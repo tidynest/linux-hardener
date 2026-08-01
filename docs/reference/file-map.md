@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-07-31
+**Last Updated:** 2026-08-01
 
 This document lists all source files with their purpose and key exports.
 
@@ -92,7 +92,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/executor/mod.rs` | Re-exports executor abstraction from `hardener-common` | `SystemExecutor`, `CommandOutput`, `FileMetadata`, `MockExecutor` |
 | `src/executor/local.rs` | Local file/command operations | `LocalExecutor` |
 | `src/executor/ssh.rs` | SSH remote operations | `SshExecutor`, `SshConfig` |
-| `src/inventory.rs` | Shared host-inventory persistence | `HostsConfig`, `load_hosts()`, `save_hosts()`, `default_hosts_path()` |
+| `src/inventory.rs` | Shared host-inventory persistence: the one definition of where `~/.config/linux-hardener/hosts.toml` lives, read and written by both the CLI `batch` command and the desktop backend. The `HostsConfig` it moves is defined in `hardener-types`, not here | `default_path()`, `load()`, `save()` |
 
 ### Key Trait (plugin.rs)
 
@@ -419,7 +419,7 @@ pub struct ScanRunner {
 | `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity, UncheckedCheck, ValidationIssue, ValidationReport), scheduler re-exports (SchedulerUiConfig, NotificationUiConfig, EmailUiConfig, WebhookUiConfig, TestNotificationResult), `CheckpointInfo`, `ScanSessionInfo`, `CheckpointDetail`, `CheckpointFileInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState`, `unchecked_tally()` |
 | `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_deep_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_get_host_history`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file` |
-| `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav (Dashboard/Analysis/Hardening/Hosts/Scheduler; Ctrl+4 reaches Hosts via the retained `/remote` redirect - Fleet Apply and Settings have no shortcut yet), Ctrl+Shift+S scan from anywhere, Alt+T theme cycle, Escape close, F11 fullscreen |
+| `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav (`/`, `/analysis`, `/hardening`, `/fleet`, `/scheduler`; Ctrl+4 navigates straight to `/fleet`, not through the retained `/remote` redirect - Fleet Apply and Settings have no shortcut yet), Ctrl+Shift+S scan from anywhere, Alt+T theme cycle, Escape priority chain, F11 fullscreen |
 | `src/navigation.rs` | Navigation signal helpers | Page routing helpers for keyboard and UI nav |
 | `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`, `unchecked_honesty_line()`; `mock_data` mod, `theme` mod |
 | `src/utils/mock_data.rs` | Development mocks | Mock data generators |
@@ -457,8 +457,8 @@ pub struct ScanRunner {
 | `src/components/card.rs` | Reusable card container component | `Card`, `CardVariant`, `HeadingLevel` |
 | `src/components/theme_toggle.rs` | Theme quick-switch `<select>` in the sidebar, bound to the shared `AppState.theme` signal (presentational only; the App `Effect` applies/persists it) | `ThemeToggle` |
 | `src/components/theme_picker.rs` | Settings page theme swatch grid: WAI-ARIA radiogroup of live-coloured preview cards, one per `THEMES` entry | `ThemePicker` |
-| `src/components/status_icons.rs` | Shared status/flag inline SVG icon set (applied/failed/manual/skipped, help affordance, diff arrow) | `IconCheck`, `IconInfo`, `IconX`, `IconWrench`, `IconMinus`, `IconArrowRight` |
-| `src/components/icons.rs` | Inline SVG icon set for the sidebar navigation and brand mark | `IconDashboard`, `IconAnalysis`, `IconHardening`, `IconFleet`, `IconFleetApply`, `IconScheduler`, `IconSettings`, `IconChevronCollapse`, `IconShieldMark` |
+| `src/components/status_icons.rs` | Shared status/flag inline SVG icon set (applied/failed/manual/skipped plus the help affordance), declared through a `status_icon!` macro and re-exported from `components/mod.rs` | `IconCheck`, `IconInfo`, `IconX`, `IconWrench`, `IconMinus` |
+| `src/components/icons.rs` | Inline SVG icon set for the sidebar navigation, the brand mark and the findings-row disclosure, declared through a `nav_icon!` macro. The module is private; callers reach it as `super::icons::...` | `IconDashboard`, `IconAnalysis`, `IconHardening`, `IconFleet`, `IconFleetApply`, `IconScheduler`, `IconSettings`, `IconChevronCollapse`, `IconChevron`, `IconShieldMark` |
 | `src/components/host_form.rs` | Add/edit remote host profile form | `HostForm` |
 | `src/components/host_panel.rs` | Expanded per-host panel: connection strip, collapsible compliance detail, collapsible findings, and the per-host scan-history timeline; rendered when a `HostRow` is expanded | `HostPanel`, `HostConnState` |
 | `src/components/host_row.rs` | One Hosts-page inventory row (name, target, connection dot, severity tallies, framework score strip) that expands in place into a `HostPanel` | `HostRow` |
@@ -476,6 +476,11 @@ pub struct ScanRunner {
 
 ### Theme Files (crates/hardener-ui/themes/)
 
+**This directory is gitignored** (`.gitignore`, `crates/hardener-ui/themes/`), so a
+fresh clone will not contain it. It is a local reference copy kept beside the
+build, listed here so the mapping between a theme id and its palette has a
+written home.
+
 | File | Purpose |
 |------|---------|
 | `themes/README.md` | Theme system documentation |
@@ -488,7 +493,7 @@ pub struct ScanRunner {
 | `themes/midnight-teal.css` | Deep teal dark theme |
 | `themes/high-contrast.css` | WCAG AAA maximum-contrast accessibility theme |
 
-**Note**: Active theme definitions are in `styles.css` using `[data-theme="..."]` selectors. Individual theme files serve as reference and documentation.
+**Note**: Active theme definitions are in `styles.css` using `[data-theme="..."]` selectors. Individual theme files serve as reference and documentation. The directory holds eight files where the application offers **seven** themes: `THEMES` in `src/utils/theme.rs` lists `default` (Midnight Teal), `fortress`, `sentinel`, `command`, `guardian`, `daywatch` and `high-contrast`. `github-dark.css` is a leftover reference palette and is not selectable.
 
 ### Tauri Bindings (tauri_bindings.rs)
 
@@ -698,13 +703,13 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/update_all_docs.py` | Batch documentation updater |
 | `scripts/release/release.sh` | Automated version bumping and release |
 | `scripts/dev/tauri-dev.sh` | Tauri development launcher |
-| `scripts/test/full-test-suite.sh` | Complete 127-test validation suite (26 sections) |
+| `scripts/test/full-test-suite.sh` | Complete validation suite, 28 sections recording 149 checks on a booted container under `--apply`. `suite_section_sizes` declares what each section records and `require_expected_total` refuses a run of the wrong size |
 | `scripts/test/differential-suite.sh` | Differential harness: applies hardening, then asks `sshd -T`, `chage -l` and `stat -c %a` what the system enforces and compares that against `scan` (`--self-test` runs anywhere) |
 | `scripts/test/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator (`--differential` swaps in the differential suite) |
 | `scripts/test/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/test/manual-verification-test.sh` | Interactive verification tests |
 | `scripts/containers/create-container.sh` | systemd-nspawn test containers for all five distros (`arch`, `debian`, `fedora`, `rhel`, `opensuse`) |
-| `scripts/test/verify-rollback.sh` | Rollback verification tests (5 tests, 10 assertions) for nspawn containers |
+| `scripts/test/verify-rollback.sh` | Rollback verification for nspawn containers, over four areas its own header names: kernel sysctl values plus config file content, `sshd_config` backup and content restoration, directory mode restoration, and `rollback --format json` producing a valid `RollbackResult` |
 
 ---
 
@@ -784,25 +789,36 @@ purpose-named directories.
 
 Tests are co-located with source files using `#[cfg(test)]` modules, plus integration tests in `tests/` directories within each crate.
 
-| Crate | Unit Tests | Integration Tests | Total |
-|-------|------------|-------------------|-------|
-| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs` | `common_types.rs` | 30 |
-| hardener-compliance | `config.rs`, `report.rs`, `output/*.rs`, `generator.rs` | `framework_tests.rs` | 46 |
-| hardener-state | `audit.rs`, `hash_chain.rs`, `signing.rs`, `db.rs` | `checkpoint_system.rs` | 31 |
-| hardener-distro | `adapter.rs`, `package/*.rs` | - | 15 |
-| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `notification/*.rs` | - | 48 |
-| hardener-cli | `cli.rs`, `output.rs`, `history.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 31 |
-| hardener-plugins | - | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 128+ |
-| hardener-core | `config.rs`, `context.rs`, `plugin.rs`, `registry.rs`, `config_loader.rs` | `plugin_manager_tests.rs`, `mock_executor_tests.rs`, `ssh_executor_tests.rs` | 43+ |
+The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
+tree on **2026-08-01**, not a run total: a run also executes doctests and, for
+`hardener-ui`, `wasm_bindgen_test` cases that no annotation count here covers.
+Treat them as the size of each crate's declared test surface, and read the
+workspace run itself for what passed.
 
-### New Test Files (v0.3.0)
+| Crate | Unit Tests | Integration Tests | Annotations |
+|-------|------------|-------------------|-------------|
+| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs` | 89 |
+| hardener-compliance | `generator.rs`, `profiles.rs`, `output/*.rs`, `frameworks/iso27001.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 86 |
+| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs` | 85 |
+| hardener-distro | `adapter.rs`, `package/*.rs` | - | 16 |
+| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 100 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, `commands/*.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 160 |
+| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, every plugin module | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 544 |
+| hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 128 |
+| hardener-types | `lib.rs`, `remote.rs` | - | 41 |
+| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 99 |
 
-| File | Purpose | Tests |
-|------|---------|-------|
+### Executor and Mock Test Files
+
+Added with the executor abstraction in v0.3.0 and grown considerably since;
+counts measured the same way and on the same date as the table above.
+
+| File | Purpose | Annotations |
+|------|---------|-------------|
 | `hardener-core/tests/mock_executor_tests.rs` | MockExecutor unit tests | 14 |
 | `hardener-core/tests/ssh_executor_tests.rs` | SshExecutor unit/integration tests | 14 |
-| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (8 files) | 80 |
-| `hardener-plugins/tests/ssh_integration_tests.rs` | Plugin SSH integration tests | 10 |
+| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (8 files) | 359 |
+| `hardener-plugins/tests/ssh_integration_tests.rs` | Plugin SSH integration tests | 11 |
 
 ---
 
@@ -826,8 +842,12 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `gui-tests/tests/dashboard.spec.js` | T-DASH-01..09 (9 tests): score, scan trigger, navigation, activity |
 | `gui-tests/tests/analysis.spec.js` | T-FIND-01..10, T-COMP-01..08 (18 tests): findings + compliance |
 | `gui-tests/tests/hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 (16 tests): configure + history |
-| `gui-tests/tests/themes.spec.js` | T-THEME-01..07 (7 tests + 30 screenshots): 6 of the 7 themes (default/Midnight Teal, fortress, sentinel, command, guardian, daywatch; High Contrast has no coverage yet) |
+| `gui-tests/tests/themes.spec.js` | T-THEME-01..07 (7 tests + 30 screenshots): 6 of the 7 themes (default/Midnight Teal, fortress, sentinel, command, guardian, daywatch; High Contrast has no coverage yet). The 30 are generated at collection time from 5 states x 6 themes |
 | `gui-tests/tests/errors.spec.js` | T-ERR-01..04 (4 tests): error handling and dismiss |
+| `gui-tests/tests/fleet.spec.js` | Fleet scan view (7 tests) |
+| `gui-tests/tests/fleet-apply.spec.js` | Fleet Apply mode toggle, selection and confirm modal (9 tests) |
+| `gui-tests/tests/remote.spec.js` | Single-host remote connect session (7 tests) |
+| `gui-tests/tests/scheduler.spec.js` | Scheduler and notification configuration (6 tests) |
 
 ### Runner Scripts
 
@@ -849,4 +869,4 @@ Tests are co-located with source files using `#[cfg(test)]` modules, plus integr
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01

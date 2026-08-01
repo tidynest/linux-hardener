@@ -1,43 +1,76 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01
 
 This document tracks validation testing across supported Linux distributions.
 
-**Last documented full cross-distro validation:** hardener **1.1.0** (CLI suite, 2026-06-28, see [v1.1.0 Re-validation](#v110-re-validation-2026-06-28))
-**Baseline validation:** hardener 0.3.3 (2026-02-23, detailed per-distro sections below remain the reference breakdown)
-**Container set:** recreated for the v1.2.2 cycle - `scripts/containers/create-container.sh` now targets Arch rolling, Debian 13 "Trixie", Fedora 44, Rocky Linux 10 and openSUSE Leap 16.0; the detailed per-distro results below still describe the previous versions (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6) from the v1.1.0 re-validation
+**Last measured full cross-distro validation:** 2026-08-01, on containers
+recreated immediately beforehand.
+**Container set:** Arch rolling, Debian 13 "Trixie", Fedora 44, Rocky Linux 10
+(RHEL 10 binary-compatible) and openSUSE Leap 16.0, all built by
+`scripts/containers/create-container.sh`.
+**Baseline validation:** hardener 0.3.3 (2026-02-23). The detailed per-distro
+sections lower down are that baseline and still describe the container versions
+of the time (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6).
 
-> **Currency note (2026-07-19):** the **container set has since been recreated
-> for the newer distro versions**. `scripts/containers/create-container.sh` now
-> targets **Debian 13 "Trixie", Fedora 44, Rocky Linux 10 (RHEL 10
-> binary-compatible), openSUSE Leap 16.0** and Arch rolling; `docs/NEXT.md`
-> records this refresh as completed and re-validated during the v1.2.2 cycle.
-> The **detailed per-distro results and the v1.1.0 re-validation write-up below
-> still describe the previous container versions** (Debian 12, Fedora 41, Rocky 9,
-> openSUSE Leap 15.6); a full results narrative on the refreshed containers is
-> still to be written. **openSUSE Leap 15.x reached end-of-life in April 2026**,
-> which is why the SUSE target moved to Leap 16.0. Family-based detection routes
-> every release in each family (Debian/Red Hat/Arch/SUSE) identically.
+> **Why the SUSE target moved:** **openSUSE Leap 15.x reached end of life in
+> April 2026**, so the SUSE container is Leap 16.0. Family-based detection routes
+> every release in each family (Debian, Red Hat, Arch, SUSE) identically, so the
+> version a container happens to carry is the version validated and not the
+> boundary of what is supported.
+
+> **What is historical here.** The 2026-08-01 summary immediately below is the
+> current reading. Everything under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28)
+> and every per-distro breakdown after it is a dated record kept for its failure
+> analysis and its per-plugin detail, not a statement about the containers as they
+> stand today.
 
 ---
 
 ## Summary
 
-| Distribution | Family | Version | Test Date | Tests | Pass | Fail | Skip | Pass Rate | Status |
-|--------------|--------|---------|-----------|-------|------|------|------|-----------|--------|
-| Arch Linux | Arch | Rolling | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
-| Debian | Debian | 12 (Bookworm) | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
-| Fedora | Red Hat | 41 | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
-| Rocky Linux | Red Hat | 9 | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
-| openSUSE | SUSE | Leap 15.6 | 2026-06-28 | 127 | 127 | 0 | 6 | 100% | VALIDATED |
+Measured 2026-08-01 with the containers recreated first:
 
-> **v1.1.0 (2026-06-28), clean run: 127/127 on all five.** The suite grew from
-> 123 to 127 tests: ISO/IEC 27001:2022 added as the 7th report framework, plus
-> `history trends`/`history regressions` cases. Two harness issues found and fixed during
-> re-validation (stale `daemon status` invocations and an intermittent JSON-grep
-> flake) are written up under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28).
-> No product regressions. The musl static binary works across all glibc versions.
+```bash
+for d in arch debian fedora rhel opensuse; do
+    sudo ./scripts/containers/create-container.sh "$d" clean --no-confirm
+    sudo ./scripts/containers/create-container.sh "$d"
+done
+sudo ./scripts/test/run-cross-distro-tests.sh --apply --booted
+```
+
+| Distribution | Family | Version | Test Date | Declared | Recorded | Pass | Fail | Skip | Status |
+|--------------|--------|---------|-----------|----------|----------|------|------|------|--------|
+| Arch Linux | Arch | Rolling | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| Debian | Debian | 13 (Trixie) | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| Fedora | Red Hat | 44 | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| Rocky Linux | Red Hat | 10 | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| openSUSE | SUSE | Leap 16.0 | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+
+> **All five distributions were identical on every column.** "Declared" is what
+> `suite_section_sizes` in `scripts/test/full-test-suite.sh` says a run of this
+> shape should record, and "Recorded" is what the run actually recorded;
+> `require_expected_total` refuses a run where the two differ, and reports the
+> refusal through the failure count so a short run cannot read as a pass in
+> `test-results/summary.txt`.
+
+> **Why passed plus failed does not reach the recorded total.** Three of the 149
+> recorded checks are section 23 rows that are recorded and then skipped: the ssh
+> plugin's apply has nothing to do on a host sections 13 to 15 have already
+> hardened, so it takes no checkpoint and there is nothing of its own to roll
+> back. That outcome is declared, not a fault. The other six of the nine skips
+> are never recorded as checks at all. The full breakdown is under
+> [Expected Container Skips](#expected-container-skips-9-per-distro).
+
+> **The audit plugin's apply fails in a container, by design, on all five.**
+> There is no auditd to reload, so `augenrules --load` and `systemctl restart
+> auditd` both fail and the plugin reports the run unsuccessful having already
+> written `/etc/audit/rules.d/hardening.rules`. Section 12A applies that plugin
+> deliberately and records its exit status as information rather than asserting
+> on it; what it asserts on is the rules file existing, because that is the thing
+> the rollback has to undo. Section 14 skips the same apply instead of running
+> it. A non-zero exit from `apply --plugin audit-hardening` inside a container is
+> the correct reading of the host, not a defect in the tool.
 
 > **Note on family coverage:** Each validated distribution covers its entire family:
 > - **Arch** covers Manjaro, EndeavourOS, Garuda
@@ -146,7 +179,7 @@ hardener daemon status --limit 5                       | grep -c 'Database:'    
 hardener --format json daemon status --limit 5                                         -> exit 0, valid JSON
 ```
 
-**Net:** both harness issues are fixed; the full suite is repeatably **125/125 on all
+**Net:** both harness issues are fixed; the full suite is repeatably **127/127 on all
 five distributions** (confirmed by a clean back-to-back single-distro and full run).
 A self-diagnosing `diag:` line (exit/bytes/head) remains in `run_test_output`'s
 failure path so any future capture anomaly is debuggable from the host log in one run.
@@ -155,7 +188,10 @@ failure path so any future capture anomaly is debuggable from the host log in on
 
 ## Automated Cross-Distro Testing
 
-All validation results in this document are produced by a fully automated test runner. A single command executes 127 tests across all 5 distributions in sequence, collecting pass/fail/skip results and producing a summary table.
+All validation results in this document are produced by a fully automated test
+runner. One command runs the suite across all 5 distributions, collecting
+pass/fail/skip counts and writing `test-results/summary.txt`. On a booted
+container under `--apply` the suite records **149 checks** per distribution.
 
 ### Running the Tests
 
@@ -164,86 +200,177 @@ All validation results in this document are produced by a fully automated test r
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 cp target/x86_64-unknown-linux-musl/release/hardener target/release/hardener
 
+# Recreate the containers. Sections 12A and 12B ask whether a rollback REMOVES
+# something an apply created, which can only be asked of a host where it does
+# not exist yet, and --apply hardens every container it touches.
+for d in arch debian fedora rhel opensuse; do
+    sudo ./scripts/containers/create-container.sh "$d" clean --no-confirm
+    sudo ./scripts/containers/create-container.sh "$d"
+done
+
 # Run the full cross-distro validation (requires root for systemd-nspawn)
-sudo ./scripts/test/run-cross-distro-tests.sh --apply
+sudo ./scripts/test/run-cross-distro-tests.sh --apply --booted
 ```
 
-The `--apply` flag gates destructive tests (sections 13-16, 23) that modify system state inside containers. Without this flag, those sections are skipped entirely.
+`--apply` gates the destructive sections (12A, 12B, 13 to 16 and 23) that modify
+system state inside containers. Without it, those sections do not run.
+
+`--booted` boots each container under its own systemd with `--private-network`
+instead of running the suite through `systemd-nspawn --pipe`. Section 12B needs
+it: `systemctl mask` and `systemctl is-enabled` both require systemd as PID 1,
+which `--pipe` does not provide, so under `--pipe` that section records its
+precondition check and skips, naming the flag that would let it run. The private
+network namespace is what makes a firewall apply safe to run at all: nspawn
+grants `CAP_NET_ADMIN` only to a container that owns its own namespace, so the
+rules land there and never in the host's netfilter.
+
+**The suite declares its own size.** `suite_section_sizes` in
+`scripts/test/full-test-suite.sh` states how many checks each section records for
+a given combination of apply, booted and container, and `require_expected_total`
+refuses a run that recorded a different number. The refusal is reported as a
+counted failure and not through the exit status alone, because the runner writes
+PASS into `summary.txt` for any distribution whose failure count is zero. A
+section that quietly stopped recording would otherwise read as a shorter run
+rather than as a fault.
 
 ### Test Infrastructure
 
-- **Execution:** All tests run via `systemd-nspawn --pipe` (non-interactive, no boot or login required)
+- **Execution:** `systemd-nspawn --pipe` by default (non-interactive, no boot or login required), or `--boot --private-network` under `--booted`
 - **Binary:** Single musl-linked static binary (~13MB) deployed to all containers
 - **Safety:** 3-layer host protection:
   1. `systemd-nspawn` container isolation (filesystem, PID, network namespace)
   2. Container detection hard-exit in the hardener binary itself
   3. `--apply` flag gating for destructive operations
-- **Container awareness:** Tests that cannot function inside containers are automatically categorised as SKIP rather than FAIL
+- **Container awareness:** A question this host cannot answer is declared unaskable in advance and skipped. A value that turns out undeterminable at runtime is a failure, never a skip
+- **`/proc/sys` stays read-only in both execution modes**, so the `fs.*` and `kernel.*` parameters are out of reach and the kernel apply cannot touch the host. The `net.ipv4.*` parameters become writable inside the container's own namespace under `--booted`
 
-### Expected Container Skips (6 per distro)
+### Expected Container Skips (9 per distro)
 
-Every distribution skips exactly 6 tests due to inherent container limitations:
+On an `--apply --booted` run every distribution skips exactly 9, and the same 9:
 
-| # | Test | Reason |
-|---|------|--------|
-| 1 | Daemon start | Blocking command that would hang the test runner |
-| 2 | Systemd install | No full systemd init (PID 1) in nspawn |
-| 3 | Systemd status after install | Depends on systemd install |
-| 4 | Systemd uninstall | Depends on systemd install |
-| 5 | Apply audit-hardening | No kernel audit subsystem available in container |
-| 6 | Apply mac-hardening | No SELinux/AppArmor kernel modules in container |
+| # | Section | Test | Reason |
+|---|---------|------|--------|
+| 1 | 10 | Daemon start | Blocking command that would hang the test runner |
+| 2 | 12 | Systemd install | No full systemd init (PID 1) in nspawn |
+| 3 | 12 | Systemd status after install | Depends on systemd install |
+| 4 | 12 | Systemd uninstall | Depends on systemd install |
+| 5 | 14 | Apply audit-hardening | No kernel audit subsystem available in container |
+| 6 | 14 | Apply mac-hardening | No SELinux/AppArmor kernel modules in container |
+| 7 | 23 | Lifecycle: ssh-hardening's apply recorded the checkpoint it took | ssh takes no checkpoint where its apply has nothing to do |
+| 8 | 23 | Lifecycle rollback: ssh-hardening | Follows from 7: there is no checkpoint of its own to roll back |
+| 9 | 23 | Lifecycle: ssh-hardening findings after the rollback | Follows from 7: nothing was rolled back, so nothing to read |
 
-These skips are deterministic and identical across all 5 distributions. They do not indicate any deficiency in the hardener -- these subsystems are simply unavailable inside unprivileged containers.
+Skips 1 to 6 are never recorded as checks. Skips 7 to 9 are recorded and then
+skipped, which is why 146 passed and 0 failed out of 149 recorded rather than
+149 passed. Section 23 pairs each rollback with its own apply through
+`ApplyResult::apply_checkpoint_id`, so a plugin whose apply took no checkpoint is
+reported as such instead of being rolled back to some other apply's checkpoint.
+
+Under `--pipe` rather than `--booted`, section 12B skips as well and the declared
+size of the run changes accordingly. None of these skips indicates a deficiency
+in the hardener: the subsystems are simply unavailable, or the plugin correctly
+had nothing to do.
 
 ### Container Setup
 
-> The versions and creation methods below document the previous (v1.1.0-era)
-> containers. `scripts/containers/create-container.sh` now targets Debian 13,
-> Fedora 44, Rocky Linux 10 and openSUSE Leap 16.0 (Fedora, Rocky and openSUSE
-> via podman image export); see the currency note above.
+Built by `scripts/containers/create-container.sh <distro>`, which is the
+authority on what each image contains. Container names are stable and are relied
+upon by the test runners.
 
 | Distro | Container Name | Created With | Base Packages |
 |--------|---------------|-------------|---------------|
-| Arch Linux | hardener-test | pacstrap | base, openssh, audit, ufw, nftables |
-| Debian 12 | hardener-test-debian | debootstrap | systemd, openssh-server, auditd, ufw, nftables |
-| Fedora 41 | hardener-test-fedora | dnf bootstrap | basesystem, openssh-server, audit, firewalld, nftables |
-| Rocky Linux 9 | hardener-test-rhel | podman export | openssh-server, audit, firewalld, nftables |
-| openSUSE Leap 15.6 | hardener-test-opensuse | zypper bootstrap | patterns-base-minimal_base, openssh-server, audit, firewalld, nftables |
+| Arch Linux (rolling) | hardener-test | pacstrap | base, base-devel, openssh, audit, bluez, ufw, iptables, nftables, sudo, polkit, jq |
+| Debian 13 (Trixie) | hardener-test-debian | debootstrap | systemd, openssh-server, auditd, bluez, ufw, iptables, nftables, sudo, polkitd, pkexec, procps, iproute2, jq |
+| Fedora 44 | hardener-test-fedora | podman image export | openssh-server, openssh-clients, audit, bluez, cracklib-dicts, firewalld, nftables, iptables, polkit, procps-ng, iproute, jq |
+| Rocky Linux 10 | hardener-test-rhel | podman image export | as Fedora, but `iptables-nft` in place of `iptables` (Rocky 10 dropped the legacy package) |
+| openSUSE Leap 16.0 | hardener-test-opensuse | podman image export | openssh-server, openssh-clients, audit, bluez, firewalld, nftables, iptables, polkit, procps, iproute2, jq |
 
-All containers have: root/test, testuser/test (with passwordless sudo), and firewall tooling installed.
+All five containers additionally have:
+
+- root/test and testuser/test with passwordless sudo
+- SSH host keys generated with `ssh-keygen -A`, run under nspawn rather than
+  chroot because ssh-keygen needs `/dev/urandom`. Without them `sshd -t` exits
+  with "no hostkeys available", the ssh plugin correctly aborts every apply, and
+  the whole plugin reads as broken for a reason that has nothing to do with it
+- `sshd`, `auditd` and `bluetooth` enabled, not merely installed. Enabling is
+  what makes installing count: the service-minimisation plugin raises a finding
+  only for a unit that is enabled or active, so an installed but disabled
+  `bluetooth.service` would leave the fixture with nothing to find. Leaving it to
+  the packaging would not do either, since Debian enables a daemon on install
+  where Arch does not and the five images would then disagree with each other.
+  The enable step is called bare so a failure aborts creation rather than
+  producing a container that builds cleanly and tests nothing
+
+**Why bluez is on all five.** The service-minimisation plugin assesses five units
+and every base image shipped with none of them, so the plugin had no subject
+matter and an oracle over it could only read the same "nothing to report" on
+every distribution. `bluetooth.service` is the fixture section 12B masks and then
+asserts a rollback unmasks.
+
+**Why `openssh-clients` is on the three podman-exported images.** It provides
+`ssh -Q`, which is how the ssh plugin asks the host which algorithms it supports.
+Without it the allow-list intersection is empty, the plugin skips all three
+crypto directives as "leaving host default", and the crypto path is unreachable
+on that distribution. These images carry
+`/etc/ssh/sshd_config.d/40-redhat-crypto-policies.conf`, whose Ciphers and MACs
+include values this tool's allow-list rejects, so this is the one fixture where
+the drop-in override the plugin exists to beat can actually be produced.
+
+**Why `cracklib-dicts` is on the two dnf-family images.** libpwquality's
+dictionary check is on by default and fails closed: with no dictionary to load it
+refuses every password, strong ones included, so a container without it cannot
+answer whether a password policy works. Rocky's base image carries it and
+Fedora's does not, a difference nobody chose that made one distribution's reading
+incomparable with the other's.
 
 ---
 
-## Test Categories (26 Sections, 126 Tests)
+## Test Categories (28 Sections, 149 Checks)
 
-| Section | Name | Tests | Description |
-|---------|------|-------|-------------|
-| 1 | Basic Commands | varies | --version, --help, all subcommand help |
-| 2 | Scan All Plugins | 8 | Individual scan for all 8 plugins |
-| 3 | Scan Filters | varies | All 5 severity levels, --audit, --exit-code |
-| 4 | Scan Output Formats | 4 | text, json, csv, html |
+Counts are what each section declares for an `--apply --booted` run inside a
+container, from `suite_section_sizes` in `scripts/test/full-test-suite.sh`. They
+sum to 149. Sections run in the order listed, which is not numeric order:
+19 runs last, and 12A and 12B run first inside the apply block.
+
+| Section | Name | Checks | Description |
+|---------|------|--------|-------------|
+| 1 | Basic Commands | 11 | --version, --help, all subcommand help, plus `plugins` listing all 8 |
+| 2 | Scan All Plugins | 10 | Full scan, each of the 8 plugins individually, and a multi-plugin scan |
+| 3 | Scan Filters | 8 | All 5 severity levels, --audit, --exit-code, --quiet |
+| 4 | Scan Output Formats | 5 | text, json, csv, html, plus a JSON structure check |
 | 5 | Reports All Frameworks | 7 | cis, stig, nist, pcidss, hipaa, gdpr, iso27001 |
 | 6 | Reports All Scenarios | 7 | server, workstation, government, healthcare, financial, gdpr, all |
-| 7 | Report Output Formats | varies | text, json, csv, html, pdf (all frameworks) |
-| 8 | Dry-Run All Plugins | 8 | --dry-run for all 8 plugins |
-| 9 | Checkpoint Operations | varies | list, create, show, delete |
-| 10 | Daemon Commands | varies | status, run-once |
-| 11 | History Commands | 3 | list, show, export |
-| 12 | Systemd Commands | varies | generate, install, status, uninstall |
-| 13 | Apply Kernel | varies | Apply kernel hardening + verify changes |
-| 14 | Apply Other Plugins | varies | Apply remaining plugins individually |
+| 7 | Report Output Formats | 12 | text, json, csv, html and pdf for CIS, plus a PDF for each of the 7 frameworks |
+| 8 | Dry-Run All Plugins | 9 | --dry-run for all 8 plugins, plus --all |
+| 9 | Checkpoint Operations | 5 | list, create, list again, show, delete |
+| 10 | Daemon Commands | 2 | status, run-once (daemon start is skipped) |
+| 11 | History Commands | 5 | list, show, export, trends, regressions |
+| 12 | Systemd Commands | 2 | generate, status (install/status/uninstall skipped in a container) |
+| 12A | Rollback Undoes The Audit Apply | 7 | Apply audit hardening, roll it back, and assert on the filesystem that the rules file is gone, that `/etc/audit` lists exactly the paths it listed beforehand, and that the compiled rule set is back at its pre-apply line count (--apply only) |
+| 12B | Rollback Undoes The Services Apply | 7 | Apply service minimisation, roll it back, and assert on the filesystem that the mask link is gone, that the unit is enabled again, and that `/etc/systemd/system` lists exactly the paths it listed beforehand (--apply only, and 1 check on an unbooted host, where the rest cannot be asked) |
+| 13 | Apply Kernel | 1 | Apply kernel hardening |
+| 14 | Apply Other Plugins | 5 | ssh, permissions, pam, firewall, services individually (audit and mac skipped in a container) |
 | 15 | Apply --all | 1 | Apply all plugins at once |
-| 16 | Rollback | 1 | Rollback to checkpoint, verify restoration |
-| 17 | Global --format Flag | 3 | Test global format flag with various commands |
-| 18 | Error Handling | varies | Invalid plugin, framework, checkpoint ID |
-| 19 | Post-Apply Verification | 2 | Final scan + compliance report |
+| 16 | Rollback | 1 | Rollback to checkpoint |
+| 17 | Global --format Flag | 3 | Global format flag with various commands |
+| 18 | Error Handling | 4 | Invalid plugin, framework, checkpoint ID |
 | 20 | Scan History Persistence | 3 | scan -> history list verification |
 | 21 | History Filtering | 3 | --limit, --status filters |
 | 22 | Plugin Filter Combinations | 4 | Short names, mixed, multi-plugin |
-| 23 | Per-Plugin Lifecycle | varies | Apply -> verify -> rollback per plugin (gated behind --apply) |
+| 23 | Per-Plugin Lifecycle | 18 | Six checks each for kernel, ssh and permissions (--apply only). The host arrives hardened by sections 13 to 15, so each apply here is a second apply: the finding count must be unmoved by it, and unmoved by the rollback that follows |
 | 24 | Config File Loading | 2 | Valid/invalid config file |
 | 25 | Report Combinations | 2 | Framework + scenario + format combos |
 | 26 | Flag Combinations | 3 | --quiet + --format, --audit + --format, multi-flag |
+| 19 | Post-Apply Scan Verification | 2 | Final scan + compliance report. Runs last, and is not gated behind --apply |
+
+**Why 12A and 12B come first inside the apply block, and must stay there.** Both
+ask whether a rollback removes something an apply created, and that can only be
+asked of a host where it does not exist yet. Section 15 applies every plugin, so
+from that point on the audit rules file and the bluetooth mask link both exist,
+their checkpoints capture them as present, and a rollback correctly restores them
+rather than removing them. Moved after any of the applies, neither section fails:
+each refuses to read at all and reports its precondition broken. Add new apply
+sections after them, never before.
 
 ---
 
@@ -712,11 +839,19 @@ silent, which is the honest answer for a file the host does not have.
 
 To reproduce the full cross-distro validation from scratch:
 
-1. **Set up containers** -- `scripts/containers/create-container.sh <distro>` creates each one:
-   - `sudo ./scripts/containers/create-container.sh debian`
-   - `sudo ./scripts/containers/create-container.sh fedora`
-   - `sudo ./scripts/containers/create-container.sh opensuse`
-   - `sudo ./scripts/containers/create-container.sh rhel` (Rocky Linux via podman export)
+1. **Set up containers** -- `scripts/containers/create-container.sh <distro>` creates each one, at `/var/lib/machines/<container name>`:
+   - `sudo ./scripts/containers/create-container.sh arch` (Arch rolling via pacstrap)
+   - `sudo ./scripts/containers/create-container.sh debian` (Debian 13 Trixie via debootstrap)
+   - `sudo ./scripts/containers/create-container.sh fedora` (Fedora 44 via podman export)
+   - `sudo ./scripts/containers/create-container.sh rhel` (Rocky Linux 10 via podman export)
+   - `sudo ./scripts/containers/create-container.sh opensuse` (openSUSE Leap 16.0 via podman export)
+
+   **Recreate rather than reuse.** `--apply` hardens every container it touches
+   and nothing in the suite undoes the audit apply section 15 performs, so a
+   second `--apply` run in the same container cannot ask sections 12A and 12B
+   their question and both will report their precondition broken. Remove first
+   with `sudo ./scripts/containers/create-container.sh <distro> clean
+   --no-confirm`.
 
 2. **Build the musl static binary**:
    ```bash
@@ -726,10 +861,10 @@ To reproduce the full cross-distro validation from scratch:
 
 3. **Run the cross-distro test suite**:
    ```bash
-   sudo ./scripts/test/run-cross-distro-tests.sh --apply
+   sudo ./scripts/test/run-cross-distro-tests.sh --apply --booted
    ```
 
-4. **Review results** -- The runner outputs a summary table to stdout and per-distro logs under the project directory.
+4. **Review results** -- The runner writes `test-results/summary.txt` and a per-distro `test-results/<distro>.log`, and prints the same table to stdout.
 
 ---
 
@@ -737,15 +872,26 @@ To reproduce the full cross-distro validation from scratch:
 
 In addition to CLI testing, the Web UI is validated with Playwright across all 5 distributions.
 
+> **The GUI figures in this section are older than the CLI ones above.** The last
+> recorded run is 2026-06-29, on the previous container versions, and the
+> Playwright suite has not been re-run since the desktop redesign landed. The
+> spec inventory below is read off the tree and is current; the pass counts are
+> not. Treat this section as a record, not as a present-tense claim.
+
 ### Summary
 
 | Distribution | Family | Version | Test Date | Tests | Pass | Fail | Status |
 |--------------|--------|---------|-----------|-------|------|------|--------|
-| Arch Linux | Arch | Rolling | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
-| Debian | Debian | 12 (Bookworm) | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
-| Fedora | Red Hat | 41 | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
-| Rocky Linux | Red Hat | 9 | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
-| openSUSE | SUSE | Leap 15.6 | 2026-02-23 | 84 | 84 | 0 | VALIDATED |
+| Arch Linux | Arch | Rolling | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
+| Debian | Debian | 12 (Bookworm) | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
+| Fedora | Red Hat | 41 | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
+| Rocky Linux | Red Hat | 9 | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
+| openSUSE | SUSE | Leap 15.6 | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
+
+The suite has grown since that baseline. It was last re-run on 2026-06-29 and was
+green on all five distributions at **113 tests across 9 specs**, the run recorded
+under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28); the fleet,
+fleet-apply, remote and scheduler specs were added between the two.
 
 ### Test Infrastructure
 
@@ -756,19 +902,27 @@ In addition to CLI testing, the Web UI is validated with Playwright across all 5
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Test Categories (7 Categories, 84 Tests)
+### Spec Inventory (9 Specs, 113 Tests)
 
-| Category | Test IDs | Tests | Description |
-|----------|----------|-------|-------------|
-| Dashboard | T-DASH-01..09 | 9 | Score display, scan trigger, navigation, activity feed |
-| Findings | T-FIND-01..10 | 10 | Scan, table rendering, detail panel, finding count |
-| Compliance | T-COMP-01..08 | 8 | Framework selection, report generation, score colours |
-| Configure | T-CONF-01..10 | 10 | Profiles, plugin toggles, preview, cancel |
-| History | T-HIST-01..06 | 6 | Checkpoints, rollback, apply results |
-| Themes | T-THEME-01..07 | 7 | 6 of the 7 themes verified, High Contrast not yet covered (the theme spec dynamically generates 30 additional screenshot tests: 5 states x 6 themes, bringing the suite total to 84) |
-| Errors | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
+Counted off `gui-tests/tests/` on 2026-08-01: 83 tests written out, plus 30 the
+theme spec generates at collection time.
+
+| Spec | Test IDs | Tests | Description |
+|------|----------|-------|-------------|
+| `dashboard.spec.js` | T-DASH-01..09 | 9 | Score display, scan trigger, navigation, activity feed |
+| `analysis.spec.js` | T-FIND-01..10, T-COMP-01..08 | 18 | Findings table and detail panel, framework selection, report generation |
+| `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 | 16 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, apply results |
+| `themes.spec.js` | T-THEME-01..07 | 7 + 30 | 6 of the 7 themes verified, High Contrast not yet covered. The 30 screenshot tests are generated as 5 states x 6 themes |
+| `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
+| `fleet.spec.js` | - | 7 | Fleet scan view |
+| `fleet-apply.spec.js` | - | 9 | Fleet Apply mode toggle, selection, confirm modal |
+| `remote.spec.js` | - | 7 | Single-host remote connect session |
+| `scheduler.spec.js` | - | 6 | Scheduler and notification configuration |
 
 ### Per-Distro Notes
+
+Recorded on the previous container set. The Chromium package names and paths have
+not been re-checked against Debian 13, Fedora 44, Rocky 10 or Leap 16.0.
 
 | Distribution | Chromium Path | Notes |
 |--------------|--------------|-------|
@@ -806,4 +960,4 @@ test-results/gui/
 
 ---
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01

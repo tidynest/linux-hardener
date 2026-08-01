@@ -1,5 +1,7 @@
 # Test Quality Improvement Plan
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Date**: 2026-02-25
 **Scope**: All test code across 11 crates (21 test files, ~7,928 lines)
 **Status**: Documented, code changes pending manual implementation

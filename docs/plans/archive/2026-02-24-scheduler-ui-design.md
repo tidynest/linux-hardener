@@ -1,5 +1,7 @@
 # Scheduler UI Design
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Date:** 2026-02-24
 **Status:** Implemented
 **Scope:** GUI page for configuring scan scheduling and notifications

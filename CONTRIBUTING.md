@@ -21,18 +21,58 @@ This project adheres to a code of conduct that all contributors are expected to 
 git clone https://github.com/tidynest/linux-system-hardener.git
 cd linux-system-hardener
 
+# Format code
+cargo fmt --all
+
+# Lint (this is the gate: warnings are errors)
+cargo clippy --workspace --all-targets -- -D warnings
+
 # Build the project
-cargo build
+cargo build --workspace
 
 # Run tests
-cargo test
-
-# Run clippy for linting
-cargo clippy --all-targets --all-features
-
-# Format code
-cargo fmt
+cargo test --workspace
 ```
+
+Those four commands are the full local gate. Run all four before opening a pull
+request, in that order.
+
+This is a virtual workspace, so `cargo build` and `cargo test` without
+`--workspace` already select every member. The flag is written out because the
+CI jobs use it with `--exclude`, and matching the shape makes the difference
+easy to see.
+
+`--workspace` includes `linux-hardener-desktop` (the Tauri backend under
+`src-tauri/`) and `hardener-ui` (the Leptos frontend), which need GTK and
+WebKitGTK development packages present on the host. CI skips both crates for
+exactly that reason (see `WORKSPACE_EXCLUDE` in `.github/workflows/ci.yml`). If
+you have not installed those system packages, scope your commands to the crate
+you are changing, for example `cargo test -p hardener-plugins`. System packages,
+rustup targets and the desktop and WASM builds are covered in
+[docs/contributing/building.md](docs/contributing/building.md).
+
+### Git Hooks
+
+The repository installs one hook, `.git/hooks/pre-commit`, and it runs
+`scripts/validate/validate_naming.py` and nothing else. **There is no pre-push
+hook in this repository.** Nothing local runs clippy, the tests or the format
+check for you, so a green commit says only that the naming validator was happy.
+Run the four gate commands above yourself.
+
+### Finding Something to Work On
+
+Open work lives on the [issue tracker](https://github.com/tidynest/linux-system-hardener/issues),
+and that is the right place to start rather than guessing at a gap:
+
+- [`good first issue`](https://github.com/tidynest/linux-system-hardener/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+  marks self-contained work with the context already written down.
+- [`help wanted`](https://github.com/tidynest/linux-system-hardener/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+  marks issues where a contributor is actively welcome.
+- Issues carry a priority label (`P2`, `P3`) and a kind label (`bug`,
+  `enhancement`, `testing`, `documentation`, `packaging`, `security`).
+
+Please comment on an issue before starting substantial work on it, so two people
+do not write the same patch.
 
 ### Development Scripts
 
@@ -54,13 +94,23 @@ The `scripts/` directory contains automation tools for development:
 
 See [scripts/README.md](scripts/README.md) for complete documentation of all scripts.
 
+`validate_naming.py` reports errors and warnings separately, and only errors
+block a commit. It currently prints 0 errors alongside a large body of
+pre-existing warnings (mostly `[Abbreviation]` notes on names such as `cmd` and
+`ctx`). Those are known and are not yours to clear: do not rename existing
+symbols to silence them. Keep the error count at zero.
+
 ## Coding Standards
 
 ### Rust Conventions
 
 - Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
-- Use `rustfmt` for consistent formatting
-- All code must pass `cargo clippy` without warnings
+- Use `rustfmt` for consistent formatting (`cargo fmt --all`)
+- All code must pass `cargo clippy --workspace --all-targets -- -D warnings`
+- Prefer a let-chain over a nested `if`: write
+  `if let Some(a) = x && let Some(b) = a.y()` rather than one `if let` inside
+  another. The workspace is on edition 2024 and the codebase uses this
+  throughout
 - Maintain >90% test coverage for new code
 
 ### Naming Conventions
@@ -80,6 +130,17 @@ This project uses British English for all documentation, comments, and user-faci
 - `colour` not `color`
 - `authorise` not `authorize`
 - `minimisation` not `minimization`
+- `behaviour` not `behavior`
+
+CSS property names and other language keywords keep their own spelling, so
+`color:` in `styles.css` stays as it is.
+
+### Punctuation
+
+Documentation and comments use ASCII punctuation only. **No em dashes and no en
+dashes**; use a comma, a colon, a pair of brackets or a full stop instead. No
+tracked Markdown file in the repository contains either character, and a patch
+that introduces one will be sent back.
 
 ### Code Quality
 
@@ -93,16 +154,21 @@ This project uses British English for all documentation, comments, and user-faci
 ### Branching Strategy
 
 - `main` - primary development branch (default)
-- Feature branches: `feature/description`
+- Features: `feat/description`
 - Bug fixes: `fix/description`
+- Test work: `test/description`
+- Documentation: `docs/description`
+
+The prefix matches the commit type below, so `feat/multi-host-batch-scan` and
+`fix/rollback-recreates-vanished-directory` are the shape the history uses.
 
 ### Making Changes
 
 1. Fork the repository
-2. Create a feature branch from `main`
+2. Create a branch from `main`, prefixed as above
 3. Make your changes
 4. Write/update tests
-5. Run the full test suite
+5. Run the four gate commands
 6. Submit a pull request
 
 ### Commit Messages
@@ -117,9 +183,17 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) for automate
 [optional footer(s)]
 ```
 
-**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `security`
+**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`,
+`ci`, `chore`, `security`. Only the type is significant to the changelog
+generator: `cliff.toml` groups commits by type, and `security` is also inferred
+from a body mentioning security.
 
-**Scopes**: `cli`, `core`, `plugins`, `config`, `state`, `compliance`, `scheduler`, `ui`, `deps`
+**Scope** names the area you touched and is not drawn from a fixed list.
+The ones the history uses most are `ui`, `suite`, `cli`, `core`, `common`,
+`state`, `config`, `compliance`, `scheduler`, `desktop`, `release`, `packaging`,
+`containers`, a plugin name (`ssh`, `pam`, `kernel`, `firewall`, `permissions`,
+`services`, `audit`, `mac`), or a document (`readme`, `changelog`, `guide`).
+Pick the narrowest one that is true.
 
 Examples:
 ```bash
@@ -134,13 +208,15 @@ For details, see [docs/contributing/releasing.md](docs/contributing/releasing.md
 
 Before submitting a PR, ensure:
 
-- [ ] Code compiles without warnings (`cargo build`)
-- [ ] All tests pass (`cargo test`)
-- [ ] Clippy passes (`cargo clippy --all-targets`)
-- [ ] Code is formatted (`cargo fmt --check`)
-- [ ] Documentation is updated
+- [ ] Code is formatted (`cargo fmt --all`)
+- [ ] Clippy passes (`cargo clippy --workspace --all-targets -- -D warnings`)
+- [ ] Code compiles (`cargo build --workspace`)
+- [ ] All tests pass (`cargo test --workspace`)
+- [ ] Documentation is updated, and `./scripts/validate/validate_all.py` passes
 - [ ] Commit messages are clear
-- [ ] PR description explains the changes
+- [ ] PR description explains the changes, and names the issue it closes
+
+No hook checks these for you. See [Git Hooks](#git-hooks) above.
 
 ## Types of Contributions
 
@@ -164,13 +240,21 @@ For feature requests, please include:
 
 ### Security Plugins
 
-If you want to contribute a new security plugin:
+If you want to contribute a new security plugin, start with
+[docs/contributing/plugin-authoring.md](docs/contributing/plugin-authoring.md),
+then:
 
 1. Review existing plugins in `crates/hardener-plugins/`
 2. Follow the `HardeningPlugin` trait interface
 3. Include comprehensive test coverage
 4. Document the security controls implemented
-5. Map to relevant compliance frameworks (CIS, STIG, NIST, PCI-DSS, HIPAA, GDPR, ISO 27001) where applicable
+5. Declare per-control coverage from the plugin's `coverage()` function and
+   register it in `coverage_table()` in `hardener-plugins`, so the report can
+   emit a real Pass or Fail instead of `ManualReview`
+6. Map to relevant compliance frameworks where applicable. There are ten, and
+   `ComplianceFramework::ALL` in `hardener-types` is the single source for the
+   list: CIS, STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR, ISO 27001:2022, SOC 2,
+   NIST 800-171 and FedRAMP
 
 ### Documentation
 
@@ -181,23 +265,44 @@ Documentation improvements are always welcome:
 - Improve installation instructions
 - Translate documentation
 
+[docs/contributing/documentation.md](docs/contributing/documentation.md)
+describes the documentation conventions and the validators. Run
+`./scripts/validate/validate_all.py` after a documentation change: several
+counts and tables in the docs are checked against the code that produces them.
+
 ## Testing
+
+[docs/contributing/testing.md](docs/contributing/testing.md) is the full guide,
+covering the container fixtures, the cross-distro suite and the differential
+suite. What follows is the minimum you need to run locally.
 
 ### Running Tests
 
 ```bash
 # Run all tests
-cargo test
+cargo test --workspace
 
 # Run tests for a specific crate
 cargo test -p hardener-core
 
 # Run tests with output
-cargo test -- --nocapture
+cargo test --workspace -- --nocapture
 
-# Run ignored tests (requires root)
-sudo cargo test -- --ignored
+# Run ignored tests (require root, or a fixture, or both)
+sudo cargo test --workspace -- --ignored
 ```
+
+Most ignored tests want `SSH_TEST_HOST` pointing at a booted container
+(`scripts/containers/boot-ssh-test-container.sh`); the rest need root because
+they modify real system configuration. Without the fixture they are skipped, not
+failed.
+
+`hardener-cli` is a binary crate, so use `cargo test -p hardener-cli` rather
+than `--lib`, which selects nothing there.
+
+A name filter such as `cargo test rollback` skips every test whose name does not
+contain the word, including tests that cover the same behaviour under a
+different name. The full suite is the only complete answer.
 
 ### Writing Tests
 
@@ -219,9 +324,11 @@ linux-system-hardener/
 │   ├── hardener-state/       # State management
 │   ├── hardener-compliance/  # Compliance mapping (PDF behind feature flag)
 │   ├── hardener-scheduler/   # Scheduled scanning daemon
-│   ├── hardener-cli/         # Command-line interface
+│   ├── hardener-cli/         # Command-line interface (binary "hardener")
 │   └── hardener-ui/          # Leptos WASM frontend
-├── src-tauri/                # Desktop app backend
+├── src-tauri/                # Desktop app backend (package linux-hardener-desktop)
+├── gui-tests/                # Playwright end-to-end suite (stale, see issue #48)
+├── packaging/                # PKGBUILD, RPM spec, Debian, polkit policy, man page
 ├── scripts/                  # Development utilities
 ├── docs/                     # Documentation
 ├── .github/workflows/        # GitHub Actions CI/CD (connected and functional)
@@ -252,7 +359,9 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 - **Email**: tidynest@proton.me
 - **Issues**: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
+- **Security**: do not open a public issue. [SECURITY.md](SECURITY.md) has the
+  private reporting route.
 
 Thank you for contributing to Linux System Hardener!
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-08-01

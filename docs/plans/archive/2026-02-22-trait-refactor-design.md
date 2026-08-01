@@ -1,5 +1,7 @@
 # Trait Refactor: Config → PluginConfig
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Date:** 2026-02-22
 **Status:** Implemented
 

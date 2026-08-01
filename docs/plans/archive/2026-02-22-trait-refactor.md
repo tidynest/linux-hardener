@@ -1,5 +1,7 @@
 # Trait Refactor: Config to PluginConfig, Implementation Plan
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Status:** Implemented (2026-02-22): commits `81c13ad`, `d029629`, `b87fb1c`
 
 **Goal:** Replace the empty `Config` unit struct with `PluginConfig` in the `HardeningPlugin` trait, and wire SSH as a proof-of-concept that consumes directives and exceptions.

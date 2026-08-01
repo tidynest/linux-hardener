@@ -12,7 +12,29 @@ Commands for running unit tests, integration tests, container-based root tests, 
 cargo test --workspace
 ```
 
-Runs every test across all 11 crates. Currently 1300+ tests.
+Runs every test across all 11 workspace members (the ten crates under `crates/`
+plus `src-tauri`). Measured 2026-08-01: 1401 passed, 0 failed, 43 ignored. The
+ignored ones are mostly the root-only and live-sshd tests described further down,
+with a few that want a particular firewall backend installed; they are not
+failures and an ordinary `cargo test` does not run them.
+
+Any count in this file is a record of one measurement on one day, not a property
+of the tree. Where a number matters, run the command and read what it says.
+
+### Faster runner: cargo nextest
+
+```bash
+cargo nextest run --workspace       # the unit and integration tests, in parallel
+cargo test --doc --workspace        # the doctests nextest does not run
+```
+
+`cargo nextest` is installed on this machine (0.9.140) and runs the same tests
+faster, one process per test. **It does not run doctests at all.** That is a
+property of nextest rather than a configuration in this repository, so a gate
+built out of `cargo nextest run` alone has not compiled or run a single `///`
+example in `crates/`, and the workspace has them. Either pair it with
+`cargo test --doc`, as above, or use plain `cargo test --workspace`, which runs
+both halves itself.
 
 ### CI subset (excludes GUI crates)
 
@@ -72,11 +94,20 @@ sudo ./scripts/containers/create-container.sh arch clean         # Remove contai
 | `rhel` (Rocky Linux, RHEL-compatible) | `hardener-test-rhel` |
 | `opensuse` | `hardener-test-opensuse` |
 
-Enabling `sshd` and `auditd` is a required step, not a best-effort one: if it
-fails the script reports what the service manager said and refuses to finish,
-because a container missing the services under test produces suite results that
-look like passes. Every bootstrap installs both packages, so a failure there
-means the bootstrap did not do what it reported doing.
+Enabling `sshd`, `auditd` and `bluetooth` is a required step, not a best-effort
+one: if it fails the script reports what the service manager said and refuses to
+finish, because a container missing the services under test produces suite
+results that look like passes. Every bootstrap installs all three packages, so a
+failure there means the bootstrap did not do what it reported doing. The one
+call that decides this is `enable_test_services` in `create-container.sh`, and
+each per-distro bootstrap routes through it.
+
+`bluez` is there for a reason of its own, and it is what makes suite section 12B
+askable at all. Until it was installed, no container image carried a unit the
+service-minimisation plugin manages, so every `systemctl is-enabled` reading
+across the five hosts came back `not-found` and the plugin had nothing to report.
+A check written against that fixture would have asserted nothing while reading in
+a log as coverage.
 
 ### SSH integration fixture (booted container)
 
@@ -170,6 +201,11 @@ same run. Exactly two verdicts differ and nothing else moves:
 
 That was the last failing test in the container suites.
 
+Those totals are a record of that run and not the size of a run today: sections
+12A and 12B did not exist on 2026-07-30 and section 23 has since grown. A booted
+`--apply` run now declares 149 checks, and the suite refuses a run that records
+any other number. See "The size of a run is declared" below.
+
 ---
 
 ## Root Test Suites (Inside Containers)
@@ -188,27 +224,228 @@ Tests hardener operations that require root: scanning as root, checkpoint creati
 Without `--apply`: only tests scanning and checkpoint operations (non-destructive).
 With `--apply`: also tests applying hardening changes and rolling them back (modifies system config files, then restores them).
 
-### Full test suite (comprehensive, 26 sections)
+### Full test suite (comprehensive, 28 sections)
 
 ```bash
 sudo ./scripts/test/full-test-suite.sh                     # Sections 1-12, 17-22, 24-26 (no apply)
-sudo ./scripts/test/full-test-suite.sh --apply              # All 26 sections including apply and rollback
+sudo ./scripts/test/full-test-suite.sh --apply             # All 28 sections including apply and rollback
 ```
 
 More thorough than `root-test-suite.sh`. Covers CLI argument parsing, every plugin's scan output, checkpoint lifecycle, compliance reports, daemon commands, systemd integration, history commands, and per-plugin apply/rollback cycles.
 
-Without `--apply`: skips sections 13-16 (per-plugin apply and rollback) and section 23 (per-plugin lifecycle).
-With `--apply`: runs all 26 sections including destructive per-plugin lifecycle testing.
+The sections are numbered 1 to 26, with **12A** and **12B** sitting beside 12, so
+there are 28 of them. Both of the lettered ones are rollback sections and both
+run first inside the apply block; the ordering is load bearing and the reason is
+below.
+
+Without `--apply`: skips 12A and 12B, sections 13-16 (per-plugin apply and
+rollback) and section 23 (per-plugin lifecycle).
+With `--apply`: runs all 28 sections including destructive per-plugin lifecycle
+testing.
+
+#### 12A: a rollback removes the audit plugin's rules file
+
+`test_audit_rollback_restores` applies `audit-hardening`, rolls it back, and then
+reads the filesystem rather than the tool's summary. Three things must be true
+afterwards: `/etc/audit/rules.d/hardening.rules` is gone, `find /etc/audit` lists
+exactly the paths it listed before the apply, and `/etc/audit/audit.rules` is
+back at its pre-apply line count.
+
+The apply's exit status is deliberately not asserted. Auditd cannot start in a
+container, so `augenrules --load` and the service restart both fail and the
+plugin reports the run unsuccessful having already written its rules file.
+Asserting exit 0 would assert something false about the host. The positive
+control is the rules file existing after the apply, because a rollback of an
+apply that wrote nothing satisfies every assertion by having nothing to undo.
+
+The checkpoint is chosen by name and then by age, through the shared
+`checkpoints_named` reading, and the count is asserted rather than the position
+trusted: every rollback writes its own "Before rollback to '<name>'" snapshot
+carrying the target's name as a substring, so a name filter alone matches the
+state after the change as readily as the one before it. 12A takes the oldest
+match, because it asks what the host looked like before the first change.
+
+The compiled rule set is judged on its line count, not on a text search. An
+earlier version grepped the compiled file for "hardening" and reported that the
+tool's rules were absent on all five hosts while the counts said the file had
+grown and stayed grown: `augenrules` strips the comment header, so the word can
+never appear there. A control whose search term cannot match can only return the
+reassuring answer. `line_count` keeps `absent` and `unreadable` apart from a
+number for the same reason, and an unreadable reading fails the row instead of
+comparing equal to another unreadable one.
+
+Seven checks: the precondition, the apply having written the file, exactly one
+checkpoint carrying the apply's name, the rollback exiting 0, the rules file
+gone, the tree identical, and the compiled line count back.
+
+#### 12B: a services rollback unmasks what the apply masked
+
+`test_services_rollback_restores` is 12A's sibling for
+`service-minimisation`. Where audit's defect was a file its apply wrote, this
+plugin's is a symlink `systemctl mask` creates,
+`/etc/systemd/system/bluetooth.service` pointing at `/dev/null`. That link
+outlived its own rollback in three separate ways, each fixed separately and none
+of them visible to this suite at the time: the checkpoint did not declare the
+path, the restore refused it because the guard resolved the link to `/dev/null`
+and out of every allowlist, and restoring the enablement symlink failed with
+ENOENT because disabling had emptied and removed its parent directory. All three
+shipped, and the suite read the same totals before and after every one of them.
+
+After the rollback: the mask link is gone, `systemctl is-enabled bluetooth` reads
+the same word it read before the apply, and `/etc/systemd/system` lists exactly
+the paths it listed before. The enablement half is a genuinely different failure
+from the mask half, which is why it is a row of its own: a rollback can remove
+the mask correctly and still leave the unit disabled.
+
+The reading is taken on the **word** `systemctl is-enabled` prints and never on
+its exit status, because `static` and `indirect` print their own word and exit 0,
+`enabled-runtime` exits 0 while the next boot discards it, and `disabled` and
+`masked` exit non-zero.
+
+**This section needs a booted host**, and says so rather than failing
+confusingly: `systemctl mask` and `systemctl is-enabled` both need systemd as
+PID 1, which `nspawn --pipe` does not provide. Under `--pipe` it records its one
+precondition check and skips, naming `--booted` as the flag that would let it
+run. `host_is_booted` is the single predicate behind both the skip and the
+expected size of the section, so the two cannot come to disagree about what a
+booted host is.
+
+The fixture it rests on is `bluez`, which `scripts/containers/create-container.sh`
+installs and enables on all five images.
+
+Seven checks booted, in the same shape as 12A: the precondition, the apply having
+masked the unit, exactly one checkpoint carrying the apply's name, the rollback
+exiting 0, the mask link gone, the unit enabled again, and
+`/etc/systemd/system` identical. One check unbooted, the precondition that then
+skips the rest.
+
+#### 23: the per-plugin lifecycle, and the checkpoint it rolls back
+
+`test_per_plugin_lifecycle` runs kernel, ssh and permissions through scan,
+apply, re-scan, rollback, re-scan. By the time it runs, sections 13 to 15 have
+already hardened the host, so each apply here is a **second** apply and finds
+nothing to do. That fixes what the section can honestly ask. "Did the rollback
+remove what the apply created" is unaskable at this position, because there is
+nothing to remove and the assertion would pass against a rollback that did
+nothing whatever; that question belongs to 12A and 12B, which run before anything
+hardens the host.
+
+What it does ask is idempotency and non-damage: the finding count must be
+unmoved by the second apply, and unmoved again by the rollback that follows.
+A rollback that removed a drop-in it should have restored raises the count, and
+that is the fault these two readings can see. The comparison is equality with
+four named outcomes (`unmoved`, `rose`, `fell`, `void`), because the `-le` it
+replaced was satisfied by nothing having happened, so its false branch was
+unreachable on every host and read in the log as coverage.
+
+**The rollback is paired with its apply through
+`ApplyResult::apply_checkpoint_id`**, read out of that apply's own result
+document by `apply_checkpoint_id_of`, and not by name or by recency. Selecting
+the newest checkpoint carrying the plugin's name was tried and was wrong on all
+five distributions in a way worth keeping: the ssh plugin takes no checkpoint
+when it has nothing to do, so the newest one bearing its name was the one section
+14 took before the host was hardened at all. Rolling that back removed the
+hardening, the count went from 0 to 10 findings, and the failure message asserted
+a cause that was false. The tool did what it was asked; the check asked for the
+wrong checkpoint. `head -1` over an unfiltered listing, which the section did for
+far longer, rolled back a stranger's and said nothing at all.
+
+A plugin whose apply took no checkpoint is a declared outcome rather than a
+fault. Its three rows are recorded and skipped, with the reason named, rather
+than rolled back to some other apply's checkpoint. Six checks per plugin over
+three plugins, so 18.
+
+#### The size of a run is declared, and a wrong size is refused
+
+The number this suite prints has moved twice without anybody deciding it should,
+126 to 133 when 12A landed and 133 to 140 when 12B did. Nothing held it, so a
+section that quietly stopped recording checks would have read as a shorter run
+rather than as a fault, which is the same shape as a check that passes by
+matching nothing.
+
+`suite_section_sizes` therefore declares how many checks **each** section
+records, `expected_test_total` sums them, and `require_expected_total` refuses a
+run whose recorded total differs. As measured off the function itself:
+
+| Run | Declared checks |
+|-----|-----------------|
+| `--apply` in a booted container | **149** |
+| `--apply` in an unbooted (`--pipe`) container | **143** |
+| without `--apply` | **109** |
+
+The refusal is reported through `log_fail`, as a **counted failure**, and not by
+the exit status alone. The reason is in the runner:
+`run-cross-distro-tests.sh` writes `PASS` into `test-results/summary.txt` for any
+distribution whose failure count is zero, so a refusal carried only by the exit
+code would read as a pass in the file most likely to be looked at first. Moving
+the failure count moves both.
+
+Each declaration is counted off the **pinned** lengths of the plugin, framework,
+scenario, format and severity tables (`PLUGINS_EXPECTED` and its siblings) rather
+than off the tables themselves. Read from `${#PLUGINS[@]}`, an expectation would
+follow the table it exists to police: dropping a plugin would lower both sides
+and a run eight checks short would still read as complete. `require_suite_tables`
+runs in the preflight, before any section, and refuses a run whose tables are not
+the size they declare.
+
+#### Recreate the containers before every `--apply` run
+
+`--apply` hardens every container it touches, and nothing in the suite undoes the
+audit apply section 15 performs. Both 12A and 12B ask whether a rollback
+**removes** something an apply created, and that can only be asked of a host
+where it does not exist yet: where it already does, the checkpoint captures it
+with content, the restore correctly writes those bytes back, the removal path is
+never exercised, and a pass would say nothing about it.
+
+This is enforced rather than advised. Each section checks its own precondition
+and, finding the artefact already present, records a **failure** naming the
+recreate command, so a second `--apply` run in the same container ends red
+instead of quietly proving less:
+
+```bash
+for d in arch debian fedora rhel opensuse; do
+    sudo ./scripts/containers/create-container.sh "$d" clean --no-confirm
+    sudo ./scripts/containers/create-container.sh "$d" || { echo "CREATE FAILED: $d"; break; }
+done
+```
+
+An undeterminable result is a failure here, never a skip. Unaskability is a
+property of the invocation, declared in advance, which is why 12B skips under
+`--pipe` and neither section skips on a dirty container.
+
+The ordering follows from the same rule: 12A and 12B run **first** inside the
+apply block, before `test_apply_kernel`, `test_apply_other_plugins` and
+`test_apply_all`. Add new apply sections after them, never before. They are
+independent of each other in either order, because audit's checkpoint declares
+paths under `/etc/audit` only and services' declares `/etc/systemd/system` and
+its own mask links.
+
+#### Self-test (safe anywhere)
 
 ```bash
 bash scripts/test/full-test-suite.sh --self-test            # classification and diagnostics, safe anywhere
 ```
 
 Needs no root and no container. It drives the decisions the suite makes rather
-than the system it makes them about, currently the one that separates an apply
-that partially succeeded, which a container is expected to produce, from an
-apply that never ran, which it is not. Inside a container both exit 1, so the
-suite tells them apart by whether the tool left a result document behind.
+than the system it makes them about:
+
+- the apply classification that separates an apply which partially succeeded,
+  which a container is expected to produce, from one that never ran, which it is
+  not. Inside a container both exit 1, so the suite tells them apart by whether
+  the tool left a result document behind, and asking for the wrong document key
+  must fail or a dry run would read as an apply.
+- `line_count`'s three outcomes, which section 12A depends on: a count, `absent`,
+  and `unreadable` kept apart, with the empty file pinned as zero lines rather
+  than as absent. The unreadable arm needs an unprivileged reader and says so
+  when run under sudo instead of quietly not running.
+- `checkpoints_named`, including that a plugin's own checkpoints come back
+  newest first without the rollback snapshot that names it.
+- `scan_finding_count`, `apply_checkpoint_id_of` (an apply that took none says
+  `none`, though its changes mention a checkpoint id) and all four arms of
+  `finding_count_verdict`.
+- the size guard: the three declared totals above, that a shortened table is
+  refused while the expected total stays where it was, and that a refused run
+  moves the failure count rather than only the exit status.
 
 ### Rollback verification
 
@@ -453,6 +690,58 @@ from nothing scores a host this run never looked at. `pwscore` being absent is a
 real answer rather than a skip, since no libpwquality means no
 `pam_pwquality.so` either.
 
+### The preview an operator approved, against the apply that followed
+
+`run_preview_agreement_checks` is the one family here whose subject is the
+tool's own output on both sides, and that is not the shortcut it looks like.
+Everywhere else, reading the tool back is the defect this suite exists to catch.
+Here the property **is** that the tool's two accounts of itself agree, and no
+reading of the host can supply it, because a preview describes a future and
+leaves nothing behind to measure. The defect it is written against was a firewall
+dry run that did not preview the boot enable its apply then made; only the mock
+tests noticed, and no container run asked the question at all.
+
+One row per compared plugin, in one direction only: an apply that applied changes
+the preview never named is the failure, because the preview is what an operator
+approves and a run longer than its preview applied something nobody was shown.
+The reverse, a preview naming work the apply then did not do, is ordinary. The
+dry run is captured before the apply, for the same reason as every other
+pre-apply capture, and the comparison uses the **first** apply's output, since
+`run_full_suite` applies twice and a second apply on an already hardened host
+reports almost nothing.
+
+`run_preview_agreement_control` is the sixth check and is not optional: every
+row above passes when the preview said nothing to contradict, and a filter that
+matches nothing says nothing, so both sides must have answered for **every**
+compared plugin and the refusal names the plugin and the side it was missing
+from.
+
+### Findings the hardening is expected to introduce
+
+"Hardening introduces no new finding" is false, and a check asserting it would
+fail a tool behaving exactly as designed. Measured on the arch and debian
+containers: the firewall plugin enables ufw, ufw applies its own sysctl file when
+its unit starts, that unit is ordered after `systemd-sysctl`, and the file sets
+`log_martians` to 0 against a target of 1. The parameter genuinely stops
+surviving a reboot, and the tool is right to report it, only after the apply.
+
+So `INTRODUCED_FINDING_ALLOWANCES` is a registry rather than a prohibition, the
+same shape and for the same reason as `validate_write_sites.py`: an introduced
+finding passes when it is declared there with a written reason, and fails naming
+itself when it is not, which forces the decision at the moment the finding first
+appears rather than the day it misleads somebody. Entries are matched on the
+whole id and keyed on the plugin as well, never on a prefix, because a pattern
+written before the decision cannot carry it.
+
+One row per compared plugin again, plus a control, because both scan documents
+were captured on every run and, until this existed, nothing asked either of them
+anything about the firewall or kernel ids at all: a commit that added a kernel
+finding appearing only after apply passed a full run 75/75, and the run said
+nothing whatever about the commit it was run for. The control requires that the
+two documents cover every compared plugin and that the apply **resolved** at
+least one finding, since a comparison in which nothing was read introduces
+nothing, and nothing introduced is the pass condition of every row above.
+
 ### Declared unaskable, which is not a skip
 
 `record_unaskable` sits beside `record_pass` and `record_fail`. It keeps its own
@@ -536,7 +825,7 @@ defect this project keeps closing. The header prints
 version, so a reader meeting an old log can see which arithmetic applied to it.
 
 **The totals move with the mode, and both kernel tables are pinned.** A run
-records **56 checks when it is not booted and 69 when it is**, and
+records **68 checks when it is not booted and 81 when it is**, and
 `expected_check_total` carries an arm for each: the 11 kernel rows and the
 seeded row are checks the tables ask for only where they can be asked at all.
 The unaskable count runs the other way, **7 when booted and 19 when not**, the
@@ -626,15 +915,18 @@ against is counted off `SSH_CHECKS_EXPECTED`, `SEEDED_SSH_CHECKS_EXPECTED`,
 `PERMISSION_CHECKS_EXPECTED`, `FIREWALL_CHECKS_EXPECTED`,
 `KERNEL_CHECKS_EXPECTED`, `SEEDED_KERNEL_CHECKS_EXPECTED` and
 `DIFF_PLUGINS_EXPECTED`, which the tables are then checked against, rather than
-off the tables themselves. `KERNEL_UNASKABLE_EXPECTED` is pinned alongside them
-in `require_check_tables` but contributes to no total, because a row that was
-never asked is not a check that ran.
+off the tables themselves. `KERNEL_UNASKABLE_EXPECTED` and
+`INTRODUCED_FINDING_ALLOWANCES_EXPECTED` are pinned alongside them in
+`require_check_tables` but contribute to no total: a row that was never asked is
+not a check that ran, and the allowance registry exists so that a red
+introduced-finding row cannot be quieted by appending an entry without the
+number beside the table moving in the same diff.
 
 Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
 seven directives`), the total the run is sized at, which `expected_check_total`
-computes at **56** unbooted and **69** booted, and the number of directives the
+computes at **68** unbooted and **81** booted, and the number of directives the
 pre-apply control covers (`19`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
 `PWQUALITY_ENFORCEMENT_CHECKS` are sized the same way, and contribute one check
 each rather than two. Every one of them fails loudly, over two `--self-test` runs,
@@ -650,8 +942,11 @@ idempotency reading did it a fourth time, refusing the run at
 again. `boot-persistence` did it a seventh time, and failed twice over as the
 firewall tables are meant to: with `FIREWALL_CHECKS_EXPECTED` left at 2 the
 self-test reads `got '55', want '56'` and `require_check_tables` refuses the
-three-entry table beside it. The per-distribution total now stands at **56** for
-a run that is not booted and **69** for one that is.
+three-entry table beside it. The preview-agreement oracle and the
+introduced-finding registry then did it twice more, six checks each and neither
+of them affected by the mode. The per-distribution total now stands at **68** for
+a run that is not booted and **81** for one that is, both pinned as literals in
+`--self-test`.
 
 ### What a failure means
 
@@ -830,6 +1125,16 @@ cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 cargo build --release --target aarch64-unknown-linux-gnu -p hardener-cli
 ```
 
-Produces three release tarballs and creates a GitHub release.
+Produces three release tarballs and creates a GitHub release. The aarch64 job
+installs `gcc-aarch64-linux-gnu` and sets
+`CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER`; there is no local equivalent to
+run unless you have that cross linker installed.
 
-**Last Updated**: 2026-07-30
+### codeql.yml (push/PR to `main`, and weekly)
+
+CodeQL analysis over Rust, JavaScript/TypeScript, Python and GitHub Actions, all
+in `build-mode: none`, on every push and pull request to `main` and on a schedule
+(Mondays, 06:00 UTC). It has no local reproduction: results go to the
+repository's security tab.
+
+**Last Updated**: 2026-08-01

@@ -10,22 +10,41 @@ This document explains the theming system for Linux System Hardener's GUI and pr
 
 The theming system uses CSS custom properties (variables) with a `[data-theme]` attribute selector pattern:
 
-1. **Base styles** are defined in `:root` (the default "Midnight Teal" theme)
+1. **Base styles** are defined in `:root, [data-theme="default"]` (the default
+   "Midnight Teal" theme)
 2. **Theme overrides** use `[data-theme="theme-name"]` selectors
 3. **A single Effect** in `App` sets the `data-theme` attribute on the `<html>` element
 4. **Persistence** uses localStorage to remember the user's choice
 
-There are two theme controls, and both simply write the shared `AppState.theme`
-signal rather than touching the DOM or storage themselves:
+There are seven themes in total: the default plus six overrides.
+`THEMES` in `crates/hardener-ui/src/utils/theme.rs` is the single list, and
+`apply_theme` there is the only writer of the attribute.
+
+The base block is deliberately written as the pair `:root, [data-theme="default"]`
+rather than `:root` alone. `apply_theme` **removes** the attribute for the
+default theme instead of setting it, so `:root` is what actually styles the page.
+The extra `[data-theme="default"]` selector exists so the default theme's preview
+card in the Settings swatch grid can render its own colours while a different
+theme is active: without it, that one card would inherit whichever theme is
+currently applied and show the wrong palette.
+
+There are three theme controls, and all three simply write the shared
+`AppState.theme` signal rather than touching the DOM or storage themselves:
 
 - The **Settings > Appearance swatch grid** (`ThemePicker`, a keyboard-navigable
   WAI-ARIA radiogroup of live-coloured preview cards) is the primary selector.
 - The **sidebar quick-switch dropdown** (`ThemeToggle`) offers the same choice
-  without leaving the current page.
+  without leaving the current page. It is hidden while the sidebar is in rail
+  mode.
+- **Alt+T** cycles to the next theme in `THEMES` order, wrapping at the end
+  (`cycle_theme` in `crates/hardener-ui/src/keyboard.rs`).
+
+Adding a fourth control means writing that signal, never calling `apply_theme`
+or `store_theme` directly. Those two are the Effect's business alone.
 
 ```
 User selects theme
- (ThemePicker grid or ThemeToggle dropdown)
+ (ThemePicker grid, ThemeToggle dropdown, or Alt+T)
         │
         ▼
 ┌───────────────────────┐
@@ -62,13 +81,18 @@ User selects theme
 | `crates/hardener-ui/src/utils/theme.rs` | `THEMES` list plus the `apply_theme`/`get_stored_theme`/`store_theme` helpers; the only writer of `<html data-theme>` and the `theme` localStorage key |
 | `crates/hardener-ui/src/components/theme_picker.rs` | Settings page swatch grid (`ThemePicker`), the primary theme selector |
 | `crates/hardener-ui/src/components/theme_toggle.rs` | Sidebar quick-switch dropdown (`ThemeToggle`); writes `AppState.theme` |
+| `crates/hardener-ui/src/keyboard.rs` | `cycle_theme`, the Alt+T shortcut; writes `AppState.theme` |
+| `crates/hardener-ui/src/state/mod.rs` | `AppState.theme`, the `RwSignal<String>` every control writes, initialised to `"default"` |
 | `crates/hardener-ui/src/lib.rs` | The `App` component's single `Effect` that applies and persists the theme whenever `AppState.theme` changes |
 
 ---
 
 ## Colour Variable Categories
 
-The theme system defines four categories of colour variables:
+The theme system defines six categories of themed variable. Every one of the six
+override themes sets the same 24 variables, so a new theme that sets fewer will
+inherit the default's value for the rest and look subtly wrong rather than
+obviously broken.
 
 ### 1. Background Colours
 
@@ -113,29 +137,51 @@ For user interaction feedback:
 | `--color-accent-hover` | Hover state for accent |
 | `--color-focus` | Focus ring colour (transparent) |
 
-### 5. Button Styles
+### 5. Status Tints
 
-Dedicated button classes for consistent, WCAG-compliant interactive elements:
+Low-alpha fills for badges and calm boxes, layered over the background tiers:
 
-| Class | Background | Purpose | Contrast |
-|-------|-----------|---------|----------|
-| `.btn-primary` | `#065f46` (darker green) | Primary actions (Save, Apply) | WCAG AA compliant against white text |
-| `.btn-accent` | `#155e75` (teal) | Secondary prominent actions (Test Notification) | WCAG AA compliant against white text |
+| Variable | Purpose |
+|----------|---------|
+| `--color-good-bg` | Pass and success fills |
+| `--color-warning-bg` | Caution and medium-severity fills |
+| `--color-critical-bg` | Error and high-severity fills |
+| `--color-accent-bg` | Selected and accented surfaces |
 
-The `.btn-primary` colour was chosen over the default green to meet WCAG AA contrast
-requirements (4.5:1) for white text on coloured backgrounds. The `.btn-accent` provides
-a visually distinct alternative for secondary actions that still need prominence.
+These are `rgba()` values rather than hex, because they sit on top of a
+background tier and must not hide it.
+
+### 6. Borders
+
+| Variable | Purpose |
+|----------|---------|
+| `--border` | Hairline separators, themed per file |
+| `--border-strong` | Emphasis and hover borders |
+
+Every theme overrides both. A light theme is not a special case here: `daywatch`
+sets `--border: #d6d3d1` through the same variable the dark themes use.
+
+### Button Styles
+
+`.btn-primary` is the one hard-coded button colour, at `#065f46` with `#047857`
+on hover. It was chosen over the default green to meet the WCAG AA contrast
+requirement (4.5:1) for white text on a coloured background, and it does not
+change with the theme.
 
 ---
 
 ## Current Themes
 
-### Default (Midnight Teal)
+### Default (Midnight Teal), id `default`
 
-The base theme defined in `:root`. Cool, professional aesthetic with teal accents.
+The base theme. Cool, professional aesthetic with teal accents. It also carries
+everything that is not themed: typography, the spacing and radius scales, layout
+sizes, z-index tiers, shadows and transitions all live in this one block and are
+never overridden per theme.
 
 ```css
-:root {
+:root,
+[data-theme="default"] {
   --bg-primary: #0f1419;
   --color-accent: #22d3ee;
   /* ... */
@@ -144,16 +190,19 @@ The base theme defined in `:root`. Cool, professional aesthetic with teal accent
 
 ### Theme Overrides
 
-Each theme overrides the base variables:
+Each theme overrides the same 24 base variables:
 
-| Theme | Identity | Accent Colour | Background Family |
-|-------|----------|---------------|-------------------|
-| **Fortress** | Strategic, vault-like | Gold #fbbf24 | Deep slate-blue |
-| **Sentinel** | Vigilant, warm | Amber #f59e0b | Warm charcoal |
-| **Command** | Military precision | Ice-blue #38bdf8 | Deep navy |
-| **Guardian** | Protective, natural | Emerald #10b981 | Forest black |
-| **Daywatch** | Light, productive | Teal #0d9488 | Warm off-white |
-| **High Contrast** | Maximum contrast, WCAG AAA | Cyan #67e8f9 | Pure black |
+| Theme | id | Identity | Accent Colour | Background Family |
+|-------|----|----------|---------------|-------------------|
+| **Fortress** | `fortress` | Strategic, vault-like | Gold #fbbf24 | Deep slate-blue #0c1222 |
+| **Sentinel** | `sentinel` | Vigilant, warm | Amber #f59e0b | Warm charcoal #1a1614 |
+| **Command** | `command` | Military precision | Ice-blue #38bdf8 | Deep navy #0a0e1a |
+| **Guardian** | `guardian` | Protective, natural | Emerald #10b981 | Forest black #0c120e |
+| **Daywatch** | `daywatch` | Light, productive | Teal #0d9488 | Warm off-white #f8f6f2 |
+| **High Contrast** | `high-contrast` | Maximum contrast, WCAG AAA | Cyan #67e8f9 | Pure black #000000 |
+
+Daywatch is the only light theme, and High Contrast is the only theme targeting
+WCAG AAA rather than AA.
 
 ---
 
@@ -169,12 +218,17 @@ Start with these questions:
 Design a palette with:
 - 4 background shades (progressive lightening/darkening)
 - 3 text shades (high to low contrast)
-- 1 primary accent + hover variant
-- Semantic colours (can reuse defaults if appropriate)
+- 1 primary accent + hover variant, plus a focus ring in the same hue
+- 8 semantic colours (base and bright for good, warning and critical, plus info
+  and pending)
+- 2 border shades
+- 4 low-alpha status tints derived from the semantics and the accent
 
 ### Step 2: Add CSS Variables Block
 
-Add your theme to `styles.css` after the existing themes:
+Add your theme to `styles.css` after the existing themes, at the end of section
+1b. Set all 24 variables. Leaving one out silently inherits the default theme's
+value, which is the failure mode that is hardest to spot.
 
 ```css
 /* Your Theme Name - Brief description */
@@ -190,7 +244,7 @@ Add your theme to `styles.css` after the existing themes:
     --text-secondary: #??????;
     --text-muted: #??????;
 
-    /* Semantic (override if needed) */
+    /* Semantic */
     --color-good: #??????;
     --color-good-bright: #??????;
     --color-warning: #??????;
@@ -205,17 +259,25 @@ Add your theme to `styles.css` after the existing themes:
     --color-accent-hover: #??????;
     --color-focus: rgba(?, ?, ?, 0.4);
 
-    /* Light themes need border override */
-    /* --border-color: #??????; */
+    /* Borders */
+    --border: #??????;
+    --border-strong: #??????;
+
+    /* Status tints - keep the alpha low so the surface still reads through */
+    --color-good-bg: rgba(?, ?, ?, .15);
+    --color-warning-bg: rgba(?, ?, ?, .15);
+    --color-critical-bg: rgba(?, ?, ?, .15);
+    --color-accent-bg: rgba(?, ?, ?, .12);
 }
 ```
 
 ### Step 3: Register the Theme
 
 Add your theme to the `THEMES` array in `crates/hardener-ui/src/utils/theme.rs`.
-Both theme controls, the sidebar dropdown (`ThemeToggle`) and the Settings
-swatch grid (`ThemePicker`), render their options from this single array, so
-one edit updates both:
+All three controls read this single array: the sidebar dropdown (`ThemeToggle`)
+and the Settings swatch grid (`ThemePicker`) render their options from it, and
+Alt+T cycles through it in order. One edit updates all three, and it also
+extends what `get_stored_theme` will accept back out of localStorage:
 
 ```rust
 pub const THEMES: &[(&str, &str)] = &[
@@ -244,17 +306,24 @@ Tools:
 - [Colour Contrast Analyser](https://www.tpgi.com/color-contrast-checker/)
 - Browser DevTools accessibility panel
 
+High Contrast targets WCAG AAA (7:1), so if you are extending that theme rather
+than adding a new one, hold it to the stricter ratio.
+
 ### Step 5: Visual Testing
 
-1. Run the app: `trunk serve --port 1420`
-2. Select your theme from the Settings page swatch grid, or the sidebar quick-switch dropdown
-3. Navigate all pages (Dashboard, Analysis, Hardening, Hosts, Fleet Apply, Scheduler, Settings)
+1. Run the app: `cd crates/hardener-ui && trunk serve --port 1420`
+2. Select your theme from the Settings page swatch grid, the sidebar
+   quick-switch dropdown, or Alt+T
+3. Navigate all seven routes: `/` (Dashboard), `/analysis`, `/hardening`,
+   `/fleet` (Hosts), `/fleet-apply`, `/scheduler`, `/settings`
 4. Check:
    - Title colour reflects accent
    - Cards and panels have clear hierarchy
    - Buttons are visible and interactive
    - Tables and badges are readable
    - Empty states and error messages are visible
+   - The Settings swatch grid still shows every theme's own colours, including
+     the default card, while your theme is the active one
 
 ---
 
@@ -287,7 +356,17 @@ Light themes work well for:
 - Print/screenshot contexts
 - Accessibility (some users prefer light)
 
-Use warm off-whites rather than pure white to reduce harshness.
+Use warm off-whites rather than pure white to reduce harshness. Daywatch is the
+worked example: `--bg-primary: #f8f6f2` with `--bg-elevated: #ffffff`, so pure
+white is reserved for the topmost layer rather than the page.
+
+### High Contrast
+
+High Contrast is the exception to everything above. It is not an aesthetic
+choice, it is an accessibility target: pure black `#000000` against pure white
+`#ffffff`, semantic colours lifted to their pale variants so they clear 7:1 on
+black, and the three semantic tints at `.25` alpha rather than `.15` so a badge
+fill is actually visible. Do not "improve" its palette for looks.
 
 ---
 
@@ -324,7 +403,7 @@ All interactive elements must have visible focus indicators:
 
 ## Theme Variable Reference
 
-Complete list of CSS variables used in themes:
+The 24 variables every theme sets:
 
 ```css
 /* Background tiers */
@@ -353,10 +432,32 @@ Complete list of CSS variables used in themes:
 --color-accent-hover /* Hover state */
 --color-focus       /* Focus ring (with alpha) */
 
-/* Borders (light themes) */
---border-color      /* Override for light themes */
+/* Borders */
+--border            /* Hairline separators */
+--border-strong     /* Emphasis and hover */
+
+/* Status tints (rgba, low alpha) */
+--color-good-bg     /* Pass fills */
+--color-warning-bg  /* Caution fills */
+--color-critical-bg /* Error fills */
+--color-accent-bg   /* Selected surfaces */
+```
+
+Set once in the base block and **not** themed, so a theme block should leave
+them alone:
+
+```css
+--font-sans, --font-mono
+--font-size-caption .. --font-size-title, --leading-ui, --leading-prose
+--header-height, --content-padding, --sidebar-width, --sidebar-rail-width
+--space-xs .. --space-2xl
+--control-height, --control-pad-x, --row-gap, --section-gap
+--radius-sm, --radius-md, --radius-lg, --radius-full, --border-radius
+--z-skip-link, --z-modal, --z-sticky, --z-dropdown
+--shadow-sm, --shadow-md
+--transition-fast, --transition-normal, --transition-slow
 ```
 
 ---
 
-**Last Updated**: 2026-07-24
+**Last Updated**: 2026-08-01

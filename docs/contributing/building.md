@@ -2,6 +2,12 @@
 
 Commands for compiling the CLI, desktop GUI, and WASM frontend.
 
+The workspace is on Rust **edition 2024** (`Cargo.toml`, `workspace.package`), so
+it needs a toolchain of **1.85 or newer**; the README's rust badge says the same
+(`scripts/badges/generate.js`). There is no `rust-toolchain.toml` pinning a
+version, and CI installs `dtolnay/rust-toolchain@stable`, so the tree is expected
+to build on current stable rather than on a pinned release.
+
 Binary paths below assume the default cargo target directory (`./target`). With
 `CARGO_TARGET_DIR` or a `[build] target-dir` in `~/.cargo/config.toml`, output
 lands under the configured directory instead; the repository's test scripts
@@ -207,4 +213,4 @@ rustup target list --installed               # List currently installed targets
 cargo update --workspace                     # Update all dependencies in Cargo.lock
 ```
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-08-01

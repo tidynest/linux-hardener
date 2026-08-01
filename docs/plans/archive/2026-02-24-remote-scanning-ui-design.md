@@ -1,5 +1,7 @@
 # Remote Scanning UI: Design Document
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Date:** 2026-02-24
 **Version:** v0.4.0 (P3 feature)
 **Scope:** GUI for scanning remote hosts via SSH

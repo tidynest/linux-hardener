@@ -27,13 +27,35 @@ The full per-release history is in [CHANGELOG.md](../../CHANGELOG.md).
 ## 1.4.0 and earlier: rollback could delete account files on a remote host
 
 **Affects** anyone who managed remote hosts over SSH. Local-only use was never
-affected.
+affected, and neither was a remote host whose `stat` output this tool could
+parse.
 
-`hardener rollback` could delete account files on the remote host. Do not run it
-on 1.4.0 or earlier against a remote target; upgrade first.
+The remote metadata probe ended in `|| echo 'NOTFOUND'`, so a host whose `stat`
+could not be parsed reported *every* path as missing. Checkpoint capture records
+a missing path with permissions `0`, and a rollback removes anything recorded
+that way, so `apply` followed by `rollback` on such a host deleted
+`/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow` and `/etc/sudoers`.
+Do not run `rollback` on 1.4.0 or earlier against a remote target; upgrade
+first.
 
 Fixed in **1.5.0**. Full detail:
 [GHSA-x4xp-32mf-xwjh](https://github.com/tidynest/linux-system-hardener/security/advisories/GHSA-x4xp-32mf-xwjh).
+
+### What the upgrade does not fix
+
+**Checkpoints taken before 1.5.0 keep the wrong rows.** The probe fix stops new
+captures recording a readable file as absent, but it does not rewrite rows that
+were already stored, so a checkpoint written by 1.4.0 or earlier against an
+affected remote host still says those paths were missing.
+
+What protects you when a rollback reads one of those old rows is a second,
+independent guard added in the same release: a rollback that finds a protected
+system path recorded as absent, while the file is in fact present on the host,
+refuses to delete it, reports that file as skipped and marks the run
+unsuccessful. The other files in the same checkpoint are still restored.
+
+So upgrading is necessary and is not sufficient on its own. Prefer taking a
+fresh checkpoint on the upgraded version over trusting an old one.
 
 ---
 
@@ -48,6 +70,12 @@ compliant, so nothing pointed at the problem.
 
 Fixed in **1.5.0**, in both the writing and the reading, and the fix is verified
 against the system rather than against the tool.
+
+Expect the upgrade to make the problem *visible* before you repair it: a host
+hardened by an earlier release now reports a violation where it previously
+reported a pass. That is the corrected reader telling you the truth, not a
+regression. The re-apply below fixes the file and the report together, and it
+also removes the stale `NAME = VALUE` line the old release appended.
 
 ### Repairing a host
 
@@ -89,7 +117,8 @@ SHA512` drops password hashing to DES, which truncates every password at eight
 characters.
 
 `/etc/security/faillock.conf` and `/etc/security/pwhistory.conf` were affected
-the same way.
+the same way. `/etc/security/pwquality.conf` was not: openSUSE ships no vendor
+copy of it, so creating it masked nothing.
 
 ### Checking
 
@@ -97,20 +126,23 @@ Look for a file of a few lines where `/usr/etc` holds a long one:
 
 ```bash
 wc -l /etc/login.defs /etc/security/faillock.conf /etc/security/pwhistory.conf
+wc -l /usr/etc/login.defs /usr/etc/security/faillock.conf \
+      /usr/etc/security/pwhistory.conf
 ```
 
 ### Repairing
 
-Restore the vendor file, then re-apply your intended values:
+Restore the vendor file, then re-apply your intended values. Do this for each of
+the three that turned out short:
 
 ```bash
 sudo cp /usr/etc/login.defs /etc/login.defs
 ```
 
 The tool cannot repair this for you, because an `/etc` file that already exists
-is edited rather than replaced. Since 1.5.1 the scan raises a Medium finding
-naming the keys your `/etc` file masks, which is what points an affected
-operator at this page.
+is edited rather than replaced. The scan does point you at it: 1.5.1 added a
+Medium finding naming the keys a short `/etc/login.defs` masks, and current
+`main` asks the same question of all four files rather than only that one.
 
 ### What each version does
 

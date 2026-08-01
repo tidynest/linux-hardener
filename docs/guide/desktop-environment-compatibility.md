@@ -1,6 +1,6 @@
 # Desktop Environment Compatibility
 
-**Last Updated**: 2026-07-19
+**Last Updated**: 2026-08-01
 
 Linux System Hardener uses `pkexec` (polkit) for privilege escalation when
 applying hardening rules or rolling back checkpoints. This requires a running
@@ -14,7 +14,8 @@ Two deliberately different identifier namespaces exist:
   `com.tidynest.linux-hardener.rollback`, declared in
   `packaging/assets/com.tidynest.linux-hardener.policy`, installed by every package to
   `/usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy`
-  (PKGBUILD line ~108; rpm spec and debian rules mirror it).
+  (the `package()` step of `packaging/PKGBUILD`; the rpm spec and debian rules
+  mirror it).
   `scripts/test/polkit/detect-polkit-agent.sh` checks exactly this id and path, and they
   agree with what ships.
 - **Tauri bundle identifier:** `com.ericjingryd.linux-hardener` in
@@ -64,14 +65,17 @@ Settings -> Session and Startup -> Application Autostart -> Add:
 
 The hardener registers two polkit actions:
 
-| Action ID | Description | Default |
-|-----------|-------------|---------|
-| `com.tidynest.linux-hardener.apply` | Apply system hardening | auth_admin_keep (5 min cache) |
-| `com.tidynest.linux-hardener.rollback` | Rollback hardening changes | auth_admin_keep (5 min cache) |
+| Action ID | Description | Active session | Any / inactive |
+|-----------|-------------|----------------|----------------|
+| `com.tidynest.linux-hardener.apply` | Apply system hardening | auth_admin_keep | auth_admin |
+| `com.tidynest.linux-hardener.rollback` | Rollback hardening changes | auth_admin_keep | auth_admin |
 
 Both actions use `auth_admin_keep` for active sessions, which caches
 credentials for approximately 5 minutes. This means users only need to
 authenticate once when applying multiple operations in quick succession.
+`allow_any` and `allow_inactive` are plain `auth_admin`, so a non-active or
+remote session re-authenticates every time rather than inheriting the cache.
+Both actions are annotated with the exec path `/usr/bin/hardener`.
 
 ## Error Handling
 

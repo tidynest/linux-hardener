@@ -1,5 +1,7 @@
 # Linux Distribution Packaging Specifications
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Date**: 2026-02-25
 **Scope**: AUR, RPM, DEB packaging for CLI + Desktop app
 **Status**: Specs ready for implementation

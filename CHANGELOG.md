@@ -60,6 +60,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without making this tool's rules come back**, because that backend writes into
   the running kernel and never into `/etc/nftables.conf`; that gap is separate
   and still open.
+- **A host running ufw may be reverting kernel parameters at every boot, and no
+  release up to and including 1.5.1 said so.** The kernel plugin writes
+  `/etc/sysctl.d/99-hardener.conf` and treated that as its boot-persistence
+  guarantee. `ufw.service` is ordered after `systemd-sysctl` and applies its own
+  sysctl file when it starts, so whatever that file sets lands after everything
+  in `sysctl.d`. Measured on the booted Debian test container:
+  `99-hardener.conf` holds `log_martians = 1` and the running kernel reads 0,
+  because the ufw package ships a file setting both `log_martians` scopes to 0.
+  A host reported compliant therefore stopped being compliant at its next
+  restart. `scan` now reports a `kernel_boot_override_*` finding for a managed
+  parameter that a unit applies after `systemd-sysctl` has run, at that
+  parameter's own severity, because what is at stake is the setting's
+  consequence arriving at the next boot rather than now. A `sysctl.d` drop-in is
+  deliberately not reported: those are applied in filename order and
+  `99-hardener.conf` sorts after what distributions ship, so reporting mere
+  presence would raise findings on hosts that have no defect. ufw applies its
+  file only where its own `ENABLED` flag in `/etc/default/ufw` says yes, and
+  that gate is honoured, so an installed but disabled ufw raises nothing.
+  **The check is report-only.** Editing another package's configuration is not
+  this tool's to do, so `apply` gains no change and writes no file it did not
+  write before; the repair is to remove the managed parameters from the other
+  package's file by hand.
+- **Fedora, RHEL and openSUSE hosts were reported as having SSH crypto
+  hardening they did not have, in every release up to and including 1.5.1.**
+  Those distributions ship a layout where `Include
+  /etc/ssh/sshd_config.d/*.conf` sits above everything this tool writes and
+  crypto-policies supplies `Ciphers`, `MACs` and `KexAlgorithms` from a drop-in,
+  and sshd uses the **first** value it obtains. `scan` resolved `Include`
+  directives for every other directive and kept reading those three from the
+  main file alone, so the tool wrote a strong list into `sshd_config`, read it
+  back, and reported the host compliant while sshd went on negotiating whatever
+  the drop-in said. Those three directives are declared in the plugin's
+  `coverage()`, so the missing finding was not merely silence: the report
+  generator passes an assessed control that produced no finding, and the
+  compliance report claimed those controls too. The mirror was wrong in the
+  other direction, and cost an operator differently: a drop-in already holding a
+  strong list read as "not set", so the tool raised a finding against a
+  compliant host and sent them to edit a file that decides nothing. `scan` now
+  reads the crypto directives from the resolved configuration and names the file
+  in force when it is not the main one, and `apply` routes an overridden crypto
+  directive to `/etc/ssh/sshd_config.d/00-hardener.conf`, whose precedence is
+  verified afterwards by re-resolving the configuration rather than assumed from
+  the filename. **This tool overrides a distribution's crypto-policies fragment
+  rather than deferring to it**, because a hardening run that reports a change
+  must make one; a file underneath offering only algorithms from the allow-list
+  is left alone and recorded as a skipped no-op instead. **Check an affected
+  host by asking sshd rather than the file: `sudo sshd -T | grep -iE
+  '^(ciphers|macs|kexalgorithms)'`.**
 - **openSUSE hosts hardened by 1.5.0 or earlier may be storing DES password
   hashes, and should have those passwords set again.** Those releases wrote a
   short `/etc/login.defs` on a distribution that keeps its copy under
@@ -73,7 +121,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hashed with DES stays DES until it is set again, and an `/etc/login.defs`
   that already exists is edited rather than replaced, so the keys an older
   release dropped stay dropped until they are restored by hand. `hardener scan`
-  now names them in a Medium finding, `pam-login-defs-masked-keys`.
+  now names them in a Medium finding, `pam-login-defs-masked-keys`. Checking and
+  repairing an affected host is written out in
+  [docs/guide/upgrading.md](docs/guide/upgrading.md#150-and-earlier-opensuse-hosts-may-have-a-short-file-masking-the-vendor-copy).
 
 ### Fixed
 
@@ -150,6 +200,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deviation is now recorded through the same shared helper as the rest, naming
   the mode the path keeps and why, and the exception is honoured in the loop
   where `apply` honours its own.
+- **`hardener apply --dry-run` previews the persistent sysctl file the kernel
+  apply is about to write.** The plugin's validate path looped over the
+  parameters, estimated where the observed value differed from the target and
+  returned, so the file
+  the whole plugin exists to leave behind was never part of that answer. On a
+  host where every parameter already reaches its target the preview was
+  therefore empty, and the apply then wrote `/etc/sysctl.d/99-hardener.conf` and
+  reported it: an operator on a fully compliant host was told nothing was
+  pending and approved a run that put a file into `/etc`. The RHEL test
+  container is the one fixture where that shows, because the other four have
+  non-empty previews for unrelated reasons that mask the missing line.
+  Predicting the write means knowing the content, and the content carries two
+  rules that lived inside apply alone: an excepted parameter is written as a
+  comment rather than a setting, and the value written is clamped so a host
+  already stricter than the baseline keeps its own. Rather than copy either into
+  validate, a parameter's plan is now decided once from one observation and
+  consumed by the runtime write and by the file alike.
+- **`hardener apply --dry-run` previews the firewall boot enable it is about to
+  make.** The boot-persistence repair above is performed by `apply` in the arm
+  where the firewall was already running, and that arm of the preview asked
+  about rules and nothing else, so the preview omitted a line the run would
+  write and asked an operator to approve something they were never shown. It is
+  not a rare corner: Fedora, RHEL and openSUSE all took that arm in the
+  container runs of 2026-07-30. The preview now asks the same question through
+  the same classifier `apply` uses, ahead of the rule estimate because that is
+  where `apply` pushes it. A unit already wanted at boot is nothing pending,
+  because `apply` records that as a skipped no-op and a preview line standing
+  for a no-op would be counted into the change count a renderer prints and into
+  the fleet's `would_change`. An install state that cannot be read becomes an
+  issue for the same reason, at Medium rather than High because failing the dry
+  run over it would fail it everywhere a unit has no `[Install]` section.
+- **`hardener apply --dry-run` previews the SSH configuration the apply will
+  read.** The plugin's validate path parsed the main file alone while scan and
+  apply both resolve
+  `Include` first, so on the layout Fedora, RHEL and openSUSE ship a main file
+  already holding the target previewed no change at all while the apply went on
+  to write a fragment. Failing to resolve is now a blocking issue rather than a
+  quiet fall back to the main file, because that fall back is precisely the
+  reading that was wrong. The crypto directives were previewed by nothing
+  whatsoever: validate had no loop over them, so an apply writing three
+  cryptographic lists announced none of them beforehand. The preview asks
+  `ssh -Q` exactly as the apply does, so both compute the same intersection of
+  the allow-list with what the host supports, and a host that cannot answer
+  yields an empty intersection which both of them skip. The fragment is named
+  once, because an operator approving a run should know a file will appear in
+  `/etc`.
+- **A kernel parameter this host does not have is no longer previewed as a
+  read-only one, and a probe that failed is no longer previewed as absence.**
+  Kernel validate wired three answers to two messages and got both wrong. A
+  positively confirmed absence arrives carrying a zero mode, and a zero mode has
+  no write bit, so a parameter this kernel does not carry was announced "is
+  read-only" at High, which blocks the dry run; a probe that could not be
+  determined announced "does not exist on this kernel" at Low, which does not.
+  The missing parameter failed the run for the wrong reason and the unreadable
+  one passed it. Absence is now answered before the mode is consulted and stays
+  Low, since `apply` cannot set a parameter the kernel does not have and there
+  is nothing for an operator to fix; the failed probe becomes a High issue
+  carrying its reason, because the preview cannot describe what apply would do.
+  `kernel.yama.ptrace_scope` is the ordinary case rather than a theoretical one,
+  being absent on any kernel built without that LSM. The read-only wording is
+  kept and is now reachable only for a parameter that is present with no write
+  bit on its inode.
 - **`hardener scan` no longer reports a critical permission check as clean on a
   distribution that keeps the file under `/usr/etc`.** Measured on the openSUSE
   test container: `/etc/sudoers` does not exist there, `/usr/etc/sudoers` does, at
@@ -183,6 +295,242 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from both layers is still nothing to report, which is what `/etc/gshadow` reads on
   that same container, and a vendor path whose existence or mode cannot be read is
   reported as unchecked rather than as absence.
+
+- **A kernel parameter that could not be read is no longer a compliance pass.**
+  The scan judged the value it read and said nothing at all when the read
+  failed, under a comment asserting a single cause it could not establish:
+  reading `/proc/sys` fails for a kernel that does not carry the parameter, for
+  a read an LSM or DAC refuses, for a `/proc` mounted `subset=pid` or not
+  mounted at all, and over SSH for any failed command or dropped channel. All of
+  it became the same silence. `coverage()` declares all eighteen parameters
+  assessed and the report generator passes an assessed control on the mere
+  absence of a finding, so a host whose ASLR value was never read rendered CIS
+  1.5.1 as a Pass. Each unreadable parameter now leaves an unchecked entry
+  carrying that parameter's own compliance mappings, which is what holds those
+  controls at Manual Review, and the other seventeen keep their verdicts. Its
+  own mappings rather than the plugin's whole coverage, deliberately: an
+  unreadable `sysctl.d` file says nothing about any parameter, while an
+  unreadable `/proc/sys` entry says nothing about exactly one. Whether a
+  privileged re-run would reach it is derived from the failure rather than
+  asserted, since a refused read is what root fixes and a parameter this kernel
+  does not carry is not.
+
+- **A permission path whose probe failed is no longer treated as a path that is
+  absent.** `path_exists` has three outcomes by contract, and two callers in the
+  permissions plugin collapsed them behind `unwrap_or(false)`, one of them under
+  a comment calling the error "not an error". In validate the consequence was a
+  preview that omitted a Critical path entirely, so an operator read a dry run,
+  saw nothing about `/etc/shadow` and approved an apply whose scope they were
+  never shown; it is now reported at High with the reason the probe gave, which
+  is the first issue this plugin's validate can raise. In apply the consequence
+  was quieter and worse: returning nothing recorded no change at all, and an
+  omitted change cannot be a failed one, so the run reported success and the
+  change list, which is the operator's record of what was hardened, held nothing
+  for the path, indistinguishable from a host that was already correct. It is
+  now a failed change carrying the probe's error, so the remaining paths are
+  still hardened and the summary still says something went wrong. A confirmed
+  absence still skips silently in both.
+
+- **`auditd` enabled for this boot only is no longer read as enabled at boot.**
+  `systemctl is-enabled` was judged on its exit status, and the exit status is
+  not the answer: `static` and `indirect` each print their own word and exit 0,
+  and so does `enabled-runtime`, which is an enablement held in
+  `/run/systemd/system` that the next boot discards. The consequence ran through
+  all three callers in the same direction, so scan reported a compliance the
+  host did not have, validate previewed no change, and apply skipped the
+  `systemctl enable` that would have made it true. Only the exact word `enabled`
+  is now read as a permanent enablement. Everything else is not enabled, which
+  is the safe direction: at worst it costs an enable attempt on a unit that
+  cannot be enabled, recorded honestly as a failed change, where the other
+  direction costs an operator their audit trail in silence. The services plugin
+  asks systemd the same question and keeps the exit status deliberately, because
+  a static unit reaches its unconditional mask only through that reading and
+  taking the word there would leave a startable unit unmasked; its site now says
+  so rather than looking like the same defect unfixed.
+
+- **A configuration file is created in a directory that exists.** `write_file`
+  lands content through a temporary file in the target directory, so it cannot
+  create a missing parent. On the RHEL family `/etc/sysctl.d` belongs to
+  systemd-udev rather than to systemd, so an install carrying systemd without it
+  has no such directory, and the kernel plugin's apply reported "Failed to write
+  file /etc/sysctl.d/99-hardener.conf" with no cause while kernel hardening
+  never survived a reboot. The same gap sat behind every PAM write, where a host
+  without the pam package has no `/etc/security`. Both now ensure the parent
+  first, and the ordering is the subtle half: the creation runs **above** the
+  checkpoint, because the checkpoint captures the directory, an absent path is
+  stored with a zero mode, and a rollback reads a zero mode as "remove this", so
+  a directory created after the capture would have turned a clean rollback into
+  a refusal on exactly the hosts the fix is for. The audit plugin already
+  created its rules directory but took its checkpoint first, which is that same
+  defect in its ordering and the one instance whose rollback had no backstop;
+  its installed-check moves above both, so a host with no audit package is
+  neither given a stray directory nor checkpointed before being left alone. The
+  four private copies of probe-then-mkdir are now one `ensure_directory` in the
+  plugins crate. The comments claiming that no apply can create an undeletable
+  path are corrected rather than left false, and every entry stays in that list.
+
+- **A backup copy keeps the file's mode and does not follow a symlink.** Three
+  plugins copy a configuration file before rewriting it, and all three asked
+  `cp` the same question with three different answers: pam passed no flags, ssh
+  passed `-p`, audit passed `--no-dereference`. Each was losing exactly what the
+  other two kept, so there was no correct copy in the tree to copy from. A copy
+  taken without `-p` carries none of the source's mode, ownership or timestamps,
+  which matters most on the audit rules file, whose 0640 exists precisely so
+  that the map of every path and syscall the host watches is not readable by
+  everyone. A copy taken without `--no-dereference` follows a link and records
+  the target, so a config that is a link elsewhere is backed up as some other
+  file and the object about to be overwritten has no backup at all, which is
+  likeliest at the ssh site on a host managed by configuration management.
+  **Behaviour change worth stating:** `cp -p` exits non-zero when it cannot
+  preserve ownership, which an unprivileged copy of a root-owned file cannot,
+  and all three sites check the exit status and abort, so a non-root run now
+  refuses at the backup rather than producing a copy that is not one. That is
+  the fail-closed direction, and apply runs as root.
+
+- **A configuration file this tool creates arrives at 0644 rather than 0600.**
+  `update_file_atomically` stages content in a temporary file, which is right
+  for a temporary file and wrong for the configuration file it becomes, and it
+  only ever put a mode back where there was an original to restore. A file that
+  did not exist therefore arrived at 0600 silently, and at 0600 the
+  ordinary-user tools that read these files cannot: `pwscore` and `pwmake` fall
+  back to their built-in defaults without saying so, which is a configuration
+  that appears to apply and does not. 0644 is not a guess. It is what the
+  distributions ship and what the remote path already produced, since
+  `SshExecutor` writes through `tee` and a remote create lands 0644 under the
+  standard umask, so one operation behaved differently depending on where it ran
+  and nobody had recorded that divergence. The mode is set explicitly rather
+  than left to the umask, because a hardening tool whose output depends on the
+  shell it was launched from cannot be reasoned about, and it is set before the
+  rename, so the target never exists at 0600 for even an instant.
+
+- **The candidate `sshd_config` is cleaned up on the host it was staged on.**
+  Validation stages a candidate, runs `sshd -t` against it and removes it. The
+  staging and the check went through the executor, so on a remote target they
+  happened there, while the removal was a bare local filesystem call that always
+  ran on the controller. Every remote apply therefore left a complete copy of
+  the incoming configuration in the target's `/tmp`, on the host it had just
+  finished hardening, and asked the controller to delete a path of its own it
+  had never written. The rejection path is the worse of the two, because a
+  candidate the daemon refused is exactly the content an operator would least
+  like left readable somewhere. The removal now goes through the executor like
+  the three deletions already in this tree, cleanup stays best-effort so a
+  failure to tidy up cannot mask the validation result, and both failure shapes
+  are reported. The candidate also states 0600 for itself rather than inheriting
+  the created-file 0644 above, which would otherwise have left a predictable
+  filename in a world-writable directory holding the configuration about to be
+  applied.
+
+- **A second SSH apply no longer hands the host back to the drop-in it was
+  hardened against.** The apply path asked whether anything *other than this
+  tool's own fragment* overrode the main configuration, and read the empty
+  answer as "nothing overrides it". Those stopped being the same question the
+  moment the fragment existed. On Fedora and RHEL the first apply routes
+  `X11Forwarding` to `00-hardener.conf` because `50-redhat.conf` outranks
+  `sshd_config`; the second apply then found its own fragment supplying the
+  value, discarded it, saw nothing left, wrote the directive into `sshd_config`
+  where `50-redhat.conf` still beats it, and pruned the fragment that was
+  holding the host. The run reported success while the host went from hardened
+  back to unhardened, and because the scheduler applies on a cadence, a fleet
+  host would do exactly that on its second scheduled run and report success
+  every time. The question that decides where a directive belongs is now what
+  would win if the fragment were not there. The same conflation reached the
+  remote-root lockout guard through a different variable: a value the fragment
+  alone supplied counted as "already safe enough", and every branch reaching
+  that conclusion falls through to a rewrite of the fragment built from the
+  directives that did need writing, so a second apply over a root session
+  rewrote it without `PermitRootLogin` and handed a vendor-layer host back to
+  the vendor's `yes`. Such a value is now carried into the rewrite; a fragment
+  the file underneath has made genuinely redundant is still pruned.
+
+- **A rollback command the host refused is no longer reported as a restore that
+  worked.** Rollback issues `rm`, `chmod` and `chown` through the executor and
+  none of the three looked at whether the command did anything.
+  `execute_command` returns `Ok` for a process that started and exited non-zero,
+  so all three inspected only the half of the answer that reports the command
+  never starting. A removal blocked by a read-only mount or an unwritable parent
+  directory came back successful, so the operator was told the host was back at
+  its checkpoint while the file the apply had created was still there, still
+  hardening the host they were trying to undo. The metadata half is worse for
+  being anticipated: the design already expects a remote restore by a user who
+  does not own the target to degrade to content only, and that degradation is
+  exactly a command that runs and is refused, so the one failure the design
+  expects was the one it could not see. For a rollback that puts `/etc/shadow`
+  back, the difference between the recorded mode and whatever the file happens
+  to carry is the whole point of recording it. All three now go through one
+  function that runs the command and describes why it did not happen, and a
+  refusal that prints nothing on stderr is reported by its exit status rather
+  than as an empty string.
+
+- **Rolling a remote host back restores the MAC mode that host recorded, not the
+  controller's.** The rollback restored the target's files through the executor
+  and then read `/etc/selinux/config` off the controller with a bare local
+  filesystem call to decide what mode to put the target in, while every other
+  file operation in that function goes through the executor. On a controller
+  without that file the read failed, the failure folded into "no mode", and the
+  default turned it into enforcing: three ways to be wrong stacked in one
+  expression, and the outcome looked identical to a correct restore. The read
+  now goes through the executor and its three outcomes are kept apart. A mode
+  that was read is applied. A configuration confirmed absent means the target is
+  not an SELinux host, which is what an AppArmor host looks like, and the
+  AppArmor reload follows. A file that exists and could not be read, or that
+  names no mode, leaves the running system alone and says so, because enforcing
+  a mode nobody read is not restoring one; the file the rollback just put back
+  still governs the next boot either way. Found in the same twenty lines:
+  `setenforce`'s exit status was never checked, so `setenforce: SELinux is
+  disabled` was logged as "SELinux policy reloaded" and, because the branch was
+  chosen on that result, the AppArmor reload beside it was never attempted. On
+  an ordinary Debian carrying `policycoreutils`, the rollback reloaded nothing
+  and reported success.
+
+- **Asking whether a command is installed works on a host without `which`.** The
+  probe ran `which`, which is a separate package that Fedora, RHEL and openSUSE
+  do not install, so on those three every question about every command came back
+  as an error rather than as an answer and each caller turned that error into
+  whatever it does with a failure. Service minimisation aborted its entire
+  validate, and the firewall plugin fared worse: all three backend probes ask
+  the same question, and the first error aborted backend classification before
+  any backend was considered. Both audit paths and the AppArmor probe ask it
+  too. `command -v` replaces it, because a shell is the one thing a host running
+  this tool is guaranteed to have. It runs under `sh` with the program name
+  passed as a positional argument rather than spliced into the script, so a name
+  carrying shell metacharacters cannot alter what runs, and its answer is
+  required to be an absolute path, since `command -v` also reports builtins and
+  shell functions that this executor cannot spawn. The probe existed in two
+  copies, one per executor, and is now one provided method on the trait, each
+  executor still routing through its own `execute_command` so the probe runs on
+  whichever host that executor targets.
+
+- **Three configuration sections were validated by nothing.** `validate_config`
+  named five plugin sections in five separate calls and left `[audit]`, `[mac]`
+  and `[services]` out. The omission was invisible because the only code
+  mentioning those three read the `custom_directives` table removed below; with
+  that gone, their `directives` maps were checked by nothing at all, neither the
+  key check that exists to stop path traversal through the kernel plugin's
+  sysctl rewrite nor the universal shell metacharacter check. The configuration
+  reference has been promising the opposite for as long as the gap existed, so
+  the documentation was right and the code was wrong and nothing there needed
+  changing. No unvalidated value reaches plugin code today, because none of the
+  three reads a directive yet, which is exactly why it was worth fixing: a
+  validation layer that is only correct while its consumers stay unwritten is
+  not defence in depth. The five calls are now one table of eight rows, since a
+  section absent from a list of separate calls is not validated leniently, it is
+  not validated at all.
+
+- **A plugin registry failure passes no compliance control.**
+  `flatten_persisted_scans` resolved plugin metadata with a call that folded an
+  error into an empty list, and an empty list is indistinguishable from a build
+  that registers no plugins. Both loops beneath it are driven by that list, so
+  the unchecked list came back holding only what the results themselves carried,
+  and the generator passes any control it finds neither failed nor unchecked:
+  every control the engine covers would have reported Pass on evidence nobody
+  collected. The path is unreachable as the code stands, since the registry is
+  built and read inside one expression and nothing else can hold the lock; it
+  becomes reachable the moment that registry is hoisted to a shared `OnceLock`,
+  which is a natural thing to do to a function that builds eight plugins on
+  every report. It was also the only such call in production that did not
+  propagate its error. The failure now takes the shape this module already uses
+  for every other reason a plugin produced no evidence: an unchecked entry
+  carrying declared coverage, which routes those controls to manual review.
 
 - **A checkpoint can now record a symlink, so `systemctl disable` and
   `systemctl mask` are undoable for the first time.** `file_metadata` follows a
@@ -230,6 +578,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to rebuild the file from. Checkpoints written before capture recorded the type
   bit store a directory as bare permission bits and are unaffected, restoring
   exactly as before.
+
+- **`systemctl mask` is now recorded well enough to be reversed.** The services
+  plugin's pre-apply checkpoint declared only the directory a mask link lands
+  in, and a recursive capture emits one row for that directory and one for each
+  child that is there when it runs, so the link, which by definition is not
+  there yet, was carried by no row at all. Rollback walks only the rows a
+  checkpoint holds and has no sweep for anything else, so the mask survived it:
+  the state was recorded well enough to describe and not well enough to reverse.
+  Each masked unit's path is now named to the checkpoint the way the kernel and
+  ssh plugins already name the files their own applies create, and an absent
+  declared path is stored with a zero mode that the restore reads as an
+  instruction to remove what is there, so the existing mechanism does the work
+  and nothing new deletes anything. Only the units the host actually has
+  installed contribute a path, because that directory is also where an
+  administrator's own unit overrides live.
 
 - **`hardener rollback` now removes the `/dev/null` symlink `systemctl mask`
   leaves behind, rather than refusing it.** The services plugin declares each
@@ -584,6 +947,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   created cannot be asked at this position, since the apply here changes
   nothing, and that question stays with sections 12A and 12B. The
   per-distribution total moves from 140 to 149.
+- **Three more validators, so `scripts/validate/validate_all.py` now runs ten
+  checks.** `validate_doc_attachment.py` catches a `///` block that came loose
+  from the item it describes, which is what happens when a new item is inserted
+  between a comment and its function: it compiles, rustdoc renders, and the only
+  symptom is one function documented as two things while the function the prose
+  describes has nothing. Eight instances had accumulated.
+  `validate_write_sites.py` is a registry holding every file-creating call site
+  in the plugins tree to two written answers, why its parent directory exists
+  and whether the path it creates is declared to that plugin's own pre-apply
+  checkpoint. Both questions were answered by hand, three times and twice
+  respectively, before anything swept for them, which is the point at which this
+  project stops fixing instances one at a time. That script also asserts that
+  every `cp` site passes both `-p` and `--no-dereference`, as an assertion
+  rather than a registry column, because unlike the other two that question has
+  a single correct answer everywhere and a column would only offer somewhere to
+  write "exempt". `validate_unit_state_reads.py` holds every `systemctl
+  is-enabled` site to a declared answer about whether it judges the printed word
+  or the exit status, because the three sites differ deliberately and a rule
+  banning either reading would be wrong at one of them.
+- **The cross-distro runner can boot the container it tests in.** Under `--pipe`
+  the suite itself is PID 1, so systemd never runs and every question that goes
+  through the service manager is unanswerable, which is why services, audit and
+  firewall had no differential oracle. `--booted` runs the same suite as a child
+  of the container's own systemd instead, leaving `--pipe` untouched as the
+  default so every measurement taken under it stays valid. The container is
+  given `--private-network` rather than `--network-veth`, measured rather than
+  reasoned about: both give an identical capability set with `CAP_NET_ADMIN`,
+  the same read-write `/proc/sys/net` and the same working iptables.
+- **The release notices that used to open `README.md` now live in
+  [docs/guide/upgrading.md](docs/guide/upgrading.md)**, organised by the version
+  a host is being upgraded **from** rather than by the release that fixed the
+  defect, so an operator reads the one section that applies to the host in front
+  of them. `README.md` describes the tool before it apologises for it.
 
 ### Removed
 - `custom_directives`, the per-plugin config table that was accepted, merged
@@ -2588,7 +2984,14 @@ Configuration file support with layered loading, compliance framework reporting 
 - **0.2.0** (2025-11-28): Compliance frameworks, PDF reports, configuration system
 - **0.1.0** (2025-11-25): Initial development release
 
-[Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.5.0...v1.5.1
+[1.5.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.3.2...v1.4.0
+[1.3.2]: https://github.com/tidynest/linux-system-hardener/compare/v1.3.1...v1.3.2
+[1.3.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.2.2...v1.3.0
+[1.2.2]: https://github.com/tidynest/linux-system-hardener/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.5...v1.2.0
 [1.0.5]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.4...v1.0.5
@@ -2604,4 +3007,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01

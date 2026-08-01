@@ -1,5 +1,7 @@
 # Security Audit: Network & Input Parsing
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Agent:** 5 -- Network & Input Parsing
 **Scope:** SSRF, notification injection, XSS, CSV injection, config parsing exploits, SSH security gaps
 **Date:** 2026-02-25

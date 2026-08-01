@@ -1,5 +1,7 @@
 # Security Audit Design: 2026-02-25
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 ## Goal
 
 Comprehensive internal security audit combining threat modelling with targeted code review. Produces a formal report suitable as foundation for third-party review (v1.0.0 prerequisite).

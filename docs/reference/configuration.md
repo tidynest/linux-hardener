@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -38,10 +38,23 @@ Rules worth knowing:
   error.
 - When running as root (including via pkexec from the desktop app), the user
   config is **skipped** so that unprivileged per-user settings cannot influence
-  root-level hardening.
+  root-level hardening. `ConfigLoader::load` tests the effective UID for this,
+  so it holds for `sudo hardener ...` just as it does for the desktop app.
+- `--config` is an addition to those sources rather than a replacement for them:
+  the file named on the command line is merged on top of whatever the system and
+  user files already contributed. It also reaches only the commands that pass it
+  to the loader; `apply`, `report --interactive` and `batch rollback` accept the
+  flag and do not act on it. See [cli.md](cli.md) for the full list.
 - Directive and exception maps **merge** across sources (later keys override
   same-named earlier keys). The `[global]` plugin lists **replace** rather than
   merge: a non-empty list in a later source wins outright.
+- A section's `enabled` key is taken from the **later source outright**, and
+  `true` is its default value, so a later file that omits a section supplies
+  `enabled = true` for it. A user config therefore restores a plugin the system
+  config turned off through `[ssh] enabled = false`. To disable a plugin so that
+  no later source can revive it, name it in `[global] disabled_plugins`, which
+  merges by replacement only when the later source sets a non-empty list of its
+  own.
 - Size limits: a config file may be at most 1 MiB, with at most 500 `directives`
   and 200 exceptions per plugin section.
 
@@ -93,7 +106,7 @@ Every section accepts the same three keys:
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
-| `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. |
+| `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final within one merged config: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. Across sources the key behaves differently; see the merge rule under File locations and precedence. |
 | `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Every `[pam]`, `[ssh]` and `[kernel]` directive is clamped tighten-only; `[permissions]` still applies an override as given, so an override can loosen that one. See below. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
@@ -127,20 +140,46 @@ ClientAliveInterval = "300"
 ClientAliveCountMax = "2"
 ```
 
-### Where `[ssh]` and `[pam]` write on layered distributions
+### Where `[ssh]`, `[kernel]` and `[pam]` write on layered distributions
 
-Two distribution families do not keep a setting in one file at one path, and
-`apply` writes differently on each. Nothing in the config selects this; it
-follows from what the host ships.
+Some distributions do not keep a setting in one file at one path, and `apply`
+writes differently on each. Nothing in the config selects this; it follows from
+what the host ships.
+
+**Precedence runs in a different direction per format, so the numbers do too.**
+This is the single most common way to misread the files this tool writes: a
+`00-` fragment and a `99-` fragment are not an inconsistency, they are the same
+intent expressed in two formats whose merge rules are opposites.
+
+| Format | Which value wins | The file this tool writes |
+|---|---|---|
+| `sshd_config.d` | the **first** value obtained | `/etc/ssh/sshd_config.d/00-hardener.conf` |
+| `sysctl.d` | the **last** file in lexical order | `/etc/sysctl.d/99-hardener.conf` |
 
 **sshd fragments.** Fedora and RHEL ship `/etc/ssh/sshd_config.d/50-redhat.conf`
-and sshd takes the **first** value it obtains, so a fragment beats the main
-file. SSH hardening is therefore written to
-`/etc/ssh/sshd_config.d/00-hardener.conf`, which sorts before what
+and openSUSE ships `40-suse-crypto-policies.conf`; sshd takes the **first** value
+it obtains, so a fragment beats the main file. SSH hardening is therefore written
+to `/etc/ssh/sshd_config.d/00-hardener.conf`, which sorts before what
 distributions ship. The file carries a header marking it as managed, an empty
 directive set removes it rather than leaving an empty file behind, and the
 precedence is verified after writing by re-resolving the configuration rather
 than assumed from the name.
+
+**sysctl drop-ins.** `systemd-sysctl` merges `/etc/sysctl.d`, `/run/sysctl.d`,
+`/usr/local/lib/sysctl.d` and `/usr/lib/sysctl.d`, sorts every file by name and
+lets the lexicographically **last** name win, so kernel hardening is written to
+`/etc/sysctl.d/99-hardener.conf` and is numbered the opposite way to the sshd
+fragment for the same reason. A drop-in sorting before it therefore loses and is
+not reported: Debian 13 ships `/usr/lib/sysctl.d/50-default.conf` with a looser
+`rp_filter`, and this tool still wins at boot. `/etc/sysctl.conf` is not among
+the files `systemd-sysctl` reads for itself; a distribution that still applies it
+reaches it through an `/etc/sysctl.d/99-sysctl.conf` symlink, which is a file in
+one of those directories and sorts after `99-hardener.conf`, so it does outrank
+it. A file that sorts after this tool's, or one applied by a
+unit ordered after `systemd-sysctl.service` (ufw is the only such case this tool
+knows of, and it is named rather than inferred), is reported as a finding. That
+reporting is read-only: this tool does not edit another package's configuration
+file.
 
 **Vendor configuration under `/usr/etc`.** openSUSE Leap 15.6+, Tumbleweed and
 MicroOS reserve `/etc` for administrator overrides, and that override is
@@ -195,10 +234,11 @@ is lowered back to 90, `MaxAuthTries = "10"` yields 3, `X11Forwarding = "yes"`
 yields `no`, and `kernel.kptr_restrict = "0"` yields 2.
 
 `[permissions]` is the one plugin left where an override replaces the target as
-given, so an override there can loosen a check as easily as tighten it. Two of
-its paths carry a max-mask rule that makes a stricter mode compliant, but the
-override itself is not compared against the baseline. Validation only rules out
-values that are unsafe in themselves (the list above).
+given, so an override there can loosen a check as easily as tighten it. This is
+a known gap rather than a design choice, tracked as issue #36. Two of its paths
+(`/etc/shadow` and `/etc/gshadow`) carry a max-mask rule that makes a stricter
+mode compliant, but the override itself is not compared against the baseline.
+Validation only rules out values that are unsafe in themselves (the list above).
 
 The clamp used to apply to `deny` and `remember` alone. Every other directive
 in all three plugins was compared for equality, which has no direction, so any
@@ -437,6 +477,13 @@ The `[scheduler]` section configures the scheduled scanning daemon
 and `hardener batch`. It lives in the same `config.toml`, but is read
 directly from the first file found (user config first, then system config)
 rather than merged across sources.
+
+Two rules from the top of this page do not reach it. `--config` is not consulted
+(`load_scheduler_config` in the CLI's `commands/daemon.rs` searches the two
+default paths itself), and the user config is **not** skipped under root here, so
+a root daemon reads `~/.config/linux-hardener/config.toml` when that path exists
+and resolves. Keep the scheduler settings in the system config on any host where
+that distinction matters.
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|

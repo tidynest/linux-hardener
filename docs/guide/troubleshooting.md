@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01
 
 Symptom-organised fixes for the most common problems. Installation steps live
 in the [installation guide](installation.md); the per-desktop polkit agent
@@ -66,8 +66,9 @@ systemctl status linux-hardener.timer
 journalctl -u linux-hardener.service --since today
 ```
 
-If the timer unit is missing, install it: `sudo hardener systemd install`
-followed by `sudo systemctl enable --now linux-hardener.timer`.
+If the timer unit is missing, install it with `sudo hardener systemd install`.
+That one command writes the unit files, reloads systemd, and enables and starts
+`linux-hardener.timer`, so no separate `systemctl enable` step is needed.
 
 ## Scan shows dimmed "unchecked" entries or looks incomplete
 
@@ -141,6 +142,28 @@ openSUSE, so no finding appears for a file the host does not have anywhere. A
 vendor path whose existence or mode could not be determined becomes a dimmed
 "unchecked" entry instead of a finding, because a probe that errored is not the
 same answer as an absence.
+
+## `checkpoint list` is empty after an apply that created one
+
+`sudo hardener apply` reports a checkpoint, and a later `hardener checkpoint
+list` shows nothing at all.
+
+Both commands are correct; they are reading different databases. The checkpoint
+store is chosen from the user the command runs as: root uses
+`/var/lib/linux-hardener/checkpoints.db`, and any other user uses
+`~/.local/share/linux-hardener/checkpoints.db`. An apply performed with `sudo`
+therefore writes where an unprivileged `checkpoint list` never looks. Run the
+checkpoint commands the same way you ran the apply:
+
+```bash
+sudo hardener checkpoint list
+sudo hardener rollback <checkpoint-id>
+```
+
+The list is also filtered to the host you are pointed at, so a checkpoint taken
+against a remote target appears under `hardener --ssh user@host checkpoint list`
+and not under a plain local listing. Remote checkpoints are still stored in the
+local database; only the restore reaches the remote host.
 
 ## The scheduled daemon refuses to start
 

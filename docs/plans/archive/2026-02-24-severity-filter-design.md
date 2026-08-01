@@ -1,5 +1,7 @@
 # Severity Filter: GUI Design
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Date**: 2026-02-24
 **Status**: Implemented
 **Priority**: P0 (v0.4.0 GUI/CLI Parity)

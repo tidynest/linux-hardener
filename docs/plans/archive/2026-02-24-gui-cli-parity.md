@@ -1,5 +1,7 @@
 # GUI vs CLI Feature Parity Improvement Plan
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 > **Status**: Complete (all 6 phases implemented as of 2026-02-24)
 > **Target Version**: v0.4.0
 

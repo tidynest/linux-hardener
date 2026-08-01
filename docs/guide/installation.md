@@ -1,12 +1,19 @@
 # Installation Guide
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01
 
 ## Requirements
 
 - Linux kernel 5.4+
 - x86_64 architecture
-- One of: Arch, Debian 12+, Ubuntu 22.04+, Fedora 40+, RHEL/Rocky 9+, openSUSE Leap 15.6+
+- systemd
+- A distribution in one of the four detected families: Debian, Red Hat, Arch or
+  SUSE. Detection is family-based, so any release in a family is routed the same
+  way and a derivative works without a code change. The tested floors are Debian
+  12+, Ubuntu 22.04+, Fedora 40+, RHEL 9+ (and rebuilds such as Rocky and
+  AlmaLinux), Arch rolling, and openSUSE Leap 15.6+ or Tumbleweed. openSUSE Leap
+  15.x reached end of life in April 2026, so the validated SUSE target is now
+  Leap 16.0.
 
 ### GUI Requirements (optional)
 
@@ -178,9 +185,13 @@ records exactly what has been validated with this image.
 
 ### Build Dependencies
 
+Building the desktop GUI additionally needs [trunk](https://trunkrs.dev), which
+compiles the Leptos frontend to WASM. Arch packages it; elsewhere install it with
+`cargo install trunk`.
+
 **Arch:**
 ```bash
-sudo pacman -S rust cargo trunk pkg-config openssl gtk3 webkit2gtk-4.1 libxcb libxkbcommon librsvg
+sudo pacman -S rust cargo musl trunk pkg-config openssl gtk3 webkit2gtk-4.1 libxcb libxkbcommon librsvg
 ```
 
 **Fedora/RHEL:**
@@ -207,16 +218,30 @@ cd linux-system-hardener
 # CLI only (static musl binary)
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 
-# Desktop GUI (workspace member, builds into the workspace target directory)
-cargo build --release -p linux-hardener-desktop
+# Desktop GUI, step 1: build the WASM frontend that Tauri embeds.
+# --public-url="." keeps asset paths relative, which Tauri's custom protocol
+# requires; absolute paths such as /foo.js do not resolve.
+cd crates/hardener-ui && trunk build --release --public-url="." && cd ../..
+
+# Desktop GUI, step 2: build the binary against those embedded assets
+cd src-tauri && cargo build --release --features tauri/custom-protocol && cd ..
 
 # Install
 sudo install -Dm755 target/x86_64-unknown-linux-musl/release/hardener /usr/bin/hardener
 sudo install -Dm755 target/release/linux-hardener-desktop /usr/bin/linux-hardener-desktop
 ```
 
+The trunk step is not optional for a fresh clone. `crates/hardener-ui/dist/` is
+generated, and therefore not in git, while `src-tauri/tauri.conf.json` points
+`frontendDist` at it, so a desktop build attempted before that directory exists
+has nothing to embed. This is the same three-step order every packaging recipe
+in `packaging/` uses.
+
 If `CARGO_TARGET_DIR` or a `[build] target-dir` in `~/.cargo/config.toml` is
 configured, substitute that directory for `target/` in the install paths above.
+`src-tauri` is a member of the root workspace, so building from inside it still
+writes to the workspace target directory and both binaries land under the same
+`target/`.
 
 ---
 
@@ -237,13 +262,17 @@ sudo install -dm700 /var/log/linux-hardener
 Enable scheduled daily security scans:
 
 ```bash
-# Using the built-in command
+# Writes the unit files, reloads systemd, then enables and starts the timer
 sudo hardener systemd install
-sudo systemctl enable --now linux-hardener.timer
 
 # Verify
 sudo hardener systemd status
 ```
+
+`systemd install` runs `systemctl daemon-reload` and
+`systemctl enable --now linux-hardener.timer` itself, so no separate `systemctl`
+step is needed. Pass `--user` to install into `~/.config/systemd/user` instead,
+and `--schedule` to change the calendar expression from the `daily` default.
 
 ### Optional: Install Polkit Policy
 
@@ -269,16 +298,21 @@ sudo install -Dm644 packaging/assets/linux-hardener.desktop \
 # Check CLI
 hardener --help
 
+# Check version (prints "hardener <version> (<commit> <date>)")
+hardener --version
+
 # Run a scan (no root required for scanning)
 hardener scan
-
-# Check version
-hardener scan --format json 2>/dev/null | head -1
 ```
 
 ---
 
 ## Upgrading
+
+Some releases fixed defects that a host keeps carrying after the upgrade,
+because installing a newer version repairs the tool and not the system it
+already changed. Read the [upgrading guide](upgrading.md) for the version you
+are coming from before or after doing any of the below.
 
 ### From Package Manager
 

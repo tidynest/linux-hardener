@@ -24,15 +24,19 @@ commands on the remote host.
 ### Remote Host
 - SSH server running (OpenSSH)
 - Linux operating system
-- Standard utilities: `cat`, `stat`, `test`, `systemctl`
-- For apply/rollback: sudo or root access
+- Standard utilities the executor itself runs: `cat`, `test`, `stat`, `find`,
+  and `sudo tee` for writes. Plugins add their own, `systemctl` and `sysctl`
+  among them.
+- For apply/rollback: a root session, or a user whose `sudo -n true` succeeds
 
 ### Authentication
 - SSH key authentication (recommended)
 - SSH agent for passphrase-protected keys
 
-Remote hosts authenticate with an SSH key or agent only - there is no password
-path.
+Remote hosts authenticate with an SSH key or agent only. There is no password
+code path anywhere in this tool, and the ssh layer it drives is invoked with
+`BatchMode=yes` and no stdin, so a host that will only accept a password fails
+at connect rather than prompting you for one.
 
 ## Quick Start
 
@@ -54,7 +58,7 @@ hardener --ssh root@server.example.com report --framework cis --report-format pd
 | FLAG               | DESCRIPTION                                        | DEFAULT |
 |--------------------|----------------------------------------------------|---------|
 | --ssh HOST         | Remote host to connect to (user@host or just host) |    -    |
-| --port PORT        | SSH port number                                    |   22    |
+| --port PORT        | SSH port number (always sent, overrides ssh config) |   22    |
 | --ssh-key FILE     | Path to SSH private key                            |    -    |
 | --ssh-timeout SECS | Connection timeout in seconds                      |   30    |
 | --ssh-no-verify    | Skip host key verification (insecure)              |  false  |
@@ -99,16 +103,21 @@ Specify the private key directly:
 hardener --ssh user@host --ssh-key ~/.ssh/id_ed25519 scan
 ```
 
+Naming a key file makes it the only key offered: the flag is passed to ssh
+together with `IdentitiesOnly=yes`, so an agent identity or an `IdentityFile`
+from your `~/.ssh/config` is not tried as a fallback. Omit `--ssh-key` when you
+want the agent and your config to decide.
+
 ### SSH Config Integration
 
-The tool respects your ~/.ssh/config. If you have:
+The tool shells out to `ssh`, so your `~/.ssh/config` is read as usual. If you
+have:
 
 ```
 Host myserver
     HostName server.example.com
     User admin
     IdentityFile ~/.ssh/server_key
-    Port 2222
 ```
 
 You can simply use:
@@ -117,12 +126,25 @@ You can simply use:
 hardener --ssh myserver scan
 ```
 
+`HostName`, `User` and `IdentityFile` are honoured. **`Port` is not.** The
+`--port` flag defaults to 22 and is always handed to ssh on the command line,
+where it outranks the config file, so a host reached on another port needs the
+port given explicitly every time:
+
+```bash
+hardener --ssh myserver --port 2222 scan
+```
+
 ### Password Authentication
 
-Not supported. `SshExecutor::connect` builds its session from a key file, the
-agent, and your `~/.ssh/config` only, so there is no password prompt and no
-environment variable that supplies one. A host that accepts passwords alone
-cannot be scanned until you authorise a key in its `~/.ssh/authorized_keys`.
+Not supported, and not merely unimplemented. `SshExecutor::connect` builds its
+session from a key file, the agent, and your `~/.ssh/config` only, so there is
+no password prompt and no environment variable that supplies one. Underneath,
+the ssh master connection is launched with `BatchMode=yes` and its stdin closed,
+which disables every interactive authentication method at the ssh layer itself.
+A host that accepts passwords alone therefore fails at connect, immediately and
+without a prompt, and stays unscannable until you authorise a key in its
+`~/.ssh/authorized_keys`.
 
 ## Common Use Cases
 
@@ -145,9 +167,14 @@ hardener --ssh root@server report --framework cis --report-format pdf --output s
 # NIST 800-53 report in JSON for automation
 hardener --ssh root@server report --framework nist --report-format json --output report.json
 
-# Multiple frameworks
-hardener --ssh root@server report --framework cis,stig --report-format html
+# Several frameworks at once: use a scenario preset, not a list.
+# --framework takes exactly one id and rejects a comma-separated one.
+# "server" is CIS + STIG.
+hardener --ssh root@server report --scenario server --report-format html
 ```
+
+`--report-format` accepts `text`, `json`, `csv`, `html` and `pdf`. A `pdf` run
+writes to a file: give `--output`, or a timestamped name is generated for you.
 
 ### Apply Hardening Remotely
 
@@ -320,18 +347,27 @@ Solutions:
 ### Permission Denied
 
 ```
-Error: Permission denied (publickey,password)
+SSH connection failed: Failed to connect to server.example.com: ... Permission
+denied (publickey,password) (no usable SSH key - load one with `ssh-add` or
+configure a key file for this host)
 ```
+
+The underlying ssh reason always reaches you; the key hint in brackets is
+appended only when that reason names an authentication or agent failure, so a
+refused connection, a timeout or an unresolvable name keeps its own wording and
+never gets mislabelled as an auth problem.
 
 Causes:
 - Wrong username
 - Key not authorized on remote
 - Key not loaded in SSH agent
+- The host offers passwords only, which this tool cannot use
 
 Solutions:
 - Verify username: --ssh correctuser@host
 - Add public key to remote ~/.ssh/authorized_keys
 - Run ssh-add to load your key
+- Check `SSH_AUTH_SOCK` is set in the shell you launched from
 
 ### Host Key Verification Failed
 
@@ -383,7 +419,9 @@ Solutions:
 ### Key-Based Authentication Is the Only Path
 
 Password authentication is vulnerable to brute-force attacks, which is why this
-tool never offers it. Use Ed25519 or RSA keys:
+tool never offers it and why the ssh layer beneath it is run with
+`BatchMode=yes`: there is nothing to disable and no flag that re-enables it. Use
+Ed25519 or RSA keys:
 
 ```bash
 # Generate a secure key
@@ -404,21 +442,45 @@ hardener --ssh root@newhost --ssh-no-verify scan
 
 ### Sudo Configuration
 
-For apply/rollback operations, the remote user needs sudo access. Configure
-passwordless sudo for specific commands if desired:
+**Connect as root for apply and rollback.** That is what the examples above do,
+and it is the only arrangement the tool exercises end to end.
+
+A non-root remote user is gated on `sudo -n true` succeeding, and the gate fails
+closed, so a command-limited `NOPASSWD` list that omits `true` refuses the whole
+run before it starts. Passing the gate is also not enough on its own: of the
+remote operations, only file writes are elevated, through `sudo tee`. Everything
+else, `systemctl` and `sysctl` included, is run as the connecting user with no
+`sudo` in front of it, so a plugin that changes unit or runtime state will not
+take effect for a non-root session even once the gate is satisfied.
+
+If you must use a non-root account, give it unrestricted passwordless sudo and
+treat the result as unvalidated:
 
 ```
 # /etc/sudoers.d/hardener
-admin ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/tee, /usr/sbin/sysctl
+admin ALL=(ALL) NOPASSWD: ALL
 ```
 
 ### Audit Trail
 
-All remote operations are logged locally. Check the audit log for a record of what
-was changed:
+Two separate records exist locally, and they answer different questions.
+
+**What was changed** is the audit log, a hash-chained file of JSON lines written
+by the local process: `/var/log/linux-hardener/audit.log` when run as root, and
+`$XDG_DATA_HOME/linux-hardener/audit.log` (normally
+`~/.local/share/linux-hardener/audit.log`) otherwise. There is no subcommand
+that prints it; read it with ordinary tools:
+
+```bash
+sudo tail -n 20 /var/log/linux-hardener/audit.log
+```
+
+**What was found, and when** is the scan history database, which is what the
+history subcommands read:
 
 ```bash
 hardener history list
+hardener history show <session-id>
 ```
 
 ## Limitations
@@ -428,6 +490,9 @@ Current limitations of SSH remote scanning:
 | Limitation                      | Description                                                  |
 |---------------------------------|--------------------------------------------------------------|
 | No jump host support            | Cannot use bastion/jump hosts (yet)                          |
+| No password authentication      | Key or agent only; a password-only host fails at connect     |
+| ssh config `Port` ignored       | `--port` is always sent and outranks the config file          |
+| Non-root sessions only half elevate | Only file writes go through `sudo`; other commands do not |
 | Local checkpoints               | Checkpoint data stored on local machine                      |
 | Vendor-layer permissions        | On a layering host, scan reports permission findings apply cannot fix |
 
@@ -454,4 +519,4 @@ Planned for future releases:
 - Jump host / bastion support
 - Remote checkpoint storage option
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01

@@ -2,7 +2,11 @@
 
 Commands for validating and auto-updating project documentation.
 
-All scripts are Python 3 and located in `scripts/`.
+`scripts/validate/` holds twelve Python 3 scripts: the master runner
+`validate_all.py`, the auto-updater `update_all_docs.py`, and ten validators.
+All twelve are documented below. The one check that is not Python lives
+elsewhere: version consistency is `scripts/release/release.sh --verify`, which
+`validate_all.py` shells out to.
 
 ---
 
@@ -76,7 +80,12 @@ Checks that Rust identifiers follow the naming conventions in `docs/reference/na
 python3 scripts/validate/validate_file_map.py
 ```
 
-Verifies that every source file in the workspace has an entry in `docs/reference/file-map.md`. Reports missing entries.
+Verifies that every `.rs` file under `crates/` and `src-tauri/src` has an entry
+in `docs/reference/file-map.md`, and that no entry names a file that is gone.
+`EXCLUDE_PATTERNS` holds the exceptions, and it is narrower than it looks: only
+`/target/`, `/tests/common/` and editor temp files are skipped, so an ordinary
+`tests/` file is expected to be documented. `--fix` prints stub rows for what is
+missing rather than writing them.
 
 ### Plugin documentation
 
@@ -84,7 +93,16 @@ Verifies that every source file in the workspace has an entry in `docs/reference
 python3 scripts/validate/validate_plugin_docs.py
 ```
 
-Checks that each plugin in `crates/hardener-plugins/` has corresponding documentation and that plugin IDs, names, and descriptions match the README plugin table, the `docs/ROADMAP.md` checklist, and the `docs/architecture/architecture.md` plugin table.
+Reads each plugin's `metadata()` in `crates/hardener-plugins/src/*/mod.rs` and
+makes three comparisons: the plugin **names** against the README plugin table,
+the derived **struct names** against the `docs/architecture/architecture.md`
+plugin table, and the number of plugins registered in `create_plugin_registry()`
+against the number found in source. Both table comparisons report in each
+direction, missing and extra.
+
+Its module docstring also mentions a `docs/ROADMAP.md` checklist; `main()` does
+not check one, so a plugin missing from the ROADMAP passes here. Descriptions are
+parsed out of `metadata()` but nothing compares them either.
 
 ### Tauri command documentation
 
@@ -92,7 +110,10 @@ Checks that each plugin in `crates/hardener-plugins/` has corresponding document
 ./scripts/validate/validate_tauri_docs.py
 ```
 
-Verifies that every `#[tauri::command]` function in `src-tauri/src/commands.rs` is documented and that the IPC command names match between code and documentation.
+Verifies that every `#[tauri::command]` function in `src-tauri/src/commands.rs`
+is documented in `docs/reference/file-map.md` with a matching signature, and that
+every `invoke_command()` call in `crates/hardener-ui/src/tauri_bindings.rs` names
+a command that actually exists.
 
 ### Last Updated dates
 
@@ -100,7 +121,16 @@ Verifies that every `#[tauri::command]` function in `src-tauri/src/commands.rs` 
 ./scripts/validate/validate_last_updated.py
 ```
 
-Checks that "Last Updated" dates in documentation files match (or are close to) the file's last git modification date. Reports files with stale dates.
+Checks the "Last Updated" date in every `.md` file under the project root,
+`docs/` and `scripts/` against that file's last git commit date, and reports a
+date more than `STALE_THRESHOLD_DAYS` (7) behind it as stale. A file with no
+"Last Updated" line at all is a warning rather than an error. `--fix` rewrites
+the stale ones.
+
+The tolerance is the reason this validator can pass while `update_all_docs.py`
+in preview mode still names a file: the updater flags any documented date older
+than the git date at all, so up to seven days of drift is stale to the updater
+and current to the validator.
 
 ### Doc comment attachment
 
@@ -254,6 +284,10 @@ Checks that every framework defined in the `ComplianceFramework` enum (`crates/h
 ./scripts/release/release.sh --verify
 ```
 
-Checks that the version in `Cargo.toml` matches `tauri.conf.json` and all documentation references. Also invoked by `validate_all.py`.
+Compares the workspace version in `Cargo.toml` against
+`docs/architecture/architecture.md`, `packaging/assets/hardener.1` and
+`src-tauri/tauri.conf.json`, and against nothing else: the packaging versions
+(`PKGBUILD`, the RPM spec, `debian/changelog`) are outside its reach. Also
+invoked by `validate_all.py`, as its first entry.
 
-**Last Updated**: 2026-07-31
+**Last Updated**: 2026-08-01

@@ -1,6 +1,6 @@
 # Documentation index
 
-**Last Updated**: 2026-07-18
+**Last Updated**: 2026-08-01
 
 Map of everything under `docs/`. Root-level files (`README.md`,
 `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`) follow GitHub convention
@@ -63,6 +63,8 @@ and stay at the repository root.
 |----------|----------|
 | [ROADMAP.md](ROADMAP.md) | Milestones, completed and planned |
 | [NEXT.md](NEXT.md) | Session handoff and current state |
+| [Issue tracker](https://github.com/tidynest/linux-system-hardener/issues) | Open work, one issue per item; the authoritative list |
+| [CHANGELOG.md](../CHANGELOG.md) | What each release changed, and what is merged but unreleased |
 | `plans/` | Active plans; `plans/archive/` holds completed or superseded ones |
 | `archive/` | Historical one-off docs |
 | `assets/` | Logo and badge artwork |

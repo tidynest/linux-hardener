@@ -1,5 +1,7 @@
 # Scheduler UI Implementation Plan
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Goal:** Add a Scheduler page to the GUI for configuring scan schedules and notifications.
 
 **Architecture:** WASM-safe types in `hardener-types`, Tauri IPC reads/writes the `[scheduler]` section of config.toml, Leptos page with two Card sections (schedule + notifications). Config is round-tripped via `toml::from_str` / `toml::to_string_pretty` using a wrapper struct that preserves the scheduler section.

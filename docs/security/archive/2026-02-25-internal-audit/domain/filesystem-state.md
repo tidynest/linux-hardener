@@ -1,5 +1,7 @@
 # Security Audit: File System & State (Agent 3)
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Auditor:** Agent 3 -- File System & State
 **Date:** 2026-02-25
 **Scope:** Path traversal, symlink attacks, TOCTOU races, atomic write failures, SQLite integrity, checkpoint/rollback safety, deserialization attacks

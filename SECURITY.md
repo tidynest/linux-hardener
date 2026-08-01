@@ -2,16 +2,27 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.4.x   | :white_check_mark: |
-| 1.3.x   | :white_check_mark: |
-| 1.2.x   | :x:                |
-| 1.1.x   | :x:                |
-| 1.0.x   | :x:                |
-| 0.3.x   | :x:                |
-| 0.2.x   | :x:                |
-| 0.1.x   | :x:                |
+The current release is **1.5.1**. Only the 1.5 series receives security fixes.
+
+| Version           | Supported          | Notes                                                |
+| ----------------- | ------------------ | ---------------------------------------------------- |
+| 1.5.x             | :white_check_mark: | Current release series                               |
+| 1.4.x             | :x:                | Affected by GHSA-x4xp-32mf-xwjh, fixed only in 1.5.0 |
+| 1.3.x             | :x:                | Affected by GHSA-x4xp-32mf-xwjh                      |
+| 1.2.x and earlier | :x:                | End of life                                          |
+
+There are no backported patches. GHSA-x4xp-32mf-xwjh applies to every release up
+to and including 1.4.0 and was fixed in 1.5.0, so any installation still on 1.4.x
+or older carries a High-severity data-loss defect. **Upgrade rather than pin.**
+
+### Fixes not yet in a release
+
+The `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) opens with a `Security`
+heading, and entries under it describe defects present in the newest release.
+Read it before deploying: at the time of writing it carries firewall findings
+affecting every release up to and including 1.5.1, each with the command an
+operator can run to check whether their own host is affected. A fix that is on
+`main` but not yet tagged protects nobody who installed from a package.
 
 ## Reporting a Vulnerability
 
@@ -19,12 +30,18 @@ We take security vulnerabilities seriously. If you discover a security issue, pl
 
 ### Reporting Process
 
-1. **Do not** open a public GitHub issue for security vulnerabilities
-2. Email your findings to: **tidynest@proton.me**
-3. Include:
+1. **Do not** open a public GitHub issue for security vulnerabilities.
+2. Use GitHub's private vulnerability reporting, which is enabled on this
+   repository: **[Report a vulnerability](https://github.com/tidynest/linux-system-hardener/security/advisories/new)**.
+   This is the preferred channel, because it opens a private advisory thread
+   with the maintainer and becomes the published advisory once fixed.
+3. If you would rather not use GitHub, email your findings to:
+   **tidynest@proton.me**.
+4. Include:
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
+   - Affected version (`hardener --version`)
    - Suggested fix (if any)
 
 ### Response Timeline
@@ -187,7 +204,35 @@ This tool maps findings to:
 - NIST SP 800-171 (protection of Controlled Unclassified Information)
 - FedRAMP Moderate baseline
 
+## Published Advisories for This Project
+
+### GHSA-x4xp-32mf-xwjh - Rollback could delete account files on a remote host (High)
+
+Published 2026-07-27. Affects **all versions up to and including 1.4.0**; fixed
+in **1.5.0**, with no backport.
+
+Over SSH, the metadata probe ran `stat ... || echo 'NOTFOUND'`, so a host whose
+`stat` output this tool could not parse reported every path as missing.
+Checkpoint capture records a missing path with permissions `0`, and rollback
+removes any path recorded that way, so `apply` followed by `rollback` on such a
+host deleted `/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow` and
+`/etc/sudoers`. Hosts with a working `stat` were unaffected.
+
+The probe now confirms absence with `test -e` and reports a path it cannot read
+as an error, which capture propagates, so the operation stops rather than
+recording a file as absent. Separately, rollback now refuses to delete a
+protected system path that a checkpoint records as absent while the file is
+present on the host, which covers checkpoints written before the fix: those rows
+were already stored and the probe fix does not rewrite them.
+
+**If you hold checkpoints taken by 1.4.0 or earlier against a remote host,
+upgrading is necessary but not sufficient on its own to make those stored rows
+correct; the refusal above is what protects a rollback that reads one.**
+
 ## Known Security Advisories
+
+The entries below concern **dependencies**, not this project's own code. For
+advisories against this project, see the section above.
 
 ### RUSTSEC-2023-0071 (rsa crate) - False Positive
 
@@ -208,8 +253,9 @@ The complete set of accepted advisories (unmaintained GTK3 and `idna` transitive
 
 ## Contact
 
-For security concerns: **tidynest@proton.me**
+For security concerns: [private vulnerability report](https://github.com/tidynest/linux-system-hardener/security/advisories/new)
+(preferred), or **tidynest@proton.me**
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01

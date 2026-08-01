@@ -1,5 +1,7 @@
 # Remediation Tracker -- Linux System Hardener Security Audit
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Version:** 1.0
 **Date:** 2026-02-25
 **Source:** `SECURITY_AUDIT_REPORT.md` (consolidated from 6 domain agent reports)

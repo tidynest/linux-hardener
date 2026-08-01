@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-07-30
+**Last Updated:** 2026-08-01
 **Version:** 1.5.1
 
 This document describes the data flow for all major operations in the system.
@@ -314,12 +314,19 @@ a checkpoint or a skip is never counted as a hardening change.
          ▼ For each file path
 ┌──────────────────────────────────────────────────────────────┐
 │  Capture File/Directory State                                │
+│  ├─ Every captured path is asked read_link (link_target_of). │
+│  │   A symlink stores its TARGET and no content; a read_link │
+│  │   that cannot answer refuses the capture rather than      │
+│  │   recording "not a link"                                  │
 │  ├─ For directories: capture_directory_entry() (metadata only)│
 │  │   └─ file_content: None, permissions/uid/gid from stat()  │
 │  ├─ For files: Read content + stat() for metadata            │
 │  │   • st_mode (permissions)                                 │
 │  │   • st_uid (owner)                                        │
 │  │   • st_gid (group)                                        │
+│  ├─ A path a plugin's apply may CREATE: record it absent,    │
+│  │   as content None with permissions 0, so the rollback     │
+│  │   reads that row as "remove this"                         │
 │  └─ Create FileState struct                                  │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -331,7 +338,9 @@ a checkpoint or a skip is never counted as a hardening change.
 │    file_content: Some([bytes...]),                           │
 │    file_permissions: 0o600,                                  │
 │    file_owner_uid: 0,                                        │
-│    file_owner_gid: 0                                         │
+│    file_owner_gid: 0,                                        │
+│    file_link_target: None   // Some(target) for a symlink,   │
+│                             // whose content is never stored │
 │  }                                                           │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -411,11 +420,20 @@ a checkpoint or a skip is never counted as a hardening change.
          │
          ▼ For each FileState
 ┌──────────────────────────────────────────────────────────────┐
-│  Restore File/Directory                                      │
-│  ├─ If file_content is None AND path is directory:           │
-│  │   └─ Restore permissions/ownership (fall through)         │
+│  Restore File/Directory (restore_file_state_tracked)         │
+│  ├─ If file_link_target is Some: recreate the LINK           │
+│  │   └─ mkdir -p on the parent, then `ln -sfn target path`;  │
+│  │      never write, chmod or chown through a symlink        │
 │  ├─ If file_content is None AND permissions == 0:            │
-│  │   └─ Delete file (it didn't exist at checkpoint time)     │
+│  │   └─ "Absent at capture", so remove the path, EXCEPT for  │
+│  │      UNDELETABLE_ROLLBACK_PATHS (account databases,       │
+│  │      /etc/ssh, /etc/sudoers and similar): those are       │
+│  │      probed first and deleted only on a positively        │
+│  │      confirmed absence. A probe error, or a path that     │
+│  │      exists now, is Skipped, never guessed                │
+│  ├─ If file_content is None otherwise (directory, or a file  │
+│  │   present but unreadable at capture):                     │
+│  │   └─ Re-apply permissions/ownership only                  │
 │  ├─ Else:                                                    │
 │  │   ├─ Write file_content to file_path                      │
 │  │   ├─ chmod(file_permissions)                              │
@@ -689,7 +707,7 @@ command is added or removed: `src/main.rs` (`generate_handler!`), `build.rs`
 | `connect_remote` | `name: String`, `state: State<RemoteState>` | `RemoteConnectionStatus` |
 | `disconnect_remote` | `state: State<RemoteState>` | `()` |
 | `run_remote_scan` | `plugin_ids: Option<Vec<String>>`, `state: State<RemoteState>` | `Vec<ScanResult>` |
-| `run_fleet_scan` | `host_names: Vec<String>`, `adhoc: Option<Vec<String>>`, `plugin_ids: Option<Vec<String>>` | `Vec<FleetHostScan>` |
+| `run_fleet_scan` | `host_names: Vec<String>`, `adhoc: Option<Vec<String>>`, `plugin_ids: Option<Vec<String>>`, `app: AppHandle` | `Vec<FleetHostScan>` (`app` emits per-host progress on `FLEET_PROGRESS_EVENT`, `"fleet-progress"` in `hardener-types/src/remote.rs`) |
 | `run_fleet_apply` | `hosts: Vec<String>`, `adhoc: Option<Vec<String>>`, `plugins: Vec<String>`, `execute: bool` | `Vec<ApplyOutcome>` |
 | `run_fleet_rollback` | `hosts: Vec<String>`, `adhoc: Option<Vec<String>>`, `plugins: Vec<String>`, `execute: bool` | `Vec<RollbackOutcome>` |
 
@@ -713,7 +731,6 @@ All GUI state lives in `AppState` (`hardener-ui/src/state/mod.rs`). Each field i
 | `selected_finding` | `RwSignal<Option<Finding>>` | Currently selected finding in detail panel |
 | `severity_filter` | `RwSignal<Option<Severity>>` | Client-side severity filter for findings |
 | `apply_results` | `RwSignal<Vec<ApplyResult>>` | Results from last apply operation |
-| `rollback_result` | `RwSignal<Option<RollbackResult>>` | Result from last rollback operation |
 | `is_scanning` | `RwSignal<bool>` | Scan in progress |
 | `is_applying` | `RwSignal<bool>` | Apply in progress |
 | `compliance_reports` | `RwSignal<Vec<ComplianceReport>>` | Generated compliance reports |
@@ -724,7 +741,6 @@ All GUI state lives in `AppState` (`hardener-ui/src/state/mod.rs`). Each field i
 | `error_message` | `RwSignal<Option<String>>` | Global error banner message |
 | `remote_hosts` | `RwSignal<Vec<RemoteHostProfile>>` | Saved remote host profiles |
 | `remote_connection` | `RwSignal<Option<RemoteConnectionInfo>>` | Active remote connection info |
-| `remote_scan_results` | `RwSignal<Vec<ScanResult>>` | Remote scan findings |
 | `is_connecting` | `RwSignal<bool>` | Remote connection in progress |
 | `is_remote_scanning` | `RwSignal<bool>` | Remote scan in progress |
 | `scheduler_config` | `RwSignal<Option<SchedulerUiConfig>>` | Loaded scheduler configuration |
@@ -734,6 +750,15 @@ All GUI state lives in `AppState` (`hardener-ui/src/state/mod.rs`). Each field i
 | `config_summary` | `RwSignal<Option<ConfigSummary>>` | Validated config file summary |
 | `deep_scan_running` | `RwSignal<bool>` | Shared privileged deep-scan button state |
 | `theme` | `RwSignal<String>` | Active colour theme id (see `utils::theme::THEMES`); shared by the sidebar quick-switch and the Settings page grid, applied to `<html data-theme>` and persisted by a single `Effect` in `App` |
+
+**Not in `AppState`, deliberately.** Two results that a reader might expect here
+are held locally by the component that owns them, because nothing else reads
+them: a `RollbackResult` lives in the `Stage::Result` variant of
+`components/rollback_modal.rs` for as long as that modal is open, and a
+single-host remote scan is folded into the page-local `FleetHostScan` map in
+`pages/hosts_page.rs` so one row renders the same way whether it came from a
+session scan or a fleet scan. `AppState` keeps only the `is_remote_scanning`
+flag for the latter.
 
 ---
 
@@ -765,7 +790,10 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 |------|----------|--------|
 | Checkpoint DB | root: `/var/lib/linux-hardener/checkpoints.db`; unprivileged: `~/.local/share/linux-hardener/checkpoints.db` | SQLite |
 | Signing Keys | root: `/etc/linux-hardener/signing.key`; unprivileged: `~/.local/share/linux-hardener/signing.key` | Ed25519 |
+| Audit Log | root: `/var/log/linux-hardener/audit.log`; unprivileged: `~/.local/share/linux-hardener/audit.log` | JSONL hash chain |
+| Scan History DB | root: `/var/lib/linux-hardener/scheduler.db`; unprivileged: `~/.local/share/linux-hardener/scheduler.db` | SQLite (scheduler, host-aware; see section 8) |
 | User Config | `~/.config/linux-hardener/config.toml` | TOML |
+| Host Inventory | `~/.config/linux-hardener/hosts.toml` | TOML |
 | System Config | `/etc/linux-hardener/config.toml` | TOML |
 | WASM Rustflags | `.cargo/config.toml` | TOML |
 | SSH Config | `/etc/ssh/sshd_config` | OpenSSH |
@@ -818,8 +846,9 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 │  └─ Returns CommandOutput { stdout, stderr, exit_code }      │
 │                                                              │
 │  ctx.executor().write_file(path, content).await              │
-│  ├─ SshExecutor: Pipes content to `cat > {path}` via SSH     │
-│  └─ Or uses sudo tee for privileged paths                    │
+│  ├─ SshExecutor: `sudo tee {path} > /dev/null` fed by a      │
+│  │   quoted heredoc, so content is never re-expanded         │
+│  └─ One write path, not two: sudo is always used             │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
@@ -837,15 +866,26 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 
 ### SSH Executor Method Mapping
 
+Every path is shell-escaped before interpolation (`shell_escape` in
+`hardener-core/src/executor/ssh.rs`).
+
 | Executor Method | SSH Implementation |
 |-----------------|-------------------|
 | `read_file(path)` | `cat {path}` |
-| `read_file_optional(path)` | `cat {path}` (returns None on error) |
-| `write_file(path, content)` | `cat > {path}` with stdin |
-| `path_exists(path)` | `test -e {path}` |
-| `file_metadata(path)` | `stat -c '%F %a %s' {path}` |
+| `read_file_optional(path)` | `cat {path} 2>/dev/null` |
+| `write_file(path, content)` | `sudo tee {path} > /dev/null` fed by a quoted heredoc (`tee_command`) |
+| `path_exists(path)` | `test -e {path} && echo yes \|\| echo no` |
+| `file_metadata(path)` | `test -e {path} && echo E \|\| echo N; stat -c '%F %a %s %u %g' {path} 2>/dev/null \|\| true` (`metadata_probe_command`) |
+| `read_dir(path)` | `find {path} -mindepth 1 -maxdepth 1 2>/dev/null` |
 | `execute_command(prog, args)` | Direct SSH command execution |
-| `command_exists(prog)` | `command -v {prog}` |
+| `read_link(path)` | `readlink -n -- {path}` (trait default, not SSH-specific) |
+| `command_exists(prog)` | `sh -c <probe> sh {prog}`, a `command -v` probe with the name passed as a positional argument so metacharacters cannot alter what runs (trait default) |
+
+`file_metadata` asks two questions in one round trip on purpose: the `E`/`N`
+marker positively confirms existence, and a parsed `stat` line is stronger
+evidence still, so a `stat` that merely failed is never read as absence.
+`read_link` and `command_exists` are provided methods on `SystemExecutor` in
+`hardener-common`, so local and remote answer them identically.
 
 ### Key Differences from Local Execution
 
@@ -1008,6 +1048,10 @@ pub struct ScanSummary {
     pub json_path: Option<String>,
     pub json_hash: Option<String>,
     pub had_errors: bool,
+    /// Set only when this scan regressed against the host's previous one;
+    /// omitted from JSON otherwise. Carries the previous scan's start time and
+    /// total, plus a per-severity delta where positive means worse.
+    pub regression: Option<RegressionInfo>,
 }
 ```
 
@@ -1047,20 +1091,33 @@ CREATE TABLE scan_findings (
     recommended_value TEXT,
     category TEXT,
     compliance_mappings TEXT,  -- JSON array
-    FOREIGN KEY(session_id) REFERENCES scan_sessions(id)
+    FOREIGN KEY(session_id) REFERENCES scan_sessions(id) ON DELETE CASCADE
 );
 
 -- Notification delivery log
 CREATE TABLE notification_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL,
-    notification_type TEXT NOT NULL,
-    sent_at INTEGER NOT NULL,
-    success INTEGER NOT NULL,
+    channel TEXT NOT NULL,   -- which notifier ran (email, webhook)
+    status TEXT NOT NULL,    -- textual outcome, not a 0/1 success flag
+    sent_at INTEGER,
     error_message TEXT,
-    FOREIGN KEY(session_id) REFERENCES scan_sessions(id)
+    FOREIGN KEY(session_id) REFERENCES scan_sessions(id) ON DELETE CASCADE
 );
 ```
+
+**This is `scheduler.db`, not `checkpoints.db`.** These three tables belong to
+`hardener_scheduler::db` and are host-aware: `scan_sessions.host_identifier`
+records which machine a session describes, which is what lets `batch` and the
+scheduler store a fleet's worth of scans in one file. The desktop's own local
+scan history lives in `hardener-state`'s `checkpoints.db` alongside the
+checkpoint tables, has no host column, and uses a different `scan_sessions`
+shape (see `docs/architecture/architecture.md`, Database Schema). The two are
+never interchangeable, and the desktop proves it by reading both: the
+`get_scan_history` and `get_scan_session` commands open the user-local
+`checkpoints.db` through `create_scan_history_manager`, while `get_host_history`
+opens `scheduler.db` through `scheduler_db_path` so it sees the history
+`batch scan` wrote.
 
 ### Daemon Structure
 
@@ -1386,4 +1443,4 @@ compares the two behaviours, not two separate screens.
 
 ---
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01

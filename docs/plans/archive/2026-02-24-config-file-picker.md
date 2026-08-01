@@ -1,5 +1,7 @@
 # Config File Picker Implementation Plan
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Goal:** Add a config file picker to the Hardening page so users can select a custom TOML config file, equivalent to the CLI `--config FILE` flag.
 
 **Architecture:** New WASM-safe `ConfigSummary` type in `hardener-types`. Two new Tauri commands (`validate_config`, `pick_config_file`). One new Leptos component (`ConfigFileCard`) on the Hardening page. Config path stored in `AppState` and threaded through to scan/apply/rollback commands. `tauri-plugin-dialog` provides the native file picker.

@@ -1,7 +1,7 @@
 # Naming Conventions Reference
 
 **Author**: Eric Jingryd
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01
 **Purpose**: Complete and authoritative naming standards for all identifiers in the project
 
 ---
@@ -9,22 +9,23 @@
 ## Table of Contents
 
 1. [Core Principles](#core-principles)
-2. [File and Directory Names](#file-and-directory-names)
-3. [Crate Names](#crate-names)
-4. [Module Names](#module-names)
-5. [Struct Names](#struct-names)
-6. [Enum Names](#enum-names)
-7. [Trait Names](#trait-names)
-8. [Function and Method Names](#function-and-method-names)
-9. [Variable Names](#variable-names)
-10. [Constant Names](#constant-names)
-11. [Type Alias Names](#type-alias-names)
-12. [Generic Parameter Names](#generic-parameter-names)
-13. [Lifetime Names](#lifetime-names)
-14. [Field Names](#field-names)
-15. [Test Function Names](#test-function-names)
-16. [Documentation File Names](#documentation-file-names)
-17. [Examples by Domain](#examples-by-domain)
+2. [Validator Behaviour](#validator-behaviour)
+3. [File and Directory Names](#file-and-directory-names)
+4. [Crate Names](#crate-names)
+5. [Module Names](#module-names)
+6. [Struct Names](#struct-names)
+7. [Enum Names](#enum-names)
+8. [Trait Names](#trait-names)
+9. [Function and Method Names](#function-and-method-names)
+10. [Variable Names](#variable-names)
+11. [Constant Names](#constant-names)
+12. [Type Alias Names](#type-alias-names)
+13. [Generic Parameter Names](#generic-parameter-names)
+14. [Lifetime Names](#lifetime-names)
+15. [Field Names](#field-names)
+16. [Test Function Names](#test-function-names)
+17. [Documentation File Names](#documentation-file-names)
+18. [Examples by Domain](#examples-by-domain)
 
 ---
 
@@ -110,6 +111,87 @@ Use a comma, colon, parentheses, or a plain hyphen instead. This applies to all
 tracked prose and source; `scripts/validate/validate_naming.py` scans every
 tracked file (`.md`, `.rs`, `.toml`, `.py`, `.sh`, `.txt`, `.yml`, `.yaml`,
 `.json`) and reports any em-dash or en-dash as an error.
+
+---
+
+## Validator Behaviour
+
+`scripts/validate/validate_naming.py` is the executable half of this document.
+It reads every `.rs` file under `crates/` (skipping `build.rs` and any path
+containing `target`), and for the dash scan it reads every git-tracked file with
+a `.md`, `.rs`, `.toml`, `.py`, `.sh`, `.txt`, `.yml`, `.yaml` or `.json`
+suffix. Nothing outside `crates/` is checked for naming.
+
+### Errors, which fail the run
+
+Only these return a non-zero exit code:
+
+- A `pub struct`, `pub enum` or `pub trait` whose name is not `PascalCase`
+- A function whose name is not `snake_case`, or a function directly under
+  `#[component]` whose name is not `PascalCase`
+- A `const` whose name is not `SCREAMING_SNAKE_CASE`
+- An em-dash or en-dash in a tracked file, including the two written as Rust
+  unicode escapes rather than as the glyph
+
+The declaration checks are line based and anchored to the start of the declaring
+line, so a name is judged where it is written and never where it is used, and
+the exact spelling of the declaration decides whether it is judged at all. A
+private `struct`, `enum` or `trait` is not checked, because the pattern requires
+the leading `pub`; a `pub const` is not checked, because that pattern requires
+`const` first. Functions are checked as `fn`, `pub fn`, `async fn` and
+`pub async fn`. Widening any of those patterns will surface names that have
+never been checked, so treat a sudden crop of errors as new coverage rather than
+as new code.
+
+### Warnings, which never fail the run
+
+- **Abbreviations.** Always flagged: `mgr`, `msg`, `dist`, `param`, `res`,
+  `val`, `pkg`, `auth`, `perms`. Flagged only outside an allowlisted context:
+  `ctx`, `cfg`, `cmd`, `distro` (the contexts are listed under
+  [Crate Names](#crate-names)). The match is a whole word and case insensitive,
+  so `param_name` passes while `param:` does not, and `/etc/pam.d/password-auth`
+  reads as the word `auth`.
+- **American spellings**: `authorize`, `color`, `organization`, `initialize`,
+  `serialize`, `finalize`, less the verbatim-external exceptions in Core
+  Principle 4.
+- **A trait name ending in `Trait`.**
+
+Both word checks read the whole line, not just the identifier, so a trailing
+comment on a code line is scanned. A line that opens with `//` or `/*` is
+skipped entirely.
+
+### How test context is decided
+
+The scanner walks each file line by line, keeps a running brace depth, and
+enters test context at `#[cfg(test)]`, `#[test]`, `#[tokio::test]` or a line
+containing `mod tests`, recording the brace depth at that point. It leaves test
+context when the depth falls back below that mark. Each warning is then counted
+as production or test.
+
+Two consequences are worth knowing before reading a count:
+
+- An inline `#[cfg(test)] mod tests { ... }` behaves as expected: the mark is
+  taken inside the module, and the module's closing brace ends the context.
+- A file under `tests/` is not test context by virtue of its path. Context
+  starts at the first test attribute in the file, so a fixture helper written
+  above it counts as production. That is why several production warnings point
+  into `crates/hardener-plugins/tests/`. Because that mark is taken at file
+  scope, where the depth is zero, it can never be fallen below, so everything
+  after the first test attribute in such a file is counted as test.
+
+### The warning count is known noise
+
+Measured 2026-08-01: **0 errors, 107 production warnings, 183 test warnings.**
+Every one of them is an abbreviation; there are currently no British English
+warnings.
+
+They are pre-existing names, plus, in the `auth` group, the PAM configuration
+filenames `system-auth`, `password-auth` and `common-auth`. Those are filenames
+the distributions ship rather than names anyone here chose, and renaming them
+would break the tool. **Never "fix" a warning by renaming.**
+
+Read the count as a delta and never as a total: what a change has to show is
+that it added none. A decrease needs no justification.
 
 ---
 
@@ -219,6 +301,15 @@ throughout the codebase:
 - `cfg` -- Used in `#[cfg()]` attributes (Rust built-in conditional compilation)
 - `cmd` -- Common in CLI and executor contexts (e.g. `execute_command`, `firewall_cmd`)
 - `distro` -- Domain term for a Linux distribution (e.g. `distro_name`, `DistroFamily`, `hardener-distro`)
+
+The exemption is per line and per context, not per word. `scripts/validate/validate_naming.py`
+waives one of these four only where the line also matches its allowlist: `#[cfg(`
+or `cfg!` for `cfg`; a `ctx` parameter, binding or field access for `ctx`;
+`execute_command`, `CommandOutput`, `firewall_cmd` or a `cmd` binding for `cmd`;
+`distro_`, `DistroFamily` or `hardener-distro` for `distro`. The same word
+elsewhere still warns, which is most of the noise described under
+[Validator Behaviour](#validator-behaviour). Every other abbreviation, including
+`dist`, `param`, `mgr` and `auth`, warns wherever it appears.
 
 ---
 
@@ -390,14 +481,14 @@ pub enum Severity {
 }
 
 pub enum FindingCategory {
-    Kernel,
-    Network,
-    Authentication,
-    FileSystem,
-    Services,
     Audit,
-    Permissions,
-    Compliance,
+    Authentication,
+    Cryptography,
+    FileSystem,
+    Kernel,
+    MandatoryAccessControl,
+    Network,
+    Services,
 }
 
 pub enum DistroFamily {
@@ -442,8 +533,8 @@ pub enum HardeningError {
     #[error("Distribution not supported: {0}")]
     UnsupportedDistro(String),
 
-    #[error("Plugin not found: {0}")]
-    PluginNotFound(String),
+    #[error("Plugin error: {0}")]
+    Plugin(String),
 }
 
 // ❌ BAD:
@@ -472,7 +563,7 @@ pub trait HardeningPlugin { }
 pub trait PackageManager { }
 pub trait FirewallBackend { }       // Firewall backend abstraction
 pub trait DistributionAdapter { }
-pub trait ComplianceFramework { }
+pub trait SystemExecutor { }        // Local or SSH command execution
 
 // ❌ BAD:
 pub trait HardeningPluginTrait { }  // Redundant "Trait" suffix
@@ -506,8 +597,8 @@ impl KernelHardeningPlugin {
 }
 
 impl CheckpointManager {
-    pub fn new(pool: SqlitePool) -> CheckpointManager {
-        Self { pool }
+    pub fn new(db_pool: SqlitePool) -> Result<CheckpointManager> {
+        // Explicit in the return position, not Result<Self>
     }
 }
 
@@ -524,9 +615,9 @@ impl KernelHardeningPlugin {
 // Pattern: get_<noun> or is_<adjective> or has_<noun>
 
 // ✅ GOOD:
-pub fn get_distribution() -> Result<Distribution> { }
-pub fn is_enabled() -> bool { }
-pub fn has_dependency(&self, id: &PluginId) -> bool { }
+pub fn get_plugin_config(&self, plugin_id: &str) -> &PluginConfig { }
+pub fn is_plugin_enabled(&self, plugin_id: &str) -> bool { }
+pub fn has_valid_exception(&self, key: &str) -> Option<&PolicyException> { }
 pub fn system_info(&self) -> &SystemInfo { }
 
 // ❌ BAD:
@@ -540,9 +631,9 @@ pub fn check_dep(&self, id: &PluginId) -> bool { }  // Abbreviation
 // Pattern: set_<noun> or update_<noun> or apply_<noun>
 
 // ✅ GOOD:
-pub fn set_severity(&mut self, severity: Severity) { }
-pub fn update_checkpoint(&mut self, checkpoint: &Checkpoint) -> Result<()> { }
-pub fn apply_sysctl_param(&self, param: &str, value: &str) -> Result<()> { }
+pub fn set_checkpoint_manager(&mut self, checkpoint_manager: CheckpointManager) { }
+pub fn update_file_atomically(path: &Path, content: &str) -> Result<()> { }
+async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> { }
 
 // ❌ BAD:
 pub fn severity(&mut self, s: Severity) { }        // Ambiguous (getter or setter?)
@@ -555,16 +646,16 @@ pub fn sysctl(&self, p: &str, v: &str) { }        // Unclear action, abbreviatio
 // Pattern: verb describing action
 
 // ✅ GOOD (Plugin trait methods):
-fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> { }
-fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
-fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
-fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }
+async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> { }
+async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
+async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
+async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }
 
 // ✅ GOOD (Supporting methods):
-fn read_sysctl_param(param: &str) -> Result<String> { }
-fn write_sysctl_param(param: &str, value: &str) -> Result<()> { }
-fn parse_ssh_directive(content: &str, directive: &str) -> Option<String> { }
-fn create_checkpoint(name: &str) -> Result<CheckpointId> { }
+pub async fn validate_sshd_config(executor: &dyn SystemExecutor, candidate: &str) -> Result<()> { }
+pub fn select_algorithms(desired: &[&str], supported: &[String]) -> Vec<String> { }
+pub async fn create_checkpoint(&self, executor: &dyn SystemExecutor, checkpoint_name: &str,
+                               file_paths: &[&Path]) -> Result<CheckpointId> { }
 
 // ❌ BAD:
 fn do_scan(&self) { }              // Redundant "do_"
@@ -578,18 +669,18 @@ fn parse_directive(c: &str) { }    // Missing context (parse what kind of direct
 // Pattern: descriptive verb_noun combination
 
 // ✅ GOOD:
-fn execute_command(cmd: &str, args: &[&str]) -> Result<String> { }
-fn parse_os_release_content(content: &str) -> Result<OsRelease> { }
-fn generate_checkpoint_id() -> String { }
-fn verify_signature(data: &[u8], signature: &[u8]) -> bool { }
+pub fn execute_command(command: &str, args: &[&str]) -> Result<String> { }
+pub fn from_os_release(content: &str) -> Result<Distribution> { }
+fn generate_checkpoint_id() -> CheckpointId { }
+pub async fn verify_checkpoint(&self, checkpoint_id: &CheckpointId) -> Result<()> { }
 
 // ✅ GOOD (Domain-specific helpers):
-fn execute_firewall_cmd(args: &[&str]) -> Result<String> { }
-fn execute_apt_command(args: &[&str]) -> Result<String> { }
-fn build_nft_rule_args(rule: &Rule) -> Vec<String> { }
-fn parse_ssh_directive(content: &str, directive_name: &str) -> Option<String> { }
-fn get_default_zone() -> Result<String> { }
-fn get_baseline_rules() -> Vec<Rule> { }
+async fn execute_firewall_cmd(&self, ctx: &Context, args: &[&str]) -> Result<String> { }
+fn execute_apt(&self, args: &[&str]) -> Result<String> { }
+fn build_nft_rule_args(&self, rule: &Rule) -> Vec<String> { }
+fn parse_input_chain_rules(chain_output: &str) -> Vec<Vec<String>> { }
+async fn get_default_zone(&self, ctx: &Context) -> Result<String> { }
+pub fn get_baseline_rules() -> Vec<Rule> { }
 
 // ❌ BAD:
 fn exec_cmd(cmd: &str) { }         // Abbreviation
@@ -653,14 +744,16 @@ for p in plugins {              // Too short, unclear
 **Function Parameters**:
 ```rust
 // ✅ GOOD:
-fn apply_sysctl_param(param_name: &str, param_value: &str) -> Result<()> { }
-fn create_checkpoint(checkpoint_name: &str) -> Result<CheckpointId> { }
-fn parse_ssh_directive(config_content: &str, directive_name: &str) -> Option<String> { }
+pub fn set_config_directive(content: &str, directive_name: &str, value: &str,
+                            format: ConfigFormat, case_sensitive: bool,
+                            duplicates: Duplicates) -> String { }
+pub fn validate_package_name(package_name: &str, rules: PackageNameRules) -> Result<()> { }
+pub fn select_algorithms(desired: &[&str], supported: &[String]) -> Vec<String> { }
 
 // ❌ BAD:
-fn apply_sysctl_param(p: &str, v: &str) -> Result<()> { }      // Abbreviations
-fn create_checkpoint(name: &str) -> Result<CheckpointId> { }    // Ambiguous
-fn parse_ssh_directive(c: &str, d: &str) -> Option<String> { } // Abbreviations
+pub fn set_config_directive(c: &str, d: &str, v: &str, f: ConfigFormat) -> String { }  // Abbreviations
+pub fn validate_package_name(name: &str, rules: PackageNameRules) -> Result<()> { }    // Ambiguous
+pub fn select_algorithms(a: &[&str], b: &[String]) -> Vec<String> { }                  // Meaningless
 ```
 
 ---
@@ -678,30 +771,37 @@ fn parse_ssh_directive(c: &str, d: &str) -> Option<String> { } // Abbreviations
 **Examples**:
 ```rust
 // ✅ GOOD:
-const KERNEL_PARAMS: &[(&str, &str, &str)] = &[
-    ("kernel.randomize_va_space", "2", "Enable full ASLR"),
+const KERNEL_PARAMS: &[KernelParameter] = &[
+    KernelParameter {
+        kernel_parameter_name: "kernel.randomize_va_space",
+        kernel_secure_value: "2",
+        kernel_description: "Enable full address space layout randomisation (ASLR)",
+        kernel_severity: Severity::High,
+        kernel_compare: Strictness::AtLeast,
+    },
 ];
 
 const SSH_DIRECTIVES: &[SshConfigDirective] = &[
     SshConfigDirective {
         ssh_directive_name: "PermitRootLogin",
         ssh_secure_value: "no",
-        ssh_description: "Disable direct root SSH access",
+        ssh_description: "Disable direct root login via SSH",
         ssh_severity: Severity::Critical,
+        ssh_compare: Strictness::Ranked(PERMIT_ROOT_LOGIN_ORDER),
     },
 ];
 
-const SSH_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
-const SSH_BACKUP_DIR: &str = "/var/backups/ssh";
+const SSHD_ADMIN_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
+const SSHD_DROPIN_DIR: &str = "/etc/ssh/sshd_config.d";
 
-const DEFAULT_CHECKPOINT_PATH: &str = "/var/lib/linux-hardener/checkpoints.db";
-const MAX_CHECKPOINT_AGE_DAYS: u64 = 90;
+const SYSCTL_DROPIN_DIR: &str = "/etc/sysctl.d";
+const SYSCTL_HARDENER_CONF: &str = "/etc/sysctl.d/99-hardener.conf";
 
-const OS_RELEASE_PATH: &str = "/etc/os-release";
-const FALLBACK_OS_RELEASE_PATH: &str = "/usr/lib/os-release";
+const ADMIN_UNIT_DIR: &str = "/etc/systemd/system";
+const MAX_INCLUDE_DEPTH: usize = 16;
 
 // ❌ BAD:
-const PARAMS: &[(&str, &str, &str)] = &[];     // Too generic
+const PARAMS: &[KernelParameter] = &[];        // Too generic
 const DIRECTIVES: &[SshConfigDirective] = &[];  // Missing domain prefix
 const DB_PATH: &str = "/var/lib/...";          // Abbreviation
 const MAX_AGE: u64 = 90;                       // Too generic
@@ -723,7 +823,7 @@ const CFG_PATH: &str = "/etc/ssh/sshd_config"; // Abbreviation
 ```rust
 // ✅ GOOD:
 pub type Result<T> = std::result::Result<T, HardeningError>;
-pub type PluginRegistry = Arc<RwLock<HashMap<PluginId, Arc<Box<dyn HardeningPlugin>>>>>;
+pub type SeverityTuple = (i64, i64, i64, i64, i64);  // Per-severity counts, scheduler db
 
 // ❌ BAD:
 pub type Res<T> = std::result::Result<T, HardeningError>;  // Abbreviation
@@ -832,9 +932,10 @@ pub struct PluginMetadata {
 pub struct Checkpoint {
     pub checkpoint_id: CheckpointId,
     pub checkpoint_name: String,
-    pub checkpoint_timestamp: u64,
+    pub checkpoint_timestamp: i64,
     pub checkpoint_username: String,
     pub checkpoint_signature: Vec<u8>,
+    pub host_key: String,
 }
 
 pub struct ScanResult {
@@ -854,6 +955,11 @@ pub struct Distribution {
     pub codename: Option<String>,  // Less clear
 }
 ```
+
+`Checkpoint::host_key` is the one unprefixed field in that group. It records
+which host the checkpoint was captured from ("local", or an SSH target). Under
+the prefix rule it would be `checkpoint_host_key`; it is listed here as the code
+spells it, not as the rule would have it.
 
 **Result/Data Struct Fields**:
 ```rust
@@ -889,11 +995,12 @@ pub struct Rule {
     pub rule_action: String,
 }
 
-pub struct SshConfigDirective {
-    pub ssh_directive_name: &'static str,
-    pub ssh_secure_value: &'static str,
-    pub ssh_description: &'static str,
-    pub ssh_severity: Severity,
+struct SshConfigDirective {
+    ssh_description: &'static str,
+    ssh_directive_name: &'static str,
+    ssh_secure_value: &'static str,
+    ssh_severity: Severity,
+    ssh_compare: Strictness,
 }
 
 // ❌ BAD:
@@ -930,13 +1037,13 @@ pub struct Rule {
 fn test_distribution_detection() { }
 
 #[test]
-fn test_sysctl_param_verification() { }
+fn test_kernel_key_accepts_valid_sysctl_names() { }
 
 #[test]
-fn test_ssh_directive_parsing() { }
+fn test_hash_chain_verification() { }
 
 #[test]
-fn test_checkpoint_creation_with_signature() { }
+fn test_change_type_display() { }
 
 // ❌ BAD:
 #[test]
@@ -952,19 +1059,19 @@ fn test_det_dist() { }                          // Abbreviations
 ```rust
 // ✅ GOOD:
 #[tokio::test]
-async fn test_full_checkpoint_and_rollback_workflow() { }
+async fn test_rollback_restores_files() { }
 
 #[tokio::test]
-async fn test_plugin_dependency_resolution() { }
+async fn test_checkpoint_captures_and_restores_directory_permissions() { }
 
-#[tokio::test]
-async fn test_scan_apply_verify_rollback_workflow() { }
+#[test]
+fn test_dependency_resolution_valid_chain() { }
 
 #[test]
 fn test_kernel_plugin_metadata() { }
 
-#[test]
-fn test_ssh_scan_reads_configuration() { }
+#[tokio::test]
+async fn test_ssh_scan_reads_configuration() { }
 
 // ❌ BAD:
 #[tokio::test]
@@ -998,23 +1105,28 @@ fn test_apply() { }                             // Too generic
 
 ## Documentation File Names
 
-**Format**: `SCREAMING_SNAKE_CASE.md` for important docs, `lowercase.md` for others
+**Format**: `SCREAMING_SNAKE_CASE.md` at the repository root and at the top of
+`docs/`, `kebab-case.md` inside the `docs/` subdirectories
 
 **Project Documentation**:
 ```
 ✅ GOOD:
-README.md
+README.md                              # Repository root, uppercase
 LICENSE
 CONTRIBUTING.md
 CHANGELOG.md
 SECURITY.md
-docs/reference/naming-conventions.md
+docs/README.md                         # Top of docs/, uppercase
+docs/ROADMAP.md
+docs/reference/naming-conventions.md   # Inside docs/, kebab-case
+docs/guide/getting-started.md
 docs/architecture/architecture.md
 
 ❌ BAD:
-docs/architecture.md         # Should be uppercase for important docs
-docs/progress-tracking.md    # Should use underscore, not hyphen
-docs/code_patterns.md        # Should be uppercase
+docs/reference/NamingConventions.md    # Wrong case (PascalCase)
+docs/reference/naming_conventions.md   # Wrong separator (use a hyphen)
+docs/guide/GettingStarted.md           # Wrong case
+readme.md                              # Root documents are uppercase
 ```
 
 ---
@@ -1040,16 +1152,20 @@ pub enum DistroFamily {
     Suse,
 }
 
-// Functions:
-pub fn detect_distribution() -> Result<Distribution> { }
-fn read_os_release() -> Result<String> { }
-fn parse_os_release_content(content: &str) -> Result<OsRelease> { }
-fn map_to_family(distro_name: &str) -> DistroFamily { }
+// Methods (hardener-distro::Distribution):
+pub fn detect() -> Result<Distribution> { }
+pub fn from_os_release(content: &str) -> Result<Distribution> { }
+pub fn version_major(&self) -> Option<u32> { }
+fn extract_field(data: &HashMap<String, String>, field_name: &str) -> Result<String> { }
+fn map_to_family(distro_id: &str) -> Result<DistroFamily> { }
 
-// Constants:
-const OS_RELEASE_PATH: &str = "/etc/os-release";
-const FALLBACK_OS_RELEASE_PATH: &str = "/usr/lib/os-release";
+// Methods (hardener-core::SystemInfo, which reads the same file for itself):
+fn read_os_release() -> Result<HashMap<String, String>> { }
+fn detect_distribution() -> Result<String> { }
 ```
+
+Neither reader holds its path in a constant: `/etc/os-release` is written at the
+two call sites.
 
 ### Plugin Domain
 
@@ -1088,19 +1204,19 @@ pub struct ScanResult {
 impl HardeningPlugin for KernelHardeningPlugin {
     fn metadata(&self) -> PluginMetadata { }
     fn dependencies(&self) -> Vec<PluginId> { }
-    fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> { }
-    fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
-    fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
-    fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }
+    async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> { }
+    async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
+    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
+    async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }
 }
 
-// Helper functions:
-fn read_sysctl_param(param_name: &str) -> Result<String> { }
-fn write_sysctl_param(param_name: &str, param_value: &str) -> Result<()> { }
-fn parse_ssh_directive(config_content: &str, directive_name: &str) -> Option<String> { }
+// Helper functions (kernel):
+async fn read_sysctl(&self, param: &str, ctx: &Context) -> Result<String> { }
+fn resolved_target(parameter: &KernelParameter, config: &PluginConfig) -> String { }
+fn parse_sysctl(content: &str) -> SysctlAssignments { }
 
 // Constants:
-const KERNEL_PARAMS: &[(&str, &str, &str)] = &[...];
+const KERNEL_PARAMS: &[KernelParameter] = &[...];
 const SSH_DIRECTIVES: &[SshConfigDirective] = &[...];
 ```
 
@@ -1112,35 +1228,48 @@ pub struct CheckpointManager { }
 pub struct Checkpoint {
     pub checkpoint_id: CheckpointId,
     pub checkpoint_name: String,
-    pub checkpoint_timestamp: u64,
+    pub checkpoint_timestamp: i64,
     pub checkpoint_username: String,
     pub checkpoint_signature: Vec<u8>,
+    pub host_key: String,
 }
 
 pub struct FileState {
-    pub file_path: PathBuf,
+    pub file_path: String,
     pub file_content: Option<Vec<u8>>,
     pub file_permissions: u32,
     pub file_owner_uid: u32,
     pub file_owner_gid: u32,
+    pub file_link_target: Option<String>,
 }
 
 // Methods:
 impl CheckpointManager {
-    pub fn new(pool: SqlitePool) -> CheckpointManager { }
-    pub async fn create_checkpoint(&self, checkpoint_name: &str) -> Result<CheckpointId> { }
-    pub async fn rollback(&self, checkpoint_id: &CheckpointId) -> Result<()> { }
+    pub fn new(db_pool: SqlitePool) -> Result<CheckpointManager> { }
+    pub fn new_with_signer(...) -> Result<CheckpointManager> { }
+    pub fn new_with_allowlist(...) -> Result<CheckpointManager> { }
+    pub async fn create_checkpoint(&self, executor: &dyn SystemExecutor,
+                                   checkpoint_name: &str, file_paths: &[&Path])
+        -> Result<CheckpointId> { }
+    pub async fn create_checkpoint_metadata_only(...) -> Result<CheckpointId> { }
+    pub async fn rollback(&self, executor: &dyn SystemExecutor,
+                          checkpoint_id: &CheckpointId) -> Result<RollbackResult> { }
+    pub async fn get_checkpoint(...) -> Result<(Checkpoint, Vec<FileState>)> { }
     pub async fn list_checkpoints(&self) -> Result<Vec<Checkpoint>> { }
+    pub async fn latest_named_for_host(...) -> Result<Option<Checkpoint>> { }
     pub async fn delete_checkpoint(&self, checkpoint_id: &CheckpointId) -> Result<()> { }
+    pub async fn verify_checkpoint(&self, checkpoint_id: &CheckpointId) -> Result<()> { }
 
-    fn generate_checkpoint_id() -> String { }
-    fn capture_file_state(&self, file_path: &Path) -> Result<FileState> { }
-    fn restore_file_state(&self, file_state: &FileState) -> Result<()> { }
+    fn generate_checkpoint_id() -> CheckpointId { }
+    async fn capture_file_state(&self, executor: &dyn SystemExecutor,
+                                file_path: &Path) -> Result<Vec<FileState>> { }
+    async fn restore_file_state_tracked(&self, executor: &dyn SystemExecutor,
+                                        file_state: &FileState)
+        -> (FileRestoreAction, Result<()>) { }
 }
 
 // Constants:
-const DEFAULT_CHECKPOINT_PATH: &str = "/var/lib/linux-hardener/checkpoints.db";
-const MAX_CHECKPOINT_AGE_DAYS: u64 = 90;
+const DEFAULT_DB_PATH: &str = "/var/lib/linux-hardener/checkpoints.db";  // hardener-state::db
 ```
 
 ### Audit Logging Domain
@@ -1149,7 +1278,7 @@ const MAX_CHECKPOINT_AGE_DAYS: u64 = 90;
 // Structs:
 pub struct AuditLogger { }
 pub struct AuditEntry {
-    pub entry_timestamp: u64,
+    pub entry_timestamp: DateTime<Utc>,
     pub entry_action_type: ActionType,
     pub entry_user: String,
     pub entry_target: String,
@@ -1179,16 +1308,18 @@ pub enum ActionResult {
 
 // Methods:
 impl AuditLogger {
-    pub async fn new(log_path: &Path) -> Result<AuditLogger> { }
+    pub async fn new(log_path: &str) -> Result<AuditLogger> { }
     pub async fn log_action(&self, action_type: ActionType, user: &str, target: &str) -> Result<()> { }
     pub async fn log_failure(&self, action_type: ActionType, user: &str, target: &str, error: &str) -> Result<()> { }
-    pub async fn verify_integrity(log_path: &Path) -> Result<bool> { }
-    pub async fn query(log_path: &Path, filter: &QueryFilter) -> Result<Vec<AuditEntry>> { }
+    pub async fn verify_integrity(log_path: &str) -> Result<bool> { }
+    pub async fn query(log_path: &str, filter: QueryFilter) -> Result<Vec<AuditEntry>> { }
 }
 
 impl HashChain {
     pub fn new() -> HashChain { }
-    pub fn next_hash(&mut self, data: &[u8]) -> Vec<u8> { }
+    pub fn next_hash(&self, data: &[u8]) -> Vec<u8> { }
+    pub fn update(&mut self, new_hash: Vec<u8>) { }
+    pub fn current_hash(&self) -> &[u8] { }
     pub fn verify_entry(previous_hash: &[u8], data: &[u8], claimed_hash: &[u8]) -> bool { }
 }
 ```
@@ -1215,17 +1346,18 @@ pub struct Package {
 // Methods:
 impl PackageManager for AptPackageManager {
     fn update(&self) -> Result<()> { }
-    fn install(&self, package_name: &str) -> Result<()> { }
-    fn remove(&self, package_name: &str) -> Result<()> { }
+    fn install(&self, packages: &[&str]) -> Result<()> { }
+    fn remove(&self, packages: &[&str]) -> Result<()> { }
     fn list_installed(&self) -> Result<Vec<Package>> { }
-    fn is_installed(&self, package_name: &str) -> Result<bool> { }
+    fn is_installed(&self, package: &str) -> Result<bool> { }
     fn security_updates(&self) -> Result<Vec<Package>> { }
 }
 
 // Helper functions:
-fn execute_apt_command(args: &[&str]) -> Result<String> { }
-fn parse_dpkg_output(output: &str) -> Vec<Package> { }
-fn validate_package_name(package_name: &str) -> Result<()> { }
+fn execute_apt(&self, args: &[&str]) -> Result<String> { }
+pub fn execute_command(command: &str, args: &[&str]) -> Result<String> { }
+pub fn validate_package_name(package_name: &str, rules: PackageNameRules) -> Result<()> { }
+pub fn validate_package_names(packages: &[&str], rules: PackageNameRules) -> Result<()> { }
 ```
 
 ### Firewall Management Domain
@@ -1251,18 +1383,21 @@ pub struct Rule {
 // Methods:
 impl FirewallBackend for FirewalldBackend {
     fn backend_name(&self) -> &str { }
-    fn detect(&self) -> Result<bool> { }
-    fn is_enabled(&self) -> Result<()> { }
-    fn enable(&self) -> Result<()> { }
-    fn apply_rules(&self, rules: &[Rule]) -> Result<Vec<Change>> { }
+    fn systemd_unit(&self) -> &'static str { }
+    async fn detect(&self, ctx: &Context) -> Result<bool> { }
+    async fn is_enabled(&self, ctx: &Context) -> Result<()> { }
+    async fn enable(&self, ctx: &Context) -> Result<()> { }
+    async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> { }
     fn get_default_rules(&self) -> Vec<Rule> { }
 }
 
 // Helper functions:
-fn execute_firewall_cmd(args: &[&str]) -> Result<String> { }
-fn get_default_zone() -> Result<String> { }
-fn build_nft_rule_args(rule: &Rule) -> Vec<String> { }
-fn get_baseline_rules() -> Vec<Rule> { }
+pub fn get_baseline_rules() -> Vec<Rule> { }               // Module level
+pub fn validate_zone_name(name: &str) -> Result<()> { }    // firewalld
+async fn execute_firewall_cmd(&self, ctx: &Context, args: &[&str]) -> Result<String> { }
+async fn get_default_zone(&self, ctx: &Context) -> Result<String> { }
+fn build_nft_rule_args(&self, rule: &Rule) -> Vec<String> { }   // nftables
+fn build_ufw_rule_args(&self, rule: &Rule) -> Vec<String> { }   // ufw
 ```
 
 ### SSH Hardening Domain
@@ -1271,24 +1406,30 @@ fn get_baseline_rules() -> Vec<Rule> { }
 // Struct:
 pub struct SshHardeningPlugin { }
 
-pub struct SshConfigDirective {
-    pub ssh_directive_name: &'static str,
-    pub ssh_secure_value: &'static str,
-    pub ssh_description: &'static str,
-    pub ssh_severity: Severity,
+struct SshConfigDirective {
+    ssh_description: &'static str,
+    ssh_directive_name: &'static str,
+    ssh_secure_value: &'static str,
+    ssh_severity: Severity,
+    ssh_compare: Strictness,
 }
 
 // Constants:
 const SSH_DIRECTIVES: &[SshConfigDirective] = &[...];
-const SSH_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
-const SSH_BACKUP_DIR: &str = "/var/backups/ssh";
+const SSH_CRYPTO_DIRECTIVES: &[SshCryptoDirective] = &[...];
+const SSHD_ADMIN_CONFIG_PATH: &str = "/etc/ssh/sshd_config";
+const SSHD_DROPIN_DIR: &str = "/etc/ssh/sshd_config.d";
+const SSH_DESIRED_KEX: &[&str] = &[...];
+const SSH_DESIRED_CIPHERS: &[&str] = &[...];
+const SSH_DESIRED_MACS: &[&str] = &[...];
 
 // Helper functions:
-fn read_ssh_config() -> Result<String> { }
-fn parse_ssh_directive(content: &str, directive_name: &str) -> Option<String> { }
-fn apply_ssh_directive(content: &mut String, directive_name: &str, value: &str) -> bool { }
-fn create_ssh_config_backup() -> Result<PathBuf> { }
-fn restart_ssh_service() -> Result<()> { }
+pub async fn supported_algorithms(executor: &dyn SystemExecutor, query_arg: &str) -> Vec<String> { }
+pub fn select_algorithms(desired: &[&str], supported: &[String]) -> Vec<String> { }
+pub async fn validate_sshd_config(executor: &dyn SystemExecutor, candidate: &str) -> Result<()> { }
+pub fn sshd_validate_scratch_path() -> PathBuf { }
+fn resolved_target(directive: &SshConfigDirective, config: &PluginConfig) -> String { }
+async fn restart_ssh_service(ctx: &Context) -> Result<()> { }
 ```
 
 ### Service Minimisation Domain
@@ -1297,29 +1438,34 @@ fn restart_ssh_service() -> Result<()> { }
 // Struct:
 pub struct ServicesHardeningPlugin { }
 
-pub struct ServiceDirective {
+struct ServiceDirective {
     service_description: &'static str,
-    service_name:        &'static str,
-    service_severity:    Severity,
+    service_name: &'static str,
+    service_severity: Severity,
 }
 
 // Constants:
 const UNNECESSARY_SERVICES: &[ServiceDirective] = &[
     ServiceDirective {
         service_description: "Bluetooth service - rarely needed on servers",
-        service_name:        "bluetooth",
-        service_severity:    Severity::High,
+        service_name: "bluetooth",
+        service_severity: Severity::High,
     },
     // ... more services
 ];
 
+const ADMIN_UNIT_DIR: &str = "/etc/systemd/system";
+const ENABLED_STATES: &[&str] = &[...];
+
 // Helper functions:
-fn is_service_exists(service_name: &str) -> Result<bool> { }
-fn is_service_enabled(service_name: &str) -> Result<bool> { }
-fn is_service_active(service_name: &str) -> Result<bool> { }
-fn stop_service(service_name: &str) -> Result<()> { }
-fn disable_service(service_name: &str) -> Result<()> { }
-fn mask_service(service_name: &str) -> Result<()> { }
+async fn is_service_exists(ctx: &Context, service_name: &str) -> Result<bool> { }
+async fn is_service_enabled(ctx: &Context, service_name: &str) -> Result<bool> { }
+async fn is_service_active(ctx: &Context, service_name: &str) -> Result<bool> { }
+async fn stop_service(ctx: &Context, service_name: &str) -> Result<()> { }
+async fn disable_service(ctx: &Context, service_name: &str) -> Result<()> { }
+async fn mask_service(ctx: &Context, service_name: &str) -> Result<()> { }
+fn unit_name(service_name: &str) -> String { }
+fn mask_link_paths(directives: &[&ServiceDirective]) -> Vec<PathBuf> { }
 ```
 
 ### Configuration Domain
@@ -1378,37 +1524,45 @@ impl PolicyException {
     pub fn is_valid(&self) -> bool { }
 }
 
-// Finding Policy Exception (attached to Finding):
+// Finding Policy Exception (attached to Finding, in hardener-types):
 pub struct FindingPolicyException {
-    pub allowed_value: String,
-    pub reason: String,
-    pub approved_by: Option<String>,
-    pub approved_date: Option<String>,
-    pub ticket: Option<String>,
-    pub expires: Option<String>,
-    pub is_expired: bool,
+    pub exception_allowed_value: String,
+    pub exception_reason: String,
+    pub exception_approved_by: Option<String>,
+    pub exception_approved_date: Option<String>,
+    pub exception_ticket: Option<String>,
+    pub exception_expires: Option<String>,
+    pub exception_is_expired: bool,
 }
 
 // Config Loader:
 pub struct ConfigLoader {
     cli_config_path: Option<PathBuf>,
+    skip_defaults: bool,
 }
 
-// Methods:
+// Methods and associated constants:
 impl ConfigLoader {
+    const SYSTEM_CONFIG_PATH: &'static str = "/etc/linux-hardener/config.toml";
+    const ENV_DISABLED_PLUGINS: &'static str = "HARDENER_DISABLED_PLUGINS";
+    const ENV_ENABLED_PLUGINS: &'static str = "HARDENER_ENABLED_PLUGINS";
+    const MAX_CONFIG_SIZE: u64 = 1_048_576;
+    const MAX_DIRECTIVES_PER_PLUGIN: usize = 500;
+    const MAX_EXCEPTIONS_PER_PLUGIN: usize = 200;
+
     pub fn new() -> ConfigLoader { }
-    pub fn with_cli_config(self, path: PathBuf) -> ConfigLoader { }
-    pub fn load(&self) -> Result<HardenerConfig, ConfigError> { }
+    pub fn with_cli_config(mut self, path: PathBuf) -> ConfigLoader { }
+    pub fn skip_defaults(mut self) -> ConfigLoader { }
+    pub fn load(&self) -> Result<HardenerConfig> { }
+    pub fn system_config_path() -> Option<PathBuf> { }
+    pub fn user_config_path() -> Option<PathBuf> { }
+    fn merge_configs(base: HardenerConfig, overlay: HardenerConfig) -> Result<HardenerConfig> { }
+    fn apply_env_overrides(config: HardenerConfig) -> Result<HardenerConfig> { }
 }
-
-// Helper functions:
-fn user_config_path() -> Option<PathBuf> { }
-
-// Constants:
-const SYSTEM_CONFIG_PATH: &str = "/etc/linux-hardener/config.toml";
-const USER_CONFIG_DIR: &str = "linux-hardener";
-const CONFIG_FILE_NAME: &str = "config.toml";
 ```
+
+The loader keeps its paths as associated constants on `ConfigLoader`, not as
+module-level ones, and the user path is built inline from `dirs::config_dir()`.
 
 ### Scheduler/Daemon Domain
 
@@ -1422,13 +1576,14 @@ pub struct Daemon {
     daemon_scan_in_progress: Arc<AtomicBool>,
 }
 
-// Scan Runner Struct:
+// Scan Runner Struct (private fields, no runner_ prefix in the code today):
 pub struct ScanRunner {
-    runner_db: Arc<ScanHistoryManager>,
-    runner_json_store: Arc<JsonStore>,
-    runner_min_severity: Severity,
-    runner_plugins: Vec<String>,
-    runner_host: String,
+    db: Arc<ScanHistoryManager>,
+    json_store: Arc<JsonStore>,
+    min_severity: Severity,
+    plugins: Vec<String>,
+    host: String,
+    dispatcher: Option<NotificationDispatcher>,
 }
 
 // Scan Summary (for notifications):
@@ -1445,6 +1600,7 @@ pub struct ScanSummary {
     pub json_path: Option<String>,
     pub json_hash: Option<String>,
     pub had_errors: bool,
+    pub regression: Option<RegressionInfo>,
 }
 
 // Trigger Type Enum:
@@ -1474,19 +1630,23 @@ pub struct StorageConfig {
 // Methods:
 impl Daemon {
     pub fn new(config: SchedulerConfig, db: Arc<ScanHistoryManager>, json_store: Arc<JsonStore>) -> Daemon { }
-    pub async fn start(&mut self, pm: Arc<PluginManager>, ctx: Arc<Context>) -> Result<()> { }
-    pub async fn run_once(&self, pm: &PluginManager, ctx: &Context, trigger: TriggerType) -> Result<ScanSummary> { }
+    pub async fn start(&mut self, plugin_manager: Arc<PluginManager>, ctx: Arc<Context>) -> Result<()> { }
+    pub async fn run_once(&self, plugin_manager: &PluginManager, ctx: &Context,
+                          trigger: TriggerType) -> Result<ScanSummary> { }
     pub async fn stop(&mut self) -> Result<()> { }
+
+    async fn signal_handler(shutdown_tx: broadcast::Sender<()>) { }
+    async fn execute_scan(runner: Arc<ScanRunner>, plugin_manager: Arc<PluginManager>,
+                          ctx: Arc<Context>, scan_in_progress: Arc<AtomicBool>) { }
+    async fn shutdown_scheduler(&mut self) -> Result<()> { }
 }
 
 impl ScanRunner {
-    pub fn new(db: Arc<ScanHistoryManager>, json_store: Arc<JsonStore>, config: &SchedulerConfig, host: String) -> ScanRunner { }
-    pub async fn run(&self, pm: &PluginManager, ctx: &Context, trigger: TriggerType) -> Result<ScanSummary> { }
+    pub fn new(config: &SchedulerConfig, db: Arc<ScanHistoryManager>,
+               json_store: Arc<JsonStore>) -> ScanRunner { }
+    pub async fn run(&self, plugin_manager: &PluginManager, ctx: &Context,
+                     trigger: TriggerType) -> Result<ScanSummary> { }
 }
-
-// Helper functions:
-fn spawn_signal_handler(shutdown_tx: broadcast::Sender<()>) { }
-async fn execute_scan(runner: Arc<ScanRunner>, pm: Arc<PluginManager>, ctx: Arc<Context>, scan_in_progress: Arc<AtomicBool>) { }
 
 // Notification System:
 #[async_trait]
@@ -1515,6 +1675,7 @@ pub struct NotificationDispatcher {
     notifiers: Vec<Box<dyn Notifier>>,
     min_severity: Severity,
     db: Arc<ScanHistoryManager>,
+    mode: NotifyMode,
 }
 
 impl NotificationDispatcher {
@@ -1531,46 +1692,54 @@ pub fn meets_severity_threshold(summary: &ScanSummary, min_severity: Severity) -
 
 ```rust
 // Page Components (Route handlers):
-// Pattern: <Name>Page
+// Pattern: <Name>Page, one per file in src/pages/, all of them functions
+// carrying #[component], never structs.
 
-// ✅ GOOD:
-pub struct DashboardPage;
-pub struct ScannerPage;
-pub struct ConfigurationPage;
+// ✅ GOOD (the seven routed pages):
+#[component] pub fn DashboardPage() -> impl IntoView { }
+#[component] pub fn AnalysisPage() -> impl IntoView { }
+#[component] pub fn HardeningPage() -> impl IntoView { }
+#[component] pub fn HostsPage() -> impl IntoView { }
+#[component] pub fn FleetApplyPage() -> impl IntoView { }
+#[component] pub fn SchedulerPage() -> impl IntoView { }
+#[component] pub fn SettingsPage() -> impl IntoView { }
 
 // ❌ BAD:
-pub struct Dashboard;        // Missing Page suffix (ambiguous - is it a page or a component?)
-pub struct ScanPage;          // Inconsistent (use ScannerPage)
-pub struct ConfigPage;        // Abbreviation (use ConfigurationPage)
+#[component] pub fn Dashboard() { }      // Missing Page suffix (page or component?)
+#[component] pub fn ConfigPage() { }     // Abbreviation (spell Configuration out)
 
 // Reusable Components:
-// Pattern: <Name> without suffix
+// Pattern: <Name> without suffix, in src/components/
 
 // ✅ GOOD:
-pub struct FindingsGrid;
-pub struct SeverityBadge;
-pub struct SecurityScore;
-pub struct QuickActions;
-pub struct FindingDetail;
+#[component] pub fn SecurityScore() -> impl IntoView { }
+#[component] pub fn FindingsTab(...) -> impl IntoView { }
+#[component] pub fn ComplianceTab(...) -> impl IntoView { }
+#[component] pub fn Card(...) -> impl IntoView { }
+#[component] pub fn Modal(...) -> impl IntoView { }
+#[component] pub fn Sidebar(...) -> impl IntoView { }
+#[component] pub fn ThemePicker(...) -> impl IntoView { }
+#[component] pub fn SegmentedControl(...) -> impl IntoView { }
 
 // ❌ BAD:
-pub struct FindingsGridComponent;  // Redundant suffix
-pub struct SevBadge;                // Abbreviation
-pub struct Score;                   // Too generic
+#[component] pub fn SecurityScoreComponent() { }  // Redundant suffix
+#[component] pub fn ComplTab() { }                // Abbreviation
+#[component] pub fn Score() { }                   // Too generic
 
 // Component Props (function parameters):
 // Pattern: Descriptive names, no special prefix needed
 
 // ✅ GOOD:
 #[component]
-pub fn SeverityBadge(severity: Severity) -> impl IntoView { }
-
-#[component]
-pub fn FindingsGrid(findings: Vec<Finding>) -> impl IntoView { }
+pub fn Card(
+    #[prop(into, optional)] title: Option<String>,
+    #[prop(into, optional)] class: Option<String>,
+    #[prop(optional)] variant: Option<CardVariant>,
+) -> impl IntoView { }
 
 // ❌ BAD:
 #[component]
-pub fn SeverityBadge(sev: Severity) -> impl IntoView { }  // Abbreviation
+pub fn Card(#[prop(optional)] cfg: Option<CardVariant>) -> impl IntoView { }  // Abbreviation
 
 // UI State Signals:
 // Pattern: Descriptive names describing what they hold
@@ -1595,9 +1764,10 @@ pub struct AppState {
 
 // ✅ GOOD:
 <div class="dashboard-page">
-<div class="findings-grid">
-<span class="severity-badge severity-critical">
-<div class="security-score score-high">
+<div class="analysis-page">
+<div class="security-score score-good">
+<div class="activity-item">
+<button class="btn btn-primary">
 
 // ❌ BAD:
 <div class="DashboardPage">     // Wrong case
@@ -1622,7 +1792,7 @@ When naming any identifier in this project, verify:
 
 ---
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01
 
 ### 2025-12-05 (GUI Styling)
 

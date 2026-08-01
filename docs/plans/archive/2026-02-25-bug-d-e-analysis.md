@@ -1,5 +1,7 @@
 # BUG D & BUG E Analysis: Permission-Denied False Negatives
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Date**: 2026-02-25
 **Status**: Both bugs ALREADY FIXED in production code. This document analyses the fix patterns and cross-plugin audit results.
 

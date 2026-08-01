@@ -1,7 +1,49 @@
 # Documentation and Repository Reorganisation Plan
 
-**Last Updated**: 2026-07-18
-**Status**: Phases 1 to 4 executed 2026-07-18 (branches `chore/docs-reorg-phase1`, `chore/scripts-consolidate`, `chore/scripts-regroup`, `chore/docs-phase2-content`, `chore/packaging-layout`), with one maintainer override: `ROADMAP.md` and `NEXT.md` moved to `docs/` rather than staying at root. Still open: the `linux-hardener` vs `linux-system-hardener` naming decision (breaking for installed unit and action ids; needs its own scoped change), the fonts-in-src relocation, and runtime verification of the consolidated container and polkit scripts (needs sudo and live sessions).
+**Last Updated**: 2026-08-01
+**Status**: **Complete.** All four phases were executed on 2026-07-18 (branches
+`chore/docs-reorg-phase1`, `chore/scripts-consolidate`, `chore/scripts-regroup`,
+`chore/docs-phase2-content`, `chore/packaging-layout`), with one maintainer
+override: `ROADMAP.md` and `NEXT.md` moved to `docs/` rather than staying at
+root. The plan text below is kept verbatim as the record of what was proposed
+and why; read the outcome first, because a few proposals were deliberately not
+taken.
+
+## Outcome, verified against the tree 2026-08-01
+
+**Carried out.** Every Phase 1 destination exists, and `docs/README.md` indexes
+them. Phase 2 delivered all five new documents (`docs/README.md`,
+`guide/getting-started.md`, `guide/troubleshooting.md`,
+`reference/configuration.md`, `contributing/plugin-authoring.md`), and the root
+README now links to the install guide, `reference/cli.md`, `ROADMAP.md` and the
+docs index instead of restating them; `packaging/docker/README.md` is down to a
+15-line build-context stub. Phase 3 moved `data/` to `packaging/assets/` and
+`systemd/` to `packaging/systemd/` (neither exists at root any more), regrouped
+`scripts/` into `containers/`, `test/`, `test/gui/`, `test/polkit/`,
+`validate/`, `release/` and `dev/`, collapsed the five per-distribution
+container scripts into one `create-container.sh <distro>` and the six per-desktop
+polkit scripts into one `test-polkit.sh <desktop>`, replaced the serial/parallel
+script pairs with `--parallel` flags, moved the two `gui-tests/tauri-*.sh`
+runners under `scripts/test/gui/`, deleted `crates/hardener-core/.gitignore`, and
+added the `linguist-generated` entries to `.gitattributes`. Phase 4's validator
+relocation landed with them: the validators live in `scripts/validate/`.
+
+**Deliberately not taken, and still open.**
+
+| Proposal | State |
+|---|---|
+| `linux-hardener` vs `linux-system-hardener` naming (open question 2) | Open, **issue #51**. Still breaking for installed unit and action ids, so still needs its own scoped change. |
+| Move `crates/hardener-compliance/src/fonts/NotoSans-*.ttf` out of `src/` | Not done; the two font files are still under `src/fonts/`, and the OFL notice this plan asked for is still absent: a search of the tree finds no licence text for them anywhere. No issue filed. |
+| Factor the shared body out of `gui-test-inner.sh` and `tauri-gui-test-inner.sh` | Not done; both scripts still exist separately under `scripts/test/gui/`. |
+| Retire the web-UI (non-Tauri) GUI test path (open question 4) | Undecided. The Playwright suite under `gui-tests/` is stale against the redesigned GUI and its rewrite is **issue #48**, which is where the question gets settled. |
+| Runtime verification of the consolidated container script | `create-container.sh <distro>` is the documented and only path to the five containers the cross-distro suite runs against, so every suite run exercises it, but no verification run is recorded in this file. Needs sudo. |
+| Runtime verification of the consolidated polkit script | Still needs live GNOME/KDE/XFCE sessions, **issue #18**. |
+
+Open questions 1 and 3 are answered by what shipped: `ROADMAP.md` and `NEXT.md`
+live under `docs/`, and the container and polkit script families were
+consolidated rather than merely regrouped.
+
+---
 
 This plan is the deliverable of a full audit of every markdown doc and of the
 non-code file structure. It proposes a staged reorganisation of `docs/` and the

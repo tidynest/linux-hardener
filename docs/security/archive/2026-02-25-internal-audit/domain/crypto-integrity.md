@@ -1,5 +1,7 @@
 # Security Audit: Cryptography & Integrity
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Agent:** 4 -- Crypto & Integrity
 **Date:** 2026-02-25
 **Scope:** Ed25519 signing, SHA-256 hash chain, key management, randomness, checkpoint integrity, audit log integrity, JSON store integrity

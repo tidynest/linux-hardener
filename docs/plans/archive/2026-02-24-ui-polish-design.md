@@ -1,5 +1,7 @@
 # UI Polish Pass: Design
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 ## Goal
 
 Eliminate wasted space across all four pages (Dashboard, Remote, Hardening, Scheduler) in a single pass. Fix empty-state sizing, introduce side-by-side layouts where content is compact, and add directional guidance in empty states.

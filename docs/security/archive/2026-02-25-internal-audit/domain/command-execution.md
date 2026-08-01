@@ -1,5 +1,7 @@
 # Security Audit: Command Execution & Privilege
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Domain:** Command Injection, Argument Injection, Privilege Escalation, TOCTOU
 **Auditor:** Agent 2 -- Command Execution & Privilege
 **Date:** 2026-02-25

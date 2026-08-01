@@ -38,6 +38,33 @@ BLUE = "\033[0;34m"
 BOLD = "\033[1m"
 NC = "\033[0m"
 
+# Doc-sync targets, declared here rather than inside the methods that consume
+# them so that scripts/validate/validate_doc_targets.py can hold every one to
+# actually resolving. Both loops below skip a target silently: a named file that
+# no longer exists, or a pattern that matches nothing, produces no update and no
+# complaint, so the updater reports success for work it never attempted. Five of
+# the framework files named here were deleted in 4039ed1 and nothing noticed for
+# six weeks.
+# Only CIS. The other five named here until 2026-08-01 (stig, nist, pci, hipaa,
+# gdpr) were deleted in 4039ed1 when catalogues became coverage-derived, so their
+# control counts are computed at report time and cannot be read off a file at
+# all. iso27001.rs survives but is deliberately absent: it builds its 93 Annex A
+# controls without writing 93 `ComplianceMapping {` literals, so counting them
+# yields 2 and adding it here would rewrite a correct 93 to a wrong 2.
+COMPLIANCE_SOURCE_FILES = {
+    "cis.rs": "CIS",
+}
+
+# The pattern differs per file because the emphasis does: architecture.md and
+# data-flow.md write `**Version:**` and README.md writes `**Version**:`. The
+# mismatch is why architecture.md sat in this list for months while being
+# unreachable by it.
+VERSION_REFERENCE_TARGETS = [
+    ("docs/architecture/architecture.md", r'(\*\*Version:\*\*\s*)\d+\.\d+\.\d+'),
+    ("docs/reference/data-flow.md", r'(\*\*Version:\*\*\s*)\d+\.\d+\.\d+'),
+    ("README.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
+]
+
 
 def find_project_root() -> Path:
     """Find the project root by looking for Cargo.toml."""
@@ -221,14 +248,8 @@ class DocumentationUpdater:
         if not frameworks_dir.exists():
             return
 
-        # Count controls in source
-        file_to_name = {
-            "cis.rs": "CIS", "stig.rs": "STIG", "nist.rs": "NIST 800-53",
-            "pci.rs": "PCI-DSS", "hipaa.rs": "HIPAA", "gdpr.rs": "GDPR",
-        }
-
         counts = {}
-        for filename, name in file_to_name.items():
+        for filename, name in COMPLIANCE_SOURCE_FILES.items():
             filepath = frameworks_dir / filename
             if filepath.exists():
                 content = filepath.read_text()
@@ -318,13 +339,7 @@ class DocumentationUpdater:
 
         version = match.group(1)
 
-        # Files and patterns to update
-        updates = [
-            ("docs/architecture/architecture.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
-            ("README.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
-        ]
-
-        for rel_path, pattern in updates:
+        for rel_path, pattern in VERSION_REFERENCE_TARGETS:
             filepath = self.root / rel_path
             if not filepath.exists():
                 continue

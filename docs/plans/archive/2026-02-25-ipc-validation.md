@@ -1,6 +1,6 @@
 # IPC Input Validation Layer Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
 
 **Goal:** Add centralised IPC input validation to all Tauri commands, closing 8 security findings (SAM-015/016/040/043/071/072/077/078).
 

@@ -19,12 +19,30 @@ These flags can be placed before or after any subcommand.
 | `-q`, `--quiet` | Suppress non-essential output | off |
 | `-C`, `--config <FILE>` | Path to TOML configuration file | auto-detected |
 | `--ssh <HOST>` | Remote host to scan via SSH (`user@host` or `host`) | local |
-| `--port <PORT>` | SSH port (only with `--ssh`) | `22` |
-| `--ssh-key <FILE>` | SSH private key file (only with `--ssh`) | SSH agent |
-| `--ssh-timeout <SECONDS>` | SSH connection timeout (only with `--ssh`) | `30` |
-| `--ssh-no-verify` | Skip SSH host key verification (insecure, only with `--ssh`) | off |
+| `--port <PORT>` | SSH port (only with `--ssh`; a `batch` target carries its own port) | `22` |
+| `--ssh-key <FILE>` | SSH private key file. Also the fallback for any `batch` host that names no key of its own | SSH agent |
+| `--ssh-timeout <SECONDS>` | SSH connection timeout. Also applies to every `batch` connection | `30` |
+| `--ssh-no-verify` | Skip SSH host key verification (insecure). With `batch` it reaches ad-hoc `--ssh` targets only; inventory hosts keep their own `host_key_checking` | off |
 | `-h`, `--help` | Print help | |
 | `-V`, `--version` | Print version | |
+
+**Where `-C`, `--config` takes effect.** clap accepts it anywhere, but only the
+commands that read a `config.toml` act on it: `scan`, `report`, `batch scan`,
+`batch report`, `batch apply`, and `systemd generate`/`install`, which embed the
+path in the unit they write. Three surfaces accept the flag and do not act on
+it, and each still evaluates the host against the system and user configuration:
+
+- `apply` (`commands::apply::run` builds its loader with `ConfigLoader::new()`
+  and never calls `with_cli_config`), so to preview or apply against a specific
+  file, install it at one of the default locations first.
+- `report --interactive`, which the wizard documents as deliberate: it loads the
+  default sources so that it cannot score a host differently from
+  `hardener report`.
+- `batch rollback`, which reads no `config.toml` at all.
+
+`daemon` is separate again: it resolves the `[scheduler]` section through its own
+path search rather than the loader (see
+[configuration.md](configuration.md#scheduler)).
 
 ---
 
@@ -145,7 +163,11 @@ sudo hardener apply [FLAGS]
 | `-p`, `--plugin <NAME>` | Apply only this plugin (repeatable for multiple) | |
 | `--dry-run` | Show what would change without writing anything (no root needed) | off |
 
-Either `--all` or at least one `--plugin` is required. `--all` and `--plugin` are mutually exclusive.
+Either `--all` or at least one `--plugin` is required. `--all` and `--plugin` are
+mutually exclusive. As with `scan`, a plugin the config disables is named in a
+`Skipping (disabled):` line rather than dropped silently, and if the config
+disables **every** selected plugin the command exits with an error instead of
+reporting a clean run that hardened nothing.
 
 **Examples:**
 
@@ -202,6 +224,12 @@ List stored checkpoints newest first, with their IDs, names, host, and
 timestamps. Capped at `--limit` rows by default; a dimmed footer discloses the
 total when the list is capped.
 
+**Only the current target's checkpoints are listed.** The rows are filtered to
+the host key of the executor this invocation is using, so a plain run lists the
+local host and `hardener --ssh user@server checkpoint list` lists that server's.
+Checkpoints belonging to other hosts are never shown, which matches the rollback
+rule that refuses to restore one host's state onto another.
+
 ```
 hardener checkpoint list [FLAGS]
 ```
@@ -213,15 +241,24 @@ hardener checkpoint list [FLAGS]
 
 ### checkpoint create
 
-Create a named checkpoint of the current system state.
+Create a named checkpoint. Requires root or passwordless sudo on the target
+session.
 
 ```
-hardener checkpoint create <NAME>
+sudo hardener checkpoint create <NAME>
 ```
 
 | Argument | Description |
 |----------|-------------|
 | `NAME` | Human-readable name for the checkpoint |
+
+This captures a **fixed list of configuration paths**, not the whole system:
+`/etc/ssh/sshd_config`, `/etc/sysctl.conf`, `/etc/sysctl.d`, `/etc/pam.d`,
+`/etc/security`, `/etc/audit/auditd.conf` and `/etc/audit/rules.d`
+(`collect_config_paths` in `commands/checkpoint.rs`). A plugin's own pre-apply
+checkpoint captures what that plugin is about to touch, which is not the same
+set, so a manual checkpoint is a companion to an apply rather than a substitute
+for the one `apply` takes.
 
 ### checkpoint delete
 
@@ -263,14 +300,23 @@ hardener report [FLAGS]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-s`, `--scenario <SCENARIO>` | Use case preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | |
+| `-s`, `--scenario <SCENARIO>` | Use case preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | `server` |
 | `--framework <FRAMEWORK>` | Specific framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001`, `soc2`, `800-171`, `fedramp` | |
 | `--profile <PROFILE>` | Compliance ID profile: `generic`, `rhel10` | auto-detect |
-| `--report-format <FORMAT>` | Report format: `text`, `json` | `text` |
+| `--report-format <FORMAT>` | Report format: `text` (or `txt`), `json`, `csv`, `html`, `pdf` | `text` |
 | `-o`, `--output <FILE>` | Write to file instead of stdout | stdout |
 | `-i`, `--interactive` | Launch interactive wizard to pick scenario/framework | off |
 
-`--scenario` and `--framework` are mutually exclusive. Use `--scenario` for a preset that selects relevant frameworks for your environment, or `--framework` to target a single standard.
+`--scenario` and `--framework` are mutually exclusive. Use `--scenario` for a preset that selects relevant frameworks for your environment, or `--framework` to target a single standard. With neither flag the report falls back to the `server` scenario (CIS plus STIG) and says so on stderr.
+
+`--report-format` selects how the report is rendered and is separate from the
+global `-f`, `--format`, which governs a command's own output. A value the
+formatter does not know is refused rather than silently rendered as text. Two
+notes on file handling: `--output` gains the format's extension when the path
+you give has none (`report.json` from `--output report --report-format json`),
+and `pdf` always writes a file, so without `--output` it saves
+`compliance-report-<timestamp>.pdf` in the working directory instead of printing
+to stdout.
 
 `--profile` selects which benchmark's control identifiers the report renders.
 It auto-detects from the scanned system's `/etc/os-release` (read through the
@@ -300,9 +346,14 @@ All four subcommands share the same host-selection flags and accept the global
 `--format text|json` flag. `apply` and `rollback` are **dry-run by default**;
 pass `--execute` to mutate the remote hosts.
 
-All four subcommands honour the global `-C`, `--config` flag, and without it
-they load the controller's own system and user configuration, exactly as a
-local `hardener scan` does.
+`batch scan`, `batch report` and `batch apply` honour the global `-C`,
+`--config` flag, and without it they load the controller's own system and user
+configuration, as a local `hardener scan` does. They differ from `scan` on the
+failure path only: a config that will not load leaves a batch run on the
+compiled-in defaults with a warning on stderr, where `scan` treats it as a hard
+error. `batch rollback` reads no `config.toml` at all: it restores checkpoints
+and has no directive, exception or plugin list to consult, so `--config` has no
+effect on it.
 
 > **Remote hosts are evaluated against the controller's configuration, not
 > their own.** Directive overrides, policy exceptions and the plugin lists all
@@ -448,6 +499,19 @@ hardener batch rollback (--all | --host a,b | --ssh user@host) [FLAGS]
 | `--execute` | Actually restore (without this, dry-run preview only) | dry-run |
 | `--concurrency <N>` | Maximum hosts rolled back in parallel | `8` |
 | `--output <FILE>` | Write report to a file instead of stdout | stdout |
+
+Selection is by checkpoint **name**: for each selected plugin it takes the
+newest checkpoint on that host called `<plugin-id>-pre-apply`, which is the name
+`apply` captures under. A host with no such checkpoint is reported as having
+nothing to do rather than as a failure. Name and recency are not the same thing
+as the checkpoint a particular apply took, so this restores the last apply of
+each plugin on each host, not a nominated run.
+
+Tiered exit codes: `0` = every host restored or previewed cleanly, including
+hosts with nothing to roll back; `1` = at least one checkpoint failed to
+restore; `2` = at least one host-level error, which covers a failed connection,
+a host without root or passwordless sudo, a checkpoint store that could not be
+read, and a rollback task that did not finish.
 
 **Examples:**
 
@@ -636,6 +700,6 @@ hardener history export <SESSION_ID> [FLAGS]
 | Argument / Flag | Description | Default |
 |-----------------|-------------|---------|
 | `SESSION_ID` | UUID of the session to export | |
-| `-o`, `--output <FILE>` | Output file path | `session-<id>.json` |
+| `-o`, `--output <FILE>` | Output file path | `session-<first 8 chars of id>.json` |
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01

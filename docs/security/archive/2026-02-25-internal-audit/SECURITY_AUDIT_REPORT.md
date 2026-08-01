@@ -1,5 +1,7 @@
 # Security Audit Report -- Linux System Hardener
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Version:** 1.0
 **Date:** 2026-02-25
 **Scope:** Full workspace (11 crates + Tauri v2 desktop application)

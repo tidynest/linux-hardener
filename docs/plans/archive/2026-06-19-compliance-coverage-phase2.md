@@ -1,5 +1,7 @@
 # Compliance Coverage: Phase 2 Design Proposal
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 > **Status:** IMPLEMENTED (2026-06-20). Option B adopted as recommended; coverage
 > is plugin-declared via `coverage()` per plugin, aggregated by
 > `hardener_plugins::compliance_coverage()` and injected into `ReportGenerator`.

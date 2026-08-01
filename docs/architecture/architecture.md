@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated:** 2026-07-30
+**Last Updated:** 2026-08-01
 **Version:** 1.5.1
 
 ---
@@ -349,9 +349,20 @@ pub trait SystemExecutor: Send + Sync {
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata>;
     async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>>;
     async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput>;
-    async fn command_exists(&self, program: &str) -> Result<bool>;
+
+    // Provided methods, implemented once on the trait so local and remote
+    // answer them identically. Both run a POSIX command through
+    // `execute_command`, so an implementor never needs to override them.
+    async fn read_link(&self, path: &Path) -> Result<Option<String>> { /* readlink */ }
+    async fn command_exists(&self, program: &str) -> Result<bool> { /* command -v */ }
 }
 ```
+
+`read_link` has three outcomes, the same shape as `file_metadata`: a target,
+a positive "not a symlink" (`Ok(None)`), or `Err` meaning the question could
+not be answered. `Err` is never read as "not a symlink", because a checkpoint
+that stored a symlink's followed content instead of its target could not
+restore it: the write would travel through the link into whatever it points at.
 
 Implementations:
 - `LocalExecutor` - Wraps `std::fs` and `std::process::Command`
@@ -450,13 +461,32 @@ absence.
 
 ### Storage Locations
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| Checkpoints | `~/.local/share/linux-hardener/checkpoints.db` | System state snapshots |
-| Audit Log | `~/.local/share/linux-hardener/audit.log` (JSONL file) | Tamper-proof action history |
-| Signing Keys | `~/.local/share/linux-hardener/signing.key` | Ed25519 keys |
+Every location below is chosen by effective UID, not by configuration. Root
+splits the three across `/etc`, `/var/lib` and `/var/log` so the signing key
+sits behind its own 0700 directory rather than beside the state it signs;
+unprivileged runs keep everything in the user data directory, where there is no
+privilege boundary to enforce that separation. `resolve_paths` and
+`audit_logger` in `hardener-cli/src/commands/state.rs` are the single place
+that decides.
+
+| Component | Root location | Unprivileged location | Purpose |
+|-----------|---------------|-----------------------|---------|
+| Checkpoints | `/var/lib/linux-hardener/checkpoints.db` (0755 dir) | `~/.local/share/linux-hardener/checkpoints.db` | System state snapshots |
+| Audit Log | `/var/log/linux-hardener/audit.log` (0700 dir) | `~/.local/share/linux-hardener/audit.log` | Tamper-proof action history (JSONL) |
+| Signing Keys | `/etc/linux-hardener/signing.key` (0700 dir, 0400 key) | `~/.local/share/linux-hardener/signing.key` | Ed25519 keys |
+
+`hardener-state` carries its own defaults for the root paths:
+`DEFAULT_DB_PATH` in `db.rs` and `CheckpointSigner::DEFAULT_KEY_PATH` /
+`DEFAULT_PUBKEY_PATH` in `signing.rs`. A signing key found at the pre-separation
+path `/var/lib/linux-hardener/signing.key` is migrated to `/etc` on the next
+privileged run (`migrate_legacy_key`).
 
 ### Database Schema
+
+This is the **checkpoint database** (`checkpoints.db`), written by
+`hardener-state`. It is not the scheduler's `scheduler.db`, which is a separate
+host-aware scan-history database written by `batch` and by scheduled scans and
+documented in `docs/reference/data-flow.md` section 8. The two are never mixed.
 
 ```sql
 -- Checkpoint metadata
@@ -466,7 +496,10 @@ CREATE TABLE checkpoints (
     timestamp INTEGER NOT NULL,
     username TEXT NOT NULL,
     signature BLOB NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    -- Which host the snapshot was taken on. Rollback refuses to restore one
+    -- host's checkpoint onto another.
+    host_key TEXT NOT NULL DEFAULT 'local'
 );
 
 -- Captured file states
@@ -478,6 +511,9 @@ CREATE TABLE file_states (
     permissions INTEGER,
     owner_uid INTEGER,
     owner_gid INTEGER,
+    -- Set when the entry is a symlink, in which case content is NULL: storing
+    -- a link's followed bytes would restore another file through the link.
+    link_target TEXT,
     FOREIGN KEY(checkpoint_id) REFERENCES checkpoints(id)
 );
 
@@ -503,10 +539,12 @@ CREATE TABLE scan_results (
     unchecked_json TEXT,   -- privilege-blocked/not-applicable checks (additive)
     FOREIGN KEY(session_id) REFERENCES scan_sessions(id) ON DELETE CASCADE
 );
--- scan_findings holds one row per finding, FK to scan_results.
+-- scan_findings holds one row per finding, FK to scan_results(id) ON DELETE
+-- CASCADE (keyed on result_id, not session_id).
 
 -- Audit logging uses file-based JSONL format (not SQLite).
--- Each entry is a JSON line in the audit log file (~/.local/share/linux-hardener/audit.log).
+-- Each entry is a JSON line in the audit log file: /var/log/linux-hardener/audit.log
+-- as root, ~/.local/share/linux-hardener/audit.log otherwise.
 -- Fields per entry: entry_timestamp, entry_action_type, entry_user,
 -- entry_target, entry_result, entry_details, entry_hash (SHA-256 hash chain).
 -- See hardener-state/src/audit.rs for the AuditEntry struct.
@@ -518,16 +556,27 @@ CREATE TABLE scan_results (
 
 | Framework | Controls | Description |
 |-----------|----------|-------------|
-| CIS | 41 | Center for Internet Security Benchmarks |
-| STIG | 20 | DISA Security Technical Implementation Guides |
-| NIST 800-53 | 20 | US Federal security controls |
-| PCI-DSS | 22 | Payment Card Industry standards |
-| HIPAA | 14 | Healthcare security requirements |
-| GDPR | 12 | EU data protection (Article 32) |
-| ISO 27001:2022 | 93 | ISO/IEC 27001:2022 Annex A controls (4 themes) |
+| CIS | 41 | Center for Internet Security Benchmarks (curated catalogue, `frameworks/cis.rs`) |
+| STIG | 22 | DISA Security Technical Implementation Guides (coverage-derived) |
+| NIST 800-53 | 19 | US Federal security controls (coverage-derived) |
+| PCI-DSS | 8 | Payment Card Industry standards (coverage-derived) |
+| HIPAA | 8 | Healthcare security requirements (coverage-derived) |
+| GDPR | 6 | EU data protection, Article 32 (coverage-derived) |
+| ISO 27001:2022 | 93 | ISO/IEC 27001:2022 Annex A controls, 4 themes (curated catalogue, `frameworks/iso27001.rs`) |
 | SOC 2 | 5 | AICPA Trust Services Criteria (2017, CC-series; coverage-derived) |
 | NIST SP 800-171 | 14 | Revision 3 CUI requirements, crosswalked from the plugins' 800-53 controls (coverage-derived) |
 | FedRAMP | 19 | Moderate (Rev 5) baseline members among the plugins' 800-53 controls (coverage-derived) |
+
+**What the Controls column counts.** Only CIS and ISO 27001 still have a
+curated catalogue file, and their counts are that file's size: the full
+standard, whether or not this tool assesses a given control. Every other row
+is **coverage-derived**, so its count is the number of distinct control ids in
+`hardener_plugins::compliance_coverage()` for that framework, which is exactly
+the set of controls the engine can assess. Those counts move whenever a plugin
+gains or loses a mapping, and they are not the size of any file. The
+per-framework catalogue files for STIG, NIST, PCI-DSS, HIPAA and GDPR were
+deleted when coverage-derived catalogues landed, so a number matching one of
+those files no longer describes anything that exists.
 
 ### Compliance profiles (report-time ID translation)
 

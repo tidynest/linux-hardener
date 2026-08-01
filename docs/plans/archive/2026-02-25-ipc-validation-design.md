@@ -1,5 +1,7 @@
 # IPC Input Validation Layer Design
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Date:** 2026-02-25
 **Resolves:** SAM-015, SAM-016, SAM-040, SAM-043, SAM-071, SAM-072, SAM-077, SAM-078
 

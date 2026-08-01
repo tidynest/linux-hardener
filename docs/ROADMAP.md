@@ -6,6 +6,14 @@ This document tracks the development progress and planned features for Linux Sys
 
 **Legend**: ⬜ Pending | 🔄 In Progress | ✅ Complete
 
+> **Where open work actually lives.** Since 2026-08-01 every known open item has
+> a GitHub issue, and the
+> [issue tracker](https://github.com/tidynest/linux-system-hardener/issues) is
+> the authoritative list. This roadmap records the milestone shape and names the
+> issue for anything still open, rather than restating the plan beside it. For
+> what each release changed, and for merged work that is not yet released, read
+> [CHANGELOG.md](../CHANGELOG.md).
+
 ---
 
 ## Completed Features
@@ -57,7 +65,10 @@ This document tracks the development progress and planned features for Linux Sys
 
 ---
 
-## In Progress
+## Milestone history
+
+Every milestone in this section is delivered. The one row still marked partial,
+DE testing under v0.4.0 §D, names its issue.
 
 ### v0.3.0: Remote & Automation ✅
 
@@ -448,10 +459,10 @@ User clicks "Apply"
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
-| Multi-host management | Manage multiple systems from one UI | Medium | ✅ Complete (Fleet scan + compliance scores + apply/rollback GUI + ad-hoc SSH targets + live per-host progress + per-host history all shipped) |
-| Historical trends | Track security posture over time | Low | ⬜ Pending (CLI `history trends` done; desktop visualisation deferred) |
+| Multi-host management | Manage multiple systems from one UI | Medium | ✅ Complete (Fleet scan + compliance scores + apply/rollback GUI + ad-hoc SSH targets + live per-host progress + per-host history all shipped). One follow-up open: drilling into a host's compliance count needs an IPC command that does not exist yet, issue #50 |
+| Historical trends | Track security posture over time | Low | ✅ Complete (CLI `history trends`; desktop renders a per-host scan-history timeline with a better/worse/same direction label, `commands::get_host_history` into `components::host_panel`) |
 | Alert notifications | Email/webhook on security regressions | Low | ✅ Complete (scheduler `notify_mode` regression alerts) |
-| DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low | 🔄 Tooling shipped (`detect-polkit-agent.sh`, `test-polkit-matrix.sh`, DE wrappers, `docs/guide/desktop-environment-compatibility.md`); real GNOME/KDE/XFCE runs pending (require DE sessions) |
+| DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low | 🔄 Tooling shipped (`scripts/test/polkit/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, the parametrised `test-polkit.sh <desktop>`, `docs/guide/desktop-environment-compatibility.md`); real GNOME/KDE/XFCE runs need live DE sessions, issue #18 |
 
 ---
 
@@ -500,7 +511,24 @@ User clicks "Apply"
 
 ---
 
-### GUI/UX Redesign (Desktop) ✅
+### v1.3.0 to v1.5.1: released, recorded in the changelog ✅
+
+Five releases landed between v1.2.0 and today and are deliberately not restated
+here, because [CHANGELOG.md](../CHANGELOG.md) is their single source:
+**v1.3.0** (RHEL 10 profiles, the SOC 2 / 800-171 / FedRAMP frameworks,
+per-command Tauri ACLs, build identity in `--version`, and the
+docs/scripts/packaging restructure), **v1.3.1** (build-identity and PKGBUILD
+target-dir packaging fixes), **v1.3.2** (the first defects surfaced by real
+local apply runs), **v1.4.0** (honest apply counts, idempotent state-aware apply
+across all eight plugins, honest unchecked reporting, remote privilege probing),
+**v1.5.0** (the GUI/UX redesign below, reversible rollback, and three security
+fixes), and **v1.5.1** (`scan --exit-code` fails on an incomplete scan,
+`scan --compliance` removed, and the openSUSE vendor-configuration fix).
+
+**v1.5.1 is the current release and `main` is 150 commits past it, unreleased.**
+Tagging that work is issue #53. `CHANGELOG.md` `[Unreleased]` describes it.
+
+### GUI/UX Redesign (Desktop) ✅ (shipped in v1.5.0)
 
 > Frontend-only: markup, CSS and presentational Leptos components only; no backend, IPC or type changes.
 
@@ -541,7 +569,7 @@ report zero `ManualReview` for covered controls.
 |------|-------------|----------|--------|
 | Honest manual-review status | Stop reporting unassessed controls as `Pass` | High | ✅ Complete |
 | Per-control multi-framework mappings | Plugins emit STIG/NIST/PCI-DSS/HIPAA/GDPR/ISO 27001 control IDs alongside CIS | High | ✅ Complete |
-| Catalogue id reconciliation | Unify catalogue vs SSG-scheme ids for clean reports | Low | ⬜ Pending |
+| Catalogue id reconciliation | Unify catalogue vs SSG-scheme ids for clean reports | Low | ✅ Complete (`frameworks::curated_controls` returns a hand-curated catalogue for CIS and ISO 27001 only; every other framework's catalogue is derived from live plugin coverage, so catalogue and findings share one identifier scheme) |
 | Option B: `Pass` for checked-passing controls | Per-control coverage set; every non-CIS framework reports zero `ManualReview` | Low | ✅ Complete |
 | CIS curated-catalogue coverage | 11 CIS controls now genuinely assessed; `report --framework cis` shows 6 `ManualReview` (from 17), the remainder genuinely out of scope | Medium | ✅ Complete |
 
@@ -560,9 +588,10 @@ report zero `ManualReview` for covered controls.
 |---------|-------------|----------|--------|
 | SSH crypto-algorithm hardening | Harden `KexAlgorithms`/`Ciphers`/`MACs`, incl. post-quantum kex (`mlkem768x25519-sha256`, default in OpenSSH 10). Must detect supported algorithms (`ssh -Q kex`) and run `sshd -t` before restart to avoid lockout | High | ✅ Done |
 | RHEL 10 compliance profiles | Report-time ID translation to DISA RHEL 10 STIG V1R1 and CIS RHEL 10 v1.0.1, auto-detected on RHEL-family 10 (`hardener-compliance/src/profiles.rs`) | Medium | ✅ Complete |
-| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Complete: CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback + ad-hoc SSH targets + live per-host progress + per-host history |
-| Security audit (external) | Third-party security review | Medium | ⬜ Pending |
-| Performance optimisation | Scan speed improvements | Medium | ⬜ Pending |
+| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Complete: CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback + ad-hoc SSH targets + live per-host progress + per-host history. Compliance-count drill-down remains open, issue #50 |
+| nftables ruleset persistence | The nftables backend writes into the running kernel and never into `/etc/nftables.conf`, so its rules do not survive a reboot even once the unit is enabled at boot | High | ⬜ Open, issue #52 |
+| Security audit (external) | Third-party security review; scope in [security/external-audit-scope.md](security/external-audit-scope.md) | Medium | ⬜ Open, issue #19 |
+| Performance optimisation | Scan speed improvements | Medium | ⬜ Pending, no issue filed |
 | Internationalisation | Multi-language support | Low | ⬜ Pending |
 | SELinux policy management | Full policy editing, not just detection | Low | ⬜ Pending |
 | AppArmor profile editor | Create and manage AppArmor profiles | Low | ⬜ Pending |
@@ -583,7 +612,7 @@ report zero `ManualReview` for covered controls.
 | Remove duplicate registry in plugins.rs | Removed from plugins.rs and apply.rs | Low | ✅ Complete |
 | Review field naming consistency | Audit complete: 2 violations fixed | Low | ✅ Complete |
 | Gate or remove `testing` feature | Removed unused feature from hardener-core | Low | ✅ Complete |
-| Extract inline tests to `tests/` dirs | Follow `hardener-plugins/tests/` pattern | Low | ✅ Complete |
+| Extract inline tests to `tests/` dirs | Follow `hardener-plugins/tests/` pattern | Low | 🔄 Partial, issue #49: the 2026-02-25 pass moved some (`hardener-core/src/registry.rs` now carries none), but 73 source files still hold an inline `#[cfg(test)] mod tests` |
 | Framework descriptions in reports | Added `description()` as subtitle | Low | ✅ Complete |
 
 ### Code Deduplication Summary ✅
@@ -638,23 +667,18 @@ report zero `ManualReview` for covered controls.
 | Framework conventions | Cli, SshConnectionConfig | Clap/SSH standard conventions |
 | UI definitions | FrameworkScore, TabDef, PluginDef | Simple internal types with clear context |
 
-### Test Restructure (Recommended)
+### Test Restructure: issue #49
 
-Move inline tests from source files to dedicated `tests/` directories:
-
-```
-crates/hardener-core/
-├── src/
-│   ├── plugin.rs           # No inline tests
-│   ├── registry.rs         # Has inline tests (could be moved)
-│   ├── testing.rs          # MockPlugin builder
-│   └── ...
-└── tests/
-    ├── plugin_manager_tests.rs  # Already using MockPlugin
-    └── ...
-```
-
-**Benefits**: Clear separation, consistency, better IDE support, parallel test execution.
+Seventy-three source files still hold an inline `#[cfg(test)] mod tests`. The
+destination is a decision rather than a style question, and the issue states it:
+most of these tests read **private** items, so moving them under `tests/` would
+mean widening visibility to make them compile, and in a hardening tool a `pub`
+added to satisfy a test is an API change in the wrong direction. The default is
+therefore a child module in its own file, not an integration test. `hardener-cli`
+is a binary crate, so its inline tests cannot become integration tests at all
+without making it a library, which is a separate decision. Read the issue before
+starting; do not follow the older "move everything to `tests/`" phrasing this
+section used to carry.
 
 ---
 
@@ -717,4 +741,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-07-27
+**Last Updated**: 2026-08-01

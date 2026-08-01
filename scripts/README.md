@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-07-31
+**Last Updated**: 2026-08-01
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -174,6 +174,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Doc Comment Attachment | `validate_doc_attachment.py` | No `///` block silently reassigned to the following item |
 | File Creation Sites | `validate_write_sites.py` | Every file-creating plugin call site carries a written reason its parent directory exists, and a written answer to whether a rollback reaches what it creates; every literal `cp` copies with both `-p` and `--no-dereference` |
 | Unit State Reads | `validate_unit_state_reads.py` | Every `systemctl is-enabled` call site says whether it judges systemd's word or its exit status, and why, with the answer cross-checked against the code |
+| Doc Sync Targets | `validate_doc_targets.py` | Every target `update_all_docs.py` declares resolves: the file exists and the pattern matches something. A target that matches nothing is skipped silently, so the updater reports success for work it never attempted |
 | CLI Documentation | `validate_cli_docs.py` | CLI commands documented |
 | Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
 
@@ -210,7 +211,7 @@ Running: Version Synchronisation
   ✓ CLI Documentation: passed
   ✓ Compliance Framework List: passed
 
-All 8 validations passed!
+All 11 validations passed!
 ```
 
 **Integration with CI/CD**:
@@ -468,7 +469,7 @@ Suggested stub entries:
 ```
 
 **Exclusions**:
-- Test files (`/tests/`) are excluded from validation
+- Shared test utilities (`/tests/common/`) are excluded; test files themselves are NOT
 - Build artifacts (`/target/`) are excluded
 
 **Dependencies**:
@@ -1153,7 +1154,7 @@ under `--apply`, 143 unbooted, 109 without `--apply`):
 
 **Test Modes**:
 
-The `--apply` flag gates destructive tests (sections 12A-16, 19, 23). Without it, those sections are skipped. Container-mode auto-detection automatically skips 6 environment-dependent tests when running inside `systemd-nspawn` containers, and an unbooted container skips section 12B as well.
+The `--apply` flag gates destructive tests (sections 12A, 12B, 13-16 and 23). Without it, those sections are skipped. **Section 19 is not gated**: `test_post_scan_verify` is called after both `DO_APPLY` blocks close, so it runs last on every run. Container-mode auto-detection skips 6 environment-dependent tests inside `systemd-nspawn`, and an unbooted container skips section 12B as well. A booted `--apply` run skips 9 in total: the other three are section 23's rollback rows for a plugin whose apply took no checkpoint, and unlike the first six those three are counted as checks before being skipped, which is why 146 passed and 0 failed does not add up to the declared 149.
 
 `--apply` hardens every container it touches, and nothing in the suite undoes the audit apply section 15 performs. Recreate the container before each `--apply` run (`sudo ./scripts/containers/create-container.sh <distro>`), or sections 12A and 12B will report their precondition broken and the run will end red.
 
@@ -1270,14 +1271,14 @@ every managed permission mode, `sshd -T` in full, the `sshd_config.d` fragments
 as names and contents, and what `login.defs` means to a fresh account. An apply
 that undoes the previous one is a fleet host drifting back to an unhardened state
 on a timer while every scan reports success, and a single-apply run cannot see
-that. A complete run comes to 52 checks per distribution, 260 across the five,
+that. A complete run comes to 68 checks per distribution unbooted and 81 booted,
 and a run recording fewer than the tables ask for is refused rather than reported
 as a pass.
 
 It needs a container that has never been hardened, because that pre-apply
 control requires findings to exist, and it needs `jq` (the suite refuses
 loudly if it is missing). `differential-suite.sh --self-test` runs the pure
-text extractors and every refusal path with no root and no container, 254
+text extractors and every refusal path with no root and no container, 410
 assertions in all.
 
 **How It Works**:

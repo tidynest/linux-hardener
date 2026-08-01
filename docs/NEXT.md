@@ -2,12 +2,29 @@
 
 ---
 
-## Current State (as of 2026-07-30)
+## Current State (as of 2026-08-01)
 
-**Read this first: `main` is well ahead of the last release, and nothing has
-shipped since it.** The version in the tree is unchanged, so none of the work in
-this paragraph is in a build a user can install. The one change on `main` with
-user-visible behaviour is the permissions plugin's vendor layer (`f008a10`): when
+**Read this first: the last release is v1.5.1 (2026-07-27) and `main` is 150
+commits past it, none of them released.** The version in the tree is still
+`1.5.1`, so none of the work described in this section is in a build a user can
+install. `CHANGELOG.md` `[Unreleased]` is the authoritative record of that work;
+this section only orients. The bulk of it is defect repair proved on the five
+test containers: firewall boot persistence (a ufw enable that never asked
+systemd to want the unit at boot, and a Debian activity probe that read a
+oneshot unit as a live firewall), configuration layered across `/etc` and
+`/usr/etc`, SSH crypto directives read and written where sshd actually reads
+them, kernel parameters that could not be read no longer counted as passes, and
+the cross-distro suite gaining rollback-lifecycle sections plus a refusal to
+accept a run that is not the size it declares.
+
+**Open work is tracked as GitHub issues, not in this file.** Nineteen issues,
+[#36 to #54](https://github.com/tidynest/linux-system-hardener/issues), were
+filed on 2026-08-01 covering everything known and unfixed; #18 and #19 predate
+them and are also open. Where a heading below still describes an open item, it
+names its issue.
+
+One representative piece of that unreleased work, because several documents
+link to it: the permissions plugin's vendor layer (`f008a10`). When
 a critical path is absent from `/etc`, the scan now assesses the distribution's
 copy under `/usr/etc` and reports a finding naming that file when its mode
 violates the directive. Measured on openSUSE, `/etc/sudoers` does not exist and
@@ -17,14 +34,23 @@ because it is package-owned and a package update would revert the change, so
 `apply` does nothing for such a path and `apply --dry-run` previews nothing about
 it; the finding instead carries the `install` command that copies the file into
 `/etc`, and the operator runs it. Documented for operators in
-[guide/troubleshooting.md](guide/troubleshooting.md#scan-reports-a-permissions-finding-under-usretc-and-apply-changes-nothing). The other two commits (`68334ee`, `27dc715`)
-are test-harness work with no user-visible effect: the differential suite gained a
-permissions oracle that asks `stat` what each of the nine modes is rather than
-trusting the tool's own report, and a second apply must now leave every mode where
-it found it. Per-distribution checks went from 30 to 52, five-distribution from
-255 to 260.
+[guide/troubleshooting.md](guide/troubleshooting.md#scan-reports-a-permissions-finding-under-usretc-and-apply-changes-nothing).
 
-**Everything below shipped in v1.5.0.** The reversible-rollback fix landed
+The differential suite (`scripts/test/differential-suite.sh`, introduced in
+v1.5.0 and described below) grew alongside it and keeps growing. It now pins how
+many checks each block records, so an emptied table cannot shrink a run into a
+pass. Do not quote a check total from this file: `expected_check_total` in that
+script is the live count, and the comment above it traces how each block arrived
+at its size. Issue #47 tracks extending the oracle to the remaining six plugins.
+
+**Everything below this line shipped in v1.5.0 or earlier.** v1.5.1 followed on
+the same day, 2026-07-27, and is the current release: it made `scan --exit-code`
+fail on an incomplete scan as well as on findings, removed `scan --compliance`
+(a flag clap accepted and no code read), and fixed hardening destroying vendor
+configuration on openSUSE. See `CHANGELOG.md` `[1.5.1]` for the operator
+guidance that shipped with it.
+
+The reversible-rollback fix landed in v1.5.0
 (`303c4d0`) - `hardener rollback` (CLI, desktop and fleet) now snapshots the
 current state before restoring a checkpoint, so a rollback is itself
 reversible; see
@@ -143,7 +169,10 @@ DE test tooling. `cargo test --workspace` = **660 passed / 0 failed / 38 ignored
 
 ## What's next (priority order)
 
-> Refreshed 2026-07-01. Items are open unless marked Done.
+> Refreshed 2026-08-01. Items are open unless marked Done. Anything still open
+> here has a GitHub issue, named inline; the
+> [issue tracker](https://github.com/tidynest/linux-system-hardener/issues) is
+> the authoritative list and this section is the narrative around it.
 
 ### Done: GUI/UX redesign (shipped in v1.5.0)
 
@@ -153,10 +182,10 @@ new Settings page; every phase was final-reviewed and eyeballed clean across
 all seven themes. The GUI/CLI/backend contract was unchanged throughout. See
 "Current State" above.
 
-Still open from that arc: the E2E Playwright suite under `gui-tests/` is stale
-against the redesign (`remote.spec.js` targets a screen that no longer exists,
-there are no Hosts or Settings specs, and redesigned selectors broke others).
-It needs its own rewrite.
+Still open from that arc, now **issue #48**: the E2E Playwright suite under
+`gui-tests/` is stale against the redesign (`remote.spec.js` targets a screen
+that no longer exists, there are no Hosts or Settings specs, and redesigned
+selectors broke others). It needs its own rewrite.
 
 ### P0: Compliance assessment coverage (phase 2)
 
@@ -296,7 +325,10 @@ host, `listen_event` binding + pending/finished/failed list on the Fleet page),
 ~~per-host history in the GUI~~ (shipped 2026-07-16, `get_host_history` over
 the scheduler db, history table + trend arrows in the fleet row expander; GUI
 fleet scans remain in-memory, CLI batch/scheduled scans populate the history).
-All Fleet follow-ups are now shipped. Emergency
+One Fleet follow-up is still open, **issue #50**: the per-host compliance count
+cannot be drilled into, because no `get_fleet_host_compliance_detail` IPC
+command exists and `ControlResult` is reduced to a total before it reaches the
+frontend. Emergency
 per-host rollback remains available via `sudo hardener --ssh <host> rollback`.
 Per-host CIS score columns plus a per-framework breakdown in the row expander
 shipped 2026-06-24. (Superseded 2026-07 by the GUI/UX redesign: the
@@ -339,8 +371,10 @@ test proven red→green).
 | Cross-distro JSON-grep flake | **Root cause: the `sed` ANSI-strip in `run_test_output`** (NOT stderr-fold/capture, those fixes did not help). It piped captured output through `sed 's/ANSI//g'` before `grep`; under openSUSE's minimal-container locale that `sed` intermittently emitted nothing, masking fields that were present (proven: direct `grep -ac` matched 8/240/3 while `sed \| grep` missed). Dropped the pointless pre-strip (ANSI never splits matched tokens); now `grep -aqE`s the captured file directly, with a `diag:` line on the fail path. Suite green 125/125 × 5. | ✅ Done (837963b) |
 | `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ✅ Done (lockfile, 2026-06-20) |
 | Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |
-| External security audit | Third-party review | ⬜ Pending |
-| Performance optimisation | Scan speed improvements | ⬜ Pending |
+| External security audit | Third-party review; scope in [security/external-audit-scope.md](security/external-audit-scope.md) | ⬜ Open, issue #19 |
+| Real desktop-environment polkit runs | GNOME/KDE/XFCE pkexec sessions; the tooling ships, the runs need live sessions | ⬜ Open, issue #18 |
+| Release checklist for the next tag | The 150 unreleased commits need a tagged release; the man page also has no `/usr/etc` text | ⬜ Open, issue #53 |
+| Performance optimisation | Scan speed improvements | ⬜ Pending, no issue filed |
 
 ---
 
@@ -384,7 +418,7 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 | ~~JSON output for `checkpoint rollback` command~~ | ~~ROADMAP.md v0.3.2 H~~ | Done | `5167e5a` |
 | ~~Polkit policy file for nicer dialog text~~ | ~~ROADMAP.md v0.3.2 H~~ | Done | 2026-02-25 |
 | ~~High Contrast theme (WCAG AAA)~~ | ~~ROADMAP.md v0.3.2 C~~ | Done | 2026-02-25 |
-| ~~Extract inline tests to `tests/` dirs~~ | ~~ROADMAP.md tech debt~~ | Done | 2026-02-25 |
+| Extract inline tests to `tests/` dirs | ROADMAP.md tech debt | Low | Partial (2026-02-25); 73 source files still carry an inline `#[cfg(test)] mod tests`, tracked as issue #49 |
 | AUR/deb/rpm package building & upload | ROADMAP.md v1.0.0 | Medium | Specs ready |
 
 ### 4. v1.0.0 production readiness
@@ -404,9 +438,12 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **1312 Passing Tests** (plus 43 ignored: root-, SSH- or backend-gated)
+- **1401 Passing Tests** (plus 43 ignored: root-, SSH- or backend-gated), measured
+  2026-08-01 with `cargo test --workspace --no-fail-fast`; re-measure before
+  quoting it, this number moves most weeks
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.5.1 (code, tag and repo packaging; AUR bump follows the tag)
+- **Current Version**: 1.5.1 (code, tag and repo packaging; AUR bump follows the
+  tag). `main` is 150 commits past that tag and unreleased
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
@@ -478,4 +515,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01

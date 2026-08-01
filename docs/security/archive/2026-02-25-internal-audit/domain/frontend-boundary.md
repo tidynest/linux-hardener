@@ -1,5 +1,7 @@
 # Agent 6 -- Frontend Trust Boundary
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Auditor:** Agent 6 (Frontend Trust Boundary)
 **Date:** 2026-02-25
 **Scope:** Tauri IPC commands, CSP configuration, capability ACLs, WASM<->Tauri serialisation, frontend state management, privilege escalation via IPC

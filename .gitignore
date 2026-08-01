@@ -72,6 +72,10 @@ pics-debug/
 # Root-level lockfile (no package.json at root)
 package-lock.json
 
+# Python bytecode, written by any run of scripts/validate/
+__pycache__/
+*.pyc
+
 # Python virtual environments
 .venv/
 

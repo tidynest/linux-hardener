@@ -1,6 +1,6 @@
 # Getting started
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-01
 
 A task-oriented tour of the hardener for new users: scan a system, read the
 findings, preview and apply hardening, roll it back, and produce a first
@@ -98,9 +98,13 @@ neither SELinux nor AppArmor) skip gracefully rather than failing.
 Checkpoints make hardening safe to try. To undo:
 
 ```bash
-hardener checkpoint list                 # Find the checkpoint ID
+sudo hardener checkpoint list            # Find the checkpoint ID
 sudo hardener rollback <checkpoint-id>   # Restore the captured state
 ```
+
+Both commands run under `sudo` on purpose. The checkpoint database is chosen
+from the user the command runs as, so an apply performed with `sudo` writes its
+checkpoint where only a `sudo` checkpoint command will find it; see section 6.
 
 Rollback restores the exact file contents captured at apply time.
 
@@ -112,20 +116,30 @@ cannot be created, the rollback is refused rather than run.
 ## 6. Manage checkpoints
 
 ```bash
-hardener checkpoint list                       # Newest 20 checkpoints (--limit N, or --all for every one)
-sudo hardener checkpoint create "pre-change"   # Manual snapshot before your own edits
-hardener checkpoint show <checkpoint-id>       # What a checkpoint contains
-hardener checkpoint delete <checkpoint-id>     # Remove one you no longer need
+sudo hardener checkpoint list                    # Newest 20 checkpoints (--limit N, or --all for every one)
+sudo hardener checkpoint create "pre-change"     # Manual snapshot before your own edits
+sudo hardener checkpoint show <checkpoint-id>    # What a checkpoint contains
+sudo hardener checkpoint delete <checkpoint-id>  # Remove one you no longer need
 ```
 
 Checkpoints are stored in a signed SQLite database:
 `/var/lib/linux-hardener/checkpoints.db` when created as root,
-`~/.local/share/linux-hardener/checkpoints.db` otherwise.
+`~/.local/share/linux-hardener/checkpoints.db` otherwise. Every checkpoint
+command picks its database the same way, from the user it runs as, so
+`hardener checkpoint list` without `sudo` reads your own database and reports
+nothing about the checkpoints a `sudo hardener apply` took. Creating a
+checkpoint needs root regardless.
+
+The list is also filtered to the host you are pointed at, so
+`hardener --ssh user@host checkpoint list` shows that remote host's checkpoints
+out of the local database rather than your own machine's.
 
 ## 7. Generate your first compliance report
 
-Reports assess the latest scan against security frameworks (CIS, STIG,
-NIST 800-53, PCI-DSS, HIPAA, GDPR, ISO 27001, SOC 2, NIST 800-171, FedRAMP):
+`report` runs its own scan and assesses the result against security frameworks
+(CIS, STIG, NIST 800-53, PCI-DSS, HIPAA, GDPR, ISO 27001, SOC 2, NIST 800-171,
+FedRAMP). It does not read a scan you ran earlier, so run it under `sudo` when
+you want the root-only checks to contribute:
 
 ```bash
 hardener report --interactive            # Wizard: pick scenario or framework
@@ -167,15 +181,16 @@ The desktop app (`linux-hardener-desktop`) wraps the same engine:
    **Preview Changes**, then the Apply button (labelled "Apply N Changes"); a
    polkit dialog asks for your password (root work runs through `pkexec`, see
    the [desktop environment compatibility guide](desktop-environment-compatibility.md)).
-4. Use the History tab on the Hardening page (it lists the checkpoints saved
-   on every apply) to roll back if needed.
+4. Use the Hardening History tab on the Hardening page (it lists the
+   checkpoints saved on every apply) to roll back if needed.
 
 Seven pages in total, reached from the grouped left sidebar: Dashboard,
 Analysis and Hardening (grouped Local); Hosts (the merged read-only
 multi-host scan posture and remote scanning), Fleet Apply (apply and roll
 back across hosts) and Scheduler (grouped Fleet); plus Settings (theme
 picker and About), pinned below the groups. `Ctrl+1` to `Ctrl+5` jump to
-Dashboard, Analysis, Hardening, Hosts and Scheduler (`Ctrl+4` reaches Hosts
-via the retained `/remote` redirect); Fleet Apply and Settings have no
-dedicated shortcut yet. `Alt+T` cycles themes, `F11` toggles fullscreen,
-`Escape` closes panels.
+Dashboard, Analysis, Hardening, Hosts and Scheduler; Fleet Apply and Settings
+have no dedicated shortcut yet. `Ctrl+Shift+S` starts a scan from anywhere,
+`Alt+T` cycles themes, `F11` toggles fullscreen, `Escape` closes panels. The
+old single-host `/remote` route still resolves and redirects to Hosts, so an
+existing bookmark keeps working.

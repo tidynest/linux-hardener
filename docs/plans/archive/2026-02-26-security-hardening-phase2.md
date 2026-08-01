@@ -1,6 +1,6 @@
 # Security Hardening Phase 2: Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
 
 **Goal:** Fix remaining security gaps discovered during deep verification of the original remediation work: 2 High, 5 Medium, and 6 Low severity items across 11 tasks.
 

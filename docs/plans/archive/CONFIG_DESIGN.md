@@ -1,5 +1,7 @@
 # Configuration System Security Design
 
+> **Archived.** Historical record, possibly superseded by later work. Retained for history.
+
 **Author:** Eric Jingryd
 **Status:** Design Document
 **Version:** Draft 1.0
