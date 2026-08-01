@@ -280,7 +280,11 @@ suite_section_sizes() {
         "22 plugin filter combinations|4"
 
     if [[ "$apply" == "true" ]]; then
-        printf '%s\n' "23 per-plugin lifecycle|9"
+        # Six per plugin over three plugins, where it was three per plugin. The
+        # nine that existed were measured on five hosts; the eighteen are
+        # derived from the section as it now stands and have not yet met a
+        # container.
+        printf '%s\n' "23 per-plugin lifecycle|18"
     fi
 
     printf '%s\n' \
@@ -604,6 +608,91 @@ test_systemd_commands() {
 }
 
 # =============================================================================
+# Readings the three rollback-aware sections share
+# =============================================================================
+
+# The checkpoint ids in a `checkpoint list` whose name carries a given string,
+# newest first, read from stdin.
+#
+# Both filters earn their place. Every rollback writes its own
+# "Before rollback to '<name>'" snapshot, which carries the target's name as a
+# substring, so filtering on the name alone matches the state AFTER the change
+# as readily as the one before it, and selecting that produced three wrong
+# readings in one evening. The id pattern is what turns a rendered row into an
+# answer.
+#
+# The callers pick the end they want and they want different ends. Sections 12A
+# and 12B take the last, the oldest, because they ask what the host looked like
+# before the first change. Section 23 takes the first, the newest, because it
+# rolls back an apply it made a moment ago. Recency is not the mistake; choosing
+# without asking the name is.
+#
+# Give the listing `--all`: it caps at twenty rows otherwise, and on a busy host
+# the row being sought is simply not in the output.
+checkpoints_named() {
+    grep -v 'Before rollback to' | grep "$1" | grep -oE 'cp_[0-9]+_[a-f0-9]+'
+}
+
+# How many findings a scan document holds, or that it is not a document.
+#
+# The same three-outcome discipline as `line_count` below and for the same
+# reason. A scan that failed prints no finding id, so a bare count reports zero
+# both for a host with nothing wrong and for a measurement nobody took, and the
+# two then compare equal to each other for as long as the caller keeps
+# comparing counts. The key is the one the tool serialises for every scan, so
+# prose on stdout is not a document however plausible it reads.
+#
+# Counted with `grep -o` rather than `grep -c`, because the JSON arrives on one
+# line and `grep -c` counts matching lines rather than matches.
+scan_finding_count() {
+    grep -q '"plugin_id"' "$1" 2>/dev/null || { echo "no-document"; return; }
+    grep -o '"finding_id"' "$1" | wc -l
+}
+
+# Which way a finding count moved, as one word, leaving the caller to say what
+# that means where it is asking.
+#
+# Four outcomes and no default arm. `void` comes first because a reading that is
+# not a reading has no direction, and two of them would otherwise compare equal
+# and report that nothing moved. What this replaces answered in two outcomes
+# through `-le`, which folded "unmoved" and "fell" into the passing one, so on a
+# host where nothing can move the comparison had no reachable false branch.
+# The checkpoint an apply took, off the apply's own result document, or `none`.
+#
+# `ApplyResult::apply_checkpoint_id` is the tool's record of the checkpoint that
+# apply created, and it is `null` where the apply had nothing to do: the ssh
+# plugin returns early on a compliant host and says at the site that a
+# checkpoint is created "never on a no-op", while kernel and permissions take
+# one before deciding. Nothing outside the plugin knows which, so asking the
+# document is the only honest way to pair a rollback with the apply it undoes.
+#
+# The key is matched with its value rather than the file searched for a
+# checkpoint id, because the apply records the checkpoint as a change as well,
+# so an id appears in the document even where this field is null.
+apply_checkpoint_id_of() {
+    local field
+    field="$(grep -oE '"apply_checkpoint_id":[[:space:]]*"cp_[0-9]+_[a-f0-9]+"' "$1" 2>/dev/null | head -1)"
+    if [[ -z "$field" ]]; then
+        echo none
+        return
+    fi
+    printf '%s' "$field" | grep -oE 'cp_[0-9]+_[a-f0-9]+'
+}
+
+finding_count_verdict() {
+    local before="$1" after="$2"
+    if [[ "$before" == "no-document" || "$after" == "no-document" ]]; then
+        echo void
+    elif [[ "$after" == "$before" ]]; then
+        echo unmoved
+    elif (( after > before )); then
+        echo rose
+    else
+        echo fell
+    fi
+}
+
+# =============================================================================
 # Section 12A: Rollback Undoes The Audit Apply (gated behind --apply)
 # =============================================================================
 
@@ -740,23 +829,13 @@ test_audit_rollback_restores() {
     # ------------------------------------------------------------------------
     #
     # By name and then by age, with the count asserted rather than the position
-    # trusted. `checkpoint list` is ORDER BY timestamp DESC, so the newest match
-    # is first and the oldest is last. Both filters earn their place: every
-    # rollback writes its own "Before rollback to '...'" snapshot carrying the
-    # target's name as a substring, so a name filter alone can select the state
-    # AFTER the change, which is the state being rolled out of. Selecting by
-    # recency produced three wrong readings in one evening. Section 23's
-    # `head -1` is that mistake and is deliberately not copied.
-    #
-    # `--all` defeats the 20-row cap the renderer applies by default, so a busy
-    # checkpoint table cannot hide the oldest match and turn a real one-match
-    # host into a zero-match failure.
+    # trusted. `checkpoints_named` above holds the two filters and says why each
+    # is there; `checkpoint list` is ORDER BY timestamp DESC, so the newest match
+    # is first and the oldest is last, and this section wants the oldest.
     log_test "Audit rollback: exactly one checkpoint carries the apply's name"
     local matches=()
     mapfile -t matches < <("$BINARY" checkpoint list --all 2>&1 \
-        | grep -v 'Before rollback to' \
-        | grep 'audit-hardening-pre-apply' \
-        | grep -oE 'cp_[0-9]+_[a-f0-9]+')
+        | checkpoints_named 'audit-hardening-pre-apply')
 
     if [[ ${#matches[@]} -ne 1 ]]; then
         log_fail "Audit rollback: wanted one checkpoint named audit-hardening-pre-apply, found ${#matches[@]}"
@@ -938,17 +1017,12 @@ test_services_rollback_restores() {
     # Choosing the checkpoint, by name and then by age
     # ------------------------------------------------------------------------
     #
-    # Identical rule to 12A, and identical reason: every rollback writes its own
-    # "Before rollback to '...'" snapshot carrying the target's name as a
-    # substring, so a name filter alone can select the state AFTER the change.
-    # `--all` defeats the 20-row cap so a busy table cannot hide the oldest
-    # match.
+    # Identical rule to 12A, through the same shared reading, and the oldest
+    # match for the same reason.
     log_test "Services rollback: exactly one checkpoint carries the apply's name"
     local matches=()
     mapfile -t matches < <("$BINARY" checkpoint list --all 2>&1 \
-        | grep -v 'Before rollback to' \
-        | grep 'service-minimisation-pre-apply' \
-        | grep -oE 'cp_[0-9]+_[a-f0-9]+')
+        | checkpoints_named 'service-minimisation-pre-apply')
 
     if [[ ${#matches[@]} -ne 1 ]]; then
         log_fail "Services rollback: wanted one checkpoint named service-minimisation-pre-apply, found ${#matches[@]}"
@@ -1310,6 +1384,44 @@ test_plugin_filter_combinations() {
 # Section 23: Per-Plugin Lifecycle (gated behind --apply)
 # =============================================================================
 
+# Applies, re-scans and rolls back three plugins on a host sections 13 to 15
+# have already hardened.
+#
+# WHAT THIS SECTION CAN AND CANNOT ASK, because for several releases it was
+# asking one of the second kind and reporting a pass. By the time it runs every
+# plugin has been applied and section 16 has rolled a checkpoint back, so each
+# apply here is a SECOND apply and finds nothing to do: fifteen readings across
+# five distributions and three plugins were all N findings to N. "Did the
+# rollback remove what the apply created" is therefore unaskable at this
+# position, since there is nothing to remove and the assertion would pass
+# against a rollback that did nothing whatever. That question belongs to
+# sections 12A and 12B, which run before anything hardens the host and put it to
+# two plugins whose whole write surface is declared to their checkpoints.
+#
+# What IS askable here, and what this section now asks: idempotency, and what a
+# rollback does to a host it should be leaving alone. A second apply must leave
+# the finding count where it found it, and rolling back to the checkpoint that
+# apply has just taken must leave it there too. A rollback that removed a
+# drop-in it should have restored raises the count, and that is the fault these
+# two readings can see.
+#
+# Its three previous assertions could see none of it. The rollback was judged on
+# its exit status alone. The count was compared with `-le`, which is satisfied
+# by nothing having happened, so its false branch was unreachable on every host
+# and read in the log as coverage. And the checkpoint was chosen with `head -1`
+# over an unfiltered listing, so it rolled back whatever was newest on the host,
+# which on any iteration whose apply took no checkpoint of its own was another
+# apply's. The section did not record which one it chose, so no log could show
+# that it had.
+#
+# The checkpoint now comes from the apply's own result document, which is the
+# only place that pairing exists. Choosing the newest checkpoint carrying the
+# plugin's name was tried first and was wrong on all five distributions, in a
+# way worth keeping: see the comment at that selection below.
+#
+# A fourth thing is gone rather than fixed: a branch skipping `audit` and `mac`
+# inside a loop over kernel, ssh and permissions. It could never fire, and a
+# reader met it as evidence that those two were considered here.
 test_per_plugin_lifecycle() {
     log_header "23. PER-PLUGIN LIFECYCLE (APPLY -> VERIFY -> ROLLBACK)"
 
@@ -1319,17 +1431,21 @@ test_per_plugin_lifecycle() {
         local full_id="${plugin}-hardening"
         log_section "Lifecycle: $full_id"
 
-        # Skip audit/MAC in containers
-        if [[ "$CONTAINER_MODE" == "true" ]] && [[ "$plugin" == "audit" || "$plugin" == "mac" ]]; then
-            log_skip "Lifecycle $full_id (not available in container)"
+        # The positive control, and it guards every comparison below. A scan
+        # that failed prints no finding id, so its count is zero, and zero is
+        # also what a clean plugin reports: with both scans failing, every
+        # comparison in this iteration compares nothing with nothing and passes.
+        local before_json="$REPORT_DIR/lifecycle-$full_id-before.json"
+        local before_count
+        "$BINARY" --format json scan --plugin "$full_id" > "$before_json" 2>/dev/null
+        before_count="$(scan_finding_count "$before_json")"
+
+        log_test "Lifecycle: $full_id produced a scan to count"
+        if [[ "$before_count" == "no-document" ]]; then
+            log_fail "Lifecycle: $full_id produced no scan document, so no count below would be a reading"
             continue
         fi
-
-        # BEFORE: count findings (grep -o to avoid multi-line count issues)
-        local before_count
-        before_count=$("$BINARY" --format json scan --plugin "$full_id" 2>/dev/null | grep -o '"finding_id"' | wc -l)
-        before_count=$((before_count + 0))  # ensure numeric
-        log_info "Before apply: $before_count findings"
+        log_pass "Lifecycle: $full_id reported $before_count finding(s) before the apply"
 
         # APPLY (partial apply expected in containers: some operations can't complete)
         log_test "Lifecycle apply: $full_id"
@@ -1346,27 +1462,92 @@ test_per_plugin_lifecycle() {
             surface_tool_error "$life_err"
         fi
 
-        # AFTER: count findings (should be <= before)
+        # Equality, where this compared with `-le`. The host arrives hardened,
+        # so the honest expectation is that nothing moves, and `-le` cannot tell
+        # that from a count that fell. Both directions are faults here and both
+        # say which they are: a rise means this apply loosened a host it had
+        # already hardened, and a fall means the applies in sections 13 to 15
+        # left work that this one finished, which would make those sections the
+        # thing to read rather than this one.
+        local after_json="$REPORT_DIR/lifecycle-$full_id-after.json"
         local after_count
-        after_count=$("$BINARY" --format json scan --plugin "$full_id" 2>/dev/null | grep -o '"finding_id"' | wc -l)
-        after_count=$((after_count + 0))  # ensure numeric
-        log_info "After apply: $after_count findings"
+        "$BINARY" --format json scan --plugin "$full_id" > "$after_json" 2>/dev/null
+        after_count="$(scan_finding_count "$after_json")"
 
-        log_test "Lifecycle verify: $full_id findings reduced"
-        if [[ "$after_count" -le "$before_count" ]]; then
-            log_pass "Lifecycle verify: $full_id ($before_count -> $after_count)"
-        else
-            log_fail "Lifecycle verify: $full_id findings increased ($before_count -> $after_count)"
-        fi
+        log_test "Lifecycle: $full_id is unmoved by an apply the host has already had"
+        case "$(finding_count_verdict "$before_count" "$after_count")" in
+            unmoved)
+                log_pass "Lifecycle: $full_id still reports $after_count finding(s) after a second apply" ;;
+            void)
+                log_fail "Lifecycle: $full_id produced no scan document after the apply, so this reading is void" ;;
+            rose)
+                log_fail "Lifecycle: $full_id went $before_count to $after_count findings, so applying it again loosened a host it had already hardened" ;;
+            fell)
+                log_fail "Lifecycle: $full_id went $before_count to $after_count findings, so an earlier apply left work this one finished" ;;
+        esac
 
-        # ROLLBACK: find latest checkpoint and roll back
+        # The checkpoint THIS apply took, off its own result document. Selecting
+        # by name instead was tried and was wrong on all five distributions,
+        # which is worth keeping because the failure looked exactly like a
+        # product defect: ssh's apply takes no checkpoint when it has nothing to
+        # do, so the newest one carrying its name was the one section 14 took
+        # before the host was hardened at all. Rolling that back removed the
+        # hardening, the count went 0 to 10 findings, and the message asserted a
+        # cause that was false. The tool did what it was asked; the check asked
+        # for the wrong checkpoint. `head -1` over an unfiltered listing, which
+        # is what this section did for far longer, rolled back a stranger's
+        # instead and said nothing at all.
+        #
+        # A plugin that takes none is a declared outcome rather than a fault: on
+        # a host sections 13 to 15 have hardened there is nothing for the apply
+        # to do, and there is correspondingly nothing of its own to undo. The
+        # rows below say so and are skipped, rather than rolling back some other
+        # apply's checkpoint and reporting on that.
         local cp_id
-        cp_id=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
-        if [[ -n "$cp_id" ]]; then
-            run_test "Lifecycle rollback: $full_id" "\"$BINARY\" rollback \"$cp_id\""
-        else
-            log_skip "Lifecycle rollback: $full_id (no checkpoint found)"
+        cp_id="$(apply_checkpoint_id_of "$life_json")"
+
+        log_test "Lifecycle: $full_id's apply recorded the checkpoint it took"
+        if [[ "$cp_id" == "none" ]]; then
+            log_skip "Lifecycle: $full_id's apply took no checkpoint, so it had nothing to do and leaves nothing of its own to roll back"
+            log_test "Lifecycle rollback: $full_id"
+            log_skip "Lifecycle rollback: $full_id (its apply took no checkpoint)"
+            log_test "Lifecycle: $full_id findings are where they were after the rollback"
+            log_skip "Lifecycle: $full_id was not rolled back, so there is nothing to read here"
+            continue
         fi
+        log_pass "Lifecycle: $full_id's apply recorded checkpoint $cp_id"
+
+        log_info "Rolling back to $cp_id, the checkpoint this apply took"
+        run_test "Lifecycle rollback: $full_id" "\"$BINARY\" rollback \"$cp_id\"" || true
+
+        # The checkpoint was taken immediately before an apply that changed
+        # nothing, so restoring it must leave the count where it started. A
+        # rollback that removed a drop-in it should have restored raises it, and
+        # that is the failure this reading exists to catch. It is a different
+        # question from 12A's and 12B's, which ask whether a rollback undid
+        # something; this one asks whether it undid more than it was given.
+        #
+        # Measured on all five distributions: kernel and permissions take a
+        # checkpoint even where the apply has nothing to do, roll their own back
+        # and do not move, while ssh takes none and skips these rows. Kernel
+        # reads 2 findings on arch and debian and 0 on the other three, so the
+        # reading is not a constant.
+        local rolled_json="$REPORT_DIR/lifecycle-$full_id-rolled-back.json"
+        local rolled_count
+        "$BINARY" --format json scan --plugin "$full_id" > "$rolled_json" 2>/dev/null
+        rolled_count="$(scan_finding_count "$rolled_json")"
+
+        log_test "Lifecycle: $full_id findings are where they were after the rollback"
+        case "$(finding_count_verdict "$before_count" "$rolled_count")" in
+            unmoved)
+                log_pass "Lifecycle: $full_id still reports $rolled_count finding(s) after the rollback" ;;
+            void)
+                log_fail "Lifecycle: $full_id produced no scan document after the rollback, so this reading is void" ;;
+            rose)
+                log_fail "Lifecycle: $full_id went $before_count to $rolled_count findings across the rollback, so the rollback took away hardening it was restoring" ;;
+            fell)
+                log_fail "Lifecycle: $full_id went $before_count to $rolled_count findings across the rollback, so the rollback hardened the host rather than returning it" ;;
+        esac
     done
 }
 
@@ -1593,15 +1774,71 @@ self_test() {
         fi
     }
 
-    # The size of a run. Every number here is a reading rather than an
-    # arithmetic restatement of the table: 140 was counted off the five
-    # per-distribution logs of the 2026-08-01 --apply --booted run, section by
-    # section, and all five agreed on every section. The other two are derived
-    # from the same table and have never been measured, which is said here so
-    # nobody reads them as evidence.
-    check_eq "$(expected_test_total true true true)" "140" \
-        "a booted --apply run in a container declares the 140 checks five hosts recorded"
-    check_eq "$(expected_test_total true false true)" "134" \
+    # The two readings sections 12A, 12B and 23 share. The listing fixture
+    # mirrors what the renderer prints: the id and the name on one line, newest
+    # first, and a rollback snapshot in the middle carrying the same plugin's
+    # name because that is the row that has misled three separate probes.
+    cat > "$workdir/checkpoints" <<'LISTING'
+Checkpoints
+ID                            NAME                                             HOST    CREATED
+cp_1785555030000_aaaaaaaa     kernel-hardening-pre-apply                       local   2026-08-01 05:30
+cp_1785555020000_bbbbbbbb     Before rollback to 'kernel-hardening-pre-apply'  local   2026-08-01 05:29
+cp_1785555010000_cccccccc     kernel-hardening-pre-apply                       local   2026-08-01 05:28
+cp_1785555000000_dddddddd     ssh-hardening-pre-apply                          local   2026-08-01 05:27
+LISTING
+
+    check_eq "$(checkpoints_named kernel-hardening-pre-apply < "$workdir/checkpoints" | tr '\n' ' ')" \
+        "cp_1785555030000_aaaaaaaa cp_1785555010000_cccccccc " \
+        "a plugin's own checkpoints come back newest first, without the rollback snapshot that names it"
+    check_eq "$(checkpoints_named audit-hardening-pre-apply < "$workdir/checkpoints")" "" \
+        "a name no checkpoint carries comes back empty rather than as another plugin's id"
+
+    printf '[{"plugin_id":"kernel","findings":[{"finding_id":"a"},{"finding_id":"b"},{"finding_id":"c"}]}]\n' \
+        > "$workdir/scan-three.json"
+    printf '[{"plugin_id":"ssh","findings":[]}]\n' > "$workdir/scan-clean.json"
+    printf 'Error: Root privileges required to scan\n' > "$workdir/scan-refused.json"
+
+    check_eq "$(scan_finding_count "$workdir/scan-three.json")" "3" \
+        "a scan document is counted by the finding ids in it"
+    check_eq "$(scan_finding_count "$workdir/scan-clean.json")" "0" \
+        "a scan that found nothing is zero findings"
+    check_eq "$(scan_finding_count "$workdir/scan-refused.json")" "no-document" \
+        "a scan that printed only an error is not a host with no findings"
+
+    # The checkpoint an apply took, off its own document. The last fixture is
+    # the one that matters: an apply records the checkpoint as a change as well,
+    # so a file holding a null field still holds a checkpoint id, and searching
+    # for the id rather than for the field's value finds it and rolls back an
+    # apply that never happened.
+    printf '[[{"plugin_id":"kernel-hardening"},{"apply_plugin_id":"kernel-hardening","apply_checkpoint_id": "cp_1785557943772_7df3db66","apply_changes":[]}]]\n' \
+        > "$workdir/apply-with-checkpoint.json"
+    printf '[[{"plugin_id":"ssh-hardening"},{"apply_plugin_id":"ssh-hardening","apply_checkpoint_id": null,"apply_changes":[{"change_description":"Created checkpoint cp_1785557943772_7df3db66"}]}]]\n' \
+        > "$workdir/apply-without-checkpoint.json"
+
+    check_eq "$(apply_checkpoint_id_of "$workdir/apply-with-checkpoint.json")" \
+        "cp_1785557943772_7df3db66" "an apply that took a checkpoint names it"
+    check_eq "$(apply_checkpoint_id_of "$workdir/apply-without-checkpoint.json")" "none" \
+        "an apply that took none says none, though its changes mention a checkpoint id"
+    check_eq "$(apply_checkpoint_id_of "$workdir/missing.json")" "none" \
+        "a document that is not there is not a checkpoint to roll back"
+
+    # All four arms, because the comparison this replaces had two and one of
+    # them was unreachable on every host the suite runs on.
+    check_eq "$(finding_count_verdict 3 3)" "unmoved" "an unchanged count is unmoved"
+    check_eq "$(finding_count_verdict 3 4)" "rose" "a count that grew is not unmoved"
+    check_eq "$(finding_count_verdict 3 2)" "fell" "a count that fell is not unmoved either, which -le could not say"
+    check_eq "$(finding_count_verdict 3 no-document)" "void" \
+        "a reading that is not a reading has no direction"
+
+    # The size of a run. 140 was counted off the five per-distribution logs of
+    # the 2026-08-01 --apply --booted run, section by section, and all five
+    # agreed on every section; section 23 then grew by nine, which is derived
+    # rather than measured and has not yet met a container. The unbooted and
+    # read-only figures are derived too, which is said here so nobody reads them
+    # as evidence.
+    check_eq "$(expected_test_total true true true)" "149" \
+        "a booted --apply run in a container declares the 140 five hosts recorded plus section 23's nine"
+    check_eq "$(expected_test_total true false true)" "143" \
         "an unbooted --apply run declares six fewer, the services rollback rows it cannot ask"
     check_eq "$(expected_test_total false true true)" "109" \
         "a run without --apply declares neither the apply sections nor the lifecycle"
@@ -1617,7 +1854,7 @@ self_test() {
     PLUGINS=("${PLUGINS[@]:0:7}")
     check_status 1 "require_suite_tables refuses a table edited down" \
         require_suite_tables
-    check_eq "$(expected_test_total true true true)" "140" \
+    check_eq "$(expected_test_total true true true)" "149" \
         "and the expected total does not follow the table it polices"
     PLUGINS=("${saved_plugins[@]}")
     check_status 0 "require_suite_tables accepts the table once it is restored" \
@@ -1626,10 +1863,10 @@ self_test() {
     # A run is refused on the count it recorded, not on the count it wanted.
     local saved_log="$LOG_FILE" saved_total="$TESTS_TOTAL"
     LOG_FILE="$workdir/self-test.log"
-    TESTS_TOTAL=140
+    TESTS_TOTAL=149
     check_status 0 "a run that recorded what the sections declare is accepted" \
         require_expected_total true true true
-    TESTS_TOTAL=139
+    TESTS_TOTAL=148
     check_status 1 "a run one check short of what the sections declare is refused" \
         require_expected_total true true true
 

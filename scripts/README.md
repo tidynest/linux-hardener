@@ -1112,8 +1112,8 @@ sudo ./scripts/test/full-test-suite.sh
 sudo ./scripts/test/full-test-suite.sh --apply
 ```
 
-**What It Tests** (28 test sections, 140 individual tests on a booted container
-under `--apply`, 134 unbooted, 109 without `--apply`):
+**What It Tests** (28 test sections, 149 individual tests on a booted container
+under `--apply`, 143 unbooted, 109 without `--apply`):
 
 | Section | Tests |
 |---------|-------|
@@ -1141,7 +1141,7 @@ under `--apply`, 134 unbooted, 109 without `--apply`):
 | 20. Scan History Persistence | scan -> history list -> verify UUID present |
 | 21. History Filtering | --limit, --status filters |
 | 22. Plugin Filter Combinations | Short names (kernel, ssh), mixed, multi-plugin |
-| 23. Per-Plugin Lifecycle | Apply -> verify findings reduced -> rollback (--apply only) |
+| 23. Per-Plugin Lifecycle | Apply, re-scan, roll back, re-scan, for kernel, ssh and permissions (--apply only). The host arrives hardened by sections 13 to 15, so each apply here is a second apply: the finding count must be unmoved by it, and unmoved by the rollback that follows. The checkpoint is the one the apply's own result document names, so a plugin whose apply had nothing to do and took none is reported as such rather than rolled back to another apply's checkpoint. What a rollback *removes* cannot be asked at this position and is asked by 12A and 12B instead. |
 | 24. Config File Loading | Valid/invalid config file paths |
 | 25. Report Combinations | Framework + scenario + format combos |
 | 26. Flag Combinations | --quiet + --format, --audit + --format, multi-flag |

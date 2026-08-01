@@ -561,6 +561,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is zero. The five per-distribution logs of the last full run were counted
   section by section to establish the declarations, and all five agreed on every
   section.
+- **The per-plugin lifecycle section asks what its apply and its rollback did.**
+  Section 23 applies, re-scans and rolls back kernel, ssh and permissions on a
+  host sections 13 to 15 have already hardened, and it could see none of that.
+  Its rollback was judged on the exit status alone. Its finding count was
+  compared with `-le`, which is satisfied by nothing having happened, so the
+  false branch was unreachable on every host the suite runs on and fifteen
+  readings across five distributions all read N to N. Its checkpoint was chosen
+  with `head -1` over an unfiltered listing, so a plugin whose apply failed
+  before taking one would have rolled back another plugin's snapshot and
+  reported a pass for undoing somebody else's work. The count is now compared
+  for equality, with each direction named, and the checkpoint comes from the
+  apply's own result document, which is the only place the pairing between an
+  apply and the checkpoint it took exists. A plugin whose apply had nothing to
+  do takes none, ssh says so at its own apply site, and the rollback rows are
+  then skipped with that reason rather than rolling back some other apply's
+  checkpoint. The host is re-scanned after the rollback as well, and the count
+  must be where the apply found it, which is what a rollback removing a drop-in
+  it should have restored would break. A scan that produced no document is told apart from a host with
+  no findings, because a failed scan prints no finding id and its count of zero
+  compared equal to a clean host's. Whether a rollback removes what an apply
+  created cannot be asked at this position, since the apply here changes
+  nothing, and that question stays with sections 12A and 12B. The
+  per-distribution total moves from 140 to 149.
 
 ### Removed
 - `custom_directives`, the per-plugin config table that was accepted, merged
