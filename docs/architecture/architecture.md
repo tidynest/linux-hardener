@@ -479,7 +479,8 @@ that decides.
 `DEFAULT_DB_PATH` in `db.rs` and `CheckpointSigner::DEFAULT_KEY_PATH` /
 `DEFAULT_PUBKEY_PATH` in `signing.rs`. A signing key found at the pre-separation
 path `/var/lib/linux-hardener/signing.key` is migrated to `/etc` on the next
-privileged run (`migrate_legacy_key`).
+privileged run (`migrate_key_from`), and only when `/etc` holds none: a key
+already there signed every checkpoint taken since the separation.
 
 ### Database Schema
 

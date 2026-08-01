@@ -55,3 +55,63 @@ async fn a_usable_directory_opens_the_audit_log() {
 
     assert!(logger_dir.join("audit.log").exists());
 }
+
+/// The upgrade this function exists for. A host hardened before the key and
+/// the database were separated has its key at the legacy path and nothing at
+/// the new one, and the key must arrive there: `CheckpointSigner` mints a
+/// fresh key for a path holding none, so a key left behind means every
+/// checkpoint taken before the upgrade fails its signature check and cannot be
+/// rolled back.
+#[test]
+fn a_legacy_key_moves_to_a_new_path_that_holds_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("legacy.key");
+    let current = dir.path().join("current.key");
+    fs::write(&legacy, b"legacy key bytes").unwrap();
+
+    migrate_key_from(&legacy, &current).expect("a legacy key must migrate");
+
+    assert_eq!(fs::read(&current).unwrap(), b"legacy key bytes");
+    assert!(!legacy.exists(), "the legacy key must not be left behind");
+    let mode = fs::metadata(&current).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o400, "the migrated key must be root read-only");
+}
+
+/// The other half, and the destructive one. A key already at the new path
+/// signed every checkpoint taken since the separation, so copying the legacy
+/// key over it destroys exactly what it was meant to preserve. Both files are
+/// given distinct contents, so a copy in either direction is visible rather
+/// than being hidden by two identical files.
+#[test]
+fn a_key_already_at_the_new_path_is_never_overwritten() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("legacy.key");
+    let current = dir.path().join("current.key");
+    fs::write(&legacy, b"legacy key bytes").unwrap();
+    fs::write(&current, b"current key bytes").unwrap();
+
+    migrate_key_from(&legacy, &current).expect("a no-op must not fail");
+
+    assert_eq!(
+        fs::read(&current).unwrap(),
+        b"current key bytes",
+        "the key in use must survive"
+    );
+    assert_eq!(
+        fs::read(&legacy).unwrap(),
+        b"legacy key bytes",
+        "the legacy key must be left alone rather than deleted"
+    );
+}
+
+/// The common case on every host installed after the separation.
+#[test]
+fn no_legacy_key_leaves_the_new_path_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("legacy.key");
+    let current = dir.path().join("current.key");
+
+    migrate_key_from(&legacy, &current).expect("nothing to migrate must not fail");
+
+    assert!(!current.exists(), "no key must be invented from nothing");
+}

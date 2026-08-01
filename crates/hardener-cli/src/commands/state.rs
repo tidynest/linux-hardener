@@ -32,7 +32,7 @@ fn resolve_paths() -> Result<(PathBuf, PathBuf)> {
         fs::create_dir_all(SYSTEM_DATA_DIR)?;
         let _ = fs::set_permissions(SYSTEM_DATA_DIR, fs::Permissions::from_mode(0o755));
 
-        migrate_legacy_key(&key_path)?;
+        migrate_key_from(std::path::Path::new(LEGACY_KEY_PATH), &key_path)?;
 
         Ok((db_path, key_path))
     } else {
@@ -47,19 +47,33 @@ fn resolve_paths() -> Result<(PathBuf, PathBuf)> {
     }
 }
 
-/// Moves the signing key from the legacy co-located path if it exists
-/// at the old location but not at the new one.
-fn migrate_legacy_key(new_path: &std::path::Path) -> Result<()> {
-    let legacy = std::path::Path::new(LEGACY_KEY_PATH);
-    if legacy.exists() && new_path.exists() {
-        fs::copy(legacy, new_path)?;
-        // Restrictive mode - read-only for root
-        fs::set_permissions(
-            new_path,
-            std::os::unix::fs::PermissionsExt::from_mode(0o400),
-        )?;
-        fs::remove_file(legacy)?;
+/// Moves the signing key from the legacy co-located path if it exists at the
+/// old location but not at the new one.
+///
+/// The second half of that condition is the whole of it, and it was inverted:
+/// the test read `new_path.exists()`, so the migration ran only in the one case
+/// where it must not and never ran in the case it exists for. Both readings
+/// destroy the ability to restore, which is the only thing a checkpoint is for.
+///
+/// Migrating onto a key that is already there overwrites the key that signed
+/// every checkpoint taken since the separation, and deletes the legacy one
+/// afterwards, so neither key survives to verify its own signatures. Not
+/// migrating when the new path is empty leaves the legacy key in place while
+/// [`CheckpointSigner::new_with_path`] mints a fresh one for the empty path, so
+/// every checkpoint taken before the upgrade fails its signature check and
+/// `rollback` refuses it.
+fn migrate_key_from(legacy: &std::path::Path, new_path: &std::path::Path) -> Result<()> {
+    if !legacy.exists() || new_path.exists() {
+        return Ok(());
     }
+
+    fs::copy(legacy, new_path)?;
+    // Restrictive mode - read-only for root
+    fs::set_permissions(
+        new_path,
+        std::os::unix::fs::PermissionsExt::from_mode(0o400),
+    )?;
+    fs::remove_file(legacy)?;
     Ok(())
 }
 
