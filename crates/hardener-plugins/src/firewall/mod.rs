@@ -853,6 +853,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         };
 
         if let Some(backend) = blocked {
+            let blocker = crate::refusal_blocker(ctx).await;
             unchecked.push(UncheckedCheck {
                 unchecked_check_id: format!("{}-disabled", backend.backend_name()),
                 unchecked_title: "Active firewall ruleset".to_string(),
@@ -861,7 +862,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     "verifying the active {} ruleset requires root",
                     backend.backend_name()
                 ),
-                unchecked_blocker: UncheckedBlocker::Privilege,
+                unchecked_blocker: blocker,
                 unchecked_compliance: get_firewall_compliance_mappings(),
             });
         } else if classified

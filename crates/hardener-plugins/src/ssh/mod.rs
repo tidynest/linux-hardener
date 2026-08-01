@@ -396,11 +396,7 @@ fn resolved_target(directive: &SshConfigDirective, config: &PluginConfig) -> Str
 /// root", leaving the guard inactive; an unprivileged remote session cannot
 /// restart sshd, so it cannot sever itself either.
 async fn is_remote_root_session(executor: &dyn hardener_core::SystemExecutor) -> bool {
-    executor.is_remote()
-        && matches!(
-            executor.execute_command("id", &["-u"]).await,
-            Ok(out) if out.success() && out.stdout.trim() == "0"
-        )
+    executor.is_remote() && hardener_core::session_is_root(executor).await
 }
 
 /// Returns true if a crypto directive's current value contains only strong
@@ -1225,7 +1221,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                         scan_findings: vec![],
                         scan_unchecked: unchecked_ssh_checks(
                             &format!("reading {path} requires root"),
-                            UncheckedBlocker::Privilege,
+                            crate::refusal_blocker(ctx).await,
                         ),
                         scan_duration_us: duration_us,
                         scan_error: None,

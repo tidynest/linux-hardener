@@ -145,6 +145,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unchecked_needs_privilege` with a boolean, so anything outside this project
   keying on that field needs updating.
 
+  **Four plugins now ask before they answer.** `firewall`, `audit`, `mac` and
+  `ssh` asserted that a privileged re-run would reach a check they could not
+  perform, without ever asking whether the session was already privileged. On a
+  host running as root that is a remedy the operator has already applied, and
+  whatever stopped the probe stops it again. Each now records `Environment` when
+  the session is already uid 0 and `Privilege` otherwise, so an unprivileged
+  scan reports exactly what it always did and a privileged one stops sending
+  the operator in a circle. The uid probe behind it is one definition shared
+  with the CLI's privilege gate and the ssh plugin's remote-root guard, which
+  had each grown their own copy.
+
   Two entries also stopped claiming things they had not established: a plugin
   whose own scan failed is no longer reported as beyond privilege's reach, since
   the reason is that plugin's prose and nothing reads it, and the ssh entry

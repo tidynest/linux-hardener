@@ -177,5 +177,34 @@ pub fn host_key_for(executor: &dyn SystemExecutor) -> String {
     }
 }
 
+/// Whether the executor's session is already uid 0.
+///
+/// One definition because two grew independently and each answered a slightly
+/// different question with the same command: the CLI's privilege gate, which
+/// also accepts passwordless sudo, and the ssh plugin's remote-root guard.
+/// Both reduce to this, and a third caller wanted it: an unchecked entry
+/// deciding whether a privileged re-run could reach a check it could not
+/// perform.
+///
+/// **This is not "could this session elevate".** A session that is not root but
+/// holds passwordless sudo has a privileged re-run available to it, so a check
+/// it could not perform is still worth offering that re-run for. Only a session
+/// already at uid 0 has nothing left to try, which is precisely the case the
+/// unchecked entries had no way to express. The CLI's gate composes this with
+/// its sudo probe rather than the other way round.
+///
+/// Asks the executor rather than the process, because `geteuid` on the
+/// controller says nothing about the far end of an `--ssh` session.
+///
+/// Fails closed: any error, any non-zero exit, anything that is not exactly
+/// `0` is "not root". A probe that could not answer must never be read as an
+/// answer.
+pub async fn session_is_root(executor: &dyn SystemExecutor) -> bool {
+    matches!(
+        executor.execute_command("id", &["-u"]).await,
+        Ok(out) if out.success() && out.stdout.trim() == "0"
+    )
+}
+
 #[cfg(test)]
 mod tests;

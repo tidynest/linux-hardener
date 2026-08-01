@@ -20,9 +20,7 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{
-        Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
-    },
+    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
 };
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
@@ -988,6 +986,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
             AuditRulesResult::PermissionDenied => {
                 // Cannot verify rules without root: report each expected rule
                 // as unchecked rather than silently skipping the whole check.
+                let blocker = crate::refusal_blocker(ctx).await;
                 for rule in AUDIT_RULES {
                     unchecked.push(UncheckedCheck {
                         unchecked_check_id: format!(
@@ -998,7 +997,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                         unchecked_category: FindingCategory::Audit,
                         unchecked_reason: "listing loaded audit rules (auditctl -l) requires root"
                             .to_string(),
-                        unchecked_blocker: UncheckedBlocker::Privilege,
+                        unchecked_blocker: blocker,
                         unchecked_compliance: get_audit_compliance_mappings("rules"),
                     });
                 }

@@ -6,7 +6,7 @@
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
     ChangeType, CommandOutput, Context, MockExecutor, PluginConfig, PolicyException,
-    plugin::HardeningPlugin,
+    UncheckedBlocker, plugin::HardeningPlugin,
 };
 use hardener_plugins::FirewallHardeningPlugin;
 use std::sync::Arc;
@@ -2454,5 +2454,56 @@ async fn an_unreadable_boot_state_is_an_issue_rather_than_a_queued_change() {
          path sums into `would_change`, so a line saying nothing is known must \
          not be counted as one queued write: {:?}",
         previewed.validation_report_estimated_changes
+    );
+}
+
+/// The defect issue #37 was opened for, measured rather than argued.
+///
+/// This plugin used to assert that a privileged re-run would reach the ruleset
+/// check, without ever asking whether it was already privileged. On an
+/// unprivileged host that advice is right. On a privileged one it is a remedy
+/// the operator has already applied, and whatever stopped the probe will stop
+/// it again: `systemd-nspawn` grants `CAP_NET_ADMIN` only to a container with
+/// its own network namespace, so a uid-0 container was told to try again as
+/// root.
+///
+/// The two fixtures differ in one registered command, `id -u`, which is the
+/// whole point: the observation the claim rests on is now made rather than
+/// assumed.
+#[tokio::test]
+async fn a_root_session_blocked_from_the_ruleset_is_not_told_to_try_root() {
+    let blocker_for = async |uid: &str| {
+        let executor = ufw_permission_denied_executor().with_command(
+            "id",
+            &["-u"],
+            CommandOutput {
+                stdout: format!("{uid}\n"),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+        let ctx = Context::with_executor(Arc::new(executor));
+        let result = FirewallHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .expect("the scan reports a blocked probe through ScanResult, never as Err");
+        result
+            .scan_unchecked
+            .iter()
+            .find(|check| check.unchecked_title == "Active firewall ruleset")
+            .map(|check| check.unchecked_blocker)
+            .unwrap_or_else(|| panic!("the blocked ruleset must be reported unchecked"))
+    };
+
+    assert_eq!(
+        blocker_for("1000").await,
+        UncheckedBlocker::Privilege,
+        "an unprivileged session has a privileged re-run left to try"
+    );
+    assert_eq!(
+        blocker_for("0").await,
+        UncheckedBlocker::Environment,
+        "a session already at uid 0 has nothing left to try, so offering sudo \
+         sends the operator after a remedy they have already applied"
     );
 }

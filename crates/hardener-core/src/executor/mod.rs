@@ -5,5 +5,5 @@ pub mod local;
 pub mod ssh;
 
 pub use hardener_common::executor::{
-    CommandOutput, FileMetadata, MockExecutor, SystemExecutor, host_key_for,
+    CommandOutput, FileMetadata, MockExecutor, SystemExecutor, host_key_for, session_is_root,
 };

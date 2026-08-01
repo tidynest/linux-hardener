@@ -16,6 +16,32 @@ pub use scan_outcome::{
 
 /// Common rollback helper for plugins.
 ///
+/// The blocker to record when a probe reported something that looked like a
+/// refusal, decided by asking whether this session is already root.
+///
+/// Four plugins used to assert that a privileged re-run would reach these
+/// checks, without observing anything. That is right on an unprivileged host
+/// and wrong on a privileged one, where whatever stopped the probe will stop it
+/// again: a capability the process does not hold, a tool it cannot spawn, a
+/// namespace it cannot see into. `systemd-nspawn` is where it was caught,
+/// granting `CAP_NET_ADMIN` only to a container with its own network
+/// namespace, so the firewall plugin at uid 0 told an operator to try again as
+/// root.
+///
+/// It deliberately does NOT ask whether the session could elevate. A session
+/// that is not root but holds passwordless sudo still has a privileged re-run
+/// to offer, which is exactly what `Privilege` means here.
+///
+/// The probe fails closed towards `Privilege`: a session whose uid could not be
+/// read is treated as not-root, so an operator is offered a remedy that may not
+/// help rather than denied one that would.
+pub async fn refusal_blocker(ctx: &hardener_core::Context) -> hardener_core::UncheckedBlocker {
+    match hardener_core::session_is_root(ctx.executor().as_ref()).await {
+        true => hardener_core::UncheckedBlocker::Environment,
+        false => hardener_core::UncheckedBlocker::Privilege,
+    }
+}
+
 /// This function handles the common pattern of restoring files from a checkpoint.
 /// Plugins can call this and then perform any additional service restarts needed.
 pub fn rollback_files_from_checkpoint(

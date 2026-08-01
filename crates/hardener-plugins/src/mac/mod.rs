@@ -717,6 +717,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                         // is the whole proof, so nothing is asked a second
                         // time; an existence probe here could only contradict
                         // it, and a contradiction used to delete the gap.
+                        let blocker = crate::refusal_blocker(ctx).await;
                         unchecked.push(UncheckedCheck {
                             unchecked_check_id: "apparmor-no-profiles".to_string(),
                             unchecked_title: "AppArmor profile enforcement".to_string(),
@@ -724,7 +725,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                             unchecked_reason:
                                 "reading the AppArmor profile set (aa-status) requires root"
                                     .to_string(),
-                            unchecked_blocker: UncheckedBlocker::Privilege,
+                            unchecked_blocker: blocker,
                             unchecked_compliance: get_mac_compliance_mappings(
                                 "apparmor-no-profiles",
                             ),
