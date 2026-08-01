@@ -418,7 +418,7 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 | ~~JSON output for `checkpoint rollback` command~~ | ~~ROADMAP.md v0.3.2 H~~ | Done | `5167e5a` |
 | ~~Polkit policy file for nicer dialog text~~ | ~~ROADMAP.md v0.3.2 H~~ | Done | 2026-02-25 |
 | ~~High Contrast theme (WCAG AAA)~~ | ~~ROADMAP.md v0.3.2 C~~ | Done | 2026-02-25 |
-| Extract inline tests to `tests/` dirs | ROADMAP.md tech debt | Low | Partial (2026-02-25); 73 source files still carry an inline `#[cfg(test)] mod tests`, tracked as issue #49 |
+| ~~Extract inline tests out of their source files~~ | ~~ROADMAP.md tech debt~~ | Done | 2026-08-01, issue #49: every one of the ten crates split, no source file in `crates/` or `src-tauri/src` holds an inline `#[cfg(test)]` block. The destination was a child module in its own file, not `tests/` |
 | AUR/deb/rpm package building & upload | ROADMAP.md v1.0.0 | Medium | Specs ready |
 
 ### 4. v1.0.0 production readiness

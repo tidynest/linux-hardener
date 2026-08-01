@@ -612,7 +612,7 @@ report zero `ManualReview` for covered controls.
 | Remove duplicate registry in plugins.rs | Removed from plugins.rs and apply.rs | Low | ✅ Complete |
 | Review field naming consistency | Audit complete: 2 violations fixed | Low | ✅ Complete |
 | Gate or remove `testing` feature | Removed unused feature from hardener-core | Low | ✅ Complete |
-| Extract inline tests to `tests/` dirs | Follow `hardener-plugins/tests/` pattern | Low | 🔄 Partial, issue #49: the 2026-02-25 pass moved some (`hardener-core/src/registry.rs` now carries none), but 73 source files still hold an inline `#[cfg(test)] mod tests` |
+| Extract inline tests out of their source files | Child module in its own file, not `tests/` | Low | ✅ Complete, issue #49, 2026-08-01 |
 | Framework descriptions in reports | Added `description()` as subtitle | Low | ✅ Complete |
 
 ### Code Deduplication Summary ✅
@@ -669,16 +669,30 @@ report zero `ManualReview` for covered controls.
 
 ### Test Restructure: issue #49
 
-Seventy-three source files still hold an inline `#[cfg(test)] mod tests`. The
-destination is a decision rather than a style question, and the issue states it:
-most of these tests read **private** items, so moving them under `tests/` would
-mean widening visibility to make them compile, and in a hardening tool a `pub`
-added to satisfy a test is an API change in the wrong direction. The default is
-therefore a child module in its own file, not an integration test. `hardener-cli`
-is a binary crate, so its inline tests cannot become integration tests at all
-without making it a library, which is a separate decision. Read the issue before
-starting; do not follow the older "move everything to `tests/`" phrasing this
-section used to carry.
+Complete as of 2026-08-01. Every source file in `crates/` and `src-tauri/src`
+that held an inline `#[cfg(test)]` block now declares it instead, and the block
+lives in its own file beside the code it exercises.
+
+The destination was a decision rather than a style question. Most of these tests
+read **private** items, so moving them under `tests/` would have meant widening
+visibility to make them compile, and in a hardening tool a `pub` added to satisfy
+a test is an API change in the wrong direction. Every one of them is therefore a
+child module in its own file. `hardener-cli` had no choice at all: it is a binary
+crate, so nothing can depend on it and an integration test was never available.
+
+Three things settled along the way and are worth not re-deriving. A non-root
+`foo.rs` takes `foo/tests.rs` beside it, which the 2018 path rules resolve with
+no `mod.rs` and no `#[path]`, so `super` is unchanged and no moved line needs
+editing. A `foo/mod.rs` **is** the module `foo`, so its tests go in the directory
+it already owns. And a module that is not called `tests` keeps its own name in a
+file of that name, following `src-tauri/src/acl_tests.rs`, which had been sitting
+beside `main.rs` since 2026-07-18 and was the repository's own precedent.
+
+Every split file opens with `#![cfg(test)]`. The declaration that pulls it in is
+already gated, so this changes nothing about what is compiled; it is there
+because three validators decide test context by looking for `cfg(test)` in the
+file they are reading, and a moved test module without it is judged as
+production code by all three.
 
 ---
 

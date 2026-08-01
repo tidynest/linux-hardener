@@ -867,7 +867,7 @@ purpose-named directories.
 
 ## Test Files
 
-Tests are co-located with source files using `#[cfg(test)]` modules, plus integration tests in `tests/` directories within each crate.
+Unit tests sit beside the source file they exercise, in a `#[cfg(test)]` module of their own file rather than inside it: `foo.rs` is accompanied by `foo/tests.rs`, and a `foo/mod.rs` by `foo/tests.rs` in the directory it already owns. They are still child modules, so they still read private items; only their location changed. Integration tests, which see the public API only, remain in each crate's `tests/` directory. The **Unit Tests** column below names the source files under test, not the files the tests live in.
 
 The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
 tree on **2026-08-01**, not a run total: a run also executes doctests and, for
