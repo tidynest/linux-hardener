@@ -75,6 +75,18 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/ssh_config.rs` | SSH connection config helper | `SshConnectionConfig` |
 | `src/commands/state.rs` | Shared state initialisation (DB + signing key paths) | `get_checkpoint_manager()`, `get_audit_logger()`, `effective_user()` |
 | `src/commands/privilege.rs` | Shared privilege probe for mutating commands; asks the executor session (`id -u` / `sudo -n`) so `--ssh` targets gate correctly | `is_privileged()` |
+| `src/cli/tests.rs` | Unit tests for `src/cli.rs`, 32 tests of argument parsing | Test-only; `super` resolves to `crate::cli`, so its imports carried across unchanged |
+| `src/output/tests.rs` | Unit tests for `src/output.rs`, 21 tests of the renderers | Test-only; `super` resolves to `crate::output`, so its imports carried across unchanged |
+| `src/ssh_config/tests.rs` | Unit tests for `src/ssh_config.rs` | Test-only; `super` resolves to `crate::ssh_config`, so its imports carried across unchanged |
+| `src/commands/scan/tests.rs` | Unit tests for `src/commands/scan.rs` | Test-only; `super` resolves to `crate::commands::scan`, so its imports carried across unchanged |
+| `src/commands/plugin_filter/tests.rs` | Unit tests for `src/commands/plugin_filter.rs` | Test-only; `super` resolves to `crate::commands::plugin_filter`, so its imports carried across unchanged |
+| `src/commands/apply/tests.rs` | Unit tests for `src/commands/apply.rs` | Test-only; `super` resolves to `crate::commands::apply`, so its imports carried across unchanged |
+| `src/commands/report/tests.rs` | Unit tests for `src/commands/report.rs` | Test-only; `super` resolves to `crate::commands::report`, so its imports carried across unchanged |
+| `src/commands/report_wizard/tests.rs` | Unit tests for `src/commands/report_wizard.rs` | Test-only; `super` resolves to `crate::commands::report_wizard`, so its imports carried across unchanged |
+| `src/commands/history/tests.rs` | Unit tests for `src/commands/history.rs` | Test-only; `super` resolves to `crate::commands::history`, so its imports carried across unchanged |
+| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 62 tests, the largest inline block in the workspace | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
+| `src/commands/state/tests.rs` | Unit tests for `src/commands/state.rs` | Test-only; `super` resolves to `crate::commands::state`, so its imports carried across unchanged |
+| `src/commands/privilege/tests.rs` | Unit tests for `src/commands/privilege.rs` | Test-only; `super` resolves to `crate::commands::privilege`, so its imports carried across unchanged |
 
 ---
 
@@ -826,7 +838,7 @@ workspace run itself for what passed.
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs` | 85 |
 | hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 100 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, `commands/*.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 160 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and nine of `commands/`: `apply.rs`, `batch.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 160 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, every plugin module | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 544 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 128 |
 | hardener-types | `lib.rs`, `remote.rs` | - | 41 |
