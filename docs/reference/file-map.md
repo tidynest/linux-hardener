@@ -638,6 +638,11 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_deep_scan` (pkexec-elevated sibling of run_scan), `run_apply`, `run_apply_dry_run`, `run_rollback`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `get_checkpoint_detail`, `generate_compliance_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `get_host_history`, `list_plugins`, `get_latest_scan`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `scan_with_executor` (shared scan helper), `scan_fleet` (bounded-concurrent orchestrator), `run_fleet_scan`/`run_fleet_apply`/`run_fleet_rollback` (#[tauri::command]), `run_fleet_mutation`/`build_batch_args`/`parse_outcomes` (fleet-mutation helpers), `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `validate_config`, `pick_config_file` |
 | `src/validation.rs` | IPC input validation layer | `validate_ipc_string()`, `validate_plugin_ids()`, `validate_checkpoint_id()`, `validate_checkpoint_name()`, `validate_privileged_config_path()`, `validate_user_config_path()`, `validate_output_path()`, `validate_ssh_key_path()` |
 | `src/acl_tests.rs` | Tests for per-command Tauri ACL scoping (SAM-039) | `#[cfg(test)]` ACL coverage |
+| `src/decoration_tests.rs` | Unit tests for `desktop_is_tiling()` in `src/main.rs` | Test-only; `main.rs` is the crate root, so this sits beside it exactly as `acl_tests.rs` does |
+| `src/validation/tests.rs` | Unit tests for `src/validation.rs` | Test-only; `super` resolves to `crate::validation` |
+| `src/commands/fleet_tests.rs` | Fleet command tests, the first of the three test modules `src/commands.rs` carried | Test-only; `super` resolves to `crate::commands` |
+| `src/commands/fail_session_on_err_tests.rs` | Tests for `fail_session_on_err`, the helper that marks an aborted scan's history row Failed rather than orphaning it as running | Test-only; `super` resolves to `crate::commands` |
+| `src/commands/compliance_source_tests.rs` | Tests for the compliance report's source selection | Test-only; `super` resolves to `crate::commands` |
 
 ### Tauri Commands
 ```rust

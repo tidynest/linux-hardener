@@ -112,20 +112,4 @@ fn desktop_is_tiling(xdg: &str) -> bool {
 }
 
 #[cfg(test)]
-mod decoration_tests {
-    use super::desktop_is_tiling;
-
-    #[test]
-    fn recognises_tiling_compositors() {
-        assert!(desktop_is_tiling("Hyprland"));
-        assert!(desktop_is_tiling("sway"));
-        assert!(desktop_is_tiling("wlroots:river"));
-    }
-
-    #[test]
-    fn rejects_floating_desktops() {
-        assert!(!desktop_is_tiling("GNOME"));
-        assert!(!desktop_is_tiling("KDE"));
-        assert!(!desktop_is_tiling(""));
-    }
-}
+mod decoration_tests;
