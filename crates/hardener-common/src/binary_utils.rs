@@ -43,28 +43,4 @@ pub fn resolve_binary(program: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn absolute_path_returned_unchanged() {
-        assert_eq!(resolve_binary("/usr/bin/ls"), "/usr/bin/ls");
-    }
-
-    #[test]
-    fn resolves_common_binary() {
-        let resolved = resolve_binary("ls");
-        assert!(
-            resolved.starts_with('/'),
-            "Expected absolute path, got: {resolved}"
-        );
-    }
-
-    #[test]
-    fn nonexistent_binary_returns_original() {
-        assert_eq!(
-            resolve_binary("__nonexistent_binary__"),
-            "__nonexistent_binary__"
-        );
-    }
-}
+mod tests;

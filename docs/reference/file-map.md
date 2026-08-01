@@ -137,6 +137,14 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/executor/mod.rs` | Executor abstraction (trait + types) | `SystemExecutor`, `CommandOutput`, `FileMetadata` |
 | `src/executor/mock.rs` | Virtual filesystem for unit testing | `MockExecutor` |
 | `src/vendor_config.rs` | Resolves configuration a distribution layers across `/etc` and `/usr/etc`. `/usr/etc` is consulted only on absence positively confirmed at `/etc`, because an `/etc` file that exists but cannot be read is still the file the system obeys, and answering with the vendor copy would report a configuration that is not in force | `ConfigLayer`, `LayeredRead`, `read_layered()`, `vendor_path_for()` |
+| `src/error/tests.rs` | Unit tests for `src/error.rs` | Test-only; `super` resolves to `crate::error` |
+| `src/logging/tests.rs` | Unit tests for `src/logging.rs` | Test-only; `super` resolves to `crate::logging` |
+| `src/binary_utils/tests.rs` | Unit tests for `src/binary_utils.rs` | Test-only; `super` resolves to `crate::binary_utils` |
+| `src/vendor_config/tests.rs` | Unit tests for `src/vendor_config.rs` | Test-only; `super` resolves to `crate::vendor_config` |
+| `src/file_utils/tests.rs` | Unit tests for `src/file_utils.rs`, the first of the two test modules that file carried | Test-only; `super` resolves to `crate::file_utils` |
+| `src/file_utils/global_scope_tests.rs` | The second, kept under its own name: that a directive written at global scope is not confused with the same directive inside an sshd `Match` block | Test-only; `super` resolves to `crate::file_utils` |
+| `src/executor/tests.rs` | Unit tests for `src/executor/mod.rs` | Test-only; that file *is* the module `executor`, so its tests go in the directory it already owns |
+| `src/executor/mock/tests.rs` | Unit tests for `src/executor/mock.rs` | Test-only; `super` resolves to `crate::executor::mock` |
 
 **Note**: Core types (Severity, FindingCategory, etc.) are now defined in `hardener-types` and re-exported here for backwards compatibility. The executor abstraction (`SystemExecutor`, `CommandOutput`, `FileMetadata`, `MockExecutor`) relocated here from `hardener-core` and is re-exported from that crate for source compatibility.
 

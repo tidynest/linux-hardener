@@ -42,14 +42,4 @@ pub fn init_logger() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_logger_initialisation() {
-        // This test verifies that init_logger() doesn't panic
-        // Note: Can only be called once per test process
-        init_logger();
-        tracing::info!("Test log message");
-    }
-}
+mod tests;
