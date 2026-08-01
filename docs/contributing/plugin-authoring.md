@@ -64,6 +64,17 @@ Per-method contract:
   (`applied_change_count`, `failed_change_count`, `skipped_change_count`)
   exclude both, so "N change(s) applied" only ever counts genuine hardening
   successes and a no-op plugin reads "no changes needed".
+  **A step that fails after the first change is recorded sets
+  `change_success: false` on that step and carries on building the result; it
+  does not return `Err`.** This is the same rule `scan()` has above, and it is
+  written here because it was not: the firewall plugin propagated a failed
+  enable with `?` and left no `ApplyResult` at all, so the checkpoint id, the
+  change list and every exception the operator had declared went with it. `Err`
+  is for a failure that reaches the caller before any change exists, such as the
+  pre-apply checkpoint, where there is nothing to report and nothing to roll
+  back to. Where a failure makes the remaining work impossible rather than
+  merely failed, record the one cause and return the result early: a list of
+  failures for steps that were never reached says the wrong thing.
 - **`rollback()`**: restores the plugin's files from the given checkpoint.
   The shared helper `hardener_plugins::rollback_files_from_checkpoint`
   handles the common restore-files pattern; add service restarts after it if

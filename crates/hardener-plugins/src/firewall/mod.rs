@@ -955,10 +955,17 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // recorded below, once `apply_changes` exists, rather than moving the
         // enable itself further down: this is a side effect the rules that
         // follow depend on, so its position must not change.
+        // The failure is held rather than propagated for the same reason the
+        // enable itself is held: `apply_changes` does not exist yet, and a `?`
+        // here returned before it ever did, so a firewall that refused to start
+        // left no result document at all. Every other plugin records the failed
+        // change and returns its result; audit's `systemctl enable auditd` is
+        // the closest match and pushes a failed `Change` in its `_` arm.
         let was_already_enabled = backend.is_enabled(ctx).await.is_ok();
-        if !was_already_enabled {
-            backend.enable(ctx).await?;
-        }
+        let enable_error = match was_already_enabled {
+            true => None,
+            false => backend.enable(ctx).await.err(),
+        };
 
         // Build rule set with config filtering and directive overrides.
         let baseline_rules = backend.get_default_rules();
@@ -972,8 +979,8 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // appear only in the log. The change list is the record apply leaves
         // behind, so an operator reading "N change(s) applied" was told about
         // the rules and not about the enable that made them mean anything.
-        apply_changes.push(if was_already_enabled {
-            Change {
+        apply_changes.push(match (was_already_enabled, &enable_error) {
+            (true, _) => Change {
                 change_description: format!(
                     "The {} firewall was already enabled",
                     backend.backend_name()
@@ -981,9 +988,8 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 change_type: ChangeType::Skipped,
                 change_success: true,
                 change_error: None,
-            }
-        } else {
-            Change {
+            },
+            (false, None) => Change {
                 change_description: format!("Enabled the {} firewall", backend.backend_name()),
                 // A service state change rather than a rule: ufw's enable runs
                 // `ufw --force enable` and firewalld's runs `systemctl start`
@@ -994,8 +1000,43 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 change_type: ChangeType::Service,
                 change_success: true,
                 change_error: None,
-            }
+            },
+            (false, Some(error)) => Change {
+                change_description: format!(
+                    "Failed to enable the {} firewall",
+                    backend.backend_name()
+                ),
+                change_type: ChangeType::Service,
+                change_success: false,
+                // The backend's own words, not a summary. ufw, firewalld and
+                // nftables each fail for reasons the operator has to act on.
+                change_error: Some(error.to_string()),
+            },
         });
+
+        // The rules below genuinely depend on the firewall being up, so this
+        // returns rather than attempting them.
+        //
+        // The result stops here rather than continuing with one recorded
+        // failure per unattempted rule. That was the other honest option and it
+        // reports one cause several times: the rules were not refused
+        // individually, they were never reached, and a list of five failures
+        // says the opposite of what happened. `restore_file_state` in
+        // `hardener-state` makes the same call where a directory it could not
+        // create is followed by a chmod that could only fail for the same
+        // reason, and says so at the site.
+        if let Some(error) = enable_error {
+            return Ok(ApplyResult {
+                apply_plugin_id,
+                apply_success: false,
+                apply_changes,
+                apply_checkpoint_id: checkpoint_id,
+                apply_error: Some(format!(
+                    "The {} firewall could not be enabled, so no rule was applied: {error}",
+                    backend.backend_name()
+                )),
+            });
+        }
 
         // The other half of "enabled", which the enable above cannot reach on
         // this host: it is skipped entirely when the firewall is already
@@ -1031,15 +1072,39 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             rules.push(rule);
         }
 
-        let mut backend_changes = backend.apply_rules(ctx, &rules).await?;
-        apply_changes.append(&mut backend_changes);
+        // The second place this abandoned a half-built result, and the costlier
+        // of the two: by here `apply_changes` holds the checkpoint, the enable
+        // and every exception the operator declared, and a `?` threw all of it
+        // away. Only two backends can reach it, and neither fails per rule:
+        // firewalld's `get_default_zone` and nftables' `ensure_managed_chain`
+        // both run before the loop, so this is a whole-backend failure and one
+        // recorded change is the right count. ufw cannot reach it at all, since
+        // its `apply_rules` records every per-rule failure and returns `Ok`.
+        let rules_error = match backend.apply_rules(ctx, &rules).await {
+            Ok(mut backend_changes) => {
+                apply_changes.append(&mut backend_changes);
+                None
+            }
+            Err(error) => {
+                apply_changes.push(Change {
+                    change_description: format!(
+                        "Failed to apply {} firewall rules",
+                        backend.backend_name()
+                    ),
+                    change_type: ChangeType::FirewallRule,
+                    change_success: false,
+                    change_error: Some(error.to_string()),
+                });
+                Some(error.to_string())
+            }
+        };
 
         Ok(ApplyResult {
             apply_plugin_id,
             apply_success: apply_changes.iter().all(|c| c.change_success),
             apply_changes,
             apply_checkpoint_id: checkpoint_id,
-            apply_error: None,
+            apply_error: rules_error,
         })
     }
 

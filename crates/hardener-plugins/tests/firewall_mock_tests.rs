@@ -2567,3 +2567,163 @@ async fn a_broken_ufw_is_not_reported_as_a_refusal() {
          classified as one"
     );
 }
+
+/// A host whose ufw is installed but switched off, and whose `--force enable`
+/// refuses. `ufw status` reporting anything but "Status: active" is what makes
+/// `is_enabled` return `Err`, which is how apply learns the firewall is down.
+fn ufw_enable_refused_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command_exists("ufw", true)
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("nft", false)
+        .with_command(
+            "ufw",
+            &["status"],
+            CommandOutput {
+                stdout: "Status: inactive\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "ufw",
+            &["--force", "enable"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "ERROR: problem running ufw-init\n".to_string(),
+                exit_code: 1,
+            },
+        )
+}
+
+#[tokio::test]
+async fn an_enable_failure_is_reported_as_a_result_rather_than_a_bare_error() {
+    let executor = ufw_enable_refused_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let result = FirewallHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect(
+            "a firewall that refuses to start is a failed apply, not an absent one: \
+             every other plugin records the failure and returns its result document",
+        );
+
+    assert!(
+        !result.apply_success,
+        "an apply that could not start the firewall has not succeeded"
+    );
+    assert!(
+        result.apply_error.is_some(),
+        "the result must carry why it failed, or the operator is left with a \
+         change list and no cause"
+    );
+
+    let failed: Vec<_> = result
+        .apply_changes
+        .iter()
+        .filter(|c| !c.change_success)
+        .collect();
+    assert_eq!(
+        failed.len(),
+        1,
+        "exactly one change failed, the enable itself; got {:?}",
+        result.apply_changes
+    );
+    assert_eq!(
+        failed[0].change_type,
+        ChangeType::Service,
+        "starting a firewall is a service change, the same variant the \
+         successful path records"
+    );
+    assert!(
+        failed[0]
+            .change_error
+            .as_deref()
+            .is_some_and(|e| e.contains("ufw-init")),
+        "the backend's own words must survive into the change, not be replaced \
+         by a summary: got {:?}",
+        failed[0].change_error
+    );
+
+    // The rules were never attempted, and the result must not suggest they
+    // were. This is the assertion that separates "recorded the failure" from
+    // "recorded the failure and then invented outcomes for work that never
+    // ran".
+    let issued_a_rule = executor
+        .log()
+        .commands_executed
+        .iter()
+        .any(|(program, args)| program == "ufw" && args.first().is_some_and(|a| a == "allow"));
+    assert!(
+        !issued_a_rule,
+        "no rule may be applied to a firewall that could not be started: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// nftables installed and already filtering, so `is_enabled` succeeds and the
+/// enable is skipped entirely. `nft add table` is then left unregistered, which
+/// is what `ensure_managed_chain` runs first, so the failure arrives through
+/// `apply_rules`: the second place this plugin used to abandon a half-built
+/// result, and the costlier one, because by then the list is not empty.
+///
+/// The ruleset must contain "hook input" or `is_enabled` reports the firewall
+/// down and the run takes the enable path instead, which is the other test.
+fn nft_chain_refused_executor() -> MockExecutor {
+    MockExecutor::new()
+        .with_command_exists("nft", true)
+        .with_command_exists("ufw", false)
+        .with_command_exists("firewall-cmd", false)
+        .with_command(
+            "nft",
+            &["list", "ruleset"],
+            CommandOutput {
+                stdout: "table inet filter {\n  chain input {\n    type filter hook input \
+                         priority 0; policy drop;\n  }\n}\n"
+                    .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "nftables"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+}
+
+#[tokio::test]
+async fn a_rule_failure_keeps_the_changes_already_recorded() {
+    let executor = nft_chain_refused_executor();
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let result = FirewallHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("a backend that cannot write its chain is a failed apply, not an absent one");
+
+    assert!(!result.apply_success, "nothing was applied");
+    assert!(
+        result.apply_error.is_some(),
+        "the cause must reach the result"
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_success && c.change_type == ChangeType::Skipped),
+        "the changes decided BEFORE the failure must survive it: the firewall \
+         was already running, which this apply recorded, and abandoning the \
+         result threw that away along with everything else. Got {:?}",
+        result.apply_changes
+    );
+    assert!(
+        result.apply_changes.iter().any(|c| !c.change_success),
+        "and the failure itself must be in the list, not only in apply_error"
+    );
+}
