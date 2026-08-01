@@ -525,7 +525,8 @@ across all eight plugins, honest unchecked reporting, remote privilege probing),
 fixes), and **v1.5.1** (`scan --exit-code` fails on an incomplete scan,
 `scan --compliance` removed, and the openSUSE vendor-configuration fix).
 
-**v1.5.1 is the current release and `main` is 150 commits past it, unreleased.**
+**v1.5.1 is the current release and `main` is 189 commits past it, 178
+excluding merges, unreleased.**
 Tagging that work is issue #53. `CHANGELOG.md` `[Unreleased]` describes it.
 
 ### GUI/UX Redesign (Desktop) ✅ (shipped in v1.5.0)
@@ -591,7 +592,7 @@ report zero `ManualReview` for covered controls.
 | Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Complete: CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback + ad-hoc SSH targets + live per-host progress + per-host history. Compliance-count drill-down remains open, issue #50 |
 | nftables ruleset persistence | The nftables backend writes into the running kernel and never into `/etc/nftables.conf`, so its rules do not survive a reboot even once the unit is enabled at boot | High | ⬜ Open, issue #52 |
 | Security audit (external) | Third-party security review; scope in [security/external-audit-scope.md](security/external-audit-scope.md) | Medium | ⬜ Open, issue #19 |
-| Performance optimisation | Scan speed improvements | Medium | ⬜ Pending, no issue filed |
+| Performance optimisation | Scan speed improvements; `scan --timings` shipped | Medium | ✅ Done, issue #20 closed 2026-07-17 |
 | Internationalisation | Multi-language support | Low | ⬜ Pending |
 | SELinux policy management | Full policy editing, not just detection | Low | ⬜ Pending |
 | AppArmor profile editor | Create and manage AppArmor profiles | Low | ⬜ Pending |

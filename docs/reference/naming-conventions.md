@@ -181,7 +181,7 @@ Two consequences are worth knowing before reading a count:
 
 ### The warning count is known noise
 
-Measured 2026-08-01: **0 errors, 107 production warnings, 183 test warnings.**
+Measured 2026-08-02: **0 errors, 108 production warnings, 192 test warnings.**
 Every one of them is an abbreviation; there are currently no British English
 warnings.
 

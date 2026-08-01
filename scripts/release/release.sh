@@ -246,20 +246,56 @@ fi
 
 # Step 3b: Update version in documentation files
 echo -e "\n${BLUE}Step 3b: Updating version in documentation...${NC}"
-DOC_FILES=(
-    "docs/architecture/architecture.md"
-)
-for doc_file in "${DOC_FILES[@]}"; do
-    if [[ -f "$doc_file" ]]; then
-        if $DRY_RUN; then
-            echo "Would update version in $doc_file"
-        else
-            # Update "**Version:** X.Y.Z" pattern
-            sed -i "s/^\*\*Version:\*\* [0-9]\+\.[0-9]\+\.[0-9]\+/**Version:** ${NEW_VERSION}/" "$doc_file"
-            echo "  Updated $doc_file"
-        fi
-    fi
-done
+# The `**Version**` markers belong to update_all_docs.py, which reads the number
+# out of Cargo.toml. Step 2b already ran it, but that was before step 3 bumped
+# Cargo.toml, so it wrote the version being replaced and a release left
+# README.md and docs/reference/data-flow.md one version behind. Step 2c could
+# not report it either: it validates before the bump, when the old number is
+# still the right answer, so the only check able to see the problem ran at the
+# only moment it could not. The hand-rolled sed this replaces covered
+# architecture.md alone, which is exactly why that one file stayed correct while
+# the other two drifted.
+if [[ ! -f "${VALIDATE_DIR}/update_all_docs.py" ]]; then
+    echo -e "  ${RED}Error: update_all_docs.py not found; version markers would be left behind${NC}"
+    exit 1
+fi
+if $DRY_RUN; then
+    python3 "${VALIDATE_DIR}/update_all_docs.py" || true
+else
+    python3 "${VALIDATE_DIR}/update_all_docs.py" --apply || true
+fi
+
+# Asserted rather than assumed, because the updater reports success for a target
+# whose pattern matched nothing, which is how a step was believed for months
+# while doing nothing. The list is imported from the updater rather than
+# restated, so a target added there is covered here without a second list to
+# keep in step. The expected number is whatever Cargo.toml holds at this point
+# in the run, which is the new version in a real run and the current one in a
+# rehearsal, so both modes assert the same property and a voided pattern fails
+# the rehearsal too.
+python3 - "${VALIDATE_DIR}" <<'PYEOF' || exit 1
+import re, sys
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+from update_all_docs import VERSION_REFERENCE_TARGETS
+
+source = Path("Cargo.toml").read_text()
+match = re.search(r'^\[workspace\.package\](?:.|\n)*?^version = "([^"]+)"', source, re.M)
+if match is None:
+    sys.exit("  Cargo.toml: could not read the workspace version")
+version = match.group(1)
+
+for name, pattern in VERSION_REFERENCE_TARGETS:
+    path = Path(name)
+    text = path.read_text()
+    updated, hits = re.subn(pattern, rf'\g<1>{version}', text)
+    if hits == 0:
+        sys.exit(f"  {name}: no version marker matched /{pattern}/; update_all_docs.py and this step disagree")
+    if updated != text:
+        sys.exit(f"  {name}: version marker is behind the workspace version {version}")
+print(f"  Verified {len(VERSION_REFERENCE_TARGETS)} version marker(s) at {version}")
+PYEOF
 
 # Update man page version in .TH header
 if [[ -f "packaging/assets/hardener.1" ]]; then

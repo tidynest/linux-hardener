@@ -77,6 +77,8 @@ fn migrate_key_from(legacy: &std::path::Path, new_path: &std::path::Path) -> Res
     Ok(())
 }
 
+/// Opens the checkpoint database and its signer at the paths
+/// [`resolve_paths`] chose for this user, migrating a pre-separation key first.
 pub async fn get_checkpoint_manager() -> Result<CheckpointManager> {
     let (db_path, key_path) = resolve_paths()?;
     let pool = init_db(Some(db_path.as_path())).await?;

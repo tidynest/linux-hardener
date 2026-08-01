@@ -4,7 +4,7 @@
 
 ## Current State (as of 2026-08-01)
 
-**Read this first: the last release is v1.5.1 (2026-07-27) and `main` is 150
+**Read this first: the last release is v1.5.1 (2026-07-27) and `main` is 189
 commits past it, none of them released.** The version in the tree is still
 `1.5.1`, so none of the work described in this section is in a build a user can
 install. `CHANGELOG.md` `[Unreleased]` is the authoritative record of that work;
@@ -373,8 +373,8 @@ test proven red→green).
 | Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |
 | External security audit | Third-party review; scope in [security/external-audit-scope.md](security/external-audit-scope.md) | ⬜ Open, issue #19 |
 | Real desktop-environment polkit runs | GNOME/KDE/XFCE pkexec sessions; the tooling ships, the runs need live sessions | ⬜ Open, issue #18 |
-| Release checklist for the next tag | The 150 unreleased commits need a tagged release; the man page also has no `/usr/etc` text | ⬜ Open, issue #53 |
-| Performance optimisation | Scan speed improvements | ⬜ Pending, no issue filed |
+| Release checklist for the next tag | The 189 unreleased commits need a tagged release; the man page also has no `/usr/etc` text | ⬜ Open, issue #53 |
+| Performance optimisation | Scan speed improvements; `scan --timings` shipped | ✅ Done, issue #20 closed 2026-07-17 |
 
 ---
 
@@ -428,7 +428,7 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 | Security audit (internal: 53/53 complete) | Critical | Done, third-party review pending |
 | Package distribution (deb, rpm, AUR) | High | Specs ready, build scripts created |
 | Comprehensive user documentation | High | Man page + docs/guide/installation.md done |
-| Performance optimisation | Medium | Pending |
+| Performance optimisation | Medium | Done, issue #20 |
 
 ---
 
@@ -443,7 +443,8 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
   quoting it, this number moves most weeks
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
 - **Current Version**: 1.5.1 (code, tag and repo packaging; AUR bump follows the
-  tag). `main` is 150 commits past that tag and unreleased
+  tag). `main` is 189 commits past that tag, 178 excluding merges, and
+  unreleased
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
