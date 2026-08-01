@@ -127,6 +127,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener scan` no longer reports a PAM directive as set in a file it could
+  not read.** Where the PAM stack does not load the module that reads a
+  configuration file, the scan reports the directive as unenforced whatever the
+  file holds, which is correct and deliberate: the check runs before the value
+  is read, because a file nothing consults makes its own value irrelevant. The
+  finding then narrated a premise that check had skipped, opening "PAM directive
+  'minlen' is set in /etc/security/pwquality.conf", and its impact line said the
+  setting "appears configured". One sentence covered four different hosts: one
+  whose file sets the directive, one whose file could not be read, one with no
+  such file at either layer, and one whose file simply omits it. Only the first
+  made the claim true. Reproduced on an unprivileged scan of an Arch host whose
+  `/etc/security/pwquality.conf` is mode 0600, where the tool logged the failed
+  read and then reported six directives as set in it. Both sentences now describe
+  the PAM stack, which is the thing that was actually read, and the remediation
+  is unchanged. No verdict, severity or compliance mapping moves; a control that
+  failed still fails.
+- **A PAM configuration file that cannot be read now says why in the log.** The
+  warning printed the path twice and the cause never, so an operator could not
+  tell a privilege failure, which a privileged re-run fixes, from an I/O or
+  encoding failure, which it does not. The distinction was already computed one
+  line above and discarded, while the audit and firewall plugins say "requires
+  root" plainly in the same scan.
 - **`hardener apply --plugin firewall-hardening` now reports turning the
   firewall on.** Enabling a firewall that was off is the most consequential
   thing this plugin does, taking a host from no firewall to a firewall, and it

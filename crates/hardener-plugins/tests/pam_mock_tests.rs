@@ -3251,6 +3251,66 @@ async fn scan_still_passes_a_pwquality_file_the_stack_does_read() {
     );
 }
 
+/// A module-absent finding must not narrate a premise the scan skipped.
+///
+/// `module_absent_finding` fires from the `NotInStack` arm, which by design
+/// runs before the directive's value is read, so one sentence covers four
+/// states: a file that sets the directive, one that cannot be read, one absent
+/// at both layers, and one that is readable and omits it. Only the first makes
+/// "is set in" true.
+///
+/// This fixture is the second, and it is the host that produced the report: an
+/// unprivileged scan of an Arch workstation whose `/etc/security/pwquality.conf`
+/// is mode 0600 and whose stack loads no `pam_pwquality.so`. The scan logged
+/// the failed read and then reported six directives as set in that file.
+#[tokio::test]
+async fn scan_does_not_claim_a_directive_is_set_in_a_file_it_could_not_read() {
+    let executor =
+        stack_without_pwquality().with_read_permission_denied("/etc/security/pwquality.conf");
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    // Positive control. Without it every assertion below is satisfied by a
+    // finding that stopped being emitted at all, which is the reassuring
+    // direction this plugin is repeatedly fixed for.
+    let minlen = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-minlen")
+        .unwrap_or_else(|| {
+            panic!(
+                "an unreadable file whose module is absent must still be reported, got: {:?}",
+                result
+                    .scan_findings
+                    .iter()
+                    .map(|f| &f.finding_id)
+                    .collect::<Vec<_>>()
+            )
+        });
+    assert!(
+        minlen.finding_description.contains("pam_pwquality.so"),
+        "the finding must still name the missing module, got: {}",
+        minlen.finding_description
+    );
+
+    assert!(
+        !minlen.finding_description.contains("is set in"),
+        "the description claims the directive is set in a file this scan was \
+         denied permission to read, got: {}",
+        minlen.finding_description
+    );
+    assert!(
+        !minlen.finding_impact.contains("appears configured"),
+        "the impact claims the file is configured, which this scan did not \
+         establish, got: {}",
+        minlen.finding_impact
+    );
+}
+
 /// A stack this run could not read is not a stack without the module. The same
 /// distinction the inline read already makes, applied to presence: concluding
 /// absence from a file that could not be opened would fail a control on a host

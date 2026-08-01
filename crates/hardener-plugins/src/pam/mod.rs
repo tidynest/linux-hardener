@@ -1375,24 +1375,34 @@ fn module_not_loaded_message(conf_path: &str, module: &str) -> String {
 /// The finding for a directive whose configuration file no module reads.
 ///
 /// A separate finding from the ordinary "wrong value" one, and it fires
-/// whatever the value is, because the value is not the problem: the file is
-/// correct and inert. It keeps the directive's own id, severity and compliance
+/// whatever the value is, because the value is not the problem: nothing reads
+/// the file. It keeps the directive's own id, severity and compliance
 /// mappings, so every control that rested on the silent pass now rests on this
 /// instead rather than on nothing.
+///
+/// **It may say nothing about the file's contents**, and this is the whole of
+/// the reasoning. It is reached from the `NotInStack` arm, which runs before
+/// the directive's value is read, so one sentence has to cover a file that
+/// sets the directive, one that could not be read, one absent at both layers
+/// and one that is readable and omits it. It used to open "is set in", which
+/// is true of the first alone: an unprivileged scan of a host with a
+/// root-only `pwquality.conf` logged the failed read and then reported six
+/// directives as set in it. Every claim here is now about the stack, which is
+/// the thing that was actually read.
 fn module_absent_finding(directive: &PamDirective, module: &str, conf_path: &str) -> Finding {
     Finding {
         finding_id: format!("pam-{}", directive.pam_directive_name),
         finding_category: FindingCategory::Authentication,
         finding_current_value: "not enforced".to_string(),
         finding_description: format!(
-            "PAM directive '{}' is set in {} but not enforced: the PAM stack does not load \
-             {}, which is the only thing that reads that file",
-            directive.pam_directive_name, conf_path, module
+            "PAM directive '{}' is not enforced: the PAM stack does not load {}, which is \
+             the only thing that reads {}",
+            directive.pam_directive_name, module, conf_path
         ),
         finding_explanation: directive.pam_description.to_string(),
         finding_impact:
-            "The setting appears configured and has no effect, so the host enforces nothing \
-             while its configuration file says otherwise"
+            "Nothing on this host reads that file, so the directive has no effect whatever \
+             its value and the host enforces nothing for it"
                 .to_string(),
         finding_recommended_value: directive.pam_secure_value.to_string(),
         finding_remediation_steps: vec![
@@ -1919,7 +1929,21 @@ async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
             reason,
             permission_denied,
         } => {
-            warn!("Failed to read {}: {}", path, reason);
+            // The cause, not just the failure. `permission_denied` is decided
+            // here and was left out of the line, so the operator read "failed
+            // to read" with nothing telling them whether sudo would help,
+            // while audit and firewall say "requires root" plainly in the same
+            // scan.
+            warn!(
+                "Failed to read {}: {} ({})",
+                path,
+                reason,
+                if permission_denied {
+                    "permission denied, a privileged re-run would reach it"
+                } else {
+                    "not a privilege failure, a privileged re-run would not help"
+                }
+            );
             let path = path.clone();
             // Only a genuine privilege failure is worth telling the operator to
             // re-run with sudo. An I/O error or non-UTF-8 content will not
