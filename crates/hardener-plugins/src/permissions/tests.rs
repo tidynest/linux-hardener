@@ -145,17 +145,33 @@ fn shadow_has_privacy_and_iso_mappings() {
     );
 }
 
-/// Confirms every assessed critical path carries the SOC 2 logical-access
+/// Confirms every mapped critical path carries the SOC 2 logical-access
 /// criterion CC6.1, filed under its Trust Services Criteria series.
+///
+/// The path list is DERIVED from `CRITICAL_PERMISSIONS` rather than restated.
+/// It used to be a literal five, which was the whole set when it was written
+/// and silently became a subset the moment the sudoers paths gained mappings:
+/// a test whose subject can grow underneath it goes on passing while covering
+/// less, and says nothing about the part it no longer reaches.
+///
+/// The count is pinned for the other direction. Deriving the list alone would
+/// let a path LOSE its mappings and simply drop out of the loop, which reads as
+/// agreement and is the opposite of it. Seven of the nine ship a mapping;
+/// `/root` and `/boot` do not.
 #[test]
 fn critical_paths_map_soc2_logical_access() {
-    for path in [
-        "/etc/passwd",
-        "/etc/shadow",
-        "/etc/group",
-        "/etc/gshadow",
-        "/etc/ssh",
-    ] {
+    let mapped: Vec<&str> = CRITICAL_PERMISSIONS
+        .iter()
+        .map(|directive| directive.permission_path)
+        .filter(|path| !get_permissions_compliance_mappings(path).is_empty())
+        .collect();
+    assert_eq!(
+        mapped.len(),
+        7,
+        "expected seven mapped paths, got {mapped:?}"
+    );
+
+    for path in mapped {
         let soc2 = get_permissions_compliance_mappings(path)
             .into_iter()
             .find(|m| m.compliance_framework == ComplianceFramework::SOC2)
@@ -180,7 +196,17 @@ fn critical_paths_map_nist_800_171_requirements() {
             .unwrap_or_else(|| panic!("{path} must carry an 800-171 mapping"))
     };
 
-    for path in ["/etc/passwd", "/etc/shadow", "/etc/group", "/etc/gshadow"] {
+    // The sudoers paths translate through the same 800-53 AC-6(1) as the
+    // account files, which is why they belong in this loop rather than beside
+    // the sshd directory below.
+    for path in [
+        "/etc/passwd",
+        "/etc/shadow",
+        "/etc/group",
+        "/etc/gshadow",
+        "/etc/sudoers",
+        "/etc/sudoers.d",
+    ] {
         let mapping = nist171_for(path);
         assert_eq!(mapping.compliance_control_id, "3.1.5", "{path}");
         assert_eq!(
@@ -207,7 +233,17 @@ fn critical_paths_map_fedramp_moderate_controls() {
             .unwrap_or_else(|| panic!("{path} must carry a FedRAMP mapping"))
     };
 
-    for path in ["/etc/passwd", "/etc/shadow", "/etc/group", "/etc/gshadow"] {
+    // The sudoers paths translate through the same 800-53 AC-6(1) as the
+    // account files, which is why they belong in this loop rather than beside
+    // the sshd directory below.
+    for path in [
+        "/etc/passwd",
+        "/etc/shadow",
+        "/etc/group",
+        "/etc/gshadow",
+        "/etc/sudoers",
+        "/etc/sudoers.d",
+    ] {
         let mapping = fedramp_for(path);
         assert_eq!(mapping.compliance_control_id, "AC-6(1)", "{path}");
         assert_eq!(
@@ -444,5 +480,68 @@ fn an_override_cannot_widen_a_max_mask_into_silence() {
     assert!(
         violates(&effective_directive(shadow, &narrowing), 0o640),
         "a narrowed mask must still be honoured, or the clamp refuses everything",
+    );
+}
+
+/// Both sudoers paths are `Severity::Critical` and neither could be reported on
+/// by any framework, because an empty mapping vector contributes no control id
+/// to the catalogue at all. That is quieter than a wrong answer: a reader
+/// looking for sudoers in a compliance report found nothing, and could not tell
+/// whether the tool had checked and was happy or had never looked.
+#[test]
+fn both_sudoers_paths_carry_the_transferable_mappings() {
+    for path in ["/etc/sudoers", "/etc/sudoers.d"] {
+        let mappings = get_permissions_compliance_mappings(path);
+        let has = |framework| mappings.iter().any(|m| m.compliance_framework == framework);
+        for framework in [
+            ComplianceFramework::NIST,
+            ComplianceFramework::HIPAA,
+            ComplianceFramework::GDPR,
+            ComplianceFramework::ISO27001,
+            ComplianceFramework::SOC2,
+            ComplianceFramework::NIST800171,
+            ComplianceFramework::FedRAMP,
+        ] {
+            assert!(has(framework), "{path} must map to {framework:?}");
+        }
+    }
+}
+
+/// CIS and PCI-DSS are omitted deliberately, and the omission has to be
+/// asserted or the next person to touch this file will "complete" the set by
+/// inventing the two ids that cannot be sourced.
+///
+/// The account files are the positive control. Without them this test passes
+/// against a tree where the CIS mappings were deleted everywhere, which would
+/// look like agreement and be the opposite of it.
+#[test]
+fn the_unsourceable_frameworks_are_absent_from_sudoers_and_present_elsewhere() {
+    let carries = |path: &str, framework| {
+        get_permissions_compliance_mappings(path)
+            .iter()
+            .any(|m| m.compliance_framework == framework)
+    };
+
+    for path in ["/etc/sudoers", "/etc/sudoers.d"] {
+        assert!(
+            !carries(path, ComplianceFramework::CIS),
+            "{path}: a CIS control id names its file in the title, so shadow's \
+             cannot be transferred and no sudoers one exists in this tree",
+        );
+        assert!(
+            !carries(path, ComplianceFramework::PCIDSS),
+            "{path}: PCI-DSS presence is per-file and SSG-driven; /etc/gshadow \
+             omits it for the same reason",
+        );
+    }
+
+    assert!(
+        carries("/etc/shadow", ComplianceFramework::CIS),
+        "control: the account files do carry CIS, so the absences above are \
+         about sudoers and not about a tree that lost its CIS mappings",
+    );
+    assert!(
+        carries("/etc/shadow", ComplianceFramework::PCIDSS),
+        "control: likewise for PCI-DSS",
     );
 }

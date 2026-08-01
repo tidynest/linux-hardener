@@ -434,9 +434,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would not. The finding is keyed on the `/etc` path, so the report, the
   deduplication between a path's finding and its unchecked entry, and any
   compliance mappings the path carries all resolve it by the identifier they
-  already ask for. `/etc/sudoers` carries no compliance mapping in this tool, so no
-  framework report changes for the measured case; the permission paths that do
-  carry one are `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow` and
+  already ask for. `/etc/sudoers` carried no compliance mapping in this tool when this
+  entry was written, so no framework report changed for the measured case; it
+  and `/etc/sudoers.d` gained one later (issue #39). The permission paths
+  carrying one at the time were `/etc/passwd`, `/etc/shadow`, `/etc/group`,
+  `/etc/gshadow` and
   `/etc/ssh`. A policy exception written for the `/etc` path still annotates the
   finding, matched against the vendor copy's mode because that is the mode in
   force.

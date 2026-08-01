@@ -910,6 +910,68 @@ fn get_permissions_compliance_mappings(path: &str) -> Vec<ComplianceMapping> {
                 "Remote Access - Usage Restrictions and Configuration",
             ),
         ],
+        // Both sudoers paths, and the two frameworks they do NOT carry are the
+        // point of this arm rather than an oversight.
+        //
+        // These seven ids are the ones already sourced in this file whose
+        // titles name no file: least privilege and access restriction apply to
+        // a Critical path on the same reasoning that puts them on
+        // `/etc/shadow`, so transferring them asserts nothing new about the
+        // world. That is the whole test for whether an id may move here.
+        //
+        // CIS is omitted because a CIS control names its file in its own title
+        // (`6.1.3 Ensure permissions on /etc/shadow are configured`), so
+        // shadow's cannot be transferred, and no sudoers id exists anywhere in
+        // this tree to put in its place. PCI-DSS is omitted because its
+        // presence is decided per file by the SSG rule: `/etc/gshadow` already
+        // drops it for exactly that reason, and there is no SSG rule here to
+        // consult. This follows the same rule the doc comment above states for
+        // STIG: a framework with no concrete control ID to cite is left out and
+        // told about, never filled in by analogy.
+        //
+        // The consequence of the previous silence, so it is not reintroduced:
+        // an empty vector contributes no control id to the catalogue, so
+        // sudoers rendered as neither Pass nor Fail nor ManualReview. It was
+        // absent, which reads exactly like a clean result.
+        "/etc/sudoers" | "/etc/sudoers.d" => vec![
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-6(1)".to_string(),
+                compliance_control_title:
+                    "Least Privilege - Authorize Access to Security Functions".to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::HIPAA,
+                compliance_control_id: "164.312(a)(1)".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Safeguards".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::GDPR,
+                compliance_control_id: "TM-AC".to_string(),
+                compliance_control_title: "Access Control".to_string(),
+                compliance_section: Some("Technical Measures".to_string()),
+            },
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.3".to_string(),
+                compliance_control_title: "Information access restriction".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+            // SOC 2: CC6.1 mirrors the AC-6(1) least-privilege file-access intent.
+            soc2(
+                "CC6.1",
+                "Logical access security software, infrastructure, and architectures",
+            ),
+            // 800-171r3 3.1.5 <- 800-53 AC-6(1) (SP 800-171r3 source-control table).
+            nist171("3.1.5", "Least Privilege"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-6(1).
+            fedramp(
+                "AC-6(1)",
+                "Least Privilege - Authorize Access to Security Functions",
+            ),
+        ],
         _ => vec![],
     }
 }
