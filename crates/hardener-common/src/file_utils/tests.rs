@@ -401,7 +401,7 @@ Match User deploy
     );
     assert_eq!(
         out,
-        "Port 22\nPermitRootLogin no\nMatch User deploy\n    PasswordAuthentication yes",
+        "Port 22\nPermitRootLogin no\nMatch User deploy\n    PasswordAuthentication yes\n",
     );
 }
 
@@ -421,7 +421,7 @@ PermitRootLogin yes
         true,
         Duplicates::Keep,
     );
-    assert_eq!(out, "#Match Address 10.0.0.0/8\nPermitRootLogin no");
+    assert_eq!(out, "#Match Address 10.0.0.0/8\nPermitRootLogin no\n");
 }
 
 /// `faillock.conf` and its siblings ship their defaults commented out, and
@@ -443,7 +443,7 @@ deny=10
         true,
         Duplicates::Remove,
     );
-    assert_eq!(out, "# deny = 3\ndeny = 5");
+    assert_eq!(out, "# deny = 3\ndeny = 5\n");
 }
 
 /// A file the writer cannot see through is rewritten on every run and never
@@ -459,7 +459,7 @@ fn rewriting_a_key_equals_value_line_converges_in_one_pass() {
         true,
         Duplicates::Remove,
     );
-    assert_eq!(out, "minlen = 14");
+    assert_eq!(out, "minlen = 14\n");
     assert_eq!(
         parse_config_value(&out, "minlen", ConfigFormat::Auto, true),
         Some("14".to_string()),
@@ -485,8 +485,8 @@ fn the_writer_does_not_match_a_longer_key_that_starts_the_same() {
         "the longer key is a different directive and must be untouched:\n{out}",
     );
     assert!(
-        out.ends_with("PASS_MAX 1"),
-        "the new directive is appended as its own line:\n{out}",
+        out.ends_with("PASS_MAX 1\n"),
+        "the new directive is appended as its own line, terminated:\n{out}",
     );
 }
 
@@ -515,5 +515,76 @@ match address 10.0.0.0/8
     assert!(
         out.contains("    PermitRootLogin yes"),
         "the block line must survive:\n{out}",
+    );
+}
+
+/// The writer's output is a file, and a file ends with a newline.
+///
+/// It did not. `content.lines()` discards the terminator and `join("\n")` does
+/// not put one back, so every rewrite came back one byte short and the next
+/// thing appended to that file landed on the last directive. The symptom that
+/// found it was sshd refusing `Bad SSH2 mac spec '...umac-128-etm@openssh.comMaxAuthTries'`.
+#[test]
+fn the_written_content_is_newline_terminated() {
+    let out = set_config_directive(
+        "Port 22\n",
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert!(
+        out.ends_with('\n'),
+        "an appended directive left the file unterminated:\n{out:?}",
+    );
+
+    // The loss was never conditional on appending. A directive rewritten where
+    // it already stands took the terminator with it too, which is why a host
+    // needed no new directive to end up with a truncated file.
+    let rewritten = set_config_directive(
+        "PermitRootLogin yes\n",
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(rewritten, "PermitRootLogin no\n");
+}
+
+/// Terminating the output must not accumulate blank lines, or a compliant file
+/// grows by one every run and each run reports a change it did not need to
+/// make. This is the positive control on the fix: it fails just as loudly for a
+/// writer that appends a newline unconditionally as the test above fails for
+/// one that appends none.
+#[test]
+fn an_existing_trailing_blank_line_is_neither_lost_nor_multiplied() {
+    let with_blank = "Port 22\n\n";
+    let once = set_config_directive(
+        with_blank,
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(
+        once, "Port 22\n\nPermitRootLogin no\n",
+        "the blank line the file already had must survive unchanged",
+    );
+
+    // And the second pass, which is what an operator running apply twice sees.
+    let twice = set_config_directive(
+        &once,
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(
+        twice, once,
+        "a second pass over its own output must be a no-op"
     );
 }

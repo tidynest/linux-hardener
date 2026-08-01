@@ -1036,13 +1036,23 @@ async fn ssh_apply_never_writes_a_directive_into_a_match_block() {
         .unwrap_or_else(|| panic!("the Match block must survive:\n{written}"));
 
     // Everything from the block header on must be exactly what went in, which
-    // rules out both an edit inside the block and an append below it. Only
-    // trailing whitespace is discounted: the writer joins lines without a
-    // final newline, which is pre-existing and tracked separately.
+    // rules out both an edit inside the block and an append below it. Trailing
+    // whitespace is discounted only because BLOCK is written as a bare literal
+    // here; the terminator itself is asserted separately below, and used to be
+    // absent.
     assert_eq!(
         written[start..].trim_end(),
         BLOCK,
         "the Match block must survive byte for byte, indentation included:\n{written}",
+    );
+
+    // The file this apply writes is a file, and the next thing appended to it
+    // must land on its own line. Without this the last directive and whatever
+    // an operator adds afterwards become one line, which is how sshd came to
+    // refuse a `MACs` value with a `MaxAuthTries` welded onto the end of it.
+    assert!(
+        written.ends_with('\n'),
+        "the written sshd_config must be newline-terminated:\n{written:?}",
     );
     assert!(
         has_permit_root_login(&written[..start], "no"),

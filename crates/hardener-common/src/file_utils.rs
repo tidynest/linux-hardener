@@ -365,7 +365,9 @@ const MATCH_KEYWORD: &str = "Match";
 ///   in this file, or stale and safe to drop
 ///
 /// # Returns
-/// New content with the directive set.
+/// New content with the directive set, always newline-terminated, because
+/// what a caller does with it is write it to a file and something else will
+/// append to that file later.
 pub fn set_config_directive(
     content: &str,
     directive_name: &str,
@@ -449,7 +451,20 @@ pub fn set_config_directive(
         }
     }
 
-    lines.join("\n")
+    // `str::lines` discards the terminator and `join` does not put one back, so
+    // every rewrite used to come back one byte short: not only an appended
+    // directive, but a line rewritten where it already stood. Whatever was
+    // appended to that file next landed on the last directive, which is how an
+    // sshd_config ended in
+    // `MACs ...umac-128-etm@openssh.comMaxAuthTries` and sshd refused to start.
+    //
+    // Pushing one newline rather than restoring what was there is exact, not
+    // approximate: a blank line at the end of the input survives `lines` as an
+    // empty element, so `"a\n\n"` round-trips through join to `"a\n"` and back
+    // to `"a\n\n"`. Only the single final terminator is ever missing.
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
 }
 
 /// Creates a timestamped backup of a file.

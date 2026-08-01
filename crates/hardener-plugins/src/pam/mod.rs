@@ -2445,9 +2445,12 @@ fn apply_exact_directive(
     // the lines themselves tells "nothing to do" apart from all three: a
     // repaired line leaves the count of lines exactly as it was, which is how a
     // file whose only definition is the appended one stayed broken and green.
-    // Blank lines are excluded because joining the lines drops a trailing
-    // blank, which would otherwise read as a change and rewrite a compliant
-    // file.
+    // Blank lines are excluded. The reason they had to be is gone: the writer
+    // dropped the file's terminator, so a compliant file came back one byte
+    // short, read as a change, and was rewritten on every run. The writer
+    // terminates its output now and that hazard is closed. The filter stays
+    // because the comparison it serves is about directive lines rather than
+    // layout, and a run that only moved a blank line still has nothing to say.
     fn lines_with_text(text: &str) -> Vec<&str> {
         text.lines().filter(|l| !l.trim().is_empty()).collect()
     }
