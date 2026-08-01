@@ -271,6 +271,9 @@ pub struct FileState {
 | `src/package/dnf.rs` | Red Hat family | `DnfPackageManager` |
 | `src/package/pacman.rs` | Arch family | `PacmanPackageManager` |
 | `src/package/zypper.rs` | SUSE family | `ZypperPackageManager` |
+| `src/tests.rs` | Unit tests for the crate root, split out of `lib.rs` | Test-only; a crate root cannot become a directory, so `super` here means this file and its `use super::*` became `use crate::*` |
+| `src/adapter/tests.rs` | Unit tests for `src/adapter.rs` | Test-only; `super` resolves to `crate::adapter`, so its imports carried across unchanged |
+| `src/package/tests.rs` | Unit tests for `src/package/mod.rs` | Test-only; `super` resolves to `crate::package`, the directory that file already owns |
 
 ---
 
@@ -821,7 +824,7 @@ workspace run itself for what passed.
 | hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs` | 89 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `output/*.rs`, `frameworks/iso27001.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 86 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs` | 85 |
-| hardener-distro | `adapter.rs`, `package/*.rs` | - | 16 |
+| hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 100 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, `commands/*.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 160 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, every plugin module | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 544 |
