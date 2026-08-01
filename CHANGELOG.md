@@ -542,6 +542,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a different question. The per-distribution total moves from 126 tests to 133.
   A services arm is owed and deliberately absent: reading the equivalent mask
   defect needs a unit the plugin manages, and no container image installs one.
+- **The services arm that entry says is owed now exists, as section 12B**, and
+  it takes the per-distribution total from 133 to 140. It asks the same
+  questions of `systemctl mask`: that the apply created the mask link, that the
+  rollback removed it, that the unit is enabled again afterwards and that
+  `/etc/systemd/system` lists exactly the paths it listed before. It needs a
+  host running systemd, says so before doing anything, and under `--pipe` skips
+  while naming the flag that would let it run.
+- **The suite refuses a run whose size it did not expect.** That total has moved
+  twice without anyone deciding it should, 126 to 133 and 133 to 140, and
+  nothing held it, so a section that quietly stopped recording checks would have
+  read as a shorter run rather than as a fault. Each section now declares how
+  many checks it records, the declarations are counted off the pinned lengths of
+  the plugin, framework, scenario, format and severity tables rather than off
+  the tables themselves, and a run that recorded a different number is reported
+  as a failure rather than only as a non-zero exit, because the cross-distro
+  runner writes PASS into its summary for any distribution whose failure count
+  is zero. The five per-distribution logs of the last full run were counted
+  section by section to establish the declarations, and all five agreed on every
+  section.
 
 ### Removed
 - `custom_directives`, the per-plugin config table that was accepted, merged

@@ -1112,7 +1112,8 @@ sudo ./scripts/test/full-test-suite.sh
 sudo ./scripts/test/full-test-suite.sh --apply
 ```
 
-**What It Tests** (27 test sections, 133 individual tests):
+**What It Tests** (28 test sections, 140 individual tests on a booted container
+under `--apply`, 134 unbooted, 109 without `--apply`):
 
 | Section | Tests |
 |---------|-------|
@@ -1129,6 +1130,7 @@ sudo ./scripts/test/full-test-suite.sh --apply
 | 11. History Commands | list, show, export |
 | 12. Systemd Commands | generate, install, status, uninstall |
 | 12A. Rollback Undoes The Audit Apply | Apply audit hardening, roll it back, and assert on the filesystem that the rules file is gone, that `/etc/audit` lists exactly the paths it listed beforehand, and that the compiled rule set is back at its pre-apply line count (--apply only). Runs FIRST inside the apply block by necessity: it asks whether a rollback *removes* a created file, which cannot be asked once section 15 has already created it. Needs a container no `--apply` run has touched, and reports its reading void rather than passing where it finds one. |
+| 12B. Rollback Undoes The Services Apply | Apply service minimisation, roll it back, and assert on the filesystem that the mask link `systemctl mask` created is gone, that the unit is enabled again, and that `/etc/systemd/system` lists exactly the paths it listed beforehand (--apply only). Runs inside the apply block beside 12A and for the same reason. Needs a host running systemd, which `--pipe` does not provide: there it records its precondition check and skips, naming `--booted` as the flag that would let it run. |
 | 13. Apply Kernel | Apply kernel hardening + verify changes |
 | 14. Apply Other Plugins | Apply 5 remaining plugins (ssh, permissions, pam, firewall, service-minimisation); audit and mac are skipped in containers. Kernel is handled in section 13. |
 | 15. Apply --all | Apply all plugins at once |
@@ -1151,11 +1153,13 @@ sudo ./scripts/test/full-test-suite.sh --apply
 
 **Test Modes**:
 
-The `--apply` flag gates destructive tests (sections 12A-16, 19, 23). Without it, those sections are skipped. Container-mode auto-detection automatically skips 6 environment-dependent tests when running inside `systemd-nspawn` containers.
+The `--apply` flag gates destructive tests (sections 12A-16, 19, 23). Without it, those sections are skipped. Container-mode auto-detection automatically skips 6 environment-dependent tests when running inside `systemd-nspawn` containers, and an unbooted container skips section 12B as well.
 
-`--apply` hardens every container it touches, and nothing in the suite undoes the audit apply section 15 performs. Recreate the container before each `--apply` run (`sudo ./scripts/containers/create-container.sh <distro>`), or section 12A will report its precondition broken and the run will end red. The total is dynamic and pinned nowhere, so an aborted section 12A also lowers the reported total rather than showing as failures against 133.
+`--apply` hardens every container it touches, and nothing in the suite undoes the audit apply section 15 performs. Recreate the container before each `--apply` run (`sudo ./scripts/containers/create-container.sh <distro>`), or sections 12A and 12B will report their precondition broken and the run will end red.
 
-The suite's own decision logic can be driven without root or a container: `./scripts/test/full-test-suite.sh --self-test` exercises the apply classification and the three-way file reading (`count` / `absent` / `unreadable`) section 12A depends on.
+**The size of a run is declared rather than discovered.** Each section says how many checks it records, and the suite refuses a run whose total differs, as a counted failure rather than as a non-zero exit alone: the cross-distro runner writes PASS into `summary.txt` for any distribution whose failure count is zero, so a refusal carried by the exit status would read there as a pass. A section that returned early therefore shows as a short run rather than lowering the total quietly, which is how the total moved from 126 to 133 to 140 with nothing noticing. The declarations are counted off the pinned lengths of the plugin, framework, scenario, format and severity tables rather than off the tables themselves, so shortening one of those moves one side of the comparison and not the other; the preflight refuses a run whose tables are not the size they declare.
+
+The suite's own decision logic can be driven without root or a container: `./scripts/test/full-test-suite.sh --self-test` exercises the apply classification, the three-way file reading (`count` / `absent` / `unreadable`) section 12A depends on, and the size guard, including that a shortened table is refused while the expected total stays where it was.
 
 **Exit Codes**:
 - `0`: All tests passed

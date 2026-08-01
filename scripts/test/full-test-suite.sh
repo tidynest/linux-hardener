@@ -23,7 +23,14 @@ BINARY="${BINARY:-$PROJECT_DIR/target/x86_64-unknown-linux-musl/release/hardener
 LOG_FILE="/tmp/hardener-full-test-$(date +%Y%m%d-%H%M%S).log"
 REPORT_DIR="/tmp/hardener-test-reports"
 
-# All 8 plugins
+# The five tables the sections below loop over. Each carries its length as a
+# literal beside it, and `suite_section_sizes` counts off those literals rather
+# than off the tables themselves: read from ${#PLUGINS[@]} an expectation would
+# follow the table it exists to police, so dropping a plugin would lower both
+# sides and a run eight checks short would still read as a complete one.
+#
+# The prose these comments used to carry said "All 6 compliance frameworks"
+# beside seven of them, which is why the number now lives in exactly one place.
 PLUGINS=(
     "audit-hardening"
     "firewall-hardening"
@@ -34,18 +41,23 @@ PLUGINS=(
     "service-minimisation"
     "ssh-hardening"
 )
+PLUGINS_EXPECTED=8
 
-# All 6 compliance frameworks
+# Compliance frameworks
 FRAMEWORKS=("cis" "stig" "nist" "pcidss" "hipaa" "gdpr" "iso27001")
+FRAMEWORKS_EXPECTED=7
 
-# All 7 scenarios
+# Deployment scenarios
 SCENARIOS=("server" "workstation" "government" "healthcare" "financial" "gdpr" "all")
+SCENARIOS_EXPECTED=7
 
-# All output formats
+# Output formats
 FORMATS=("text" "json" "csv" "html")
+FORMATS_EXPECTED=4
 
 # Severity levels
 SEVERITIES=("info" "low" "medium" "high" "critical")
+SEVERITIES_EXPECTED=5
 
 # Test counters
 TESTS_TOTAL=0
@@ -157,6 +169,158 @@ run_test_output() {
     fi
 }
 
+# Whether systemd is running as PID 1 here.
+#
+# /run/systemd/system exists only then. It is the canonical test and it is
+# cheaper and more honest than asking systemctl a question and reading its
+# failure. Section 12B needs a booted host to ask anything at all, and the
+# expectation of how many checks that section records needs the same answer, so
+# both ask this one predicate: two copies would be free to disagree, and this
+# project has already been bitten by exactly that, with two copies of the
+# rollback allowlist guard, one fatal and one per file.
+host_is_booted() { [[ -d /run/systemd/system ]]; }
+
+# =============================================================================
+# How large a run of this suite is, declared rather than discovered
+# =============================================================================
+#
+# The number this suite prints has moved twice without anybody deciding it
+# should: 126 to 133 when section 12A landed and 133 to 140 when 12B did.
+# Nothing held it, so a section that quietly stopped recording checks would have
+# read as a shorter run rather than as a fault, which is the same shape as a
+# check that passes by matching nothing. `require_check_tables` in
+# `differential-suite.sh` is the precedent and it has caught its own authors
+# four times.
+
+require_suite_tables() {
+    local entry name got want refused=0
+    for entry in \
+        "PLUGINS ${#PLUGINS[@]} $PLUGINS_EXPECTED" \
+        "FRAMEWORKS ${#FRAMEWORKS[@]} $FRAMEWORKS_EXPECTED" \
+        "SCENARIOS ${#SCENARIOS[@]} $SCENARIOS_EXPECTED" \
+        "FORMATS ${#FORMATS[@]} $FORMATS_EXPECTED" \
+        "SEVERITIES ${#SEVERITIES[@]} $SEVERITIES_EXPECTED"; do
+        read -r name got want <<<"$entry"
+        if [[ "$got" != "$want" ]]; then
+            log "  ${RED}[FATAL]${NC} $name holds $got entries where it declares $want"
+            refused=1
+        fi
+    done
+    if (( refused > 0 )); then
+        log "  A shortened table makes a smaller run look like a complete one, because"
+        log "  every expectation in suite_section_sizes is counted off these numbers."
+        log "  Restore the entry, or move the number beside the table if it went"
+        log "  deliberately."
+        return 1
+    fi
+}
+
+# What each section records, in the order main runs them.
+#
+# Three facts change the answer, and all three arrive as arguments rather than
+# as readings taken here, so the self-test can ask about a combination this host
+# is not in:
+#
+#   apply     - the four apply sections, the two rollback sections and the
+#               lifecycle run only under --apply.
+#   booted    - section 12B can only put its question to a host running systemd,
+#               and under --pipe it records the one precondition check and skips.
+#   container - outside a container three systemd checks and the audit and MAC
+#               applies run that a container skips. The preflight refuses to run
+#               anywhere but a container, so that arm cannot be reached today; it
+#               is here to keep this table honest with the code rather than
+#               because a run will meet it.
+#
+# Where each number comes from: the booted container column was counted off the
+# five per-distribution logs of the 2026-08-01 --apply --booted run, section by
+# section, and all five distributions agreed on every section. The unbooted 12B
+# row and the two non-container rows are read off the code and have never been
+# measured, which is said out loud rather than left for somebody to assume.
+suite_section_sizes() {
+    local apply="$1" booted="$2" container="$3"
+    local systemd_checks=5 other_apply_checks=7 services_rollback_checks=1
+
+    if [[ "$container" == "true" ]]; then
+        systemd_checks=2
+        other_apply_checks=5
+    fi
+    if [[ "$booted" == "true" ]]; then
+        services_rollback_checks=7
+    fi
+
+    printf '%s\n' \
+        "1 basic commands|11" \
+        "2 scan, all plugins|$((PLUGINS_EXPECTED + 2))" \
+        "3 scan filters|$((SEVERITIES_EXPECTED + 3))" \
+        "4 scan output formats|$((FORMATS_EXPECTED + 1))" \
+        "5 reports, all frameworks|$FRAMEWORKS_EXPECTED" \
+        "6 reports, all scenarios|$SCENARIOS_EXPECTED" \
+        "7 report output formats|$((FRAMEWORKS_EXPECTED + 5))" \
+        "8 dry run, all plugins|$((PLUGINS_EXPECTED + 1))" \
+        "9 checkpoint operations|5" \
+        "10 daemon commands|2" \
+        "11 history commands|5" \
+        "12 systemd commands|$systemd_checks"
+
+    if [[ "$apply" == "true" ]]; then
+        printf '%s\n' \
+            "12A audit rollback|7" \
+            "12B services rollback|$services_rollback_checks" \
+            "13 apply kernel|1" \
+            "14 apply, the other plugins|$other_apply_checks" \
+            "15 apply --all|1" \
+            "16 rollback|1"
+    fi
+
+    printf '%s\n' \
+        "17 global --format flag|3" \
+        "18 error handling|4" \
+        "20 scan history persistence|3" \
+        "21 history filtering|3" \
+        "22 plugin filter combinations|4"
+
+    if [[ "$apply" == "true" ]]; then
+        printf '%s\n' "23 per-plugin lifecycle|9"
+    fi
+
+    printf '%s\n' \
+        "24 config file loading|2" \
+        "25 report combinations|2" \
+        "26 flag combinations|3" \
+        "19 post-apply scan verification|2"
+}
+
+expected_test_total() {
+    local count total=0
+    while IFS='|' read -r _ count; do
+        total=$((total + count))
+    done < <(suite_section_sizes "$@")
+    printf '%s' "$total"
+}
+
+# Refuses a run that recorded a different number of checks from the one its
+# sections declare.
+#
+# Reported through log_fail rather than through the exit status alone, and the
+# reason is in the runner: `run-cross-distro-tests.sh` writes PASS into
+# summary.txt for any distribution whose failure count is zero, so a refusal
+# carried only by the exit code would read as a pass in the file most likely to
+# be looked at first. Moving the failure count moves both.
+require_expected_total() {
+    local want got="$TESTS_TOTAL" label count
+    want="$(expected_test_total "$@")"
+    [[ "$got" == "$want" ]] && return 0
+
+    log_fail "The run recorded $got checks where its sections declare $want"
+    log_info "  A section that returned early records fewer and a section added without"
+    log_info "  its number here records more, and neither should read as a complete run."
+    log_info "  What each section declares, in the order they run:"
+    while IFS='|' read -r label count; do
+        log_info "    $label: $count"
+    done < <(suite_section_sizes "$@")
+    return 1
+}
+
 # =============================================================================
 # Pre-flight checks
 # =============================================================================
@@ -201,6 +365,15 @@ preflight_checks() {
         exit 1
     fi
     log_check "Version: $version"
+
+    # Before any section runs, because a shortened table makes every expectation
+    # below it wrong and there is nothing to learn from a run measured against a
+    # number that has already moved.
+    if ! require_suite_tables; then
+        log "${RED}ERROR: this suite's own tables are not the size they declare${NC}"
+        exit 1
+    fi
+    log_check "Check tables hold what they declare"
 
     mkdir -p "$REPORT_DIR"
     log_check "Report directory: $REPORT_DIR"
@@ -692,10 +865,9 @@ test_services_rollback_restores() {
 
     log_test "Services rollback: the host is in the state this reading needs"
 
-    # /run/systemd/system exists only when systemd is running as PID 1. This is
-    # the canonical test and it is cheaper and more honest than asking
-    # `systemctl` a question and interpreting its failure.
-    if [[ ! -d /run/systemd/system ]]; then
+    # The same predicate the expected size of this section is derived from, so
+    # the two cannot come to disagree about what a booted host is.
+    if ! host_is_booted; then
         log_skip "Services rollback: this host is not booted under systemd; re-run with --booted"
         log_info "  systemctl mask and systemctl is-enabled both need systemd as PID 1,"
         log_info "  which nspawn --pipe does not provide. Nothing below can be asked here."
@@ -1250,6 +1422,12 @@ test_flag_combinations() {
 generate_summary() {
     log_header "TEST SUMMARY"
 
+    # Asked before the counts are printed, so a run of the wrong size moves the
+    # failure count those counts report rather than only the exit status.
+    local booted=false
+    host_is_booted && booted=true
+    require_expected_total "$DO_APPLY" "$booted" "$CONTAINER_MODE" || true
+
     local pass_rate=0
     if [[ $TESTS_TOTAL -gt 0 ]]; then
         pass_rate=$((TESTS_PASSED * 100 / TESTS_TOTAL))
@@ -1404,6 +1582,74 @@ self_test() {
         check_contains "unreadable" "an unreadable file is not reported as absent" \
             line_count "$workdir/unreadable"
     fi
+
+    check_eq() {
+        local got="$1" want="$2" what="$3"
+        if [[ "$got" == "$want" ]]; then
+            echo "  ok   $what"
+        else
+            echo "  FAIL $what: got '$got', want '$want'"
+            failures=$((failures + 1))
+        fi
+    }
+
+    # The size of a run. Every number here is a reading rather than an
+    # arithmetic restatement of the table: 140 was counted off the five
+    # per-distribution logs of the 2026-08-01 --apply --booted run, section by
+    # section, and all five agreed on every section. The other two are derived
+    # from the same table and have never been measured, which is said here so
+    # nobody reads them as evidence.
+    check_eq "$(expected_test_total true true true)" "140" \
+        "a booted --apply run in a container declares the 140 checks five hosts recorded"
+    check_eq "$(expected_test_total true false true)" "134" \
+        "an unbooted --apply run declares six fewer, the services rollback rows it cannot ask"
+    check_eq "$(expected_test_total false true true)" "109" \
+        "a run without --apply declares neither the apply sections nor the lifecycle"
+
+    # The property that makes the table guard a guard rather than a mirror: the
+    # expectation is counted off the pinned numbers, so shortening a table moves
+    # one side and not the other. Counted off ${#PLUGINS[@]} instead, both sides
+    # would fall together and a run three plugins short would read as complete.
+    check_status 0 "require_suite_tables accepts the tables as they stand" \
+        require_suite_tables
+
+    local saved_plugins=("${PLUGINS[@]}")
+    PLUGINS=("${PLUGINS[@]:0:7}")
+    check_status 1 "require_suite_tables refuses a table edited down" \
+        require_suite_tables
+    check_eq "$(expected_test_total true true true)" "140" \
+        "and the expected total does not follow the table it polices"
+    PLUGINS=("${saved_plugins[@]}")
+    check_status 0 "require_suite_tables accepts the table once it is restored" \
+        require_suite_tables
+
+    # A run is refused on the count it recorded, not on the count it wanted.
+    local saved_log="$LOG_FILE" saved_total="$TESTS_TOTAL"
+    LOG_FILE="$workdir/self-test.log"
+    TESTS_TOTAL=140
+    check_status 0 "a run that recorded what the sections declare is accepted" \
+        require_expected_total true true true
+    TESTS_TOTAL=139
+    check_status 1 "a run one check short of what the sections declare is refused" \
+        require_expected_total true true true
+
+    # The refusal has to reach the failure count and not only the exit status.
+    # `run-cross-distro-tests.sh` decides a distribution's status in summary.txt
+    # on the failure count alone, so a refusal that moved nothing but the exit
+    # code would be written into that file as a pass. Asserting the status is
+    # asserting the absence of a wrong claim; this asserts the presence of the
+    # right one.
+    local saved_failed="$TESTS_FAILED" saved_failed_list=("${FAILED_TESTS[@]}")
+    TESTS_FAILED=0
+    FAILED_TESTS=()
+    require_expected_total true true true > "$workdir/refusal.log" 2>&1
+    check_eq "$TESTS_FAILED" "1" \
+        "a refused run is counted as a failure, not carried by the exit status alone"
+    TESTS_FAILED="$saved_failed"
+    FAILED_TESTS=("${saved_failed_list[@]}")
+
+    LOG_FILE="$saved_log"
+    TESTS_TOTAL="$saved_total"
 
     rm -rf "$workdir"
 
