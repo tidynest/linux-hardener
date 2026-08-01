@@ -125,6 +125,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repairing an affected host is written out in
   [docs/guide/upgrading.md](docs/guide/upgrading.md#150-and-earlier-opensuse-hosts-may-have-a-short-file-masking-the-vendor-copy).
 
+### Added
+
+- **`/etc/sudoers` and `/etc/sudoers.d` are reported on by a compliance
+  framework.** Both fell through the catch-all arm of the permissions plugin's
+  mapping table, so neither contributed a control identifier and a framework
+  report rendered them as neither Pass nor Fail nor ManualReview. They were
+  absent, which is quieter than a wrong answer and harder to notice: a reader
+  looking for sudoers found nothing and could not tell whether the tool had
+  checked and was content or had never looked at all. Both paths are Critical
+  and both now carry the seven control identifiers already sourced in that file
+  whose titles name no file, on the same reasoning that puts least privilege
+  and access restriction on `/etc/shadow`. CIS and PCI-DSS are deliberately
+  left out and the reason is recorded at the site: a CIS control names its own
+  file in its title, so `/etc/shadow`'s cannot be transferred and no sudoers
+  control identifier exists anywhere in this tree to put in its place, and
+  PCI-DSS is decided per file by the upstream SSG rule, which is why
+  `/etc/gshadow` already drops it. Both absences are asserted by a test, with
+  the account files as its positive control, so the set cannot be completed by
+  inventing the two.
+
 ### Changed
 
 - **`UncheckedCheck` records what blocked a check rather than a single
@@ -162,6 +182,133 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raised when Include resolution fails no longer says "reading
   /etc/ssh/sshd_config requires root" about a file it read successfully three
   lines earlier.
+- **The differential test suite asks whether settings the tool does not manage
+  survived the run.** `ENCRYPT_METHOD`, `HOME_MODE` and `UMASK` are captured
+  before apply and again afterwards and must be unchanged, each read from the
+  setting's own consumer rather than from a configuration file. The assertion
+  is the invariant, never a particular value, because the correct value differs
+  between distributions while "unchanged" does not. Nothing in the suite
+  previously asked this, so a masking regression could have reappeared with
+  every existing check green. The per-distribution total moves from 22 checks
+  to 25, and the five-distribution total from 110 to 125.
+- **The full test suite asks whether a rollback undid anything.** Its per-plugin
+  lifecycle section applied a plugin and rolled it back, and its only rollback
+  assertion was that the command exited 0, so it reported a pass for a rollback
+  that restored nothing. That is the defect family this project keeps finding in
+  its own product, and two instances of it were fixed in the audit plugin alone
+  while the suite read the same 126 of 126 on five distributions before and
+  after. New section 12A applies audit hardening, rolls it back and then reads
+  the filesystem: the rules file must be gone, `/etc/audit` must list exactly
+  the paths it listed beforehand, and the compiled rule set must be back at its
+  pre-apply line count. It runs first inside the apply block by necessity, since
+  a rollback can only be seen to *remove* a created file on a host that does not
+  have it yet, and it refuses to report at all on a container an earlier
+  `--apply` run has already hardened, because a reading taken there would answer
+  a different question. The per-distribution total moves from 126 tests to 133.
+  A services arm is owed and deliberately absent: reading the equivalent mask
+  defect needs a unit the plugin manages, and no container image installs one.
+- **The services arm that entry says is owed now exists, as section 12B**, and
+  it takes the per-distribution total from 133 to 140. It asks the same
+  questions of `systemctl mask`: that the apply created the mask link, that the
+  rollback removed it, that the unit is enabled again afterwards and that
+  `/etc/systemd/system` lists exactly the paths it listed before. It needs a
+  host running systemd, says so before doing anything, and under `--pipe` skips
+  while naming the flag that would let it run.
+- **The suite refuses a run whose size it did not expect.** That total has moved
+  twice without anyone deciding it should, 126 to 133 and 133 to 140, and
+  nothing held it, so a section that quietly stopped recording checks would have
+  read as a shorter run rather than as a fault. Each section now declares how
+  many checks it records, the declarations are counted off the pinned lengths of
+  the plugin, framework, scenario, format and severity tables rather than off
+  the tables themselves, and a run that recorded a different number is reported
+  as a failure rather than only as a non-zero exit, because the cross-distro
+  runner writes PASS into its summary for any distribution whose failure count
+  is zero. The five per-distribution logs of the last full run were counted
+  section by section to establish the declarations, and all five agreed on every
+  section.
+- **The per-plugin lifecycle section asks what its apply and its rollback did.**
+  Section 23 applies, re-scans and rolls back kernel, ssh and permissions on a
+  host sections 13 to 15 have already hardened, and it could see none of that.
+  Its rollback was judged on the exit status alone. Its finding count was
+  compared with `-le`, which is satisfied by nothing having happened, so the
+  false branch was unreachable on every host the suite runs on and fifteen
+  readings across five distributions all read N to N. Its checkpoint was chosen
+  with `head -1` over an unfiltered listing, so a plugin whose apply failed
+  before taking one would have rolled back another plugin's snapshot and
+  reported a pass for undoing somebody else's work. The count is now compared
+  for equality, with each direction named, and the checkpoint comes from the
+  apply's own result document, which is the only place the pairing between an
+  apply and the checkpoint it took exists. A plugin whose apply had nothing to
+  do takes none, ssh says so at its own apply site, and the rollback rows are
+  then skipped with that reason rather than rolling back some other apply's
+  checkpoint. The host is re-scanned after the rollback as well, and the count
+  must be where the apply found it, which is what a rollback removing a drop-in
+  it should have restored would break. A scan that produced no document is told apart from a host with
+  no findings, because a failed scan prints no finding id and its count of zero
+  compared equal to a clean host's. Whether a rollback removes what an apply
+  created cannot be asked at this position, since the apply here changes
+  nothing, and that question stays with sections 12A and 12B. The
+  per-distribution total moves from 140 to 149.
+- **Three more validators.** `validate_doc_attachment.py` catches a `///`
+  block that came loose from the item it describes, which is what happens when
+  a new item is inserted between a comment and its function: it compiles,
+  rustdoc renders, and the only symptom is one function documented as two
+  things while the function the prose describes has nothing. Eight instances
+  had accumulated.
+  `validate_write_sites.py` is a registry holding every file-creating call site
+  in the plugins tree to two written answers, why its parent directory exists
+  and whether the path it creates is declared to that plugin's own pre-apply
+  checkpoint. Both questions were answered by hand, three times and twice
+  respectively, before anything swept for them, which is the point at which this
+  project stops fixing instances one at a time. That script also asserts that
+  every `cp` site passes both `-p` and `--no-dereference`, as an assertion
+  rather than a registry column, because unlike the other two that question has
+  a single correct answer everywhere and a column would only offer somewhere to
+  write "exempt". `validate_unit_state_reads.py` holds every `systemctl
+  is-enabled` site to a declared answer about whether it judges the printed word
+  or the exit status, because the three sites differ deliberately and a rule
+  banning either reading would be wrong at one of them.
+- **The cross-distro runner can boot the container it tests in.** Under `--pipe`
+  the suite itself is PID 1, so systemd never runs and every question that goes
+  through the service manager is unanswerable, which is why services, audit and
+  firewall had no differential oracle. `--booted` runs the same suite as a child
+  of the container's own systemd instead, leaving `--pipe` untouched as the
+  default so every measurement taken under it stays valid. The container is
+  given `--private-network` rather than `--network-veth`, measured rather than
+  reasoned about: both give an identical capability set with `CAP_NET_ADMIN`,
+  the same read-write `/proc/sys/net` and the same working iptables.
+- **The release notices that used to open `README.md` now live in
+  [docs/guide/upgrading.md](docs/guide/upgrading.md)**, organised by the version
+  a host is being upgraded **from** rather than by the release that fixed the
+  defect, so an operator reads the one section that applies to the host in front
+  of them. `README.md` describes the tool before it apologises for it.
+
+- **Four more validators, so `scripts/validate/validate_all.py` runs fourteen
+  checks.** `validate_doc_targets.py` holds `update_all_docs.py`'s declared
+  target lists and the tree to each other in both directions, because the
+  updater silently skips a target whose file is missing and then reports "no
+  changes needed" for work it never attempted: five compliance files it names
+  had been deleted six weeks earlier and every run said there was nothing to
+  do. `validate_badges.py` compares the committed badge SVGs against the
+  generator that declares them, which had drifted to a different version and a
+  different test count, making the documented regeneration step destructive.
+  `validate_test_assertions.py` refuses a test whose every assertion sits
+  inside an `if`, a `for` or a `match` arm, since such a test asserts nothing
+  when the condition does not hold and still counts towards the total everyone
+  reads. `validate_policy_exception_sites.py` fails on a finding that hardcodes
+  its policy exception to `None` with no comment beside it, because counting
+  those sites cannot tell an oversight from a decision and neither can a test
+  asserting the field is `None`.
+- **The full test suite's dry-run and apply rows read the document they are
+  given.** Both passed on the command exiting 0 or on a result document merely
+  existing, so a row read the same whether the plugin's preview was correct,
+  wrong or reverted to an earlier version. Each now compares the exit code
+  against the document's own verdict, which the CLI derives one from the other:
+  a dry run fails on a Critical or High validation issue, and for a single
+  plugin an apply's exit code is exactly `apply_success`. A run that exits
+  non-zero with nothing in its report to explain it is now a failure, and the
+  blocking issues are printed into the log, so a run can say which blocker
+  fired rather than only that one did.
 
 ### Fixed
 
@@ -1031,108 +1178,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   key in a later package as well as the file an older release of this tool
   wrote.
 
-### Changed
-
-- **The differential test suite asks whether settings the tool does not manage
-  survived the run.** `ENCRYPT_METHOD`, `HOME_MODE` and `UMASK` are captured
-  before apply and again afterwards and must be unchanged, each read from the
-  setting's own consumer rather than from a configuration file. The assertion
-  is the invariant, never a particular value, because the correct value differs
-  between distributions while "unchanged" does not. Nothing in the suite
-  previously asked this, so a masking regression could have reappeared with
-  every existing check green. The per-distribution total moves from 22 checks
-  to 25, and the five-distribution total from 110 to 125.
-- **The full test suite asks whether a rollback undid anything.** Its per-plugin
-  lifecycle section applied a plugin and rolled it back, and its only rollback
-  assertion was that the command exited 0, so it reported a pass for a rollback
-  that restored nothing. That is the defect family this project keeps finding in
-  its own product, and two instances of it were fixed in the audit plugin alone
-  while the suite read the same 126 of 126 on five distributions before and
-  after. New section 12A applies audit hardening, rolls it back and then reads
-  the filesystem: the rules file must be gone, `/etc/audit` must list exactly
-  the paths it listed beforehand, and the compiled rule set must be back at its
-  pre-apply line count. It runs first inside the apply block by necessity, since
-  a rollback can only be seen to *remove* a created file on a host that does not
-  have it yet, and it refuses to report at all on a container an earlier
-  `--apply` run has already hardened, because a reading taken there would answer
-  a different question. The per-distribution total moves from 126 tests to 133.
-  A services arm is owed and deliberately absent: reading the equivalent mask
-  defect needs a unit the plugin manages, and no container image installs one.
-- **The services arm that entry says is owed now exists, as section 12B**, and
-  it takes the per-distribution total from 133 to 140. It asks the same
-  questions of `systemctl mask`: that the apply created the mask link, that the
-  rollback removed it, that the unit is enabled again afterwards and that
-  `/etc/systemd/system` lists exactly the paths it listed before. It needs a
-  host running systemd, says so before doing anything, and under `--pipe` skips
-  while naming the flag that would let it run.
-- **The suite refuses a run whose size it did not expect.** That total has moved
-  twice without anyone deciding it should, 126 to 133 and 133 to 140, and
-  nothing held it, so a section that quietly stopped recording checks would have
-  read as a shorter run rather than as a fault. Each section now declares how
-  many checks it records, the declarations are counted off the pinned lengths of
-  the plugin, framework, scenario, format and severity tables rather than off
-  the tables themselves, and a run that recorded a different number is reported
-  as a failure rather than only as a non-zero exit, because the cross-distro
-  runner writes PASS into its summary for any distribution whose failure count
-  is zero. The five per-distribution logs of the last full run were counted
-  section by section to establish the declarations, and all five agreed on every
-  section.
-- **The per-plugin lifecycle section asks what its apply and its rollback did.**
-  Section 23 applies, re-scans and rolls back kernel, ssh and permissions on a
-  host sections 13 to 15 have already hardened, and it could see none of that.
-  Its rollback was judged on the exit status alone. Its finding count was
-  compared with `-le`, which is satisfied by nothing having happened, so the
-  false branch was unreachable on every host the suite runs on and fifteen
-  readings across five distributions all read N to N. Its checkpoint was chosen
-  with `head -1` over an unfiltered listing, so a plugin whose apply failed
-  before taking one would have rolled back another plugin's snapshot and
-  reported a pass for undoing somebody else's work. The count is now compared
-  for equality, with each direction named, and the checkpoint comes from the
-  apply's own result document, which is the only place the pairing between an
-  apply and the checkpoint it took exists. A plugin whose apply had nothing to
-  do takes none, ssh says so at its own apply site, and the rollback rows are
-  then skipped with that reason rather than rolling back some other apply's
-  checkpoint. The host is re-scanned after the rollback as well, and the count
-  must be where the apply found it, which is what a rollback removing a drop-in
-  it should have restored would break. A scan that produced no document is told apart from a host with
-  no findings, because a failed scan prints no finding id and its count of zero
-  compared equal to a clean host's. Whether a rollback removes what an apply
-  created cannot be asked at this position, since the apply here changes
-  nothing, and that question stays with sections 12A and 12B. The
-  per-distribution total moves from 140 to 149.
-- **Three more validators, so `scripts/validate/validate_all.py` now runs ten
-  checks.** `validate_doc_attachment.py` catches a `///` block that came loose
-  from the item it describes, which is what happens when a new item is inserted
-  between a comment and its function: it compiles, rustdoc renders, and the only
-  symptom is one function documented as two things while the function the prose
-  describes has nothing. Eight instances had accumulated.
-  `validate_write_sites.py` is a registry holding every file-creating call site
-  in the plugins tree to two written answers, why its parent directory exists
-  and whether the path it creates is declared to that plugin's own pre-apply
-  checkpoint. Both questions were answered by hand, three times and twice
-  respectively, before anything swept for them, which is the point at which this
-  project stops fixing instances one at a time. That script also asserts that
-  every `cp` site passes both `-p` and `--no-dereference`, as an assertion
-  rather than a registry column, because unlike the other two that question has
-  a single correct answer everywhere and a column would only offer somewhere to
-  write "exempt". `validate_unit_state_reads.py` holds every `systemctl
-  is-enabled` site to a declared answer about whether it judges the printed word
-  or the exit status, because the three sites differ deliberately and a rule
-  banning either reading would be wrong at one of them.
-- **The cross-distro runner can boot the container it tests in.** Under `--pipe`
-  the suite itself is PID 1, so systemd never runs and every question that goes
-  through the service manager is unanswerable, which is why services, audit and
-  firewall had no differential oracle. `--booted` runs the same suite as a child
-  of the container's own systemd instead, leaving `--pipe` untouched as the
-  default so every measurement taken under it stays valid. The container is
-  given `--private-network` rather than `--network-veth`, measured rather than
-  reasoned about: both give an identical capability set with `CAP_NET_ADMIN`,
-  the same read-write `/proc/sys/net` and the same working iptables.
-- **The release notices that used to open `README.md` now live in
-  [docs/guide/upgrading.md](docs/guide/upgrading.md)**, organised by the version
-  a host is being upgraded **from** rather than by the release that fixed the
-  defect, so an operator reads the one section that applies to the host in front
-  of them. `README.md` describes the tool before it apologises for it.
+- **A configuration file this tool writes ends with a newline.**
+  `set_config_directive` read its input with `str::lines`, which discards the
+  terminator, and reassembled it with `join("\n")`, which does not put one
+  back, so every file it produced was one byte short and the next thing
+  appended landed on the last directive rather than below it. The symptom that
+  found it was sshd refusing a `MACs` value with a `MaxAuthTries` welded onto
+  its end. The loss was never conditional on appending: a directive merely
+  rewritten where it already stood came back truncated too, so a host needed no
+  new directive to end up one `echo >>` away from an sshd that will not start.
+- **A permissions directive override may tighten a target and never relax it.**
+  The permissions plugin was the last one applying an operator's override
+  exactly as given, so a configured mode replaced the shipped target with
+  nothing comparing the two. The rule could not be borrowed from the type the
+  other plugins use, which scores every value on one scale: a permission mode
+  is a bitmask whose order is partial, and 0640 and 0604 are neither stricter
+  nor looser than one another but different. It is stated here as a subset
+  test, so an override earns its place by setting no bit the baseline does not
+  already set.
+- **A kernel dry run stops promising a write to a read-only mount.** The plugin
+  decided a parameter was read-only from the write bit of its inode under
+  `/proc/sys`, a test that can never observe the thing it is asked about:
+  read-only is a property of the mount and every file under `/proc/sys` is 0644
+  either way. Inside a container whose `/proc/sys` is the host's and mounted
+  read-only, `apply --dry-run` previewed writes the apply could not perform and
+  raised nothing, on exactly the surface an operator uses to decide whether a
+  run is safe. The mount is asked directly now.
+- **A dry run stops reporting an unchecked value as the host's state.** For
+  services, mac, audit and firewall a policy exception's value field is
+  advisory: the key already names the deviating item and nothing ever matches
+  the value, which the configuration reference has stated for some time. Three
+  of the four passed that field into the slot of the preview line documented as
+  the value the host keeps, so a stale or placeholder declaration was printed
+  as though it had been read from the machine. On a Permissive host an
+  exception declaring Enforcing made the preview state the opposite of the
+  truth.
+- **An approved deviation an operator wrote down reaches compliance.** Six scan
+  findings across firewall, mac and audit hardcoded their policy exception to
+  `None`, so the configuration could not excuse them however the operator wrote
+  it. A control is failed by any finding carrying no exception, which means a
+  documented deviation was honoured by apply and by the dry run and ignored by
+  scan and by report, against what the configuration reference promises. Each
+  now takes a key naming the subsystem state, the shape mac already used for
+  `selinux-enforcing`. Keying on the finding identifier was rejected because
+  firewall builds its identifiers from the detected backend, so an exception
+  written on a ufw host would have stopped matching on a firewalld one.
+- **A release run completes rather than aborting on a target that had moved.**
+  Step 3c of `scripts/release/release.sh` asserted on a README alt-text pattern
+  that stopped existing when the test badge became status-only, so a real
+  release aborted after `Cargo.toml`, `architecture.md`, the man page and
+  `tauri.conf.json` had already been rewritten, leaving a half-versioned tree.
+  The dry run could not report any of this, because it skipped the step
+  outright: the one step able to abort a release was the one step a rehearsal
+  never reached. It now runs the same assertions and writes nothing.
 
 ### Removed
 - `custom_directives`, the per-plugin config table that was accepted, merged
