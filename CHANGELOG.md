@@ -283,7 +283,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   defect, so an operator reads the one section that applies to the host in front
   of them. `README.md` describes the tool before it apologises for it.
 
-- **Five more validators, so `scripts/validate/validate_all.py` runs fifteen
+- **Six more validators, so `scripts/validate/validate_all.py` runs sixteen
   checks.** `validate_doc_targets.py` holds `update_all_docs.py`'s declared
   target lists and the tree to each other in both directions, because the
   updater silently skips a target whose file is missing and then reports "no
@@ -301,6 +301,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asserting the field is `None`. `validate_srcinfo.py` holds
   `packaging/.SRCINFO` to `packaging/PKGBUILD`, field by field always and byte
   for byte against a fresh `makepkg --printsrcinfo` where `makepkg` exists.
+  `validate_changelog_headings.py` refuses a release entry that repeats a
+  change-type heading, which had happened in four releases unnoticed.
 - **The full test suite's dry-run and apply rows read the document they are
   given.** Both passed on the command exiting 0 or on a result document merely
   existing, so a row read the same whether the plugin's preview was correct,
@@ -2217,6 +2219,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exception ("AppArmor detected - use aa-enforce...") also inflated the
   applied-change count despite touching nothing on the host; it now reports
   as a skip, consistent with the no-MAC-system fix above.
+- The services plugin's existence probe called
+  `systemctl list-unit-files <name>` without the `.service` suffix, which
+  `list-unit-files` does not mangle the way `is-enabled`/`is-active` do: the
+  pattern matched nothing, so every service looked absent and the plugin
+  scanned, validated and applied as a silent no-op. The batched scan listings
+  and the suffixed per-service probe now detect enabled services again
+  (enabled Avahi/CUPS correctly fail CIS 2.2.3/2.2.4 instead of
+  false-passing).
+- The ssh plugin's three STIG crypto mappings carried V-IDs that name
+  unrelated rules in the real RHEL 8 STIG (V-230290/1/2 are known-hosts
+  authentication, Kerberos and separate-/var). Ciphers and MACs now carry
+  their true V2R7 identifiers (`RHEL-08-010291`/V-230252 and
+  `RHEL-08-010290`/V-230251, both CAT I), and the KexAlgorithms check no
+  longer claims a STIG control at all: its rule was removed from the RHEL 8
+  STIG in V2R6 and none exists in the RHEL 10 STIG.
+- The SSH executor's remote `write_file` no longer appends a spurious
+  trailing newline to newline-terminated content, so files written over
+  `--ssh` (apply, checkpoint restore) round-trip byte-exact instead of
+  growing by one newline per write. Caught by the new live-sshd
+  integration tests.
+- Scan-history findings are now persisted with the official display strings
+  for severity and category (`CRITICAL`, `File System`) instead of Rust
+  variant names (`Critical`, `FileSystem`). Existing rows are unaffected:
+  severity counting is case-insensitive and the stored category string is
+  never parsed back.
+- A corrupted policy-exception entry in the desktop scan-history database now
+  surfaces as a database error instead of being silently read back as "no
+  exception". A stored exception suppresses findings, so an unreadable one
+  must not vanish quietly.
 
 ### Added
 - Build identity in version output: `hardener --version` and a quiet chip
@@ -2224,66 +2255,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alongside the semantic version, so a stale installed build is visible at
   a glance. Tarball builds without git report `release`;
   `SOURCE_DATE_EPOCH` is honoured for reproducible packaged builds.
-
-### Changed
-- Desktop layout compacted: the shared spacing scale, card and control
-  paddings, summary tiles and page title sizes all tighten so more content
-  fits above the fold on every page.
-- Documentation restructured into `docs/guide/`, `docs/reference/`,
-  `docs/architecture/`, `docs/contributing/`, `docs/design/` and
-  `docs/security/` (with archived plans and the resolved 2026-02-25
-  internal audit under `archive/`); `ROADMAP.md` and `NEXT.md` moved under
-  `docs/`. All intra-repo links and the doc validators follow the new
-  tree. New docs: a documentation index, a getting-started guide, a
-  symptom-organised troubleshooting guide, a full configuration
-  reference and a plugin-authoring guide; the README single-sources
-  usage, configuration and roadmap content to them.
-- Test tooling consolidated: the five per-distribution container
-  scripts became `scripts/containers/create-container.sh <distro>`, the
-  four per-desktop polkit wrappers became
-  `scripts/test/polkit/test-polkit.sh <desktop>`, and the separate
-  parallel runner variants merged behind a `--parallel` flag. Scripts
-  now live in `scripts/{containers,test,validate,release,dev}`
-  subdirectories.
-- Packaging inputs moved under `packaging/`: `data/` is now
-  `packaging/assets/` and `systemd/` is `packaging/systemd/`. Install
-  destinations are unchanged; built packages are identical.
-- Test tooling deduplicated: the six copies of `resolve_target_dir`, the
-  three `CONTAINERS`/`DISTRO_ORDER` distro tables (plus the same names
-  hardcoded in `create-container.sh`), the colour/box-banner preambles, and
-  the parallel job-pool frame duplicated across the cross-distro and Web UI
-  GUI runners now live in `scripts/lib/common.sh` and
-  `scripts/lib/parallel.sh`. Each runner's serial and `--parallel` code
-  paths share one `run_single_distro` instead of carrying two near-identical
-  bodies, and the cross-distro parallel runner reads its pass/fail/skip
-  counts back from the persisted per-distro logfile instead of a
-  `.passed`/`.failed`/`.skipped`/`.total` temp-file relay. `create-container.sh`'s
-  Fedora and Rocky (RHEL) bootstraps, identical bar the image and one
-  package name, are now one parameterised `bootstrap_dnf_family` (openSUSE's
-  zypper bootstrap stayed separate; its user/group setup diverges enough
-  that folding it in would cost more clarity than it would save). No CLI
-  flag, invocation path or output file changed.
-- The CLI `--framework` flag and the desktop framework parser each
-  hand-maintained their own alias table for legacy framework spellings
-  (`pci`, `iso`, `soc-2` and similar). Both now delegate to a new
-  `ComplianceFramework::from_id`, the single source of truth for framework
-  identifiers; every spelling either parser accepted before still parses,
-  and the two alias sets are merged so `iso-27001` (desktop-only) and `iso`
-  (CLI-only) are both accepted everywhere now.
-
-### Security
-- Per-command Tauri capability ACLs for the desktop app (SAM-039, issue #22):
-  `src-tauri/build.rs` now declares all 29 IPC commands via
-  `tauri_build::AppManifest`, autogenerating an `allow-*`/`deny-*` permission
-  pair per command and enabling Tauri's runtime ACL check for application
-  commands. The main-window capability grants each permission explicitly,
-  ordered by risk tier, so any single command can be revoked by removing one
-  line from `capabilities/default.json`. Enforcement is verified by
-  mock-runtime tests (`src-tauri/src/acl_tests.rs`): invoking an ungranted
-  command is rejected by the ACL layer before dispatch. Layers on top of the
-  existing IPC validation, `PrivilegedOpGuard`, and pkexec boundary.
-
-### Added
 - FedRAMP compliance framework: `report --framework fedramp` (CLI and desktop,
   including the fleet posture set, `--scenario all` and
   `--scenario government`) assesses against the FedRAMP Moderate baseline
@@ -2365,6 +2336,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clock, written to stderr so JSON stdout stays machine-parseable.
 
 ### Changed
+- Desktop layout compacted: the shared spacing scale, card and control
+  paddings, summary tiles and page title sizes all tighten so more content
+  fits above the fold on every page.
+- Documentation restructured into `docs/guide/`, `docs/reference/`,
+  `docs/architecture/`, `docs/contributing/`, `docs/design/` and
+  `docs/security/` (with archived plans and the resolved 2026-02-25
+  internal audit under `archive/`); `ROADMAP.md` and `NEXT.md` moved under
+  `docs/`. All intra-repo links and the doc validators follow the new
+  tree. New docs: a documentation index, a getting-started guide, a
+  symptom-organised troubleshooting guide, a full configuration
+  reference and a plugin-authoring guide; the README single-sources
+  usage, configuration and roadmap content to them.
+- Test tooling consolidated: the five per-distribution container
+  scripts became `scripts/containers/create-container.sh <distro>`, the
+  four per-desktop polkit wrappers became
+  `scripts/test/polkit/test-polkit.sh <desktop>`, and the separate
+  parallel runner variants merged behind a `--parallel` flag. Scripts
+  now live in `scripts/{containers,test,validate,release,dev}`
+  subdirectories.
+- Packaging inputs moved under `packaging/`: `data/` is now
+  `packaging/assets/` and `systemd/` is `packaging/systemd/`. Install
+  destinations are unchanged; built packages are identical.
+- Test tooling deduplicated: the six copies of `resolve_target_dir`, the
+  three `CONTAINERS`/`DISTRO_ORDER` distro tables (plus the same names
+  hardcoded in `create-container.sh`), the colour/box-banner preambles, and
+  the parallel job-pool frame duplicated across the cross-distro and Web UI
+  GUI runners now live in `scripts/lib/common.sh` and
+  `scripts/lib/parallel.sh`. Each runner's serial and `--parallel` code
+  paths share one `run_single_distro` instead of carrying two near-identical
+  bodies, and the cross-distro parallel runner reads its pass/fail/skip
+  counts back from the persisted per-distro logfile instead of a
+  `.passed`/`.failed`/`.skipped`/`.total` temp-file relay. `create-container.sh`'s
+  Fedora and Rocky (RHEL) bootstraps, identical bar the image and one
+  package name, are now one parameterised `bootstrap_dnf_family` (openSUSE's
+  zypper bootstrap stayed separate; its user/group setup diverges enough
+  that folding it in would cost more clarity than it would save). No CLI
+  flag, invocation path or output file changed.
+- The CLI `--framework` flag and the desktop framework parser each
+  hand-maintained their own alias table for legacy framework spellings
+  (`pci`, `iso`, `soc-2` and similar). Both now delegate to a new
+  `ComplianceFramework::from_id`, the single source of truth for framework
+  identifiers; every spelling either parser accepted before still parses,
+  and the two alias sets are merged so `iso-27001` (desktop-only) and `iso`
+  (CLI-only) are both accepted everywhere now.
 - README presentation overhaul (issue #23): new Midnight Teal wordmark
   (`docs/assets/logo.svg` + dark variant, selected via `<picture>` and
   `prefers-color-scheme`), shields badges recoloured to the same teal palette
@@ -2389,36 +2404,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   daemon uses it. Criterion benches remain deliberately out of scope; the
   `--timings` flag plus these recorded numbers are the measurement story.
 
-### Fixed
-- The services plugin's existence probe called
-  `systemctl list-unit-files <name>` without the `.service` suffix, which
-  `list-unit-files` does not mangle the way `is-enabled`/`is-active` do: the
-  pattern matched nothing, so every service looked absent and the plugin
-  scanned, validated and applied as a silent no-op. The batched scan listings
-  and the suffixed per-service probe now detect enabled services again
-  (enabled Avahi/CUPS correctly fail CIS 2.2.3/2.2.4 instead of
-  false-passing).
-- The ssh plugin's three STIG crypto mappings carried V-IDs that name
-  unrelated rules in the real RHEL 8 STIG (V-230290/1/2 are known-hosts
-  authentication, Kerberos and separate-/var). Ciphers and MACs now carry
-  their true V2R7 identifiers (`RHEL-08-010291`/V-230252 and
-  `RHEL-08-010290`/V-230251, both CAT I), and the KexAlgorithms check no
-  longer claims a STIG control at all: its rule was removed from the RHEL 8
-  STIG in V2R6 and none exists in the RHEL 10 STIG.
-- The SSH executor's remote `write_file` no longer appends a spurious
-  trailing newline to newline-terminated content, so files written over
-  `--ssh` (apply, checkpoint restore) round-trip byte-exact instead of
-  growing by one newline per write. Caught by the new live-sshd
-  integration tests.
-- Scan-history findings are now persisted with the official display strings
-  for severity and category (`CRITICAL`, `File System`) instead of Rust
-  variant names (`Critical`, `FileSystem`). Existing rows are unaffected:
-  severity counting is case-insensitive and the stored category string is
-  never parsed back.
-- A corrupted policy-exception entry in the desktop scan-history database now
-  surfaces as a database error instead of being silently read back as "no
-  exception". A stored exception suppresses findings, so an unreadable one
-  must not vanish quietly.
+### Security
+- Per-command Tauri capability ACLs for the desktop app (SAM-039, issue #22):
+  `src-tauri/build.rs` now declares all 29 IPC commands via
+  `tauri_build::AppManifest`, autogenerating an `allow-*`/`deny-*` permission
+  pair per command and enabling Tauri's runtime ACL check for application
+  commands. The main-window capability grants each permission explicitly,
+  ordered by risk tier, so any single command can be revoked by removing one
+  line from `capabilities/default.json`. Enforcement is verified by
+  mock-runtime tests (`src-tauri/src/acl_tests.rs`): invoking an ungranted
+  command is rejected by the ACL layer before dispatch. Layers on top of the
+  existing IPC validation, `PrivilegedOpGuard`, and pkexec boundary.
 
 ## [1.2.2] - 2026-07-02
 
@@ -2629,6 +2625,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   until a mapping exists, and the generator surfaces any finding-referenced
   control missing from a framework's catalogue, so an incomplete mapping can
   only ever over-report a failure, never a pass.
+- **Remote checkpoint capture and restore now operate on the remote host.**
+  Previously, `apply --ssh` and `rollback --ssh` would snapshot and restore files
+  on the controller rather than the target. Checkpoint operations now run through
+  the active `SystemExecutor`, so remote sessions correctly read and write files on
+  the remote. Checkpoints are keyed by host; rollback refuses to restore one host's
+  checkpoint onto another.
 
 ### Changed
 - **`tauri` 2.11.2 → 2.11.3.** Routine patch bump (no CVE); pulls the matching
@@ -2646,16 +2648,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single identifier scheme. CIS and ISO/IEC 27001:2022 keep their curated
   catalogues (the full standard, with unassessed controls flagged
   `ManualReview`).
-
-### Fixed
-- **Remote checkpoint capture and restore now operate on the remote host.**
-  Previously, `apply --ssh` and `rollback --ssh` would snapshot and restore files
-  on the controller rather than the target. Checkpoint operations now run through
-  the active `SystemExecutor`, so remote sessions correctly read and write files on
-  the remote. Checkpoints are keyed by host; rollback refuses to restore one host's
-  checkpoint onto another.
-
-### Changed
 - **Executor abstraction relocated to `hardener-common`.** `SystemExecutor`,
   `FileMetadata`, `CommandOutput`, and `MockExecutor` now live in
   `hardener-common` (under `executor/`), re-exported from `hardener-core` for
@@ -3013,6 +3005,12 @@ First stable release. Feature-complete Linux system hardener with 8 security plu
 - **CSS Flex/Grid Utilities**: Added `.flex`, `.flex-col`, `.flex-wrap`, `.flex-1`, `.items-center`, `.items-start`, `.justify-center`, `.justify-between`, `.grid`, `.gap-xs`, `.gap-sm`, `.gap-md`, `.gap-lg`, `.gap-xl`
 - **CSS Variables**: Extended spacing scale (`--space-xs` to `--space-2xl`), border radius scale, z-index scale
 - **Responsive Testing**: Verified layouts at 320px, 640px, 1920px viewports
+- Test suite expanded from 220 to 428+ tests (95% increase)
+- PDF findings now display with better visual hierarchy and spacing
+- All 8 plugins converted to async with `#[async_trait]`
+- HardeningPlugin trait methods now async: `scan()`, `apply()`, `rollback()`, `validate()`
+- **hardener-ui** now depends only on `hardener-types` (removed hardener-core, hardener-common, hardener-compliance dependencies)
+- Types re-exported from source crates for backwards compatibility
 
 ### Fixed
 - **WCAG AA Text Contrast**: Brightened `--text-secondary` (#a1aebe → #a8b8c8) and `--text-muted` (#7a8a9e → #8a9aae) to meet 4.5:1 contrast ratio
@@ -3024,25 +3022,6 @@ First stable release. Feature-complete Linux system hardener with 8 security plu
 - **Flex Container Overflow**: Added `min-width: 0` to flex children (`.navigation`, `.nav-links`, `.header-content`, `.activity-content`)
 - **Grid Container Overflow**: Updated grid templates to use `minmax(0, 1fr)` pattern (`.dashboard-grid`, `.scanner-layout`, `.report-summary`)
 - **Auto-fill Grid Overflow**: Used `minmax(min(Xpx, 100%), 1fr)` for `.plugin-grid` and `.framework-grid` to prevent narrow viewport overflow
-
-### Added (continued)
-- CSS Variables for consistent theming (colours, typography, spacing)
-- JetBrains Mono for data/code, Inter for UI text
-- Colour-coded security states (green/amber/red for good/warning/critical)
-- Horizontal navigation bar with hover effects
-- Security score circular gauge with glow effects
-- Styled buttons, tables, forms, badges, and empty states
-- Foundation styles for 3-page architecture: Dashboard, Analysis (tabbed), Hardening (sectioned)
-- **WASM-Compatible Types Crate**: New `hardener-types` crate for shared type definitions
-  - Extracted all shared types (PluginId, Severity, Finding, ScanResult, etc.) to dedicated crate
-  - WASM-safe dependencies only (serde, chrono)
-  - Enables GUI frontend to compile to `wasm32-unknown-unknown` target
-- **PDF Feature Gate**: krilla PDF library now behind optional `pdf` feature in hardener-compliance
-- **WASM Entry Point**: Added `#[wasm_bindgen(start)]` entry point for Leptos app mounting
-- `.cargo/config.toml` for WASM rustflags (getrandom backend configuration)
-- `crates/hardener-ui/styles.css` - Complete dark terminal theme CSS (~2700 lines)
-
-### Fixed
 - **GUI "Loading..." text persistence**: Fixed by mounting app to `#app` element instead of body and clearing inner HTML
 - **Security score showing 100/100 before scan**: Added `has_scan_results()` check, now shows "--/100" and "Run a scan to see your score" initially
 - **"View Findings" appearing as hyperlink**: Changed from `<A>` link to styled `<button>` with programmatic navigation
@@ -3069,13 +3048,22 @@ First stable release. Feature-complete Linux system hardener with 8 security plu
 - Tauri command `generate_compliance_report` for GUI integration
 - Compliance page route `/compliance` with navigation link
 
-### Changed
-- Test suite expanded from 220 to 428+ tests (95% increase)
-- PDF findings now display with better visual hierarchy and spacing
-- All 8 plugins converted to async with `#[async_trait]`
-- HardeningPlugin trait methods now async: `scan()`, `apply()`, `rollback()`, `validate()`
-- **hardener-ui** now depends only on `hardener-types` (removed hardener-core, hardener-common, hardener-compliance dependencies)
-- Types re-exported from source crates for backwards compatibility
+### Added (continued)
+- CSS Variables for consistent theming (colours, typography, spacing)
+- JetBrains Mono for data/code, Inter for UI text
+- Colour-coded security states (green/amber/red for good/warning/critical)
+- Horizontal navigation bar with hover effects
+- Security score circular gauge with glow effects
+- Styled buttons, tables, forms, badges, and empty states
+- Foundation styles for 3-page architecture: Dashboard, Analysis (tabbed), Hardening (sectioned)
+- **WASM-Compatible Types Crate**: New `hardener-types` crate for shared type definitions
+  - Extracted all shared types (PluginId, Severity, Finding, ScanResult, etc.) to dedicated crate
+  - WASM-safe dependencies only (serde, chrono)
+  - Enables GUI frontend to compile to `wasm32-unknown-unknown` target
+- **PDF Feature Gate**: krilla PDF library now behind optional `pdf` feature in hardener-compliance
+- **WASM Entry Point**: Added `#[wasm_bindgen(start)]` entry point for Leptos app mounting
+- `.cargo/config.toml` for WASM rustflags (getrandom backend configuration)
+- `crates/hardener-ui/styles.css` - Complete dark terminal theme CSS (~2700 lines)
 
 ### Added (v0.3.0 Features)
 - **SSH Remote Scanning**: Scan, apply, and rollback on remote hosts via SSH

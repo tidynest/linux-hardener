@@ -177,13 +177,14 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Doc Sync Targets | `validate_doc_targets.py` | The updater's declared targets and the tree agree in both directions. Forward: every target it declares resolves, the file exists and the pattern matches something, because a target matching nothing is skipped silently and the run reports success for work it never attempted. Inverse: no markdown file outside an archive carries a version line without being a declared target, because a list of files to rewrite cannot notice a file that should be on it |
 | Badges | `validate_badges.py` | Every badge under `docs/assets/badges/` renders the label and message `scripts/badges/generate.js` declares for it, so the documented regeneration step cannot silently revert a hand-edited SVG; the `aur`, `version` and `rust` badges are additionally compared against `packaging/PKGBUILD`, and against `Cargo.toml`'s `version` and `rust-version`, which are the authorities for them |
 | Policy Exception Sites | `validate_policy_exception_sites.py` | Every scan finding that hardcodes `finding_policy_exception: None` carries a comment saying why, because a `None` fails a compliance control on a deviation the operator wrote down and approved, and counting the sites cannot tell an oversight from a decision |
+| CHANGELOG Headings | `validate_changelog_headings.py` | No release entry repeats a change-type heading. A second `### Fixed` under one version hides its own entries from a reader who found the first, and splits a release's published notes between two identical headings on no principle. Compared on the exact heading text, so `### Added (Testing Infrastructure)` beside `### Fixed (GUI Tests)` is two sections rather than a duplicate pair |
 | .SRCINFO | `validate_srcinfo.py` | `packaging/.SRCINFO` says what `packaging/PKGBUILD` declares. The AUR reads only `.SRCINFO`, so a stale one describes a package that is not the one it builds; it had fallen three releases behind. Compared field by field always, and byte for byte against a fresh `makepkg --printsrcinfo` where `makepkg` exists |
 | Test Assertions | `validate_test_assertions.py` | Every test reaches an assertion on every path through its body. An assertion buried inside an `if` with no `else`, or inside a loop over a computed collection, does not run when the condition does not hold, so the test exits 0 having checked nothing and still counts towards the suite total. A `match` whose every arm asserts, an `if`/`else` chain that ends in a bare `else` with every branch asserting, and a `for` over an array literal written at the site all satisfy it, because none of those can be skipped |
 | CLI Documentation | `validate_cli_docs.py` | CLI commands documented |
 | Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
 
 **Modes**:
-- Default: Runs all 15 validators
+- Default: Runs all 16 validators
 - `--quick`: Skips CLI and Compliance validators (faster)
 - `--fix`: Passes `--fix` to validators that support it
 
@@ -215,7 +216,7 @@ Running: Version Synchronisation
   ✓ CLI Documentation: passed
   ✓ Compliance Framework List: passed
 
-All 15 validations passed!
+All 16 validations passed!
 ```
 
 **Integration with CI/CD**:
