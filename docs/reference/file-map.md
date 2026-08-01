@@ -107,6 +107,13 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/executor/local.rs` | Local file/command operations | `LocalExecutor` |
 | `src/executor/ssh.rs` | SSH remote operations | `SshExecutor`, `SshConfig` |
 | `src/inventory.rs` | Shared host-inventory persistence: the one definition of where `~/.config/linux-hardener/hosts.toml` lives, read and written by both the CLI `batch` command and the desktop backend. The `HostsConfig` it moves is defined in `hardener-types`, not here | `default_path()`, `load()`, `save()` |
+| `src/config/tests.rs` | Unit tests for `src/config.rs` | Test-only; `super` resolves to `crate::config` |
+| `src/config_loader/tests.rs` | Unit tests for `src/config_loader.rs` | Test-only; `super` resolves to `crate::config_loader` |
+| `src/config_validation/tests.rs` | Unit tests for `src/config_validation.rs` | Test-only; `super` resolves to `crate::config_validation` |
+| `src/plugin/tests.rs` | Unit tests for `src/plugin.rs` | Test-only; `super` resolves to `crate::plugin` |
+| `src/inventory/tests.rs` | Unit tests for `src/inventory.rs` | Test-only; `super` resolves to `crate::inventory` |
+| `src/executor/local/tests.rs` | Unit tests for `src/executor/local.rs` | Test-only; `super` resolves to `crate::executor::local` |
+| `src/executor/ssh/tests.rs` | Unit tests for `src/executor/ssh.rs` | Test-only; `super` resolves to `crate::executor::ssh` |
 
 ### Key Trait (plugin.rs)
 
