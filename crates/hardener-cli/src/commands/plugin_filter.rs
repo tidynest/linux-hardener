@@ -15,8 +15,14 @@ use hardener_core::PluginMetadata;
 /// (`"service"`).
 ///
 /// The trailing hyphen is what makes the prefix a whole segment rather than
-/// any leading substring. Without it `"services"` would match
-/// `"service-minimisation"`; with it, that entry correctly matches nothing.
+/// any leading substring. Without it `"serv"` would match
+/// `"service-minimisation"`, and `""` would match every plugin there is, so a
+/// filter naming nothing would quietly select something. With it, both match
+/// nothing and are refused.
+///
+/// The plural `"services"` matches nothing either way, which is why it is not
+/// the example: it is a real mistake an operator makes and it is refused, but
+/// it says nothing about what the hyphen does.
 pub(crate) fn matches(entry: &str, plugin_id: &str) -> bool {
     plugin_id == entry || plugin_id.starts_with(&format!("{entry}-"))
 }

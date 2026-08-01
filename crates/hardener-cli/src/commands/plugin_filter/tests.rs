@@ -50,7 +50,39 @@ fn full_id_matches_itself() {
 fn a_longer_prefix_is_not_a_segment_and_must_not_match() {
     // The plural reads naturally and is the mistake an operator makes;
     // it names no plugin and must be refused rather than silently dropped.
+    // Note that this one is refused with or without the trailing hyphen, so
+    // it does not measure the hyphen; the two tests below do.
     assert!(!matches("services", "service-minimisation"));
+}
+
+#[test]
+fn a_partial_segment_is_not_a_segment_and_must_not_match() {
+    // This is what the trailing hyphen buys. A leading substring of the first
+    // segment is not the segment, and without the hyphen every one of these
+    // would match, so a typo would select a plugin the operator did not name.
+    assert!(!matches("serv", "service-minimisation"));
+    assert!(!matches("s", "ssh-hardening"));
+    assert!(!matches("kernel-hard", "kernel-hardening"));
+}
+
+#[test]
+fn an_empty_entry_names_nothing_and_selects_nothing() {
+    // The sharp end of the same rule: `starts_with("")` is true of every id,
+    // so without the hyphen an empty entry would match all three and `expand`
+    // would hand back whichever the registry happened to list first. A filter
+    // that names nothing must fail, never resolve to something.
+    //
+    // `scan::tests` already asserts that an empty entry names no plugin. What
+    // is new here is the consequence one level up, that `expand` refuses it
+    // rather than quietly resolving it, which is the behaviour an operator
+    // actually meets.
+    assert!(!matches("", "service-minimisation"));
+    let err = expand(&registry(), &[String::new()])
+        .expect_err("an empty entry must be refused, not resolved to a plugin");
+    assert!(
+        err.to_string().contains("Unknown plugin"),
+        "refused as unknown rather than silently dropped: {err}"
+    );
 }
 
 #[test]
