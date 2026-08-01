@@ -269,6 +269,15 @@ pub struct FileState {
 | `src/output/pdf.rs` | PDF formatter | `PdfFormatter` |
 | `src/fonts/NotoSans-Regular.ttf` | Embedded font | Regular weight |
 | `src/fonts/NotoSans-Bold.ttf` | Embedded font | Bold weight |
+| `src/generator/tests.rs` | Unit tests for `src/generator.rs` | Test-only; `super` resolves to `crate::generator`, so its imports carried across unchanged |
+| `src/profiles/tests.rs` | Unit tests for `src/profiles.rs` | Test-only; `super` resolves to `crate::profiles` |
+| `src/frameworks/iso27001/tests.rs` | Unit tests for `src/frameworks/iso27001.rs` | Test-only; `super` resolves to `crate::frameworks::iso27001` |
+| `src/output/test_support.rs` | Fixtures shared by the formatter test modules, split out of `src/output/mod.rs` | Test-only; that file *is* the module `output`, so this sits in the directory it already owns and the formatter tests still reach it as `crate::output::test_support` |
+| `src/output/text/tests.rs` | Unit tests for `src/output/text.rs` | Test-only; `super` resolves to `crate::output::text` |
+| `src/output/json/tests.rs` | Unit tests for `src/output/json.rs` | Test-only; `super` resolves to `crate::output::json` |
+| `src/output/csv/tests.rs` | Unit tests for `src/output/csv.rs` | Test-only; `super` resolves to `crate::output::csv` |
+| `src/output/html/tests.rs` | Unit tests for `src/output/html.rs` | Test-only; `super` resolves to `crate::output::html` |
+| `src/output/pdf/tests.rs` | Unit tests for `src/output/pdf.rs` | Test-only; `super` resolves to `crate::output::pdf` |
 
 ---
 
@@ -844,7 +853,7 @@ workspace run itself for what passed.
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs` | 89 |
-| hardener-compliance | `generator.rs`, `profiles.rs`, `output/*.rs`, `frameworks/iso27001.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 86 |
+| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 86 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs` | 85 |
 | hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 100 |

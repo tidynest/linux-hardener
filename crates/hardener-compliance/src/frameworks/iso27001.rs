@@ -260,47 +260,4 @@ pub fn get_controls() -> Vec<ComplianceMapping> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashSet;
-
-    #[test]
-    fn returns_all_93_annex_a_controls() {
-        assert_eq!(get_controls().len(), 93);
-    }
-
-    #[test]
-    fn covers_all_four_themes() {
-        let themes: HashSet<String> = get_controls()
-            .into_iter()
-            .filter_map(|c| c.compliance_section)
-            .collect();
-        for theme in ["Organizational", "People", "Physical", "Technological"] {
-            assert!(themes.contains(theme), "missing theme: {theme}");
-        }
-    }
-
-    #[test]
-    fn theme_counts_match_iso_structure() {
-        let controls = get_controls();
-        let count = |theme: &str| {
-            controls
-                .iter()
-                .filter(|c| c.compliance_section.as_deref() == Some(theme))
-                .count()
-        };
-        assert_eq!(count("Organizational"), 37);
-        assert_eq!(count("People"), 8);
-        assert_eq!(count("Physical"), 14);
-        assert_eq!(count("Technological"), 34);
-    }
-
-    #[test]
-    fn all_mappings_use_iso27001_framework() {
-        assert!(
-            get_controls()
-                .iter()
-                .all(|c| c.compliance_framework == ComplianceFramework::ISO27001)
-        );
-    }
-}
+mod tests;

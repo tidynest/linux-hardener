@@ -94,25 +94,4 @@ pub(crate) fn group_controls_by_section<'a>(
 
 /// Fixtures shared by the formatter test modules.
 #[cfg(test)]
-pub(crate) mod test_support {
-    use hardener_types::{Finding, FindingCategory, FindingPolicyException, Severity};
-
-    /// A finding as a scan emits it. Passing `exception` mirrors what
-    /// `Plugin::scan` attaches when the config documents the deviation.
-    pub(crate) fn finding(title: &str, excepted: bool) -> Finding {
-        Finding {
-            finding_category: FindingCategory::Network,
-            finding_current_value: "yes".to_string(),
-            finding_description: "Test finding".to_string(),
-            finding_explanation: "Test explanation".to_string(),
-            finding_id: format!("test-{title}"),
-            finding_impact: "Test impact".to_string(),
-            finding_recommended_value: "no".to_string(),
-            finding_remediation_steps: vec!["Fix it".to_string()],
-            finding_severity: Severity::High,
-            finding_title: title.to_string(),
-            finding_compliance: vec![],
-            finding_policy_exception: excepted.then(FindingPolicyException::default),
-        }
-    }
-}
+pub(crate) mod test_support;
