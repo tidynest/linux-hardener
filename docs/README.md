@@ -12,6 +12,7 @@ and stay at the repository root.
 |-----|--------------------------|
 | [guide/getting-started.md](guide/getting-started.md) | Scan, review findings, dry-run, apply, roll back, and produce a first compliance report |
 | [guide/installation.md](guide/installation.md) | Install from AUR, RPM, deb, static binary, Docker, or source |
+| [guide/upgrading.md](guide/upgrading.md) | Check whether a defect a release fixed is still on a host you already hardened, and repair it |
 | [guide/troubleshooting.md](guide/troubleshooting.md) | Fix a problem: GUI launch, polkit auth errors, timer, partial scans |
 | [guide/ssh-remote-scanning.md](guide/ssh-remote-scanning.md) | Scan, apply, and report against remote hosts over SSH |
 | [guide/desktop-environment-compatibility.md](guide/desktop-environment-compatibility.md) | Set up a polkit agent per desktop environment or window manager |
