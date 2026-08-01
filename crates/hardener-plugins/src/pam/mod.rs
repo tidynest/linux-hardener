@@ -1156,8 +1156,9 @@ impl HardeningPlugin for PamHardeningPlugin {
         // remaining step is a /etc/pam.d edit this plugin refuses to make. A
         // dry run exiting 0 where the apply exits non-zero is the divergence
         // `ValidationReport::has_blocking_issue` exists to prevent.
-        for (path, presence) in module_presence_by_file(ctx).await {
-            let ModulePresence::NotInStack { module } = presence else {
+        let presence = module_presence_by_file(ctx).await;
+        for (path, found) in &presence {
+            let ModulePresence::NotInStack { module } = found else {
                 continue;
             };
             issues.push(ValidationIssue {
@@ -1200,6 +1201,19 @@ impl HardeningPlugin for PamHardeningPlugin {
         // wording, never a false "(currently not set)" claim.
         let pwquality = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
         let login_defs = read_conf_classified(ctx, "/etc/login.defs").await;
+
+        // Medium, and not High, on purpose. High blocks the dry run
+        // (`has_blocking_issue`), and this is a pre-existing condition of the
+        // host that this plugin neither caused nor will fix: refusing to
+        // preview an otherwise sound hardening run because a package is missing
+        // would be the wrong lever. The operator is told, and the run proceeds.
+        if dictcheck_locks_out_password_changes(ctx, &presence, &pwquality).await {
+            issues.push(ValidationIssue {
+                validation_issue_config_key: Some("dictcheck".to_string()),
+                validation_issue_message: dictcheck_lockout_message(),
+                validation_issue_severity: Severity::Medium,
+            });
+        }
 
         let mut estimated_changes = Vec::new();
         // Excepted settings are recorded rather than dropped: a preview that
@@ -1656,6 +1670,92 @@ fn clamped_baseline(directive: &PamDirective, config: &PluginConfig) -> String {
         config,
         directive.pam_directive_name,
         directive.pam_secure_value,
+    )
+}
+
+/// Where libpwquality looks for its cracklib dictionary, by distribution
+/// family. The path is compiled into libpwquality rather than configured, so
+/// this is a candidate set and any one of them being present is enough.
+const CRACKLIB_DICTIONARIES: &[&str] = &[
+    // Red Hat, Arch and SUSE families.
+    "/usr/share/cracklib/pw_dict.pwd",
+    // Debian and derivatives, whose cracklib-runtime builds it into a cache.
+    "/var/cache/cracklib/cracklib_dict.pwd",
+];
+
+/// Whether this host will refuse every password change once `pam_pwquality` is
+/// in the stack, because its dictionary check is on and there is no dictionary.
+///
+/// libpwquality's `dictcheck` defaults on and **fails closed**: with no
+/// dictionary to load it rejects every password, strong ones included, and the
+/// operator sees a refusal with nothing in it to act on. This tool does not
+/// cause that, but it is the thing that ran just before the symptom appears, so
+/// an operator who hardens PAM and then cannot change a password will reasonably
+/// blame it. Naming the condition and its remedy is the whole job here; the fix
+/// is a package operation on a host nobody asked to have packages changed on.
+///
+/// Three things must all hold, and each is checked rather than assumed:
+///
+/// - `pam_pwquality.so` is actually loaded, since a module nothing loads reads
+///   no dictionary and refuses nothing;
+/// - `dictcheck` is not explicitly switched off in `pwquality.conf`;
+/// - none of the candidate dictionaries is present.
+///
+/// Silent when it cannot tell, which is the opposite of this crate's usual
+/// fail-closed direction and is deliberate. The other guards refuse to call a
+/// host compliant on evidence they lack; this one would be telling an operator
+/// their host is broken, and a warning that fires on every host it cannot read
+/// is one nobody reads twice.
+async fn dictcheck_locks_out_password_changes(
+    ctx: &Context,
+    presence: &[(&'static str, ModulePresence)],
+    pwquality: &ConfRead,
+) -> bool {
+    let loaded = presence
+        .iter()
+        .find(|(path, _)| *path == "/etc/security/pwquality.conf")
+        .is_some_and(|(_, found)| matches!(found, ModulePresence::InStack));
+    if !loaded {
+        return false;
+    }
+
+    // Only an explicit zero switches it off. An unreadable or absent file
+    // leaves the default in force, which is on.
+    let content = match pwquality {
+        ConfRead::Content(content, _) => content.as_str(),
+        ConfRead::Absent => "",
+        ConfRead::Unreadable { .. } => return false,
+    };
+    let disabled = parse_config_value(content, "dictcheck", ConfigFormat::Auto, true)
+        .is_some_and(|value| value.trim() == "0");
+    if disabled {
+        return false;
+    }
+
+    // A probe that failed says nothing about whether the file is there, so one
+    // `Err` is enough to stay quiet.
+    for path in CRACKLIB_DICTIONARIES {
+        match ctx.executor().path_exists(Path::new(path)).await {
+            Ok(true) => return false,
+            Ok(false) => {}
+            Err(_) => return false,
+        }
+    }
+    true
+}
+
+/// The wording for the lockout above, kept beside the detection so the two
+/// cannot drift.
+fn dictcheck_lockout_message() -> String {
+    format!(
+        "pam_pwquality is loaded, its dictcheck is on, and no cracklib \
+         dictionary is installed at {}. libpwquality's dictionary check fails \
+         closed, so every password change on this host will be refused, strong \
+         passwords included, and the refusal names no cause. Install the \
+         dictionary (cracklib-dicts on dnf hosts, cracklib-runtime on apt \
+         hosts) or set dictcheck = 0 in /etc/security/pwquality.conf. This \
+         tool will not install a package on your behalf.",
+        CRACKLIB_DICTIONARIES.join(" or ")
     )
 }
 

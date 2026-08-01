@@ -165,6 +165,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A dry run now warns before PAM hardening can lock every password change on
+  the host.** libpwquality's `dictcheck` defaults on and fails closed: with
+  `pam_pwquality` in the stack and no cracklib dictionary installed, every
+  password change is refused, strong ones included, and the refusal names no
+  cause. This tool does not create that condition, but it is what ran
+  immediately before the symptom appears, so an operator who hardens PAM and
+  then cannot change a password will reasonably blame it.
+
+  `apply --dry-run --plugin pam` reports it at Medium, naming both remedies
+  (install `cracklib-dicts` on dnf hosts or `cracklib-runtime` on apt hosts, or
+  set `dictcheck = 0`). Medium rather than High on purpose: High blocks the dry
+  run, and refusing to preview an otherwise sound hardening run over a missing
+  package would be the wrong lever. **The tool will not install a package on
+  your behalf.**
+
+  It stays silent unless all three conditions hold, and silent when it cannot
+  tell: a stack that does not load `pam_pwquality`, a `dictcheck = 0` already in
+  `pwquality.conf`, a dictionary present at either of the two paths
+  distributions use, or a probe that failed, each mean nothing is said.
+
 - **Two plugins told you to try again as root for failures root cannot fix.**
   The firewall plugin replaced every `ufw status` failure with the literal
   string "Unable to determine UFW status (permission denied)", discarding

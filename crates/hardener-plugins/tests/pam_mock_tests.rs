@@ -3734,3 +3734,95 @@ async fn pam_apply_issues_no_mkdir_when_the_config_file_already_exists() {
         executor.log().commands_executed
     );
 }
+
+/// Issue #41: a host that will refuse every password change is told so, and a
+/// host that will not is left alone.
+///
+/// libpwquality's `dictcheck` defaults on and fails closed. With `pam_pwquality`
+/// in the stack and no cracklib dictionary installed, every password change is
+/// refused, strong ones included, and the refusal names no cause. This tool does
+/// not cause that, but it runs immediately before the symptom appears, so an
+/// operator who hardens PAM and then cannot change a password will blame it.
+///
+/// The value of this check is entirely in the three cases where it stays quiet.
+/// A warning that fires whenever it cannot tell is one nobody reads twice, so
+/// each of the ways out is asserted rather than assumed.
+#[tokio::test]
+async fn a_host_with_no_cracklib_dictionary_is_warned_before_it_locks_itself_out() {
+    let lockout_issue = async |executor: MockExecutor| {
+        let ctx = Context::with_executor(Arc::new(executor));
+        let report = PamHardeningPlugin::new()
+            .validate(&ctx, &PluginConfig::default())
+            .await
+            .expect("validate reports through ValidationReport, never as Err");
+        report
+            .validation_report_issues
+            .iter()
+            .find(|issue| issue.validation_issue_config_key.as_deref() == Some("dictcheck"))
+            .cloned()
+    };
+
+    // The dangerous host: the module is loaded and neither dictionary exists.
+    let warned = lockout_issue(secure_pam_executor())
+        .await
+        .expect("a host that will refuse every password change must be told");
+    assert_eq!(
+        warned.validation_issue_severity,
+        Severity::Medium,
+        "High blocks the dry run, and refusing to preview a sound hardening run \
+         over a missing package would be the wrong lever"
+    );
+    assert!(
+        warned.validation_issue_message.contains("cracklib-dicts"),
+        "the remedy must be named, got: {}",
+        warned.validation_issue_message
+    );
+
+    // A host that has the dictionary is in no danger. Either path is enough,
+    // because libpwquality's is compiled in and differs by distribution.
+    for present in [
+        "/usr/share/cracklib/pw_dict.pwd",
+        "/var/cache/cracklib/cracklib_dict.pwd",
+    ] {
+        assert!(
+            lockout_issue(secure_pam_executor().with_file(present, "dictionary\n"))
+                .await
+                .is_none(),
+            "a host carrying {present} must not be warned"
+        );
+    }
+
+    // An operator who switched the check off is in no danger either.
+    assert!(
+        lockout_issue(
+            secure_pam_executor_base()
+                .with_file("/etc/security/faillock.conf", "deny = 3\n")
+                .with_file(
+                    "/etc/security/pwquality.conf",
+                    "minlen = 14\ndictcheck = 0\n"
+                )
+        )
+        .await
+        .is_none(),
+        "dictcheck = 0 disables the check, so there is nothing to warn about"
+    );
+
+    // And a host whose stack does not load the module reads no dictionary at
+    // all, so it cannot be refused by one that is missing. This is the case
+    // this very machine is in.
+    assert!(
+        lockout_issue(
+            MockExecutor::new()
+                .with_directory("/etc")
+                .with_directory("/etc/security")
+                .with_file(
+                    "/etc/pam.d/password-auth",
+                    "password required pam_unix.so sha512 shadow use_authtok\n",
+                )
+                .with_file("/etc/security/pwquality.conf", "minlen = 14\n")
+        )
+        .await
+        .is_none(),
+        "a module nothing loads reads no dictionary and refuses nothing"
+    );
+}
