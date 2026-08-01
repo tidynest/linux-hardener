@@ -23,8 +23,8 @@ pub mod testing;
 
 // Re-export commonly used types (always available)
 pub use plugin::{
-    ApplyResult, Change, ChangeType, Finding, PluginMetadata, ScanResult, UncheckedCheck,
-    ValidationIssue, ValidationReport,
+    ApplyResult, Change, ChangeType, Finding, PluginMetadata, ScanResult, UncheckedBlocker,
+    UncheckedCheck, ValidationIssue, ValidationReport,
 };
 
 // Re-export config types (always available)

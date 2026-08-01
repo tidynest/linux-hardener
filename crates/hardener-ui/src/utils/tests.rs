@@ -150,7 +150,7 @@ fn an_unchecked() -> hardener_types::UncheckedCheck {
         unchecked_title: "t".to_string(),
         unchecked_category: FindingCategory::Network,
         unchecked_reason: "needs root".to_string(),
-        unchecked_needs_privilege: true,
+        unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
         unchecked_compliance: vec![],
     }
 }

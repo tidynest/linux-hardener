@@ -11,8 +11,8 @@ use hardener_common::error::Result;
 
 // Re-export types from hardener-types for backwards compatibility
 pub use hardener_types::{
-    ApplyResult, Change, ChangeType, Finding, PluginMetadata, ScanResult, UncheckedCheck,
-    ValidationIssue, ValidationReport,
+    ApplyResult, Change, ChangeType, Finding, PluginMetadata, ScanResult, UncheckedBlocker,
+    UncheckedCheck, ValidationIssue, ValidationReport,
 };
 
 // Also re-export commonly used types from hardener-common

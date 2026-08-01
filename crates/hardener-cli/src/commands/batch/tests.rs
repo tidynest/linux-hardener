@@ -516,7 +516,7 @@ fn host_report_treats_unchecked_covered_control_as_manual_review_not_pass() {
         unchecked_title: "PAM setting: minlen".into(),
         unchecked_category: FindingCategory::Authentication,
         unchecked_reason: "reading /etc/security/pwquality.conf requires root".into(),
-        unchecked_needs_privilege: true,
+        unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
         unchecked_compliance: vec![stig_mapping],
     }];
     let outcome = HostOutcome {
@@ -1068,7 +1068,7 @@ fn text_render_unchecked_line_only_when_nonzero() {
         unchecked_title: "PAM setting: minlen".into(),
         unchecked_category: FindingCategory::Authentication,
         unchecked_reason: "requires root".into(),
-        unchecked_needs_privilege: true,
+        unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
         unchecked_compliance: vec![],
     }];
     let with = render_text(&[HostOutcome {

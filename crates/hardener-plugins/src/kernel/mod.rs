@@ -19,7 +19,10 @@ use hardener_common::{
 use hardener_core::{
     Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
+    plugin::{
+        ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker,
+        UncheckedCheck,
+    },
 };
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
@@ -486,12 +489,21 @@ pub fn coverage() -> Vec<ComplianceMapping> {
 /// operator to try again with sudo would send them after a fix that cannot
 /// work.
 fn unchecked_parameter(param_name: &str, reason: String, needs_privilege: bool) -> UncheckedCheck {
+    // `needs_privilege` is derived from the failure rather than asserted, so
+    // the two answers this plugin can give map cleanly onto the two the type
+    // records. A read DAC or an LSM refused is exactly what root fixes; a
+    // parameter this kernel does not carry is not, and no privilege will make
+    // it appear.
+    let blocker = match needs_privilege {
+        true => UncheckedBlocker::Privilege,
+        false => UncheckedBlocker::Environment,
+    };
     UncheckedCheck {
         unchecked_check_id: format!("kernel_{}", param_name.replace('.', "_")),
         unchecked_title: format!("Kernel parameter {param_name}"),
         unchecked_category: FindingCategory::Kernel,
         unchecked_reason: reason,
-        unchecked_needs_privilege: needs_privilege,
+        unchecked_blocker: blocker,
         unchecked_compliance: get_compliance_mappings(param_name),
     }
 }

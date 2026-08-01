@@ -155,7 +155,7 @@ async fn latest_scan_round_trips_findings_and_unchecked_together() {
         unchecked_title: "Kernel setting: kptr_restrict".to_string(),
         unchecked_category: FindingCategory::Kernel,
         unchecked_reason: "reading /proc/sys/kernel/kptr_restrict requires root".to_string(),
-        unchecked_needs_privilege: false,
+        unchecked_blocker: hardener_types::UncheckedBlocker::Environment,
         unchecked_compliance: vec![],
     }];
 
@@ -267,7 +267,7 @@ async fn unchecked_checks_survive_store_and_restore() {
             unchecked_title: "PAM setting: minlen".to_string(),
             unchecked_category: FindingCategory::Authentication,
             unchecked_reason: "reading /etc/security/pwquality.conf requires root".to_string(),
-            unchecked_needs_privilege: false,
+            unchecked_blocker: hardener_types::UncheckedBlocker::Environment,
             unchecked_compliance: vec![],
         }],
         scan_duration_us: 1,

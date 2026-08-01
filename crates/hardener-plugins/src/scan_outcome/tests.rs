@@ -151,3 +151,43 @@ fn a_failed_scan_and_a_disabled_plugin_both_contribute_one() {
 
     assert_eq!(unchecked.len(), 2);
 }
+
+/// The three `Unassessed` variants do not share a blocker, and the difference
+/// costs an operator a run if it is got wrong.
+///
+/// A plugin the config disabled and one this run did not select are the
+/// operator's own doing, and no privilege overrules either. A plugin whose scan
+/// reported its own failure is a different thing entirely: the reason is that
+/// plugin's prose, nothing here reads it, and it may well be a refusal root
+/// would lift. Claiming `Environment` for that one would be asserting sudo is
+/// useless on the strength of a string nobody looked at.
+#[test]
+fn an_incomplete_scan_claims_nothing_where_a_disabled_plugin_claims_environment() {
+    let ssh = metadata_for("ssh-hardening");
+    let kernel = metadata_for("kernel-hardening");
+
+    let (_, unchecked) = flatten_scans(
+        &[(ssh, scan_of("ssh-hardening", false))],
+        std::slice::from_ref(&kernel),
+    );
+    assert_eq!(unchecked.len(), 2, "one per plugin, failed and disabled");
+
+    let blocker_of = |id_starts: &str| {
+        unchecked
+            .iter()
+            .find(|check| check.unchecked_check_id.starts_with(id_starts))
+            .map(|check| check.unchecked_blocker)
+            .unwrap_or_else(|| panic!("no entry for {id_starts}: {unchecked:?}"))
+    };
+
+    assert_eq!(
+        blocker_of("ssh-hardening"),
+        UncheckedBlocker::Unknown,
+        "a plugin whose own scan failed may not have its cause guessed at"
+    );
+    assert_eq!(
+        blocker_of("kernel-hardening"),
+        UncheckedBlocker::Environment,
+        "a plugin the operator disabled is not waiting for a privileged re-run"
+    );
+}

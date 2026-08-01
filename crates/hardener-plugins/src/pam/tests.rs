@@ -68,8 +68,9 @@ fn an_unchecked_pam_directive_reports_the_real_cause() {
         true,
     );
     assert!(entry.unchecked_reason.contains("requires root"));
-    assert!(
-        entry.unchecked_needs_privilege,
+    assert_eq!(
+        entry.unchecked_blocker,
+        UncheckedBlocker::Privilege,
         "a privilege failure must offer the remedy that reaches it"
     );
     assert_eq!(entry.unchecked_check_id, "pam-minlen");
@@ -83,8 +84,9 @@ fn an_unchecked_pam_directive_reports_the_real_cause() {
         carried.unchecked_reason, "any reason at all",
         "the reason is the caller's, reported rather than reinterpreted"
     );
-    assert!(
-        !carried.unchecked_needs_privilege,
+    assert_eq!(
+        carried.unchecked_blocker,
+        UncheckedBlocker::Environment,
         "a cause privilege cannot reach must not offer sudo, which is what the \
          stack table's own unknown distribution case produces"
     );

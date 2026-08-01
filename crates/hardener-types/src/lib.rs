@@ -367,6 +367,39 @@ pub struct PluginMetadata {
     pub plugin_version: String,
 }
 
+/// What stopped a check from being evaluated, as far as the producer could
+/// tell.
+///
+/// This replaced a boolean that had to stand for two situations needing
+/// opposite advice: the process was not privileged and a privileged re-run
+/// would reach the check, or the process was already privileged and something
+/// else blocked it, so a privileged re-run would change nothing. There was
+/// nowhere to record the second, and four producers asserted the first
+/// unconditionally, so an operator was sent after a remedy that could not work.
+///
+/// The measurement that settled it: `systemd-nspawn` grants `CAP_NET_ADMIN`
+/// only to a container with its own network namespace, so the firewall plugin
+/// running as uid 0 reported "requires root" for a check whose real blocker was
+/// a missing capability. `CapEff` reads `fdecbfff` with `--network-veth` and
+/// `fdecafff` without, one bit apart, and `iptables -L` returns 4 either way to
+/// a process that cannot see the tables.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub enum UncheckedBlocker {
+    /// The session is not privileged, and a privileged re-run would reach this
+    /// check. This is the only variant that makes a renderer offer sudo.
+    Privilege,
+    /// Privilege is not what is missing. A capability the process does not
+    /// hold, a filesystem that cannot express the thing being asked about, a
+    /// tool that is not installed, a parameter this kernel does not carry: all
+    /// of them survive a privileged re-run unchanged.
+    Environment,
+    /// The producer did not determine which, so nothing is claimed and no
+    /// remedy is offered. The default, deliberately: a wrong remedy costs an
+    /// operator more than a missing one.
+    #[default]
+    Unknown,
+}
+
 /// A check the scanner could not evaluate.
 ///
 /// Unchecked entries are not findings: they carry no severity, never enter
@@ -387,18 +420,22 @@ pub struct UncheckedCheck {
     pub unchecked_category: FindingCategory,
     /// Why it could not be checked, e.g. "reading /etc/security/pwquality.conf requires root".
     pub unchecked_reason: String,
-    /// Whether re-running the scan with privilege could turn this entry into a
-    /// real result.
+    /// What stopped the check, as far as the producer could tell.
     ///
     /// The producer is the only place that knows. `unchecked_reason` is prose
     /// for an operator, so a renderer wanting to offer "run with sudo" had to
     /// either assert privilege for every entry, which is what four of them did,
     /// or guess from the wording, which is worse.
     ///
-    /// Defaults to `false` on deserialisation, so a scan persisted before this
-    /// field existed claims nothing rather than over-promising a remedy.
+    /// Defaults to [`UncheckedBlocker::Unknown`] on deserialisation, which is
+    /// also what a scan persisted under the previous boolean field now reads
+    /// as. That is lossy in one direction on purpose: an old entry that said
+    /// `true` becomes "not determined" rather than keeping a claim four
+    /// producers were making without checking. Claiming nothing costs an
+    /// operator a remedy they might have wanted; claiming wrongly costs them a
+    /// run that cannot help.
     #[serde(default)]
-    pub unchecked_needs_privilege: bool,
+    pub unchecked_blocker: UncheckedBlocker,
     /// Compliance mappings the check covers (drives ManualReview).
     pub unchecked_compliance: Vec<ComplianceMapping>,
 }
@@ -429,8 +466,11 @@ impl UncheckedTally {
             .into_iter()
             .fold(Self::default(), |tally, check| Self {
                 total: tally.total + 1,
+                // Only `Privilege` counts. `Environment` and `Unknown` are both
+                // "sudo will not help", for different reasons, and the tally's
+                // one job is deciding whether to offer it.
                 needing_privilege: tally.needing_privilege
-                    + usize::from(check.unchecked_needs_privilege),
+                    + usize::from(check.unchecked_blocker == UncheckedBlocker::Privilege),
             })
     }
 

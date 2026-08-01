@@ -30,7 +30,7 @@ use hardener_common::{error::is_permission_denied, types::FindingCategory};
 use hardener_core::{
     PluginConfig,
     context::Context,
-    plugin::{Finding, UncheckedCheck},
+    plugin::{Finding, UncheckedBlocker, UncheckedCheck},
 };
 use std::{
     collections::{BTreeMap, HashMap},
@@ -204,12 +204,21 @@ fn persistence_check_id(path: &str) -> String {
 /// of all of them unknown, and a control must not pass on the absence of a
 /// finding nobody was able to look for.
 fn unchecked_persistence(path: &str, reason: String, needs_privilege: bool) -> UncheckedCheck {
+    // `needs_privilege` is derived from the failure rather than asserted, so
+    // the two answers this plugin can give map cleanly onto the two the type
+    // records. A read DAC or an LSM refused is exactly what root fixes; a
+    // parameter this kernel does not carry is not, and no privilege will make
+    // it appear.
+    let blocker = match needs_privilege {
+        true => UncheckedBlocker::Privilege,
+        false => UncheckedBlocker::Environment,
+    };
     UncheckedCheck {
         unchecked_check_id: persistence_check_id(path),
         unchecked_title: "Kernel parameters survive a reboot".to_string(),
         unchecked_category: FindingCategory::Kernel,
         unchecked_reason: reason,
-        unchecked_needs_privilege: needs_privilege,
+        unchecked_blocker: blocker,
         unchecked_compliance: super::coverage(),
     }
 }

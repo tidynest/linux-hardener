@@ -19,7 +19,9 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
+    plugin::{
+        Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
+    },
 };
 use std::os::unix::fs::OpenOptionsExt;
 use std::{path::Path, time::Instant};
@@ -264,7 +266,9 @@ fn non_posix_unchecked(directive: &PermissionDirective, fstype: &str) -> Uncheck
         unchecked_title: format!("Permissions on {}", directive.permission_path),
         unchecked_category: FindingCategory::FileSystem,
         unchecked_reason: non_posix_guidance(directive.permission_path, fstype),
-        unchecked_needs_privilege: false,
+        // The filesystem cannot express a POSIX mode at all. Root cannot make
+        // vfat grow one, which is why the reason names fstab instead.
+        unchecked_blocker: UncheckedBlocker::Environment,
         unchecked_compliance: get_permissions_compliance_mappings(directive.permission_path),
     }
 }
@@ -280,7 +284,11 @@ fn unverifiable_unchecked(directive: &PermissionDirective, reason: &str) -> Unch
         unchecked_title: format!("Permissions on {}", directive.permission_path),
         unchecked_category: FindingCategory::FileSystem,
         unchecked_reason: reason.to_string(),
-        unchecked_needs_privilege: false,
+        // Every caller reaches here from an `Err` out of `path_exists` or
+        // `file_metadata`, and neither is classified, so a refusal root would
+        // fix is indistinguishable here from one it would not. Saying so is the
+        // honest answer; the previous `false` asserted the second.
+        unchecked_blocker: UncheckedBlocker::Unknown,
         unchecked_compliance: get_permissions_compliance_mappings(directive.permission_path),
     }
 }

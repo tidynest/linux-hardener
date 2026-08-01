@@ -95,7 +95,7 @@ fn unchecked_control_reports_manual_review_not_pass() {
         unchecked_title: "PAM setting: minlen".to_string(),
         unchecked_category: FindingCategory::Authentication,
         unchecked_reason: "requires root".to_string(),
-        unchecked_needs_privilege: true,
+        unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
         unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
     }];
     let report = generator.generate(&[], &unchecked).pop().unwrap();
@@ -120,7 +120,7 @@ fn finding_beats_unchecked_for_the_same_control() {
         unchecked_title: "PAM setting: minlen".to_string(),
         unchecked_category: FindingCategory::Authentication,
         unchecked_reason: "requires root".to_string(),
-        unchecked_needs_privilege: true,
+        unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
         unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
     }];
     let report = generator

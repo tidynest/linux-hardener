@@ -16,7 +16,9 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
+    plugin::{
+        Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
+    },
 };
 use std::path::Path;
 use std::time::Instant;
@@ -722,7 +724,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                             unchecked_reason:
                                 "reading the AppArmor profile set (aa-status) requires root"
                                     .to_string(),
-                            unchecked_needs_privilege: true,
+                            unchecked_blocker: UncheckedBlocker::Privilege,
                             unchecked_compliance: get_mac_compliance_mappings(
                                 "apparmor-no-profiles",
                             ),
@@ -745,7 +747,9 @@ impl HardeningPlugin for MacHardeningPlugin {
                     unchecked_reason: format!(
                         "could not determine whether a MAC system is present: {reason}"
                     ),
-                    unchecked_needs_privilege: false,
+                    // The probe failed and its reason is prose. Whether root
+                    // would have got an answer is exactly what is not known.
+                    unchecked_blocker: UncheckedBlocker::Unknown,
                     unchecked_compliance: get_mac_compliance_mappings("no-mac-system"),
                 });
             }

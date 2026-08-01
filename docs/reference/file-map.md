@@ -36,7 +36,8 @@ pub enum ComplianceFramework { CIS, HIPAA, ISO27001, NIST, PCIDSS, STIG, GDPR, S
 pub struct ScanResult { scan_plugin_id, scan_success, scan_findings, scan_unchecked, scan_duration_us, scan_error }
 pub struct ApplyResult { apply_plugin_id, apply_success, apply_changes, apply_checkpoint_id, apply_error }
 pub struct Finding { finding_id, finding_title, finding_severity, ... }
-pub struct UncheckedCheck { unchecked_check_id, unchecked_title, unchecked_category, unchecked_reason, unchecked_needs_privilege, unchecked_compliance }
+pub struct UncheckedCheck { unchecked_check_id, unchecked_title, unchecked_category, unchecked_reason, unchecked_blocker, unchecked_compliance }
+pub enum UncheckedBlocker { Privilege, Environment, Unknown }
 pub fn unchecked_summary(...)  // the one roll-up line every CLI renderer prints
 pub struct UncheckedTally { total, needing_privilege }  // and privilege_would_help()
 

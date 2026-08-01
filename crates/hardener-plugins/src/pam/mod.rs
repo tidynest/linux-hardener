@@ -21,8 +21,8 @@ use hardener_common::{
 use hardener_core::{
     Change, ChangeType, Checkpoint, Context, PluginConfig,
     plugin::{
-        ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck,
-        ValidationIssue, ValidationReport,
+        ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker,
+        UncheckedCheck, ValidationIssue, ValidationReport,
     },
 };
 use std::path::Path;
@@ -1349,12 +1349,21 @@ fn unchecked_pam_directive(
     reason: String,
     needs_privilege: bool,
 ) -> UncheckedCheck {
+    // `needs_privilege` is derived from the failure rather than asserted, so
+    // the two answers this plugin can give map cleanly onto the two the type
+    // records. A read DAC or an LSM refused is exactly what root fixes; a
+    // file that is simply absent is not, and no privilege will make
+    // it appear.
+    let blocker = match needs_privilege {
+        true => UncheckedBlocker::Privilege,
+        false => UncheckedBlocker::Environment,
+    };
     UncheckedCheck {
         unchecked_check_id: format!("pam-{}", directive.pam_directive_name),
         unchecked_title: format!("PAM setting: {}", directive.pam_directive_name),
         unchecked_category: FindingCategory::Authentication,
         unchecked_reason: reason,
-        unchecked_needs_privilege: needs_privilege,
+        unchecked_blocker: blocker,
         unchecked_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
     }
 }

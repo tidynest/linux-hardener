@@ -5,7 +5,7 @@
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
     ChangeType, CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
-    SystemExecutor, plugin::HardeningPlugin,
+    SystemExecutor, UncheckedBlocker, plugin::HardeningPlugin,
 };
 use hardener_plugins::KernelHardeningPlugin;
 use std::sync::Arc;
@@ -1978,8 +1978,9 @@ async fn an_unreadable_ufw_defaults_file_is_unchecked_rather_than_a_pass() {
         "the unchecked entry must name the file, got: {}",
         unchecked.unchecked_reason
     );
-    assert!(
-        unchecked.unchecked_needs_privilege,
+    assert_eq!(
+        unchecked.unchecked_blocker,
+        UncheckedBlocker::Privilege,
         "a read refused for permission is exactly what a privileged run would fix"
     );
     assert!(
@@ -2259,8 +2260,15 @@ async fn a_parameter_that_could_not_be_read_is_unchecked_rather_than_a_pass() {
              the report still auto-passes the control it covers ({label}), got: {:?}",
             entry.unchecked_compliance
         );
+        // The two answers this plugin can give, named rather than encoded: a
+        // refusal root would lift, against a parameter this kernel does not
+        // carry, which no privilege will conjure into existence.
+        let expected = match privilege_helps {
+            true => UncheckedBlocker::Privilege,
+            false => UncheckedBlocker::Environment,
+        };
         assert_eq!(
-            entry.unchecked_needs_privilege, privilege_helps,
+            entry.unchecked_blocker, expected,
             "whether a privileged re-run would reach this must come from the \
              failure the probe saw ({label})"
         );

@@ -37,7 +37,9 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
+    plugin::{
+        Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
+    },
 };
 use std::{path::Path, time::Instant};
 use tracing::{error, info, warn};
@@ -1130,14 +1132,21 @@ fn keep_value_the_fragment_holds(
     }
 }
 
-/// Unchecked entries for every sshd_config check when the file itself cannot
-/// be read at the current privilege level. Ids mirror the finding ids.
+/// Unchecked entries for every sshd_config check, when something stopped this
+/// scan reading the effective configuration. Ids mirror the finding ids.
 ///
-/// `path` names the file that could not be read, which is not always
-/// `/etc/ssh/sshd_config`: on a host that layers its configuration it may be
-/// the vendor copy under `/usr/etc`, and naming the wrong file sends the
-/// operator to a path that is not the problem.
-fn unchecked_ssh_checks(path: &str) -> Vec<UncheckedCheck> {
+/// Both the reason and the blocker are the caller's, because the two callers
+/// meet different failures and the helper used to speak for both. It said
+/// "reading {path} requires root" either way, which is true of the one caller
+/// whose read was refused and false of the other, whose read succeeded and
+/// whose Include resolution then failed. That second entry named a file it had
+/// already read and sent the operator to a remedy for a problem the file did
+/// not have.
+///
+/// The path a caller names is not always `/etc/ssh/sshd_config`: on a host that
+/// layers its configuration it may be the vendor copy under `/usr/etc`, and
+/// naming the wrong file sends the operator somewhere that is not the problem.
+fn unchecked_ssh_checks(reason: &str, blocker: UncheckedBlocker) -> Vec<UncheckedCheck> {
     SSH_DIRECTIVES
         .iter()
         .map(|d| {
@@ -1156,8 +1165,8 @@ fn unchecked_ssh_checks(path: &str) -> Vec<UncheckedCheck> {
             unchecked_check_id: format!("ssh-{}", name.to_lowercase()),
             unchecked_title: format!("SSH setting: {}", name),
             unchecked_category: FindingCategory::Network,
-            unchecked_reason: format!("reading {path} requires root"),
-            unchecked_needs_privilege: true,
+            unchecked_reason: reason.to_string(),
+            unchecked_blocker: blocker,
             unchecked_compliance: compliance,
         })
         .collect()
@@ -1214,7 +1223,10 @@ impl HardeningPlugin for SshHardeningPlugin {
                         scan_plugin_id: plugin_id,
                         scan_success: true,
                         scan_findings: vec![],
-                        scan_unchecked: unchecked_ssh_checks(&path),
+                        scan_unchecked: unchecked_ssh_checks(
+                            &format!("reading {path} requires root"),
+                            UncheckedBlocker::Privilege,
+                        ),
                         scan_duration_us: duration_us,
                         scan_error: None,
                     });
@@ -1260,7 +1272,20 @@ impl HardeningPlugin for SshHardeningPlugin {
                     scan_plugin_id: plugin_id,
                     scan_success: false,
                     scan_findings: vec![],
-                    scan_unchecked: unchecked_ssh_checks(&main.path),
+                    scan_unchecked: unchecked_ssh_checks(
+                        &format!(
+                            "{} was read, but the Include directives it carries \
+                             could not be resolved, so the effective configuration \
+                             is unknown: {e}",
+                            main.path
+                        ),
+                        // `include::resolve` fails on nesting past its depth
+                        // limit, a directory it cannot list, an included file it
+                        // cannot read, and a pattern naming no directory. Only
+                        // one of those is a refusal root would lift, and nothing
+                        // here knows which happened.
+                        UncheckedBlocker::Unknown,
+                    ),
                     scan_duration_us: duration_us,
                     scan_error: Some(format!(
                         "Cannot resolve sshd_config Include directives: {e}"

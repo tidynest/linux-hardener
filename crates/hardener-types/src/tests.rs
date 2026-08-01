@@ -360,7 +360,7 @@ mod serde_compatibility_tests {
             unchecked_title: "PAM setting: minlen".to_string(),
             unchecked_category: FindingCategory::Authentication,
             unchecked_reason: "reading /etc/security/pwquality.conf requires root".to_string(),
-            unchecked_needs_privilege: true,
+            unchecked_blocker: UncheckedBlocker::Privilege,
             unchecked_compliance: vec![],
         };
         let json = serde_json::to_string(&check).unwrap();
@@ -380,19 +380,48 @@ mod serde_compatibility_tests {
             "unchecked_compliance": []
         }"#;
         let check: UncheckedCheck = serde_json::from_str(old_json).expect("old JSON must parse");
-        assert!(
-            !check.unchecked_needs_privilege,
+        assert_eq!(
+            check.unchecked_blocker,
+            UncheckedBlocker::Unknown,
             "an absent field must not be read as a promise that sudo helps"
         );
     }
 
-    fn unchecked(id: &str, reason: &str, needs_privilege: bool) -> UncheckedCheck {
+    /// The lossy direction, asserted rather than left to be discovered. A scan
+    /// persisted under the previous boolean carried `unchecked_needs_privilege`,
+    /// which no longer exists; serde ignores the unknown key and the new field
+    /// takes its default. The old `true` is therefore dropped on purpose, since
+    /// four producers were writing it without checking anything.
+    #[test]
+    fn a_scan_persisted_under_the_old_boolean_claims_nothing() {
+        let old_json = r#"{
+            "unchecked_check_id": "firewall-disabled",
+            "unchecked_title": "Active firewall ruleset",
+            "unchecked_category": "Network",
+            "unchecked_reason": "verifying the active nftables ruleset requires root",
+            "unchecked_needs_privilege": true,
+            "unchecked_compliance": []
+        }"#;
+        let check: UncheckedCheck = serde_json::from_str(old_json).expect("old JSON must parse");
+        assert_eq!(
+            check.unchecked_blocker,
+            UncheckedBlocker::Unknown,
+            "a claim made by the field that was removed must not survive the rename"
+        );
+        assert_eq!(
+            UncheckedTally::from_checks(&[check]).needing_privilege,
+            0,
+            "and it must not reach the tally that decides whether to offer sudo"
+        );
+    }
+
+    fn unchecked(id: &str, reason: &str, blocker: UncheckedBlocker) -> UncheckedCheck {
         UncheckedCheck {
             unchecked_check_id: id.to_string(),
             unchecked_title: id.to_string(),
             unchecked_category: FindingCategory::Authentication,
             unchecked_reason: reason.to_string(),
-            unchecked_needs_privilege: needs_privilege,
+            unchecked_blocker: blocker,
             unchecked_compliance: vec![],
         }
     }
@@ -407,7 +436,7 @@ mod serde_compatibility_tests {
         let disabled = unchecked(
             "ssh-hardening-not-assessed",
             "disabled by configuration, so the controls it covers were not assessed",
-            false,
+            UncheckedBlocker::Environment,
         );
 
         let summary = unchecked_summary(&[disabled]).expect("one entry must be summarised");
@@ -430,17 +459,17 @@ mod serde_compatibility_tests {
             unchecked(
                 "ssh-hardening-not-assessed",
                 "disabled by configuration",
-                false,
+                UncheckedBlocker::Environment,
             ),
             unchecked(
                 "pam-minlen",
                 "reading /etc/security/pwquality.conf requires root",
-                true,
+                UncheckedBlocker::Privilege,
             ),
             unchecked(
                 "pam-dcredit",
                 "reading /etc/security/pwquality.conf requires root",
-                true,
+                UncheckedBlocker::Privilege,
             ),
         ];
 
@@ -463,9 +492,13 @@ mod serde_compatibility_tests {
             unchecked(
                 "pam-minlen",
                 "reading /etc/security/pwquality.conf requires root",
-                true,
+                UncheckedBlocker::Privilege,
             ),
-            unchecked("audit-rules", "auditctl -l requires root", true),
+            unchecked(
+                "audit-rules",
+                "auditctl -l requires root",
+                UncheckedBlocker::Privilege,
+            ),
         ];
 
         let summary = unchecked_summary(&entries).expect("two entries must be summarised");
@@ -493,7 +526,7 @@ mod serde_compatibility_tests {
         let tally = UncheckedTally::from_checks(&[unchecked(
             "ssh-hardening-not-assessed",
             "disabled by configuration, so the controls it covers were not assessed",
-            false,
+            UncheckedBlocker::Environment,
         )]);
 
         assert_eq!(tally.total, 1);
@@ -507,16 +540,20 @@ mod serde_compatibility_tests {
     /// The other two directions, so the fix cannot be "never offer it".
     #[test]
     fn a_run_privilege_can_help_offers_privilege() {
-        let all = UncheckedTally::from_checks(&[unchecked("pam-minlen", "requires root", true)]);
+        let all = UncheckedTally::from_checks(&[unchecked(
+            "pam-minlen",
+            "requires root",
+            UncheckedBlocker::Privilege,
+        )]);
         assert!(all.privilege_would_help());
 
         let mixed = UncheckedTally::from_checks(&[
             unchecked(
                 "ssh-hardening-not-assessed",
                 "disabled by configuration",
-                false,
+                UncheckedBlocker::Environment,
             ),
-            unchecked("pam-minlen", "requires root", true),
+            unchecked("pam-minlen", "requires root", UncheckedBlocker::Privilege),
         ]);
         assert!(
             mixed.privilege_would_help(),
@@ -524,6 +561,40 @@ mod serde_compatibility_tests {
         );
 
         assert!(!UncheckedTally::default().privilege_would_help());
+    }
+
+    /// The reason the boolean was replaced rather than corrected. Both of these
+    /// suppress the offer, so a tally cannot tell them apart and does not need
+    /// to, but they are different answers to the operator's next question and
+    /// the entry itself must keep them separate. `Environment` says the host
+    /// cannot answer this and a privileged re-run will not change that;
+    /// `Unknown` says nobody looked. Under one boolean both were `false`, and a
+    /// producer that had not looked was indistinguishable from one that had.
+    #[test]
+    fn environment_and_unknown_suppress_the_offer_but_stay_distinct() {
+        let blocked = unchecked(
+            "boot-mode",
+            "/boot is on vfat",
+            UncheckedBlocker::Environment,
+        );
+        let undetermined = unchecked(
+            "audit-rules",
+            "auditctl -l failed",
+            UncheckedBlocker::Unknown,
+        );
+
+        assert_ne!(
+            blocked.unchecked_blocker, undetermined.unchecked_blocker,
+            "the entry must record which of the two it is"
+        );
+
+        let tally = UncheckedTally::from_checks(&[blocked, undetermined]);
+        assert_eq!(tally.total, 2);
+        assert_eq!(
+            tally.needing_privilege, 0,
+            "neither is reachable by privilege, so neither may be counted towards the offer"
+        );
+        assert!(!tally.privilege_would_help());
     }
 }
 mod policy_exception_tests {

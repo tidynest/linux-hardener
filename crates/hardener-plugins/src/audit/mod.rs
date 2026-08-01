@@ -20,7 +20,9 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
+    plugin::{
+        Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
+    },
 };
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
@@ -996,7 +998,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                         unchecked_category: FindingCategory::Audit,
                         unchecked_reason: "listing loaded audit rules (auditctl -l) requires root"
                             .to_string(),
-                        unchecked_needs_privilege: true,
+                        unchecked_blocker: UncheckedBlocker::Privilege,
                         unchecked_compliance: get_audit_compliance_mappings("rules"),
                     });
                 }

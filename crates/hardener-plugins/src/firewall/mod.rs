@@ -18,7 +18,9 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
+    plugin::{
+        Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
+    },
 };
 use std::time::Instant;
 use tracing::{info, warn};
@@ -512,7 +514,7 @@ fn not_at_boot_unchecked(backend: &dyn FirewallBackend) -> UncheckedCheck {
         ),
         // `is-enabled` needs no privilege, so a run with sudo would read
         // exactly the same thing and offering one would be a false promise.
-        unchecked_needs_privilege: false,
+        unchecked_blocker: UncheckedBlocker::Environment,
         unchecked_compliance: get_firewall_compliance_mappings(),
     }
 }
@@ -859,7 +861,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     "verifying the active {} ruleset requires root",
                     backend.backend_name()
                 ),
-                unchecked_needs_privilege: true,
+                unchecked_blocker: UncheckedBlocker::Privilege,
                 unchecked_compliance: get_firewall_compliance_mappings(),
             });
         } else if classified

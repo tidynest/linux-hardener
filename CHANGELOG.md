@@ -125,6 +125,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repairing an affected host is written out in
   [docs/guide/upgrading.md](docs/guide/upgrading.md#150-and-earlier-opensuse-hosts-may-have-a-short-file-masking-the-vendor-copy).
 
+### Changed
+
+- **`UncheckedCheck` records what blocked a check rather than a single
+  boolean.** `unchecked_needs_privilege: bool` is replaced by
+  `unchecked_blocker`, one of `Privilege`, `Environment` or `Unknown`. The
+  boolean had to stand for two situations that need opposite advice: the
+  session is not privileged and a re-run with sudo would reach the check, or it
+  is already privileged and something else blocks it, so sudo changes nothing.
+  There was nowhere to record the second, and four producers asserted the first
+  without checking anything, which is how a container running as uid 0 came to
+  be told to try again as root.
+
+  **Two consequences worth knowing before you upgrade.** A scan already in your
+  history was persisted with the old field, which no longer exists, so it reads
+  back as `Unknown` and the desktop stops offering "Run with sudo" for it until
+  you rescan. Nothing errors and no history is lost. Separately, `batch
+  --format json` now emits `unchecked_blocker` with a string value in place of
+  `unchecked_needs_privilege` with a boolean, so anything outside this project
+  keying on that field needs updating.
+
+  Two entries also stopped claiming things they had not established: a plugin
+  whose own scan failed is no longer reported as beyond privilege's reach, since
+  the reason is that plugin's prose and nothing reads it, and the ssh entry
+  raised when Include resolution fails no longer says "reading
+  /etc/ssh/sshd_config requires root" about a file it read successfully three
+  lines earlier.
+
 ### Fixed
 
 - **The Rust 1.85 minimum is now declared, so cargo enforces it instead of

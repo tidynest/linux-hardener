@@ -15,7 +15,9 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
+    plugin::{
+        Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
+    },
 };
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -208,7 +210,9 @@ fn unchecked_all_services(reason: &str) -> Vec<UncheckedCheck> {
             unchecked_title: format!("Unnecessary service {}", directive.service_name),
             unchecked_category: FindingCategory::Services,
             unchecked_reason: format!("could not list services: {reason}"),
-            unchecked_needs_privilege: false,
+            // The listing failed and the error is carried as prose, not
+            // classified, so nothing here knows whether root would have read it.
+            unchecked_blocker: UncheckedBlocker::Unknown,
             unchecked_compliance: get_service_compliance_mappings(directive.service_name),
         })
         .collect()

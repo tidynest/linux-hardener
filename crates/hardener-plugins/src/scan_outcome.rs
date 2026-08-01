@@ -14,7 +14,7 @@
 //! how the rule came to be applied in one and not the other.
 
 use hardener_common::types::{FindingCategory, PluginId};
-use hardener_core::{Finding, PluginMetadata, ScanResult, UncheckedCheck};
+use hardener_core::{Finding, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck};
 
 /// Why a plugin contributed no evidence to this run.
 #[derive(Clone, Copy, Debug)]
@@ -172,7 +172,9 @@ fn registry_unavailable_check(reason: &str) -> UncheckedCheck {
             "the plugins this run would have assessed could not be listed ({reason}), \
              so no control may be reported as satisfied"
         ),
-        unchecked_needs_privilege: false,
+        // The registry is enumerated in this process. Nothing about privilege
+        // reaches it, so a privileged re-run reports exactly this again.
+        unchecked_blocker: UncheckedBlocker::Environment,
         unchecked_compliance: crate::compliance_coverage(),
     }
 }
@@ -210,7 +212,17 @@ pub fn unassessed_check(metadata: &PluginMetadata, why: Unassessed<'_>) -> Unche
         unchecked_title: title,
         unchecked_category: metadata.plugin_category,
         unchecked_reason: reason,
-        unchecked_needs_privilege: false,
+        // Two of the three are the operator's own doing, and root overrules
+        // neither: a plugin the config disabled, and one this run did not
+        // select. The third is a plugin whose scan reported its own failure,
+        // and that reason is the plugin's prose rather than anything this
+        // function classified, so it may well be a refusal root would lift.
+        // Claiming Environment for it would be asserting the remedy is useless
+        // on the strength of a string nobody read.
+        unchecked_blocker: match why {
+            Unassessed::ScanIncomplete(_) => UncheckedBlocker::Unknown,
+            Unassessed::DisabledByConfig | Unassessed::NotCovered => UncheckedBlocker::Environment,
+        },
         unchecked_compliance: crate::coverage_for(id).unwrap_or_default(),
     }
 }

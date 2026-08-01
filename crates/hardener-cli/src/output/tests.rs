@@ -227,7 +227,7 @@ fn unchecked(id: &str, title: &str) -> UncheckedCheck {
         unchecked_title: title.to_string(),
         unchecked_category: FindingCategory::Audit,
         unchecked_reason: "listing loaded audit rules (auditctl -l) requires root".to_string(),
-        unchecked_needs_privilege: true,
+        unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
         unchecked_compliance: vec![],
     }
 }
