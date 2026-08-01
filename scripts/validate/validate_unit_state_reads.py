@@ -113,6 +113,9 @@ PROBE = '"is-enabled"'
 # fixtures name states deliberately and must not be held to the registry.
 TEST_MODULE = "#[cfg(test)]"
 
+# A whole file gated as tests, rather than a module at the end of one.
+FILE_IS_TEST = "#![cfg(test)]"
+
 # The enclosing function is found by walking back to the nearest `fn`, which is
 # the unit the cross-check reads: a site's judgement lives in the function that
 # holds it in all three cases today.
@@ -165,11 +168,19 @@ def find_project_root() -> Path:
 def production_text(path: Path) -> str:
     """`path` with its test module removed.
 
-    Cut at the first `#[cfg(test)]` rather than parsed, because every source in
-    this workspace puts its test module last and a partial cut would be worse
+    Cut at the first `#[cfg(test)]` rather than parsed, because a source that
+    keeps its test module inline puts it last, and a partial cut would be worse
     than none: it would drop production code and could only ever hide a site.
+
+    A file that opens with `#![cfg(test)]` is a test module in its own right,
+    split out of the source it exercises, so all of it is test text and none of
+    it is a site. Without this the split would resurrect every site a test
+    fixture makes, which is how four mock firewall fixtures came to be asked a
+    question only the product can answer.
     """
     text = path.read_text()
+    if FILE_IS_TEST in text[:text.find("\n\n") + 2 or len(text)]:
+        return ""
     cut = text.find(TEST_MODULE)
     return text if cut == -1 else text[:cut]
 

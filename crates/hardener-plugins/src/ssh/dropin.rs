@@ -144,39 +144,4 @@ async fn remove_dropin(ctx: &Context) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn directive(keyword: &'static str, value: &str) -> Directive {
-        Directive {
-            keyword,
-            value: value.to_string(),
-            note: "",
-        }
-    }
-
-    #[test]
-    fn directives_are_rendered_in_a_stable_order() {
-        let one = render(&[
-            directive("X11Forwarding", "no"),
-            directive("PermitRootLogin", "no"),
-        ]);
-        let other = render(&[
-            directive("PermitRootLogin", "no"),
-            directive("X11Forwarding", "no"),
-        ]);
-        assert_eq!(one, other, "order in must not change the file on disk");
-        let body: Vec<&str> = one.lines().filter(|l| !l.starts_with('#')).collect();
-        assert_eq!(body, vec!["PermitRootLogin no", "X11Forwarding no"]);
-    }
-
-    #[test]
-    fn the_fragment_says_who_owns_it() {
-        let rendered = render(&[directive("X11Forwarding", "no")]);
-        assert!(
-            rendered.starts_with('#'),
-            "a managed file must say so before its first directive: {rendered}"
-        );
-        assert!(rendered.contains("linux-system-hardener"));
-    }
-}
+mod tests;

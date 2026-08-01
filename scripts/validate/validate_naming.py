@@ -94,7 +94,10 @@ class NamingValidator:
 
         # Allowed in specific contexts (don't warn)
         self.context_allowlist = {
-            'cfg': [r'#\[cfg\(', r'cfg!'],  # Rust cfg attribute/macro
+            # `#!?\[` so the inner form matches too: a test module split out of
+            # its source file carries `#![cfg(test)]`, and the outer-only pattern
+            # flagged that attribute as a badly named identifier once per file.
+            'cfg': [r'#!?\[cfg\(', r'cfg!'],  # Rust cfg attribute/macro
             'ctx': [r'ctx:', r'&ctx', r'ctx\.', r'ctx,', r'\(ctx\)', r'mut ctx', r'ctx\)', r'let ctx'],  # Context param
             'distro': [r'distro_', r'DistroFamily', r'hardener-distro'],
             'cmd': [r'execute_command', r'CommandOutput', r'firewall_cmd', r'cmd:', r'&cmd', r'cmd\.', r'let cmd'],
@@ -178,6 +181,15 @@ class NamingValidator:
 
                 # Track brace depth for test context
                 brace_depth += line.count('{') - line.count('}')
+
+                # A file gated in its entirety, rather than a module at the end
+                # of one. Note this is checked before the inline forms below:
+                # `#![cfg(test)]` does not contain `#[cfg(test)]`, so the inline
+                # test would miss it and judge a whole split-out test file as
+                # production code, starting with the attribute's own `cfg`.
+                if stripped == '#![cfg(test)]':
+                    in_test_context = True
+                    test_brace_start = brace_depth
 
                 # Detect test module or test function start
                 if '#[cfg(test)]' in stripped or '#[test]' in stripped or '#[tokio::test]' in stripped:

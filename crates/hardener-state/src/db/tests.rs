@@ -1,3 +1,12 @@
+#![cfg(test)]
+//
+// The module declaration that pulls this file in is already gated, so this
+// inner attribute changes nothing about what is compiled. It is here so the
+// file says what it is on its own terms: several validators decide test
+// context by looking for `cfg(test)` in the file they are reading, and a test
+// module that moved out of its source file would otherwise be judged as
+// production code by every one of them.
+
 //! Unit tests for [`db`].
 //!
 //! Split out of `db.rs`. This file sits in the `db/` directory

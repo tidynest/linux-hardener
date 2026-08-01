@@ -120,6 +120,10 @@ def preceding_item_doc_length(lines: list[str], before: int) -> tuple[int, str]:
 def loose_docs_in(path: Path) -> list[tuple[int, str, str, int]]:
     """Every undocumented free function in `path` that follows a long doc block."""
     lines = path.read_text().splitlines()
+    # A file that declares itself test-only is entirely the thing the loop below
+    # stops at when it meets it inline, so there is nothing here to report.
+    if any(l.strip() == "#![cfg(test)]" for l in lines[:12]):
+        return []
     found = []
     for i, line in enumerate(lines):
         # Everything from the unit-test module on is out of scope: test helpers

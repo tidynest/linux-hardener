@@ -159,6 +159,21 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/permissions/mod.rs` | FileSystem | Critical paths, SUID/SGID, world-writable. Where `/etc` holds nothing at all, `scan` reads the `/usr/etc` copy through `vendor_path_for()` and reports a violating vendor mode as a finding keyed on the `/etc` path, so the id stays `perm--etc-sudoers` while the title names the file in force. The vendor file is never written, so that finding's remediation is an install into `/etc`; `apply` is unchanged and still leaves a path absent from `/etc` alone | `PermissionCheck::VendorOnly`, `check_vendor_layer_permissions()`, `effective_directive()` |
 | `src/audit/mod.rs` | Audit | auditd rules for time, users, permissions |
 | `src/mac/mod.rs` | MAC | SELinux/AppArmor status |
+| `src/tests.rs` | Tests | Unit tests for the crate root | Test-only; reached the crate through `crate::` already, so no import changed |
+| `src/audit/tests.rs` | Tests | Unit tests for `src/audit/mod.rs` | Test-only; `super` resolves to `crate::audit` |
+| `src/firewall/tests.rs` | Tests | Unit tests for `src/firewall/mod.rs`, 21 of them | Test-only; `super` resolves to `crate::firewall` |
+| `src/kernel/tests.rs` | Tests | Unit tests for `src/kernel/mod.rs` | Test-only; `super` resolves to `crate::kernel` |
+| `src/kernel/persistence/tests.rs` | Tests | Unit tests for `src/kernel/persistence.rs` | Test-only; `super` resolves to `crate::kernel::persistence` |
+| `src/mac/tests.rs` | Tests | Unit tests for `src/mac/mod.rs` | Test-only; `super` resolves to `crate::mac` |
+| `src/pam/tests.rs` | Tests | Unit tests for `src/pam/mod.rs` | Test-only; `super` resolves to `crate::pam` |
+| `src/pam/layer_drift/tests.rs` | Tests | Unit tests for `src/pam/layer_drift.rs` | Test-only; `super` resolves to `crate::pam::layer_drift` |
+| `src/pam/login_defs/tests.rs` | Tests | Unit tests for `src/pam/login_defs.rs` | Test-only; `super` resolves to `crate::pam::login_defs` |
+| `src/permissions/tests.rs` | Tests | Unit tests for `src/permissions/mod.rs` | Test-only; `super` resolves to `crate::permissions` |
+| `src/services/tests.rs` | Tests | Unit tests for `src/services/mod.rs` | Test-only; `super` resolves to `crate::services` |
+| `src/scan_outcome/tests.rs` | Tests | Unit tests for `src/scan_outcome.rs` | Test-only; `super` resolves to `crate::scan_outcome` |
+| `src/ssh/dropin/tests.rs` | Tests | Unit tests for `src/ssh/dropin.rs` | Test-only; `super` resolves to `crate::ssh::dropin` |
+| `src/ssh/include/tests.rs` | Tests | Unit tests for `src/ssh/include.rs` | Test-only; `super` resolves to `crate::ssh::include` |
+| `src/strictness/tests.rs` | Tests | Unit tests for `src/strictness.rs` | Test-only; `super` resolves to `crate::strictness` |
 
 ### Plugin Constants (Examples)
 
