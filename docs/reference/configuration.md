@@ -470,8 +470,29 @@ sysctl name for `[kernel]`, a PAM directive name for `[pam]` (for example
 `minlen`), an absolute path for `[permissions]` (for example `/etc/shadow`), a
 service name for `[services]` (for example `cups`), an audit rule category for
 `[audit]` (`time-change`, `identity`, `network-change`, `perm-mod`,
-`privileged`, `delete`, `modules`), and `selinux-enforcing` /
+`privileged`, `delete`, `modules`), a baseline rule id for `[firewall]`
+(`loopback`, `established`, `ssh`, `drop_default`), and `selinux-enforcing` /
 `apparmor-enforce` for `[mac]`.
+
+Some findings are about a subsystem rather than about a setting inside it, and
+those take a key naming the subsystem state. A rule that was never applied is a
+different statement from a firewall that was never enabled, so no rule id can
+excuse the second:
+
+| Key | Accepts a host where |
+|---|---|
+| `firewall-enabled` | no firewall is enforcing at all |
+| `firewall-at-boot` | the firewall enforces now and is gone after a reboot |
+| `mac-present` | neither SELinux nor AppArmor is installed |
+| `auditd-present` | auditd is not installed |
+| `auditd-at-boot` | auditd is installed and not started at boot |
+| `auditd-running` | auditd is installed and currently stopped |
+
+Each state takes its own key on purpose. Accepting a host with no firewall is a
+different decision from accepting one whose firewall does not survive a
+restart, and declaring one does not declare the other. The keys deliberately do
+not carry the detected backend: an exception written on a host running ufw goes
+on being honoured when the same policy reaches a host running firewalld.
 
 ---
 

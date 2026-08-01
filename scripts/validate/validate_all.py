@@ -81,6 +81,7 @@ def main():
         ("Doc Sync Targets", "validate_doc_targets.py", []),
         ("Badges", "validate_badges.py", []),
         ("Test Assertions", "validate_test_assertions.py", []),
+        ("Policy Exception Sites", "validate_policy_exception_sites.py", []),
     ]
 
     # Add slower validators unless in quick mode
