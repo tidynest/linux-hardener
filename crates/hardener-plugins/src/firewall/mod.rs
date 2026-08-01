@@ -1069,9 +1069,17 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // The other half of "enabled", which the enable above cannot reach on
         // this host: it is skipped entirely when the firewall is already
         // running, so a host running a firewall whose unit is not wanted at
-        // boot was never repaired however often the tool was run. Where the
-        // enable did run, it asked systemd itself (ufw and firewalld both do),
-        // so asking again here would only repeat it.
+        // boot was never repaired however often the tool was run.
+        //
+        // Where the enable did run it is skipped instead, and that is right for
+        // two of the three backends and not the third. ufw's `--force enable`
+        // and firewalld's `systemctl start` plus `systemctl enable` both leave
+        // the unit wanted at boot, so asking again would only repeat them.
+        // nftables' `enable` creates the inet filter table and its three chains
+        // through `nft` and issues no `systemctl` call at all, so on that
+        // backend a fresh enable leaves the unit unenabled and the ruleset only
+        // in the kernel. That gap is #52, and closing it is a behaviour change
+        // needing container evidence rather than a comment.
         if was_already_enabled {
             let boot_change = ensure_unit_wanted_at_boot(ctx, backend.as_ref()).await;
             apply_changes.push(boot_change);
