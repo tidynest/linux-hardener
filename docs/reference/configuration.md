@@ -107,7 +107,7 @@ Every section accepts the same three keys:
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
 | `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final within one merged config: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. Across sources the key behaves differently; see the merge rule under File locations and precedence. |
-| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Every directive is clamped tighten-only, in all four plugins that accept one. See below. |
+| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Directives are clamped tighten-only: completely in `[kernel]`, `[ssh]`, `[pam]` and `[permissions]`, and on the `action` field alone in `[firewall]`, whose `port`, `source` and `protocol` are applied as given. See below. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
 > **Removed: `custom_directives`.** Earlier releases accepted and validated a
@@ -293,10 +293,19 @@ entirely where the baseline restricts it to administrators, and
 `net.ipv4.tcp_syncookies = 2` sends SYN cookies unconditionally rather than
 under pressure.
 
-To record a deliberate, approved deviation, an exception is the only route
-that works: a loosening override is refused in every plugin and simply has no
-effect. An exception carries a reason, an approver and an expiry, and the
-report shows it instead of silently lowering the bar.
+To record a deliberate, approved deviation, an exception is the route that
+works everywhere: a loosening override is refused wherever it can be recognised
+as one, and simply has no effect. An exception carries a reason, an approver and
+an expiry, and the report shows it instead of silently lowering the bar.
+
+**One gap, stated rather than implied.** In `[firewall]` only the `action` field
+is clamped, because it is the only one whose direction holds for any rule:
+`accept` admits what `drop` and `reject` refuse, so a blocking rule cannot be
+overridden into an accepting one. `source` and `protocol` weaken or strengthen
+depending on the rule's own action, and `port` merely moves, which is why
+changing the SSH port is a legitimate override. Widening `source` on an
+accepting rule is therefore honoured as written, and an exception is the only
+thing that records it as a decision.
 
 ---
 

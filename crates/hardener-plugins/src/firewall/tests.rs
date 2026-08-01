@@ -961,3 +961,117 @@ fn firewall_maps_fedramp_moderate_controls() {
         );
     }
 }
+
+/// A directive override may tighten a rule and never weaken it, which is what
+/// every other plugin taking one already guarantees and what the configuration
+/// reference promises for all of them.
+///
+/// The catch-all is the case that matters. `drop_default` exists so that
+/// anything the three allow rules did not admit is refused, and an override
+/// turning it into `accept` is the whole baseline undone by one line of
+/// configuration, applied by the tool whose job is to prevent exactly that.
+#[test]
+fn an_override_cannot_turn_the_catch_all_drop_into_accept() {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("drop_default.action".to_string(), "accept".to_string());
+
+    let mut rule = get_baseline_rules()
+        .into_iter()
+        .find(|r| rule_id(r) == "drop_default")
+        .expect("the baseline carries a catch-all rule");
+    apply_rule_directives(&mut rule, "drop_default", &config);
+
+    assert_eq!(
+        rule.rule_action, "drop",
+        "a blocking rule must not be weakened to accept by an override"
+    );
+}
+
+/// The other direction still works, or the clamp would be a ban rather than a
+/// clamp. Tightening an allow rule into a drop is a legitimate thing to ask for.
+#[test]
+fn an_override_may_tighten_an_accepting_rule() {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("ssh.action".to_string(), "drop".to_string());
+
+    let mut rule = get_baseline_rules()
+        .into_iter()
+        .find(|r| rule_id(r) == "ssh")
+        .expect("the baseline carries an ssh rule");
+    apply_rule_directives(&mut rule, "ssh", &config);
+
+    assert_eq!(
+        rule.rule_action, "drop",
+        "tightening must still be honoured"
+    );
+}
+
+/// `drop` and `reject` are both blocking, so swapping one for the other is
+/// neither a loosening nor a tightening and is the operator's business.
+#[test]
+fn an_override_may_swap_one_blocking_action_for_the_other() {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("drop_default.action".to_string(), "reject".to_string());
+
+    let mut rule = get_baseline_rules()
+        .into_iter()
+        .find(|r| rule_id(r) == "drop_default")
+        .expect("the baseline carries a catch-all rule");
+    apply_rule_directives(&mut rule, "drop_default", &config);
+
+    assert_eq!(rule.rule_action, "reject");
+}
+
+/// The three fields that are not clamped, pinned as a positive control. Without
+/// them a clamp that refused every override would pass the assertions above,
+/// and changing the SSH port is the configuration reference's own worked
+/// example of a legitimate override.
+#[test]
+fn port_source_and_protocol_overrides_are_still_applied() {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("ssh.port".to_string(), "2222".to_string());
+    config
+        .directives
+        .insert("ssh.source".to_string(), "10.0.0.0/8".to_string());
+    config
+        .directives
+        .insert("ssh.protocol".to_string(), "udp".to_string());
+
+    let mut rule = get_baseline_rules()
+        .into_iter()
+        .find(|r| rule_id(r) == "ssh")
+        .expect("the baseline carries an ssh rule");
+    apply_rule_directives(&mut rule, "ssh", &config);
+
+    assert_eq!(rule.rule_port, "2222");
+    assert_eq!(rule.rule_source, "10.0.0.0/8");
+    assert_eq!(rule.rule_protocol, "udp");
+}
+
+/// An action the configuration layer would have rejected never reaches a rule.
+/// It cannot arrive through a validated config, so this pins the fail-closed
+/// posture rather than a reachable path: an unrecognised action is not a
+/// tightening and must not be written to a backend.
+#[test]
+fn an_unrecognised_action_is_refused_rather_than_written() {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("ssh.action".to_string(), "allow".to_string());
+
+    let mut rule = get_baseline_rules()
+        .into_iter()
+        .find(|r| rule_id(r) == "ssh")
+        .expect("the baseline carries an ssh rule");
+    apply_rule_directives(&mut rule, "ssh", &config);
+
+    assert_eq!(rule.rule_action, "accept", "the baseline must stand");
+}

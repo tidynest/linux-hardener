@@ -1243,6 +1243,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolved this package's version and sources from a file three releases behind.
   Regenerated, and held there by `validate_srcinfo.py`.
 
+- **A firewall directive override can no longer weaken a rule's action.** The
+  firewall plugin was the last one applying an operator's override exactly as
+  given, so `[firewall] directives` carrying `"drop_default.action" = "accept"`
+  passed validation and apply wrote an ACCEPT catch-all where the baseline had
+  DROP, against what the configuration reference promised for every plugin. A
+  blocking rule can no longer be overridden into an accepting one; tightening an
+  accepting rule, and swapping `drop` for `reject`, both still work. `action` is
+  the only field clamped, because it is the only one whose direction holds for
+  any rule, and `docs/reference/configuration.md` now says exactly that rather
+  than promising a clamp on `port`, `source` and `protocol` that is not
+  performed.
+
 ### Removed
 - `custom_directives`, the per-plugin config table that was accepted, merged
   across config sources, counted towards the directive limit and validated at

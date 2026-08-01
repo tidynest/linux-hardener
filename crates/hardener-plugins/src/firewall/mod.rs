@@ -309,11 +309,45 @@ fn rule_id(rule: &Rule) -> String {
     }
 }
 
+/// Whether an `action` override may replace `baseline`.
+///
+/// The one direction with an unambiguous answer, and the reason this exists:
+/// `accept` admits traffic that `drop` and `reject` refuse, so a blocking rule
+/// becoming an accepting one is a weakening whatever else changes. `drop` and
+/// `reject` both block, so swapping one for the other is neither a loosening
+/// nor a tightening and is left to the operator, and tightening an accepting
+/// rule into a blocking one is exactly what an override is for.
+///
+/// Fail-closed on anything else. `hardener-core`'s config validation already
+/// refuses an action outside these three, so an unrecognised value cannot
+/// arrive through a validated config, and a value that reached here anyway is
+/// not a tightening this function can vouch for.
+fn action_override_is_allowed(baseline: &str, requested: &str) -> bool {
+    match requested {
+        "drop" | "reject" => true,
+        "accept" => !matches!(baseline, "drop" | "reject"),
+        _ => false,
+    }
+}
+
 /// Applies directive overrides to a single firewall rule.
 ///
 /// Directives use `<rule_id>.<field>` keys:
 /// - `ssh.port` = "2222"
 /// - `ssh.source` = "10.0.0.0/8"
+///
+/// **`action` is clamped and the other three are not**, which is a deliberate
+/// and stated ceiling rather than an oversight. This plugin was the last one
+/// applying an operator's override exactly as given, so
+/// `drop_default.action = "accept"` turned the catch-all into an accepting rule
+/// and the tool wrote it, against what the configuration reference promises for
+/// every plugin. `action` has a direction that holds for any rule; `source` and
+/// `protocol` weaken or strengthen depending on the rule's action, and deciding
+/// that needs CIDR containment and a protocol lattice rather than a comparison;
+/// `port` merely moves, and changing the SSH port is the documented worked
+/// example of a legitimate override. Widening `source` on an accepting rule is
+/// therefore still honoured, and `docs/reference/configuration.md` says so
+/// rather than promising a clamp this does not perform.
 fn apply_rule_directives(rule: &mut Rule, id: &str, config: &PluginConfig) {
     if let Some(port) = config.directives.get(&format!("{id}.port")) {
         rule.rule_port = port.clone();
@@ -324,8 +358,17 @@ fn apply_rule_directives(rule: &mut Rule, id: &str, config: &PluginConfig) {
     if let Some(protocol) = config.directives.get(&format!("{id}.protocol")) {
         rule.rule_protocol = protocol.clone();
     }
-    if let Some(action) = config.directives.get(&format!("{id}.action")) {
-        rule.rule_action = action.clone();
+    match config.directives.get(&format!("{id}.action")) {
+        Some(action) if action_override_is_allowed(&rule.rule_action, action) => {
+            rule.rule_action = action.clone();
+        }
+        Some(action) => warn!(
+            "Ignoring firewall directive '{id}.action = {action}': it would weaken \
+             the '{}' rule from '{}'. Record a deliberate deviation as a policy \
+             exception instead.",
+            rule.rule_description, rule.rule_action
+        ),
+        None => {}
     }
 }
 
