@@ -248,16 +248,15 @@ fn get_system_db_path() -> PathBuf {
 }
 
 pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
-    let mut all = Vec::new();
+    let mut entries: Vec<(Checkpoint, CheckpointManager)> = Vec::new();
+    // Each database is opened through create_checkpoint_manager, so a
+    // checkpoint is carried with the manager that can verify its signature.
     // Read from user database
-    if let Ok(cp) = read_checkpoints(get_user_db_path()).await { all.extend(cp); }
-    // Read from system database (if exists and readable)
-    if let Ok(cp) = read_checkpoints(get_system_db_path()).await {
-        // Deduplicate by ID
-        for c in cp { if !all.iter().any(|x| x.id == c.id) { all.push(c); } }
-    }
-    all.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-    Ok(all)
+    // ... push every checkpoint list_checkpoints() returns
+    // Read from system database, deduplicating on checkpoint_id
+    // ... push only ids the user database did not already supply
+    entries.sort_by_key(|(cp, _)| std::cmp::Reverse(cp.checkpoint_timestamp));
+    // ... map each entry to CheckpointInfo
 }
 ```
 
@@ -270,25 +269,24 @@ The UI uses a mobile-first responsive approach with CSS custom properties:
 | < 480px | Mobile | Single column, sidebar shown as a collapsed icon rail |
 | 480-768px | Tablet | 2-column grids, adapted spacing |
 | 768-1024px | Small desktop | Full layouts, scanner sidebar |
-| > 1024px | Desktop | Full 2-column scanner layout |
-| > 1600px | Ultra-wide | Content constrained to 1600px max-width, centred |
+| > 1024px | Desktop | Full 2-column configure layout |
 
 Navigation itself is a grouped left sidebar (`aside.sidebar`, `components/sidebar.rs`; groups Local and Fleet plus a pinned Settings area), not the old top nav bar. Independent of the CSS breakpoints above, the sidebar auto-collapses to an icon rail below a 900px viewport width via a JS resize listener, unless the user has an explicit collapse preference stored, which wins in both directions.
 
 Key CSS defensive measures:
-- `.main-content`: `max-width: var(--content-max-width)` prevents ultra-wide stretching
-- `.value-cell`: Overflow handling with `text-overflow: ellipsis` for long paths
-- `#app`: `min-width: 320px` prevents layout collapse at extreme narrow widths
+- `#app`: `width: 100%; max-width: 100%` so the shell never exceeds the viewport
+- `.sidebar-link-label`: `overflow: hidden` with `text-overflow: ellipsis` for long labels
 - `min-width: 0` on flex children (`.app-content`, `.header-content`) prevents overflow
-- `minmax(0, 1fr)` in grid templates (`.dashboard-grid`, `.scanner-layout`) prevents content blowout
+- `minmax(0, 1fr)` in the `.configure-layout` grid template prevents content blowout
 
 **Accessibility Features (WCAG 2.1 AA):**
 - Skip link as first focusable element (`<a class="skip-link">Skip to main content</a>`)
 - `<main id="main-content" tabindex="-1">` for skip link target
 - Tab components with full WAI-ARIA pattern (`aria-controls`, `aria-labelledby`, `tabindex`)
-- Utility classes: `.sr-only` (screen reader only), `.truncate`, `.line-clamp-*`
+- Utility class `.sr-only` for screen-reader-only text
 - Visible focus states via `:focus-visible` with accent colour ring
-- Touch targets minimum 44x44px via `@media (pointer: coarse)`
+- Touch targets given `min-height: 44px` via `@media (pointer: coarse)`, on
+  `.btn`, `.tab-button` and `.sidebar-link`
 
 **Playwright MCP Integration:**
 
@@ -395,8 +393,8 @@ pub trait FirewallBackend: Send + Sync {
 | `AuditHardeningPlugin` | Audit | auditd rules for time, users, permissions, modules |
 | `FirewallHardeningPlugin` | Network | Firewall enabled, baseline rules |
 | `KernelHardeningPlugin` | Kernel | ASLR, kptr_restrict, dmesg_restrict, ptrace_scope |
-| `MacHardeningPlugin` | MAC | SELinux/AppArmor status |
-| `PamHardeningPlugin` | Auth | Password complexity, lockout, reuse |
+| `MacHardeningPlugin` | Kernel | SELinux/AppArmor status |
+| `PamHardeningPlugin` | Authentication | Password complexity, lockout, reuse |
 | `PermissionsHardeningPlugin` | FileSystem | Critical paths, SUID/SGID |
 | `ServicesHardeningPlugin` | Services | Unnecessary services |
 | `SshHardeningPlugin` | Network | PermitRootLogin, PasswordAuthentication |
@@ -678,6 +676,7 @@ pub struct PolicyException {
 |----------|---------|---------|
 | `ci.yml` | Push/PR to `main` | Tests, clippy, fmt, security audit, build |
 | `release.yml` | Tag `v*` | Multi-target builds, GitHub releases |
+| `codeql.yml` | Push/PR to `main`, weekly schedule | CodeQL static analysis |
 
 > **Note:** GitHub Actions CI/CD is connected and functional. Workflows trigger on
 > push/PR to the `main` branch, running check, test, clippy, fmt, security audit,
