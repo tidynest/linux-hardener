@@ -1343,12 +1343,19 @@ impl HardeningPlugin for SshHardeningPlugin {
         // contain any algorithm outside the strong allow-list (i.e. a weak/legacy
         // cipher, KEX or MAC is enabled).
         for crypto in SSH_CRYPTO_DIRECTIVES {
-            let current_value = parse_config_value(
-                global_scope(&config_content),
-                crypto.crypto_directive_name,
-                ConfigFormat::SpaceSeparated,
-                false,
-            );
+            // From the resolved configuration, exactly as the loop above reads
+            // its own directives. This read the main file alone until an
+            // openSUSE, Fedora or RHEL host made the cost plain: crypto-policies
+            // supplies Ciphers, MACs and KexAlgorithms from
+            // /etc/ssh/sshd_config.d, the Include sits above everything this
+            // tool writes, and sshd takes the first value it obtains. The strong
+            // list this tool put in the main file was read back and reported
+            // while sshd negotiated the drop-in's, and since these three
+            // directives are in `coverage()`, the absent finding rendered their
+            // controls as Pass. The mirror was just as wrong: a drop-in already
+            // holding a strong list read as "not set" and was reported.
+            let effective = resolved.effective(crypto.crypto_directive_name);
+            let current_value = effective.as_ref().map(|e| e.value.clone());
 
             if !crypto_value_is_secure(current_value.as_deref(), crypto.crypto_desired) {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
@@ -1359,10 +1366,24 @@ impl HardeningPlugin for SshHardeningPlugin {
                     finding_category: FindingCategory::Network,
                     finding_current_value: current_display.clone(),
                     finding_description: crypto.crypto_description.to_string(),
-                    finding_explanation: format!(
-                        "The SSH directive '{}' is unset or permits weak algorithms. {}",
-                        crypto.crypto_directive_name, crypto.crypto_description,
-                    ),
+                    finding_explanation: match effective.as_ref() {
+                        // Naming the file matters for the same reason it does
+                        // above: editing sshd_config would not change what sshd
+                        // negotiates, because the drop-in is read first.
+                        Some(e) if e.source != main.path => format!(
+                            "The SSH directive '{}' is unset or permits weak algorithms. {} \
+                             The value in force comes from {}, which sshd reads before \
+                             {}, so it overrides anything set there.",
+                            crypto.crypto_directive_name,
+                            crypto.crypto_description,
+                            e.source,
+                            main.path,
+                        ),
+                        _ => format!(
+                            "The SSH directive '{}' is unset or permits weak algorithms. {}",
+                            crypto.crypto_directive_name, crypto.crypto_description,
+                        ),
+                    },
                     finding_id: format!("ssh-{}", crypto.crypto_directive_name.to_lowercase()),
                     finding_impact:
                         "Weak SSH cryptography can allow session decryption or downgrade attacks"
@@ -1801,6 +1822,66 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
 
             let target_value = selected.join(",");
+
+            // Where this directive belongs, by the same question the directive
+            // loop above asks: what would win if this tool's own fragment were
+            // not there. Writing the main file cannot change what sshd
+            // negotiates when a file it reads first answers the keyword, and on
+            // RHEL, Fedora and openSUSE that file is crypto-policies'
+            // 50-redhat.conf, which answers all three of these. The apply
+            // reported "Ciphers: x -> y" and sshd went on using the drop-in's
+            // list. The maintainer's decision is that this tool overrides that
+            // fragment rather than deferring to it, so an overridden directive
+            // is routed to the fragment this tool owns, which sorts first.
+            //
+            // Routed rather than written here, deliberately: a directive in
+            // `to_dropin` goes through `verify_dropin_precedence`, which reads
+            // the configuration back and reports a failed change naming the
+            // file still answering the keyword. That 00- sorts before 50- is a
+            // claim about filenames nobody controls, and it is checked rather
+            // than assumed for these directives exactly as for the others.
+            let overridden = resolved
+                .effective_without(crypto.crypto_directive_name, dropin::DROPIN_PATH)
+                .filter(|effective| effective.source != config_path);
+            if let Some(effective) = overridden {
+                // Secure rather than equal to the target: a file underneath
+                // offering a subset of the allow-list leaves the host with no
+                // weak algorithm on offer, which is the same question scan
+                // asks, so the two agree about that host and no fragment is
+                // needed. Asking for equality would leave a fragment restating
+                // a list the host already obeys.
+                if crypto_value_is_secure(Some(&effective.value), crypto.crypto_desired) {
+                    changes.push(Change {
+                        change_description: format!(
+                            "{}: already strong via {}, which sshd reads before {}",
+                            crypto.crypto_directive_name, effective.source, config_path,
+                        ),
+                        change_type: ChangeType::Skipped,
+                        change_success: true,
+                        change_error: None,
+                    });
+                    continue;
+                }
+                to_dropin.push(dropin::Directive {
+                    keyword: crypto.crypto_directive_name,
+                    value: target_value,
+                    note: "",
+                });
+                continue;
+            }
+
+            // The vendor file is never edited, so on a host keeping its
+            // sshd_config under /usr/etc every managed directive goes to the
+            // fragment, crypto included.
+            if !writing_main {
+                to_dropin.push(dropin::Directive {
+                    keyword: crypto.crypto_directive_name,
+                    value: target_value,
+                    note: "",
+                });
+                continue;
+            }
+
             let original_value = parse_config_value(
                 global_scope(&config_content),
                 crypto.crypto_directive_name,
@@ -1907,9 +1988,22 @@ impl HardeningPlugin for SshHardeningPlugin {
                 config_path,
                 Utc::now().format("%Y%m%d_%H%M%S")
             );
+            // `-p` was here from the start and `--no-dereference` was not, the
+            // reverse of the audit plugin's copy; the two flags answer separate
+            // questions and a backup needs both. `-p` preserves mode, ownership
+            // and timestamps, so a restored copy is the file rather than one
+            // wearing the umask's mode. `--no-dereference` copies a symlink as
+            // a symlink, which matters here more than at the other two sites: a
+            // host whose sshd_config is a link into a configuration-management
+            // checkout would otherwise have its managed file copied and the
+            // object this apply is about to overwrite left with no backup at
+            // all. `cp -p` exits non-zero when it cannot preserve ownership, as
+            // an unprivileged copy of a root-owned file cannot; that is caught
+            // by the failure arms below, which is the right direction, and
+            // apply runs as root so it should not arise.
             match ctx
                 .executor()
-                .execute_command("cp", &["-p", config_path, &backup_path])
+                .execute_command("cp", &["-p", "--no-dereference", config_path, &backup_path])
                 .await
             {
                 Ok(output) if output.success() => {
@@ -2139,21 +2233,57 @@ impl HardeningPlugin for SshHardeningPlugin {
 
         // The content already came back from the layered read above; reading it
         // a second time would be a second round trip against a remote host.
+        // Whether the apply this previews will write the fragment, which is a
+        // file appearing in /etc that the preview said nothing about until the
+        // kernel plugin was caught doing the same with 99-hardener.conf.
+        let mut writes_fragment = false;
+
         match &main {
             LayeredRead::Found { content, .. } => {
+                // Resolved first, because a preview reading a different
+                // configuration from the apply it precedes is not a preview.
+                // This parsed the main file alone while scan and apply both
+                // resolved the Include, so on the layout RHEL, Fedora and
+                // openSUSE ship, a main file already holding the target
+                // previewed no change while the apply went on to write a
+                // fragment beating the drop-in. Failing to resolve is a
+                // blocking issue rather than a fallback to the main file: the
+                // fallback is precisely the reading that was wrong.
+                let resolved = match include::resolve(ctx, &resolved_path, content).await {
+                    Ok(resolved) => resolved,
+                    Err(e) => {
+                        issues.push(ValidationIssue {
+                            validation_issue_severity: Severity::Critical,
+                            validation_issue_message: format!(
+                                "Cannot resolve sshd_config Include directives: {e}"
+                            ),
+                            validation_issue_config_key: None,
+                        });
+                        return Ok(ValidationReport {
+                            validation_report_plugin_id: plugin_id,
+                            validation_report_is_valid: false,
+                            validation_report_issues: issues,
+                            validation_report_estimated_changes: estimated_changes,
+                            validation_report_compliant_count: 0,
+                            validation_report_exceptions: exceptions,
+                        });
+                    }
+                };
+
                 // Check each directive to see if it needs updating.
                 for directive in SSH_DIRECTIVES {
                     // Resolve the target the way apply and scan do, through the
                     // one function all three call.
                     let target = resolved_target(directive, config);
 
-                    // SSHD config is space-separated and case-insensitive.
-                    let current_value = parse_config_value(
-                        global_scope(content),
-                        directive.ssh_directive_name,
-                        ConfigFormat::SpaceSeparated,
-                        false, // case-insensitive
-                    );
+                    // The value sshd obeys, from whichever file supplies it.
+                    let effective = resolved.effective(directive.ssh_directive_name);
+                    let current_value = effective.as_ref().map(|e| e.value.clone());
+                    // A directive another file answers first is one the apply
+                    // routes to the fragment, whatever the main file says.
+                    let overridden = effective
+                        .as_ref()
+                        .is_some_and(|e| e.source != resolved_path);
 
                     // The exception is honoured only when it documents the
                     // value the host actually has, matching apply's rendering
@@ -2173,14 +2303,23 @@ impl HardeningPlugin for SshHardeningPlugin {
                     }
 
                     match current_value {
-                        Some(val) if !directive.ssh_compare.violated_by(&target, Some(&val)) => {
+                        Some(value)
+                            if !directive.ssh_compare.violated_by(&target, Some(&value)) =>
+                        {
                             // Already set to the target value - no change needed.
                         }
-                        Some(val) => {
+                        Some(value) if overridden => {
+                            writes_fragment = true;
+                            estimated_changes.push(format!(
+                                "{}: {} → {}",
+                                directive.ssh_directive_name, value, target
+                            ));
+                        }
+                        Some(value) => {
                             // Value exists but does not match the target.
                             estimated_changes.push(format!(
                                 "{}: {} → {}",
-                                directive.ssh_directive_name, val, target
+                                directive.ssh_directive_name, value, target
                             ));
                         }
                         None => {
@@ -2191,6 +2330,53 @@ impl HardeningPlugin for SshHardeningPlugin {
                             ));
                         }
                     }
+                }
+
+                // The crypto directives were previewed by nothing at all
+                // until now: an apply writing three cryptographic lists
+                // announced none of them. The target is the intersection of
+                // this tool's allow-list with what the host supports, so the
+                // preview asks `ssh -Q` exactly as the apply does; a host that
+                // cannot answer yields an empty intersection, which the apply
+                // skips and the preview therefore omits, so the two agree.
+                for crypto in SSH_CRYPTO_DIRECTIVES {
+                    let effective = resolved.effective(crypto.crypto_directive_name);
+                    let current_value = effective.as_ref().map(|e| e.value.clone());
+                    let observed = current_value
+                        .clone()
+                        .unwrap_or_else(|| "not set".to_string());
+                    if let Some(exception) =
+                        config.matching_exception(crypto.crypto_directive_name, &observed)
+                    {
+                        exceptions.push(hardener_common::types::exception_preview_line(
+                            crypto.crypto_directive_name,
+                            &observed,
+                            &exception.reason,
+                        ));
+                        continue;
+                    }
+                    if crypto_value_is_secure(current_value.as_deref(), crypto.crypto_desired) {
+                        continue;
+                    }
+                    let supported =
+                        supported_algorithms(ctx.executor().as_ref(), crypto.crypto_query_arg)
+                            .await;
+                    let selected = select_algorithms(crypto.crypto_desired, &supported);
+                    if selected.is_empty() {
+                        continue;
+                    }
+                    if effective
+                        .as_ref()
+                        .is_some_and(|e| e.source != resolved_path)
+                    {
+                        writes_fragment = true;
+                    }
+                    estimated_changes.push(format!(
+                        "{}: {} → {}",
+                        crypto.crypto_directive_name,
+                        observed,
+                        selected.join(",")
+                    ));
                 }
             }
             LayeredRead::Absent => {
@@ -2211,6 +2397,16 @@ impl HardeningPlugin for SshHardeningPlugin {
                     validation_issue_config_key: None,
                 });
             }
+        }
+
+        // Named once rather than per directive: the fragment is one file, and
+        // an operator approving this run should know a file will appear in /etc
+        // that no line above mentions.
+        if writes_fragment {
+            estimated_changes.push(format!(
+                "{} will be written so the settings above are the ones sshd reads first",
+                dropin::DROPIN_PATH
+            ));
         }
 
         let valid = issues.is_empty();

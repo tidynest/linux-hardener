@@ -10,38 +10,78 @@ use hardener_core::{
 use hardener_plugins::KernelHardeningPlugin;
 use std::sync::Arc;
 
-/// Creates a mock executor with secure kernel parameters.
+/// Every managed parameter at its secure value, as one list.
+///
+/// The fixtures below are folds of this rather than hand-written copies of it,
+/// because a fixture that drifts from the plugin's own parameter table stops
+/// representing a host.
+const SECURE_PARAMETER_VALUES: &[(&str, &str)] = &[
+    ("/proc/sys/kernel/randomize_va_space", "2"),
+    ("/proc/sys/kernel/kptr_restrict", "2"),
+    ("/proc/sys/kernel/dmesg_restrict", "1"),
+    ("/proc/sys/kernel/yama/ptrace_scope", "2"),
+    ("/proc/sys/fs/suid_dumpable", "0"),
+    ("/proc/sys/fs/protected_hardlinks", "1"),
+    ("/proc/sys/fs/protected_symlinks", "1"),
+    ("/proc/sys/net/ipv4/conf/all/rp_filter", "1"),
+    ("/proc/sys/net/ipv4/conf/default/rp_filter", "1"),
+    ("/proc/sys/net/ipv4/tcp_syncookies", "1"),
+    ("/proc/sys/net/ipv4/conf/all/accept_source_route", "0"),
+    ("/proc/sys/net/ipv4/conf/default/accept_source_route", "0"),
+    ("/proc/sys/net/ipv4/conf/all/accept_redirects", "0"),
+    ("/proc/sys/net/ipv4/conf/default/accept_redirects", "0"),
+    ("/proc/sys/net/ipv4/conf/all/secure_redirects", "0"),
+    ("/proc/sys/net/ipv4/conf/default/secure_redirects", "0"),
+    ("/proc/sys/net/ipv4/conf/all/log_martians", "1"),
+    ("/proc/sys/net/ipv4/conf/default/log_martians", "1"),
+];
+
+/// What [`secure_kernel_executor`] leaves out, so the omission is a decision
+/// the fixture states rather than a gap in a hand-written list.
+const PARTIAL_FIXTURE_OMITS: &[&str] = &[
+    "/proc/sys/net/ipv4/conf/all/accept_redirects",
+    "/proc/sys/net/ipv4/conf/default/accept_redirects",
+    "/proc/sys/net/ipv4/conf/all/secure_redirects",
+    "/proc/sys/net/ipv4/conf/default/secure_redirects",
+    "/proc/sys/net/ipv4/conf/all/log_martians",
+    "/proc/sys/net/ipv4/conf/default/log_martians",
+];
+
+/// A host holding every parameter in `values` at the value given.
+///
+/// Nearly every host ships the sysctl drop-in directory; the ones that do not
+/// are covered by their own tests further down.
+fn kernel_executor_holding(values: &[(&str, &str)]) -> MockExecutor {
+    values.iter().fold(
+        MockExecutor::new().with_directory("/etc/sysctl.d"),
+        |executor, (path, value)| executor.with_file(path, value),
+    )
+}
+
+/// Creates a mock executor with secure kernel parameters, omitting the redirect
+/// and martian ones, which the state-aware tests below must not see here.
 fn secure_kernel_executor() -> MockExecutor {
-    MockExecutor::new()
-        // Nearly every host ships the sysctl drop-in directory; the ones that
-        // do not are covered by their own tests further down.
-        .with_directory("/etc/sysctl.d")
-        // All parameters set to secure values
-        .with_file("/proc/sys/kernel/randomize_va_space", "2")
-        .with_file("/proc/sys/kernel/kptr_restrict", "2")
-        .with_file("/proc/sys/kernel/dmesg_restrict", "1")
-        .with_file("/proc/sys/kernel/yama/ptrace_scope", "2")
-        .with_file("/proc/sys/fs/suid_dumpable", "0")
-        .with_file("/proc/sys/fs/protected_hardlinks", "1")
-        .with_file("/proc/sys/fs/protected_symlinks", "1")
-        .with_file("/proc/sys/net/ipv4/conf/all/rp_filter", "1")
-        .with_file("/proc/sys/net/ipv4/conf/default/rp_filter", "1")
-        .with_file("/proc/sys/net/ipv4/tcp_syncookies", "1")
-        .with_file("/proc/sys/net/ipv4/conf/all/accept_source_route", "0")
-        .with_file("/proc/sys/net/ipv4/conf/default/accept_source_route", "0")
+    let values: Vec<(&str, &str)> = SECURE_PARAMETER_VALUES
+        .iter()
+        .filter(|(path, _)| !PARTIAL_FIXTURE_OMITS.contains(path))
+        .copied()
+        .collect();
+    kernel_executor_holding(&values)
 }
 
 /// Creates a mock executor with EVERY kernel parameter at its secure value,
-/// covering the full baseline (the `secure_kernel_executor` above omits the
-/// redirect/martian parameters, which state-aware tests must also see).
+/// covering the full baseline.
 fn fully_secure_kernel_executor() -> MockExecutor {
-    secure_kernel_executor()
-        .with_file("/proc/sys/net/ipv4/conf/all/accept_redirects", "0")
-        .with_file("/proc/sys/net/ipv4/conf/default/accept_redirects", "0")
-        .with_file("/proc/sys/net/ipv4/conf/all/secure_redirects", "0")
-        .with_file("/proc/sys/net/ipv4/conf/default/secure_redirects", "0")
-        .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1")
-        .with_file("/proc/sys/net/ipv4/conf/default/log_martians", "1")
+    kernel_executor_holding(SECURE_PARAMETER_VALUES)
+}
+
+/// The fully secure host with one parameter's file never registered.
+///
+/// An unregistered path in the mock is absent and `read_file` fails for it,
+/// which is what a kernel built without the parameter looks like: the Yama
+/// scope is the real case, absent on any kernel without that LSM.
+fn fully_secure_kernel_executor_without(path: &str) -> MockExecutor {
+    fully_secure_kernel_executor().without_file(path)
 }
 
 /// Creates a mock executor with insecure kernel parameters.
@@ -568,9 +608,13 @@ async fn test_kernel_validate_readonly_params() {
 
 #[tokio::test]
 async fn test_kernel_validate_missing_params() {
-    // MockExecutor returns Ok(FileMetadata { exists: false, mode: 0 }) for missing files
-    // The kernel plugin sees mode=0, which means "read-only" (no write bit)
-    // So missing params are treated as High severity "read-only" issues
+    // This test used to assert the defect. Its own comment explained the
+    // mechanism and then called the result correct: a missing file returns
+    // Ok(exists: false, mode: 0), the zero mode has no write bit, so every
+    // absent parameter was reported "is read-only" at High and failed the dry
+    // run. The message was wrong, the severity was wrong, and the test was
+    // pinning both, which is why the swap survived. A test that encodes a defect
+    // as an expectation is the reason nobody finds it.
     let executor = MockExecutor::new(); // Empty - no params
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = KernelHardeningPlugin::new();
@@ -578,23 +622,28 @@ async fn test_kernel_validate_missing_params() {
 
     let result = plugin.validate(&ctx, &config).await.unwrap();
 
-    // With MockExecutor, missing files return mode=0, which triggers "read-only" check
-    // This results in High severity issues, making validation fail
-    assert!(
-        !result.validation_report_is_valid,
-        "missing params (mode=0) should make validation invalid"
-    );
     assert!(
         !result.validation_report_issues.is_empty(),
-        "missing params should produce validation issues"
+        "a kernel carrying none of the managed parameters has something to say"
     );
-
-    // All issues should be about read-only (mode=0)
+    // Absence is a fact about the host, not a blocker: apply cannot set a
+    // parameter this kernel does not have, and there is nothing for an operator
+    // to fix, so the preview says so and still runs.
+    assert!(
+        result.validation_report_is_valid,
+        "an absent parameter is not a reason to refuse the dry run, got: {:?}",
+        result.validation_report_issues
+    );
     for issue in &result.validation_report_issues {
-        assert_eq!(issue.validation_issue_severity, Severity::High);
+        assert_eq!(issue.validation_issue_severity, Severity::Low);
         assert!(
-            issue.validation_issue_message.contains("read-only"),
-            "issue should mention read-only, got: {}",
+            issue.validation_issue_message.contains("does not exist"),
+            "an absent parameter must be described as absent, got: {}",
+            issue.validation_issue_message
+        );
+        assert!(
+            !issue.validation_issue_message.contains("read-only"),
+            "a parameter this kernel does not carry is not a read-only one: {}",
             issue.validation_issue_message
         );
     }
@@ -2071,4 +2120,156 @@ async fn the_last_writer_decides_and_ufw_writes_after_every_dropin() {
          host runs is ufw's, got: {:?}",
         boot_summary(&result)
     );
+}
+
+/// The dry run said the opposite of the truth in both directions.
+///
+/// `file_metadata` reports a positively confirmed absence as
+/// `Ok(exists: false, mode: 0)` and reserves `Err` for "could not determine",
+/// and its trait contract says callers must never read `Err` as absence. Kernel
+/// validate did exactly that: the `Err` arm announced "does not exist on this
+/// kernel" at Low, while a real absence, whose zero mode carries no write bit,
+/// fell into the read-only arm and was announced "is read-only" at High, which
+/// blocks the dry run.
+///
+/// So the parameter that was missing blocked the run under the wrong reason, and
+/// the parameter nobody could read passed it under the other wrong reason. Both
+/// directions are asserted, because a fix that merely reworded one arm would
+/// leave the other saying something it never established.
+#[tokio::test]
+async fn an_absent_parameter_is_reported_absent_rather_than_read_only() {
+    const YAMA: &str = "/proc/sys/kernel/yama/ptrace_scope";
+    let executor = fully_secure_kernel_executor_without(YAMA);
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("kernel validate should not error");
+
+    let issue = report
+        .validation_report_issues
+        .iter()
+        .find(|i| i.validation_issue_config_key.as_deref() == Some("kernel.yama.ptrace_scope"))
+        .unwrap_or_else(|| {
+            panic!(
+                "an absent parameter must be reported, got: {:?}",
+                report.validation_report_issues
+            )
+        });
+    assert!(
+        !issue.validation_issue_message.contains("read-only"),
+        "a parameter this kernel does not carry is not a read-only one: {}",
+        issue.validation_issue_message
+    );
+    assert!(
+        issue.validation_issue_message.contains("does not exist"),
+        "the message must say what was actually established: {}",
+        issue.validation_issue_message
+    );
+}
+
+/// The other direction: a parameter whose metadata could not be read must not be
+/// announced as absent, and must fail the dry run rather than passing it.
+#[tokio::test]
+async fn an_unreadable_parameter_is_not_reported_as_absent() {
+    const ASLR: &str = "/proc/sys/kernel/randomize_va_space";
+    let executor = fully_secure_kernel_executor().with_metadata_error(ASLR);
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("kernel validate should not error");
+
+    let issue = report
+        .validation_report_issues
+        .iter()
+        .find(|i| i.validation_issue_config_key.as_deref() == Some("kernel.randomize_va_space"))
+        .unwrap_or_else(|| {
+            panic!(
+                "a parameter the run could not examine must be reported, got: {:?}",
+                report.validation_report_issues
+            )
+        });
+    assert!(
+        !issue.validation_issue_message.contains("does not exist"),
+        "the probe failed; absence was never established: {}",
+        issue.validation_issue_message
+    );
+    assert_eq!(
+        issue.validation_issue_severity,
+        Severity::High,
+        "a preview that could not examine a managed parameter must not read as clean"
+    );
+}
+
+/// A parameter this scan could not read is not a parameter it found compliant.
+///
+/// The scan judged the value it read and said nothing at all when the read
+/// failed, so the parameter left no finding and no unchecked entry. That is not
+/// silence in a log: `coverage()` declares all eighteen parameters assessed, and
+/// `ReportGenerator` passes an assessed control on the mere absence of a
+/// finding, so an unreadable ASLR setting rendered CIS 1.5.1 as a Pass with no
+/// value ever read. The generator's own comment states the invariant this
+/// breaks: only a control the engine both assesses and could evaluate this run
+/// may pass on an absent finding.
+///
+/// Both flavours are asserted because the site's comment claimed only one of
+/// them. A refused read is a parameter that is there, and a privileged run would
+/// reach it; an absent file is a kernel that does not carry the parameter, which
+/// no privilege fixes. They must both be unchecked, and they must disagree about
+/// whether privilege would help, or the entry is repeating a hardcoded literal
+/// rather than reporting what the probe saw.
+#[tokio::test]
+async fn a_parameter_that_could_not_be_read_is_unchecked_rather_than_a_pass() {
+    const ASLR: &str = "/proc/sys/kernel/randomize_va_space";
+
+    for (label, executor, privilege_helps) in [
+        (
+            "refused for permission",
+            fully_secure_kernel_executor().with_read_permission_denied(ASLR),
+            true,
+        ),
+        (
+            "absent from this kernel",
+            fully_secure_kernel_executor_without(ASLR),
+            false,
+        ),
+    ] {
+        let result = scan_host(executor).await;
+
+        let entry = result
+            .scan_unchecked
+            .iter()
+            .find(|unchecked| unchecked.unchecked_reason.contains(ASLR))
+            .unwrap_or_else(|| {
+                panic!(
+                    "a parameter {label} must be reported unchecked, got: {:?}",
+                    result.scan_unchecked
+                )
+            });
+
+        assert!(
+            entry
+                .unchecked_compliance
+                .iter()
+                .any(|mapping| mapping.compliance_control_id == "1.5.1"),
+            "the entry must carry the parameter's own compliance mappings, or \
+             the report still auto-passes the control it covers ({label}), got: {:?}",
+            entry.unchecked_compliance
+        );
+        assert_eq!(
+            entry.unchecked_needs_privilege, privilege_helps,
+            "whether a privileged re-run would reach this must come from the \
+             failure the probe saw ({label})"
+        );
+        assert!(
+            !result
+                .scan_findings
+                .iter()
+                .any(|finding| finding.finding_id == "kernel_kernel_randomize_va_space"),
+            "a value that was never read cannot be judged against a target ({label})"
+        );
+    }
 }

@@ -354,9 +354,113 @@ async fn test_permissions_scan_duration_recorded() {
     );
 }
 
+/// A probe that failed is not a path that is absent.
+///
+/// `path_exists` has three outcomes by contract: present, confirmed absent, and
+/// could not be determined. Validate collapsed the last two with
+/// `unwrap_or(false)` under the comment "Path doesn't exist - not an error, just
+/// skip", so a Critical path this run could not probe vanished from the dry run
+/// entirely and the operator approved a run whose scope they had not been shown.
+///
+/// The scan was fixed for exactly this and says so in its own comment: treating
+/// an errored probe as absence made it silent about a path it never managed to
+/// look at. Validate kept the collapse.
 #[tokio::test]
-async fn test_permissions_validate_always_valid() {
-    // Current validate implementation always returns valid
+async fn validate_reports_a_path_whose_existence_could_not_be_determined() {
+    let executor = secure_permissions_executor().with_path_exists_error("/etc/shadow");
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let report = PermissionsHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let issue = report
+        .validation_report_issues
+        .iter()
+        .find(|i| i.validation_issue_message.contains("/etc/shadow"))
+        .unwrap_or_else(|| {
+            panic!(
+                "a path the dry run could not probe must be reported, got: {:?}",
+                report.validation_report_issues
+            )
+        });
+    assert_eq!(
+        issue.validation_issue_severity,
+        Severity::High,
+        "the preview cannot describe this run, so it must not read as a clean one"
+    );
+    assert!(
+        !report.validation_report_is_valid,
+        "a report that could not see a Critical path is not a valid preview"
+    );
+}
+
+/// The other half, and the one that must not move: a path confirmed absent is
+/// still nothing to report. Without this, making the error case loud could be
+/// "fixed" by reporting every absence, which would fire on openSUSE, where
+/// /etc/gshadow is legitimately absent from both layers.
+#[tokio::test]
+async fn validate_stays_silent_about_a_path_confirmed_absent() {
+    let executor = secure_permissions_executor().with_path_exists("/etc/shadow", false);
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let report = PermissionsHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !report
+            .validation_report_issues
+            .iter()
+            .any(|i| i.validation_issue_message.contains("/etc/shadow")),
+        "a confirmed absence is not a defect, got: {:?}",
+        report.validation_report_issues
+    );
+}
+
+/// Apply carried the same collapse, and an omitted change cannot be a failed
+/// one: the run reported success and its change list, which is the operator's
+/// record of what was hardened, had no entry for the path at all.
+#[tokio::test]
+async fn apply_records_a_failure_when_existence_cannot_be_determined() {
+    let executor = secure_permissions_executor().with_path_exists_error("/etc/shadow");
+    let mut ctx = Context::with_executor(Arc::new(executor));
+
+    let result = PermissionsHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("/etc/shadow"))
+        .unwrap_or_else(|| {
+            panic!(
+                "a path the apply could not probe must appear in the record, got: {:?}",
+                result.apply_changes
+            )
+        });
+    assert!(
+        !change.change_success,
+        "a path that was never examined was not hardened: {change:?}"
+    );
+    assert!(
+        !result.apply_success,
+        "an apply that could not examine a Critical path did not fully succeed"
+    );
+}
+
+/// A host where every managed path is confirmed absent has nothing to preview
+/// and nothing to complain about.
+///
+/// Named for what it pins rather than for the old claim that validate "always
+/// returns valid": it can now report an issue, for a path whose existence could
+/// not be determined, and this fixture is the case that must stay quiet.
+#[tokio::test]
+async fn validate_is_clean_when_every_path_is_confirmed_absent() {
     let executor = MockExecutor::new();
     let ctx = Context::with_executor(Arc::new(executor));
     let plugin = PermissionsHardeningPlugin::new();

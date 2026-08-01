@@ -2,6 +2,9 @@
 //!
 //! These tests verify plugin behavior without touching real auditd.
 
+mod common;
+
+use common::test_checkpoint_manager;
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
     CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
@@ -1507,10 +1510,28 @@ async fn test_audit_rules_mode_failure_is_recorded_not_fatal() {
 const RULES_DIR: &str = "/etc/audit/rules.d";
 const RULES_FILE: &str = "/etc/audit/rules.d/hardening.rules";
 
+/// A command that said its piece on **stderr**, which is what the name does not
+/// say and what cost a reader minutes: the first argument is the error stream,
+/// not the output one. Use [`spoken`] for a command whose answer is read.
 fn command_output(stderr: &str, exit_code: i32) -> CommandOutput {
     CommandOutput {
         stdout: String::new(),
         stderr: stderr.to_string(),
+        exit_code,
+    }
+}
+
+/// A command that answered on stdout, for the probes that read the word rather
+/// than the exit status.
+///
+/// The newline is added here because systemd prints one and every caller would
+/// otherwise have to remember it. `is-enabled` is judged on its word, so a
+/// fixture that answers with an empty stdout represents a host that cannot
+/// exist.
+fn spoken(stdout: &str, exit_code: i32) -> CommandOutput {
+    CommandOutput {
+        stdout: format!("{stdout}\n"),
+        stderr: String::new(),
         exit_code,
     }
 }
@@ -1522,12 +1543,14 @@ fn audit_apply_executor() -> MockExecutor {
     MockExecutor::new()
         .with_command_exists("auditd", true)
         .with_command_exists("augenrules", true)
-        .with_command(
-            "systemctl",
-            &["is-enabled", "auditd"],
-            command_output("", 0),
-        )
-        .with_command("systemctl", &["is-active", "auditd"], command_output("", 0))
+        // Both answers carry the word systemd actually prints. They said
+        // nothing but exit 0 until `is_auditd_enabled` began reading the word,
+        // at which point a fixture representing "enabled" was answering with a
+        // state no systemd emits, and these two tests failed on an enable the
+        // fixture had never been asked to permit. A fixture that cannot occur
+        // on a real host proves nothing about one.
+        .with_command("systemctl", &["is-enabled", "auditd"], spoken("enabled", 0))
+        .with_command("systemctl", &["is-active", "auditd"], spoken("active", 0))
         .with_command("chmod", &["0640", RULES_FILE], command_output("", 0))
         .with_command("augenrules", &["--load"], command_output("", 0))
 }
@@ -1629,25 +1652,6 @@ impl SystemExecutor for MkdirCreatesTheDirectory {
 
         Ok(output)
     }
-}
-
-/// Builds a CheckpointManager backed by a temporary SQLite database and a
-/// freshly generated signing key: no root access or production paths needed.
-async fn test_checkpoint_manager() -> hardener_state::CheckpointManager {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let db_path = dir.path().join("test_checkpoints.db");
-    let key_path = dir.path().join("test.key");
-
-    let db_pool = hardener_state::init_db(Some(&db_path))
-        .await
-        .expect("init_db");
-    let signer =
-        hardener_state::CheckpointSigner::new_with_path(&key_path).expect("CheckpointSigner");
-
-    // Keep the tempdir alive for the duration of the process.
-    std::mem::forget(dir);
-
-    hardener_state::CheckpointManager::new_with_signer(db_pool, signer).expect("CheckpointManager")
 }
 
 /// The directory has to exist before the checkpoint, not merely before the
@@ -1828,5 +1832,191 @@ async fn audit_apply_touches_nothing_when_auditd_is_not_installed() {
         result.apply_checkpoint_id.is_none(),
         "a host that is not touched is not checkpointed either, got: {:?}",
         result.apply_checkpoint_id
+    );
+}
+
+/// The rules file the apply creates has to be named in the checkpoint, not
+/// merely covered by the directory that holds it.
+///
+/// Capturing a directory emits a row for the directory and one per child that
+/// is there at capture time, and on a host that never had this file there is no
+/// such child, so nothing carried it. A rollback walks only the rows the
+/// checkpoint holds, which left the hardening in place after an operator had
+/// asked for it to be undone. Naming the path makes the capture store it absent
+/// with a zero mode, which the restore reads as "remove this".
+///
+/// The assertion is on the stored row, because the row is what a later rollback
+/// reads. It does not prove the removal itself: that belongs to the restore
+/// side, which is exercised in `hardener-state`.
+#[tokio::test]
+async fn audit_apply_checkpoints_the_rules_file_it_is_about_to_create() {
+    // The directory is there, courtesy of the auditd package, but the file is
+    // not: this is the first apply this host has seen.
+    let executor = Arc::new(audit_apply_executor().with_directory(RULES_DIR));
+    let mut ctx =
+        Context::with_executor_and_checkpoint(executor.clone(), test_checkpoint_manager().await);
+
+    let result = AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("audit apply should not error");
+
+    assert!(
+        wrote_the_rules_file(&executor),
+        "the apply under test must have created the file, writes: {:?}",
+        executor.log().files_written
+    );
+
+    let checkpoint_id = result
+        .apply_checkpoint_id
+        .clone()
+        .expect("the apply must take a checkpoint on a host with auditd");
+    let (_, captured) = ctx
+        .checkpoint_manager()
+        .expect("the context carries a checkpoint manager")
+        .get_checkpoint(&hardener_state::CheckpointId::new(checkpoint_id))
+        .await
+        .expect("the checkpoint just taken must be readable");
+
+    let rules_row = captured
+        .iter()
+        .find(|state| state.file_path == RULES_FILE)
+        .unwrap_or_else(|| {
+            panic!(
+                "the checkpoint must carry a row for the rules file the apply creates, \
+                 otherwise a rollback has no way to remove it. Captured: {captured:?}"
+            )
+        });
+    assert_eq!(
+        rules_row.file_permissions, 0,
+        "a file that was absent at capture must be stored with a zero mode, which is what \
+         the restore reads as 'remove this'. Captured: {captured:?}"
+    );
+}
+
+// =============================================================================
+// What augenrules writes outside the rules directory
+// =============================================================================
+
+/// The compiled rule set `augenrules` produces, and which auditd loads at boot.
+const COMPILED_RULES: &str = "/etc/audit/audit.rules";
+
+/// The copy `augenrules` saves of whatever the compiled file held before it ran.
+const COMPILED_RULES_PREV: &str = "/etc/audit/audit.rules.prev";
+
+/// `augenrules --load` saves the previous compiled rule set beside the new one,
+/// so an apply that reloads leaves a file behind that the host never had.
+///
+/// Both this path and the compiled file itself sit in /etc/audit rather than in
+/// /etc/audit/rules.d, so the recursive capture of the rules directory does not
+/// reach either: the only way a row exists for them is for the apply to declare
+/// them. Measured on five distributions, `.prev` was created by the apply and
+/// still there after a rollback that reported success on four of them; openSUSE
+/// simply produces no `.prev`, which is the absent-at-capture case this test
+/// describes and the one the removal half of the mechanism handles.
+///
+/// The assertion is on the stored row, because the row is what a later rollback
+/// reads. It does not prove the removal itself: that belongs to the restore
+/// side, which is exercised in `hardener-state`.
+#[tokio::test]
+async fn audit_apply_checkpoints_the_previous_compiled_rules_augenrules_saves() {
+    // A host on which augenrules has never run, so it has no .prev to keep.
+    let executor = Arc::new(audit_apply_executor().with_directory(RULES_DIR));
+    let mut ctx =
+        Context::with_executor_and_checkpoint(executor.clone(), test_checkpoint_manager().await);
+
+    let result = AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("audit apply should not error");
+
+    let checkpoint_id = result
+        .apply_checkpoint_id
+        .clone()
+        .expect("the apply must take a checkpoint on a host with auditd");
+    let (_, captured) = ctx
+        .checkpoint_manager()
+        .expect("the context carries a checkpoint manager")
+        .get_checkpoint(&hardener_state::CheckpointId::new(checkpoint_id))
+        .await
+        .expect("the checkpoint just taken must be readable");
+
+    let prev_row = captured
+        .iter()
+        .find(|state| state.file_path == COMPILED_RULES_PREV)
+        .unwrap_or_else(|| {
+            panic!(
+                "the checkpoint must carry a row for the copy augenrules saves, otherwise a \
+                 rollback has no way to remove a file the apply brought into being. \
+                 Captured: {captured:?}"
+            )
+        });
+    assert_eq!(
+        prev_row.file_permissions, 0,
+        "a file that was absent at capture must be stored with a zero mode, which is what \
+         the restore reads as 'remove this'. Captured: {captured:?}"
+    );
+}
+
+/// The compiled rule set is rewritten by the apply and has to be restorable,
+/// which asks more of the checkpoint than a removal does: the row must carry the
+/// bytes the file held before the run.
+///
+/// `augenrules --load` compiles everything in /etc/audit/rules.d into
+/// /etc/audit/audit.rules, so the file grew from five or six lines to thirty on
+/// every distribution measured and read exactly the same after a rollback that
+/// reported success. Removing it is not the fix, because auditd loads it at
+/// boot and every host measured had one before the apply: the row has to hold
+/// the pre-apply content so the restore can write it back.
+///
+/// The assertion is on the stored content rather than on a mode, because a row
+/// recorded present with no content restores nothing, and that is the failure
+/// this half of the mechanism has to rule out.
+#[tokio::test]
+async fn audit_apply_checkpoints_the_content_of_the_compiled_rules_it_replaces() {
+    const PRE_APPLY_COMPILED: &str = "## This file is automatically generated\n-D\n-b 8192\n";
+
+    // The ordinary host: auditd shipped a compiled rule set, and the apply is
+    // about to have augenrules overwrite it.
+    let executor = Arc::new(
+        audit_apply_executor()
+            .with_directory(RULES_DIR)
+            .with_file(COMPILED_RULES, PRE_APPLY_COMPILED),
+    );
+    let mut ctx =
+        Context::with_executor_and_checkpoint(executor.clone(), test_checkpoint_manager().await);
+
+    let result = AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("audit apply should not error");
+
+    let checkpoint_id = result
+        .apply_checkpoint_id
+        .clone()
+        .expect("the apply must take a checkpoint on a host with auditd");
+    let (_, captured) = ctx
+        .checkpoint_manager()
+        .expect("the context carries a checkpoint manager")
+        .get_checkpoint(&hardener_state::CheckpointId::new(checkpoint_id))
+        .await
+        .expect("the checkpoint just taken must be readable");
+
+    let compiled_row = captured
+        .iter()
+        .find(|state| state.file_path == COMPILED_RULES)
+        .unwrap_or_else(|| {
+            panic!(
+                "the checkpoint must carry a row for the compiled rule set augenrules \
+                 rewrites, otherwise a rollback leaves the hardening loaded at the next \
+                 boot. Captured: {captured:?}"
+            )
+        });
+    assert_eq!(
+        compiled_row.file_content.as_deref(),
+        Some(PRE_APPLY_COMPILED.as_bytes()),
+        "a file that existed at capture must be stored with its content, because that is \
+         what the restore writes back; a row with no content restores nothing. \
+         Captured: {captured:?}"
     );
 }

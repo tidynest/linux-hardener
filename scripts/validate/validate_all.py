@@ -77,6 +77,7 @@ def main():
         ("Last Updated Dates", "validate_last_updated.py", ["--fix"] if fix_mode else []),
         ("Doc Comment Attachment", "validate_doc_attachment.py", []),
         ("File Creation Sites", "validate_write_sites.py", []),
+        ("Unit State Reads", "validate_unit_state_reads.py", []),
     ]
 
     # Add slower validators unless in quick mode

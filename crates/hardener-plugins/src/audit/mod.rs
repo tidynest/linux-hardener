@@ -238,6 +238,16 @@ const AUDIT_RULES_PATH: &str = "/etc/audit/rules.d/hardening.rules";
 /// The directory holding the rules file, which the audit package owns.
 const AUDIT_RULES_DIR: &str = "/etc/audit/rules.d";
 
+/// The compiled rule set `augenrules` produces from [`AUDIT_RULES_DIR`], and the
+/// file auditd loads at boot. Written by the reload this apply performs rather
+/// than by this apply directly, which is why it is easy to miss.
+const AUDIT_COMPILED_RULES: &str = "/etc/audit/audit.rules";
+
+/// Where `augenrules` saves whatever [`AUDIT_COMPILED_RULES`] held before it
+/// ran. Not every distribution's `augenrules` writes one, so it is the path most
+/// likely to be absent when the checkpoint is captured.
+const AUDIT_COMPILED_RULES_PREV: &str = "/etc/audit/audit.rules.prev";
+
 /// The mode the rules file is given, as a `chmod` argument.
 ///
 /// 0640, which is what STIG asks of `/etc/audit/rules.d/*.rules` and what the
@@ -257,12 +267,35 @@ async fn is_auditd_installed(ctx: &Context) -> Result<bool> {
 }
 
 /// Checks if auditd service is enabled to start at boot.
+///
+/// Judged on the word systemd prints and never on its exit status, because the
+/// two disagree by design. Measured on a live host rather than read out of the
+/// manual: `static` and `indirect` each print their own word and exit **0**,
+/// alongside `enabled-runtime`, which systemd documents the same way and which
+/// is the one that matters most here. A runtime enablement lives in
+/// `/run/systemd/system` and the next boot discards it, so a host in that state
+/// has no audit daemon after a reboot while `is-enabled` exits 0 to say it has.
+///
+/// Reading the status let all three answer "enabled at boot". The consequence
+/// ran through every caller in the same direction: scan reported a compliance
+/// the host did not have, `validate` previewed no change, and apply skipped the
+/// `systemctl enable` that would have repaired it. One boolean stood for
+/// "enabled" and for "enabled until the next reboot".
+///
+/// Only the exact word `enabled` is a permanent enablement. Everything else is
+/// read as not enabled, which is the safe direction: the worst it costs is an
+/// enable attempt on a unit that cannot be enabled, recorded honestly as a
+/// failed change, where the other direction costs an operator their audit trail
+/// silently. The firewall plugin needs the fuller answer, because it tells the
+/// operator WHICH way the unit fails to start; see `NOT_AT_BOOT_STATES` and
+/// `unit_boot_persistence` there. This plugin only decides whether to enable,
+/// so it asks the narrower question.
 async fn is_auditd_enabled(ctx: &Context) -> Result<bool> {
     let output = ctx
         .executor()
         .execute_command("systemctl", &["is-enabled", "auditd"])
         .await?;
-    Ok(output.success())
+    Ok(output.stdout.trim() == "enabled")
 }
 
 /// Checks if auditd service is currently running.
@@ -344,12 +377,29 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<S
     let backup = if matches!(existing, Ok(false)) {
         None
     } else {
+        // `--no-dereference` was here from the start and `-p` was not, the
+        // reverse of the ssh plugin's copy; the two flags answer separate
+        // questions and a backup needs both. `--no-dereference` copies a
+        // symlink as a symlink, so the object about to be overwritten is what
+        // gets copied rather than whatever it points at. `-p` preserves mode,
+        // ownership and timestamps, which this file needs more than most: the
+        // apply insists on 0640 precisely because the rules name every path and
+        // syscall the host watches, and a copy restored at the umask's mode
+        // hands that map to anyone who can read the directory. `cp -p` exits
+        // non-zero when it cannot preserve ownership, as an unprivileged copy
+        // of a root-owned file cannot; the check below turns that into an
+        // abort, which is the right direction, and apply runs as root so it
+        // should not arise.
+        //
         // `execute_command` returns Ok for a command that ran and failed, so
         // `?` alone only catches a spawn failure. An unchecked exit code let a
         // failed cp report success and the write proceed over an unsaved file.
         let output = ctx
             .executor()
-            .execute_command("cp", &["--no-dereference", AUDIT_RULES_PATH, &backup_path])
+            .execute_command(
+                "cp",
+                &["-p", "--no-dereference", AUDIT_RULES_PATH, &backup_path],
+            )
             .await?;
         if !output.success() {
             return Err(HardeningError::Plugin(format!(
@@ -1004,10 +1054,74 @@ impl HardeningPlugin for AuditHardeningPlugin {
         // write.
         let rules_dir_error = crate::ensure_directory(ctx, AUDIT_RULES_DIR).await;
 
-        // Create checkpoint before changes
+        // Create checkpoint before changes.
+        //
+        // AUDIT_RULES_PATH is named alongside the directory that holds it, and
+        // not left to the recursion. Capturing a directory emits a row for it
+        // and one per child that is there at capture time, so on a host that
+        // never had the rules file nothing carried it, and a rollback, which
+        // walks only the rows the checkpoint holds, left the hardening in place
+        // after the operator had asked for it to be undone. Declared, the path
+        // is stored absent with a zero mode, which the restore reads as "remove
+        // this".
+        //
+        // Unconditionally, unlike the services plugin, which narrows its mask
+        // paths to units the host has installed. That one writes into
+        // /etc/systemd/system, an administrator override slot, where declaring
+        // a path this tool may never create would put somebody else's file on a
+        // rollback's removal list. `hardening.rules` is our own filename that
+        // nothing else writes, so it is safe to declare unseen, exactly as the
+        // kernel and ssh plugins declare their drop-ins.
+        //
+        // The two paths below are what `augenrules --load` writes, and they are
+        // named for the same reason the rules file is: the reload runs as part
+        // of this apply, so the state it leaves is this apply's to undo.
+        // `augenrules` compiles every *.rules file in AUDIT_RULES_DIR into
+        // AUDIT_COMPILED_RULES and saves the previous compiled copy as
+        // AUDIT_COMPILED_RULES_PREV. Both sit in /etc/audit itself rather than
+        // in the rules directory, so capturing AUDIT_RULES_DIR recursively
+        // never reached either: measured on five distributions, the compiled
+        // file went from five or six lines to thirty during the apply and read
+        // exactly the same after a rollback that reported success, and the
+        // .prev the apply created outlived that rollback everywhere augenrules
+        // writes one.
+        //
+        // The two exercise different halves of the same mechanism, which is why
+        // both are named rather than one standing for the pair. The compiled
+        // file exists before the apply on every host measured, so it is
+        // captured with its content and the restore writes those bytes back;
+        // .prev usually does not, so it is stored absent with a zero mode and
+        // the restore removes it. Where an administrator's own earlier
+        // `augenrules` run left a .prev, it is captured and restored instead,
+        // which is the same bargain either way round.
+        //
+        // Re-running `augenrules` after the restore was the alternative, and it
+        // was rejected: it would load rules as a side effect of an undo, it
+        // fails in exactly the environments where the apply already fails (a
+        // container can start no auditd, and both `augenrules --load` and
+        // `systemctl restart` fail there), and it does nothing about .prev.
+        //
+        // The ceiling, which is worth saying rather than hiding: restoring the
+        // file returns the persistent state only. Rules already loaded into the
+        // running kernel stay loaded until a reload or a reboot. That is the
+        // same shape as the kernel plugin's rollback, which deletes its drop-in
+        // without reverting the runtime sysctl values, and it is a known limit
+        // of this tool rather than something this declaration introduces.
+        //
+        // One consequence of declaring rather than recursing: a declared path
+        // is captured strictly, so an existing but unreadable
+        // AUDIT_COMPILED_RULES now aborts the capture instead of being
+        // tolerated as an incidental child would be. The apply runs as root and
+        // the file is root-owned, so it should never fire, and it is the bargain
+        // every declared path makes: without the content there is nothing to
+        // restore, so continuing would leave the operator believing in a
+        // recovery that does not exist.
         let audit_paths: Vec<&Path> = vec![
             Path::new("/etc/audit/auditd.conf"),
             Path::new(AUDIT_RULES_DIR),
+            Path::new(AUDIT_RULES_PATH),
+            Path::new(AUDIT_COMPILED_RULES),
+            Path::new(AUDIT_COMPILED_RULES_PREV),
         ];
         let checkpoint_id =
             crate::create_checkpoint_for_apply(ctx, "audit-hardening-pre-apply", &audit_paths)
@@ -1015,7 +1129,39 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
         changes.extend(crate::checkpoint_change(&checkpoint_id));
 
-        // Enable auditd if not enabled
+        // Enable auditd if not enabled.
+        //
+        // This writes a `.wants` symlink under /etc/systemd/system, and the
+        // checkpoint declared just above covers nothing there, so a rollback
+        // leaves auditd wanted at boot. That is the decision rather than an
+        // oversight, and it is written here because the question reaches this
+        // site by a route that makes it look like one: sweeping the tree for
+        // "which apply creates a path its own checkpoint does not declare"
+        // found two genuine defects, the `systemctl mask` link and the audit
+        // rules file, and then found this, which is not one.
+        //
+        // Undoing it would mean removing the symlink, which is to say leaving
+        // the host with no audit daemon at its next boot, on a host whose
+        // operator asked only to undo a hardening run. That contradicts the
+        // settled rule that a hardening run never leaves a host less secure
+        // than it found it, and the asymmetry it buys is one this plugin
+        // already has: it enables auditd and never disables one.
+        //
+        // The firewall plugin reached the same answer at
+        // `ensure_unit_wanted_at_boot`, and its reasoning is NOT identical,
+        // which is worth saying because copying it blind would overstate this
+        // case. Firewall's rests on two legs: the rule above, plus its own
+        // `rollback` re-enabling the firewall unconditionally, so that removing
+        // the symlink would leave a rollback which turns the firewall on for
+        // this boot and off at the next. This plugin's `rollback` restores
+        // files and reloads rules and says nothing about enablement at all, so
+        // there is no such incoherence to avoid and the first leg carries the
+        // decision on its own.
+        //
+        // What the operator is left with, said rather than hidden: a host that
+        // had auditd disabled before the run has it enabled after the rollback,
+        // and one `systemctl disable auditd` undoes that. A rollback removing
+        // it for them cannot be undone by anything as cheap.
         if !is_auditd_enabled(ctx).await.unwrap_or(false) {
             let result = ctx
                 .executor()
@@ -1379,6 +1525,109 @@ mod tests {
             executor.log().files_written.is_empty(),
             "the rules file must not be written when its backup failed, but these writes happened: {:?}",
             executor.log().files_written
+        );
+    }
+
+    /// `systemctl is-enabled` is judged on its word and never on its exit
+    /// status, because the two disagree by design.
+    ///
+    /// Measured on a live systemd host rather than taken from the manual:
+    /// `static` and `indirect` each print their own word and exit **0**, while
+    /// `disabled` and `masked` print theirs and exit 1. `enabled-runtime` is
+    /// documented by systemd as exiting 0 and is the case this plugin most
+    /// needs to get right, because it is enablement made in
+    /// `/run/systemd/system`, which the next boot discards.
+    ///
+    /// Reading the exit status therefore reports auditd as enabled at boot on
+    /// a host where nothing will start it, and the apply skips the enable that
+    /// would have repaired it. Both directions are asserted so that a helper
+    /// which simply always answered "not enabled" would fail here too.
+    #[tokio::test]
+    async fn boot_enablement_is_read_from_the_word_and_not_the_exit_status() {
+        for (state, exit_code, wanted) in [
+            ("enabled", 0, true),
+            ("enabled-runtime", 0, false),
+            ("static", 0, false),
+            ("indirect", 0, false),
+            ("disabled", 1, false),
+            ("masked", 1, false),
+        ] {
+            let executor = Arc::new(MockExecutor::new().with_command(
+                "systemctl",
+                &["is-enabled", "auditd"],
+                CommandOutput {
+                    stdout: format!("{state}\n"),
+                    stderr: String::new(),
+                    exit_code,
+                },
+            ));
+            let ctx = Context::with_executor(executor as Arc<dyn SystemExecutor>);
+
+            let enabled = is_auditd_enabled(&ctx)
+                .await
+                .expect("a registered systemctl answer must not error");
+
+            assert_eq!(
+                enabled, wanted,
+                "systemctl is-enabled auditd answering '{state}' with exit \
+                 {exit_code} must read as enabled={wanted}"
+            );
+        }
+    }
+
+    /// A backup is only worth taking if it is a copy of the thing about to be
+    /// replaced, at the mode that thing carries.
+    ///
+    /// This file is the one the plugin insists on holding at 0640, because the
+    /// rules name every path and syscall the host watches; a backup restored
+    /// without `-p` lands at whatever the umask gives it and hands that map to
+    /// anyone. `--no-dereference` copies a symlink as a symlink, so a rules
+    /// file that is a link elsewhere is backed up as the object about to be
+    /// overwritten rather than as its target.
+    ///
+    /// Asserted on the recorded argv rather than on the run succeeding, and
+    /// against a mock that answers any `cp` by program name. A test that leaned
+    /// on an exact-argument registration missing would fail with "command not
+    /// registered", which is a different failure wearing this one's clothes.
+    #[tokio::test]
+    async fn the_backup_copy_keeps_the_mode_and_does_not_follow_a_symlink() {
+        let ok = CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        };
+        let executor = Arc::new(
+            MockExecutor::new()
+                .with_file(AUDIT_RULES_PATH, "-w /etc/passwd -p wa -k identity\n")
+                .with_path_exists(AUDIT_RULES_PATH, true)
+                .with_command_program("cp", ok),
+        );
+        let ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+
+        let backup = write_audit_rules_file(&ctx, "-w /etc/new -p wa -k new")
+            .await
+            .expect("a mock that answers any cp must let the write through")
+            .expect("an existing rules file must be backed up");
+
+        let log = executor.log();
+        let (_, args) = log
+            .commands_executed
+            .iter()
+            .find(|(program, _)| program == "cp")
+            .expect("the backup must be taken with cp");
+        for flag in ["-p", "--no-dereference"] {
+            assert!(
+                args.iter().any(|argument| argument == flag),
+                "the backup cp must pass {flag}, got: {args:?}"
+            );
+        }
+        // Checked separately from the flags because "the flag is present" and
+        // "the flag is a flag" are different claims: an argument added after
+        // the source would be read by cp as another file to copy.
+        assert_eq!(
+            &args[args.len() - 2..],
+            &[AUDIT_RULES_PATH.to_string(), backup],
+            "source and destination must stay the last two arguments, got: {args:?}"
         );
     }
 

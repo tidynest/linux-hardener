@@ -2,6 +2,9 @@
 //!
 //! These tests verify plugin behavior without touching real systemd services.
 
+mod common;
+
+use common::test_checkpoint_manager;
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
     CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
@@ -841,5 +844,132 @@ async fn scan_treats_no_installed_units_as_a_clean_host_not_a_failure() {
     assert!(
         result.scan_unchecked.is_empty(),
         "nothing was unverifiable: the listing answered, it just listed nothing"
+    );
+}
+
+/// Where `systemctl mask` records itself, and the only unit directory this
+/// plugin's changes reach.
+const ADMIN_UNIT_DIR: &str = "/etc/systemd/system";
+
+/// A host on which bluetooth is the one unit installed, and on which nothing
+/// has yet written a `/etc/systemd/system/bluetooth.service`.
+///
+/// `ADMIN_UNIT_DIR` is registered as a directory so the capture recurses into
+/// it exactly as it would on a real host; it is deliberately left empty, which
+/// is the state the defect lives in. The four other assessed units answer with
+/// an empty listing, so they are absent.
+fn one_installed_service_executor() -> MockExecutor {
+    // Serves double duty: the empty successful reply a mutation command gives,
+    // and the empty listing `list-unit-files` gives for a unit that is not
+    // installed, which is what the existence probe reads as absent.
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+
+    let mut executor = MockExecutor::new()
+        .with_command_exists("systemctl", true)
+        .with_directory(ADMIN_UNIT_DIR)
+        .with_command(
+            "systemctl",
+            &["list-unit-files", "bluetooth.service"],
+            CommandOutput {
+                stdout: "bluetooth.service enabled enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "bluetooth"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "bluetooth"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("systemctl", &["stop", "bluetooth"], ok.clone())
+        .with_command("systemctl", &["disable", "bluetooth"], ok.clone())
+        .with_command("systemctl", &["mask", "bluetooth"], ok.clone());
+
+    for unit in ASSESSED_UNITS.iter().filter(|u| **u != "bluetooth.service") {
+        executor = executor.with_command("systemctl", &["list-unit-files", unit], ok.clone());
+    }
+    executor
+}
+
+/// `systemctl mask` creates `/etc/systemd/system/<unit>.service` as a symlink
+/// to /dev/null, and nothing but this checkpoint can undo it.
+///
+/// The capture recurses into the declared directory and emits a row per child
+/// that is there at capture time; the mask link is by definition not there yet,
+/// so no row carried it and the rollback, which walks only rows the checkpoint
+/// holds, had nothing to remove. The plugin must therefore declare the path
+/// itself, the way the kernel and ssh plugins declare the files their applies
+/// create: an absent declared path is stored with a zero mode, which the
+/// rollback reads as "remove this".
+///
+/// The assertion is on the stored row rather than on the commands logged,
+/// because the row is the thing the rollback later reads, and because the mock
+/// answers a command from its registry without ever consulting the virtual
+/// filesystem, so no command's exit status could prove anything about a path.
+#[tokio::test]
+async fn services_apply_checkpoints_the_mask_link_of_an_installed_unit() {
+    let executor = one_installed_service_executor();
+    let mut ctx =
+        Context::with_executor_and_checkpoint(Arc::new(executor), test_checkpoint_manager().await);
+
+    let result = ServicesHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("services apply should not error");
+
+    let checkpoint_id = result
+        .apply_checkpoint_id
+        .clone()
+        .expect("the apply must take a checkpoint when a manager is present");
+    let (_, captured) = ctx
+        .checkpoint_manager()
+        .expect("the context carries a checkpoint manager")
+        .get_checkpoint(&hardener_state::CheckpointId::new(checkpoint_id))
+        .await
+        .expect("the checkpoint just taken must be readable");
+
+    let mask_link = format!("{ADMIN_UNIT_DIR}/bluetooth.service");
+    let mask_row = captured
+        .iter()
+        .find(|state| state.file_path == mask_link)
+        .unwrap_or_else(|| {
+            panic!(
+                "the checkpoint must carry a row for {mask_link}; without one the mask this \
+                 apply just created can never be undone. Captured: {captured:?}"
+            )
+        });
+
+    assert_eq!(
+        mask_row.file_permissions, 0,
+        "the path was absent when the checkpoint was taken, and only a zero mode tells the \
+         rollback to remove what the mask put there. Captured: {captured:?}"
+    );
+
+    // Narrowing, at the level where it matters: a unit this host has never had
+    // installed must contribute no row at all, because a declared path found
+    // absent is deleted on rollback unconditionally and /etc/systemd/system is
+    // also where an administrator's own unit overrides live.
+    assert!(
+        !captured
+            .iter()
+            .any(|state| state.file_path == format!("{ADMIN_UNIT_DIR}/cups.service")),
+        "an uninstalled unit must not have its override slot declared. Captured: {captured:?}"
     );
 }

@@ -83,7 +83,7 @@ fn with_backup_cp(mut executor: MockExecutor, path: &str) -> MockExecutor {
         let backup = format!("{path}.backup-{t}");
         executor = executor.with_command(
             "cp",
-            &[path, &backup],
+            &["-p", "--no-dereference", path, &backup],
             hardener_core::CommandOutput {
                 stdout: String::new(),
                 stderr: String::new(),
@@ -687,7 +687,7 @@ async fn test_pam_apply_tightens_looser_thresholds() {
             let backup = format!("{path}.backup-{t}");
             executor = executor.with_command(
                 "cp",
-                &[path, &backup],
+                &["-p", "--no-dereference", path, &backup],
                 hardener_core::CommandOutput {
                     stdout: String::new(),
                     stderr: String::new(),
@@ -1035,7 +1035,12 @@ async fn pam_apply_one_drifted_rewrites_one_file_with_one_backup() {
         let backup = format!("/etc/security/pwquality.conf.backup-{t}");
         executor = executor.with_command(
             "cp",
-            &["/etc/security/pwquality.conf", &backup],
+            &[
+                "-p",
+                "--no-dereference",
+                "/etc/security/pwquality.conf",
+                &backup,
+            ],
             hardener_core::CommandOutput {
                 stdout: String::new(),
                 stderr: String::new(),
@@ -1161,7 +1166,7 @@ async fn apply_still_creates_an_absent_security_conf() {
         // backup rather than attempt and fail it.
         executor = executor.with_command(
             "cp",
-            &[path, &backup],
+            &["-p", "--no-dereference", path, &backup],
             hardener_core::CommandOutput {
                 stdout: String::new(),
                 stderr: format!("cp: cannot stat '{path}': No such file or directory\n"),
@@ -2332,7 +2337,12 @@ async fn pam_apply_honours_stricter_override() {
         let backup = format!("/etc/security/faillock.conf.backup-{t}");
         executor_tighten = executor_tighten.with_command(
             "cp",
-            &["/etc/security/faillock.conf", &backup],
+            &[
+                "-p",
+                "--no-dereference",
+                "/etc/security/faillock.conf",
+                &backup,
+            ],
             hardener_core::CommandOutput {
                 stdout: String::new(),
                 stderr: String::new(),
@@ -3094,7 +3104,12 @@ async fn apply_refuses_to_write_the_conf_when_the_pam_stack_cannot_be_read() {
     for t in now..now + 3 {
         executor = executor.with_command(
             "cp",
-            &[conf, &format!("{conf}.backup-{t}")],
+            &[
+                "-p",
+                "--no-dereference",
+                conf,
+                &format!("{conf}.backup-{t}"),
+            ],
             hardener_core::CommandOutput {
                 stdout: String::new(),
                 stderr: String::new(),

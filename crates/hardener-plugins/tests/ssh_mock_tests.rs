@@ -820,7 +820,7 @@ fn apply_ready_executor(config: &str) -> MockExecutor {
         let backup = format!("/etc/ssh/sshd_config.backup.{stamp}");
         executor = executor.with_command(
             "cp",
-            &["-p", "/etc/ssh/sshd_config", &backup],
+            &["-p", "--no-dereference", "/etc/ssh/sshd_config", &backup],
             ok_output(""),
         );
     }
@@ -1376,6 +1376,68 @@ async fn ssh_apply_still_writes_and_restarts_when_config_drifts() {
     );
 }
 
+/// As [`apply_ready_executor`] but answering any `cp` by program name rather
+/// than pinning its arguments.
+///
+/// The test below is about what those arguments are, so it must not be the
+/// thing that decides them: with an exact registration a wrong argv fails as
+/// "command not registered", which reads as a broken fixture rather than as the
+/// missing flag it is.
+fn apply_ready_executor_any_backup(config: &str) -> MockExecutor {
+    let temp = sshd_validate_temp_path();
+    MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", config)
+        .with_command("sshd", &["-t", "-f", &temp], ok_output(""))
+        .with_command("systemctl", &["restart", "sshd"], ok_output(""))
+        .with_command_program("cp", ok_output(""))
+}
+
+/// A backup is only worth taking if it is a copy of the thing about to be
+/// replaced, at the mode that thing carries.
+///
+/// `-p` keeps mode, ownership and timestamps, so an operator who copies the
+/// backup back gets sshd_config as it was rather than one wearing whatever the
+/// umask handed it. `--no-dereference` copies a symlink as a symlink, which
+/// matters here more than anywhere else in the tree: a host whose
+/// /etc/ssh/sshd_config is a link into a configuration-management checkout
+/// would otherwise be backed up as the managed file, and the object this apply
+/// is about to overwrite would have no copy at all.
+#[tokio::test]
+async fn ssh_backup_copy_keeps_the_mode_and_does_not_follow_a_symlink() {
+    let executor = apply_ready_executor_any_backup("# minimal config\n");
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result.apply_success,
+        "a drifting apply must succeed: {result:?}"
+    );
+    let log = executor.log();
+    let (_, args) = log
+        .commands_executed
+        .iter()
+        .find(|(program, _)| program == "cp")
+        .expect("a drifting apply must back up the config with cp");
+    for flag in ["-p", "--no-dereference"] {
+        assert!(
+            args.iter().any(|argument| argument == flag),
+            "the backup cp must pass {flag}, got: {args:?}"
+        );
+    }
+    // Checked separately from the flags because "the flag is present" and "the
+    // flag is a flag" are different claims: an argument added after the source
+    // would be read by cp as another file to copy.
+    assert_eq!(
+        args[args.len() - 2],
+        "/etc/ssh/sshd_config",
+        "the source must stay the second-to-last argument, got: {args:?}"
+    );
+    assert!(
+        args[args.len() - 1].starts_with("/etc/ssh/sshd_config.backup."),
+        "the destination must stay the last argument, got: {args:?}"
+    );
+}
+
 #[tokio::test]
 async fn scan_honours_directive_override() {
     // Baseline for a directive whose actual value equals the built-in secure
@@ -1704,6 +1766,146 @@ async fn validate_honours_a_directive_override_that_tightens() {
     );
 }
 
+/// The dry run previews the apply it precedes, so it has to read the same
+/// configuration that apply reads.
+///
+/// `validate` parsed the main file alone while scan and apply both resolve the
+/// Include first. On the layout RHEL, Fedora and openSUSE ship, a drop-in
+/// answers the keyword before the main file, so a main file already holding the
+/// target previewed no change at all while the apply went on to write a
+/// fragment. That is the preview being short of the run in the direction the
+/// operator approves, which is the defect 420a52b and 5aa31cf each fixed
+/// elsewhere.
+#[tokio::test]
+async fn validate_previews_the_change_a_drop_in_forces_even_when_the_main_file_is_compliant() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/ssh/sshd_config",
+            "Include /etc/ssh/sshd_config.d/*.conf\nX11Forwarding no\n",
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/50-redhat.conf",
+            "X11Forwarding yes\n",
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = SshHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("X11Forwarding")),
+        "the apply will write a fragment for this directive, so the preview must \
+         say so, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    // The file itself, named once. A preview listing settings while staying
+    // silent about a new file appearing in /etc is the defect 5aa31cf fixed in
+    // the kernel plugin, and this apply writes exactly such a file.
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("/etc/ssh/sshd_config.d/00-hardener.conf")),
+        "the preview must name the file the apply will create, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+/// The crypto directives were previewed by nothing at all: `validate` had no
+/// loop over them, so an apply that writes three cryptographic lists announced
+/// none of them beforehand.
+#[tokio::test]
+async fn validate_previews_the_crypto_directives_the_apply_would_write() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/ssh/sshd_config",
+            "Include /etc/ssh/sshd_config.d/*.conf\n",
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/50-redhat.conf",
+            "Ciphers 3des-cbc\n",
+        )
+        .with_command(
+            "ssh",
+            &["-Q", "cipher"],
+            ok_output("chacha20-poly1305@openssh.com\naes256-gcm@openssh.com\n3des-cbc\n"),
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = SshHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("Ciphers")),
+        "the apply writes a strong cipher list over the drop-in's, so the preview \
+         must name it, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("3des-cbc") && c.contains("→ 3des-cbc")),
+        "the preview must not promise the weak list it is replacing, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+/// The mirror, and it exists because its absence was measured: removing the
+/// already-strong check from the crypto preview left every test green.
+///
+/// `ssh -Q cipher` is registered deliberately. Without it the intersection is
+/// empty and the preview omits the directive for a completely different reason,
+/// so the test would pass whether or not the check it guards is there. A test
+/// that cannot fail for the reason it exists is not a test.
+#[tokio::test]
+async fn validate_previews_no_crypto_change_when_the_host_is_already_strong() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/ssh/sshd_config",
+            "Include /etc/ssh/sshd_config.d/*.conf\n",
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/50-redhat.conf",
+            "Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com\n",
+        )
+        .with_command(
+            "ssh",
+            &["-Q", "cipher"],
+            ok_output(
+                "chacha20-poly1305@openssh.com\naes256-gcm@openssh.com\naes128-gcm@openssh.com\n",
+            ),
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let report = SshHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|c| c.contains("Ciphers")),
+        "a host already offering only strong ciphers has nothing to preview, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
 #[tokio::test]
 async fn validate_clamps_a_directive_override_that_would_loosen() {
     let executor = insecure_ssh_executor();
@@ -1909,6 +2111,86 @@ async fn ssh_scan_accepts_a_drop_in_that_holds_the_secure_value() {
             .iter()
             .any(|f| f.finding_id == "ssh-permitrootlogin"),
         "a drop-in already holding the target value is compliant"
+    );
+}
+
+/// The crypto directives are read from the same resolved configuration as
+/// every other directive, because sshd reads them from the same place.
+///
+/// The layout below is what RHEL, Fedora and openSUSE ship: crypto-policies
+/// supplies Ciphers, MACs and KexAlgorithms from a drop-in, and the Include
+/// sits above everything this tool writes, so sshd takes the drop-in's value.
+/// Reading only the main file reported the strong list this tool put there
+/// while sshd negotiated the drop-in's, and because the crypto directives are
+/// in `coverage()`, the absence of a finding rendered those controls as Pass.
+#[tokio::test]
+async fn ssh_scan_reports_the_ciphers_a_drop_in_forces_not_the_main_file_s() {
+    let executor = MockExecutor::new()
+        .with_file(
+            "/etc/ssh/sshd_config",
+            &format!("{SHIPPED_LAYOUT}Ciphers chacha20-poly1305@openssh.com\n"),
+        )
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/50-redhat.conf",
+            "Ciphers 3des-cbc\n",
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "ssh-ciphers")
+        .expect("the drop-in forces a weak cipher, so this must be a finding");
+    assert_eq!(
+        finding.finding_current_value, "3des-cbc",
+        "the reported value must be the one sshd negotiates, not the one in the main file"
+    );
+    assert!(
+        finding
+            .finding_explanation
+            .contains("/etc/ssh/sshd_config.d/50-redhat.conf"),
+        "the finding must name the file that actually governs it: {}",
+        finding.finding_explanation
+    );
+}
+
+/// The mirror image, and the direction a main-file read gets wrong the other
+/// way: a drop-in supplying a strong list leaves the host compliant, and
+/// reporting it because the main file is silent would send an operator to edit
+/// a file that decides nothing.
+#[tokio::test]
+async fn ssh_scan_accepts_ciphers_a_drop_in_holds_at_a_strong_value() {
+    let executor = MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", SHIPPED_LAYOUT)
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(
+            "/etc/ssh/sshd_config.d/10-crypto.conf",
+            "Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com\n",
+        );
+    let ctx = Context::with_executor(Arc::new(executor) as Arc<dyn SystemExecutor>);
+
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "ssh-ciphers"),
+        "a drop-in already holding a strong cipher list is compliant, findings: {:?}",
+        result
+            .scan_findings
+            .iter()
+            .map(|f| (&f.finding_id, &f.finding_current_value))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -2179,6 +2461,93 @@ async fn apply_writes_a_winning_dropin_when_one_overrides_the_main_file() {
         result.apply_success,
         "the directive is now genuinely applied, so apply succeeds: {:?}",
         result.apply_changes
+    );
+}
+
+/// A crypto directive a drop-in overrides is routed to the fragment that beats
+/// it, exactly as every other overridden directive already is.
+///
+/// This is the half the scan fix deliberately left open. RHEL, Fedora and
+/// openSUSE let crypto-policies supply Ciphers, MACs and KexAlgorithms from
+/// /etc/ssh/sshd_config.d, which sshd reads before the main file, so writing
+/// the strong list into sshd_config reported a change sshd never obeyed. The
+/// maintainer's decision is that this tool overrides that fragment rather than
+/// deferring to it.
+///
+/// `ssh -Q cipher` is registered because the target is the intersection of this
+/// tool's allow-list with what the host supports: without it the intersection is
+/// empty and the whole directive is skipped, which would make this test pass by
+/// asserting nothing.
+#[tokio::test]
+async fn apply_writes_a_winning_dropin_for_a_crypto_directive_a_dropin_overrides() {
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\nCiphers aes256-gcm@openssh.com\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file("/etc/ssh/sshd_config.d/50-redhat.conf", "Ciphers 3des-cbc\n"),
+    )
+    .with_command(
+        "ssh",
+        &["-Q", "cipher"],
+        ok_output("chacha20-poly1305@openssh.com\naes256-gcm@openssh.com\naes128-gcm@openssh.com\n3des-cbc\n"),
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    let dropin = dropin_written(&executor).unwrap_or_else(|| {
+        panic!(
+            "a drop-in must be written to beat 50-redhat.conf's cipher list, wrote: {:?}",
+            executor.log().files_written
+        )
+    });
+    assert!(
+        dropin.contains("Ciphers "),
+        "the drop-in must carry the overridden crypto directive, got: {dropin}"
+    );
+    assert!(
+        !dropin.contains("3des-cbc"),
+        "the drop-in must not carry the weak algorithm it exists to beat, got: {dropin}"
+    );
+    assert!(
+        result.apply_success,
+        "the directive is genuinely applied, so apply succeeds: {:?}",
+        result.apply_changes
+    );
+}
+
+/// The mirror: a drop-in already holding a strong list needs no fragment, and
+/// writing one anyway would restate a value the host already obeys.
+#[tokio::test]
+async fn apply_writes_no_crypto_dropin_when_the_overriding_file_is_already_strong() {
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                "Include /etc/ssh/sshd_config.d/*.conf\n",
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/50-redhat.conf",
+                "Ciphers chacha20-poly1305@openssh.com\n",
+            ),
+    )
+    .with_command(
+        "ssh",
+        &["-Q", "cipher"],
+        ok_output(
+            "chacha20-poly1305@openssh.com\naes256-gcm@openssh.com\naes128-gcm@openssh.com\n",
+        ),
+    );
+
+    let _ = run_ssh_apply(&executor).await;
+
+    let dropin = dropin_written(&executor).unwrap_or_default();
+    assert!(
+        !dropin.contains("Ciphers"),
+        "a file underneath already holding a strong list needs no fragment, got: {dropin}"
     );
 }
 

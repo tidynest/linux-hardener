@@ -529,6 +529,27 @@ fn not_at_boot_unchecked(backend: &dyn FirewallBackend) -> UncheckedCheck {
 /// the policy and the zone target they cannot read. A run that then fails is
 /// recorded as a failed change carrying systemd's own words, rather than a
 /// host quietly left to lose its firewall.
+///
+/// This enable writes a `.wants` symlink under `/etc/systemd/system`, and this
+/// plugin's pre-apply checkpoint deliberately does not declare it, so a
+/// rollback leaves the firewall wanted at boot. That is the decision rather
+/// than an oversight, and it is written here because the question reaches this
+/// site by a route that makes it look like one: sweeping the tree for "which
+/// apply creates a path its own checkpoint does not declare" found two genuine
+/// defects elsewhere, the `systemctl mask` link and the audit rules file, and
+/// then found this, which is not one.
+///
+/// Undoing it would mean removing the symlink, which is to say disabling the
+/// firewall at boot, on a host where the operator asked only to undo a
+/// hardening run. That contradicts the settled rule that a hardening run never
+/// leaves a host less secure than it found it, and it would contradict this
+/// plugin's own `rollback`, which re-enables the firewall unconditionally and
+/// deliberately never disables one. A rollback that re-enabled the firewall for
+/// this boot while removing what starts it at the next would be incoherent in a
+/// way no operator could be expected to predict.
+///
+/// The asymmetry is intended and is the same one the rollback already has: this
+/// plugin will turn a firewall on and will never turn one off.
 async fn ensure_unit_wanted_at_boot(ctx: &Context, backend: &dyn FirewallBackend) -> Change {
     let unit = backend.systemd_unit();
     if matches!(

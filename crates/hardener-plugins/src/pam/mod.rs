@@ -765,6 +765,25 @@ impl HardeningPlugin for PamHardeningPlugin {
         // plugin already refuses to edit /etc/pam.d itself, so the remaining
         // step is the operator's and a run that hardened nothing has not
         // earned a clean result.
+        // `Indeterminate` continues here alongside `InStack`, and that is a
+        // decision rather than the two being conflated by accident. It has two
+        // flavours and neither is reachable in an apply on any distribution this
+        // project supports. A candidate that could not be read cannot get this
+        // far: /etc/pam.d is in `pam_paths` above and
+        // `create_checkpoint_for_apply` propagates a capture failure with `?`,
+        // so the apply has already aborted. A distribution whose stack this
+        // table does not name is not one of the five: the candidates cover
+        // system-auth and password-auth for the RHEL family, and
+        // common-password and common-auth for the Debian family and openSUSE.
+        //
+        // What remains is latent rather than live, and it is worth naming
+        // because a sweep for "which apply outcomes are silent" lands here and
+        // cannot otherwise tell this from an oversight. Were a sixth
+        // distribution added whose stack sits outside the table, this loop would
+        // say nothing while the apply reported success for files nothing reads.
+        // Scan is not blind to that case, which is why nothing is changed here
+        // today: it reports the same reading as unchecked, and an unchecked
+        // control renders as ManualReview rather than as a pass.
         for (path, presence) in module_presence_by_file(ctx).await {
             let ModulePresence::NotInStack { module } = presence else {
                 continue;
@@ -2474,6 +2493,24 @@ async fn apply_create_mode(ctx: &Context, path: &str, mode: u32, changes: &mut V
 }
 
 /// Creates a timestamped backup of a configuration file.
+///
+/// `-p` and `--no-dereference` are both required, and this site passed neither
+/// until the three plugins that take such a copy were compared: ssh passed only
+/// `-p`, audit only `--no-dereference`, and each was therefore losing whatever
+/// the other kept. `-p` preserves mode, ownership and timestamps, without which
+/// an operator who copies the backup back gets the file at whatever the umask
+/// hands it, and on a `/etc/security/*.conf` that is the difference between a
+/// policy file and a world-readable one. `--no-dereference` copies a symlink as
+/// a symlink, so a config that is a link elsewhere is backed up as the object
+/// about to be overwritten rather than as its target, which is a different file
+/// that this apply never touches.
+///
+/// `cp -p` exits non-zero when it cannot preserve ownership, which an
+/// unprivileged copy of a root-owned file cannot. The exit code is checked
+/// below and aborts the caller, so on the one path where that could bite, a
+/// non-root run, the backup now refuses rather than producing a copy that is
+/// not one. Apply runs as root, so it is a refusal that should never be
+/// reached.
 async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -2486,7 +2523,7 @@ async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> 
 
     let output = ctx
         .executor()
-        .execute_command("cp", &[file_path, &backup_path])
+        .execute_command("cp", &["-p", "--no-dereference", file_path, &backup_path])
         .await
         .map_err(|e| HardeningError::Plugin(e.to_string()))?;
 
@@ -2736,7 +2773,7 @@ mod tests {
             let backup = format!("{path}.backup-{t}");
             executor = executor.with_command(
                 "cp",
-                &[path, &backup],
+                &["-p", "--no-dereference", path, &backup],
                 CommandOutput {
                     stdout: String::new(),
                     stderr: "cp: cannot stat '/etc/security/faillock.conf': Permission denied\n"
@@ -2758,6 +2795,65 @@ mod tests {
         assert!(
             message.contains("Permission denied"),
             "the error must carry cp's own stderr so an operator can act on it, got: {message}"
+        );
+    }
+
+    /// A backup is only worth taking if it is a copy of the thing about to be
+    /// replaced, at the mode that thing carries.
+    ///
+    /// `-p` keeps mode, ownership and timestamps, so an operator who copies the
+    /// backup back gets the file they had rather than one wearing whatever the
+    /// umask handed it, which on a `/etc/security/*.conf` is the difference
+    /// between a policy file and a world-readable one. `--no-dereference`
+    /// copies a symlink as a symlink, so a config that is a link elsewhere is
+    /// backed up as the object this plugin is about to overwrite rather than as
+    /// its target, which is a different file that nothing here is touching.
+    ///
+    /// Asserted on the recorded argv rather than on the run succeeding, and
+    /// against a mock that answers any `cp` by program name. A test that leaned
+    /// on the exact-argument registration missing would fail with "command not
+    /// registered", which is a different failure wearing this one's clothes,
+    /// and it would stop failing the moment anyone added a program-level
+    /// fallback to the fixture.
+    #[tokio::test]
+    async fn the_backup_copy_keeps_the_mode_and_does_not_follow_a_symlink() {
+        use hardener_common::executor::{CommandOutput, MockExecutor};
+        use std::sync::Arc;
+
+        let path = "/etc/security/faillock.conf";
+        let executor = Arc::new(MockExecutor::new().with_command_program(
+            "cp",
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        ));
+        let ctx = Context::with_executor(executor.clone());
+
+        let backup = create_config_backup(&ctx, path)
+            .await
+            .expect("a mock that answers any cp must let the backup through");
+
+        let log = executor.log();
+        let (_, args) = log
+            .commands_executed
+            .iter()
+            .find(|(program, _)| program == "cp")
+            .expect("the backup must be taken with cp");
+        for flag in ["-p", "--no-dereference"] {
+            assert!(
+                args.iter().any(|argument| argument == flag),
+                "the backup cp must pass {flag}, got: {args:?}"
+            );
+        }
+        // Checked separately from the flags because "the flag is present"
+        // and "the flag is a flag" are different claims: an argument added
+        // after the source would be read by cp as another file to copy.
+        assert_eq!(
+            &args[args.len() - 2..],
+            &[path.to_string(), backup],
+            "source and destination must stay the last two arguments, got: {args:?}"
         );
     }
 

@@ -204,6 +204,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signature digest includes the target only when one is present, so a checkpoint
   signed before this release still verifies.
 
+- **`hardener rollback` now recreates a directory that was removed after the
+  checkpoint, which is what `systemctl disable` leaves behind.** Recording a
+  symlink, above, made the enablement link storable; placing one whose directory
+  had gone was still impossible. `systemctl disable` removes the enablement
+  symlink and then the `*.target.wants` directory it emptied, which is the
+  ordinary case for a service that is the only thing wanting its target, and a
+  rollback restored one recorded path at a time without creating anything on the
+  way. Measured on all five test distributions: rollback of a
+  `service-minimisation-pre-apply` checkpoint exited 1 with exactly two failures
+  per host, `chmod: cannot access
+  '/etc/systemd/system/bluetooth.target.wants'` and `ln: failed to create
+  symbolic link ...: No such file or directory`, while a sibling link in the
+  surviving `/etc/systemd/system` came back in the same run. Both sites now
+  create the directory they need first, independently of each other: the
+  directory's own row and the link's parent, each probed before any `mkdir -p`
+  so a directory already present is never written to. A row is treated as a
+  directory by the file-type bit in its recorded mode, never by the absence of
+  content: the permissions plugin checkpoints `/etc/passwd`, `/etc/shadow`,
+  `/etc/gshadow` and `/etc/sudoers` metadata-only, deliberately, so that no
+  password file's contents reach the checkpoint database, and those rows are
+  content-less too. Restoring one whose file had since been removed must not put
+  a directory named `/etc/shadow` in its place; it reports that it could not
+  restore the path, which is the honest answer for a checkpoint holding nothing
+  to rebuild the file from. Checkpoints written before capture recorded the type
+  bit store a directory as bare permission bits and are unaffected, restoring
+  exactly as before.
+
+- **`hardener rollback` now removes the `/dev/null` symlink `systemctl mask`
+  leaves behind, rather than refusing it.** The services plugin declares each
+  masked unit's path to its pre-apply checkpoint, and a path absent at capture is
+  stored with a zero mode meaning "remove on restore", so the row that undoes a
+  mask was present and correct. The restore refused it: the guard that stops a
+  rollback writing captured content *through* a symlink asks what the path
+  resolves to now, and at rollback time the path is the mask link, which resolves
+  to `/dev/null`, outside every allowlist. Measured in a container:
+  `[skipped] /etc/systemd/system/bluetooth.service`, "Rollback symlink
+  /etc/systemd/system/bluetooth.service resolves outside allowed directories",
+  and the mask outlived the rollback meant to undo it. A row recorded absent is
+  restored by `rm -f` on the path, which unlinks the entry itself and follows
+  nothing, so it now carries the same exemption a recorded symlink already had,
+  for the same reason: the write lands on that path and nowhere else. The
+  exemption is deliberately narrow, keyed on what the row records rather than on
+  what stands at the path. A row carrying content is still refused when its path
+  is now a link out of bounds, because that write would go through the link, and
+  so is a directory row, whose `chmod` and `chown` follow one just as readily.
+  The paths a rollback may never delete are unaffected: that rule is enforced
+  after this guard, and a protected path recorded as absent is still probed and
+  still never removed.
+
+- **Rolling back an audit apply now restores the compiled rule set auditd
+  actually loads, instead of leaving the hardening in force at the next boot.**
+  `apply --plugin audit-rules` writes `/etc/audit/rules.d/hardening.rules` and
+  then runs `augenrules --load`, which compiles everything in `rules.d` into
+  `/etc/audit/audit.rules` and saves the previous compiled copy as
+  `/etc/audit/audit.rules.prev`. Neither of those two lives in `rules.d`, so the
+  recursive capture of that directory never reached them, and the pre-apply
+  checkpoint named neither. Measured on all five test distributions:
+  `/etc/audit/audit.rules` went from 5 lines to 30 on Arch and from 6 to 31 on
+  Debian, Fedora, RHEL and openSUSE during the apply, and read **exactly the
+  same after a rollback that reported success**, so the rollback removed the
+  source file and left the compiled output auditd reads at start-up. The `.prev`
+  file was created by the apply and survived the rollback on Arch, Debian,
+  Fedora and RHEL; openSUSE's `augenrules` writes no `.prev`, and the gap was
+  present there too. Both paths are now declared to the checkpoint alongside the
+  three that were already there, which handles the two cases separately:
+  `audit.rules` exists before the apply on every host measured, so it is
+  captured with its content and restored to its pre-apply bytes, while `.prev`
+  usually does not exist, so it is stored absent and removed, and an
+  administrator's own earlier copy is captured and restored instead.
+  Re-running `augenrules` after the restore was considered and rejected: it
+  would load rules as a side effect of an undo, it fails in exactly the
+  environments where the apply already fails, and it does nothing about `.prev`.
+  **The rollback returns the persistent state only.** Rules already loaded into
+  the running kernel stay loaded until a reload or a reboot, which is the same
+  limit the kernel plugin's rollback has always had with runtime sysctl values.
+
 - **`hardener rollback` no longer refuses to restore anything because one file
   in the checkpoint cannot be restored.** Measured on the five test
   distributions: four of them failed rollback outright, restoring nothing, with
@@ -450,6 +526,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously asked this, so a masking regression could have reappeared with
   every existing check green. The per-distribution total moves from 22 checks
   to 25, and the five-distribution total from 110 to 125.
+- **The full test suite asks whether a rollback undid anything.** Its per-plugin
+  lifecycle section applied a plugin and rolled it back, and its only rollback
+  assertion was that the command exited 0, so it reported a pass for a rollback
+  that restored nothing. That is the defect family this project keeps finding in
+  its own product, and two instances of it were fixed in the audit plugin alone
+  while the suite read the same 126 of 126 on five distributions before and
+  after. New section 12A applies audit hardening, rolls it back and then reads
+  the filesystem: the rules file must be gone, `/etc/audit` must list exactly
+  the paths it listed beforehand, and the compiled rule set must be back at its
+  pre-apply line count. It runs first inside the apply block by necessity, since
+  a rollback can only be seen to *remove* a created file on a host that does not
+  have it yet, and it refuses to report at all on a container an earlier
+  `--apply` run has already hardened, because a reading taken there would answer
+  a different question. The per-distribution total moves from 126 tests to 133.
+  A services arm is owed and deliberately absent: reading the equivalent mask
+  defect needs a unit the plugin manages, and no container image installs one.
 
 ### Removed
 - `custom_directives`, the per-plugin config table that was accepted, merged

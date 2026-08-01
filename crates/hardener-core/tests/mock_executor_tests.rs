@@ -135,7 +135,8 @@ async fn test_mock_executor_file_metadata() {
     assert!(meta.exists, "file metadata should report exists");
     assert!(meta.is_file, "file metadata should report is_file");
     assert!(!meta.is_dir, "file metadata should not report is_dir");
-    assert_eq!(meta.mode, 0o644);
+    // Full st_mode, `S_IFREG` included, as both real executors report it.
+    assert_eq!(meta.mode, 0o100644);
     assert_eq!(meta.size, 5); // "12345" = 5 bytes
 
     // Directory metadata
@@ -149,7 +150,10 @@ async fn test_mock_executor_file_metadata() {
         "directory metadata should not report is_file"
     );
     assert!(meta.is_dir, "directory metadata should report is_dir");
-    assert_eq!(meta.mode, 0o755);
+    // `S_IFDIR` likewise: a caller reading the type bit back out must see a
+    // directory here, or a mock-based test of directory handling silently
+    // exercises the file path instead.
+    assert_eq!(meta.mode, 0o040755);
 
     // Nonexistent path
     let meta = executor

@@ -932,11 +932,32 @@ async fn apply_path_permissions(
 ) -> Option<Change> {
     let path = Path::new(directive.permission_path);
 
-    // Skip if path doesn't exist. This is the existence authority when
-    // `current_mode` is unverified (see the doc comment above: genuinely
-    // independent of the failed `stat` on SSH, but only a race locally).
-    if !ctx.executor().path_exists(path).await.unwrap_or(false) {
-        return None;
+    // The existence authority when `current_mode` is unverified (see the doc
+    // comment above: genuinely independent of the failed `stat` on SSH, but only
+    // a race locally).
+    //
+    // An errored probe is not an absence, and reading it as one returned None,
+    // which records no `Change` at all. An omitted change cannot be a failed one,
+    // so the run reported success and the change list, which is the operator's
+    // record of what was hardened, held nothing for the path: indistinguishable
+    // from a host that was already correct. It is reported as a failed change
+    // rather than as an error, matching the rule that a mode which could not be
+    // set is a failed change and not fatal, so the remaining paths are still
+    // hardened and the summary still says something went wrong.
+    match ctx.executor().path_exists(path).await {
+        Ok(true) => {}
+        Ok(false) => return None,
+        Err(e) => {
+            return Some(Change {
+                change_description: format!(
+                    "{}: could not determine whether the path exists, so it was not examined",
+                    directive.permission_path
+                ),
+                change_type: ChangeType::Permissions,
+                change_success: false,
+                change_error: Some(e.to_string()),
+            });
+        }
     }
 
     match current_mode {
@@ -1405,10 +1426,34 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
 
             let path = Path::new(directive.permission_path);
 
-            // Check if path exists
-            if !ctx.executor().path_exists(path).await.unwrap_or(false) {
-                // Path doesn't exist - not an error, just skip
-                continue;
+            // Only a confirmed absence is nothing to preview. This read an
+            // errored probe as absence, under a comment calling it "not an
+            // error", so a Critical path the run could not examine vanished from
+            // the dry run and the operator approved a run whose scope they had
+            // not been shown. `scan` was repaired for exactly this and says so at
+            // its own site; this caller kept the collapse.
+            //
+            // High rather than a quieter severity because it is what
+            // `validation_report_is_valid` above keys on and what
+            // `has_blocking_issue` counts: a preview that could not see a path it
+            // manages must not read as a clean one. A confirmed absence still
+            // skips silently, which is what keeps openSUSE quiet about
+            // /etc/gshadow, absent there from both layers.
+            match ctx.executor().path_exists(path).await {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(e) => {
+                    issues.push(hardener_core::ValidationIssue {
+                        validation_issue_config_key: None,
+                        validation_issue_message: format!(
+                            "{}: could not determine whether the path exists ({e}), so this \
+                             preview cannot say what apply would do to it",
+                            directive.permission_path
+                        ),
+                        validation_issue_severity: Severity::High,
+                    });
+                    continue;
+                }
             }
 
             let current_mode = current_verified_mode(ctx, path).await;

@@ -455,10 +455,22 @@ bootstrap_dnf_family() {
     #
     # bluez is here for the neighbouring reason: it gives service-minimisation
     # a unit to assess. See enable_test_services for why it is also enabled.
+    #
+    # openssh-clients is here for `ssh -Q`, which is how the ssh plugin asks the
+    # host which algorithms it supports. Without it the allow-list intersection
+    # is empty, the plugin skips all three crypto directives with "leaving host
+    # default", and the crypto path is unreachable on this distribution. That is
+    # not a cosmetic gap: these images carry
+    # /etc/ssh/sshd_config.d/40-redhat-crypto-policies.conf, which includes
+    # crypto-policies' own Ciphers and MACs, and those hold aes256-ctr and
+    # hmac-sha1, which this tool's allow-list rejects. So this is the one
+    # fixture where the drop-in override the plugin exists to beat can actually
+    # be produced, and it could not be produced until this package was here.
     log_info "Installing test dependencies..."
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
         dnf -y install \
         openssh-server \
+        openssh-clients \
         audit \
         bluez \
         cracklib-dicts \
@@ -551,9 +563,13 @@ bootstrap_opensuse() {
     # Install required packages for hardener testing
     log_info "Installing test dependencies..."
     # bluez gives service-minimisation a unit to assess; see enable_test_services.
+    # openssh-clients for `ssh -Q`, the same reason as the dnf block above: with
+    # no ssh binary the plugin cannot ask the host what it supports and skips
+    # every crypto directive.
     systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
         zypper --gpg-auto-import-keys --non-interactive install \
         openssh-server \
+        openssh-clients \
         audit \
         bluez \
         firewalld \

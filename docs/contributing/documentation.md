@@ -127,27 +127,110 @@ functions.
 python3 scripts/validate/validate_write_sites.py
 ```
 
-Holds every file-creating call site under `crates/hardener-plugins/src` to a
-written reason why its parent directory exists, classifying each as `ensured`
-(a `crate::ensure_directory` for that parent, named by the entry) or `exempt`
-(the parent is guaranteed by something else, and the entry says what).
+Holds every file-creating call site under `crates/hardener-plugins/src` to two
+written answers, one per defect the tree has repeated, then asserts a third
+thing of the `cp` sites alone.
 
-The same defect was fixed three times in three commits before this existed: a
-file written into a directory nothing ensures, which `write_file` cannot create
+The first is why the write can land at all, classifying each site as `ensured`
+(a `crate::ensure_directory` for that parent, named by the entry) or `exempt`
+(the parent is guaranteed by something else, and the entry says what). The same
+defect was fixed three times in three commits before this existed: a file
+written into a directory nothing ensures, which `write_file` cannot create
 because it lands its content through a temporary file in the target directory.
 All three were findable the moment the first was understood, but nothing swept
 for them, so they arrived one at a time across a day.
 
-Fix a report by deciding which classification the new site has and adding its
-entry, then moving `EXPECTED_SITE_COUNT` to match. The count is pinned as a
-literal on purpose: a registry that counts its own size cannot fail when a site
-is added, which is the one thing this check exists to do.
+The second is whether a rollback reaches what the write created, classifying
+each site as `declared` (the path is named to this plugin's pre-apply
+checkpoint, and the entry names the tokens the path list has to contain) or
+`exempt` (nothing declares it, and the entry says why no state of ours outlives
+the rollback). A checkpoint captures a declared directory recursively, so it
+records only the children present when it runs, and a rollback walks only the
+rows it holds. A file the apply is about to create therefore has no row and
+survives the rollback meant to undo it, unless its path is declared in its own
+right: a declared path that is absent at capture is stored with a zero mode,
+which the restore reads as "remove this". That defect has been found twice, in
+the `systemctl mask` link and in the audit rules file.
+
+The third is not a classification but an assertion, and applies only to the
+sites whose argv[0] is the literal `cp`: every one of them must pass both `-p`
+and `--no-dereference` before the source and destination. Three plugins take a
+backup copy and all three answered that differently, pam passing neither flag,
+ssh only `-p` and audit only `--no-dereference`, so each lost what the others
+kept. A copy without `-p` records none of the source's mode, ownership or
+timestamps, so restoring it hands the operator the file at whatever the umask
+gives; a copy without `--no-dereference` follows a symlink and records the
+target, so a config that is a link is backed up as some other file and the one
+about to be overwritten has no backup at all. It is asserted rather than
+registered because, unlike the other two questions, it has a single correct
+answer at every site: there is nothing for an entry to decide, and a column
+would only offer somewhere to write "exempt".
+
+Fix a report on either of the first two questions by deciding both
+classifications for the new site and adding its entry as a pair of pairs, then
+moving `EXPECTED_SITE_COUNT` to match. A report on the third is fixed by
+passing the flag. The count
+is pinned as a literal on purpose: a registry that counts its own size cannot
+fail when a site is added, which is the one thing this check exists to do. The
+second question needs no pin of its own, because an entry that does not answer
+it is rejected as malformed and the registry's length is already held to the
+pin.
 
 What it proves is narrow, and the script's own docstring says so at length. It
-proves no site is unclassified. It does not prove any ensure is correct, covers
-the right parent, or runs before the write, and it cannot see a file created by
-shell redirection, by a program named through a variable, or by a direct
-`std::fs` call.
+proves no site is unclassified on either question and that no literal `cp`
+copies without both flags. It does not prove any ensure
+is correct, covers the right parent, or runs before the write; it does not prove
+any declaration reaches the right path or is captured before the write; and it
+cannot see a file created by shell redirection, by a program named through a
+variable, or by a direct `std::fs` call. The flag assertion inherits that last
+blind spot exactly: a copy made through a variable, a shell, or any program
+other than a literal `cp` is not held to it. Most sharply, it cannot see the
+`systemctl mask` link that prompted the second question at all, because that
+file is created through `execute_command("systemctl", ...)` and admitting
+`systemctl` would admit every `start`, `stop` and `daemon-reload` beside it. The
+same blind spot covers `systemctl enable`, `augenrules --load`, and the firewall
+backends writing their persistence through `firewall-cmd --permanent` and `ufw`.
+
+### Unit state reads
+
+```bash
+python3 scripts/validate/validate_unit_state_reads.py
+```
+
+Holds every `systemctl is-enabled` call site to a written answer: does it judge
+systemd's word, or systemd's exit status, and why is that right there.
+
+The two are different questions. Measured on a live host: `static` and
+`indirect` each print their own word and exit 0, while `disabled` and `masked`
+exit 1, and `enabled-runtime` exits 0 although the next boot discards it. So
+"the command succeeded" does not mean "this unit starts at the next boot".
+
+A rule banning the exit status would be wrong, which is why this is a registry
+rather than a ban. Firewall reads the word and keeps a three-way answer, because
+it tells the operator which way the unit fails to start. Audit reads the word
+and reduces it to a boolean, because it only decides whether to enable; it
+judged the exit status until an `enabled-runtime` host read as compliant with
+nothing to start auditd after a reboot. Services judges the exit status
+deliberately, because a `static` unit reaches its unconditional mask only
+because of it, and reading the word there would leave a unit another unit can
+pull in unmasked.
+
+What makes it more than a form is that the answer is cross-checked against the
+code: a site answering `word` must not read `output.success()` in the function
+holding it, and a site answering `exit-status` must. Flipping an implementation
+without touching its entry fails here. The cross-check is deliberately crude, as
+the script's docstring says at length, along with what it cannot see: a probe
+built through `format!`, a variable or a shell; `is-active` and the other
+subcommands, held out because their status and their word answer the same
+question; anything below the first `#[cfg(test)]` in a file, production or not;
+and whether the answer a site gives is the right one for its plugin.
+
+Fix a report by adding an entry that names the file and enclosing function,
+answers `word` or `exit-status`, and says why, then moving
+`EXPECTED_SITE_COUNT`. The count is pinned as a literal for the same reason the
+file-creation registry pins its own: a check that counts its own expected size
+cannot fail when a site is added, and it is the guard against this script
+quietly matching nothing at all.
 
 ### CLI documentation (slower)
 
