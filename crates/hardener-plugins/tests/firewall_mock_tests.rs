@@ -2507,3 +2507,63 @@ async fn a_root_session_blocked_from_the_ruleset_is_not_told_to_try_root() {
          sends the operator after a remedy they have already applied"
     );
 }
+
+/// A ufw that is installed and broken is not a ufw that refused.
+///
+/// `is_enabled` used to return the literal string "Unable to determine UFW
+/// status (permission denied)" for every failure of `ufw status`, discarding
+/// whatever ufw had actually said. The caller classifies on that message, so a
+/// backend failure with nothing to do with privilege reported that the operator
+/// should try again as root, and on a host already running as root that advice
+/// was doubly useless.
+///
+/// The two fixtures differ only in ufw's stderr. One is the refusal ufw prints,
+/// the other is a real failure of its iptables backend, and they must not reach
+/// the same conclusion.
+#[tokio::test]
+async fn a_broken_ufw_is_not_reported_as_a_refusal() {
+    let unchecked_titles_for = async |stderr: &str| {
+        let executor = MockExecutor::new()
+            .with_command_exists("ufw", true)
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("nft", false)
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: stderr.to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command(
+                "id",
+                &["-u"],
+                CommandOutput {
+                    stdout: "1000\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            );
+        let ctx = Context::with_executor(Arc::new(executor));
+        let result = FirewallHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .expect("a failing backend probe is reported through ScanResult, never as Err");
+        result
+            .scan_unchecked
+            .iter()
+            .any(|check| check.unchecked_title == "Active firewall ruleset")
+    };
+
+    assert!(
+        unchecked_titles_for("ERROR: You need to be root to run this script").await,
+        "ufw's own refusal must still be recognised, or removing the fabricated \
+         string would have silenced the case it was covering for"
+    );
+    assert!(
+        !unchecked_titles_for("ERROR: problem running iptables-restore").await,
+        "a broken iptables backend is not a privilege problem and must not be \
+         classified as one"
+    );
+}

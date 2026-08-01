@@ -42,6 +42,23 @@ fn detects_permission_strings() {
     ));
 }
 
+/// ufw does not use any of the wordings the other tools do, and the firewall
+/// plugin used to paper over that by fabricating "(permission denied)" for
+/// every ufw failure, which classified a broken install as a refusal. With the
+/// real stderr propagated instead, this predicate has to recognise what ufw
+/// actually prints or the genuine root case stops being detected at all.
+#[test]
+fn detects_ufws_own_wording() {
+    assert!(message_indicates_permission_denied(
+        "ERROR: You need to be root to run this script"
+    ));
+    // And the failure that is not a refusal must stay unmatched, which is the
+    // whole reason the fabricated string had to go.
+    assert!(!message_indicates_permission_denied(
+        "ufw command failed: ERROR: problem running iptables-restore"
+    ));
+}
+
 #[test]
 fn not_found_is_not_permission_denied() {
     let io = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");

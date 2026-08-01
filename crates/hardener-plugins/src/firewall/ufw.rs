@@ -198,13 +198,19 @@ impl FirewallBackend for UfwBackend {
                     Err(HardeningError::Plugin("UFW is not enabled".to_string()))
                 }
             }
-            Err(_) => {
-                // Cannot determine status - likely permission denied.
-                // Return error but don't claim it's disabled.
-                Err(HardeningError::Plugin(
-                    "Unable to determine UFW status (permission denied)".to_string(),
-                ))
-            }
+            // The real error, carried rather than replaced. This arm used to
+            // return the literal string "Unable to determine UFW status
+            // (permission denied)" for every failure mode, which the caller's
+            // classifier then read as a refusal: a ufw whose iptables backend
+            // was broken, or which was not installed where the probe expected
+            // it, reported that the operator should try again as root.
+            // `execute_ufw` already puts ufw's own stderr in the message, and
+            // `message_indicates_permission_denied` recognises the wording ufw
+            // actually prints, so the genuine case still classifies correctly
+            // and only the fabricated ones stop doing so.
+            Err(e) => Err(HardeningError::Plugin(format!(
+                "Unable to determine UFW status: {e}"
+            ))),
         }
     }
 

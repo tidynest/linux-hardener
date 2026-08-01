@@ -79,12 +79,23 @@ pub type Result<T> = std::result::Result<T, HardeningError>;
 
 /// True when an error message indicates a privilege failure rather than a
 /// genuine absence or malfunction. Matches the strings the kernel, nft,
-/// auditctl and sshd surface for unprivileged callers.
+/// auditctl, ufw and sshd surface for unprivileged callers.
+///
+/// Every entry is a wording some tool actually prints, and that is the whole
+/// discipline here: this predicate decides whether an operator is told to try
+/// again as root, so a string nothing emits adds no coverage and a string too
+/// general matches failures privilege cannot fix. `need to be root` is ufw's,
+/// and it is here because the firewall plugin used to fabricate
+/// "(permission denied)" for every ufw failure rather than propagate the real
+/// stderr. That made a broken ufw install indistinguishable from a refusal, and
+/// removing the fabrication made this the only thing standing between the
+/// genuine case and silence.
 pub fn message_indicates_permission_denied(message: &str) -> bool {
     message.contains("Permission denied")
         || message.contains("permission denied")
         || message.contains("Operation not permitted")
         || message.contains("must be root")
+        || message.contains("need to be root")
         || message.contains("requires root")
 }
 

@@ -8,7 +8,7 @@ use common::test_checkpoint_manager;
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
     CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
-    SystemExecutor, plugin::HardeningPlugin,
+    SystemExecutor, UncheckedBlocker, plugin::HardeningPlugin,
 };
 use hardener_plugins::AuditHardeningPlugin;
 use std::{
@@ -2018,5 +2018,85 @@ async fn audit_apply_checkpoints_the_content_of_the_compiled_rules_it_replaces()
         "a file that existed at capture must be stored with its content, because that is \
          what the restore writes back; a row with no content restores nothing. \
          Captured: {captured:?}"
+    );
+}
+
+/// A host with no audit package is not a host that refused.
+///
+/// `read_current_audit_rules` returned `PermissionDenied` from the `Err(_)` arm
+/// of `execute_command`, and `LocalExecutor` turns ENOENT into exactly that
+/// `Err`, so a machine that has never had auditd installed was told that
+/// listing its audit rules requires root. No privilege installs a package.
+///
+/// The three fixtures differ only in what `auditctl` does, and they must reach
+/// three different answers.
+#[tokio::test]
+async fn an_absent_auditctl_is_not_reported_as_a_refusal() {
+    let entry_for = async |executor: MockExecutor| {
+        let ctx = Context::with_executor(Arc::new(executor));
+        let result = AuditHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .expect("an unreadable rule set is reported through ScanResult, never as Err");
+        result
+            .scan_unchecked
+            .iter()
+            .find(|check| check.unchecked_title.starts_with("Audit rule:"))
+            .cloned()
+    };
+
+    // auditd is up, but auditctl is not there. `auditctl -l` is deliberately
+    // left unregistered, so the mock fails the spawn exactly as a real host
+    // does for ENOENT, which is the path that used to be called a refusal.
+    let absent = MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("auditctl", false)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    let entry = entry_for(absent)
+        .await
+        .expect("the rules must still be reported unchecked");
+    assert_eq!(
+        entry.unchecked_blocker,
+        UncheckedBlocker::Environment,
+        "a package that is not installed will not install itself for root"
+    );
+    assert!(
+        entry.unchecked_reason.contains("auditctl could not be run"),
+        "the reason must name what actually happened, got: {}",
+        entry.unchecked_reason
+    );
+
+    // auditctl is there and refuses: the case the old code was right about,
+    // which must keep working or this fix would have traded one silence for
+    // another.
+    let refused = entry_for(auditctl_permission_denied_executor())
+        .await
+        .expect("a refusal must still be reported unchecked");
+    assert_eq!(
+        refused.unchecked_blocker,
+        UncheckedBlocker::Privilege,
+        "an unprivileged session that auditctl refused still has root to try"
+    );
+    assert!(
+        refused.unchecked_reason.contains("requires root"),
+        "got: {}",
+        refused.unchecked_reason
     );
 }

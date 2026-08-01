@@ -20,7 +20,9 @@ use hardener_common::{
 use hardener_core::{
     ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
-    plugin::{Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedCheck},
+    plugin::{
+        Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
+    },
 };
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
@@ -307,26 +309,40 @@ async fn is_auditd_running(ctx: &Context) -> Result<bool> {
     Ok(output.success())
 }
 
-/// Result of reading audit rules - distinguishes success from permission error.
+/// Result of reading audit rules, distinguishing the ways it can fail to.
+///
+/// The refusal and the tool being unrunnable used to share one variant, which
+/// made a host without the audit package report that listing rules requires
+/// root. They need opposite advice and they are separate now.
 enum AuditRulesResult {
     /// Successfully read rules (may be empty if no rules configured).
     Rules(Vec<String>),
-    /// Permission denied - cannot determine rule state.
+    /// `auditctl` ran and refused for lack of privilege.
     PermissionDenied,
+    /// `auditctl` could not be run at all, carrying the reason. The common case
+    /// is that the audit package is not installed, which no privilege fixes.
+    ProbeFailed(String),
 }
 
 /// Reads current audit rules from the system using auditctl.
 ///
 /// Returns `AuditRulesResult` to distinguish between "no rules" and "permission denied".
 async fn read_current_audit_rules(ctx: &Context) -> AuditRulesResult {
+    // A command that could not be spawned is not a command that refused. This
+    // arm returned PermissionDenied, and `LocalExecutor::execute_command` turns
+    // ENOENT into exactly this `Err`, so a host with no audit package was told
+    // that listing its rules requires root.
     let output = match ctx.executor().execute_command("auditctl", &["-l"]).await {
         Ok(output) => output,
-        Err(_) => return AuditRulesResult::PermissionDenied,
+        Err(e) => return AuditRulesResult::ProbeFailed(e.to_string()),
     };
 
-    // Check for permission denied in stderr or non-zero exit.
+    // Check for permission denied in stderr or non-zero exit. The test is the
+    // shared predicate rather than a substring of its own: `contains("root")`
+    // matched any stderr naming a path under `/root`, and `contains("permission")`
+    // matched failures that were not refusals.
     if !output.success() {
-        if output.stderr.contains("root") || output.stderr.contains("permission") {
+        if hardener_common::error::message_indicates_permission_denied(&output.stderr) {
             return AuditRulesResult::PermissionDenied;
         }
         // Other failure - treat as empty rules (conservative).
@@ -997,6 +1013,33 @@ impl HardeningPlugin for AuditHardeningPlugin {
                         unchecked_category: FindingCategory::Audit,
                         unchecked_reason: "listing loaded audit rules (auditctl -l) requires root"
                             .to_string(),
+                        unchecked_blocker: blocker,
+                        unchecked_compliance: get_audit_compliance_mappings("rules"),
+                    });
+                }
+            }
+            AuditRulesResult::ProbeFailed(reason) => {
+                // `auditctl` could not be run. Whether that is worth a
+                // privileged retry turns on whether the binary is there at all,
+                // which is a question this executor can answer, so it is asked
+                // rather than guessed: a package that is not installed will not
+                // install itself for root.
+                let blocker = match ctx.executor().command_exists("auditctl").await {
+                    Ok(false) => UncheckedBlocker::Environment,
+                    _ => UncheckedBlocker::Unknown,
+                };
+                for rule in AUDIT_RULES {
+                    unchecked.push(UncheckedCheck {
+                        unchecked_check_id: format!(
+                            "audit_rule_{}",
+                            rule.audit_rule_category.replace('-', "_")
+                        ),
+                        unchecked_title: format!("Audit rule: {}", rule.audit_rule_category),
+                        unchecked_category: FindingCategory::Audit,
+                        unchecked_reason: format!(
+                            "auditctl could not be run, so the loaded audit rules \
+                             could not be listed: {reason}"
+                        ),
                         unchecked_blocker: blocker,
                         unchecked_compliance: get_audit_compliance_mappings("rules"),
                     });

@@ -165,6 +165,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Two plugins told you to try again as root for failures root cannot fix.**
+  The firewall plugin replaced every `ufw status` failure with the literal
+  string "Unable to determine UFW status (permission denied)", discarding
+  whatever ufw had actually said, so a ufw whose iptables backend was broken
+  reported a privilege problem. It now carries the real error, and the shared
+  permission predicate learned the wording ufw actually prints
+  (`You need to be root to run this script`), which nothing else in the tree
+  emits and which was the only reason the fabricated string had been getting
+  away with it.
+
+  The audit plugin returned "permission denied" from the arm that catches a
+  failure to spawn `auditctl` at all, and `LocalExecutor` turns a missing
+  binary into exactly that failure, so **a host that has never had the audit
+  package installed was told that listing its audit rules requires root**. A
+  spawn failure is now its own outcome, and whether it is worth a privileged
+  retry is decided by asking whether the binary exists rather than assuming.
+  Its refusal test also stopped being `stderr.contains("root")`, which matched
+  any message naming a path under `/root`.
+
 - **The Rust 1.85 minimum is now declared, so cargo enforces it instead of
   three documents merely asserting it.** The rust badge, `README.md` and
   `docs/contributing/building.md` all stated a 1.85 floor while no `Cargo.toml`
