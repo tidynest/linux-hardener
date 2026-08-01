@@ -1158,13 +1158,58 @@ produced_result_document() {
     grep -q "\"$2\"" "$1" 2>/dev/null
 }
 
-# A dry run that left a validation report ran, whatever its exit code said.
+# Whether a validation report carries an issue serious enough to have failed the
+# run. Critical and High are what `ValidationReport::has_blocking_issue` counts
+# and what `apply.rs` fails a dry run on, spelled as serde spells the enum, so
+# this asks the document the same question the tool asked itself. Lower
+# severities are advisory: PAM layer drift emits a Medium on every host whose
+# `/etc` file masks its vendor copy, and treating that as a blocker would fail
+# every distribution.
+#
+# Grepped rather than parsed, and deliberately: the predicate is one field's
+# membership in a two-element set, `jq` is used nowhere else in this suite and
+# would become a hard dependency for every host it runs on, and a parser aborts
+# on a truncated document where this still answers. The tool pretty-prints
+# (`serde_json::to_string_pretty`), so the field and its value share a line.
+report_has_blocking_issue() {
+    grep -Eq '"validation_issue_severity"[[:space:]]*:[[:space:]]*"(Critical|High)"' \
+        "$1" 2>/dev/null
+}
+
+# Whether an apply document says the apply failed. `apply_success` is the
+# plugin's own verdict, so a non-zero exit can be checked against what the
+# document claims instead of being assumed to agree with it.
+apply_reported_failure() {
+    grep -Eq '"apply_success"[[:space:]]*:[[:space:]]*false' "$1" 2>/dev/null
+}
+
+# The issue lines of a validation report, so a log can say WHICH blocker fired
+# rather than only that one did. Raw document lines rather than extracted
+# values: matching the key is the one thing a quote inside a message cannot
+# break, and the reading is wanted for a human reading a log.
+surface_report_issues() {
+    local line
+    while IFS= read -r line; do
+        log_info "  $line"
+    done < <(grep -E '"validation_issue_(severity|message)"' "$1" 2>/dev/null)
+}
+
+# A dry run that left a validation report ran, whatever its exit code said, and
+# the report has to agree with the exit code about whether it blocked.
 #
 # The exit code cannot answer this on its own: a plugin whose PAM module is
 # absent from the stack fails the run by design, and a container's bind-mount
 # permissions fail others, so a non-zero exit is ordinary on a host where the
 # dry run nonetheless did its work. What separates that from a run that never
 # started is whether the tool serialised a record of its own.
+#
+# That was the whole of the row until #63, and it left the row unable to fail:
+# a document existing was a pass whatever was in it, so the row read the same
+# whether the preview was correct, wrong or reverted. The exit code and the
+# report are now compared, because the CLI derives one from the other
+# (`apply.rs`, `has_blocking_issue`) and a disagreement is a defect in one of
+# them. A run that exits non-zero with nothing blocking in its report failed
+# for a reason it never wrote down, which is the reading the old row certified.
 run_dry_run_test() {
     local name="$1" label="$2"
     shift 2
@@ -1173,11 +1218,20 @@ run_dry_run_test() {
 
     log_test "$name"
     if "$@" --dry-run --format json > "$json" 2>"$err"; then
-        log_pass "$name"
-    elif produced_result_document "$json" validation_report_plugin_id; then
-        log_pass "$name (partial: expected in container)"
-    else
+        if report_has_blocking_issue "$json"; then
+            log_fail "$name (exit 0, and the report carries a blocking issue)"
+            surface_report_issues "$json"
+        else
+            log_pass "$name"
+        fi
+    elif ! produced_result_document "$json" validation_report_plugin_id; then
         log_fail "$name (the plugin reported no validation report)"
+        surface_tool_error "$err"
+    elif report_has_blocking_issue "$json"; then
+        log_pass "$name (blocked, and the report says why: expected in container)"
+        surface_report_issues "$json"
+    else
+        log_fail "$name (non-zero exit, and nothing in the report explains it)"
         surface_tool_error "$err"
     fi
 }
@@ -1189,6 +1243,12 @@ test_apply_other_plugins() {
     # permissions, missing services, etc.). This is expected, not a real failure.
     # An apply that never ran is not, and is told apart by whether it left a
     # result document rather than by its exit code.
+    #
+    # The document's own verdict is read too, for the reason `run_dry_run_test`
+    # gives: accepting any document at all left the row unable to fail. For a
+    # single plugin the CLI's exit code is exactly `apply_success` (an apply
+    # that errors outright leaves no document and is caught above), so the two
+    # disagreeing means one of them is wrong.
     for plugin in ssh-hardening permissions-hardening pam-hardening firewall-hardening service-minimisation; do
         if [[ "$CONTAINER_MODE" == "true" ]]; then
             log_test "Apply $plugin"
@@ -1198,13 +1258,21 @@ test_apply_other_plugins() {
             # there. Keeping them apart is what leaves the document parseable.
             if "$BINARY" apply --plugin "$plugin" --format json \
                 > "$apply_json" 2>"$apply_err"; then
-                log_pass "Apply $plugin"
-                cat "$apply_err" >> "$LOG_FILE"
-            elif produced_result_document "$apply_json" apply_plugin_id; then
+                if apply_reported_failure "$apply_json"; then
+                    log_fail "Apply $plugin (exit 0, and the result says it failed)"
+                    surface_tool_error "$apply_err"
+                else
+                    log_pass "Apply $plugin"
+                    cat "$apply_err" >> "$LOG_FILE"
+                fi
+            elif ! produced_result_document "$apply_json" apply_plugin_id; then
+                log_fail "Apply $plugin (the plugin reported no result at all)"
+                surface_tool_error "$apply_err"
+            elif apply_reported_failure "$apply_json"; then
                 log_pass "Apply $plugin (partial apply: expected in container)"
                 cat "$apply_err" >> "$LOG_FILE"
             else
-                log_fail "Apply $plugin (the plugin reported no result at all)"
+                log_fail "Apply $plugin (non-zero exit, and the result claims success)"
                 surface_tool_error "$apply_err"
             fi
         else
@@ -1884,6 +1952,114 @@ LISTING
         "a refused run is counted as a failure, not carried by the exit status alone"
     TESTS_FAILED="$saved_failed"
     FAILED_TESTS=("${saved_failed_list[@]}")
+
+    # The dry-run row, driven over documents no host produces on demand. The row
+    # this replaces passed on exit 0 or on a validation report merely existing,
+    # so it read the same whether the preview blocked honestly, blocked while
+    # claiming success, or failed for a reason it never wrote down (#63). A
+    # stand-in tool supplies both halves, because the pairing of the exit code
+    # and the document is the whole of what the row now decides.
+    cat > "$workdir/fake-tool" <<'TOOL'
+#!/usr/bin/env bash
+cat "$FAKE_DOC"
+exit "$FAKE_STATUS"
+TOOL
+    chmod +x "$workdir/fake-tool"
+
+    cat > "$workdir/report-clean.json" <<'JSON'
+[
+  {
+    "validation_report_plugin_id": "ssh-hardening",
+    "validation_report_is_valid": true,
+    "validation_report_issues": []
+  }
+]
+JSON
+    cat > "$workdir/report-blocked.json" <<'JSON'
+[
+  {
+    "validation_report_plugin_id": "pam-hardening",
+    "validation_report_is_valid": false,
+    "validation_report_issues": [
+      {
+        "validation_issue_severity": "High",
+        "validation_issue_message": "the PAM stack does not load pam_pwquality.so",
+        "validation_issue_config_key": null
+      }
+    ]
+  }
+]
+JSON
+    # A note, not a blocker. `has_blocking_issue` counts Critical and High only,
+    # and PAM layer drift emits a Medium on every host whose /etc file masks its
+    # vendor copy, so a row failing on any issue at all would fail everywhere.
+    cat > "$workdir/report-medium.json" <<'JSON'
+[
+  {
+    "validation_report_plugin_id": "pam-hardening",
+    "validation_report_is_valid": false,
+    "validation_report_issues": [
+      {
+        "validation_issue_severity": "Medium",
+        "validation_issue_message": "/etc/pam.d masks its vendor copy",
+        "validation_issue_config_key": null
+      }
+    ]
+  }
+]
+JSON
+    : > "$workdir/report-none.json"
+
+    row_verdict() {
+        local before="$TESTS_FAILED"
+        FAKE_DOC="$1"
+        FAKE_STATUS="$2"
+        export FAKE_DOC FAKE_STATUS
+        run_dry_run_test "driven row" "self-test" "$workdir/fake-tool" >/dev/null 2>&1
+        if (( TESTS_FAILED > before )); then echo "fail"; else echo "pass"; fi
+    }
+
+    local dry_saved_report_dir="$REPORT_DIR" dry_saved_failed="$TESTS_FAILED"
+    local dry_saved_failed_list=("${FAILED_TESTS[@]}")
+    REPORT_DIR="$workdir"
+
+    check_eq "$(row_verdict "$workdir/report-clean.json" 0)" "pass" \
+        "a dry run that exited 0 with nothing blocking passes"
+    check_eq "$(row_verdict "$workdir/report-blocked.json" 1)" "pass" \
+        "a dry run that exited non-zero and wrote the blocker explaining it passes"
+    check_eq "$(row_verdict "$workdir/report-medium.json" 0)" "pass" \
+        "a Medium note is not a blocker and does not fail a run that exited 0"
+    check_eq "$(row_verdict "$workdir/report-blocked.json" 0)" "fail" \
+        "a dry run that exited 0 while its report carries a High blocker fails"
+    check_eq "$(row_verdict "$workdir/report-clean.json" 1)" "fail" \
+        "a dry run that exited non-zero with nothing in its report to explain it fails"
+    check_eq "$(row_verdict "$workdir/report-none.json" 1)" "fail" \
+        "a dry run that wrote no report at all still fails"
+
+    # The blocker has to reach the log as well as the verdict. #63 was found
+    # because a five-host run could not say whether a blocker had fired: the
+    # messages were in the document and nothing ever read them.
+    check_contains "pam_pwquality" "the blocker that explains a non-zero exit is named in the log" \
+        surface_report_issues "$workdir/report-blocked.json"
+
+    TESTS_FAILED="$dry_saved_failed"
+    FAILED_TESTS=("${dry_saved_failed_list[@]}")
+    REPORT_DIR="$dry_saved_report_dir"
+
+    # The apply row's twin, same shape. `apply_success` is the plugin's own
+    # verdict, and the row this replaces accepted any apply that serialised a
+    # document regardless of what that verdict said.
+    printf '[[{"apply_plugin_id":"ssh-hardening","apply_success":false}]]\n' \
+        > "$workdir/apply-failed.json"
+    printf '[[{"apply_plugin_id":"ssh-hardening","apply_success":true}]]\n' \
+        > "$workdir/apply-succeeded.json"
+
+    check_status 0 "an apply document that reports failure is recognised as one" \
+        apply_reported_failure "$workdir/apply-failed.json"
+    check_status 1 "an apply document that reports success is not a failure" \
+        apply_reported_failure "$workdir/apply-succeeded.json"
+    check_status 1 "an apply that printed nothing reports no failure either" \
+        apply_reported_failure "$workdir/empty.json"
 
     LOG_FILE="$saved_log"
     TESTS_TOTAL="$saved_total"

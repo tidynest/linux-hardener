@@ -433,7 +433,18 @@ than the system it makes them about:
   which a container is expected to produce, from one that never ran, which it is
   not. Inside a container both exit 1, so the suite tells them apart by whether
   the tool left a result document behind, and asking for the wrong document key
-  must fail or a dry run would read as an apply.
+  must fail or a dry run would read as an apply. The document's own
+  `apply_success` is read as well: for a single plugin the exit code is exactly
+  that field, so an exit code disagreeing with it means one of the two is wrong.
+- the dry-run row's pairing of exit code and validation report. A document
+  existing was once the whole test, which left the row unable to fail; it now
+  fails a run that exited 0 while its report carries a Critical or High issue,
+  and a run that exited non-zero with nothing in its report to explain it.
+  Critical and High are what `ValidationReport::has_blocking_issue` counts, so
+  the row asks the document the question the CLI asked itself, and a Medium note
+  is pinned as advisory because PAM layer drift emits one on every host whose
+  `/etc` file masks its vendor copy. The blocking issues are printed into the
+  log, so a run can say which blocker fired rather than only that one did.
 - `line_count`'s three outcomes, which section 12A depends on: a count, `absent`,
   and `unreadable` kept apart, with the empty file pinned as zero lines rather
   than as absent. The unreadable arm needs an unprivileged reader and says so
