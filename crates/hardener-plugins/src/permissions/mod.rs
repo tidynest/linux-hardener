@@ -357,10 +357,30 @@ fn effective_directive(
     config: &PluginConfig,
 ) -> PermissionDirective {
     let mut effective = directive.clone();
+    // An operator's override may tighten a target and never relax it, the rule
+    // pam, ssh and kernel already hold through `strictness.rs`. It cannot be
+    // borrowed from there: `Strictness` scores every value on one `i64` scale,
+    // and a mode is a bitmask whose order is partial. 0640 and 0604 are neither
+    // stricter nor looser than one another, they are different, and no integer
+    // comparison says otherwise. So the rule is stated here as a subset test
+    // instead: an override earns its place by setting no bit the baseline does
+    // not already set.
+    //
+    // Applied uniformly to both kinds of directive, which is what closes the
+    // quieter half of this. On a max-mask directive `permission_mode` is the
+    // allowed-bits mask rather than a mode, and a widened mask does not chmod
+    // anything wrong, it makes a world-readable /etc/shadow score compliant and
+    // the scan then reports nothing at all. Silence about a Critical path is
+    // indistinguishable from a clean host, which is the outcome this plugin
+    // exists to prevent.
+    //
+    // A refused override falls back to the baseline without a finding. That was
+    // the maintainer's call, taken with the reporting variant in front of it.
     if let Some(mode) = config
         .directives
         .get(directive.permission_path)
         .and_then(|s| u32::from_str_radix(s, 8).ok())
+        .filter(|mode| mode & !directive.permission_mode == 0)
     {
         effective.permission_mode = mode;
     }

@@ -572,13 +572,22 @@ async fn apply_reports_a_mode_that_did_not_move_after_a_successful_chmod() {
     );
 }
 
+/// A tightening override reaches the chmod, and a loosening one does not.
+///
+/// This used to assert the opposite half of its own subject: it set `/boot` to
+/// 0755 against a baseline of 0700 and required the chmod to use it, which is
+/// the one place in the repository that pinned a loosening override as correct
+/// behaviour. The rule is now that an override may clear bits and never set
+/// one, so the same fixture asks the same question of a value that qualifies,
+/// and asks the refused case beside it rather than in a separate test: a clamp
+/// that refused everything and a clamp that refused nothing must both fail
+/// here, and only one assertion cannot tell them apart.
 #[tokio::test]
 async fn test_permissions_apply_respects_directives() {
-    // /boot at 0o777: directive overrides target to 0o755 instead of baseline 0o700
-    // Uses `.remote()` because MockExecutor cannot support local fchmod.
-    let executor = MockExecutor::new()
-        .remote()
-        .with_file_metadata(
+    // /boot at 0o777, so both overrides have real work to do. `.remote()`
+    // because MockExecutor cannot support local fchmod.
+    let loose_boot = || {
+        MockExecutor::new().remote().with_file_metadata(
             "/boot",
             "",
             FileMetadata {
@@ -591,44 +600,58 @@ async fn test_permissions_apply_respects_directives() {
                 gid: 0,
             },
         )
-        .with_command(
-            "chmod",
-            &["0755", "/boot"],
-            CommandOutput {
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        );
+    };
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
 
-    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
-    let plugin = PermissionsHardeningPlugin::new();
+    let chmod_mode_for = |executor: &MockExecutor| -> String {
+        let log = executor.log();
+        let (_, args) = log
+            .commands_executed
+            .iter()
+            .find(|(cmd, args): &&(String, Vec<String>)| {
+                cmd == "chmod" && args.iter().any(|a| a == "/boot")
+            })
+            .unwrap_or_else(|| panic!("chmod for /boot: {:?}", log.commands_executed))
+            .clone();
+        args[0].clone()
+    };
 
+    // 0500 sets no bit outside the 0700 baseline, so it is the target.
+    let tightening = loose_boot().with_command("chmod", &["0500", "/boot"], ok.clone());
+    let mut ctx = Context::with_executor(Arc::new(tightening.clone()));
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("/boot".to_string(), "500".to_string());
+    PermissionsHardeningPlugin::new()
+        .apply(&mut ctx, &config)
+        .await
+        .expect("apply");
+    assert_eq!(
+        chmod_mode_for(&tightening),
+        "0500",
+        "a tightening override is the target apply chmods to",
+    );
+
+    // 0755 adds group and world read and execute, so the baseline stands.
+    let loosening = loose_boot().with_command("chmod", &["0700", "/boot"], ok);
+    let mut ctx = Context::with_executor(Arc::new(loosening.clone()));
     let mut config = PluginConfig::default();
     config
         .directives
         .insert("/boot".to_string(), "755".to_string());
-
-    let _result = plugin.apply(&mut ctx, &config).await.unwrap();
-
-    // Verify chmod was called with 0755 (not the baseline 0700)
-    let log = executor.log();
-    let chmod_cmd = log
-        .commands_executed
-        .iter()
-        .find(|(cmd, args): &&(String, Vec<String>)| {
-            cmd == "chmod" && args.iter().any(|a| a == "/boot")
-        });
-    assert!(
-        chmod_cmd.is_some(),
-        "should have called chmod for /boot, got: {:?}",
-        log.commands_executed
-    );
-    let (_, args) = chmod_cmd.expect("checked above");
-    assert!(
-        args.iter().any(|a| a == "0755"),
-        "chmod should use directive value 0755, got: {:?}",
-        args
+    PermissionsHardeningPlugin::new()
+        .apply(&mut ctx, &config)
+        .await
+        .expect("apply");
+    assert_eq!(
+        chmod_mode_for(&loosening),
+        "0700",
+        "a loosening override is refused and the shipped baseline applies",
     );
 }
 

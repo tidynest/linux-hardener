@@ -368,3 +368,81 @@ fn every_critical_path_is_protected_from_rollback_deletion() {
         );
     }
 }
+
+/// An operator's override may tighten a target and never relax it. This plugin
+/// was the last one applying an override exactly as given.
+///
+/// The rule is a subset test rather than an ordering, because a mode is a
+/// bitmask: 0640 and 0604 are neither stricter nor looser than one another,
+/// they are different. An override earns its place by setting no bit the
+/// baseline does not already set.
+#[test]
+fn a_directive_override_may_only_clear_bits() {
+    let boot = CRITICAL_PERMISSIONS
+        .iter()
+        .find(|d| d.permission_path == "/boot")
+        .expect("/boot is a shipped directive");
+    assert_eq!(boot.permission_mode, 0o700, "baseline this test rests on");
+
+    let mut loosening = PluginConfig::default();
+    loosening
+        .directives
+        .insert("/boot".to_string(), "755".to_string());
+    assert_eq!(
+        effective_directive(boot, &loosening).permission_mode,
+        0o700,
+        "0755 adds group and world read and execute, so the baseline stands",
+    );
+
+    // The positive control. Without it this test would pass just as happily
+    // against a clamp that refused every override, which is a different rule
+    // and one the maintainer did not choose.
+    let mut tightening = PluginConfig::default();
+    tightening
+        .directives
+        .insert("/boot".to_string(), "500".to_string());
+    assert_eq!(
+        effective_directive(boot, &tightening).permission_mode,
+        0o500,
+        "0500 clears the write bit and adds nothing, so it is honoured",
+    );
+}
+
+/// The sharper half, and the reason this is a security fix rather than a
+/// tidying one. On the two mask directives `permission_mode` is the allowed-bits
+/// mask, not a mode, so an override does not chmod anything wrong: it widens
+/// what counts as compliant, and the scan then says nothing at all about a
+/// world-readable shadow file. Silence is the worst outcome available here,
+/// because it is indistinguishable from a clean host.
+#[test]
+fn an_override_cannot_widen_a_max_mask_into_silence() {
+    let shadow = CRITICAL_PERMISSIONS
+        .iter()
+        .find(|d| d.permission_path == "/etc/shadow")
+        .expect("/etc/shadow is a shipped directive");
+    assert!(shadow.permission_max_mask, "the mask branch is the subject");
+    assert!(
+        violates(shadow, 0o644),
+        "control: a world-readable shadow violates the shipped mask",
+    );
+
+    let mut widening = PluginConfig::default();
+    widening
+        .directives
+        .insert("/etc/shadow".to_string(), "644".to_string());
+    assert!(
+        violates(&effective_directive(shadow, &widening), 0o644),
+        "the override must not turn a world-readable shadow into a clean scan",
+    );
+
+    // 0600 sets no bit outside 0640, so narrowing the mask is still allowed and
+    // a group-readable shadow becomes a violation under it.
+    let mut narrowing = PluginConfig::default();
+    narrowing
+        .directives
+        .insert("/etc/shadow".to_string(), "600".to_string());
+    assert!(
+        violates(&effective_directive(shadow, &narrowing), 0o640),
+        "a narrowed mask must still be honoured, or the clamp refuses everything",
+    );
+}

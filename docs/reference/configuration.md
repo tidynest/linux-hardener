@@ -107,7 +107,7 @@ Every section accepts the same three keys:
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
 | `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final within one merged config: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. Across sources the key behaves differently; see the merge rule under File locations and precedence. |
-| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Every `[pam]`, `[ssh]` and `[kernel]` directive is clamped tighten-only; `[permissions]` still applies an override as given, so an override can loosen that one. See below. |
+| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Every directive is clamped tighten-only, in all four plugins that accept one. See below. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
 > **Removed: `custom_directives`.** Earlier releases accepted and validated a
@@ -233,12 +233,23 @@ back to it, a `minlen` below 14 is raised back to 14, a `PASS_MAX_DAYS` above 90
 is lowered back to 90, `MaxAuthTries = "10"` yields 3, `X11Forwarding = "yes"`
 yields `no`, and `kernel.kptr_restrict = "0"` yields 2.
 
-`[permissions]` is the one plugin left where an override replaces the target as
-given, so an override there can loosen a check as easily as tighten it. This is
-a known gap rather than a design choice, tracked as issue #36. Two of its paths
-(`/etc/shadow` and `/etc/gshadow`) carry a max-mask rule that makes a stricter
-mode compliant, but the override itself is not compared against the baseline.
-Validation only rules out values that are unsafe in themselves (the list above).
+`[permissions]` states the same rule differently, because a permission mode is
+a bitmask rather than a value on a scale. `0640` and `0604` are neither
+stricter nor looser than one another, they are different, so there is no
+arithmetic comparison to make. An override is accepted when it sets no bit the
+baseline does not already set, and refused otherwise: `/boot = "500"` is
+honoured against a baseline of `0700`, and `/boot = "755"` is not, leaving the
+baseline in force. A refused override is not reported; it simply has no effect.
+
+The same test governs the two max-mask paths (`/etc/shadow` and
+`/etc/gshadow`), where the configured value is the mask of permitted bits
+rather than a mode. An override may narrow that mask and may not widen it,
+which matters more than it looks: a widened mask would not chmod anything
+wrong, it would make a world-readable `/etc/shadow` count as compliant and the
+scan would then say nothing about it at all.
+
+Validation additionally rules out values that are unsafe in themselves (the
+list above), before any plugin sees them.
 
 The clamp used to apply to `deny` and `remember` alone. Every other directive
 in all three plugins was compared for equality, which has no direction, so any
@@ -282,9 +293,10 @@ entirely where the baseline restricts it to administrators, and
 `net.ipv4.tcp_syncookies = 2` sends SYN cookies unconditionally rather than
 under pressure.
 
-To record a deliberate, approved deviation, prefer an exception over a
-loosening override: an exception carries a reason, an approver and an expiry,
-and the report shows it instead of silently lowering the bar.
+To record a deliberate, approved deviation, an exception is the only route
+that works: a loosening override is refused in every plugin and simply has no
+effect. An exception carries a reason, an approver and an expiry, and the
+report shows it instead of silently lowering the bar.
 
 ---
 
@@ -374,7 +386,7 @@ it previews what `apply` would do, so a vendor violation reaches you through
 that exists but whose mode could not be verified is hardened anyway for the
 seven critical paths with a single exact target mode (`/root`, `/boot`,
 `/etc/ssh`, `/etc/sudoers`, `/etc/sudoers.d`, `/etc/passwd`, `/etc/group`):
-`apply` chmods it to that baseline, or to a configured `directives` override
+`apply` chmods it to that baseline, or to an accepted `directives` override
 for the path where one is set, regardless of the unknown starting mode -
 the one exception being a filesystem positively confirmed unable to hold
 POSIX permissions, where a skip is recorded instead of a chmod. Either way
