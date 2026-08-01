@@ -3,10 +3,20 @@
 Commands for compiling the CLI, desktop GUI, and WASM frontend.
 
 The workspace is on Rust **edition 2024** (`Cargo.toml`, `workspace.package`), so
-it needs a toolchain of **1.85 or newer**; the README's rust badge says the same
-(`scripts/badges/generate.js`). There is no `rust-toolchain.toml` pinning a
-version, and CI installs `dtolnay/rust-toolchain@stable`, so the tree is expected
-to build on current stable rather than on a pinned release.
+it needs a toolchain of **1.85 or newer**: that edition stabilised in 1.85, which
+is where the figure comes from rather than from a measurement. It is declared as
+`rust-version = "1.85"` beside the edition and inherited by every member, so
+cargo refuses an older toolchain with a message naming the version rather than
+letting it fail later as a compiler error. The README's rust badge says the same
+(`scripts/badges/generate.js`) and `validate_badges.py` holds it to the declared
+value.
+
+There is still no `rust-toolchain.toml` pinning a version, and CI installs
+`dtolnay/rust-toolchain@stable`, so the tree is expected to build on current
+stable. **Nothing builds it on 1.85**, so the declaration states the intended
+floor rather than a verified one: code that quietly starts requiring a newer
+release would compile here, compile in CI, and fail only for someone on 1.85. A
+CI job building on the declared version is what would close that.
 
 Binary paths below assume the default cargo target directory (`./target`). With
 `CARGO_TARGET_DIR` or a `[build] target-dir` in `~/.cargo/config.toml`, output

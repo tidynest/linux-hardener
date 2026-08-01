@@ -304,8 +304,11 @@ only warning would have been a reader noticing the front page had got worse.
 
 Agreeing with the generator is not the same as being true, so a badge with a
 single authority in the repo is compared against that authority as well. `aur`
-is checked against `packaging/PKGBUILD` and `version` against `Cargo.toml`. That
-second check is what catches the case the first cannot: the AUR badge read 1.5.0
+is checked against `packaging/PKGBUILD`, and `version` and `rust` against
+`Cargo.toml`'s `version` and `rust-version`. A trailing plus in a badge marks a
+floor rather than an exact value, so the rust badge's `1.85+` is compared on the
+number in front of it. That second kind of check is what catches the case the
+first cannot: the AUR badge read 1.5.0
 while the published package was 1.5.1, with generator and artefact in perfect
 agreement about a release they were both behind. Where the authority itself
 cannot be read, or its pattern matches nothing, that is reported rather than

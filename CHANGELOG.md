@@ -127,6 +127,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Rust 1.85 minimum is now declared, so cargo enforces it instead of
+  three documents merely asserting it.** The rust badge, `README.md` and
+  `docs/contributing/building.md` all stated a 1.85 floor while no `Cargo.toml`
+  carried a `rust-version` key, so building on an older toolchain produced
+  whatever compiler error the code happened to hit first rather than cargo's
+  message naming the required version. It is declared in `[workspace.package]`
+  beside the edition that sets it, since edition 2024 stabilised in 1.85, and
+  inherited by all eleven members: a workspace key nothing inherits enforces
+  nothing, which was confirmed by removing the inheritance from one crate and
+  watching it build under a floor every other crate refused. The rust badge is
+  now checked against the declared value too, so the three assertions cannot
+  drift from it. **The declaration states the intended floor rather than a
+  verified one**: nothing builds the tree on 1.85, so code that starts requiring
+  a newer release still passes here and in CI, and a CI job on the declared
+  version is what would close that.
 - **Two README badges were wrong, and regenerating them from their own source
   would have made two others worse.** `scripts/badges/generate.js` is the
   declared source for the badge SVGs and the release procedure regenerates from

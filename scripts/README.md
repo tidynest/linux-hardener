@@ -175,7 +175,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | File Creation Sites | `validate_write_sites.py` | Every file-creating plugin call site carries a written reason its parent directory exists, and a written answer to whether a rollback reaches what it creates; every literal `cp` copies with both `-p` and `--no-dereference` |
 | Unit State Reads | `validate_unit_state_reads.py` | Every `systemctl is-enabled` call site says whether it judges systemd's word or its exit status, and why, with the answer cross-checked against the code |
 | Doc Sync Targets | `validate_doc_targets.py` | Every target `update_all_docs.py` declares resolves: the file exists and the pattern matches something. A target that matches nothing is skipped silently, so the updater reports success for work it never attempted |
-| Badges | `validate_badges.py` | Every badge under `docs/assets/badges/` renders the label and message `scripts/badges/generate.js` declares for it, so the documented regeneration step cannot silently revert a hand-edited SVG; the `aur` and `version` badges are additionally compared against `packaging/PKGBUILD` and `Cargo.toml`, which are the authorities for them |
+| Badges | `validate_badges.py` | Every badge under `docs/assets/badges/` renders the label and message `scripts/badges/generate.js` declares for it, so the documented regeneration step cannot silently revert a hand-edited SVG; the `aur`, `version` and `rust` badges are additionally compared against `packaging/PKGBUILD`, and against `Cargo.toml`'s `version` and `rust-version`, which are the authorities for them |
 | CLI Documentation | `validate_cli_docs.py` | CLI commands documented |
 | Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
 

@@ -4,6 +4,7 @@ version.workspace = true
 description = "Linux System Hardening Desktop Application"
 authors.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [build-dependencies]

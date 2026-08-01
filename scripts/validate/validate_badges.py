@@ -60,6 +60,11 @@ WORKSPACE_MANIFEST = Path("Cargo.toml")
 CROSS_CHECKS = {
     "aur": (PKGBUILD, re.compile(r"^pkgver=(.+)$", re.M)),
     "version": (WORKSPACE_MANIFEST, re.compile(r'^version\s*=\s*"([^"]+)"', re.M)),
+    # `rust-version` only became an authority when it was declared; before that
+    # the 1.85 in this badge, in README.md and in building.md rested on nothing
+    # a machine could read. The `^` anchors matter: `version` must not match the
+    # `rust-version` line sitting two lines below it in the same file.
+    "rust": (WORKSPACE_MANIFEST, re.compile(r'^rust-version\s*=\s*"([^"]+)"', re.M)),
 }
 
 # The entries of the BADGES table, which is a flat literal by design so that the
@@ -155,7 +160,10 @@ def check_against_source(root: Path, name: str, message: str) -> list[str]:
     if not found:
         return [f"{name}: nothing in {source} matches {pattern.pattern}, so this badge is unchecked"]
 
-    if found.group(1) != message:
+    # A trailing plus marks a floor rather than an exact value, which is how the
+    # rust badge reads its minimum. The number in front of it still has to be
+    # the declared one.
+    if message.rstrip("+") != found.group(1):
         return [
             f"{name}: the badge says '{message}' while {source} says "
             f"'{found.group(1)}', which is the authority for it"
