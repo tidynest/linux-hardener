@@ -1,0 +1,1343 @@
+//! Unit tests for [`manager`].
+//!
+//! Split out of `manager.rs`. This file sits in the `manager/` directory
+//! beside it, so `super` still resolves to `crate::manager` and every
+//! import carried across unchanged, private items included.
+
+use super::*;
+use hardener_common::executor::MockExecutor;
+
+#[test]
+fn default_prefixes_cover_account_database_paths() {
+    // The permissions plugin checkpoints these (CIS 6.1.2-6.1.5). Rollback's
+    // Phase-1 allowlist matches via `starts_with`, so an uncovered path is
+    // refused and skipped rather than restored, and the rollback reports
+    // failure. It no longer abandons the other files, but a declared path
+    // silently not coming back is still the wrong outcome.
+    for path in ["/etc/passwd", "/etc/group", "/etc/shadow", "/etc/gshadow"] {
+        assert!(
+            DEFAULT_ROLLBACK_PREFIXES
+                .iter()
+                .any(|p| path.starts_with(p)),
+            "{path} not covered by DEFAULT_ROLLBACK_PREFIXES (rollback would abort)"
+        );
+    }
+}
+
+#[test]
+fn default_prefixes_cover_the_systemd_paths_the_services_plugin_checkpoints() {
+    // The services plugin checkpoints /etc/systemd/system before disabling
+    // or masking a unit, so an uncovered path here would be skipped and the
+    // unit never restored. Phase 1 used to abandon the entire rollback over
+    // one such path; it now skips it and restores the rest, which makes this
+    // check about whether the plugin's own writes come back rather than about
+    // whether anything comes back at all.
+    let path = "/etc/systemd/system/multi-user.target.wants/example.service";
+    assert!(
+        DEFAULT_ROLLBACK_PREFIXES
+            .iter()
+            .any(|p| path.starts_with(p)),
+        "{path} not covered by DEFAULT_ROLLBACK_PREFIXES (rollback would abort)"
+    );
+}
+
+#[test]
+fn default_prefixes_exclude_package_owned_unit_directories() {
+    // Nothing this tool does writes to the packaged unit directory, so
+    // restoring into it could only overwrite a distribution's unit files
+    // with copies captured before a package update.
+    for path in ["/usr/lib/systemd/system/sshd.service", "/usr/bin/systemctl"] {
+        assert!(
+            !DEFAULT_ROLLBACK_PREFIXES
+                .iter()
+                .any(|p| path.starts_with(p)),
+            "{path} must stay outside the rollback allowlist"
+        );
+    }
+}
+
+#[tokio::test]
+async fn rollback_restores_zero_perm_account_file_instead_of_removing_it() {
+    use hardener_common::executor::{CommandOutput, FileMetadata};
+
+    // End-to-end guard for the cross-distro regression (permissions
+    // apply→rollback exit 1 + silent /etc/shadow deletion on Arch). Drives the
+    // public rollback() API and proves BOTH halves of the fix together:
+    //   1. /etc/shadow is in the production allowlist → Phase-1 does not abort.
+    //   2. A file that existed at capture with perms 0000 is stored with a
+    //      non-zero mode (S_IFREG type bit, as the fixed LocalExecutor now
+    //      reports it), so restore re-applies permissions rather than reading
+    //      mode 0 as "did not exist" and deleting the path.
+    let manager = test_manager().await; // production DEFAULT_ROLLBACK_PREFIXES
+    let shadow = "/etc/shadow";
+    let ok = || CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = MockExecutor::new()
+        .with_file_metadata(
+            shadow,
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o100000, // S_IFREG | 0000 perms: what the fixed local executor reports
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .with_command("chmod", &["0", shadow], ok())
+        .with_command("chown", &["0:0", shadow], ok());
+
+    let cp_id = manager
+        .create_checkpoint_metadata_only(&executor, "perm-test", &[Path::new(shadow)])
+        .await
+        .expect("checkpoint");
+
+    // Returning Ok (not Err) proves the allowlist accepts /etc/shadow.
+    let result = manager
+        .rollback(&executor, &cp_id)
+        .await
+        .expect("rollback must not abort on an allow-listed path");
+
+    assert!(
+        result.rollback_success,
+        "rollback should succeed: {result:?}"
+    );
+    assert_eq!(result.rollback_files.len(), 1);
+    assert_eq!(
+        result.rollback_files[0].restore_action,
+        FileRestoreAction::PermissionsRestored,
+        "an existing 0000-perm file must be permission-restored, never Removed"
+    );
+    assert!(
+        !executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(program, _)| program == "rm"),
+        "rollback must never issue `rm` for a file that existed at capture"
+    );
+}
+
+#[tokio::test]
+async fn rollback_refuses_to_delete_every_undeletable_path_recorded_as_absent() {
+    use hardener_common::executor::FileMetadata;
+
+    // A checkpoint written by a version whose stat probe reported an
+    // existing file as absent stores it with mode 0, which restore reads
+    // as "remove on rollback". Fixing capture cannot disarm rows already
+    // on disk, so restore must refuse the deletion outright.
+    //
+    // Every entry in the list is exercised, not a representative one, so a
+    // path added to UNDELETABLE_ROLLBACK_PATHS is covered the moment it is
+    // added rather than waiting for someone to remember a new test.
+    let manager = test_manager().await;
+    let mut exercised = 0usize;
+
+    for path in UNDELETABLE_ROLLBACK_PATHS {
+        // rollback()'s Phase 1 runs path.is_symlink()/canonicalize() against
+        // the real local filesystem before the guard under test is ever
+        // reached. If one of these paths happens to be a symlink on the
+        // machine running the test, resolving outside
+        // DEFAULT_ROLLBACK_PREFIXES, Phase 1 aborts the whole rollback for a
+        // reason unrelated to this guard, and the unwrap_or_else below would
+        // panic on a contributor's own /etc rather than on a real defect.
+        // Skip such a path rather than let the test depend on the local
+        // filesystem; every other entry is still exercised in full.
+        if Path::new(path).is_symlink() {
+            eprintln!(
+                "rollback_refuses_to_delete_every_undeletable_path_recorded_as_absent: \
+                 skipping {path}, it is a symlink on this machine"
+            );
+            continue;
+        }
+        exercised += 1;
+
+        // Capture believes the path is absent: nothing registered on the
+        // mock, so file_metadata reports a confirmed absence and the row
+        // stores 0.
+        let capturing = MockExecutor::new();
+        let cp_id = manager
+            .create_checkpoint_metadata_only(&capturing, "poisoned", &[Path::new(path)])
+            .await
+            .unwrap_or_else(|e| panic!("{path}: capture of a confirmed-absent path: {e}"));
+
+        // Rollback then runs against a host that does have the path, which
+        // is what an operator upgrading from v1.4.0 actually has.
+        let restoring = MockExecutor::new().with_file_metadata(
+            path,
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o100644,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        );
+
+        let result = manager
+            .rollback(&restoring, &cp_id)
+            .await
+            .unwrap_or_else(|e| panic!("{path}: rollback must run rather than abort: {e}"));
+
+        let restoring_log = restoring.log();
+        let deletions: Vec<_> = restoring_log
+            .commands_executed
+            .iter()
+            .filter(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == path))
+            .collect();
+        assert!(
+            deletions.is_empty(),
+            "rollback must never delete {path}, but issued: {deletions:?}"
+        );
+        assert_eq!(
+            result.rollback_files[0].restore_action,
+            FileRestoreAction::Skipped,
+            "{path}: a refused deletion must be recorded as Skipped"
+        );
+        assert!(
+            !result.rollback_success,
+            "{path}: a refused deletion means the checkpoint is untrustworthy and must be reported, not silently swallowed"
+        );
+    }
+
+    assert!(
+        exercised > 0,
+        "every UNDELETABLE_ROLLBACK_PATHS entry was a symlink on this machine; the guard was never exercised"
+    );
+}
+
+#[tokio::test]
+async fn rollback_still_deletes_a_path_an_apply_can_create() {
+    use hardener_common::executor::FileMetadata;
+
+    // The counterpart to the test above: the refusal is keyed on list
+    // membership, so a path an apply CAN create must still be removed. The
+    // kernel plugin writes its own /etc/sysctl.d drop-in, so a checkpoint
+    // taken before that apply records the file as absent truthfully, and
+    // deleting it is what the operator asked for. Protecting it instead
+    // would leave the hardening in place after a rollback.
+    let manager = test_manager().await;
+    let drop_in = "/etc/sysctl.d/99-hardener.conf";
+    assert!(
+        !UNDELETABLE_ROLLBACK_PATHS.contains(&drop_in),
+        "{drop_in} is created by the kernel plugin's apply, so it must stay deletable"
+    );
+
+    let capturing = MockExecutor::new();
+    let cp_id = manager
+        .create_checkpoint_metadata_only(&capturing, "pre-apply", &[Path::new(drop_in)])
+        .await
+        .expect("capture of a confirmed-absent path must succeed");
+
+    let restoring = MockExecutor::new()
+        .with_file_metadata(
+            drop_in,
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o100644,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .with_command("rm", &["-f", drop_in], ok_output());
+
+    let result = manager
+        .rollback(&restoring, &cp_id)
+        .await
+        .expect("rollback must run rather than abort");
+
+    let restoring_log = restoring.log();
+    assert!(
+        restoring_log
+            .commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == drop_in)),
+        "a file the apply created must still be deleted, but the commands issued were: {:?}",
+        restoring_log.commands_executed
+    );
+    assert_eq!(
+        result.rollback_files[0].restore_action,
+        FileRestoreAction::Removed,
+        "an unprotected path recorded as absent must be Removed"
+    );
+    assert!(
+        result.rollback_success,
+        "deleting a path the apply created is an ordinary success: {result:?}"
+    );
+}
+
+/// A command that ran and refused is not a command that worked.
+///
+/// `execute_command` returns `Ok` for a process that started and exited
+/// non-zero, so a removal blocked by a read-only mount or an unwritable
+/// parent directory arrived here as success. Rollback then reported the
+/// file removed, `rollback_success` stayed true, and the operator was told
+/// the host was back at the checkpoint while the file the apply created was
+/// still on disk still doing its job.
+#[tokio::test]
+async fn a_removal_the_host_refused_is_not_a_successful_rollback() {
+    use hardener_common::executor::FileMetadata;
+
+    let manager = test_manager().await;
+    let drop_in = "/etc/sysctl.d/99-hardener.conf";
+
+    let capturing = MockExecutor::new();
+    let cp_id = manager
+        .create_checkpoint_metadata_only(&capturing, "pre-apply", &[Path::new(drop_in)])
+        .await
+        .expect("capture of a confirmed-absent path must succeed");
+
+    let restoring = MockExecutor::new()
+        .with_file_metadata(
+            drop_in,
+            "",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o100644,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .with_command(
+            "rm",
+            &["-f", drop_in],
+            hardener_common::executor::CommandOutput {
+                stdout: String::new(),
+                stderr: "rm: cannot remove '/etc/sysctl.d/99-hardener.conf': Read-only \
+                         file system"
+                    .to_string(),
+                exit_code: 1,
+            },
+        );
+
+    let result = manager
+        .rollback(&restoring, &cp_id)
+        .await
+        .expect("rollback must run rather than abort");
+
+    assert!(
+        !result.rollback_success,
+        "a file the host refused to remove is still hardening it: {result:?}"
+    );
+    assert!(
+        result.rollback_files[0]
+            .restore_error
+            .as_deref()
+            .is_some_and(|e| e.contains("Read-only file system")),
+        "the reason the host gave must reach the operator, got: {:?}",
+        result.rollback_files[0].restore_error
+    );
+}
+
+/// The same conflation on the metadata half of a restore.
+///
+/// These two are best-effort by design, and the comment above them names
+/// the case they are expected to lose: a remote restore by a user who does
+/// not own the target. That is precisely a command that runs and is
+/// refused, so the one failure the design anticipates was the one it could
+/// not see, and a restore that recovered content but no permissions
+/// reported itself as complete.
+#[tokio::test]
+async fn permissions_the_host_refused_to_restore_are_reported() {
+    use hardener_common::executor::{CommandOutput, FileMetadata};
+
+    for refused in ["chmod", "chown"] {
+        let manager = test_manager().await;
+        let path = "/etc/shadow";
+        let denied = || CommandOutput {
+            stdout: String::new(),
+            stderr: "Operation not permitted".to_string(),
+            exit_code: 1,
+        };
+
+        let executor = MockExecutor::new()
+            .with_file_metadata(
+                path,
+                "",
+                FileMetadata {
+                    exists: true,
+                    is_file: true,
+                    is_dir: false,
+                    mode: 0o100000,
+                    size: 0,
+                    uid: 0,
+                    gid: 0,
+                },
+            )
+            .with_command(
+                "chmod",
+                &["0", path],
+                if refused == "chmod" {
+                    denied()
+                } else {
+                    ok_output()
+                },
+            )
+            .with_command(
+                "chown",
+                &["0:0", path],
+                if refused == "chown" {
+                    denied()
+                } else {
+                    ok_output()
+                },
+            );
+
+        let cp_id = manager
+            .create_checkpoint_metadata_only(&executor, "perm-test", &[Path::new(path)])
+            .await
+            .expect("checkpoint");
+
+        let result = manager
+            .rollback(&executor, &cp_id)
+            .await
+            .expect("rollback must not abort on an allow-listed path");
+
+        assert!(
+            !result.rollback_success,
+            "{refused} was refused, so the mode on {path} is not what the checkpoint \
+             recorded: {result:?}"
+        );
+        assert!(
+            result.rollback_files[0]
+                .restore_error
+                .as_deref()
+                .is_some_and(|e| e.contains(refused) && e.contains("Operation not permitted")),
+            "the refusal must name the command and the reason, got: {:?}",
+            result.rollback_files[0].restore_error
+        );
+    }
+}
+
+#[tokio::test]
+async fn rollback_refuses_to_delete_a_critical_path_when_existence_cannot_be_checked() {
+    // The existence probe itself can fail, for example an SSH command that
+    // dies mid-check. That is neither "confirmed absent" nor "confirmed
+    // present": the guard must fail closed rather than guess either way.
+    let manager = test_manager().await;
+    let passwd = "/etc/passwd";
+
+    let capturing = MockExecutor::new();
+    let cp_id = manager
+        .create_checkpoint_metadata_only(&capturing, "poisoned", &[Path::new(passwd)])
+        .await
+        .expect("capture of a confirmed-absent path must succeed");
+
+    let restoring = MockExecutor::new().with_path_exists_error(passwd);
+
+    let result = manager
+        .rollback(&restoring, &cp_id)
+        .await
+        .expect("rollback must run rather than abort");
+
+    let restoring_log = restoring.log();
+    let deletions: Vec<_> = restoring_log
+        .commands_executed
+        .iter()
+        .filter(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == passwd))
+        .collect();
+    assert!(
+        deletions.is_empty(),
+        "rollback must never delete {passwd} when its existence cannot be confirmed, but issued: {deletions:?}"
+    );
+    assert_eq!(
+        result.rollback_files[0].restore_action,
+        FileRestoreAction::Skipped,
+        "an unverifiable path must be recorded as Skipped"
+    );
+    assert!(
+        !result.rollback_success,
+        "an unverifiable path means rollback cannot proceed safely and must be reported, not silently swallowed"
+    );
+}
+
+#[tokio::test]
+async fn rollback_succeeds_when_a_protected_path_is_genuinely_absent() {
+    // A minimal host with no sudo installed has no /etc/sudoers.d. Capture
+    // records that absence correctly, so rollback has nothing to delete and
+    // must report an ordinary success. Refusing here would fail every
+    // rollback on every host that lacks an optional package.
+    let manager = test_manager().await;
+    let sudoers_d = "/etc/sudoers.d";
+
+    // Absent at capture and still absent at restore: nothing registered.
+    let executor = MockExecutor::new();
+    let cp_id = manager
+        .create_checkpoint_metadata_only(&executor, "minimal-host", &[Path::new(sudoers_d)])
+        .await
+        .expect("capture of a confirmed-absent path must succeed");
+
+    let result = manager
+        .rollback(&executor, &cp_id)
+        .await
+        .expect("rollback must run");
+
+    assert!(
+        result.rollback_success,
+        "a genuinely absent optional path must not fail the rollback: {result:?}"
+    );
+    assert!(
+        result.rollback_files[0].restore_error.is_none(),
+        "no error should be recorded for a path that was never there: {:?}",
+        result.rollback_files[0].restore_error
+    );
+}
+
+/// Builds a CheckpointManager over a temporary in-memory SQLite database
+/// with a freshly generated signing key: no filesystem privileges needed.
+async fn test_manager() -> CheckpointManager {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("mgr_test.db");
+    let db_pool = crate::db::init_db(Some(&db_path)).await.expect("init_db");
+    let key_path = dir.path().join("test.key");
+    let signer = CheckpointSigner::new_with_path(&key_path).expect("signer");
+    // Keep `dir` alive for the duration of the test by leaking it into the heap.
+    // The OS reclaims the tempdir when the process exits.
+    std::mem::forget(dir);
+    CheckpointManager::new_with_signer(db_pool, signer).expect("manager")
+}
+
+#[tokio::test]
+async fn create_checkpoint_captures_via_executor_and_tags_host() {
+    let exec = MockExecutor::new()
+        .remote()
+        .with_description("ssh://root@h")
+        .with_file("/etc/sysctl.conf", "kernel.kptr_restrict = 1\n");
+
+    let manager = test_manager().await;
+    let id = manager
+        .create_checkpoint(&exec, "t", &[std::path::Path::new("/etc/sysctl.conf")])
+        .await
+        .expect("create_checkpoint");
+
+    let (cp, file_states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+    assert_eq!(cp.host_key, "ssh://root@h");
+    assert_eq!(file_states.len(), 1);
+    assert_eq!(
+        file_states[0].file_content.as_deref(),
+        Some(b"kernel.kptr_restrict = 1\n".as_ref()),
+    );
+    assert!(
+        exec.log()
+            .files_read
+            .iter()
+            .any(|p| p.ends_with("sysctl.conf"))
+    );
+}
+
+#[tokio::test]
+async fn local_executor_tags_host_key_as_local() {
+    let exec = MockExecutor::new().with_file("/etc/test.conf", "v=1\n");
+
+    let manager = test_manager().await;
+    let id = manager
+        .create_checkpoint(
+            &exec,
+            "local-test",
+            &[std::path::Path::new("/etc/test.conf")],
+        )
+        .await
+        .expect("create_checkpoint");
+
+    let (cp, _) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+    assert_eq!(cp.host_key, "local");
+}
+
+#[tokio::test]
+async fn rollback_restores_directory_permissions_not_skipped() {
+    // A directory's captured mode (0o755) carries no S_IFDIR bit; `file_metadata`
+    // masks the type bit off. Rollback must still re-apply its permissions rather
+    // than skip or remove it. Regression guard for the masked-mode directory bug.
+    let ok = hardener_common::executor::CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let exec = MockExecutor::new()
+        .with_directory("/etc/pam.d")
+        .with_command("chmod", &["755", "/etc/pam.d"], ok.clone())
+        .with_command("chown", &["0:0", "/etc/pam.d"], ok);
+
+    let manager = test_manager().await;
+    let id = manager
+        .create_checkpoint_metadata_only(&exec, "dir", &[std::path::Path::new("/etc/pam.d")])
+        .await
+        .expect("create");
+    let result = manager.rollback(&exec, &id).await.expect("rollback");
+
+    assert!(result.rollback_success, "directory rollback should succeed");
+    let entry = result
+        .rollback_files
+        .iter()
+        .find(|f| f.restore_path.ends_with("pam.d"))
+        .expect("directory entry present");
+    assert!(
+        matches!(entry.restore_action, FileRestoreAction::PermissionsRestored),
+        "directory must have permissions restored, not skipped or removed"
+    );
+    assert!(
+        !exec.log().commands_executed.iter().any(|(p, _)| p == "rm"),
+        "directory must not be removed on rollback"
+    );
+}
+
+#[tokio::test]
+async fn absent_file_is_captured_as_missing_entry() {
+    let exec = MockExecutor::new(); // no files seeded
+
+    let manager = test_manager().await;
+    let id = manager
+        .create_checkpoint(
+            &exec,
+            "absent",
+            &[std::path::Path::new("/etc/no-such-file")],
+        )
+        .await
+        .expect("create_checkpoint");
+
+    let (_, file_states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+    assert_eq!(file_states.len(), 1);
+    assert!(file_states[0].file_content.is_none());
+    assert_eq!(file_states[0].file_permissions, 0);
+}
+
+#[tokio::test]
+async fn metadata_only_checkpoint_stores_no_content() {
+    let exec = MockExecutor::new().with_directory("/etc/pam.d");
+
+    let manager = test_manager().await;
+    let id = manager
+        .create_checkpoint_metadata_only(&exec, "meta-only", &[std::path::Path::new("/etc/pam.d")])
+        .await
+        .expect("create_checkpoint_metadata_only");
+
+    let (_, file_states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+    assert_eq!(file_states.len(), 1);
+    assert!(file_states[0].file_content.is_none());
+    assert_ne!(file_states[0].file_permissions, 0);
+}
+
+#[tokio::test]
+async fn capture_refuses_to_record_an_unverifiable_path_as_absent() {
+    // The data-loss bug at its source. An unstat-able path recorded as
+    // absent (file_permissions: 0) is deleted by a later rollback, so
+    // capture must fail rather than record it.
+    let manager = test_manager().await;
+    let executor = MockExecutor::new()
+        .with_metadata_error("/etc/passwd")
+        .with_path_exists("/etc/passwd", true);
+
+    manager
+        .create_checkpoint_metadata_only(
+            &executor,
+            "permissions-hardening",
+            &[std::path::Path::new("/etc/passwd")],
+        )
+        .await
+        .expect_err("an unverifiable path must abort capture, not be stored as absent");
+}
+
+#[tokio::test]
+async fn capture_still_records_a_genuinely_absent_path() {
+    // The other half: confirmed absence must stay an ordinary outcome, or
+    // every host lacking an optional path would fail to apply.
+    let manager = test_manager().await;
+    let executor = MockExecutor::new();
+
+    manager
+        .create_checkpoint_metadata_only(
+            &executor,
+            "permissions-hardening",
+            &[std::path::Path::new("/etc/sudoers.d")],
+        )
+        .await
+        .expect("a confirmed-absent path is not an error");
+}
+
+#[tokio::test]
+async fn capture_refuses_a_declared_path_whose_content_cannot_be_read() {
+    // A checkpoint that silently records no content for a file it was asked
+    // to protect is worse than no checkpoint: rollback restores the mode and
+    // never the contents, so the file cannot be recovered.
+    let manager = test_manager().await;
+    let path = "/etc/security/faillock.conf";
+    let executor = MockExecutor::new()
+        .with_file(path, "deny = 3\n")
+        .with_read_permission_denied(path);
+
+    let result = manager
+        .create_checkpoint(&executor, "unreadable", &[Path::new(path)])
+        .await;
+
+    let error = result
+        .expect_err("a declared path whose content could not be read must fail the capture")
+        .to_string();
+    // Named in the capture's own words, not merely somewhere in the wrapped
+    // cause: this mock's read error happens to repeat the path, but a real
+    // one need not (a bare "Permission denied (os error 13)" does not), and
+    // an operator cannot act on a failure that does not say which file.
+    assert!(
+        error.contains(&format!("Cannot checkpoint {path}")),
+        "the failure must name the path it could not capture, got: {error}"
+    );
+}
+
+#[tokio::test]
+async fn capture_tolerates_an_unreadable_child_of_a_declared_directory() {
+    // Guard against over-correction: a plugin declares /etc/pam.d to record
+    // it, not to rewrite what is inside. One odd file in there must not stop
+    // an apply on a host that works today.
+    let manager = test_manager().await;
+    let dir = "/etc/pam.d";
+    let child = "/etc/pam.d/odd";
+    let executor = MockExecutor::new()
+        .with_directory(dir)
+        .with_file(child, "unreadable\n")
+        .with_read_permission_denied(child);
+
+    let result = manager
+        .create_checkpoint(&executor, "sweep", &[Path::new(dir)])
+        .await;
+
+    let id = result.expect("an unreadable file found by recursion must not fail the capture");
+    let (_, file_states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+    let captured = file_states
+        .iter()
+        .find(|s| s.file_path == child)
+        .expect("the capture must still record a row for the unreadable child");
+    assert_eq!(
+        captured.file_content, None,
+        "the tolerated child must carry no content, since none was read"
+    );
+}
+
+#[tokio::test]
+async fn list_checkpoints_includes_host_key() {
+    let exec = MockExecutor::new()
+        .remote()
+        .with_description("ssh://root@target")
+        .with_file("/etc/ssh/sshd_config", "Port 22\n");
+
+    let manager = test_manager().await;
+    manager
+        .create_checkpoint(
+            &exec,
+            "listed",
+            &[std::path::Path::new("/etc/ssh/sshd_config")],
+        )
+        .await
+        .expect("create_checkpoint");
+
+    let list = manager.list_checkpoints().await.expect("list_checkpoints");
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].host_key, "ssh://root@target");
+}
+
+fn cp(id: &str, name: &str, ts: i64, host: &str) -> Checkpoint {
+    Checkpoint {
+        checkpoint_id: CheckpointId::new(id.to_string()),
+        checkpoint_name: name.to_string(),
+        checkpoint_timestamp: ts,
+        checkpoint_username: "u".to_string(),
+        checkpoint_signature: vec![],
+        host_key: host.to_string(),
+    }
+}
+
+#[test]
+fn select_latest_named_picks_newest_per_name_for_host() {
+    let all = vec![
+        cp("a", "ssh-hardening-pre-apply", 100, "ssh://root@h"),
+        cp("b", "ssh-hardening-pre-apply", 200, "ssh://root@h"),
+        cp("c", "kernel-hardening-pre-apply", 150, "ssh://root@h"),
+        cp("d", "ssh-hardening-pre-apply", 999, "ssh://root@other"),
+    ];
+    let names = vec![
+        "ssh-hardening-pre-apply".to_string(),
+        "kernel-hardening-pre-apply".to_string(),
+    ];
+    let got = select_latest_named(&all, "ssh://root@h", &names);
+    assert_eq!(got.len(), 2, "one checkpoint per matched name");
+    assert_eq!(
+        got[0].checkpoint_id.as_str(),
+        "b",
+        "newest ssh checkpoint on this host"
+    );
+    assert_eq!(got[1].checkpoint_id.as_str(), "c");
+}
+
+#[test]
+fn select_latest_named_omits_unmatched_names_and_other_hosts() {
+    let all = vec![cp("a", "ssh-hardening-pre-apply", 100, "ssh://root@h")];
+    let names = vec![
+        "audit-hardening-pre-apply".to_string(),
+        "ssh-hardening-pre-apply".to_string(),
+    ];
+    let got = select_latest_named(&all, "ssh://root@nope", &names);
+    assert!(got.is_empty(), "no checkpoints for that host");
+}
+
+#[tokio::test]
+async fn latest_named_for_host_reads_db() {
+    let exec = MockExecutor::new()
+        .remote()
+        .with_description("ssh://root@h")
+        .with_file("/etc/ssh/sshd_config", "Port 22\n");
+    let manager = test_manager().await;
+    manager
+        .create_checkpoint(
+            &exec,
+            "ssh-hardening-pre-apply",
+            &[std::path::Path::new("/etc/ssh/sshd_config")],
+        )
+        .await
+        .expect("create");
+    let got = manager
+        .latest_named_for_host("ssh://root@h", &["ssh-hardening-pre-apply".to_string()])
+        .await
+        .expect("select");
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].checkpoint_name, "ssh-hardening-pre-apply");
+}
+
+/// Builds a CheckpointManager with a custom allowlist containing `/etc/x`.
+async fn test_manager_with_etc_x() -> CheckpointManager {
+    test_manager_with_allowlist(vec!["/etc/x".to_string()]).await
+}
+
+async fn test_manager_with_allowlist(prefixes: Vec<String>) -> CheckpointManager {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db_path = dir.path().join("mgr_test.db");
+    let db_pool = crate::db::init_db(Some(&db_path)).await.expect("init_db");
+    let key_path = dir.path().join("test.key");
+    let signer = CheckpointSigner::new_with_path(&key_path).expect("signer");
+    std::mem::forget(dir);
+    CheckpointManager::new_with_allowlist(db_pool, signer, prefixes).expect("manager")
+}
+
+/// A link to a directory is a link, not a directory to walk into.
+///
+/// `file_metadata` follows a link, so such a path reports `is_dir` and the
+/// recursive capture would descend into the target, storing the target
+/// directory's files under child paths that resolve back through the link.
+/// Restoring those would write into the target directory, which is the same
+/// defect one level down.
+///
+/// The child registered below is what lets this test fail: without it the
+/// recursion would find nothing and a single link entry would be
+/// indistinguishable from a walk that happened to come back empty.
+#[tokio::test]
+async fn a_link_to_a_directory_is_captured_as_a_link_not_walked_into() {
+    let exec = MockExecutor::new()
+        .with_directory("/etc/x/wants")
+        .with_symlink("/etc/x/wants", "/usr/lib/systemd/system")
+        .with_file("/etc/x/wants/packaged.service", "[Unit]\n");
+    let manager = test_manager_with_etc_x().await;
+
+    let id = manager
+        .create_checkpoint(&exec, "dirlink", &[Path::new("/etc/x/wants")])
+        .await
+        .expect("create_checkpoint");
+    let (_, states) = manager.get_checkpoint(&id).await.expect("get_checkpoint");
+
+    assert_eq!(
+        states.len(),
+        1,
+        "a link must be one entry, not a walk of what it points at, got: {:?}",
+        states.iter().map(|s| &s.file_path).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        states[0].file_link_target.as_deref(),
+        Some("/usr/lib/systemd/system"),
+        "the entry must record where the link points"
+    );
+    assert!(
+        states[0].file_content.is_none(),
+        "a link has no content of its own to store"
+    );
+}
+
+/// A symlink must come back as a symlink, not as the content it pointed at.
+///
+/// `file_metadata` follows a link, so a capture of `/etc/systemd/system`
+/// stored the contents of the packaged unit files its enablement links point
+/// at. Restoring that meant writing those bytes back through the link into
+/// `/usr/lib/systemd/system`, which the allowlist exists to prevent, so
+/// `systemctl disable` and `systemctl mask` state has never been recoverable
+/// on any distribution: the rollback either refused the path or, before that,
+/// abandoned the whole run over it.
+///
+/// Recreating the link writes only the link, so the target's directory is
+/// never touched and the allowlist question is about the link's own path.
+/// The assertions below say that in three ways, because "it did not write
+/// through the link" is the property, and an `ln` that ran alongside a write
+/// would satisfy a weaker one.
+#[tokio::test]
+async fn a_captured_symlink_is_restored_as_a_link_not_as_content() {
+    use hardener_common::executor::CommandOutput;
+
+    let link = "/etc/x/autovt.service";
+    let target = "/usr/lib/systemd/system/getty.service";
+    let exec = MockExecutor::new()
+        // The link's own directory. A host cannot hold a link whose
+        // directory is absent, and a restore probes that directory before
+        // recreating the link, so a fixture omitting it describes a host
+        // that could not exist and sends the restore down the branch that
+        // creates the directory instead of the one under test here.
+        .with_directory("/etc/x")
+        // Content is what the mock returns for a read, exactly as a real
+        // read through the link would return the target's bytes.
+        .with_file(link, "[Unit]\nDescription=Getty\n")
+        .with_symlink(link, target)
+        .with_command(
+            "ln",
+            &["-sfn", target, link],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    let manager = test_manager_with_etc_x().await;
+
+    let id = manager
+        .create_checkpoint(&exec, "svc", &[Path::new(link)])
+        .await
+        .expect("create_checkpoint");
+    let result = manager.rollback(&exec, &id).await.expect("rollback");
+
+    let log = exec.log();
+    assert!(
+        log.commands_executed
+            .iter()
+            .any(|(program, args)| program == "ln" && args.iter().any(|a| a == target)),
+        "the link must be recreated pointing at its target, got: {:?}",
+        log.commands_executed
+    );
+    assert!(
+        !log.files_written.iter().any(|(p, _)| p == Path::new(link)),
+        "nothing may be written through the link, got: {:?}",
+        log.files_written
+    );
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(program, args)| (program == "chmod" || program == "chown")
+                && args.iter().any(|a| a == link)),
+        "chmod and chown follow a link, so neither may be issued for one, got: {:?}",
+        log.commands_executed
+    );
+    assert!(
+        result.rollback_success,
+        "restoring a link is a success, got: {:?}",
+        result.rollback_files
+    );
+}
+
+/// One file that cannot be restored must not cost the operator every other
+/// file in the checkpoint.
+///
+/// `/etc/systemd/system` is allow-listed and the services plugin declares
+/// it, so capture recurses in and collects the stock unit symlinks a
+/// distribution ships there. `autovt@.service` points into
+/// `/usr/lib/systemd/system`, which is deliberately not allow-listed,
+/// because writing a captured copy through that link would overwrite a
+/// packaged unit file. The guard is right to refuse it. Phase 1 then turned
+/// that one refusal into an abort of the entire rollback, so
+/// `hardener rollback` restored nothing at all on four of the five test
+/// distributions, measured 2026-07-29.
+///
+/// Phase 2 already treats the identical condition as a per-file skip, so two
+/// copies of one guard disagreed and the fatal copy ran first.
+#[tokio::test]
+async fn one_unrestorable_path_does_not_abort_the_whole_rollback() {
+    use hardener_common::executor::CommandOutput;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().to_path_buf();
+    let good = root.join("good.conf");
+    let outward = root.join("outward.link");
+    std::fs::write(&good, "current\n").expect("write good");
+    // Resolves outside the allowlist, exactly as a stock unit symlink does.
+    std::os::unix::fs::symlink("/etc", &outward).expect("symlink");
+
+    let manager = test_manager_with_allowlist(vec![root.to_string_lossy().into_owned()]).await;
+    // chmod and chown are registered because a restore issues both after the
+    // write. Without them the run stops at a failed metadata command and the
+    // assertion below would pass or fail for a reason that has nothing to do
+    // with Phase 1, which is how a fixture comes to hide the thing under test.
+    let ok = || CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let good_str = good.to_str().expect("utf8");
+    let exec = MockExecutor::new()
+        .with_file(good_str, "captured\n")
+        .with_file(outward.to_str().expect("utf8"), "captured\n")
+        .with_command("chmod", &["644", good_str], ok())
+        .with_command("chown", &["0:0", good_str], ok());
+
+    let id = manager
+        .create_checkpoint(&exec, "mixed", &[good.as_path(), outward.as_path()])
+        .await
+        .expect("create_checkpoint");
+
+    let result = manager
+        .rollback(&exec, &id)
+        .await
+        .expect("one unrestorable path must not abort the rollback");
+
+    let entry = |p: &Path| {
+        result
+            .rollback_files
+            .iter()
+            .find(|f| f.restore_path == p.to_string_lossy())
+            .unwrap_or_else(|| panic!("{} missing from the result", p.display()))
+    };
+    assert!(
+        entry(&good).restore_success,
+        "the in-bounds file must still be restored, got: {:?}",
+        entry(&good).restore_error
+    );
+    let refused = entry(&outward);
+    assert!(
+        !refused.restore_success,
+        "the out-of-bounds symlink must not be written"
+    );
+    assert!(
+        refused
+            .restore_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("resolves outside"),
+        "the refusal must say why, got: {:?}",
+        refused.restore_error
+    );
+    assert!(
+        !result.rollback_success,
+        "a rollback that skipped a file is not a successful one"
+    );
+}
+
+#[tokio::test]
+async fn rollback_refuses_cross_host_checkpoint() {
+    let remote = MockExecutor::new()
+        .remote()
+        .with_description("ssh://a")
+        .with_file("/etc/x", "original\n");
+
+    let manager = test_manager_with_etc_x().await;
+    let id = manager
+        .create_checkpoint(&remote, "t", &[std::path::Path::new("/etc/x")])
+        .await
+        .expect("create_checkpoint");
+
+    // A local executor targets "local", but the checkpoint was for "ssh://a".
+    let local = MockExecutor::new();
+    let err = manager
+        .rollback(&local, &id)
+        .await
+        .expect_err("expected cross-host error");
+    assert!(
+        err.to_string().contains("Refusing to restore"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn rollback_restores_through_executor() {
+    use hardener_common::executor::CommandOutput;
+
+    // Seed the executor with the "original" file content and register
+    // chmod/chown so best-effort metadata commands succeed.
+    let exec = MockExecutor::new()
+        .with_file("/etc/x", "original\n")
+        .with_command(
+            "chmod",
+            &["644", "/etc/x"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "chown",
+            &["0:0", "/etc/x"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+
+    let manager = test_manager_with_etc_x().await;
+    let id = manager
+        .create_checkpoint(&exec, "t", &[std::path::Path::new("/etc/x")])
+        .await
+        .expect("create_checkpoint");
+
+    // Overwrite the file in the mock's in-memory store.
+    exec.write_file(std::path::Path::new("/etc/x"), "changed\n")
+        .await
+        .expect("write_file");
+
+    let result = manager.rollback(&exec, &id).await.expect("rollback");
+    assert!(result.rollback_success, "rollback_success should be true");
+
+    // The executor's write_file restores the content into the mock store.
+    let restored = exec
+        .read_file(std::path::Path::new("/etc/x"))
+        .await
+        .expect("read_file after rollback");
+    assert_eq!(restored, "original\n");
+}
+
+/// A helper producing a zero-exit command output for best-effort chmod/chown.
+fn ok_output() -> hardener_common::executor::CommandOutput {
+    hardener_common::executor::CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
+#[tokio::test]
+async fn rollback_snapshots_current_state_before_restoring() {
+    // The reversible-rollback guarantee: before overwriting the live files,
+    // rollback captures their CURRENT content as a new checkpoint named after
+    // the one being restored.
+    let exec = MockExecutor::new()
+        .with_file("/etc/x", "original\n")
+        .with_command("chmod", &["644", "/etc/x"], ok_output())
+        .with_command("chown", &["0:0", "/etc/x"], ok_output());
+    let manager = test_manager_with_etc_x().await;
+    let id = manager
+        .create_checkpoint(&exec, "hardening", &[Path::new("/etc/x")])
+        .await
+        .expect("create_checkpoint");
+
+    // The live state diverges from the checkpoint we will restore.
+    exec.write_file(Path::new("/etc/x"), "changed\n")
+        .await
+        .expect("write_file");
+
+    let before = manager.list_checkpoints().await.expect("list").len();
+    manager.rollback(&exec, &id).await.expect("rollback");
+    let after = manager.list_checkpoints().await.expect("list");
+
+    assert_eq!(
+        after.len(),
+        before + 1,
+        "rollback must create exactly one pre-rollback checkpoint"
+    );
+    let pre = after
+        .iter()
+        .find(|c| c.checkpoint_name == "Before rollback to 'hardening'")
+        .expect("a checkpoint named after the restored one must exist");
+    let (_, states) = manager
+        .get_checkpoint(&pre.checkpoint_id)
+        .await
+        .expect("get_checkpoint");
+    let captured = states
+        .iter()
+        .find(|s| s.file_path == "/etc/x")
+        .expect("the snapshot must include /etc/x");
+    assert_eq!(
+        captured.file_content.as_deref(),
+        Some(b"changed\n".as_ref()),
+        "the snapshot must capture the CURRENT content, not the restored checkpoint's"
+    );
+}
+
+#[tokio::test]
+async fn rollback_snapshot_keeps_account_files_metadata_only() {
+    // Parity with apply-time capture: account databases are snapshot
+    // metadata-only, so no password hashes ever enter the checkpoint DB.
+    use hardener_common::executor::FileMetadata;
+    let shadow = "/etc/shadow";
+    let exec = MockExecutor::new()
+        .with_file_metadata(
+            shadow,
+            "root:$6$secret$hash:19000:0:99999:7:::\n",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o100000,
+                size: 0,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .with_command("chmod", &["0", shadow], ok_output())
+        .with_command("chown", &["0:0", shadow], ok_output());
+    let manager = test_manager().await; // production allowlist covers /etc/shadow
+    let id = manager
+        .create_checkpoint_metadata_only(&exec, "perm", &[Path::new(shadow)])
+        .await
+        .expect("create_checkpoint_metadata_only");
+
+    manager.rollback(&exec, &id).await.expect("rollback");
+
+    let after = manager.list_checkpoints().await.expect("list");
+    let pre = after
+        .iter()
+        .find(|c| c.checkpoint_name == "Before rollback to 'perm'")
+        .expect("pre-rollback checkpoint");
+    let (_, states) = manager
+        .get_checkpoint(&pre.checkpoint_id)
+        .await
+        .expect("get_checkpoint");
+    let s = states
+        .iter()
+        .find(|s| s.file_path == shadow)
+        .expect("shadow captured");
+    assert!(
+        s.file_content.is_none(),
+        "account files must be snapshot metadata-only: no content may be stored"
+    );
+}
+
+#[tokio::test]
+async fn rollback_is_reversible_via_its_pre_rollback_checkpoint() {
+    // End-to-end undo: after rolling back, restoring the pre-rollback
+    // checkpoint returns the system to the state it was in before rollback.
+    let exec = MockExecutor::new()
+        .with_file("/etc/x", "baseline\n")
+        .with_command("chmod", &["644", "/etc/x"], ok_output())
+        .with_command("chown", &["0:0", "/etc/x"], ok_output());
+    let manager = test_manager_with_etc_x().await;
+    let baseline = manager
+        .create_checkpoint(&exec, "baseline", &[Path::new("/etc/x")])
+        .await
+        .expect("create_checkpoint");
+
+    // Move the live state forward (as an apply would).
+    exec.write_file(Path::new("/etc/x"), "hardened\n")
+        .await
+        .expect("write_file");
+
+    // Roll back to baseline; this must snapshot the "hardened" state first.
+    manager.rollback(&exec, &baseline).await.expect("rollback");
+    assert_eq!(
+        exec.read_file(Path::new("/etc/x")).await.expect("read"),
+        "baseline\n"
+    );
+
+    // Undo the rollback by restoring the pre-rollback checkpoint.
+    let pre = manager
+        .list_checkpoints()
+        .await
+        .expect("list")
+        .into_iter()
+        .find(|c| c.checkpoint_name == "Before rollback to 'baseline'")
+        .expect("pre-rollback checkpoint");
+    manager
+        .rollback(&exec, &pre.checkpoint_id)
+        .await
+        .expect("undo rollback");
+
+    assert_eq!(
+        exec.read_file(Path::new("/etc/x")).await.expect("read"),
+        "hardened\n",
+        "undoing the rollback must restore the pre-rollback state"
+    );
+}
+
+#[tokio::test]
+async fn rollback_fails_closed_when_current_state_cannot_be_captured() {
+    // If the current state cannot be snapshot, rollback must refuse and write
+    // nothing: a rollback we cannot undo is more dangerous than not running.
+    use hardener_common::executor::FileMetadata;
+    let setup = MockExecutor::new()
+        .with_file("/etc/x", "original\n")
+        .with_command("chmod", &["644", "/etc/x"], ok_output())
+        .with_command("chown", &["0:0", "/etc/x"], ok_output());
+    let manager = test_manager_with_etc_x().await;
+    let id = manager
+        .create_checkpoint(&setup, "cp", &[Path::new("/etc/x")])
+        .await
+        .expect("create_checkpoint");
+
+    // Roll back against a host where /etc/x exists but is unreadable.
+    let exec = MockExecutor::new()
+        .with_file_metadata(
+            "/etc/x",
+            "unreadable",
+            FileMetadata {
+                exists: true,
+                is_file: true,
+                is_dir: false,
+                mode: 0o644,
+                size: 10,
+                uid: 0,
+                gid: 0,
+            },
+        )
+        .with_read_permission_denied("/etc/x")
+        .with_command("chmod", &["644", "/etc/x"], ok_output())
+        .with_command("chown", &["0:0", "/etc/x"], ok_output());
+
+    let before = manager.list_checkpoints().await.expect("list").len();
+    let result = manager.rollback(&exec, &id).await;
+
+    assert!(
+        result.is_err(),
+        "rollback must fail closed when the current state cannot be captured"
+    );
+    assert!(
+        exec.log().files_written.is_empty(),
+        "no file may be written when rollback fails closed"
+    );
+    assert_eq!(
+        manager.list_checkpoints().await.expect("list").len(),
+        before,
+        "no half-committed pre-rollback checkpoint may persist on failure"
+    );
+}
+
+#[tokio::test]
+async fn rollback_leaves_no_snapshot_when_validation_rejects() {
+    // The snapshot runs after Phase 1, over the restorable set only, so a
+    // checkpoint whose every path is refused must not persist an orphan
+    // pre-rollback checkpoint or read a refused path's content. This fixture
+    // holds exactly one path and it is out of bounds, which is the
+    // nothing-left-to-restore case: an error, not a run whose every file was
+    // skipped.
+    let exec = MockExecutor::new().with_file("/tmp/evil.conf", "x\n");
+    let manager = test_manager_with_etc_x().await; // allowlist is ["/etc/x"] only
+    let id = manager
+        .create_checkpoint(&exec, "bad", &[Path::new("/tmp/evil.conf")])
+        .await
+        .expect("create_checkpoint");
+
+    let before = manager.list_checkpoints().await.expect("list").len();
+    let result = manager.rollback(&exec, &id).await;
+
+    assert!(
+        result.is_err(),
+        "rollback must reject a path outside the allowlist"
+    );
+    assert_eq!(
+        manager.list_checkpoints().await.expect("list").len(),
+        before,
+        "a rollback rejected by validation must not persist a pre-rollback checkpoint"
+    );
+}

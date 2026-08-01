@@ -195,6 +195,10 @@ const KERNEL_PARAMS: &[(&str, &str, &str, Severity)] = &[
 | `src/db.rs` | Database schema | `init_db()` |
 | `src/scan_history.rs` | GUI scan session types | `ScanSessionId`, `ScanStatus`, `ScanSession` |
 | `src/scan_manager.rs` | GUI scan persistence | `ScanHistoryManager` |
+| `src/manager/tests.rs` | Unit tests for `src/manager.rs`, 33 of them | Test-only; `super` resolves to `crate::manager`, so imports carried across unchanged |
+| `src/hash_chain/tests.rs` | Unit tests for `src/hash_chain.rs` | Test-only; same shape |
+| `src/signing/tests.rs` | Unit tests for `src/signing.rs` | Test-only; same shape |
+| `src/db/tests.rs` | Unit tests for `src/db.rs` | Test-only; same shape |
 
 ### Key Structures
 
