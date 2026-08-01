@@ -473,13 +473,9 @@ line_count() {
 # by a rollback, and all three sit under one directory, so a single `find` can
 # say whether anything else moved with them.
 #
-# A services arm is owed and is not here. The services plugin's equivalent
-# defect is the mask symlink its apply creates, and reading it needs a unit the
-# plugin actually manages: `bluetooth.service`, which none of the five container
-# images installs. The fixture that installs bluez lives on a branch that is not
-# merged, so an arm written today would either fail for want of the unit or skip
-# itself, and a silently skipped check reads in a log exactly like coverage.
-# Add the arm once that fixture lands, in the same shape as this one.
+# The services arm this comment used to say was owed is now section 12B below.
+# The fixture it waited for landed: `b261988` installs bluez in all five images
+# and enables it, so `bluetooth.service` is a unit the plugin actually manages.
 test_audit_rollback_restores() {
     log_header "12A. ROLLBACK UNDOES THE AUDIT APPLY"
 
@@ -649,6 +645,187 @@ test_audit_rollback_restores() {
         log_pass "Audit rollback: $compiled is back at $compiled_after lines"
     else
         log_fail "Audit rollback: $compiled went $compiled_before to $compiled_after and did not come back"
+    fi
+}
+
+# =============================================================================
+# Section 12B: Rollback Undoes The Services Apply (gated behind --apply)
+# =============================================================================
+
+# Asserts on the filesystem that rolling back a services apply unmasks the unit.
+#
+# The sibling of 12A above, and the arm that section said was owed. Where audit's
+# defect was a file its apply wrote, this plugin's is a symlink `systemctl mask`
+# creates: /etc/systemd/system/<unit>.service pointing at /dev/null. That link
+# outlived its own rollback in three separate ways, each fixed separately and
+# none of them visible to this suite at the time. The checkpoint did not declare
+# the path (`386d122`); the restore refused it because the guard resolved the
+# link to /dev/null, outside every allowlist (`ed60feb`); and restoring the
+# enablement symlink failed with ENOENT because disabling had emptied and removed
+# its parent directory (`d256395`). All three shipped, and this suite read the
+# same totals before and after every one of them.
+#
+# Why this can be asked at all now: until `b261988` no container image installed
+# a unit this plugin manages, so all twenty-five `is-enabled` readings across the
+# five hosts returned `not-found` and an arm written here would have asserted
+# nothing while reading in a log as coverage.
+#
+# THIS SECTION NEEDS A BOOTED HOST, and that is declared here rather than
+# discovered from a confusing failure. `systemctl mask` and `systemctl
+# is-enabled` both need systemd as PID 1, which `nspawn --pipe` does not
+# provide. Under `--pipe` the reading is skipped with the flag that would make it
+# run, because unaskability is a property of the invocation, known before the
+# run starts. What is never skipped is a question this host CAN answer.
+test_services_rollback_restores() {
+    log_header "12B. ROLLBACK UNDOES THE SERVICES APPLY"
+
+    local unit="bluetooth"
+    local unit_file="$unit.service"
+    local admin_dir="/etc/systemd/system"
+    local mask_link="$admin_dir/$unit_file"
+    local work="$REPORT_DIR/services-rollback"
+    mkdir -p "$work"
+
+    # ------------------------------------------------------------------------
+    # The precondition, in three parts
+    # ------------------------------------------------------------------------
+
+    log_test "Services rollback: the host is in the state this reading needs"
+
+    # /run/systemd/system exists only when systemd is running as PID 1. This is
+    # the canonical test and it is cheaper and more honest than asking
+    # `systemctl` a question and interpreting its failure.
+    if [[ ! -d /run/systemd/system ]]; then
+        log_skip "Services rollback: this host is not booted under systemd; re-run with --booted"
+        log_info "  systemctl mask and systemctl is-enabled both need systemd as PID 1,"
+        log_info "  which nspawn --pipe does not provide. Nothing below can be asked here."
+        return
+    fi
+
+    if ! systemctl list-unit-files "$unit_file" 2>/dev/null | grep -q "$unit_file"; then
+        log_fail "Services rollback: $unit_file is not installed, so the plugin manages nothing here"
+        log_info "  create-container.sh installs bluez on all five images, so a missing unit"
+        log_info "  is a broken image and not a host this check does not apply to"
+        return
+    fi
+
+    # The same rule 12A states: "a rollback REMOVES the link the apply created"
+    # can only be asked where that link does not exist yet.
+    if [[ -e "$mask_link" ]]; then
+        log_fail "Services rollback: $mask_link exists before the apply, so this reading is void"
+        log_info "  it points at $(readlink "$mask_link" 2>/dev/null || echo '<unreadable>') and was left by an earlier run"
+        log_info "  recreate first: sudo ./scripts/containers/create-container.sh <distro>"
+        return
+    fi
+
+    log_pass "Services rollback: the host is in the state this reading needs"
+
+    # ------------------------------------------------------------------------
+    # What the host looks like before anything touches it
+    # ------------------------------------------------------------------------
+    #
+    # The word `systemctl is-enabled` prints, never its exit status. The two
+    # disagree by design: `static` and `indirect` print their own word and exit
+    # 0, `enabled-runtime` exits 0 while the next boot discards it, and
+    # `disabled` and `masked` exit non-zero. The plugins were repaired to read
+    # the word for exactly this reason and a probe reading the status would be
+    # measuring something else.
+    local enabled_before
+    enabled_before="$(systemctl is-enabled "$unit" 2>&1 | head -1)"
+    find "$admin_dir" | sort > "$work/tree-preapply"
+    log_info "Before the apply: $unit is '$enabled_before', $admin_dir holds $(wc -l < "$work/tree-preapply") paths"
+
+    # ------------------------------------------------------------------------
+    # The apply, whose exit status is deliberately not the question
+    # ------------------------------------------------------------------------
+
+    local apply_json="$REPORT_DIR/services-rollback-apply.json"
+    local apply_err="$REPORT_DIR/services-rollback-apply.err"
+    local apply_status=0
+    "$BINARY" apply --plugin service-minimisation --format json \
+        > "$apply_json" 2>"$apply_err" || apply_status=$?
+    log_info "The apply exited $apply_status"
+
+    # ------------------------------------------------------------------------
+    # The positive control: doing nothing must never pass
+    # ------------------------------------------------------------------------
+    #
+    # Read off the filesystem rather than off the tool's summary, because the
+    # summary is the thing under test. A rollback of an apply that masked
+    # nothing satisfies every assertion below by having nothing to undo.
+    log_test "Services rollback: the apply masked the unit"
+    if [[ ! -L "$mask_link" ]]; then
+        log_fail "Services rollback: the apply created no mask link at $mask_link, so nothing below could be undone"
+        surface_tool_error "$apply_err"
+        return
+    fi
+    log_pass "Services rollback: the apply masked the unit ($mask_link -> $(readlink "$mask_link"))"
+    log_info "After the apply: $unit is '$(systemctl is-enabled "$unit" 2>&1 | head -1)'"
+
+    # ------------------------------------------------------------------------
+    # Choosing the checkpoint, by name and then by age
+    # ------------------------------------------------------------------------
+    #
+    # Identical rule to 12A, and identical reason: every rollback writes its own
+    # "Before rollback to '...'" snapshot carrying the target's name as a
+    # substring, so a name filter alone can select the state AFTER the change.
+    # `--all` defeats the 20-row cap so a busy table cannot hide the oldest
+    # match.
+    log_test "Services rollback: exactly one checkpoint carries the apply's name"
+    local matches=()
+    mapfile -t matches < <("$BINARY" checkpoint list --all 2>&1 \
+        | grep -v 'Before rollback to' \
+        | grep 'service-minimisation-pre-apply' \
+        | grep -oE 'cp_[0-9]+_[a-f0-9]+')
+
+    if [[ ${#matches[@]} -ne 1 ]]; then
+        log_fail "Services rollback: wanted one checkpoint named service-minimisation-pre-apply, found ${#matches[@]}"
+        return
+    fi
+    log_pass "Services rollback: exactly one checkpoint carries the apply's name"
+
+    local checkpoint_id="${matches[-1]}"
+    log_info "Rolling back to $checkpoint_id"
+
+    # ------------------------------------------------------------------------
+    # The rollback and what must be true afterwards
+    # ------------------------------------------------------------------------
+
+    run_test "Services rollback: the rollback exits 0" "\"$BINARY\" rollback \"$checkpoint_id\"" || true
+
+    find "$admin_dir" | sort > "$work/tree-postrollback"
+
+    log_test "Services rollback: the mask link is gone"
+    if [[ -e "$mask_link" || -L "$mask_link" ]]; then
+        log_fail "Services rollback: $mask_link survived the rollback, so systemctl mask is not undoable"
+        log_info "  it still points at $(readlink "$mask_link" 2>/dev/null || echo '<not a link>')"
+    else
+        log_pass "Services rollback: $mask_link was removed by the rollback"
+    fi
+
+    # The enablement half, which is a different failure from the mask half and
+    # is what `d256395` repaired: disabling the unit empties and removes
+    # /etc/systemd/system/<target>.wants, and restoring the symlink into a
+    # directory that is no longer there fails with ENOENT. A rollback can
+    # therefore remove the mask correctly and still leave the unit disabled.
+    local enabled_after
+    enabled_after="$(systemctl is-enabled "$unit" 2>&1 | head -1)"
+    log_test "Services rollback: the unit is enabled again"
+    if [[ "$enabled_before" == "$enabled_after" ]]; then
+        log_pass "Services rollback: $unit is back to '$enabled_after'"
+    else
+        log_fail "Services rollback: $unit went '$enabled_before' to '$enabled_after' and did not come back"
+    fi
+
+    # Where an over-broad removal would show: a rollback that took somebody
+    # else's unit file with it leaves the tree short, one that left its own
+    # behind leaves it long.
+    log_test "Services rollback: the unit directory is back where it started"
+    if diff -u "$work/tree-preapply" "$work/tree-postrollback" > "$work/tree-diff" 2>&1; then
+        log_pass "Services rollback: $admin_dir is identical to its pre-apply state"
+    else
+        log_fail "Services rollback: $admin_dir differs from its pre-apply state"
+        surface_tool_output "$(cat "$work/tree-diff")"
     fi
 }
 
@@ -1311,16 +1488,23 @@ main() {
     test_systemd_commands
 
     if [[ "$DO_APPLY" == "true" ]]; then
-        # FIRST, and it has to stay first. This section asks whether a rollback
-        # REMOVES the file an apply created, and that question can only be put
-        # to a host where the file does not exist yet. `test_apply_all` below
-        # applies every plugin including audit, so from that point on
-        # /etc/audit/rules.d/hardening.rules exists, its checkpoint captures it
-        # with content, and a rollback correctly restores it rather than
-        # removing it. Moved after any of the three applies below, this section
-        # does not fail: it refuses to read at all, reporting its precondition
-        # broken. Add new apply sections after it, never before it.
+        # FIRST, and they have to stay first. Both sections ask whether a
+        # rollback REMOVES something an apply created, and that question can
+        # only be put to a host where it does not exist yet. `test_apply_all`
+        # below applies every plugin, so from that point on
+        # /etc/audit/rules.d/hardening.rules and the bluetooth mask link both
+        # exist, their checkpoints capture them as present, and a rollback
+        # correctly restores them rather than removing them. Moved after any of
+        # the three applies below, neither section fails: each refuses to read
+        # at all, reporting its precondition broken. Add new apply sections
+        # after them, never before.
+        #
+        # They are independent of each other in either order: audit's checkpoint
+        # declares paths under /etc/audit only, and services' declares
+        # /etc/systemd/system and its own mask links, so neither rollback can
+        # disturb the other's reading.
         test_audit_rollback_restores
+        test_services_rollback_restores
 
         test_apply_kernel
         test_apply_other_plugins
