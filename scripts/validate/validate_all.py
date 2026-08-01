@@ -82,6 +82,7 @@ def main():
         ("Badges", "validate_badges.py", []),
         ("Test Assertions", "validate_test_assertions.py", []),
         ("Policy Exception Sites", "validate_policy_exception_sites.py", []),
+        (".SRCINFO", "validate_srcinfo.py", []),
     ]
 
     # Add slower validators unless in quick mode

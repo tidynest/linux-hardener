@@ -283,7 +283,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   defect, so an operator reads the one section that applies to the host in front
   of them. `README.md` describes the tool before it apologises for it.
 
-- **Four more validators, so `scripts/validate/validate_all.py` runs fourteen
+- **Five more validators, so `scripts/validate/validate_all.py` runs fifteen
   checks.** `validate_doc_targets.py` holds `update_all_docs.py`'s declared
   target lists and the tree to each other in both directions, because the
   updater silently skips a target whose file is missing and then reports "no
@@ -298,7 +298,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads. `validate_policy_exception_sites.py` fails on a finding that hardcodes
   its policy exception to `None` with no comment beside it, because counting
   those sites cannot tell an oversight from a decision and neither can a test
-  asserting the field is `None`.
+  asserting the field is `None`. `validate_srcinfo.py` holds
+  `packaging/.SRCINFO` to `packaging/PKGBUILD`, field by field always and byte
+  for byte against a fresh `makepkg --printsrcinfo` where `makepkg` exists.
 - **The full test suite's dry-run and apply rows read the document they are
   given.** Both passed on the command exiting 0 or on a result document merely
   existing, so a row read the same whether the plugin's preview was correct,
@@ -1231,6 +1233,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The dry run could not report any of this, because it skipped the step
   outright: the one step able to abort a release was the one step a rehearsal
   never reached. It now runs the same assertions and writes nothing.
+
+- **`packaging/.SRCINFO` describes the package the PKGBUILD builds.** It read
+  `pkgver = 1.2.2` against a PKGBUILD of 1.5.1, and the `source` line derived
+  from it pointed at the v1.2.2 tarball. The AUR reads `.SRCINFO` and never the
+  PKGBUILD beside it, so its web page, its search index and every helper
+  resolved this package's version and sources from a file three releases behind.
+  Regenerated, and held there by `validate_srcinfo.py`.
 
 ### Removed
 - `custom_directives`, the per-plugin config table that was accepted, merged
