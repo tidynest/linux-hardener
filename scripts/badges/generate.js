@@ -24,12 +24,12 @@ const logoURI = name => {
 
 // Bump `message` on release for version / aur / tests; the rest are constant.
 const BADGES = [
-  { file: 'version',  label: 'version',  message: '1.5.0',      color: TEAL },
+  { file: 'version',  label: 'version',  message: '1.5.1',      color: TEAL },
   { file: 'license',  label: 'license',  message: 'Apache-2.0', color: TEAL },
   { file: 'rust',     label: 'rust',     message: '1.85+',      color: TEAL,       logo: 'rust' },
-  { file: 'aur',      label: 'AUR',      message: '1.5.0',      color: TEAL,       logo: 'archlinux' },
+  { file: 'aur',      label: 'AUR',      message: '1.5.1',      color: TEAL,       logo: 'archlinux' },
   { file: 'platform', label: 'platform', message: 'Linux',      color: TEAL,       logo: 'linux' },
-  { file: 'tests',    label: 'tests',    message: '1100+',      color: TEAL_TESTS },
+  { file: 'tests',    label: 'tests',    message: '1400+',      color: TEAL_TESTS },
 ]
 
 fs.mkdirSync(OUT, { recursive: true })

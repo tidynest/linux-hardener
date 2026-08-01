@@ -127,6 +127,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Two README badges were wrong, and regenerating them from their own source
+  would have made two others worse.** `scripts/badges/generate.js` is the
+  declared source for the badge SVGs and the release procedure regenerates from
+  it, but the artefacts had been edited without the source: the generator
+  declared version 1.5.0 and tests 1100+ while the committed SVGs read 1.5.1 and
+  1191+, so running the documented step would have reverted both. Beside that,
+  the AUR badge read 1.5.0 against a 1.5.1 that is already published, and the
+  test count was well behind the tree. The generator now declares 1.5.1, 1.5.1
+  and 1400+, and the SVGs are regenerated from it. `validate_badges.py` holds
+  them together from now on, and additionally compares the `aur` and `version`
+  badges against `packaging/PKGBUILD` and `Cargo.toml`, which is the check that
+  catches a badge agreeing with its generator about a release both are behind.
 - **`hardener scan` no longer reports a PAM directive as set in a file it could
   not read.** Where the PAM stack does not load the module that reads a
   configuration file, the scan reports the directive as unenforced whatever the

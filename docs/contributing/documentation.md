@@ -2,9 +2,10 @@
 
 Commands for validating and auto-updating project documentation.
 
-`scripts/validate/` holds twelve Python 3 scripts: the master runner
-`validate_all.py`, the auto-updater `update_all_docs.py`, and ten validators.
-All twelve are documented below. The one check that is not Python lives
+`scripts/validate/` holds fourteen Python 3 scripts: the master runner
+`validate_all.py`, the auto-updater `update_all_docs.py`, the eleven validators
+`validate_all.py` runs, and `validate_naming.py`, which is standalone. All
+fourteen are documented below. The one check that is not Python lives
 elsewhere: version consistency is `scripts/release/release.sh --verify`, which
 `validate_all.py` shells out to.
 
@@ -261,6 +262,62 @@ answers `word` or `exit-status`, and says why, then moving
 file-creation registry pins its own: a check that counts its own expected size
 cannot fail when a site is added, and it is the guard against this script
 quietly matching nothing at all.
+
+### Doc sync targets
+
+```bash
+python3 scripts/validate/validate_doc_targets.py
+```
+
+Holds every target `update_all_docs.py` declares to actually resolving: the file
+it names exists, and its pattern matches something in that file.
+
+The updater walks two lists and skips, in silence, any target whose file is
+missing or whose pattern matches nothing. A skipped target produces no update
+and no complaint, so the run reports "no changes needed" for work it never
+attempted. Five of the compliance framework files it named were deleted in
+`4039ed1`, and for six weeks afterwards the control counts in
+`architecture.md` described files that no longer existed while every run of the
+updater said there was nothing to do.
+
+It imports the target lists rather than restating them, because a second copy of
+a list is a second thing to drift. That import is also why the script sets
+`sys.dont_write_bytecode`: Python invalidates a `.pyc` on source mtime and size
+at one-second granularity, so a same-length edit landing within the same second
+is served from cache and the check reports on a file that no longer exists.
+
+### Badges
+
+```bash
+python3 scripts/validate/validate_badges.py
+```
+
+Checks that each SVG under `docs/assets/badges/` renders the label and message
+that `scripts/badges/generate.js` declares for it.
+
+The generator is the declared source and `docs/contributing/releasing.md`
+documents regenerating from it as a release step, but nothing held the two
+together and they drifted: the generator declared version 1.5.0 and tests 1100+
+while the committed SVGs read 1.5.1 and 1191+. Somebody had edited the artefacts
+without the source, which made the documented procedure destructive, and the
+only warning would have been a reader noticing the front page had got worse.
+
+Agreeing with the generator is not the same as being true, so a badge with a
+single authority in the repo is compared against that authority as well. `aur`
+is checked against `packaging/PKGBUILD` and `version` against `Cargo.toml`. That
+second check is what catches the case the first cannot: the AUR badge read 1.5.0
+while the published package was 1.5.1, with generator and artefact in perfect
+agreement about a release they were both behind. Where the authority itself
+cannot be read, or its pattern matches nothing, that is reported rather than
+passed, because a cross-check that could not run must not read as one that
+agreed.
+
+Two ceilings are deliberate. It compares rendered text rather than SVG bytes, so
+it needs no node or `npm install` in the gate and a change to badge-maker's
+colours or geometry is invisible to it; only the values a human edits are
+pinned, which are the ones that have drifted. And the tests badge has no
+authority: its `+` makes it a floor rather than a count, and pinning it to a
+measured figure would make this gate depend on a full workspace test run.
 
 ### CLI documentation (slower)
 

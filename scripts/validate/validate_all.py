@@ -79,6 +79,7 @@ def main():
         ("File Creation Sites", "validate_write_sites.py", []),
         ("Unit State Reads", "validate_unit_state_reads.py", []),
         ("Doc Sync Targets", "validate_doc_targets.py", []),
+        ("Badges", "validate_badges.py", []),
     ]
 
     # Add slower validators unless in quick mode
