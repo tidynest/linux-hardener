@@ -292,6 +292,12 @@ impl MockExecutor {
     /// Metadata already registered is left alone, so builder order cannot
     /// change the answer, and an explicit [`Self::with_path_exists`] still
     /// wins for a test that genuinely wants the impossible state.
+    ///
+    /// The recorded mode carries `S_IFREG` for the same reason
+    /// [`with_file`](Self::with_file) and [`with_directory`](Self::with_directory)
+    /// carry theirs, and the trait states it as a contract clause: every
+    /// existing path reports its full `st_mode`. A denied read says nothing
+    /// about what the path is, only about who may open it.
     pub fn with_read_permission_denied(self, path: &str) -> Self {
         let path_buf = PathBuf::from(path);
         self.read_permission_denied
@@ -306,7 +312,7 @@ impl MockExecutor {
                 exists: true,
                 is_file: true,
                 is_dir: false,
-                mode: 0o600,
+                mode: 0o100600,
                 size: 0,
                 uid: 0,
                 gid: 0,

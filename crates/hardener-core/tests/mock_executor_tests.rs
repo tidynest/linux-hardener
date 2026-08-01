@@ -390,6 +390,14 @@ async fn every_executor_reports_an_existing_path_with_its_type_bits() {
     assert_existing_path_carries_a_type_bit(&mock, Path::new("/etc/zero-perm"), "mock file").await;
     assert_existing_path_carries_a_type_bit(&mock, Path::new("/etc/somewhere"), "mock dir").await;
 
+    // A root-only file registered through the denial builder alone. It records
+    // its own metadata rather than borrowing another builder's, so it is a
+    // third shape and not a variation on the first, and it is the shape a
+    // privilege fixture reaches when it names a path nothing else registers.
+    let denied = MockExecutor::new().with_read_permission_denied("/etc/shadow");
+    assert_existing_path_carries_a_type_bit(&denied, Path::new("/etc/shadow"), "mock denied read")
+        .await;
+
     // The local executor, against a real 0000-perm file, which is the exact
     // shape that was being deleted before `0b96045`.
     let dir = tempfile::tempdir().expect("tempdir");
