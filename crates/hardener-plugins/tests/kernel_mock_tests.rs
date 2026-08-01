@@ -2281,3 +2281,135 @@ async fn a_parameter_that_could_not_be_read_is_unchecked_rather_than_a_pass() {
         );
     }
 }
+
+/// A parameter whose inode is writable but whose MOUNT is read-only.
+///
+/// The inode test above this cannot see it: every file under `/proc/sys` is
+/// 0644 whether or not the mount allows writing, because read-only is a
+/// property of the mount. So a dry run previewed a write the apply could not
+/// perform, and said nothing about it, on exactly the surface an operator uses
+/// to decide whether a run is safe.
+///
+/// `findmnt -T` is what answers it. The `-T` matters and is the whole reason
+/// the obvious version of this does not work: `/proc/sys` is not a mount point,
+/// it is a directory inside the `/proc` mount, and `findmnt` without `-T`
+/// matches only mount points and exits 1 with no output. Measured.
+#[tokio::test]
+async fn a_read_only_mount_is_reported_even_though_the_inode_is_writable() {
+    let param = "/proc/sys/kernel/randomize_va_space";
+    let writable_inode = FileMetadata {
+        exists: true,
+        is_file: true,
+        is_dir: false,
+        mode: 0o100644,
+        size: 2,
+        uid: 0,
+        gid: 0,
+    };
+    // A value that violates the target, so the parameter reaches the arm that
+    // promises a write. A compliant one never gets there and would prove
+    // nothing.
+    let fixture = |options: &str| {
+        MockExecutor::new()
+            .with_file_metadata(param, "0", writable_inode.clone())
+            .with_command(
+                "findmnt",
+                &["-T", param, "-no", "VFS-OPTIONS"],
+                CommandOutput {
+                    stdout: format!("{options}\n"),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+    };
+
+    let read_only = fixture("ro,nosuid,nodev,noexec,relatime");
+    let ctx = Context::with_executor(Arc::new(read_only));
+    let result = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("validate");
+    let mount_issue = result
+        .validation_report_issues
+        .iter()
+        .find(|i| i.validation_issue_config_key.as_deref() == Some("kernel.randomize_va_space"));
+    let mount_issue = mount_issue.unwrap_or_else(|| {
+        panic!(
+            "a preview that cannot be carried out must say so: {:?}",
+            result.validation_report_issues
+        )
+    });
+    assert_eq!(mount_issue.validation_issue_severity, Severity::High);
+    assert!(
+        mount_issue.validation_issue_message.contains("read-only"),
+        "got: {}",
+        mount_issue.validation_issue_message
+    );
+
+    // The positive control, and it is the assertion that matters. Without it
+    // this test passes just as happily against a probe that reports every
+    // mount read-only, which would block every dry run on every host.
+    //
+    // `errors=remount-ro` is deliberate and was added after a mutation proved
+    // the first version of this fixture could not do its job: a plain
+    // `rw,nosuid,nodev,noexec,relatime` contains no `ro` anywhere, so a naive
+    // `contains("ro")` answered it correctly by accident and the mutation
+    // passed. This option is what a read-WRITE ext4 root commonly carries, so
+    // it separates an exact-token test from a substring one.
+    let writable = fixture("rw,nosuid,nodev,noexec,relatime,errors=remount-ro");
+    let ctx = Context::with_executor(Arc::new(writable));
+    let result = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("validate");
+    assert!(
+        !result
+            .validation_report_issues
+            .iter()
+            .any(|i| i.validation_issue_config_key.as_deref() == Some("kernel.randomize_va_space")),
+        "a writable mount must raise nothing: {:?}",
+        result.validation_report_issues
+    );
+}
+
+/// An inconclusive probe must not invent a blocker.
+///
+/// The settled rule is that an undeterminable value is a failure rather than a
+/// skip, and this is not an exception to it: the probe here can only ADD an
+/// issue, never suppress one, so failing closed would mean blocking every dry
+/// run on every host where `findmnt` is absent. The permissions plugin's
+/// filesystem probe reaches the same answer from the opposite direction, where
+/// its probe can only suppress and therefore keeps the finding when it cannot
+/// tell.
+#[tokio::test]
+async fn an_unanswerable_mount_probe_blocks_nothing() {
+    let param = "/proc/sys/kernel/randomize_va_space";
+    // `findmnt` deliberately unregistered, so the mock errors on it the way a
+    // host without util-linux would.
+    let executor = MockExecutor::new().with_file_metadata(
+        param,
+        "0",
+        FileMetadata {
+            exists: true,
+            is_file: true,
+            is_dir: false,
+            mode: 0o100644,
+            size: 2,
+            uid: 0,
+            gid: 0,
+        },
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+    let result = KernelHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("validate");
+    assert!(
+        !result
+            .validation_report_issues
+            .iter()
+            .any(|i| i.validation_issue_message.contains("read-only")),
+        "an unanswerable probe must not report a read-only mount: {:?}",
+        result.validation_report_issues
+    );
+}

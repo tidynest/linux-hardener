@@ -256,6 +256,55 @@ fn resolved_target(parameter: &KernelParameter, config: &PluginConfig) -> String
     )
 }
 
+/// Whether the mount carrying `path` is read-only, or `None` when the probe
+/// could not tell.
+///
+/// The inode cannot answer this. Every file under `/proc/sys` is 0644 whether
+/// or not the mount allows writing, because read-only is a property of the
+/// mount, so a dry run previewed writes an apply could not perform and said
+/// nothing about it.
+///
+/// **`-T` is the whole point and its absence is why the obvious version of this
+/// does not work.** `/proc/sys` is not a mount point, it is a directory inside
+/// the `/proc` mount, and `findmnt` given a path that is not a mount point
+/// matches nothing and exits 1. Measured: `findmnt -no OPTIONS /proc/sys` is
+/// empty while `findmnt -T /proc/sys -no VFS-OPTIONS` reports the mount.
+/// `-T` resolves a path to the mount covering it, which is the question.
+///
+/// Asked per parameter rather than once for `/proc/sys`, because the answer
+/// genuinely differs within that tree: `systemd-nspawn` mounts `/proc/sys`
+/// read-only and `/proc/sys/net` read-write for the container's own network
+/// namespace, so one reading for the whole subtree would be wrong for both
+/// halves on the hosts where this matters most.
+///
+/// `None` on any probe failure, and the caller must not treat that as a
+/// blocker. This is not an exception to the rule that an undeterminable value
+/// is a failure rather than a skip: that rule exists so a probe cannot SUPPRESS
+/// a finding, and this probe can only ADD one. Failing closed here would block
+/// every dry run on every host without util-linux. The permissions plugin's
+/// filesystem probe reaches the same answer from the other side, where its
+/// probe can only suppress and therefore keeps the finding when it cannot tell.
+async fn mount_is_read_only(ctx: &Context, path: &str) -> Option<bool> {
+    let output = ctx
+        .executor()
+        .execute_command("findmnt", &["-T", path, "-no", "VFS-OPTIONS"])
+        .await
+        .ok()?;
+    let options = output.stdout.trim();
+    if !output.success() || options.is_empty() {
+        return None;
+    }
+    // Exact token, and the option list is full of traps for a substring test.
+    // `errors=remount-ro` is the one that matters: it is what a read-WRITE
+    // ext4 root commonly carries, so `contains("ro")` would report a perfectly
+    // writable host as read-only and block its dry run. Reporting every mount
+    // read-only is the failure mode that looks like a product defect on every
+    // host at once, which is why the test pins this with a fixture carrying
+    // that option rather than with the bare `rw` list that cannot tell the two
+    // implementations apart.
+    Some(options.split(',').any(|option| option.trim() == "ro"))
+}
+
 /// What a run intends for one parameter, decided once from the value the host
 /// was observed to hold.
 ///
@@ -1373,6 +1422,21 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         .violated_by(&target_value, observed.as_deref()) =>
                 {
                     compliant_count += 1
+                }
+                // The mount is asked about only here, at the one point where
+                // this preview is about to promise a write. A compliant
+                // parameter needs no write and an absent one has nowhere to
+                // put it, so probing those would spend a subprocess to learn
+                // something nothing acts on.
+                Ok(_) if mount_is_read_only(ctx, &path).await == Some(true) => {
+                    issues.push(ValidationIssue {
+                        validation_issue_severity: Severity::High,
+                        validation_issue_message: format!(
+                            "{param_name} cannot be set: {path} is on a read-only mount, so \
+                             apply would fail here however it is run"
+                        ),
+                        validation_issue_config_key: Some(param_name.to_string()),
+                    });
                 }
                 Ok(_) => {
                     runtime_will_change = true;
