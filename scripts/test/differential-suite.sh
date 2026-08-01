@@ -2376,12 +2376,14 @@ SCAN_JSON_GENERATION=""
 # target, so every second assertion expects zero findings and is given zero:
 # on a green run not one finding filter is ever asked to match anything. A
 # mistyped id, a renamed plugin_id and a plugin whose scan failed outright all
-# produce that same zero, and the JSON cannot even express the last of them.
-# `scan --format json` serialises plugin_id, plugin_name, findings and
-# unchecked, and neither scan_success nor scan_error, so a plugin that failed to
-# scan emits exactly what a fully compliant host emits. A capture taken while
-# the container is known to be unhardened is the only thing in reach that tells
-# those apart.
+# produce that same zero, and only the last of the three is nameable from the
+# document itself. `scan --format json` serialises scan_success and scan_error
+# beside plugin_id, plugin_name, findings and unchecked, and
+# validate_scan_document refuses a plugin that reports its own scan as failed.
+# The other two leave the document looking entirely healthy: a plugin can report
+# scan_success true while the filter reading it names an id, or a plugin_id, the
+# tool does not emit. A capture taken while the container is known to be
+# unhardened is the only thing in reach that tells those apart.
 PRE_APPLY_SCAN_JSON=""
 PRE_APPLY_SCAN_GENERATION=""
 
@@ -2431,7 +2433,7 @@ has_scan_array() {
 # first of these filters was written. A key that is absent or renamed counts
 # zero under a `// []` default, so the keys are required rather than defaulted.
 validate_scan_document() {
-    local document="$1" label="$2" plugin count
+    local document="$1" label="$2" plugin count reason
     # jq's own parse error is left visible above this message: "not an array"
     # and "not JSON at all" are worth telling apart.
     #
@@ -2499,6 +2501,46 @@ validate_scan_document() {
             echo "  from one it ran and passed, and under a renamed key it counts zero," >&2
             echo "  which is this suite's pass condition. Rebuild the CLI from this tree," >&2
             echo "  or set BINARY to a build that carries the key." >&2
+            return 1
+        fi
+        # And whether the scan ran at all, which no shape above can say. Every
+        # rule up to here asks whether the document can be read; this one asks
+        # whether it is a reading. A plugin whose scan failed reports no
+        # finding, and no finding for every compared directive is exactly this
+        # suite's pass condition.
+        #
+        # True is not by itself a statement that anything was measured: the ssh
+        # plugin reports a successful scan while putting every one of its
+        # directives into `unchecked` when sshd_config cannot be read for want
+        # of root. That case is what the two rules above answer, and this one is
+        # deliberately not made to carry it.
+        if ! jq --exit-status --arg p "$plugin" \
+            '[.[] | select(.plugin_id == $p) | has("scan_success")] == [true]' \
+            >/dev/null <<<"$document"; then
+            echo "FATAL: the $label object for plugin '$plugin' has no 'scan_success' key." >&2
+            echo "  It is the only thing that tells a scan that ran and found nothing" >&2
+            echo "  from one that never ran, and both report no finding, which is this" >&2
+            echo "  suite's pass condition. Rebuild the CLI from this tree, or set" >&2
+            echo "  BINARY to a build that carries the key." >&2
+            return 1
+        fi
+        # Present and false is a different fault, and no rebuild fixes it: the
+        # tool is stating that this plugin's scan did not complete on this host.
+        # The reason it gave travels into the refusal, because a check that
+        # refuses has to say what it refused over. scan_error is an Option, so
+        # the null it may hold is answered here rather than printed at a reader
+        # as though it were the explanation.
+        if ! jq --exit-status --arg p "$plugin" \
+            '[.[] | select(.plugin_id == $p) | .scan_success] == [true]' \
+            >/dev/null <<<"$document"; then
+            reason="$(jq -r --arg p "$plugin" \
+                '.[] | select(.plugin_id == $p) | .scan_error // "none reported"' \
+                <<<"$document")"
+            echo "FATAL: the $label object for plugin '$plugin' reports scan_success false." >&2
+            echo "  Its scan did not complete, so what it lists is not a reading of" >&2
+            echo "  this host: every compared directive under that plugin would count" >&2
+            echo "  zero findings, which is this suite's pass condition." >&2
+            echo "  The reason the tool gave: $reason" >&2
             return 1
         fi
     done
@@ -2852,10 +2894,14 @@ compared_finding_ids() {
 # to have produced at least one finding for each plugin, counted through the
 # very filter the comparison uses.
 #
-# Per plugin rather than in total, because a scan fails one plugin at a time.
-# The JSON carries neither scan_success nor scan_error, so a plugin that failed
-# emits the same empty arrays a fully compliant host does, and only a control
-# scoped to that plugin can see the difference.
+# Per plugin rather than in total, because each of those faults lands on one
+# plugin at a time. The third of them is answered before this runs: the JSON
+# carries scan_success, and validate_scan_document refuses a plugin that reports
+# its own scan as failed. The first two never touch that key. A plugin whose
+# scan succeeded emits the same empty arrays a fully compliant host does the
+# moment the filter reading it is written under the wrong id convention, and
+# only a control scoped to that plugin, counted through the very filter the
+# comparison uses, can see it.
 run_preapply_control() {
     local plugin entry_plugin id count matched total unreadable
     for plugin in "${DIFF_PLUGINS[@]}"; do
@@ -4448,7 +4494,8 @@ Number of days of warning before password expires	: 11"
     check_eq "$(pam_finding_id PASS_MAX_DAYS)" "pam-PASS_MAX_DAYS" "pam keeps its directive's case"
 
     # Shaped after real `scan --format json` output: an array of plugin objects
-    # carrying plugin_id, plugin_name, findings and unchecked. One finding under
+    # carrying plugin_id, plugin_name, findings, unchecked, scan_success and
+    # scan_error, which is the whole key set output.rs builds. One finding under
     # each plugin, so a filter can be proven to match; the directives absent
     # from each findings array stand in for the compliant case, where matching
     # nothing is the correct answer. The plugin order is deliberately not the
@@ -4460,7 +4507,9 @@ Number of days of warning before password expires	: 11"
     "findings": [
       { "finding_id": "pam-PASS_MAX_DAYS", "finding_current_value": "99999" }
     ],
-    "unchecked": []
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   },
   {
     "plugin_id": "ssh-hardening",
@@ -4468,7 +4517,9 @@ Number of days of warning before password expires	: 11"
     "findings": [
       { "finding_id": "ssh-permitrootlogin", "finding_current_value": "yes" }
     ],
-    "unchecked": []
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   },
   {
     "plugin_id": "permissions-hardening",
@@ -4476,7 +4527,9 @@ Number of days of warning before password expires	: 11"
     "findings": [
       { "finding_id": "perm--boot", "finding_current_value": "755" }
     ],
-    "unchecked": []
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   },
   {
     "plugin_id": "firewall-hardening",
@@ -4484,7 +4537,9 @@ Number of days of warning before password expires	: 11"
     "findings": [
       { "finding_id": "ufw-disabled", "finding_current_value": "disabled" }
     ],
-    "unchecked": []
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   },
   {
     "plugin_id": "kernel-hardening",
@@ -4492,7 +4547,9 @@ Number of days of warning before password expires	: 11"
     "findings": [
       { "finding_id": "kernel_net_ipv4_conf_all_rp_filter", "finding_current_value": "0" }
     ],
-    "unchecked": []
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   }
 ]'
 
@@ -4541,7 +4598,9 @@ Number of days of warning before password expires	: 11"
     "plugin_id": "ssh-hardening",
     "plugin_name": "SSH Hardening",
     "findings": [],
-    "unchecked": []
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   }
 ]'
     init_status=0
@@ -4582,11 +4641,52 @@ Number of days of warning before password expires	: 11"
     scan_oracle_init || init_status=$?
     check_eq "$init_status" "1" "scan_oracle_init refuses a plugin object with no unchecked key"
 
+    # The key that says the scan ran at all, which the loop above cannot infer:
+    # after apply every compared directive is expected to report no finding, and
+    # a plugin whose scan never completed reports no finding either. The two
+    # faults are told apart the way `findings` and `unchecked` are, because an
+    # absent key is a stale binary and a false one is a genuine failure here.
+    #
+    # Status and message together, in the idiom the preview capture's refusal
+    # uses. The status alone could not tell these two arms apart: both refuse,
+    # and an absent key would still be refused by the arm written for a false
+    # one, silently taking the rebuild advice out of the log.
+    local ss_out
+    ss_out="$(mktemp)"
+    scan_capture="$(jq 'map(if .plugin_id == "permissions-hardening" then del(.scan_success) else . end)' <<<"$scan_fixture")"
+    init_status=0
+    scan_oracle_init 2>"$ss_out" >/dev/null || init_status=$?
+    check_eq "$init_status/$(grep -c "has no 'scan_success' key" "$ss_out" || true)" "1/1" \
+        "scan_oracle_init refuses a plugin object with no scan_success key, named as the absent key a rebuild supplies rather than as a scan that failed"
+
+    scan_capture="$(jq 'map(if .plugin_id == "kernel-hardening" then .scan_success = false | .scan_error = "sysctl -a exited 1" else . end)' <<<"$scan_fixture")"
+    init_status=0
+    scan_oracle_init || init_status=$?
+    check_eq "$init_status" "1" "scan_oracle_init refuses a plugin that reported its own scan as failed"
+
+    # The reason the tool gave has to reach the log, or a maintainer is told a
+    # plugin failed and left to rediscover why.
+    init_status=0
+    scan_oracle_init 2>"$ss_out" >/dev/null || init_status=$?
+    check_eq "$init_status/$(grep -c 'sysctl -a exited 1' "$ss_out" || true)" "1/1" \
+        "and the refusal carries the scan_error the tool reported, because a check that refuses has to say what it refused over"
+
+    # A failed scan that named no reason. scan_error is an Option, so null is a
+    # shape the tool genuinely emits, and the refusal has to stay a refusal
+    # without printing jq's 'null' at the reader as the explanation.
+    scan_capture="$(jq 'map(if .plugin_id == "kernel-hardening" then .scan_success = false else . end)' <<<"$scan_fixture")"
+    init_status=0
+    scan_oracle_init 2>"$ss_out" >/dev/null || init_status=$?
+    check_eq "$init_status/$(grep -c 'null' "$ss_out" || true)" "1/0" \
+        "a failed scan that reported no reason is refused as well, and the refusal does not offer jq's 'null' as one"
+    rm -f "$ss_out"
+
     # The tool's own "I could not check this". The ids in `unchecked` are
     # identical to the finding ids by design, so an unchecked directive has no
     # finding, and no finding is what this suite scores as agreement. The ssh
     # plugin puts every one of its directives here at once when sshd_config
-    # cannot be read, and still reports the scan as successful.
+    # cannot be read for want of root, and still reports the scan as successful,
+    # which is why every object below carries scan_success true and is accepted.
     local unchecked_fixture='[
   {
     "plugin_id": "pam-hardening",
@@ -4594,7 +4694,9 @@ Number of days of warning before password expires	: 11"
     "findings": [],
     "unchecked": [
       { "unchecked_check_id": "pam-PASS_MAX_DAYS", "unchecked_reason": "reading /etc/login.defs requires root" }
-    ]
+    ],
+    "scan_success": true,
+    "scan_error": null
   },
   {
     "plugin_id": "ssh-hardening",
@@ -4602,7 +4704,9 @@ Number of days of warning before password expires	: 11"
     "findings": [],
     "unchecked": [
       { "unchecked_check_id": "ssh-permitrootlogin", "unchecked_reason": "reading /etc/ssh/sshd_config requires root" }
-    ]
+    ],
+    "scan_success": true,
+    "scan_error": null
   },
   {
     "plugin_id": "permissions-hardening",
@@ -4610,19 +4714,25 @@ Number of days of warning before password expires	: 11"
     "findings": [],
     "unchecked": [
       { "unchecked_check_id": "perm--boot", "unchecked_reason": "could not determine whether /boot exists" }
-    ]
+    ],
+    "scan_success": true,
+    "scan_error": null
   },
   {
     "plugin_id": "firewall-hardening",
     "plugin_name": "Firewall Hardening",
     "findings": [],
-    "unchecked": []
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   },
   {
     "plugin_id": "kernel-hardening",
     "plugin_name": "Kernel Hardening",
     "findings": [],
-    "unchecked": []
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   }
 ]'
     scan_capture="$unchecked_fixture"
@@ -4728,10 +4838,13 @@ Number of days of warning before password expires	: 11"
     CHECKS_PASSED=$before_passed
     CHECKS_FAILED=$before_failed
 
-    # A plugin with nothing to report before apply. That is what a plugin whose
-    # scan failed looks like in this JSON, which carries no scan_success and no
-    # scan_error to say otherwise, and it is also what a filter that matches
-    # nothing looks like. Neither may pass.
+    # A plugin with nothing to report before apply. A failed scan looks like
+    # this and so does a filter that matches nothing, and the two are separated
+    # elsewhere: the JSON does carry scan_success, so validate_scan_document has
+    # already refused the first before this control runs. The second is what
+    # only this control sees, because a filter naming an id the tool never emits
+    # returns nothing out of a scan that reported itself entirely successful.
+    # Neither may pass.
     PRE_APPLY_SCAN_JSON="$(jq 'map(if .plugin_id == "ssh-hardening" then .findings = [] else . end)' <<<"$scan_fixture")"
     before_total=$CHECKS_TOTAL
     before_passed=$CHECKS_PASSED
