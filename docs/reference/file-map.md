@@ -304,6 +304,16 @@ pub struct FileState {
 | `src/notification/webhook.rs` | HTTP webhook notifications | `WebhookNotifier` |
 | `src/notification/dispatcher.rs` | Notification coordinator | `NotificationDispatcher` |
 | `src/systemd.rs` | Systemd unit file generation | `SystemdGenerator`, `cron_to_calendar()`, `service_name()`, `timer_name()` |
+| `src/config/tests.rs` | Unit tests for `src/config.rs` | Test-only; `super` resolves to `crate::config`, so its imports carried across unchanged |
+| `src/db/tests.rs` | Unit tests for `src/db.rs`, 13 tests over the host-aware scan history | Test-only; `super` resolves to `crate::db`, so its imports carried across unchanged |
+| `src/json_store/tests.rs` | Unit tests for `src/json_store.rs` | Test-only; `super` resolves to `crate::json_store`, so its imports carried across unchanged |
+| `src/runner/tests.rs` | Unit tests for `src/runner.rs` | Test-only; `super` resolves to `crate::runner`, so its imports carried across unchanged |
+| `src/daemon/tests.rs` | Unit tests for `src/daemon.rs` | Test-only; `super` resolves to `crate::daemon`, so its imports carried across unchanged |
+| `src/notification/tests.rs` | Unit tests for `src/notification/mod.rs`, that file is the module, so its tests go to the directory it already owns | Test-only; `super` resolves to `crate::notification`, so its imports carried across unchanged |
+| `src/notification/email/tests.rs` | Unit tests for `src/notification/email.rs` | Test-only; `super` resolves to `crate::notification::email`, so its imports carried across unchanged |
+| `src/notification/webhook/tests.rs` | Unit tests for `src/notification/webhook.rs`, 33 tests, the largest block in this crate | Test-only; `super` resolves to `crate::notification::webhook`, so its imports carried across unchanged |
+| `src/notification/dispatcher/tests.rs` | Unit tests for `src/notification/dispatcher.rs` | Test-only; `super` resolves to `crate::notification::dispatcher`, so its imports carried across unchanged |
+| `src/systemd/tests.rs` | Unit tests for `src/systemd.rs` | Test-only; `super` resolves to `crate::systemd`, so its imports carried across unchanged |
 
 ### Key Structures (daemon.rs)
 
