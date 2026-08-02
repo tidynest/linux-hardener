@@ -198,6 +198,7 @@ async fn the_plugin_owning_a_restored_path_is_reloaded() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].reload_plugin_id, "alpha");
     assert!(results[0].reload_success);
+    assert_eq!(results[0].reload_action, "alpha reloaded");
 }
 
 #[tokio::test]
@@ -208,6 +209,10 @@ async fn a_plugin_owning_no_restored_path_is_not_reloaded() {
 
     let results = reload_plugins_after_rollback(&ctx, &registry, &restored).await;
 
+    assert!(
+        results.iter().any(|r| r.reload_plugin_id == "alpha"),
+        "alpha owns the restored path and must be reloaded, or this test passes vacuously"
+    );
     assert!(
         !results.iter().any(|r| r.reload_plugin_id == "beta"),
         "beta owns nothing that was restored and must not be reloaded"
@@ -242,7 +247,15 @@ async fn a_failing_reload_is_recorded_rather_than_dropped() {
 
     assert_eq!(results.len(), 1);
     assert!(!results[0].reload_success);
-    assert_eq!(results[0].reload_error.as_deref(), Some("reload refused"));
+    assert_eq!(
+        results[0].reload_error.as_deref(),
+        Some(
+            HardeningError::Plugin("reload refused".to_string())
+                .to_string()
+                .as_str()
+        ),
+        "the reload dispatch writes the same Display every other *_error field in this tree writes, prefix included"
+    );
 }
 
 /// A plugin returning Ok(None) said there was nothing to do, so it earns no
@@ -259,4 +272,41 @@ async fn a_plugin_with_nothing_to_reload_produces_no_row() {
     let results = reload_plugins_after_rollback(&ctx, &registry, &restored).await;
 
     assert!(results.is_empty());
+}
+
+/// A registry that cannot be listed has nothing to reload, but an empty
+/// `Vec` reads exactly like a rollback that had nothing left to reload:
+/// `RollbackResult::reloads_ok` cannot tell the two apart. This must come
+/// back as a recorded failure instead, or a poisoned registry lock reports a
+/// clean rollback.
+#[test]
+fn a_registry_that_cannot_be_listed_reports_a_failed_reload_not_a_clean_one() {
+    let listed: Result<Vec<PluginMetadata>> = Err(HardeningError::Plugin(
+        "Failed to acquire read lock: poisoned".to_string(),
+    ));
+
+    let outcome = plugins_or_reload_failure(listed);
+
+    let failure = outcome.expect_err("a registry that cannot be listed did not report a clean run");
+    assert!(!failure.reload_success);
+    assert_eq!(failure.reload_plugin_id, "plugin-registry");
+}
+
+/// A plugin the listing just named but that `get` could not produce (a
+/// poisoned lock, or an id the listing named a moment before it vanished)
+/// must be recorded as a failed reload, not skipped as though it were never
+/// a candidate.
+#[test]
+fn a_plugin_the_listing_named_but_get_could_not_find_reports_a_failed_reload() {
+    let ghost_id = PluginId::from("ghost");
+    let fetched: Result<Option<Arc<dyn HardeningPlugin>>> = Ok(None);
+
+    let outcome = plugin_or_reload_failure(fetched, &ghost_id);
+
+    let failure = match outcome {
+        Err(failure) => failure,
+        Ok(_) => panic!("a plugin the listing named but get could not find was silently skipped"),
+    };
+    assert!(!failure.reload_success);
+    assert_eq!(failure.reload_plugin_id, "ghost");
 }

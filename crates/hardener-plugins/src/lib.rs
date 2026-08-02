@@ -271,21 +271,31 @@ fn coverage_table() -> [(&'static str, Vec<hardener_common::types::ComplianceMap
 /// the reloads that actually happened.
 ///
 /// Failures are recorded rather than propagated: one subsystem refusing to
-/// come back must not hide what the others did.
+/// come back must not hide what the others did. The same rule covers the
+/// registry itself: a listing that cannot be produced, or a plugin the
+/// listing named but `get` could not retrieve, is recorded as a failed
+/// reload rather than silently dropped. See `plugins_or_reload_failure` and
+/// `plugin_or_reload_failure`.
 pub async fn reload_plugins_after_rollback(
     ctx: &hardener_core::Context,
     registry: &hardener_core::PluginRegistry,
     restored: &[std::path::PathBuf],
 ) -> Vec<hardener_types::ReloadResult> {
-    let mut results = Vec::new();
-
-    let Ok(metadata) = registry.list() else {
-        return results;
+    let metadata = match plugins_or_reload_failure(registry.list()) {
+        Ok(metadata) => metadata,
+        Err(failure) => return vec![failure],
     };
 
+    let mut results = Vec::new();
+
     for meta in metadata {
-        let Ok(Some(plugin)) = registry.get(&meta.plugin_id) else {
-            continue;
+        let plugin = match plugin_or_reload_failure(registry.get(&meta.plugin_id), &meta.plugin_id)
+        {
+            Ok(plugin) => plugin,
+            Err(failure) => {
+                results.push(failure);
+                continue;
+            }
         };
         if !restored.iter().any(|path| plugin.reloads_for_path(path)) {
             continue;
@@ -293,9 +303,6 @@ pub async fn reload_plugins_after_rollback(
         let (action, success, error) = match plugin.reload_after_rollback(ctx).await {
             Ok(None) => continue,
             Ok(Some(action)) => (action, true, None),
-            Err(hardener_common::error::HardeningError::Plugin(message)) => {
-                ("reload failed".to_string(), false, Some(message))
-            }
             Err(e) => ("reload failed".to_string(), false, Some(e.to_string())),
         };
         results.push(hardener_types::ReloadResult {
@@ -307,6 +314,60 @@ pub async fn reload_plugins_after_rollback(
     }
 
     results
+}
+
+/// The registry's plugin listing, or the dispatch's own record that it could
+/// not be consulted.
+///
+/// Discarding the error here used to leave an empty `Vec`, which reads
+/// exactly like a rollback that reloaded nothing:
+/// `RollbackResult::reloads_ok` cannot tell a poisoned registry lock apart
+/// from a clean run once the list is empty either way. Naming the registry
+/// as the thing that failed gives the operator something to see instead of
+/// silence.
+fn plugins_or_reload_failure(
+    listed: hardener_common::error::Result<Vec<hardener_core::PluginMetadata>>,
+) -> std::result::Result<Vec<hardener_core::PluginMetadata>, hardener_types::ReloadResult> {
+    listed.map_err(|error| {
+        tracing::warn!("rollback could not enumerate plugins to reload: {error}");
+        hardener_types::ReloadResult {
+            reload_plugin_id: "plugin-registry".to_string(),
+            reload_action: "reload skipped".to_string(),
+            reload_success: false,
+            reload_error: Some(format!("plugin registry could not be enumerated: {error}")),
+        }
+    })
+}
+
+/// A plugin the listing just named, or the dispatch's own record that it
+/// could not be retrieved.
+///
+/// The listing and the fetch are two separate calls against the same
+/// registry: a failed fetch, or one that comes back empty for an id the
+/// listing just produced, used to be skipped rather than recorded, leaving
+/// the same blind spot for one plugin that `plugins_or_reload_failure`
+/// closes for the registry as a whole.
+fn plugin_or_reload_failure(
+    fetched: hardener_common::error::Result<
+        Option<std::sync::Arc<dyn hardener_core::HardeningPlugin>>,
+    >,
+    plugin_id: &hardener_common::types::PluginId,
+) -> std::result::Result<
+    std::sync::Arc<dyn hardener_core::HardeningPlugin>,
+    hardener_types::ReloadResult,
+> {
+    let reason = match fetched {
+        Ok(Some(plugin)) => return Ok(plugin),
+        Ok(None) => "plugin was listed but could not be found".to_string(),
+        Err(error) => error.to_string(),
+    };
+    tracing::warn!("could not retrieve plugin {plugin_id} for reload: {reason}");
+    Err(hardener_types::ReloadResult {
+        reload_plugin_id: plugin_id.as_str().to_string(),
+        reload_action: "reload skipped".to_string(),
+        reload_success: false,
+        reload_error: Some(reason),
+    })
 }
 
 #[cfg(test)]
