@@ -13,7 +13,7 @@ use hardener_compliance::{ReportConfig, ReportGenerator, Scenario, resolve_profi
 use hardener_core::plugin::{Finding, UncheckedCheck};
 use hardener_core::{ConfigLoader, HardenerConfig};
 use hardener_core::{
-    PluginMetadata, ScanResult, SshExecutor,
+    Context, PluginMetadata, ScanResult, SshExecutor,
     executor::{SystemExecutor, host_key_for},
 };
 use hardener_distro::Distribution;
@@ -1364,7 +1364,30 @@ async fn rollback_one(
         let mut failed = 0;
         for cp in &selected {
             match mgr.rollback(exec.as_ref(), &cp.checkpoint_id).await {
-                Ok(r) if r.rollback_success => restored += 1,
+                Ok(mut r) if r.rollback_success => {
+                    // As on the local path: restoring the bytes is only half
+                    // of a rollback, and only paths that actually came back
+                    // are offered to a plugin to reload.
+                    let restored_paths: Vec<PathBuf> = r
+                        .rollback_files
+                        .iter()
+                        .filter(|f| f.restore_success)
+                        .map(|f| PathBuf::from(&f.restore_path))
+                        .collect();
+                    let ctx = Context::with_executor(Arc::clone(&exec));
+                    let registry = hardener_plugins::create_plugin_registry();
+                    r.rollback_reloads = hardener_plugins::reload_plugins_after_rollback(
+                        &ctx,
+                        &registry,
+                        &restored_paths,
+                    )
+                    .await;
+                    if r.reloads_ok() {
+                        restored += 1;
+                    } else {
+                        failed += 1;
+                    }
+                }
                 _ => failed += 1,
             }
         }

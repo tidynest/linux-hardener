@@ -514,6 +514,24 @@ pub fn rollback_result(format: &OutputFormat, result: &RollbackResult) {
                 "\n{} file(s) processed, {restored} restored successfully.",
                 result.rollback_files.len()
             );
+
+            if !result.rollback_reloads.is_empty() {
+                println!("\nReloads:");
+                for reload in &result.rollback_reloads {
+                    let status = if reload.reload_success {
+                        "ok".green().to_string()
+                    } else {
+                        match &reload.reload_error {
+                            Some(err) => format!("{} {err}", "FAILED:".red()),
+                            None => "FAILED".red().to_string(),
+                        }
+                    };
+                    println!(
+                        "  {:<18} {:<25} {status}",
+                        reload.reload_plugin_id, reload.reload_action
+                    );
+                }
+            }
         }
     }
 }

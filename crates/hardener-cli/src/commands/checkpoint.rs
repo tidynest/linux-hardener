@@ -1,10 +1,12 @@
 //! Checkpoint commands: create, list, show, delete, and rollback operations.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
-use hardener_core::{SystemExecutor, executor::host_key_for};
+use hardener_core::{Context, SystemExecutor, executor::host_key_for};
 use hardener_state::{ActionResult, ActionType, CheckpointId};
+use hardener_types::RollbackResult;
 
 use crate::cli::OutputFormat;
 use crate::output;
@@ -127,13 +129,28 @@ pub async fn rollback(
         );
     }
 
-    let result = manager.rollback(executor.as_ref(), &id).await?;
+    let mut result = manager.rollback(executor.as_ref(), &id).await?;
+
+    // Restoring the bytes is only half of a rollback: until the services that
+    // read them are asked to re-read, the machine keeps running the
+    // configuration the operator just undid.
+    let restored: Vec<PathBuf> = result
+        .rollback_files
+        .iter()
+        .filter(|f| f.restore_success)
+        .map(|f| PathBuf::from(&f.restore_path))
+        .collect();
+    let ctx = Context::with_executor(Arc::clone(&executor));
+    let registry = hardener_plugins::create_plugin_registry();
+    result.rollback_reloads =
+        hardener_plugins::reload_plugins_after_rollback(&ctx, &registry, &restored).await;
+
     output::rollback_result(&format, &result);
 
-    let action_result = if result.rollback_success {
-        ActionResult::Success
-    } else {
-        ActionResult::Failure
+    let reason = rollback_failure_reason(&result);
+    let action_result = match reason {
+        None => ActionResult::Success,
+        Some(_) => ActionResult::Failure,
     };
     if let Some(logger) = get_audit_logger().await {
         let _ = logger
@@ -146,11 +163,32 @@ pub async fn rollback(
             .await;
     }
 
-    if !result.rollback_success {
-        bail!("Rollback completed with errors");
+    match reason {
+        None => Ok(()),
+        Some(FailureReason::Files) => {
+            bail!("Rollback completed with errors: some files were not restored")
+        }
+        Some(FailureReason::Reload) => bail!(
+            "Files were restored, but a service did not reload and is still running the previous configuration"
+        ),
     }
+}
 
-    Ok(())
+/// Which half of a rollback failed, so the operator is told the one that
+/// changes what they do next: files not restored is a different problem from
+/// files restored that a service would not take.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailureReason {
+    Files,
+    Reload,
+}
+
+pub fn rollback_failure_reason(result: &RollbackResult) -> Option<FailureReason> {
+    match (result.rollback_success, result.reloads_ok()) {
+        (false, _) => Some(FailureReason::Files),
+        (true, false) => Some(FailureReason::Reload),
+        (true, true) => None,
+    }
 }
 
 fn collect_config_paths() -> Vec<&'static std::path::Path> {
@@ -165,3 +203,6 @@ fn collect_config_paths() -> Vec<&'static std::path::Path> {
         Path::new("/etc/audit/rules.d"),
     ]
 }
+
+#[cfg(test)]
+mod tests;
