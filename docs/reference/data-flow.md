@@ -914,9 +914,25 @@ evidence still, so a `stat` that merely failed is never read as absence.
    Note: remote chmod/chown/rm run without sudo, so a non-root remote restore
    degrades to content-only for privileged paths; binary files are not
    checkpointed remotely.
-2. **SystemInfo**: Local only. `Context::with_executor` calls `SystemInfo::detect()` whatever the executor, so an SSH scan reports the operator's own distribution, hostname and kernel rather than the target's
-3. **Privileged operations**: May require sudo on remote (user configures)
-4. **Network latency**: Each operation involves SSH round-trip
+2. **SystemInfo**: Local only, and unread. `Context::with_executor` calls
+   `SystemInfo::detect()` whatever the executor, and every field is a local
+   reading: `/etc/os-release` through `std::fs` rather than the executor,
+   `gethostname`, `uname`, and an architecture that is the controller binary's
+   compile-time constant. **No plugin consults it and nothing formats it into a
+   report.** `Context::system_info` has no callers, which the compiler confirms:
+   made private, it warns `method system_info is never used`. The struct derives
+   only `Clone` and `Debug`, so it cannot be serialised into a report either.
+   This is an abstraction leak rather than an observable defect, and it would
+   become one the moment a plugin started branching on it. The plugins that do
+   need the target's identity ask the executor: see `detect_host_profile` in
+   `hardener-cli`, which reads the target's own `/etc/os-release` through it
+3. **Scan history is keyed by the CONTROLLER's hostname**, not the target's.
+   `persist_scan_session` runs unconditionally after a scan and reads the local
+   `/etc/hostname`, so `hardener --ssh user@remote scan` files the remote's
+   findings under the operator's own host name. `batch` does not share this
+   path. Unlike the entry above, this one is observable
+4. **Privileged operations**: May require sudo on remote (user configures)
+5. **Network latency**: Each operation involves SSH round-trip
 
 ---
 
