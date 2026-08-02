@@ -182,6 +182,29 @@ async fn setenforce_that_ran_and_failed_is_not_a_reload() {
     );
 }
 
+/// A host with neither SELinux nor AppArmor has nothing for a rollback to
+/// reload. Claiming "MAC policy reloaded" there reports an action that never
+/// happened, so the absent case must produce no row rather than a row nobody
+/// can trust.
+#[tokio::test]
+async fn a_host_with_no_mac_system_reports_no_reload() {
+    // No overrides: MockExecutor's default path_exists is false everywhere,
+    // so detect_mac_system finds neither /sys/fs/selinux nor
+    // /sys/kernel/security/apparmor and reports Absent.
+    let executor = Arc::new(MockExecutor::new());
+    let ctx = Context::with_executor(executor);
+
+    let reloaded = MacHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect("an absent MAC system is not an error");
+
+    assert_eq!(
+        reloaded, None,
+        "no MAC system was detected, so nothing was reloaded"
+    );
+}
+
 /// A representative MAC check (`selinux-not-enforcing`) must now carry
 /// multi-framework mappings: the existing CIS control plus NIST 800-53 and
 /// STIG sourced from SSG `selinux_state`.

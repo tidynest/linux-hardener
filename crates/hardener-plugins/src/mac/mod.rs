@@ -935,6 +935,16 @@ impl HardeningPlugin for MacHardeningPlugin {
     }
 
     async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
+        // A host that carries neither SELinux nor AppArmor has nothing this
+        // rollback could have reloaded; reporting a reload there is claiming
+        // an action nobody took. An indeterminate probe is left alone -
+        // reload_mac_system already tries setenforce and, failing that, the
+        // AppArmor reload, so this still attempts what it always attempted
+        // when the answer is merely unknown rather than confirmed absent.
+        if matches!(self.detect_mac_system(ctx).await, MacDetection::Absent) {
+            return Ok(None);
+        }
+
         self.reload_mac_system(ctx).await;
         Ok(Some("MAC policy reloaded".to_string()))
     }

@@ -2177,6 +2177,14 @@ impl HardeningPlugin for SshHardeningPlugin {
         })
     }
 
+    // Known gap: on a host whose /etc has no sshd_config, `apply` checkpoints
+    // the vendor copy at /usr/etc/ssh/sshd_config (read_layered's resolution
+    // of config_path), which this prefix does not cover. Left uncovered
+    // rather than widened to /usr/etc, because on exactly that host every
+    // managed directive is written to the drop-in instead, which lives under
+    // /etc/ssh and is covered here, so a rollback of that checkpoint still
+    // restarts sshd. Widening the prefix would need its own justification -
+    // this one is why the gap is safe, not a reason to close it.
     fn reloads_for_path(&self, path: &Path) -> bool {
         path.starts_with("/etc/ssh")
     }
@@ -2426,3 +2434,6 @@ impl HardeningPlugin for SshHardeningPlugin {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

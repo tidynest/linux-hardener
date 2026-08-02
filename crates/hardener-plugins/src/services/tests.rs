@@ -14,6 +14,36 @@
 //! import carried across unchanged, private items included.
 
 use super::*;
+use hardener_common::executor::{CommandOutput, MockExecutor};
+use std::sync::Arc;
+
+/// A rollback that reports success on a reload systemd itself refused is a
+/// rollback that told an operator the unit files it just restored are live
+/// when `daemon-reload` never re-read them. The non-zero exit has to reach
+/// the caller as an error, carrying systemd's own stderr, not a warning that
+/// stops at this function's boundary.
+#[tokio::test]
+async fn a_failed_daemon_reload_is_reported_as_an_error() {
+    let executor = Arc::new(MockExecutor::new().with_command_program(
+        "systemctl",
+        CommandOutput {
+            stdout: String::new(),
+            stderr: "Failed to reload daemon: access denied".to_string(),
+            exit_code: 1,
+        },
+    ));
+    let ctx = Context::with_executor(executor);
+
+    let result = ServicesHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await;
+
+    let err = result.expect_err("a non-zero daemon-reload must not be reported as a success");
+    assert!(
+        err.to_string().contains("access denied"),
+        "the error must carry systemd's own stderr, got: {err}"
+    );
+}
 
 /// The mask link's path is the administrator unit directory plus the unit
 /// name, and it is derived for the units handed in and no others.

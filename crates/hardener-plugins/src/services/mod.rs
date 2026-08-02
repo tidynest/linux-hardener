@@ -928,10 +928,10 @@ impl HardeningPlugin for ServicesHardeningPlugin {
             .await?;
 
         if !output.success() {
-            warn!(
-                "systemctl daemon-reload returned non-zero: {}",
+            return Err(HardeningError::Plugin(format!(
+                "systemctl daemon-reload failed: {}",
                 output.stderr
-            );
+            )));
         }
 
         Ok(Some("systemd daemon reloaded".to_string()))

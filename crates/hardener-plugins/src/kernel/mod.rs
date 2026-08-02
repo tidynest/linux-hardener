@@ -1285,6 +1285,14 @@ impl HardeningPlugin for KernelHardeningPlugin {
             .execute_command("sysctl", &["--system"])
             .await?;
 
+        // Deliberately not turned into an Err on a non-zero exit, unlike
+        // services' daemon-reload. A read-only parameter under a container
+        // runtime's namespacing makes `sysctl --system` exit non-zero on an
+        // otherwise unremarkable host, so failing rollback on it would turn
+        // "the rollback worked" into "the rollback exited 1" almost
+        // everywhere this runs. The warning below is the honest report of
+        // that routine case; an outright failure to reload would need a
+        // sharper signal than this exit code gives.
         if reload_result.success() {
             info!("Kernel parameters reloaded successfully");
         } else {

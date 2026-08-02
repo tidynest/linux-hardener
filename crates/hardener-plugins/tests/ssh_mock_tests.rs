@@ -3218,21 +3218,9 @@ fn ssh_reloads_for_its_own_paths_and_no_others() {
     assert!(!plugin.reloads_for_path(Path::new("/etc/audit/auditd.conf")));
 }
 
-/// Ties the predicate to the paths `apply` actually checkpoints, so the two
-/// cannot drift apart unnoticed. The two source constants this mirrors
-/// (`SSHD_ADMIN_CONFIG_PATH`, `dropin::DROPIN_PATH`) are private to
-/// `hardener_plugins`, and this file compiles as a separate crate, so the
-/// values are duplicated here rather than named.
-#[test]
-fn every_path_ssh_checkpoints_is_one_it_reloads_for() {
-    let plugin = SshHardeningPlugin::new();
-    for path in [
-        "/etc/ssh/sshd_config",
-        "/etc/ssh/sshd_config.d/00-hardener.conf",
-    ] {
-        assert!(
-            plugin.reloads_for_path(Path::new(path)),
-            "ssh checkpoints {path} but would not reload for it"
-        );
-    }
-}
+// The agreement test that used to live here (asserting the predicate covers
+// the two literal paths `apply` checkpoints) moved to
+// `crates/hardener-plugins/src/ssh/tests.rs`, where `SSHD_ADMIN_CONFIG_PATH`
+// and `dropin::DROPIN_PATH` are visible by name. This file compiles as a
+// separate crate and can only see literals, which stayed green through a
+// change to either constant's value - the drift the test exists to catch.
