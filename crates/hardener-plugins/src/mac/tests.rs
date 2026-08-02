@@ -49,7 +49,10 @@ async fn the_restored_mode_is_read_from_the_target_not_the_controller() {
         Arc::new(setenforce_available().with_file("/etc/selinux/config", "SELINUX=permissive\n"));
     let ctx = Context::with_executor(executor.clone());
 
-    MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+    MacHardeningPlugin::new()
+        .reload_mac_system(&ctx)
+        .await
+        .expect("the leg this fixture leaves working did not fail");
 
     assert_eq!(
         call_args(&executor, "setenforce").as_deref(),
@@ -68,7 +71,10 @@ async fn an_enforcing_config_on_the_target_restores_enforcing() {
         Arc::new(setenforce_available().with_file("/etc/selinux/config", "SELINUX=enforcing\n"));
     let ctx = Context::with_executor(executor.clone());
 
-    MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+    MacHardeningPlugin::new()
+        .reload_mac_system(&ctx)
+        .await
+        .expect("the leg this fixture leaves working did not fail");
 
     assert_eq!(
         call_args(&executor, "setenforce").as_deref(),
@@ -89,7 +95,10 @@ async fn a_config_that_cannot_be_read_is_not_guessed_at() {
     );
     let ctx = Context::with_executor(executor.clone());
 
-    MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+    MacHardeningPlugin::new()
+        .reload_mac_system(&ctx)
+        .await
+        .expect("the leg this fixture leaves working did not fail");
 
     assert!(
         call_args(&executor, "setenforce").is_none(),
@@ -113,7 +122,10 @@ async fn a_host_with_no_selinux_config_reloads_apparmor() {
     ));
     let ctx = Context::with_executor(executor.clone());
 
-    MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+    MacHardeningPlugin::new()
+        .reload_mac_system(&ctx)
+        .await
+        .expect("the leg this fixture leaves working did not fail");
 
     assert!(
         call_args(&executor, "setenforce").is_none(),
@@ -171,7 +183,10 @@ async fn setenforce_that_ran_and_failed_is_not_a_reload() {
     );
     let ctx = Context::with_executor(executor.clone());
 
-    MacHardeningPlugin::new().reload_mac_system(&ctx).await;
+    MacHardeningPlugin::new()
+        .reload_mac_system(&ctx)
+        .await
+        .expect("the leg this fixture leaves working did not fail");
 
     assert_eq!(
         call_args(&executor, "systemctl").as_deref(),
@@ -355,4 +370,99 @@ fn every_path_mac_checkpoints_is_one_it_reloads_for() {
             "mac checkpoints {path} but would not reload for it"
         );
     }
+}
+
+/// A reload nobody performed must not be reported as one. Both legs failing
+/// used to end in `warn!` and an unconditional `Some("MAC policy reloaded")`,
+/// so a host whose `setenforce` was refused and whose `systemctl reload
+/// apparmor` failed still produced a green row and `reloads_ok() == true`.
+/// That is the sentinel conflation this whole branch exists to close.
+#[tokio::test]
+async fn a_mac_reload_that_failed_on_both_legs_is_reported_as_an_error() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_path_exists("/sys/fs/selinux", true)
+            .with_file(SELINUX_CONFIG_PATH, "SELINUX=enforcing\n")
+            .with_command_program(
+                "setenforce",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "setenforce: SELinux is disabled\n".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command_program(
+                "systemctl",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "Failed to reload apparmor.service: Unit not found".to_string(),
+                    exit_code: 5,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor);
+
+    let error = MacHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect_err("neither leg reloaded anything, so this is not a success");
+
+    assert!(
+        error.to_string().contains("Unit not found"),
+        "the error must carry what the host said, got: {error}"
+    );
+}
+
+/// The AppArmor leg succeeding is a genuine reload and must be reported as
+/// one, with the row naming what actually ran rather than a fixed sentence.
+#[tokio::test]
+async fn a_mac_reload_that_reached_apparmor_reports_what_it_reloaded() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_path_exists("/sys/kernel/security/apparmor", true)
+            .with_command_program(
+                "systemctl",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor);
+
+    let reloaded = MacHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect("an AppArmor reload that succeeded is not an error");
+
+    assert_eq!(
+        reloaded.as_deref(),
+        Some("AppArmor profiles reloaded"),
+        "the row must name the leg that ran"
+    );
+}
+
+/// A mode nobody could read is deliberately not forced, and a rollback that
+/// forced nothing reloaded nothing. Reporting a reload there is the same
+/// untruth as reporting one after a failure, so the unreadable case produces
+/// no row rather than a row nobody can trust.
+#[tokio::test]
+async fn an_unreadable_selinux_mode_reports_no_reload() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_path_exists("/sys/fs/selinux", true)
+            .with_file(SELINUX_CONFIG_PATH, "# no mode line here\n"),
+    );
+    let ctx = Context::with_executor(executor);
+
+    let reloaded = MacHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect("an unreadable mode is a no-op, not a failure");
+
+    assert_eq!(
+        reloaded, None,
+        "nothing was reloaded, so nothing may be reported"
+    );
 }

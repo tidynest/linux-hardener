@@ -142,62 +142,94 @@ impl MacHardeningPlugin {
     }
 
     /// Brings the running MAC system back in line with the configuration a
-    /// rollback has just restored.
+    /// rollback has just restored, and reports which leg did it.
     ///
     /// Extracted from `rollback` so it can be exercised: `rollback` itself
     /// needs a checkpoint manager before it reaches this point.
-    async fn reload_mac_system(&self, ctx: &Context) {
+    ///
+    /// The three outcomes are kept apart because an operator acts on each
+    /// differently. `Some(action)` names the leg that ran. `None` is a
+    /// deliberate no-op: nothing was asked of the running system, so there is
+    /// nothing to report. `Err` is a reload that was attempted and refused,
+    /// which means the restored files are on disk while the running policy is
+    /// still the one the apply installed. This used to return `()` and fold
+    /// every failure into a `warn!`, so the caller reported "MAC policy
+    /// reloaded" on a host where neither leg had done anything at all.
+    async fn reload_mac_system(&self, ctx: &Context) -> Result<Option<String>> {
         let mode = match self.restored_selinux_mode(ctx).await {
             RestoredMode::Setenforce(mode) => Some(mode),
             RestoredMode::NotConfigured => None,
             // A mode nobody could read is not a mode to restore. Forcing one
             // would be this rollback deciding the host's security posture on a
             // guess, and the file it just restored already governs the next
-            // boot either way.
+            // boot either way. Nothing was run, so nothing is claimed.
             RestoredMode::Unknown(reason) => {
                 warn!(
                     "Could not determine the SELinux mode to restore from {}: {}. \
                      Leaving the running mode alone; the restored file governs the next boot",
                     SELINUX_CONFIG_PATH, reason
                 );
-                return;
+                return Ok(None);
             }
         };
 
+        // Carried rather than logged and dropped. When the AppArmor leg fails
+        // too, the error the caller raises has to say what was tried first,
+        // otherwise a SELinux host's diagnosis reads as a missing AppArmor
+        // unit and points at the wrong subsystem entirely.
+        let mut setenforce_failure = None;
         if let Some(mode) = mode {
             match ctx.executor().execute_command("setenforce", &[mode]).await {
                 Ok(output) if output.success() => {
                     info!("SELinux runtime mode restored (setenforce {})", mode);
-                    return;
+                    return Ok(Some(format!(
+                        "SELinux runtime mode restored (setenforce {mode})"
+                    )));
                 }
                 // execute_command returns Ok for a command that ran and failed,
                 // so the status has to be read. `setenforce: SELinux is
                 // disabled` used to be logged as a policy reload.
-                Ok(output) => warn!(
-                    "setenforce {} exited {}: {}",
-                    mode,
-                    output.exit_code,
-                    output.stderr.trim()
-                ),
-                Err(e) => warn!("Could not run setenforce: {}", e),
+                Ok(output) => {
+                    setenforce_failure = Some(format!(
+                        "setenforce {mode} exited {}: {}",
+                        output.exit_code,
+                        output.stderr.trim()
+                    ));
+                }
+                Err(e) => setenforce_failure = Some(format!("could not run setenforce: {e}")),
+            }
+            if let Some(reason) = &setenforce_failure {
+                warn!("{reason}");
             }
         }
 
         // Reached when the target carries no SELinux configuration, which is
         // what an AppArmor host looks like, and when setenforce did not do what
         // it was asked.
-        match ctx
+        let apparmor_failure = match ctx
             .executor()
             .execute_command("systemctl", &["reload", "apparmor"])
             .await
         {
             Ok(output) if output.success() => {
                 info!("AppArmor profiles reloaded");
+                return Ok(Some("AppArmor profiles reloaded".to_string()));
             }
-            _ => {
-                warn!("Could not reload MAC system (SELinux/AppArmor)");
-            }
-        }
+            Ok(output) => format!(
+                "systemctl reload apparmor exited {}: {}",
+                output.exit_code,
+                output.stderr.trim()
+            ),
+            Err(e) => format!("could not run systemctl reload apparmor: {e}"),
+        };
+
+        let mut reasons = Vec::new();
+        reasons.extend(setenforce_failure);
+        reasons.push(apparmor_failure);
+        Err(HardeningError::Plugin(format!(
+            "Could not reload the MAC system: {}",
+            reasons.join("; ")
+        )))
     }
 
     /// The mode the restored [`SELINUX_CONFIG_PATH`] asks for, read from the
@@ -945,8 +977,10 @@ impl HardeningPlugin for MacHardeningPlugin {
             return Ok(None);
         }
 
-        self.reload_mac_system(ctx).await;
-        Ok(Some("MAC policy reloaded".to_string()))
+        // Reported exactly as `reload_mac_system` found it: the leg that ran,
+        // no row where nothing was asked of the host, and an error where a
+        // reload was attempted and refused.
+        self.reload_mac_system(ctx).await
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
