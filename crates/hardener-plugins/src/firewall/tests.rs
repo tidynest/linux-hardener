@@ -16,6 +16,7 @@
 use super::*;
 use hardener_core::{CommandOutput, MockExecutor};
 use std::path::Path;
+use std::sync::Arc;
 
 /// Reproduces the maintainer's hardened-Arch scenario: nftables and ufw
 /// are both installed, the unprivileged `nft list ruleset` probe fails
@@ -1099,4 +1100,215 @@ fn every_path_firewall_checkpoints_is_one_it_reloads_for() {
             "firewall checkpoints {path} but would not reload for it"
         );
     }
+}
+
+/// The commands a fixture logged, as `("program", ["arg", ...])` pairs
+/// flattened into one string per command, so an assertion can ask whether a
+/// rollback reload issued something it must never issue.
+fn logged_commands(executor: &MockExecutor) -> Vec<String> {
+    executor
+        .log()
+        .commands_executed
+        .into_iter()
+        .map(|(program, args)| format!("{program} {}", args.join(" ")))
+        .collect()
+}
+
+/// Asserts the shape every backend's rollback reload shares: the reload
+/// command was issued, and nothing that would change whether the firewall
+/// runs now or at the next boot was.
+///
+/// A rollback restores files and re-reads them. Starting a unit, enabling it
+/// at boot, or installing a chain is hardening, and hardening during an undo
+/// is the defect these tests exist to keep out.
+fn assert_reload_only(commands: &[String], expected_reload: &str) {
+    assert!(
+        commands.iter().any(|c| c == expected_reload),
+        "the rollback must issue `{expected_reload}`, got: {commands:?}"
+    );
+    assert!(
+        !commands.iter().any(|c| c.starts_with("systemctl enable")),
+        "a rollback must not enable a unit at boot, got: {commands:?}"
+    );
+    assert!(
+        !commands.iter().any(|c| c.starts_with("systemctl start")),
+        "a rollback must not start a service, got: {commands:?}"
+    );
+}
+
+/// firewalld re-reads `/etc/firewalld/**` on `firewall-cmd --reload` and on
+/// nothing else. `systemctl start firewalld` is a no-op on a host where
+/// firewalld already runs, which is every host a rollback of a firewalld
+/// configuration reaches, so the restored zone files were never read back.
+#[tokio::test]
+async fn a_firewalld_rollback_reloads_rather_than_enables() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("firewall-cmd", true)
+            .with_command_exists("ufw", false)
+            .with_command_exists("nft", false)
+            .with_command(
+                "firewall-cmd",
+                &["--state"],
+                CommandOutput {
+                    stdout: "running\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "firewall-cmd",
+                &["--reload"],
+                CommandOutput {
+                    stdout: "success\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let reloaded = FirewallHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect("a firewalld reload that succeeded is not an error");
+
+    assert!(reloaded.is_some(), "the reload must be reported");
+    assert_reload_only(&logged_commands(&executor), "firewall-cmd --reload");
+}
+
+/// nftables re-reads its persistent ruleset with `nft -f /etc/nftables.conf`.
+/// The old path built an `inet filter` table with an input chain whose policy
+/// is `drop`, which leaves the applied posture live and hardens a host that
+/// had no firewall before the apply the operator is undoing.
+#[tokio::test]
+async fn an_nftables_rollback_reloads_rather_than_installing_a_drop_policy() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", false)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: "table inet filter { chain input { type filter hook input }}"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "nft",
+                &["-f", "/etc/nftables.conf"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let reloaded = FirewallHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect("an nftables reload that succeeded is not an error");
+
+    assert!(reloaded.is_some(), "the reload must be reported");
+    let commands = logged_commands(&executor);
+    assert_reload_only(&commands, "nft -f /etc/nftables.conf");
+    assert!(
+        !commands
+            .iter()
+            .any(|c| c.contains("policy") && c.contains("drop")),
+        "a rollback must not install a drop-policy chain, got: {commands:?}"
+    );
+}
+
+/// ufw re-reads `/etc/ufw/**` on `ufw reload`, which leaves an inactive ufw
+/// inactive. `ufw --force enable` would turn the firewall on and write
+/// `ENABLED=yes` into the very file the rollback has just restored.
+#[tokio::test]
+async fn a_ufw_rollback_reloads_rather_than_forcing_it_on() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", true)
+            .with_command_exists("nft", false)
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: active\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "ufw",
+                &["reload"],
+                CommandOutput {
+                    stdout: "Firewall reloaded\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let reloaded = FirewallHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect("a ufw reload that succeeded is not an error");
+
+    assert!(reloaded.is_some(), "the reload must be reported");
+    let commands = logged_commands(&executor);
+    assert_reload_only(&commands, "ufw reload");
+    assert!(
+        !commands.iter().any(|c| c.contains("--force enable")),
+        "a rollback must not force ufw on, got: {commands:?}"
+    );
+}
+
+/// A reload the backend refused must reach the caller as an error rather than
+/// as a green row: the files came back but the running firewall is still the
+/// one the apply installed, and that is the difference the operator acts on.
+#[tokio::test]
+async fn a_refused_firewall_reload_is_reported_as_an_error() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("firewall-cmd", true)
+            .with_command_exists("ufw", false)
+            .with_command_exists("nft", false)
+            .with_command(
+                "firewall-cmd",
+                &["--state"],
+                CommandOutput {
+                    stdout: "running\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command(
+                "firewall-cmd",
+                &["--reload"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "Authorization failed".to_string(),
+                    exit_code: 1,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor);
+
+    let error = FirewallHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect_err("a refused reload must not be reported as a success");
+
+    assert!(
+        error.to_string().contains("Authorization failed"),
+        "the error must carry the backend's own stderr, got: {error}"
+    );
 }

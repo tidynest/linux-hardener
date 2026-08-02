@@ -196,6 +196,20 @@ impl FirewallBackend for FirewalldBackend {
         Ok(())
     }
 
+    /// `firewall-cmd --reload` is the only thing that makes a running
+    /// firewalld re-read `/etc/firewalld`. Its permanent configuration lives
+    /// in those XML files and its runtime configuration is a separate copy
+    /// held in the daemon, so a rollback that restores the files and stops
+    /// there changes nothing a packet ever meets. `systemctl start firewalld`
+    /// cannot stand in: it exits zero without doing anything on a host where
+    /// firewalld is already running, which is every host that has a firewalld
+    /// configuration worth rolling back.
+    async fn reload(&self, ctx: &Context) -> Result<()> {
+        info!("Reloading firewalld configuration");
+        self.execute_firewall_cmd(ctx, &["--reload"]).await?;
+        Ok(())
+    }
+
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
         let zone = self.get_default_zone(ctx).await?;
         let mut changes = Vec::new();

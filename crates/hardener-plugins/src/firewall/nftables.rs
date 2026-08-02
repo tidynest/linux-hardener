@@ -10,6 +10,12 @@ use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Change, ChangeType, context::Context};
 use tracing::{info, warn};
 
+/// The persistent ruleset every distribution's `nftables.service` loads at
+/// boot, and the only nftables file this plugin checkpoints. Named once here
+/// so the path the checkpoint captures, the path the rollback reloads for, and
+/// the path the reload actually feeds to `nft` cannot drift apart.
+pub(super) const NFTABLES_CONFIG_PATH: &str = "/etc/nftables.conf";
+
 /// Nftables firewall backend for modern Linux systems.
 ///
 /// Nftables uses a hierarchical structure:
@@ -278,6 +284,25 @@ impl FirewallBackend for NftablesBackend {
         .await?;
 
         info!("Nftables firewall enabled successfully");
+        Ok(())
+    }
+
+    /// Feeds the restored [`NFTABLES_CONFIG_PATH`] back to `nft`, which is the
+    /// whole of what a rollback of an nftables configuration has to do.
+    ///
+    /// [`Self::enable`] is not a substitute and was actively harmful here: it
+    /// builds an `inet filter` table whose input chain carries a `drop` policy
+    /// and never reads the restored file at all, so the applied posture stayed
+    /// live and a host whose firewall was inactive before the apply came out
+    /// of the undo filtering traffic.
+    ///
+    /// What the file does on load is the file's business. Every distribution's
+    /// shipped `nftables.conf` opens with `flush ruleset`, so loading it
+    /// replaces the live ruleset outright; one that does not will merge
+    /// instead, which is the behaviour that host's own boot gives it.
+    async fn reload(&self, ctx: &Context) -> Result<()> {
+        info!("Reloading the nftables ruleset from {NFTABLES_CONFIG_PATH}");
+        self.execute_nft(ctx, &["-f", NFTABLES_CONFIG_PATH]).await?;
         Ok(())
     }
 

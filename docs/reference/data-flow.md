@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-02
 **Version:** 1.5.1
 
 This document describes the data flow for all major operations in the system.
@@ -465,7 +465,7 @@ a checkpoint or a skip is never counted as a hardening change.
 │  Restart Affected Services                                   │
 │  ├─ SSH: systemctl restart sshd                              │
 │  ├─ Kernel: sysctl --system                                  │
-│  ├─ Firewall: re-enable the backend (firewalld/nftables/ufw) │
+│  ├─ Firewall: firewall-cmd --reload / nft -f / ufw reload    │
 │  ├─ Audit: augenrules --load (fallback: systemctl restart)   │
 │  └─ Others as needed                                         │
 └────────┬─────────────────────────────────────────────────────┘
@@ -1462,4 +1462,4 @@ compares the two behaviours, not two separate screens.
 
 ---
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-02

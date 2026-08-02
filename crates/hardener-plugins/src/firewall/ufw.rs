@@ -268,6 +268,22 @@ impl FirewallBackend for UfwBackend {
         Ok(())
     }
 
+    /// `ufw reload` re-reads `/etc/ufw` and reloads the rules into the kernel
+    /// without touching whether ufw is on: on a host where `ENABLED=no` it
+    /// prints that it is skipping the reload and exits zero, which is the
+    /// correct outcome for a rollback that has just restored that very flag.
+    ///
+    /// [`Self::enable`] is the opposite of what an undo wants. `ufw --force
+    /// enable` writes `ENABLED=yes` back into the restored
+    /// `/etc/ufw/ufw.conf`, loads the rules, and this backend then enables the
+    /// unit at boot as well, so a host that had no firewall before the apply
+    /// would finish the rollback with one.
+    async fn reload(&self, ctx: &Context) -> Result<()> {
+        info!("Reloading the UFW configuration");
+        self.execute_ufw(ctx, &["reload"]).await?;
+        Ok(())
+    }
+
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
         let mut changes = Vec::new();
 

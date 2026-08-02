@@ -65,6 +65,21 @@ pub trait FirewallBackend: Send + Sync {
     /// Enables and starts the firewall service.
     async fn enable(&self, ctx: &Context) -> Result<()>;
 
+    /// Re-reads the backend's own configuration files from disk.
+    ///
+    /// Deliberately separate from [`Self::enable`], and the separation is the
+    /// point. `enable` decides whether the firewall runs and whether it runs
+    /// at the next boot; `reload` decides nothing, it only makes the running
+    /// backend read the files it is configured from. A rollback needs the
+    /// second and must never perform the first: restoring the configuration a
+    /// host had before an apply, and then starting a firewall that host never
+    /// ran, hardens a system during an undo.
+    ///
+    /// A backend that will not reload returns an error carrying its own
+    /// stderr, so the caller can tell an operator that the files came back but
+    /// the running firewall is still the one the apply installed.
+    async fn reload(&self, ctx: &Context) -> Result<()>;
+
     /// Applies a set of firewall rules.
     ///
     /// # Arguments
@@ -998,7 +1013,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 
         // Create checkpoint for firewall config files
         let firewall_paths: Vec<&Path> = vec![
-            Path::new("/etc/nftables.conf"),
+            Path::new(nftables::NFTABLES_CONFIG_PATH),
             Path::new("/etc/firewalld"),
             Path::new("/etc/ufw"),
         ];
@@ -1189,16 +1204,17 @@ impl HardeningPlugin for FirewallHardeningPlugin {
     }
 
     fn reloads_for_path(&self, path: &Path) -> bool {
-        path == Path::new("/etc/nftables.conf")
+        path == Path::new(nftables::NFTABLES_CONFIG_PATH)
             || path.starts_with("/etc/firewalld")
             || path.starts_with("/etc/ufw")
     }
 
     async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
         let backend = self.detect_backend(ctx).await?;
-        backend.enable(ctx).await?;
-        info!("Firewall re-enabled successfully");
-        Ok(Some("firewall backend re-enabled".to_string()))
+        backend.reload(ctx).await?;
+        let name = backend.backend_name();
+        info!("{name} re-read its restored configuration");
+        Ok(Some(format!("{name} configuration reloaded")))
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
