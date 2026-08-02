@@ -127,6 +127,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`validate_file_map.py` derives the test counts `file-map.md` claims.** Five
+  rows describe a test module by how many tests it holds, and the number was
+  kept by hand; it drifted twice in two sessions. Each claim is now checked
+  against the `#[test]` and `#[tokio::test]` declarations in the file the row
+  names, both spellings, so a module that gained an async test cannot start
+  undercounting without saying so.
+
 - **`/etc/sudoers` and `/etc/sudoers.d` are reported on by a compliance
   framework.** Both fell through the catch-all arm of the permissions plugin's
   mapping table, so neither contributed a control identifier and a framework
@@ -315,6 +322,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fired rather than only that one did.
 
 ### Fixed
+
+- **The differential test suite can reach a clean run on Arch and on RHEL.**
+  Two of its own pre-apply controls could never be satisfied there, so neither
+  distribution could be used as a merge gate however often the run was
+  repeated. On Arch the login.defs oracle had no reader for `PASS_MIN_DAYS`:
+  that shadow build has no minimum-days field at all, so `chage -l` prints no
+  such line and `chage --help` offers no `-m`. The row now carries a second
+  reader, the `passwd -S` field holding the same setting, consulted only where
+  the first comes up empty; the other four distributions go on using the label
+  they always used. On RHEL every managed kernel parameter already met its
+  target before the apply, so the control correctly refused to certify checks
+  that would have passed whether or not the tool had run. A seed now loosens
+  one row, `net.ipv4.conf.all.accept_source_route`, before the pre-apply
+  capture, and reads it back rather than trusting the write. Where neither
+  login.defs reader has a directive, the failure now carries what each of them
+  printed, so the cause can be read off the log instead of needing a container.
 
 - **An Arch upgrade no longer replaces the configuration the operator wrote.**
   `package()` installs `config.toml` into `/etc` and the PKGBUILD declared no
@@ -1294,6 +1317,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration may not match the restored files, and a reboot resolves it.**
 
 ### Removed
+- `hardener_scheduler::systemd::user_unit_path` and `system_unit_path`, two
+  accessors nothing in the workspace called. The first returned
+  `/etc/systemd/user` under a doc comment promising a path relative to home,
+  and described neither the value nor what the product does: both places that
+  install a user unit build `$HOME/.config/systemd/user` themselves. Correcting
+  it was rejected, because the right answer depends on `HOME` and a
+  `&'static str` cannot hold it. `service_name` and `timer_name` stay; the CLI
+  and the crate's own tests call both.
 - `custom_directives`, the per-plugin config table that was accepted, merged
   across config sources, counted towards the directive limit and validated at
   load time, while no plugin ever read it. Anything set there had no effect,
