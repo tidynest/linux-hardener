@@ -8,6 +8,7 @@ use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
 use async_trait::async_trait;
 use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Change, ChangeType, context::Context};
+use std::path::Path;
 use tracing::{info, warn};
 
 /// The persistent ruleset every distribution's `nftables.service` loads at
@@ -300,7 +301,30 @@ impl FirewallBackend for NftablesBackend {
     /// shipped `nftables.conf` opens with `flush ruleset`, so loading it
     /// replaces the live ruleset outright; one that does not will merge
     /// instead, which is the behaviour that host's own boot gives it.
+    ///
+    /// Guarded on the file's presence, through the executor so the answer is
+    /// the target's and not the controller's. Fedora and RHEL ship
+    /// `/etc/sysconfig/nftables.conf` instead of this path, so a host where
+    /// nftables wins backend detection can genuinely never have had
+    /// [`NFTABLES_CONFIG_PATH`]; the checkpoint then records it absent and the
+    /// restore is a correct no-op. `nft -f` on a file that is not there exits
+    /// 1, and this used to run it anyway, turning a rollback that had done
+    /// everything possible into a reported failure. Absence confirmed is the
+    /// only case this skips: anything else, including a probe that could not
+    /// tell, still attempts the load so a genuine refusal is still surfaced.
     async fn reload(&self, ctx: &Context) -> Result<()> {
+        if matches!(
+            ctx.executor()
+                .path_exists(Path::new(NFTABLES_CONFIG_PATH))
+                .await,
+            Ok(false)
+        ) {
+            info!(
+                "{NFTABLES_CONFIG_PATH} is absent on this host, so there is nothing for nft to \
+                 reload"
+            );
+            return Ok(());
+        }
         info!("Reloading the nftables ruleset from {NFTABLES_CONFIG_PATH}");
         self.execute_nft(ctx, &["-f", NFTABLES_CONFIG_PATH]).await?;
         Ok(())

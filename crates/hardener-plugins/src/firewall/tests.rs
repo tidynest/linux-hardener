@@ -1188,6 +1188,11 @@ async fn an_nftables_rollback_reloads_rather_than_installing_a_drop_policy() {
             .with_command_exists("firewall-cmd", false)
             .with_command_exists("ufw", false)
             .with_command_exists("nft", true)
+            // Present on this fixture's host, unlike the Fedora/RHEL case
+            // covered by `an_nftables_rollback_does_not_fail_when_the_restored_file_is_absent`,
+            // so the reload's existence guard does not skip the `nft -f` call
+            // this test exists to assert.
+            .with_path_exists("/etc/nftables.conf", true)
             .with_command(
                 "nft",
                 &["list", "ruleset"],
@@ -1223,6 +1228,53 @@ async fn an_nftables_rollback_reloads_rather_than_installing_a_drop_policy() {
             .iter()
             .any(|c| c.contains("policy") && c.contains("drop")),
         "a rollback must not install a drop-policy chain, got: {commands:?}"
+    );
+}
+
+/// Fedora and RHEL ship `/etc/sysconfig/nftables.conf`, not
+/// `/etc/nftables.conf`. On a host where nftables wins backend detection and
+/// `/etc/nftables.conf` was never present, the checkpoint correctly records
+/// the path as absent and the restore is a no-op, but the reload used to run
+/// `nft -f /etc/nftables.conf` regardless: `nft` exits 1 on a file that is
+/// not there, `execute_nft` turns that into an error, and a rollback that did
+/// everything possible on that host still exited 1 telling the operator a
+/// service was left on the old configuration.
+#[tokio::test]
+async fn an_nftables_rollback_does_not_fail_when_the_restored_file_is_absent() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("ufw", false)
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["list", "ruleset"],
+                CommandOutput {
+                    stdout: "table inet filter { chain input { type filter hook input }}"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+        // Deliberately no `with_path_exists` for /etc/nftables.conf and no
+        // `nft -f /etc/nftables.conf` registration: MockExecutor's default
+        // `path_exists` answer for an unregistered path is `false`, which is
+        // exactly what a Fedora or RHEL host that never had this file looks
+        // like. If the fix ever asks `nft` to load it anyway, the command is
+        // unregistered and the mock refuses it, failing this test.
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let reloaded = FirewallHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect("an absent /etc/nftables.conf must not fail the rollback");
+
+    assert!(reloaded.is_some(), "the reload must still be reported");
+    let commands = logged_commands(&executor);
+    assert!(
+        !commands.iter().any(|c| c.starts_with("nft -f")),
+        "nft must not be asked to load a file that is not there, got: {commands:?}"
     );
 }
 

@@ -233,7 +233,12 @@ and a service refused to reload, in which case that service is still running
 the previous configuration and needs attention even though the disk is correct.
 A reload the host genuinely cannot perform is not counted as a failure: a
 kernel audit configuration locked with `-e 2` is reported as restored but not
-loaded until the next reboot, and exits `0`.
+loaded until the next reboot, and exits `0`. The same holds for nftables on a
+host that never had `/etc/nftables.conf` in the first place, which is every
+Fedora and RHEL host (they ship `/etc/sysconfig/nftables.conf` instead): the
+checkpoint records the path absent, the restore is a correct no-op, and the
+reload is skipped rather than asking `nft` to load a file that was never
+there.
 
 ---
 
