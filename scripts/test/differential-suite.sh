@@ -91,10 +91,14 @@ fi
 #
 # passwd is the login.defs probe's second reader, for the one directive chage
 # cannot report on every distribution. It is listed even though the run only
-# consults it where chage came up short: it ships in the same package as chage,
-# so a container without it is a broken container, and refusing here names that
-# once instead of leaving one directive to fail much later for a reason that
-# reads like a distribution difference.
+# consults it where chage came up short, because create-container.sh installs it
+# on every distribution it builds: `debootstrap --include=...,passwd` at :362 and
+# `dnf -y install ... passwd shadow-utils` at :427. It is NOT always the same
+# package as chage, which is why that is not the reason given: on the dnf family
+# passwd and shadow-utils are two packages, and on Arch both binaries come from
+# `shadow`. Refusing here names a container missing it once, rather than leaving
+# one directive to fail much later for a reason that reads like a distribution
+# difference.
 REQUIRED_COMMANDS=(jq grep sshd ssh-keygen useradd userdel chage id chpasswd stat su passwd)
 
 # Refuse, naming every command that is missing rather than one per run.
@@ -522,6 +526,18 @@ SEEDED_LOOSER_KERNEL_CHECKS=(
 
 seed_kernel_looser_than_baseline() {
     local entry name seed reading
+    # The guard seed_stricter_than_baseline carries, for a reason that bites
+    # harder here. Moved below the apply, this would loosen a parameter the tool
+    # had already hardened: every kernel row would then fail on every
+    # distribution, while the pre-apply control went on printing a green line
+    # about a real question being asked.
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the looser-than-baseline seed was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        echo "  It has to be in place before the first apply, because what the" >&2
+        echo "  control below measures is the host that apply is about to meet." >&2
+        return 1
+    fi
     if [[ "$KERNEL_BOOTED" != "1" ]]; then
         return 0
     fi
@@ -928,10 +944,25 @@ remove_probe_user() {
     fi
 }
 
-# Create the probe user, read the shadow row login.defs just gave it, and remove
-# the user again. Prints chage -l verbatim, which carries min, max and warn.
+# The probe's two readings, published as globals rather than printed.
+#
+# They are globals because there are two of them and a function has one stdout.
+# The alternative, printing both and splitting them apart again, was written
+# first and was wrong in a way worth recording: the assignment sat inside a
+# function every caller invoked as `$(...)`, so the second reading was set in a
+# subshell and the parent never saw it. The fallback could not fire at all. A
+# value that has to survive the call must not be returned by assignment from
+# inside one.
+LOGIN_DEFS_PROBE_CHAGE=""
+LOGIN_DEFS_PROBE_PASSWD=""
+
+# Create the probe user, read the shadow row login.defs just gave it with both
+# readers, and remove the user again. Sets the two globals above; prints
+# nothing, so no caller can wrap it in a command substitution and lose half.
 # Callers want login_defs_system_value; this runs once, through the init below.
 login_defs_system_values() {
+    LOGIN_DEFS_PROBE_CHAGE=""
+    LOGIN_DEFS_PROBE_PASSWD=""
     require_absent_probe_user || return 1
     if ! useradd -m "$DIFF_PROBE_USER" >/dev/null 2>&1; then
         echo "FATAL: could not create probe user" >&2
@@ -947,18 +978,19 @@ login_defs_system_values() {
         return 1
     fi
     # The second reader, taken here because both readings describe the same
-    # probe account and a shell function has one stdout to return them on: this
-    # is the only point at which the account exists to be asked.
+    # probe account and this is the only point at which it exists to be asked.
     #
     # A failure is deliberately not fatal. On four of the five distributions
     # chage answers every directive and this capture is never consulted, so a
     # passwd that could not be run must not end a run it was not needed for.
     # The directive that does need it says so loudly at the point of use.
-    if ! LOGIN_DEFS_PASSWD_STATUS="$(LC_ALL=C passwd -S "$DIFF_PROBE_USER" 2>/dev/null)"; then
-        LOGIN_DEFS_PASSWD_STATUS=""
+    local status
+    if ! status="$(LC_ALL=C passwd -S "$DIFF_PROBE_USER" 2>/dev/null)"; then
+        status=""
     fi
     remove_probe_user || return 1
-    printf '%s' "$out"
+    LOGIN_DEFS_PROBE_CHAGE="$out"
+    LOGIN_DEFS_PROBE_PASSWD="$status"
 }
 
 # Captured by login_defs_oracle_init, which must run after apply. Empty means the
@@ -976,15 +1008,15 @@ LOGIN_DEFS_CHAGE_GENERATION=""
 LOGIN_DEFS_PASSWD_STATUS=""
 
 login_defs_oracle_init() {
-    local out
-    if ! out="$(login_defs_system_values)"; then
-        return 1
-    fi
-    if [[ -z "$out" ]]; then
+    # Called directly, never as `$(...)`: the probe publishes two readings
+    # through globals, and a subshell would drop both.
+    login_defs_system_values || return 1
+    if [[ -z "$LOGIN_DEFS_PROBE_CHAGE" ]]; then
         echo "FATAL: chage -l succeeded but printed nothing" >&2
         return 1
     fi
-    LOGIN_DEFS_CHAGE="$out"
+    LOGIN_DEFS_CHAGE="$LOGIN_DEFS_PROBE_CHAGE"
+    LOGIN_DEFS_PASSWD_STATUS="$LOGIN_DEFS_PROBE_PASSWD"
     LOGIN_DEFS_CHAGE_GENERATION="$APPLY_GENERATION"
 }
 
@@ -1383,8 +1415,11 @@ idempotence_reading() {
             # what login.defs means. Left in, a run straddling midnight would
             # report a change the tool did not make. Assigned before filtering
             # rather than piped, because a pipeline reports its last stage's
-            # status and would swallow a probe that failed.
-            reading="$(login_defs_system_values)" || return 1
+            # status and would swallow a probe that failed. The probe is called
+            # directly rather than as `$(...)`, because it publishes its two
+            # readings through globals; only chage's is compared here.
+            login_defs_system_values || return 1
+            reading="$LOGIN_DEFS_PROBE_CHAGE"
             while IFS= read -r line; do
                 if [[ "$line" != "Last password change"* ]]; then
                     printf '%s\n' "$line"
@@ -4293,8 +4328,10 @@ Number of days of warning before password expires	: 11"
     # that row must not carry the fourth column. The scan document is deliberately
     # absent here, which costs each directive its second assertion and changes
     # nothing about the first.
-    local ld_before_total=$CHECKS_TOTAL ld_before_passed=$CHECKS_PASSED
-    local ld_before_failed=$CHECKS_FAILED ld_runner_output
+    # No counters are saved around this: the runner is driven inside a command
+    # substitution, so record_pass and record_fail increment in a subshell and
+    # the totals here never move. Restoring them would be restoring nothing.
+    local ld_runner_output
     LOGIN_DEFS_CHAGE="Last password change					: Dec 24, 2024
 Minimum number of days between password change		: 1
 Maximum number of days between password change		: 90
@@ -4306,9 +4343,6 @@ Number of days of warning before password expires	: 7"
         "the login.defs runner records a row for the directive it read"
     check_eq "$(grep -c '90|5' <<<"$ld_runner_output")" "0" \
         "and reads its target without the passwd -S column glued on"
-    CHECKS_TOTAL=$ld_before_total
-    CHECKS_PASSED=$ld_before_passed
-    CHECKS_FAILED=$ld_before_failed
 
     LOGIN_DEFS_CHAGE=""
     LOGIN_DEFS_PASSWD_STATUS=""
@@ -4319,6 +4353,10 @@ Number of days of warning before password expires	: 7"
     # and it never leaves one behind. useradd, userdel, chage and id are stubbed
     # against a variable standing in for the account database, which keeps
     # --self-test runnable with no root and no container.
+    # Field 4 is 3, which appears in neither chage fixture, so a PASS_MIN_DAYS
+    # of 3 can only have come from the second reader.
+    local probe_passwd_fixture="hardenerdiffprobe P 2024-12-24 3 42 11 -1"
+    local probe_restore_fixture="$probe_fixture"
     local probe_stub_exists=0 probe_stub_chage=0 probe_stub_userdel=1
     useradd() { probe_stub_exists=1; }
     userdel() {
@@ -4333,6 +4371,13 @@ Number of days of warning before password expires	: 7"
         fi
         printf '%s\n' "$probe_fixture"
     }
+    # Stubbed for the same reason chage is, and its absence hid a defect: with
+    # the real binary reached instead, `passwd -S` failed against an account
+    # that does not exist, the capture came back empty, and the assertions below
+    # could not tell that apart from a capture that never propagated. It also
+    # made --self-test, documented as safe anywhere, shell out to the setuid
+    # passwd on a maintainer's own machine.
+    passwd() { printf '%s\n' "$probe_passwd_fixture"; }
 
     probe_stub_exists=1
     check_status 1 "probe refuses when the probe user already exists" \
@@ -4362,6 +4407,27 @@ Number of days of warning before password expires	: 7"
     check_eq "$init_status" "0" "login_defs_oracle_init succeeds against the stubbed probe"
     check_eq "$(login_defs_system_value PASS_MAX_DAYS)" "42" "login_defs_oracle_init feeds the accessor"
 
+    # BOTH readings have to survive the call, and this is the assertion the
+    # first version of the fallback did not have. The capture was being made
+    # inside a function every caller invoked as `$(...)`, so it was published
+    # into a subshell and the parent kept an empty string: on Arch, the only
+    # host that needs the second reader, the fallback could never fire and the
+    # run stayed exactly as broken as before. Everything else was green,
+    # because every other assertion planted the globals by hand.
+    check_eq "$LOGIN_DEFS_PASSWD_STATUS" "$probe_passwd_fixture" \
+        "the probe's passwd -S reading survives the call that took it"
+    # And the whole Arch path, end to end through the probe rather than planted:
+    # a chage that reports no minimum, and a value that can only have come from
+    # the second reader.
+    probe_fixture="$archless_fixture"
+    init_status=0
+    login_defs_oracle_init || init_status=$?
+    check_eq "$init_status" "0" "the oracle initialises against a chage with no minimum"
+    check_eq "$(login_defs_system_value PASS_MIN_DAYS)" "3" \
+        "and PASS_MIN_DAYS is answered from the probe's own passwd -S reading"
+    probe_fixture="$probe_restore_fixture"
+    login_defs_oracle_init || true
+
     # The same freshness stamp as the ssh oracle, and the same hazard: the probe
     # reads what login.defs means NOW, so a capture taken before apply describes
     # the old file. PASS_WARN_AGE's target already equals the value several
@@ -4377,7 +4443,7 @@ Number of days of warning before password expires	: 7"
     APPLY_GENERATION=0
     LOGIN_DEFS_CHAGE=""
     LOGIN_DEFS_CHAGE_GENERATION=""
-    unset -f useradd userdel id chage
+    unset -f useradd userdel id chage passwd
 
     # The vendor survival family. Its whole job is to notice a value changing,
     # so the assertions that matter are the ones where something changed and
@@ -4994,6 +5060,11 @@ Number of days of warning before password expires	: 7"
     check_status 1 "a seed the kernel did not take is refused rather than believed" \
         seed_kernel_looser_than_baseline
     looser_readback="$looser_seed"
+
+    bump_apply_generation
+    check_status 1 "the looser seed refuses to run after an apply" \
+        seed_kernel_looser_than_baseline
+    APPLY_GENERATION=0
 
     looser_written=""
     KERNEL_BOOTED=0
@@ -5676,8 +5747,12 @@ X11Forwarding yes" \
     check_status 1 "an unknown idempotency key is refused, never read as an empty reading" \
         idempotence_reading no-such-reading
 
+    # The stub publishes through the global the probe publishes through, rather
+    # than printing: a probe that printed its reading could not return two of
+    # them, which is what put the second one in a subshell in the first place.
     login_defs_system_values() {
-        printf 'Last password change : Jul 28, 2026\nMinimum number of days : 1\n'
+        LOGIN_DEFS_PROBE_CHAGE='Last password change : Jul 28, 2026
+Minimum number of days : 1'
     }
     check_eq "$(idempotence_reading login-defs)" "Minimum number of days : 1" \
         "the login.defs reading drops the probe account's own creation date"

@@ -894,6 +894,17 @@ for the same reason: every run now arrives holding one, and evidence that read
 the same for a seeded row and a naturally away one would let a log claim a
 container was non-compliant when the suite had made it so.
 
+**Be clear about what this costs the control.** On a booted run it can no longer
+record a failure: the seed aborts unless its read-back returns the loosened
+value, the pre-apply capture is taken from that same kernel, and the row is
+scored `at-most 0`, so at least one parameter is always away. The control has
+become an assertion that the seed took rather than a discovery about the host.
+That is a tautology, not a hole, and the difference matters: if the kernel
+plugin did nothing at all, the seed would still be standing afterwards and
+`run_kernel_checks` would fail that row. Nothing goes green that should not. The
+ten unseeded rows are as vacuous on an already-compliant host as they were
+before, and making each of them ask a real question is what #47 is for.
+
 **A run that is not booted asks the kernel nothing.** The signal is
 `HARDENER_DIFF_BOOTED`, exported by `run-cross-distro-tests.sh` on the
 `systemd-run --machine` invocation inside `nspawn_suite_booted` and nowhere
