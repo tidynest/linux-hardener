@@ -1277,9 +1277,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   meant to undo.** Restoring `/etc/ssh/sshd_config` did not restart sshd,
   restoring a sysctl drop-in did not re-run `sysctl --system`, and the same
   gap existed for the firewall, audit, service-unit and MAC plugins: the file
-  on disk
-  changed while the running process kept whatever it had loaded at the last
-  apply. An operator who rolled back to undo an unwanted apply saw the
+  on disk changed while the running process kept whatever it had loaded at the
+  last apply. An operator who rolled back to undo an unwanted apply saw the
   rollback reported as successful while the host went on enforcing the
   configuration the rollback was supposed to have reverted, which is not the
   host running weaker security than asked, but the recovery path failing to

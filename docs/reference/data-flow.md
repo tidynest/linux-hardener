@@ -465,7 +465,7 @@ a checkpoint or a skip is never counted as a hardening change.
 │  Restart Affected Services                                   │
 │  ├─ SSH: systemctl restart sshd                              │
 │  ├─ Kernel: sysctl --system                                  │
-│  ├─ Firewall: firewall-cmd --reload / systemctl restart nft  │
+│  ├─ Firewall: re-enable the backend (firewalld/nftables/ufw) │
 │  ├─ Audit: augenrules --load (fallback: systemctl restart)   │
 │  └─ Others as needed                                         │
 └────────┬─────────────────────────────────────────────────────┘
