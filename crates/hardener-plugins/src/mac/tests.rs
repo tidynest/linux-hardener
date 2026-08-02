@@ -183,10 +183,7 @@ async fn setenforce_that_ran_and_failed_is_not_a_reload() {
     );
     let ctx = Context::with_executor(executor.clone());
 
-    MacHardeningPlugin::new()
-        .reload_mac_system(&ctx)
-        .await
-        .expect("the leg this fixture leaves working did not fail");
+    let result = MacHardeningPlugin::new().reload_mac_system(&ctx).await;
 
     assert_eq!(
         call_args(&executor, "systemctl").as_deref(),
@@ -194,6 +191,55 @@ async fn setenforce_that_ran_and_failed_is_not_a_reload() {
         "a setenforce that exited non-zero reloaded nothing, so the other MAC \
          system is still worth trying; commands: {:?}",
         executor.log().commands_executed
+    );
+    assert!(
+        result.is_err(),
+        "a setenforce that exited non-zero must not be reported as a successful reload just \
+         because the apparmor attempt that followed it exited zero"
+    );
+}
+
+/// The exact shape of the residual sentinel conflation this branch closes: a
+/// host carrying a restored SELinux config whose `setenforce` is refused, and
+/// a systemd `apparmor` unit that happens to reload cleanly straight after.
+/// `reload_mac_system` used to return on the AppArmor success and throw the
+/// setenforce failure away, so a host where the file it just restored named
+/// an SELinux mode nobody applied still produced `Ok(Some("AppArmor profiles
+/// reloaded"))`.
+#[tokio::test]
+async fn a_failed_setenforce_is_not_hidden_by_a_later_apparmor_success() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_file("/etc/selinux/config", "SELINUX=enforcing\n")
+            .with_command_program(
+                "setenforce",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "setenforce: SELinux is disabled\n".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command_program(
+                "systemctl",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let error = MacHardeningPlugin::new()
+        .reload_mac_system(&ctx)
+        .await
+        .expect_err(
+            "a setenforce that ran and failed must not be erased by a later AppArmor success",
+        );
+
+    assert!(
+        error.to_string().contains("setenforce"),
+        "the SELinux failure must still be named in the error, got: {error}"
     );
 }
 

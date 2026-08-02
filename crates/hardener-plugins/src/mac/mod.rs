@@ -213,23 +213,41 @@ impl MacHardeningPlugin {
         {
             Ok(output) if output.success() => {
                 info!("AppArmor profiles reloaded");
-                return Ok(Some("AppArmor profiles reloaded".to_string()));
+                None
             }
-            Ok(output) => format!(
+            Ok(output) => Some(format!(
                 "systemctl reload apparmor exited {}: {}",
                 output.exit_code,
                 output.stderr.trim()
-            ),
-            Err(e) => format!("could not run systemctl reload apparmor: {e}"),
+            )),
+            Err(e) => Some(format!("could not run systemctl reload apparmor: {e}")),
         };
 
-        let mut reasons = Vec::new();
-        reasons.extend(setenforce_failure);
-        reasons.push(apparmor_failure);
-        Err(HardeningError::Plugin(format!(
-            "Could not reload the MAC system: {}",
-            reasons.join("; ")
-        )))
+        // A setenforce that ran and was refused is not undone by AppArmor
+        // reloading cleanly straight after: the restored SELINUX_CONFIG_PATH
+        // named a mode, and that mode is still not the one running. Reporting
+        // `Ok(Some("AppArmor profiles reloaded"))` here would be the same
+        // sentinel conflation this function exists to close, only moved one
+        // branch over: one field standing for two legs' outcomes, with the
+        // AppArmor success overwriting the SELinux failure instead of a
+        // missing SELinux config overwriting an AppArmor one. Both legs'
+        // reasons are named, because a SELinux host diagnosed on the
+        // AppArmor text alone points at the wrong subsystem, and the AppArmor
+        // success (when there was one) is named too so an operator does not
+        // read a real reload as if it never happened.
+        match (setenforce_failure, apparmor_failure) {
+            (None, None) => Ok(Some("AppArmor profiles reloaded".to_string())),
+            (None, Some(reason)) => Err(HardeningError::Plugin(format!(
+                "Could not reload the MAC system: {reason}"
+            ))),
+            (Some(reason), None) => Err(HardeningError::Plugin(format!(
+                "Could not reload the MAC system: {reason} (AppArmor profiles were reloaded, but \
+                 that does not restore SELinux's runtime mode)"
+            ))),
+            (Some(selinux_reason), Some(apparmor_reason)) => Err(HardeningError::Plugin(format!(
+                "Could not reload the MAC system: {selinux_reason}; {apparmor_reason}"
+            ))),
+        }
     }
 
     /// The mode the restored [`SELINUX_CONFIG_PATH`] asks for, read from the
