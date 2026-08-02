@@ -62,14 +62,6 @@ macro_rules! define_plugin {
                 todo!("Implement apply() for {}", stringify!($plugin_name))
             }
 
-            async fn rollback(
-                &self,
-                _ctx: &mut $crate::hardener_core::Context,
-                _checkpoint: &$crate::hardener_core::plugin::Checkpoint,
-            ) -> $crate::hardener_common::error::Result<()> {
-                todo!("Implement rollback() for {}", stringify!($plugin_name))
-            }
-
             async fn validate(
                 &self,
                 _ctx: &$crate::hardener_core::Context,

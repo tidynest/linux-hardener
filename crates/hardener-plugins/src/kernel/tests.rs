@@ -204,3 +204,26 @@ fn redirect_and_martian_params_map_cis() {
         assert_eq!(cis.compliance_control_id, id, "{param}");
     }
 }
+
+/// Names only kernel's own paths, so a failure here cannot come from another
+/// plugin's entry in a shared list.
+#[test]
+fn kernel_reloads_for_its_own_paths_and_no_others() {
+    let plugin = KernelHardeningPlugin::new();
+    assert!(plugin.reloads_for_path(Path::new("/etc/sysctl.conf")));
+    assert!(plugin.reloads_for_path(Path::new("/etc/sysctl.d/99-hardener.conf")));
+    assert!(!plugin.reloads_for_path(Path::new("/etc/ssh/sshd_config")));
+}
+
+/// Ties the predicate to the literals `apply` actually checkpoints, so the
+/// two cannot drift apart unnoticed.
+#[test]
+fn every_path_kernel_checkpoints_is_one_it_reloads_for() {
+    let plugin = KernelHardeningPlugin::new();
+    for path in ["/etc/sysctl.conf", SYSCTL_DROPIN_DIR, SYSCTL_HARDENER_CONF] {
+        assert!(
+            plugin.reloads_for_path(Path::new(path)),
+            "kernel checkpoints {path} but would not reload for it"
+        );
+    }
+}

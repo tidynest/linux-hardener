@@ -545,3 +545,13 @@ fn the_unsourceable_frameworks_are_absent_from_sudoers_and_present_elsewhere() {
         "control: likewise for PCI-DSS",
     );
 }
+
+/// Pins the trait default: permission and ownership changes are immediate,
+/// and this plugin's paths come from operator directives at runtime, so
+/// there is no set it could enumerate.
+#[test]
+fn permissions_reloads_for_nothing_because_mode_changes_are_immediate() {
+    let plugin = PermissionsHardeningPlugin::new();
+    assert!(!plugin.reloads_for_path(Path::new("/etc/shadow")));
+    assert!(!plugin.reloads_for_path(Path::new("/etc/sudoers")));
+}

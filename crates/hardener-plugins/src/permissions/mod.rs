@@ -17,7 +17,7 @@ use hardener_common::{
     vendor_config::vendor_path_for,
 };
 use hardener_core::{
-    ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationReport,
+    ApplyResult, Change, ChangeType, PluginConfig, ValidationReport,
     context::Context,
     plugin::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
@@ -1487,22 +1487,9 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
         })
     }
 
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
-        info!(
-            "Rolling back file permissions to checkpoint: {}",
-            checkpoint.checkpoint_id.as_str()
-        );
-
-        // Restore file permissions from checkpoint
-        // The checkpoint system stores file content, permissions, and ownership
-        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
-
-        info!("File permissions restored from checkpoint");
-
-        // No service restart needed - permission changes are immediate
-
-        Ok(())
-    }
+    // Neither reload method is implemented: permission and ownership changes
+    // are immediate. This plugin's paths also come from operator directives at
+    // runtime, so there is no set it could enumerate.
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();

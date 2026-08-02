@@ -18,14 +18,14 @@ use hardener_common::{
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
+    ApplyResult, Change, ChangeType, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
     plugin::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
 use std::{path::Path, time::Instant};
-use tracing::{info, warn};
+use tracing::info;
 
 /// Audit Hardening Plugin
 ///
@@ -1439,24 +1439,14 @@ impl HardeningPlugin for AuditHardeningPlugin {
         })
     }
 
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
-        info!(
-            "Rolling back audit configuration to checkpoint: {}",
-            checkpoint.checkpoint_id.as_str()
-        );
+    fn reloads_for_path(&self, path: &Path) -> bool {
+        path.starts_with("/etc/audit")
+    }
 
-        // Restore configuration files from checkpoint
-        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
-
-        info!("Audit configuration files restored from checkpoint");
-
-        // Reload audit rules after restoring config
-        match reload_audit_rules(ctx).await {
-            Ok(_) => info!("Audit rules reloaded successfully"),
-            Err(e) => warn!("Failed to reload audit rules: {}", e),
-        }
-
-        Ok(())
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
+        reload_audit_rules(ctx).await?;
+        info!("Audit rules reloaded successfully");
+        Ok(Some("audit rules reloaded".to_string()))
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {

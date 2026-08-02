@@ -453,3 +453,13 @@ fn threshold_directives_accept_stricter_and_flag_looser() {
         "zero disables the check, so it is the loosest value and not the strictest"
     );
 }
+
+/// Pins the trait default: PAM's changes take effect immediately for new
+/// authentication attempts, so a rollback that restored `/etc/pam.d` has
+/// nothing to reload.
+#[test]
+fn pam_reloads_for_nothing_because_its_changes_are_immediate() {
+    let plugin = PamHardeningPlugin::new();
+    assert!(!plugin.reloads_for_path(Path::new("/etc/pam.d/system-auth")));
+    assert!(!plugin.reloads_for_path(Path::new("/etc/security/faillock.conf")));
+}

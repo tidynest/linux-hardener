@@ -35,7 +35,7 @@ use hardener_common::{
     vendor_config::{ConfigLayer, LayeredRead, read_layered},
 };
 use hardener_core::{
-    ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
+    ApplyResult, Change, ChangeType, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
     plugin::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
@@ -2177,29 +2177,14 @@ impl HardeningPlugin for SshHardeningPlugin {
         })
     }
 
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
-        info!(
-            "Rolling back SSH configuration to checkpoint: {}",
-            checkpoint.checkpoint_id.as_str()
-        );
+    fn reloads_for_path(&self, path: &Path) -> bool {
+        path.starts_with("/etc/ssh")
+    }
 
-        // Use the common rollback helper
-        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
-
-        info!("SSH configuration files restored from checkpoint");
-
-        // Restart SSH service to apply the restored configuration
-        match Self::restart_ssh_service(ctx).await {
-            Ok(_) => {
-                info!("SSH service restarted after rollback");
-            }
-            Err(e) => {
-                error!("Failed to restart SSH service after rollback: {}", e);
-                return Err(e);
-            }
-        }
-
-        Ok(())
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
+        Self::restart_ssh_service(ctx).await?;
+        info!("SSH service restarted after rollback");
+        Ok(Some("sshd restarted".to_string()))
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {

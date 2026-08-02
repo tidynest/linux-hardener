@@ -16,12 +16,13 @@ use hardener_common::{
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationReport,
+    ApplyResult, Change, ChangeType, PluginConfig, ValidationReport,
     context::Context,
     plugin::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
+use std::path::Path;
 use std::time::Instant;
 use tracing::{info, warn};
 
@@ -1187,29 +1188,17 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         })
     }
 
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
-        info!(
-            "Rolling back firewall configuration to checkpoint: {}",
-            checkpoint.checkpoint_id.as_str()
-        );
+    fn reloads_for_path(&self, path: &Path) -> bool {
+        path == Path::new("/etc/nftables.conf")
+            || path.starts_with("/etc/firewalld")
+            || path.starts_with("/etc/ufw")
+    }
 
-        // Restore configuration files from checkpoint
-        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
-
-        info!("Firewall configuration files restored from checkpoint");
-
-        // Re-enable firewall to reload rules based on detected backend
-        match self.detect_backend(ctx).await {
-            Ok(backend) => match backend.enable(ctx).await {
-                Ok(_) => info!("Firewall re-enabled successfully"),
-                Err(e) => warn!("Failed to re-enable firewall: {}", e),
-            },
-            Err(e) => {
-                warn!("Could not detect firewall backend for reload: {}", e);
-            }
-        }
-
-        Ok(())
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
+        let backend = self.detect_backend(ctx).await?;
+        backend.enable(ctx).await?;
+        info!("Firewall re-enabled successfully");
+        Ok(Some("firewall backend re-enabled".to_string()))
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {

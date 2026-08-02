@@ -176,3 +176,23 @@ fn services_map_fedramp_moderate_controls() {
         );
     }
 }
+
+/// Names only services' own paths, so a failure here cannot come from
+/// another plugin's entry in a shared list.
+#[test]
+fn services_reloads_for_its_own_paths_and_no_others() {
+    let plugin = ServicesHardeningPlugin::new();
+    assert!(plugin.reloads_for_path(Path::new("/etc/systemd/system/telnet.socket")));
+    assert!(!plugin.reloads_for_path(Path::new("/etc/ssh/sshd_config")));
+}
+
+/// Ties the predicate to the literal `apply` actually checkpoints, so the
+/// two cannot drift apart unnoticed.
+#[test]
+fn every_path_services_checkpoints_is_one_it_reloads_for() {
+    let plugin = ServicesHardeningPlugin::new();
+    assert!(
+        plugin.reloads_for_path(Path::new(ADMIN_UNIT_DIR)),
+        "services checkpoints {ADMIN_UNIT_DIR} but would not reload for it"
+    );
+}

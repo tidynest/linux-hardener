@@ -8,6 +8,8 @@ use crate::config::PluginConfig;
 use async_trait::async_trait;
 #[cfg(feature = "system")]
 use hardener_common::error::Result;
+#[cfg(feature = "system")]
+use std::path::Path;
 
 // Re-export types from hardener-types for backwards compatibility
 pub use hardener_types::{
@@ -73,8 +75,24 @@ pub trait HardeningPlugin: Send + Sync {
     /// Should create a checkpoint before making changes.
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
 
-    /// Rolls back changes to a previous checkpoint
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
+    /// Whether a rollback that restored `path` needs this plugin to reload.
+    ///
+    /// The question is about the reload, not about ownership. A plugin that
+    /// owns a path but needs no reload for it answers `false`, which is why
+    /// the permissions plugin, whose paths come from operator directives at
+    /// runtime and cannot be enumerated, takes the default.
+    fn reloads_for_path(&self, _path: &Path) -> bool {
+        false
+    }
+
+    /// Re-reads configuration this plugin owns, after a rollback restored it.
+    ///
+    /// Returns what was done, for the operator: `Some("sshd restarted")`.
+    /// `None` means there was nothing to reload and produces no row in the
+    /// rollback output.
+    async fn reload_after_rollback(&self, _ctx: &Context) -> Result<Option<String>> {
+        Ok(None)
+    }
 
     /// Validates configuration without applying changes (dry-run).
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;

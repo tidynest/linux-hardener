@@ -17,7 +17,7 @@ use hardener_common::{
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
+    Change, ChangeType, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
     plugin::{
         ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker,
@@ -1275,38 +1275,11 @@ impl HardeningPlugin for KernelHardeningPlugin {
         })
     }
 
-    /// Rolls back kernel parameters to a previous checkpoint.
-    ///
-    /// Restores sysctl configuration files from the checkpoint and reloads
-    /// the kernel parameters using `sysctl --system`.
-    ///
-    /// # Arguments
-    /// * `ctx` - Execution context containing checkpoint manager
-    /// * `checkpoint` - The checkpoint to restore to
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
-        info!(
-            "Rolling back kernel configuration to checkpoint: {}",
-            checkpoint.checkpoint_id.as_str()
-        );
+    fn reloads_for_path(&self, path: &Path) -> bool {
+        path == Path::new("/etc/sysctl.conf") || path.starts_with(SYSCTL_DROPIN_DIR)
+    }
 
-        // Get the checkpoint manager from context
-        let manager = ctx.checkpoint_manager().ok_or_else(|| {
-            hardener_common::error::HardeningError::State(
-                "CheckpointManager not available in context".to_string(),
-            )
-        })?;
-
-        // Run async rollback to restore configuration files
-        let checkpoint_id = checkpoint.checkpoint_id.clone();
-        let manager = manager.clone();
-
-        manager
-            .rollback(ctx.executor().as_ref(), &checkpoint_id)
-            .await?;
-
-        info!("Kernel configuration files restored from checkpoint");
-
-        // Reload sysctl settings from restored config files
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
         let reload_result = ctx
             .executor()
             .execute_command("sysctl", &["--system"])
@@ -1321,7 +1294,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             );
         }
 
-        Ok(())
+        Ok(Some("sysctl --system".to_string()))
     }
 
     /// Validates that kernel parameters can be applied (dry-run).

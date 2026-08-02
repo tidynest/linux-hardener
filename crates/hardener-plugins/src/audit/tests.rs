@@ -367,3 +367,33 @@ async fn scan_reports_rules_unchecked_when_auditctl_needs_root() {
             .all(|u| u.unchecked_check_id.starts_with("audit_rule_"))
     );
 }
+
+/// Names only audit's own paths, so a failure here cannot come from another
+/// plugin's entry in a shared list.
+#[test]
+fn audit_reloads_for_its_own_paths_and_no_others() {
+    let plugin = AuditHardeningPlugin::new();
+    assert!(plugin.reloads_for_path(Path::new("/etc/audit/auditd.conf")));
+    assert!(plugin.reloads_for_path(Path::new("/etc/audit/rules.d/hardening.rules")));
+    assert!(plugin.reloads_for_path(Path::new("/etc/audit/audit.rules")));
+    assert!(!plugin.reloads_for_path(Path::new("/etc/pam.d/system-auth")));
+}
+
+/// Ties the predicate to the literals `apply` actually checkpoints, so the
+/// two cannot drift apart unnoticed.
+#[test]
+fn every_path_audit_checkpoints_is_one_it_reloads_for() {
+    let plugin = AuditHardeningPlugin::new();
+    for path in [
+        "/etc/audit/auditd.conf",
+        AUDIT_RULES_DIR,
+        AUDIT_RULES_PATH,
+        AUDIT_COMPILED_RULES,
+        AUDIT_COMPILED_RULES_PREV,
+    ] {
+        assert!(
+            plugin.reloads_for_path(Path::new(path)),
+            "audit checkpoints {path} but would not reload for it"
+        );
+    }
+}

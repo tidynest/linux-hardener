@@ -13,7 +13,7 @@ use hardener_common::{
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
 };
 use hardener_core::{
-    ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
+    ApplyResult, Change, ChangeType, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
     plugin::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
@@ -917,39 +917,24 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         })
     }
 
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
-        info!(
-            "Rolling back service configuration to checkpoint: {}",
-            checkpoint.checkpoint_id.as_str()
-        );
+    fn reloads_for_path(&self, path: &Path) -> bool {
+        path.starts_with(ADMIN_UNIT_DIR)
+    }
 
-        // Restore configuration files from checkpoint
-        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
-
-        info!("Service configuration files restored from checkpoint");
-
-        // Reload systemd to pick up any restored unit files
-        let reload_result = ctx
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
+        let output = ctx
             .executor()
             .execute_command("systemctl", &["daemon-reload"])
-            .await;
+            .await?;
 
-        match reload_result {
-            Ok(output) if output.success() => {
-                info!("Systemd daemon reloaded successfully");
-            }
-            Ok(output) => {
-                warn!(
-                    "systemctl daemon-reload returned non-zero: {}",
-                    output.stderr
-                );
-            }
-            Err(e) => {
-                warn!("Failed to reload systemd daemon: {}", e);
-            }
+        if !output.success() {
+            warn!(
+                "systemctl daemon-reload returned non-zero: {}",
+                output.stderr
+            );
         }
 
-        Ok(())
+        Ok(Some("systemd daemon reloaded".to_string()))
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {

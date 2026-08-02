@@ -15,6 +15,7 @@
 
 use super::*;
 use hardener_core::{CommandOutput, MockExecutor};
+use std::path::Path;
 
 /// Reproduces the maintainer's hardened-Arch scenario: nftables and ufw
 /// are both installed, the unprivileged `nft list ruleset` probe fails
@@ -1074,4 +1075,28 @@ fn an_unrecognised_action_is_refused_rather_than_written() {
     apply_rule_directives(&mut rule, "ssh", &config);
 
     assert_eq!(rule.rule_action, "accept", "the baseline must stand");
+}
+
+/// Names only firewall's own paths, so a failure here cannot come from
+/// another plugin's entry in a shared list.
+#[test]
+fn firewall_reloads_for_its_own_paths_and_no_others() {
+    let plugin = FirewallHardeningPlugin::new();
+    assert!(plugin.reloads_for_path(Path::new("/etc/nftables.conf")));
+    assert!(plugin.reloads_for_path(Path::new("/etc/firewalld/zones/public.xml")));
+    assert!(plugin.reloads_for_path(Path::new("/etc/ufw/ufw.conf")));
+    assert!(!plugin.reloads_for_path(Path::new("/etc/sysctl.conf")));
+}
+
+/// Ties the predicate to the literals `apply` actually checkpoints, so the
+/// two cannot drift apart unnoticed.
+#[test]
+fn every_path_firewall_checkpoints_is_one_it_reloads_for() {
+    let plugin = FirewallHardeningPlugin::new();
+    for path in ["/etc/nftables.conf", "/etc/firewalld", "/etc/ufw"] {
+        assert!(
+            plugin.reloads_for_path(Path::new(path)),
+            "firewall checkpoints {path} but would not reload for it"
+        );
+    }
 }

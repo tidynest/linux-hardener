@@ -3,8 +3,8 @@
 //! Provides MockPlugin for testing plugin-related functionality.
 
 use crate::{
-    ApplyResult, Checkpoint, Context, Finding, HardeningPlugin, PluginConfig, PluginMetadata,
-    ScanResult, ValidationReport,
+    ApplyResult, Context, Finding, HardeningPlugin, PluginConfig, PluginMetadata, ScanResult,
+    ValidationReport,
 };
 use async_trait::async_trait;
 use hardener_common::{
@@ -164,10 +164,6 @@ impl HardeningPlugin for MockPlugin {
             apply_checkpoint_id: None,
             apply_error: None,
         })
-    }
-
-    async fn rollback(&self, _ctx: &mut Context, _checkpoint: &Checkpoint) -> Result<()> {
-        Ok(())
     }
 
     async fn validate(&self, _ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {

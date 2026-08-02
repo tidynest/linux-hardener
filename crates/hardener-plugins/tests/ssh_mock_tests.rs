@@ -12,6 +12,7 @@ use hardener_plugins::ssh::{
     SshHardeningPlugin, select_algorithms, sshd_validate_scratch_path, supported_algorithms,
     validate_sshd_config,
 };
+use std::path::Path;
 use std::sync::Arc;
 
 /// Creates a mock executor with a typical secure SSH config.
@@ -3204,4 +3205,34 @@ async fn apply_reports_why_the_dropin_directory_could_not_be_created() {
         !result.apply_success,
         "an apply that could not write the fragment has not succeeded"
     );
+}
+
+/// Names only ssh's own paths, so a failure here cannot come from another
+/// plugin's entry in a shared list.
+#[test]
+fn ssh_reloads_for_its_own_paths_and_no_others() {
+    let plugin = SshHardeningPlugin::new();
+    assert!(plugin.reloads_for_path(Path::new("/etc/ssh/sshd_config")));
+    assert!(plugin.reloads_for_path(Path::new("/etc/ssh/sshd_config.d/00-hardener.conf")));
+    assert!(!plugin.reloads_for_path(Path::new("/etc/sysctl.conf")));
+    assert!(!plugin.reloads_for_path(Path::new("/etc/audit/auditd.conf")));
+}
+
+/// Ties the predicate to the paths `apply` actually checkpoints, so the two
+/// cannot drift apart unnoticed. The two source constants this mirrors
+/// (`SSHD_ADMIN_CONFIG_PATH`, `dropin::DROPIN_PATH`) are private to
+/// `hardener_plugins`, and this file compiles as a separate crate, so the
+/// values are duplicated here rather than named.
+#[test]
+fn every_path_ssh_checkpoints_is_one_it_reloads_for() {
+    let plugin = SshHardeningPlugin::new();
+    for path in [
+        "/etc/ssh/sshd_config",
+        "/etc/ssh/sshd_config.d/00-hardener.conf",
+    ] {
+        assert!(
+            plugin.reloads_for_path(Path::new(path)),
+            "ssh checkpoints {path} but would not reload for it"
+        );
+    }
 }

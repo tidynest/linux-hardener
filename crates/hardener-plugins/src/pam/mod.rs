@@ -19,7 +19,7 @@ use hardener_common::{
     vendor_config::{ConfigLayer, LayeredRead, read_layered, vendor_path_for},
 };
 use hardener_core::{
-    Change, ChangeType, Checkpoint, Context, PluginConfig,
+    Change, ChangeType, Context, PluginConfig,
     plugin::{
         ApplyResult, Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker,
         UncheckedCheck, ValidationIssue, ValidationReport,
@@ -1107,22 +1107,9 @@ impl HardeningPlugin for PamHardeningPlugin {
         })
     }
 
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
-        info!(
-            "Rolling back PAM configuration to checkpoint: {}",
-            checkpoint.checkpoint_id.as_str()
-        );
-
-        // Restore configuration files from checkpoint
-        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
-
-        info!("PAM configuration files restored from checkpoint");
-
-        // PAM doesn't require a service restart - changes take effect immediately
-        // for new authentication attempts
-
-        Ok(())
-    }
+    // Neither reload method is implemented: PAM changes take effect
+    // immediately for new authentication attempts, so a rollback that
+    // restored /etc/pam.d has nothing to reload.
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         info!("Validating PAM configuration files");

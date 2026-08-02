@@ -14,7 +14,7 @@ use hardener_common::{
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity},
 };
 use hardener_core::{
-    ApplyResult, Change, ChangeType, Checkpoint, PluginConfig, ValidationIssue, ValidationReport,
+    ApplyResult, Change, ChangeType, PluginConfig, ValidationIssue, ValidationReport,
     context::Context,
     plugin::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
@@ -924,20 +924,19 @@ impl HardeningPlugin for MacHardeningPlugin {
         })
     }
 
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> {
-        info!(
-            "Rolling back MAC configuration to checkpoint: {}",
-            checkpoint.checkpoint_id.as_str()
-        );
+    fn reloads_for_path(&self, path: &Path) -> bool {
+        // `Path::starts_with` compares whole components, so `/etc/apparmor`
+        // does not match `/etc/apparmor.d`: both are checkpointed as their
+        // own paths (see the `mac_paths` built in `apply`), so both prefixes
+        // are named here.
+        path.starts_with("/etc/selinux")
+            || path.starts_with("/etc/apparmor")
+            || path.starts_with("/etc/apparmor.d")
+    }
 
-        // Restore configuration files from checkpoint
-        crate::rollback_files_from_checkpoint(ctx, checkpoint)?;
-
-        info!("MAC configuration files restored from checkpoint");
-
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
         self.reload_mac_system(ctx).await;
-
-        Ok(())
+        Ok(Some("MAC policy reloaded".to_string()))
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {

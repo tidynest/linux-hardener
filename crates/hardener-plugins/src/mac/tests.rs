@@ -308,3 +308,28 @@ fn mac_findings_map_fedramp_access_enforcement() {
         );
     }
 }
+
+/// Names only mac's own paths, so a failure here cannot come from another
+/// plugin's entry in a shared list.
+#[test]
+fn mac_reloads_for_its_own_paths_and_no_others() {
+    let plugin = MacHardeningPlugin::new();
+    assert!(plugin.reloads_for_path(Path::new("/etc/selinux/config")));
+    assert!(plugin.reloads_for_path(Path::new("/etc/apparmor.d/usr.bin.foo")));
+    assert!(!plugin.reloads_for_path(Path::new("/etc/nftables.conf")));
+}
+
+/// Ties the predicate to the literals `apply` actually checkpoints, so the
+/// two cannot drift apart unnoticed. `/etc/apparmor` and `/etc/apparmor.d`
+/// are checkpointed as two separate paths, and `Path::starts_with` compares
+/// whole components, so the predicate has to name both.
+#[test]
+fn every_path_mac_checkpoints_is_one_it_reloads_for() {
+    let plugin = MacHardeningPlugin::new();
+    for path in [SELINUX_CONFIG_PATH, "/etc/apparmor", "/etc/apparmor.d"] {
+        assert!(
+            plugin.reloads_for_path(Path::new(path)),
+            "mac checkpoints {path} but would not reload for it"
+        );
+    }
+}

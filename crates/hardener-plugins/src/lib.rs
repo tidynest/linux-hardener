@@ -42,39 +42,6 @@ pub async fn refusal_blocker(ctx: &hardener_core::Context) -> hardener_core::Unc
     }
 }
 
-/// This function handles the common pattern of restoring files from a checkpoint.
-/// Plugins can call this and then perform any additional service restarts needed.
-pub fn rollback_files_from_checkpoint(
-    ctx: &hardener_core::Context,
-    checkpoint: &hardener_core::Checkpoint,
-) -> hardener_common::error::Result<()> {
-    // Get the checkpoint manager from context
-    let manager = ctx.checkpoint_manager().ok_or_else(|| {
-        hardener_common::error::HardeningError::State(
-            "CheckpointManager not available in context".to_string(),
-        )
-    })?;
-
-    // Run async rollback to restore configuration files
-    let checkpoint_id = checkpoint.checkpoint_id.clone();
-    let manager = manager.clone();
-
-    let rt = tokio::runtime::Runtime::new().map_err(|e| {
-        hardener_common::error::HardeningError::State(format!(
-            "Failed to create tokio runtime: {}",
-            e
-        ))
-    })?;
-
-    rt.block_on(async {
-        manager
-            .rollback(ctx.executor().as_ref(), &checkpoint_id)
-            .await
-    })?;
-
-    Ok(())
-}
-
 /// Creates a checkpoint before applying changes.
 ///
 /// This function captures the current state of the specified files so they can
