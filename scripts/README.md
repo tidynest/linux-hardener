@@ -448,10 +448,13 @@ For complete release documentation, see [docs/contributing/releasing.md](../docs
 - All `.rs` files in `crates/` and `src-tauri/src/` are documented
 - No deleted files remain documented in file-map.md
 - Files are listed under their correct crate sections
+- A description claiming "N tests" agrees with the file it describes, counted
+  from its `#[test]` and `#[tokio::test]` declarations
 
 **Exit Codes**:
 - `0`: file-map.md is complete and accurate
-- `1`: Discrepancies found (missing or extra files)
+- `1`: Discrepancies found (missing or extra files, or a test count the source
+  does not support)
 
 **Example Output (Discrepancies Found)**:
 ```

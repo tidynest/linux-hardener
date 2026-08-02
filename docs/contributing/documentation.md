@@ -91,6 +91,14 @@ in `docs/reference/file-map.md`, and that no entry names a file that is gone.
 `tests/` file is expected to be documented. `--fix` prints stub rows for what is
 missing rather than writing them.
 
+It also derives the test counts the descriptions claim. A row reading
+"21 tests of the renderers" is checked against the `#[test]` and
+`#[tokio::test]` declarations in the file it describes, so a number kept by
+hand cannot drift away from the tests it counts. Both spellings are matched,
+because a file that gained an async test would otherwise start undercounting
+without saying so. A claim on a row whose file no longer exists is left to the
+missing-file report above rather than counted twice.
+
 ### Plugin documentation
 
 ```bash

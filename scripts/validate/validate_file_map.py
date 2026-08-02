@@ -33,6 +33,16 @@ EXCLUDE_PATTERNS = [
 # Path to file-map.md relative to project root
 FILE_MAP_PATH = "docs/reference/file-map.md"
 
+# A test function, as declared. Both spellings, because a crate that gained an
+# async test would otherwise start undercounting silently.
+TEST_ATTRIBUTE = re.compile(r"^[ \t]*#\[(?:tokio::)?test\]", re.MULTILINE)
+
+# A count claimed in a file-map description, as in "21 tests of the renderers".
+# These have drifted twice in two sessions, which is what this derives away:
+# the number in the prose is checked against the file it describes rather than
+# maintained by hand.
+CLAIMED_TEST_COUNT = re.compile(r"\b(\d+) tests\b")
+
 # ANSI colour codes
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
@@ -112,6 +122,11 @@ def extract_crate_from_path(file_path: str) -> str:
     return "unknown"
 
 
+def count_test_attributes(source: Path) -> int:
+    """Count the test functions one Rust file declares."""
+    return len(TEST_ATTRIBUTE.findall(source.read_text(encoding="utf-8")))
+
+
 def generate_stub_entry(file_path: str) -> str:
     """Generate a Markdown table row stub for a missing file."""
     filename = Path(file_path).name
@@ -139,7 +154,10 @@ def main():
     file_map_content = (root / FILE_MAP_PATH).read_text()
 
     # Parse sections to understand which crate each file belongs to
+    # The same walk collects the test counts the descriptions claim, so the
+    # crate context a row's path needs is resolved once rather than twice.
     current_crate = None
+    claimed_test_counts: list[tuple[str, int]] = []
     for line in file_map_content.split('\n'):
         # Detect crate section headers like "## hardener-core" or "## hardener-cli (CLI Binary)"
         section_match = re.match(r'^##\s+(hardener-\w+|src-tauri)', line)
@@ -156,6 +174,9 @@ def main():
             else:
                 full_path = f"crates/{current_crate}/{rel_path}"
             documented_full_paths.add(full_path)
+            claim = CLAIMED_TEST_COUNT.search(line)
+            if claim:
+                claimed_test_counts.append((full_path, int(claim.group(1))))
 
     # Find discrepancies
     missing_from_docs = actual_files - documented_full_paths
@@ -201,6 +222,28 @@ def main():
             print(f"  - {f}")
         print()
         print(f"  {YELLOW}These entries should be removed from file-map.md{NC}\n")
+
+    # Report test counts the prose claims and the source does not support.
+    # A row whose file is missing is skipped: that is already reported above as
+    # an entry documenting a file the codebase does not have, and counting the
+    # tests in a file that is not there would report one defect as two.
+    miscounted = []
+    for full_path, claimed in claimed_test_counts:
+        source = root / full_path
+        if not source.exists():
+            continue
+        actual = count_test_attributes(source)
+        if actual != claimed:
+            miscounted.append((full_path, claimed, actual))
+
+    if miscounted:
+        has_errors = True
+        print(f"{RED}Test counts in file-map.md that the source does not support "
+              f"({len(miscounted)}):{NC}\n")
+        for full_path, claimed, actual in sorted(miscounted):
+            print(f"  - {full_path}: the description says {claimed}, the file declares {actual}")
+        print()
+        print(f"  {YELLOW}Correct the number in the description, or the tests it counts{NC}\n")
 
     # Summary
     if has_errors:
