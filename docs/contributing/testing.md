@@ -487,7 +487,7 @@ consumer what is in force:
 | Setting | Oracle | Why not read the file |
 |---------|--------|-----------------------|
 | The `sshd_config` directives in `SSH_CHECKS` | `sshd -T` | Resolves `Include` precedence and `Match` scoping, which our parser does not |
-| `PASS_MIN_DAYS`, `PASS_MAX_DAYS`, `PASS_WARN_AGE` | `useradd` then `chage -l` | `login.defs` supplies defaults for NEW accounts, so only a fresh account shows what the file means today |
+| `PASS_MIN_DAYS`, `PASS_MAX_DAYS`, `PASS_WARN_AGE` | `useradd`, then `chage -l` with `passwd -S` behind it | `login.defs` supplies defaults for NEW accounts, so only a fresh account shows what the file means today. Arch builds shadow with no minimum-days field at all, so `PASS_MIN_DAYS` is read from `passwd -S` there: see [The directive one reader cannot report](#the-directive-one-reader-cannot-report) |
 | `ENCRYPT_METHOD`, `HOME_MODE`, `UMASK` | a probe account: the scheme prefix `crypt` wrote into its shadow field, `stat -c %a` on its home, `su - probe -c umask` | These are settings the tool does **not** manage, and the file they come from is the one a masked `/etc` copy silences. Reading that file back would ask the masked copy what it says |
 | The nine paths in `PERMISSION_CHECKS` | `stat -c %a` | A mode has no parser to disagree with: the value the kernel reports **is** the value in force. What the oracle adds is the comparison, because two of the nine are allowed-bits masks where a stricter mode is compliant |
 | The three properties in `FIREWALL_CHECKS` | `nft list ruleset` and `systemctl is-enabled`, each diffed against a pre-apply capture | `ufw status` and `firewall-cmd --list-all` are the tools' own frontends. Netfilter is what a packet meets, and systemd is what decides whether it still will after a reboot. **The two ruleset rows require `--booted`; `boot-persistence` does not** |
@@ -781,6 +781,42 @@ of the four labels:
 not full coverage, and the line exists so that it cannot be read as though it
 were.
 
+### The directive one reader cannot report
+
+`LOGIN_DEFS_CHECKS` carries two readers per row, not one. The first is the
+`chage -l` label the directive is reported under; the second is the `passwd -S`
+field carrying the same setting, and it is consulted only where the first comes
+up empty.
+
+The second reader exists because Arch cannot answer `PASS_MIN_DAYS` through
+`chage` at all. Its shadow build has no minimum-days field: `chage -l` prints no
+such line, `chage --help` offers no `-m`, and the word appears nowhere in the
+binary, which rules out a translated label and a privilege difference alike.
+Measured on `shadow 4.20.0.arch1-1`. The other four distributions report the
+label and go on using it.
+
+Two properties of that arrangement are deliberate.
+
+**The fallback is per directive, not a replacement.** `passwd -S` reports all
+three values and could have replaced `chage` outright, which would be the
+smaller diff. It was not taken: `chage` is proven against four distributions and
+`passwd -S` against none, so swapping the reader would have put four passing
+runs at risk to fix the one that could not pass. The row that needs the second
+reader uses it; the rows that do not, do not.
+
+**A fallback that answered everything would be invisible**, because it would
+return the right value on every row and no run would ever notice. The self-test
+closes that by giving the two readers *disagreeing* fixtures: the `passwd -S`
+line says 99 and 88 where `chage` says 42 and 11, so a fallback that had started
+answering `PASS_MAX_DAYS` reads 99 and goes red. Only an absent label falls
+through. A pattern `grep` rejected is a malformed table entry, and answering it
+from elsewhere would hide the defect behind a plausible value.
+
+When neither reader has the directive, the failure carries what each of them
+actually printed. The Arch run that raised this said only that the label was
+missing, so the log could not show what `chage` had said and the cause needed a
+container to find.
+
 ### The kernel oracle, and the parameters it cannot ask about
 
 `KERNEL_CHECKS` holds 11 `net.ipv4.*` parameters, one assertion each: `sysctl -n`
@@ -867,7 +903,7 @@ nothing is recorded as `UNAVAILABLE` with the reason, never as a blank beside
 the path.
 
 `jq` is required, along with `grep`, `sshd`, `ssh-keygen`, `useradd`,
-`userdel`, `chage`, `id`, `chpasswd`, `stat` and `su`. A missing one aborts the
+`userdel`, `chage`, `id`, `chpasswd`, `stat`, `su` and `passwd`. A missing one aborts the
 run by name before any check runs. The account rows the probe reads are parsed
 by the shell rather than by `awk`, which is in neither the dnf-family nor the
 openSUSE package set the container script installs. An oracle that cannot answer

@@ -88,7 +88,14 @@ fi
 # empty reading compared against another empty reading is a check that agrees
 # with itself. The account rows themselves are read by the shell, so that probe
 # adds no command of its own.
-REQUIRED_COMMANDS=(jq grep sshd ssh-keygen useradd userdel chage id chpasswd stat su)
+#
+# passwd is the login.defs probe's second reader, for the one directive chage
+# cannot report on every distribution. It is listed even though the run only
+# consults it where chage came up short: it ships in the same package as chage,
+# so a container without it is a broken container, and refusing here names that
+# once instead of leaving one directive to fail much later for a reason that
+# reads like a distribution difference.
+REQUIRED_COMMANDS=(jq grep sshd ssh-keygen useradd userdel chage id chpasswd stat su passwd)
 
 # Refuse, naming every command that is missing rather than one per run.
 require_commands() {
@@ -231,6 +238,34 @@ extract_chage_value() {
         return 1
     fi
     printf '%s' "${line#*:}" | tr -d '[:space:]'
+}
+
+# Extract one field from a captured `passwd -S` line, numbered as passwd(1)
+# documents them: login name, status, date of last change, minimum age, maximum
+# age, warning period, inactivity period.
+#
+# This exists because chage cannot answer PASS_MIN_DAYS on every distribution
+# the suite supports. Arch builds shadow without the field entirely: `chage -l`
+# prints no minimum line, `chage --help` offers no -m, and the word appears
+# nowhere in the binary, which rules out a translated label and a privilege
+# difference alike. passwd -S reads the same /etc/shadow row and does report it.
+#
+# The width is asserted rather than assumed, and a line of any other width is
+# refused instead of indexed. Seven is the documented shape, and the one field
+# that could ever gain a space is the date, which shadow has printed both as
+# 2024-12-24 and as 12/24/2024. Indexing past a spacey date would answer with
+# the neighbour of the field asked for, and a wrong value that reads like a real
+# one is the single outcome this suite must never produce.
+# Returns 1 when the capture cannot be read that way, which every caller treats
+# as "no value", never as a pass.
+extract_passwd_status_value() {
+    local output="$1" field="$2"
+    local -a parts
+    read -r -a parts <<<"$output"
+    if (( ${#parts[@]} != 7 )); then
+        return 1
+    fi
+    printf '%s' "${parts[field - 1]}"
 }
 
 # Container detection follows scripts/test/root-test-suite.sh, checking the same
@@ -744,12 +779,22 @@ run_rollback_reload_check() {
 # row, written when it was created, which says nothing about the file today.
 DIFF_PROBE_USER="hardenerdiffprobe"
 
-# The PASS_* directives, the chage -l label reporting each one, and the value
-# the tool targets. Fields: directive|label|target.
+# The PASS_* directives, the chage -l label reporting each one, the value the
+# tool targets, and the passwd -S field carrying the same setting.
+# Fields: directive|label|target|passwd-field.
+#
+# The fourth column is the second reader, and it is consulted only where the
+# first cannot answer. On Arch chage reports no minimum at all, so PASS_MIN_DAYS
+# has no label to find there however the run is invoked; see
+# extract_passwd_status_value for what was measured. Every other distribution
+# keeps reading the label it always read, which is why the fallback is per
+# directive rather than a replacement: passwd -S could answer all three, but
+# swapping a reader proven on four distributions for one proven on none would
+# put the four already passing at risk to fix the one that is not.
 LOGIN_DEFS_CHECKS=(
-    "PASS_MIN_DAYS|Minimum number of days|1"
-    "PASS_MAX_DAYS|Maximum number of days|90"
-    "PASS_WARN_AGE|Number of days of warning|7"
+    "PASS_MIN_DAYS|Minimum number of days|1|4"
+    "PASS_MAX_DAYS|Maximum number of days|90|5"
+    "PASS_WARN_AGE|Number of days of warning|7|6"
 )
 
 # Refuse to touch an account this suite did not create. The probe deletes the
@@ -819,6 +864,17 @@ login_defs_system_values() {
         remove_probe_user || true
         return 1
     fi
+    # The second reader, taken here because both readings describe the same
+    # probe account and a shell function has one stdout to return them on: this
+    # is the only point at which the account exists to be asked.
+    #
+    # A failure is deliberately not fatal. On four of the five distributions
+    # chage answers every directive and this capture is never consulted, so a
+    # passwd that could not be run must not end a run it was not needed for.
+    # The directive that does need it says so loudly at the point of use.
+    if ! LOGIN_DEFS_PASSWD_STATUS="$(LC_ALL=C passwd -S "$DIFF_PROBE_USER" 2>/dev/null)"; then
+        LOGIN_DEFS_PASSWD_STATUS=""
+    fi
     remove_probe_user || return 1
     printf '%s' "$out"
 }
@@ -831,6 +887,11 @@ login_defs_system_values() {
 # describes the old file. That is what the generation stamp catches.
 LOGIN_DEFS_CHAGE=""
 LOGIN_DEFS_CHAGE_GENERATION=""
+# The second reader's capture, taken from the same probe account in the same
+# breath as the one above and therefore covered by that one's generation stamp.
+# Empty means passwd -S could not be run or has not run yet, and the only
+# directive that consults it treats empty as no value rather than as a pass.
+LOGIN_DEFS_PASSWD_STATUS=""
 
 login_defs_oracle_init() {
     local out
@@ -845,13 +906,14 @@ login_defs_oracle_init() {
     LOGIN_DEFS_CHAGE_GENERATION="$APPLY_GENERATION"
 }
 
-# The chage -l label that reports one PASS_* directive.
-login_defs_label() {
-    local directive="$1" entry name label
+# The whole LOGIN_DEFS_CHECKS row for one PASS_* directive, so the caller
+# unpacks both readers from one lookup rather than searching the table twice.
+login_defs_row() {
+    local directive="$1" entry name
     for entry in "${LOGIN_DEFS_CHECKS[@]}"; do
-        IFS='|' read -r name label _ <<<"$entry"
+        IFS='|' read -r name _ <<<"$entry"
         if [[ "$name" == "$directive" ]]; then
-            printf '%s' "$label"
+            printf '%s' "$entry"
             return 0
         fi
     done
@@ -861,19 +923,44 @@ login_defs_label() {
 # Print what login.defs currently means for one PASS_* directive, as shadow
 # applied it to a brand new account.
 # Returns non-zero, loudly, when the oracle was never initialised, its capture
-# predates the last apply, the directive is not in the table, or chage did not
-# report it.
+# predates the last apply, the directive is not in the table, or neither reader
+# reported it.
 login_defs_system_value() {
-    local directive="$1" label
+    local directive="$1" row label field value status=0
     require_fresh_capture login_defs "$LOGIN_DEFS_CHAGE" "$LOGIN_DEFS_CHAGE_GENERATION" || return 1
-    if ! label="$(login_defs_label "$directive")"; then
+    if ! row="$(login_defs_row "$directive")"; then
         echo "FATAL: no chage label known for '$directive'" >&2
         return 1
     fi
-    if ! extract_chage_value "$LOGIN_DEFS_CHAGE" "$label"; then
-        echo "FATAL: chage -l does not report '$label' for '$directive'" >&2
+    IFS='|' read -r _ label _ field <<<"$row"
+    value="$(extract_chage_value "$LOGIN_DEFS_CHAGE" "$label")" || status=$?
+    if (( status == 0 )); then
+        printf '%s' "$value"
+        return 0
+    fi
+    # Only an absent label falls through to the second reader. A pattern grep
+    # rejected is status 2, which extract_chage_value has already shouted about,
+    # and answering that from elsewhere would hide a malformed table entry
+    # behind a value that looked correct.
+    if (( status != 1 )); then
         return 1
     fi
+    if [[ -n "$LOGIN_DEFS_PASSWD_STATUS" ]] &&
+        value="$(extract_passwd_status_value "$LOGIN_DEFS_PASSWD_STATUS" "$field")"; then
+        printf '%s' "$value"
+        return 0
+    fi
+    # The output goes with the message. The arch run that raised this said only
+    # that the label was missing, so the log could not show what chage had
+    # actually printed and the cause could not be diagnosed from the evidence
+    # the run produced.
+    {
+        echo "FATAL: neither reader reports '$label' for '$directive'."
+        echo "  chage -l printed:"
+        printf '%s\n' "$LOGIN_DEFS_CHAGE" | sed 's/^/    /'
+        echo "  passwd -S printed: ${LOGIN_DEFS_PASSWD_STATUS:-<nothing>}"
+    } >&2
+    return 1
 }
 
 # Settings this tool does not manage, and must therefore leave exactly as it
@@ -3370,7 +3457,10 @@ run_ssh_checks() {
 run_login_defs_checks() {
     local entry directive target system
     for entry in "${LOGIN_DEFS_CHECKS[@]}"; do
-        IFS='|' read -r directive _ target <<<"$entry"
+        # Four names for four columns. `read` gives the last name every field
+        # that is left, so a three-name unpack would have read the target as
+        # "90|5" the moment the passwd -S column was added.
+        IFS='|' read -r directive _ target _ <<<"$entry"
         if ! system="$(login_defs_system_value "$directive")"; then
             record_unresolved pam-hardening "$directive" "shadow reported no value for the probe account"
             continue
@@ -3785,6 +3875,32 @@ Number of days of warning before password expires	: 7"
     check_status 2 "a rejected chage pattern is not reported as an absent label" \
         extract_chage_value "$chage_fixture" '\('
 
+    # The passwd -S reader, which exists because one supported distribution's
+    # shadow cannot report the minimum at all. Arch builds chage without the
+    # field: `chage -l` prints no 'Minimum number of days' line, `chage --help`
+    # offers no -m, and `strings` finds the word nowhere in the binary. That
+    # rules out a translated label and a privilege difference alike, so no way
+    # of invoking chage there can answer PASS_MIN_DAYS. passwd -S reports the
+    # same /etc/shadow row and does carry the field, on shadow 4.20.0.arch1-1
+    # as elsewhere.
+    #
+    # The field count is asserted rather than assumed. passwd(1) documents
+    # exactly seven fields, and the only one that could ever gain a space is the
+    # date, which shadow has printed both as 2024-12-24 and as 12/24/2024. A
+    # reader that indexed blindly would answer a spacey date with the neighbour
+    # of the field it was asked for, and a wrong value that looks like a reading
+    # is the one failure this suite must never produce.
+    local passwd_status_fixture="hardenerdiffprobe P 2024-12-24 5 42 11 -1"
+    check_eq "$(extract_passwd_status_value "$passwd_status_fixture" 4)" "5" "passwd -S min"
+    check_eq "$(extract_passwd_status_value "$passwd_status_fixture" 5)" "42" "passwd -S max"
+    check_eq "$(extract_passwd_status_value "$passwd_status_fixture" 6)" "11" "passwd -S warn"
+    check_status 1 "a passwd -S line of the wrong width is refused rather than indexed" \
+        extract_passwd_status_value "hardenerdiffprobe P Dec 24, 2024 5 42 11 -1" 4
+    check_status 1 "a truncated passwd -S line returns non-zero" \
+        extract_passwd_status_value "hardenerdiffprobe P" 4
+    check_status 1 "empty passwd -S output returns non-zero" \
+        extract_passwd_status_value "" 4
+
     # The banner that lets a log name the binary that produced it. All three
     # branches, because the dangerous one is the quiet one: a --version that
     # fails, or that succeeds while printing nothing, must not reach the log as
@@ -4030,7 +4146,67 @@ Number of days of warning before password expires	: 11"
     check_eq "$(login_defs_system_value PASS_WARN_AGE)" "11" "login.defs PASS_WARN_AGE reads the warn label"
     check_status 1 "login.defs directive outside the table returns non-zero" \
         login_defs_system_value PASS_NO_SUCH_DIRECTIVE
+
+    # The Arch reading, where chage reports no minimum and the second reader has
+    # to answer for that directive alone. The passwd -S fixture disagrees with
+    # the chage one on max and warn on purpose: a fallback that had quietly
+    # started answering every directive would read 99 and 88 here, and a fixture
+    # that agreed with chage could not tell the two readers apart.
+    local archless_fixture="Last password change					: Dec 24, 2024
+Maximum number of days between password change		: 42
+Number of days of warning before password expires	: 11"
+    LOGIN_DEFS_CHAGE="$archless_fixture"
+    LOGIN_DEFS_PASSWD_STATUS="hardenerdiffprobe P 2024-12-24 5 99 88 -1"
+    check_eq "$(login_defs_system_value PASS_MIN_DAYS)" "5" \
+        "a chage that reports no minimum falls back to passwd -S"
+    check_eq "$(login_defs_system_value PASS_MAX_DAYS)" "42" \
+        "a directive chage does report is still read from chage"
+    check_eq "$(login_defs_system_value PASS_WARN_AGE)" "11" \
+        "and so is the warn age, which passwd -S could also have answered"
+
+    # Neither reader has it, which is the case the FATAL exists for. The message
+    # has to carry the output it rejected: the arch run that raised this said
+    # only that the label was missing, so the log could not say what chage had
+    # actually printed and the cause needed a container to find.
+    LOGIN_DEFS_PASSWD_STATUS=""
+    check_status 1 "a directive neither reader reports returns non-zero" \
+        login_defs_system_value PASS_MIN_DAYS
+    local unreadable_message
+    unreadable_message="$(login_defs_system_value PASS_MIN_DAYS 2>&1 >/dev/null)" || true
+    check_eq "$(grep -c 'Maximum number of days between password change' <<<"$unreadable_message")" "1" \
+        "the message carries the output it could not parse"
+
+    # The runner unpacks this table positionally, so its unpack and the table's
+    # width have to move together: a three-name unpack against four columns
+    # reads PASS_MAX_DAYS' target as "90|5", because `read` gives the last name
+    # everything that is left. Driven through the runner rather than asserted
+    # off the table, because the defect lives in the runner's own line and a
+    # test that unpacked the row itself would only be pinning its own arithmetic.
+    #
+    # The absence claim is worth nothing without the positive one beside it, so
+    # both are made: the run must produce a row for the directive at all, and
+    # that row must not carry the fourth column. The scan document is deliberately
+    # absent here, which costs each directive its second assertion and changes
+    # nothing about the first.
+    local ld_before_total=$CHECKS_TOTAL ld_before_passed=$CHECKS_PASSED
+    local ld_before_failed=$CHECKS_FAILED ld_runner_output
+    LOGIN_DEFS_CHAGE="Last password change					: Dec 24, 2024
+Minimum number of days between password change		: 1
+Maximum number of days between password change		: 90
+Number of days of warning before password expires	: 7"
+    LOGIN_DEFS_CHAGE_GENERATION="$APPLY_GENERATION"
+    LOGIN_DEFS_PASSWD_STATUS=""
+    ld_runner_output="$(run_login_defs_checks)"
+    check_eq "$(grep -c "PASS_MAX_DAYS: the system holds '90'" <<<"$ld_runner_output")" "1" \
+        "the login.defs runner records a row for the directive it read"
+    check_eq "$(grep -c '90|5' <<<"$ld_runner_output")" "0" \
+        "and reads its target without the passwd -S column glued on"
+    CHECKS_TOTAL=$ld_before_total
+    CHECKS_PASSED=$ld_before_passed
+    CHECKS_FAILED=$ld_before_failed
+
     LOGIN_DEFS_CHAGE=""
+    LOGIN_DEFS_PASSWD_STATUS=""
     LOGIN_DEFS_CHAGE_GENERATION=""
 
     # The probe creates a real account, so its two safety properties are pinned

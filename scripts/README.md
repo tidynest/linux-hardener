@@ -1263,7 +1263,8 @@ sudo ./scripts/test/run-cross-distro-tests.sh
 **`--differential`** runs a different kind of test. Instead of comparing the
 tool against itself, it applies hardening inside the container and then asks
 each setting's real consumer what is in force: `sshd -T` for SSH, and
-`chage -l` on an account created after the apply for `/etc/login.defs`, and
+`chage -l` on an account created after the apply for `/etc/login.defs`, with
+`passwd -S` behind it for the one directive Arch's shadow cannot report, and
 `stat -c %a` for the nine paths in `PERMISSION_CHECKS`. Every directive is
 checked twice, that the system satisfies what the run requires of it and that
 `scan` agrees with the system. Satisfying is not always equality: two of the
