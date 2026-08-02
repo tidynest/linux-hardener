@@ -63,6 +63,10 @@ VERSION_REFERENCE_TARGETS = [
     ("docs/architecture/architecture.md", r'(\*\*Version:\*\*\s*)\d+\.\d+\.\d+'),
     ("docs/reference/data-flow.md", r'(\*\*Version:\*\*\s*)\d+\.\d+\.\d+'),
     ("README.md", r'(\*\*Version\*\*:\s*)\d+\.\d+\.\d+'),
+    # SECURITY.md names the current release in prose rather than as a marker,
+    # and it is the one file where a stale number is a false statement about
+    # which versions receive security fixes rather than a cosmetic lag.
+    ("SECURITY.md", r'(The current release is \*\*)\d+\.\d+\.\d+'),
 ]
 
 
