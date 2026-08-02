@@ -861,6 +861,39 @@ looks like the obvious candidate: 2 there ranks below strict mode 1, so seeding
 it would seed a looser value, a correct tool would tighten it, and the check
 would report a defect against every distribution.
 
+**One other row is seeded LOOSER than the tool's target**, and it is the mirror
+of the seed above rather than a repeat of it. The stricter seed proves the tool
+declines to un-harden a host already above its target; nothing proved the
+opposite question could be asked at all on a host that arrived compliant. The
+RHEL container is exactly that host: it ships every managed parameter at or
+above its target, so `run_kernel_preapply_control` correctly refused to certify
+checks that would have passed whether or not the tool had run, and the container
+could not reach a clean total however often the run was repeated. The seed is
+`net.ipv4.conf.all.accept_source_route` written to `1` against a tool target of
+`0`. That row is scored `at-most`, so 1 is unambiguously looser in the one
+direction it is compared in, and no supported distribution ships source routing
+on, which means a pre-apply reading of 1 exists only where the seed took effect.
+`rp_filter` is the trap here rather than the obvious alternative: its space is
+ranked weakest-first, so its looser value is 0 and not the larger number.
+
+Two properties of that seed are deliberate.
+
+**It is written on every distribution**, not only where the control would
+otherwise fail. Seeding only the hosts that needed it would have the five runs
+measuring five different things, and the one host whose behaviour had changed
+would be the one with nothing to be compared against.
+
+**The write is read back before the run continues.** The stricter seed needs no
+read-back because `run_seeded_kernel_check` reads that parameter again after the
+apply, so a write the kernel accepted and then ignored fails there. The looser
+seed has no row of its own: it adds no assertion, and what it changes is whether
+the existing control can be satisfied. Unread, a seed that did not take would
+leave the control scoring the value the container shipped while the log said a
+seed had been placed. The control's pass names the seeded parameter as seeded,
+for the same reason: every run now arrives holding one, and evidence that read
+the same for a seeded row and a naturally away one would let a log claim a
+container was non-compliant when the suite had made it so.
+
 **A run that is not booted asks the kernel nothing.** The signal is
 `HARDENER_DIFF_BOOTED`, exported by `run-cross-distro-tests.sh` on the
 `systemd-run --machine` invocation inside `nspawn_suite_booted` and nowhere
@@ -872,7 +905,7 @@ defect this project keeps closing. The header prints
 version, so a reader meeting an old log can see which arithmetic applied to it.
 
 **The totals move with the mode, and both kernel tables are pinned.** A run
-records **68 checks when it is not booted and 81 when it is**, and
+records **70 checks when it is not booted and 83 when it is**, and
 `expected_check_total` carries an arm for each: the 11 kernel rows and the
 seeded row are checks the tables ask for only where they can be asked at all.
 The unaskable count runs the other way, **7 when booted and 19 when not**, the

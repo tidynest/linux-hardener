@@ -1284,7 +1284,7 @@ every managed permission mode, `sshd -T` in full, the `sshd_config.d` fragments
 as names and contents, and what `login.defs` means to a fresh account. An apply
 that undoes the previous one is a fleet host drifting back to an unhardened state
 on a timer while every scan reports success, and a single-apply run cannot see
-that. A complete run comes to 68 checks per distribution unbooted and 81 booted,
+that. A complete run comes to 70 checks per distribution unbooted and 83 booted,
 and a run recording fewer than the tables ask for is refused rather than reported
 as a pass.
 
