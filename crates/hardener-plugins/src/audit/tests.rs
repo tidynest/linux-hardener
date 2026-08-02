@@ -397,3 +397,104 @@ fn every_path_audit_checkpoints_is_one_it_reloads_for() {
         );
     }
 }
+
+/// A rollback that did everything the host allows must not exit as a failure.
+///
+/// `apply` already treats an unloadable rule set as a skip when the kernel
+/// audit config is locked (`-e 2`): the rules file is written and correct, it
+/// simply cannot go live before the next reboot. The rollback path asked the
+/// same question of the same host and called it a failed reload, so restoring
+/// an audit checkpoint on a locked host exited 1 and told the operator a
+/// service was still on the previous configuration. Both halves have to read
+/// the host the same way.
+#[tokio::test]
+async fn a_locked_audit_config_is_a_reported_skip_rather_than_a_failed_reload() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("augenrules", true)
+            .with_command_program(
+                "augenrules",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "Error sending add rule request (Operation not permitted)".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command_program(
+                "systemctl",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "Failed to restart auditd.service".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command(
+                "auditctl",
+                &["-s"],
+                CommandOutput {
+                    stdout: "enabled 2\nfailure 1\npid 0\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor);
+
+    let reloaded = AuditHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect("a locked audit config is not a rollback failure");
+
+    let action = reloaded.expect("the operator is still told why nothing was loaded");
+    assert!(
+        action.contains("reboot"),
+        "the row must say the restored rules take effect at the next reboot, got: {action}"
+    );
+}
+
+/// The other direction, so the skip above cannot swallow a genuine failure: a
+/// host whose audit config is not locked and whose reload was refused anyway
+/// has a running daemon on the previous rules, and the rollback must say so.
+#[tokio::test]
+async fn an_unlocked_audit_config_still_fails_a_refused_reload() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("augenrules", true)
+            .with_command_program(
+                "augenrules",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "augenrules: failure".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command_program(
+                "systemctl",
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "Failed to restart auditd.service: access denied".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command(
+                "auditctl",
+                &["-s"],
+                CommandOutput {
+                    stdout: "enabled 1\nfailure 1\npid 942\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor);
+
+    let error = AuditHardeningPlugin::new()
+        .reload_after_rollback(&ctx)
+        .await
+        .expect_err("an unlocked host that refused the reload has genuinely failed");
+
+    assert!(
+        error.to_string().contains("Failed to reload audit rules"),
+        "the error must name the reload as the thing that failed, got: {error}"
+    );
+}

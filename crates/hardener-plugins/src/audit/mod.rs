@@ -1156,18 +1156,22 @@ impl HardeningPlugin for AuditHardeningPlugin {
         // `augenrules` run left a .prev, it is captured and restored instead,
         // which is the same bargain either way round.
         //
-        // Re-running `augenrules` after the restore was the alternative, and it
-        // was rejected: it would load rules as a side effect of an undo, it
-        // fails in exactly the environments where the apply already fails (a
-        // container can start no auditd, and both `augenrules --load` and
-        // `systemctl restart` fail there), and it does nothing about .prev.
+        // Restoring these two files returns the persistent state, and that is
+        // all a file restore can do: rules already loaded into the running
+        // kernel stay loaded until something asks the kernel to re-read them.
+        // `reload_after_rollback` is what asks, running the same
+        // `reload_audit_rules` the apply runs, so a rollback of any
+        // `/etc/audit` path now leaves the running rules and the restored
+        // files in agreement rather than a reboot apart.
         //
-        // The ceiling, which is worth saying rather than hiding: restoring the
-        // file returns the persistent state only. Rules already loaded into the
-        // running kernel stay loaded until a reload or a reboot. That is the
-        // same shape as the kernel plugin's rollback, which deletes its drop-in
-        // without reverting the runtime sysctl values, and it is a known limit
-        // of this tool rather than something this declaration introduces.
+        // Capturing .prev is still worth its own line, because the reload does
+        // nothing about it: `augenrules` writes a fresh .prev every time it
+        // compiles, so without this path an undo would leave the copy the
+        // apply's own reload created sitting on the host.
+        //
+        // The reload is allowed to fail without failing the rollback where the
+        // host genuinely cannot load rules, which is the case a container and
+        // a kernel locked with `-e 2` both reach; see `reload_after_rollback`.
         //
         // One consequence of declaring rather than recursing: a declared path
         // is captured strictly, so an existing but unreadable
@@ -1444,9 +1448,32 @@ impl HardeningPlugin for AuditHardeningPlugin {
     }
 
     async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
-        reload_audit_rules(ctx).await?;
-        info!("Audit rules reloaded successfully");
-        Ok(Some("audit rules reloaded".to_string()))
+        let Err(error) = reload_audit_rules(ctx).await else {
+            info!("Audit rules reloaded successfully");
+            return Ok(Some("audit rules reloaded".to_string()));
+        };
+
+        // The same question `apply` asks of the same host, for the same
+        // reason. A kernel audit configuration locked with `-e 2` refuses
+        // every load until the next reboot, and on Arch the `systemctl
+        // restart` leg can never succeed either because the unit ships
+        // `RefuseManualStop=yes`. The restored rules file is on disk and
+        // correct; nothing further is possible here. Reporting that as a
+        // failed reload made a rollback that did everything it could exit 1
+        // claiming a service was still on the previous configuration, which
+        // is the opposite of what the operator needs to read. The row is kept
+        // rather than dropped, because "nothing was loaded, reboot to finish"
+        // is information, not silence.
+        if is_audit_config_immutable(ctx).await {
+            info!("Audit rule reload skipped: the kernel audit config is locked (-e 2)");
+            return Ok(Some(
+                "audit rules restored but not loaded: the kernel audit config is locked \
+                 (-e 2), so a reboot is required for them to take effect"
+                    .to_string(),
+            ));
+        }
+
+        Err(error)
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
