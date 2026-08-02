@@ -766,16 +766,15 @@ pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
                 cells.push((format!("{restored} restored"), "score-good"));
             }
             if *failed > 0 {
-                // Matches the CLI's `render_rollback_text` wording so the two
-                // surfaces agree: a reload failure means a service is still
-                // on the old configuration, a different problem from a file
-                // that never came back, and the fleet table must say which.
-                let label = if *reload_failed > 0 {
-                    format!("{failed} failed ({reload_failed} due to reload)")
-                } else {
-                    format!("{failed} failed")
-                };
-                cells.push((label, "score-critical"));
+                // The same sentence the CLI's `render_rollback_text` prints,
+                // from the one place that writes it: a reload failure means a
+                // service is still on the old configuration, a different
+                // problem from a file that never came back, and the fleet
+                // table must say which.
+                cells.push((
+                    hardener_types::rollback_failed_label(*failed, *reload_failed),
+                    "score-critical",
+                ));
             }
             if cells.is_empty() {
                 cells.push(("Nothing restored".to_string(), ""));

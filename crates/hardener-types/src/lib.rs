@@ -1161,5 +1161,21 @@ pub enum RollbackStatus {
     Failed { error: String },
 }
 
+/// How a fleet rollback names the failed half of a host's outcome.
+///
+/// One sentence for both surfaces. The CLI's text report and the desktop's
+/// fleet table draw the same distinction, because it is the distinction an
+/// operator acts on: a file that never came back needs the checkpoint looking
+/// at, whereas a file that came back to a service that would not reload it
+/// needs the service looking at. Written twice and kept in step by a comment,
+/// the two wordings could drift; `hardener-cli` is a binary so the desktop
+/// cannot borrow from it, and this crate is the one both already depend on.
+pub fn rollback_failed_label(failed: usize, reload_failed: usize) -> String {
+    match reload_failed {
+        0 => format!("{failed} failed"),
+        _ => format!("{failed} failed ({reload_failed} due to reload)"),
+    }
+}
+
 #[cfg(test)]
 mod tests;

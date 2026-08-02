@@ -1212,12 +1212,12 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                 // As on the local path: a checkpoint whose files never came
                 // back is a different problem from one whose files came back
                 // but whose plugin refused to reload them, and the operator
-                // needs to know which one they are looking at.
-                let result = if *reload_failed > 0 {
-                    format!("{restored} restored, {failed} failed ({reload_failed} due to reload)")
-                } else {
-                    format!("{restored} restored, {failed} failed")
-                };
+                // needs to know which one they are looking at. The wording is
+                // the desktop's too, so it lives in `hardener-types`.
+                let result = format!(
+                    "{restored} restored, {}",
+                    hardener_types::rollback_failed_label(*failed, *reload_failed)
+                );
                 push_detail(&mut out, "result", &result);
             }
             RollbackStatus::NothingToDo => {

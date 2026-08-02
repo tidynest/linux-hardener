@@ -696,4 +696,16 @@ mod rollback_result_tests {
         assert!(result.rollback_reloads.is_empty());
         assert!(result.reloads_ok());
     }
+
+    /// The CLI's text report and the desktop's fleet table both draw the
+    /// failed half of a rollback outcome from here, so the two wordings are
+    /// one string rather than two that have to be kept in step by hand.
+    #[test]
+    fn a_rollback_failure_label_names_the_reload_share_only_when_there_is_one() {
+        assert_eq!(crate::rollback_failed_label(3, 0), "3 failed");
+        assert_eq!(
+            crate::rollback_failed_label(3, 2),
+            "3 failed (2 due to reload)"
+        );
+    }
 }
