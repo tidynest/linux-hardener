@@ -629,14 +629,18 @@ fn not_at_boot_unchecked(backend: &dyn FirewallBackend) -> UncheckedCheck {
 /// Undoing it would mean removing the symlink, which is to say disabling the
 /// firewall at boot, on a host where the operator asked only to undo a
 /// hardening run. That contradicts the settled rule that a hardening run never
-/// leaves a host less secure than it found it, and it would contradict this
-/// plugin's own `rollback`, which re-enables the firewall unconditionally and
-/// deliberately never disables one. A rollback that re-enabled the firewall for
-/// this boot while removing what starts it at the next would be incoherent in a
-/// way no operator could be expected to predict.
+/// leaves a host less secure than it found it, and it would sit oddly beside
+/// this plugin's own `reload_after_rollback`, which re-reads the restored
+/// configuration files and does not touch whether the unit starts or is
+/// enabled at boot, in either direction. A rollback that left the running
+/// firewall exactly as it found it while quietly disabling what starts it at
+/// the next boot would be incoherent in a way no operator could be expected to
+/// predict.
 ///
-/// The asymmetry is intended and is the same one the rollback already has: this
-/// plugin will turn a firewall on and will never turn one off.
+/// The decision is intended, and nothing about it turns on which command the
+/// reload issues: `reload_after_rollback` never starts or enables a unit
+/// either, so this symlink surviving a rollback is not an asymmetry it grants
+/// on request, it is simply outside every action a rollback takes.
 async fn ensure_unit_wanted_at_boot(ctx: &Context, backend: &dyn FirewallBackend) -> Change {
     let unit = backend.systemd_unit();
     if matches!(
