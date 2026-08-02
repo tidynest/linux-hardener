@@ -5,12 +5,6 @@
 
 use std::path::PathBuf;
 
-/// Default installation path for system-wide units.
-const SYSTEM_UNIT_PATH: &str = "/etc/systemd/system";
-
-/// Default installation path for user units.
-const USER_UNIT_PATH: &str = "/etc/systemd/user";
-
 /// Unit file names.
 const SERVICE_NAME: &str = "linux-hardener.service";
 const TIMER_NAME: &str = "linux-hardener.timer";
@@ -220,16 +214,6 @@ pub fn service_name() -> &'static str {
 /// Returns the timer unit filename.
 pub fn timer_name() -> &'static str {
     TIMER_NAME
-}
-
-/// Returns the system-wide unit installation path.
-pub fn system_unit_path() -> &'static str {
-    SYSTEM_UNIT_PATH
-}
-
-/// Returns the user unit installation path (relative to home).
-pub fn user_unit_path() -> &'static str {
-    USER_UNIT_PATH
 }
 
 #[cfg(test)]
