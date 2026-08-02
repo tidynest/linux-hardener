@@ -639,7 +639,7 @@ rollback_reload_assert_restored() {
     fi
 }
 
-# The orchestrator. Unlike every apply elsewhere in this file it shells out on
+# The cycle itself. Unlike every apply elsewhere in this file it shells out on
 # its own rather than through apply_hardening: apply_hardening covers every
 # plugin in DIFF_PLUGINS and is called after the seeds and captures below have
 # already been taken, and this check has to run before all of that with only
@@ -650,10 +650,13 @@ rollback_reload_assert_restored() {
 # Every path records exactly two checks, whatever goes wrong and wherever:
 # the positive control and the restoration assertion. A capture, apply,
 # checkpoint lookup or rollback that fails is recorded as a failure of
-# whichever check(s) it leaves unanswered rather than aborting the run, so a
-# fixture where this block cannot complete is a visible FAIL in the summary
-# and not two checks the total silently stopped expecting.
-run_rollback_reload_check() {
+# whichever check(s) it leaves unanswered rather than returning silently, so a
+# fixture where this block cannot complete names the defect on its own two
+# lines and does not leave the total quietly expecting them.
+#
+# Whether the run continues past those failures is not decided here. That is
+# the gate below, which is what the suite calls.
+rollback_reload_cycle() {
     local baseline apply_out apply_status=0 after_apply
     local list_json checkpoint_id rollback_out rollback_status=0 after_rollback
 
@@ -698,6 +701,41 @@ run_rollback_reload_check() {
         return 0
     fi
     rollback_reload_assert_restored "$baseline" "$after_rollback"
+}
+
+# The gate the suite calls, and the reason the cycle above can run first without
+# the apply it performs derailing every seed below it.
+#
+# APPLY_GENERATION is how this file refuses a reading taken on the wrong side of
+# an apply, so the seeds and pre-apply captures in run_full_suite all require it
+# to read 0. The cycle applies, which takes it to 1, and then rolls that apply
+# back. Handing the counter back afterwards is sound for exactly one reason: the
+# cycle's own restoration assertion is that sshd -T reports precisely what it
+# reported before the apply, so a cycle that PASSED has already proved the
+# container is standing in its pre-apply state. The restore is not papering over
+# an apply, it records that the apply was undone and that the undoing was
+# checked against the daemon rather than assumed.
+#
+# Which is why a cycle that FAILED must not hand it back. A rollback that never
+# reached sshd leaves the container holding the hardening, and every seed,
+# capture and check below would then measure a host this suite had already
+# changed while reporting the answers as the host's own. That is worse than no
+# results, so it ends the run the way every other unrecoverable precondition in
+# this file does: the two FAIL lines above name what sshd enforced at each
+# reading, and nothing under them is printed with a confidence it has not
+# earned.
+run_rollback_reload_check() {
+    local saved_generation=$APPLY_GENERATION saved_failed=$CHECKS_FAILED
+    rollback_reload_cycle
+    if (( CHECKS_FAILED != saved_failed )); then
+        echo "FATAL: the rollback-reload check failed, so this container is left" \
+            "holding ssh hardening it was told to undo." >&2
+        echo "  Every check below it reads a host it assumes no apply has touched," >&2
+        echo "  so the run stops here rather than measuring a hardened container and" >&2
+        echo "  reporting what it finds as the container's own starting values." >&2
+        return 1
+    fi
+    APPLY_GENERATION=$saved_generation
 }
 
 # login.defs supplies defaults for NEW accounts only, so the only honest way to
@@ -3826,12 +3864,11 @@ Number of days of warning before password expires	: 7"
     SSHD_EFFECTIVE_GENERATION=""
     unset -f ensure_host_keys capture_sshd_effective
 
-    # The rollback-reload check (Task 7, issue #67). run_rollback_reload_check
-    # itself shells out to $BINARY and is not driven here, the same reason
-    # apply_hardening is not; what is proven here is that its two recording
-    # functions actually distinguish agreement from disagreement, because a
-    # check that always passes is the exact defect this repository keeps
-    # finding in this file.
+    # The rollback-reload check (Task 7, issue #67). What is proven first is
+    # that its two recording functions actually distinguish agreement from
+    # disagreement, because a check that always passes is the exact defect
+    # this repository keeps finding in this file; the gate around them is
+    # driven at the end of the block, over stubs.
     local rr_fixture="PermitRootLogin no
 PasswordAuthentication yes
 X11Forwarding no"
@@ -3896,6 +3933,74 @@ X11Forwarding no"
     check_eq "$((CHECKS_FAILED - rr_before_failed))" "0" \
         "with no failure recorded alongside that pass"
     CHECKS_TOTAL=$rr_before_total CHECKS_PASSED=$rr_before_passed CHECKS_FAILED=$rr_before_failed
+
+    # The gate around the cycle, driven whole. sshd -T and $BINARY are stubbed,
+    # the same way ssh_oracle_init's proof above stubs its capture, so the real
+    # orchestrator runs here with no root, no container and no tool.
+    #
+    # What this pins is the bookkeeping the cycle cannot be trusted without.
+    # The cycle applies, so it bumps APPLY_GENERATION, and everything below it
+    # in run_full_suite requires that counter to read 0: without the hand-back
+    # seed_stricter_than_baseline refuses outright and the whole run reports no
+    # checks at all, which is what happened on all five distributions the first
+    # time this section shipped. Without the refusal to hand it back on
+    # failure, a container left hardened by a rollback that never reached sshd
+    # would be measured by every check below as though it were pristine.
+    local rr_readings rr_saved_binary rr_rollback_reaches_sshd=1
+    rr_readings="$(mktemp)"
+    ensure_host_keys() { :; }
+    # The reading index advances through a file rather than a variable: every
+    # caller reads this through a command substitution, and a counter bumped
+    # inside that subshell would be back to its old value by the next reading.
+    capture_sshd_effective() {
+        local nth
+        nth="$(cat "$rr_readings")"
+        printf '%s' "$((nth + 1))" >"$rr_readings"
+        # Reading 0 is the pre-apply baseline, 1 is post-apply and 2 is
+        # post-rollback: hardened at 1 always, and back at the baseline at 2
+        # only when the rollback is meant to have reached the daemon.
+        if (( nth == 1 || (nth == 2 && rr_rollback_reaches_sshd == 0) )); then
+            printf 'PermitRootLogin no\nPasswordAuthentication no\n'
+        else
+            printf 'PermitRootLogin prohibit-password\nPasswordAuthentication yes\n'
+        fi
+    }
+    # One checkpoint row under the name the cycle looks for, and nothing else to
+    # do: what a real apply and rollback would have moved is exactly what the
+    # stubbed readings above describe.
+    rr_stub_binary() {
+        if [[ "$1" == "--format" ]]; then
+            printf '[{"checkpoint_name":"ssh-hardening-pre-apply","checkpoint_id":"cp-1"}]'
+        fi
+    }
+    rr_saved_binary="$BINARY"
+    BINARY=rr_stub_binary
+
+    printf '0' >"$rr_readings"
+    APPLY_GENERATION=0
+    check_status 0 "run_rollback_reload_check succeeds when sshd is back at its pre-apply answer" \
+        run_rollback_reload_check
+    check_eq "$APPLY_GENERATION" "0" \
+        "and hands the apply generation back, because its own passing assertion is that the container is standing where it started"
+    check_eq "$((CHECKS_PASSED - rr_before_passed))" "2" \
+        "recording its two checks, both passed"
+    CHECKS_TOTAL=$rr_before_total CHECKS_PASSED=$rr_before_passed CHECKS_FAILED=$rr_before_failed
+
+    printf '0' >"$rr_readings"
+    rr_rollback_reaches_sshd=0
+    APPLY_GENERATION=0
+    check_status 1 "run_rollback_reload_check ends the run when sshd still enforces the hardening after rollback" \
+        run_rollback_reload_check
+    check_eq "$APPLY_GENERATION" "1" \
+        "and keeps the generation it bumped, so nothing below it can read a hardened container as a pristine one"
+    check_eq "$((CHECKS_FAILED - rr_before_failed))" "1" \
+        "with the restoration assertion recorded as that failure"
+    CHECKS_TOTAL=$rr_before_total CHECKS_PASSED=$rr_before_passed CHECKS_FAILED=$rr_before_failed
+
+    BINARY="$rr_saved_binary"
+    APPLY_GENERATION=0
+    rm -f "$rr_readings"
+    unset -f ensure_host_keys capture_sshd_effective rr_stub_binary
 
     # The login.defs oracle. The fixture values are deliberately unlike the
     # targets (1, 90, 7) and unlike the values the shipped defect leaves behind
@@ -6338,9 +6443,12 @@ run_full_suite() {
     # Task 7's acceptance criterion, and it runs first, above every seed and
     # every capture below: its own baseline is "whatever this container
     # shipped", which is only true while nothing else here has touched
-    # sshd_config yet. It records its own checks and never aborts the run, so
-    # a failure inside it is a FAIL in the summary rather than a stop.
-    run_rollback_reload_check
+    # sshd_config yet. It applies and rolls that apply back, and hands the
+    # generation counter back only once its own assertion has proved the
+    # container is standing where it started, so the seed below still meets
+    # the generation 0 it requires. A failure leaves the container hardened
+    # and therefore ends the run: see the gate above the function.
+    run_rollback_reload_check || return 1
 
     # Before every capture below, because all of them describe a container that
     # has to already be holding the seed.
