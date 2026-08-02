@@ -1197,7 +1197,11 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                     &format!("would restore {checkpoints} checkpoint(s)"),
                 );
             }
-            RollbackStatus::RolledBack { restored, failed } => {
+            RollbackStatus::RolledBack {
+                restored,
+                failed,
+                reload_failed,
+            } => {
                 rolled_back += 1;
                 let status = if *failed > 0 {
                     "partially rolled back".yellow()
@@ -1205,11 +1209,16 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                     "rolled back".green()
                 };
                 push_detail(&mut out, "status", &status.to_string());
-                push_detail(
-                    &mut out,
-                    "result",
-                    &format!("{restored} restored, {failed} failed"),
-                );
+                // As on the local path: a checkpoint whose files never came
+                // back is a different problem from one whose files came back
+                // but whose plugin refused to reload them, and the operator
+                // needs to know which one they are looking at.
+                let result = if *reload_failed > 0 {
+                    format!("{restored} restored, {failed} failed ({reload_failed} due to reload)")
+                } else {
+                    format!("{restored} restored, {failed} failed")
+                };
+                push_detail(&mut out, "result", &result);
             }
             RollbackStatus::NothingToDo => {
                 nothing += 1;
@@ -1360,38 +1369,39 @@ async fn rollback_one(
             checkpoints: selected.len(),
         }
     } else {
+        // Built once for the whole host rather than per checkpoint: neither
+        // depends on which checkpoint is being restored.
+        let ctx = Context::with_executor(Arc::clone(&exec));
+        let registry = hardener_plugins::create_plugin_registry();
         let mut restored = 0;
         let mut failed = 0;
+        let mut reload_failed = 0;
         for cp in &selected {
             match mgr.rollback(exec.as_ref(), &cp.checkpoint_id).await {
-                Ok(mut r) if r.rollback_success => {
+                Ok(mut r) => {
                     // As on the local path: restoring the bytes is only half
-                    // of a rollback, and only paths that actually came back
-                    // are offered to a plugin to reload.
-                    let restored_paths: Vec<PathBuf> = r
-                        .rollback_files
-                        .iter()
-                        .filter(|f| f.restore_success)
-                        .map(|f| PathBuf::from(&f.restore_path))
-                        .collect();
-                    let ctx = Context::with_executor(Arc::clone(&exec));
-                    let registry = hardener_plugins::create_plugin_registry();
-                    r.rollback_reloads = hardener_plugins::reload_plugins_after_rollback(
-                        &ctx,
-                        &registry,
-                        &restored_paths,
-                    )
-                    .await;
-                    if r.reloads_ok() {
-                        restored += 1;
-                    } else {
-                        failed += 1;
+                    // of a rollback, and this runs on whatever files came
+                    // back regardless of whether the whole checkpoint did, so
+                    // a partial restore's successful files still get offered
+                    // to their plugin.
+                    super::checkpoint::reload_restored_paths(&ctx, &registry, &mut r).await;
+                    match (r.rollback_success, r.reloads_ok()) {
+                        (true, true) => restored += 1,
+                        (true, false) => {
+                            failed += 1;
+                            reload_failed += 1;
+                        }
+                        (false, _) => failed += 1,
                     }
                 }
-                _ => failed += 1,
+                Err(_) => failed += 1,
             }
         }
-        RollbackStatus::RolledBack { restored, failed }
+        RollbackStatus::RolledBack {
+            restored,
+            failed,
+            reload_failed,
+        }
     };
 
     RollbackOutcome {

@@ -270,14 +270,16 @@ fn rollback_exit_code_follows_precedence() {
     assert_eq!(
         rollback_exit_code(&[ro(RollbackStatus::RolledBack {
             restored: 2,
-            failed: 0
+            failed: 0,
+            reload_failed: 0
         })]),
         0
     );
     assert_eq!(
         rollback_exit_code(&[ro(RollbackStatus::RolledBack {
             restored: 1,
-            failed: 1
+            failed: 1,
+            reload_failed: 0
         })]),
         1
     );
@@ -291,7 +293,8 @@ fn rollback_exit_code_follows_precedence() {
         rollback_exit_code(&[
             ro(RollbackStatus::RolledBack {
                 restored: 0,
-                failed: 1
+                failed: 1,
+                reload_failed: 0
             }),
             ro(RollbackStatus::Failed {
                 error: "x".to_string()
@@ -338,6 +341,7 @@ fn render_rollback_text_partial_and_nothing_to_do() {
         ro(RollbackStatus::RolledBack {
             restored: 1,
             failed: 1,
+            reload_failed: 0,
         }),
         ro(RollbackStatus::NothingToDo),
     ]);
@@ -356,11 +360,53 @@ fn render_rollback_text_partial_and_nothing_to_do() {
     );
 }
 
+/// A checkpoint whose files never came back and a checkpoint whose files came
+/// back but whose plugin refused to reload them are both "1 failed" by the
+/// per-checkpoint counter, but they are different problems for the operator:
+/// one means "the restore did not happen", the other means "the restore
+/// happened but the service is still running the old configuration". The
+/// fleet row must say which one it is, the way the single-host `rollback`
+/// command already does via `FailureReason`.
+#[test]
+fn render_rollback_text_names_a_reload_failure_separately_from_a_file_failure() {
+    colored::control::set_override(false);
+
+    let file_failure = render_rollback_text(&[ro(RollbackStatus::RolledBack {
+        restored: 2,
+        failed: 1,
+        reload_failed: 0,
+    })]);
+    assert!(
+        file_failure.contains("2 restored, 1 failed"),
+        "plain counts: {file_failure}"
+    );
+    assert!(
+        !file_failure.contains("reload"),
+        "a restore failure with no reload involved must not mention reload: {file_failure}"
+    );
+
+    let reload_failure = render_rollback_text(&[ro(RollbackStatus::RolledBack {
+        restored: 2,
+        failed: 1,
+        reload_failed: 1,
+    })]);
+    assert!(
+        reload_failure.contains("2 restored, 1 failed") && reload_failure.contains("reload"),
+        "a reload failure must be named rather than folded silently into the same \
+         count as a file failure: {reload_failure}"
+    );
+    assert_ne!(
+        file_failure, reload_failure,
+        "the two failure kinds must render distinguishably"
+    );
+}
+
 #[test]
 fn render_rollback_json_tags_state() {
     let json = render_rollback_json(&[ro(RollbackStatus::RolledBack {
         restored: 2,
         failed: 0,
+        reload_failed: 0,
     })]);
     assert!(json.contains("\"state\": \"rolledback\""), "json: {json}");
 }

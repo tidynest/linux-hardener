@@ -131,19 +131,9 @@ pub async fn rollback(
 
     let mut result = manager.rollback(executor.as_ref(), &id).await?;
 
-    // Restoring the bytes is only half of a rollback: until the services that
-    // read them are asked to re-read, the machine keeps running the
-    // configuration the operator just undid.
-    let restored: Vec<PathBuf> = result
-        .rollback_files
-        .iter()
-        .filter(|f| f.restore_success)
-        .map(|f| PathBuf::from(&f.restore_path))
-        .collect();
     let ctx = Context::with_executor(Arc::clone(&executor));
     let registry = hardener_plugins::create_plugin_registry();
-    result.rollback_reloads =
-        hardener_plugins::reload_plugins_after_rollback(&ctx, &registry, &restored).await;
+    reload_restored_paths(&ctx, &registry, &mut result).await;
 
     output::rollback_result(&format, &result);
 
@@ -174,16 +164,46 @@ pub async fn rollback(
     }
 }
 
+/// Restoring the bytes is only half of a rollback: until the services that
+/// read them are asked to re-read, the machine keeps running the
+/// configuration the operator just undid.
+///
+/// Collects the paths that actually came back (a partially restored
+/// checkpoint still offers up whatever it managed), asks their plugins to
+/// reload, and writes the outcome onto `result`. A checkpoint that restored
+/// nothing is left alone rather than dispatched: `reload_plugins_after_rollback`
+/// still records a `plugin-registry` failure row when the registry cannot be
+/// listed, which would otherwise turn a clean no-op into a reported reload
+/// failure. Shared by the local and fleet rollback paths so this
+/// collect/guard/dispatch/assign sequence exists once.
+pub(crate) async fn reload_restored_paths(
+    ctx: &Context,
+    registry: &hardener_core::PluginRegistry,
+    result: &mut RollbackResult,
+) {
+    let restored: Vec<PathBuf> = result
+        .rollback_files
+        .iter()
+        .filter(|f| f.restore_success)
+        .map(|f| PathBuf::from(&f.restore_path))
+        .collect();
+    if restored.is_empty() {
+        return;
+    }
+    result.rollback_reloads =
+        hardener_plugins::reload_plugins_after_rollback(ctx, registry, &restored).await;
+}
+
 /// Which half of a rollback failed, so the operator is told the one that
 /// changes what they do next: files not restored is a different problem from
 /// files restored that a service would not take.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FailureReason {
+pub(crate) enum FailureReason {
     Files,
     Reload,
 }
 
-pub fn rollback_failure_reason(result: &RollbackResult) -> Option<FailureReason> {
+pub(crate) fn rollback_failure_reason(result: &RollbackResult) -> Option<FailureReason> {
     match (result.rollback_success, result.reloads_ok()) {
         (false, _) => Some(FailureReason::Files),
         (true, false) => Some(FailureReason::Reload),

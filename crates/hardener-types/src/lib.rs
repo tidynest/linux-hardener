@@ -1146,7 +1146,15 @@ pub enum RollbackStatus {
     /// Dry-run: `checkpoints` checkpoints would be restored.
     Previewed { checkpoints: usize },
     /// Execute: `restored` fully restored, `failed` had a restore error.
-    RolledBack { restored: usize, failed: usize },
+    /// `reload_failed` is the subset of `failed` whose files came back but
+    /// whose plugin would not reload them, so an operator reading the count
+    /// can tell that failure apart from a file that never came back at all.
+    RolledBack {
+        restored: usize,
+        failed: usize,
+        #[serde(default)]
+        reload_failed: usize,
+    },
     /// No matching checkpoint for the selected plugins on this host.
     NothingToDo,
     /// Host-level error (connect / not privileged / selection query / usage).

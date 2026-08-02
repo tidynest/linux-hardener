@@ -1009,6 +1009,7 @@ fn rollback_cells_rolled_back_clean() {
     let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {
         restored: 9,
         failed: 0,
+        reload_failed: 0,
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Ok);
     assert_eq!(v.cells, vec![("9 restored".to_string(), "score-good")]);
@@ -1019,6 +1020,7 @@ fn rollback_cells_rolled_back_with_failures() {
     let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {
         restored: 4,
         failed: 2,
+        reload_failed: 0,
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Failed);
     assert_eq!(
@@ -1035,6 +1037,7 @@ fn rollback_cells_rolled_back_nothing_shows_muted_fallback() {
     let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {
         restored: 0,
         failed: 0,
+        reload_failed: 0,
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Ok);
     assert_eq!(v.cells, vec![("Nothing restored".to_string(), "")]);

@@ -756,7 +756,9 @@ pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
             cells: vec![("Nothing to roll back".to_string(), "")],
             error: None,
         },
-        RollbackStatus::RolledBack { restored, failed } => {
+        RollbackStatus::RolledBack {
+            restored, failed, ..
+        } => {
             let mut cells = Vec::new();
             if *restored > 0 {
                 cells.push((format!("{restored} restored"), "score-good"));
