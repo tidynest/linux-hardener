@@ -90,7 +90,11 @@ This tool is designed to harden systems against common attack vectors, but is **
    - Configuration values are sanitised
 
 3. **Least Privilege**
-   - Privileges are dropped as soon as possible
+   - Scanning runs unprivileged and reports what it could not read rather than
+     escalating in order to read it
+   - Only `apply` and `rollback` require root, and the desktop application holds
+     none of its own: it escalates per invocation through `pkexec`, and the
+     privileged process is the short-lived CLI child rather than the GUI
    - Individual operations request only necessary permissions
 
 4. **Audit Logging**
@@ -148,7 +152,7 @@ The Tauri desktop application uses `pkexec` (polkit) for operations that require
 
 The project follows these security practices:
 
-- All dependencies are regularly audited (`cargo audit` and `cargo-deny`; a global pre-push gate blocks advisories, and `deny.toml` pins the licence/advisory policy)
+- All dependencies are regularly audited: `cargo audit` runs in CI on both remotes (`.github/workflows/ci.yml`, `.gitlab-ci.yml`), `cargo deny check` runs from the release checklist, and `deny.toml` pins the licence/advisory policy. Nothing in this repository blocks a push, so CI is where an advisory is caught rather than before it
 - Code is reviewed before merging
 - No use of `unsafe` Rust without justification
 - Error handling avoids information disclosure
@@ -193,7 +197,7 @@ The project follows these security practices:
 
 This tool maps findings to:
 
-- CIS Benchmarks (Level 1 and Level 2)
+- CIS Benchmark for Distribution Independent Linux v2.0 (benchmark levels are not modelled, so a report cannot be scoped to Level 1 or Level 2)
 - DISA STIG (where applicable)
 - NIST 800-53 security controls
 - PCI-DSS v4.0 requirements

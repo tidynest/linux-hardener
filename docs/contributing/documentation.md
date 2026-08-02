@@ -5,7 +5,8 @@ Commands for validating and auto-updating project documentation.
 `scripts/validate/` holds eighteen Python 3 scripts: the master runner
 `validate_all.py`, the auto-updater `update_all_docs.py`, the fifteen
 validators `validate_all.py` runs, and `validate_naming.py`, which is
-standalone and runs from the pre-commit hook instead. The one check that is not
+standalone and is what a hand-installed pre-commit hook runs, if there is one.
+The one check that is not
 Python lives elsewhere: version consistency is
 `scripts/release/release.sh --verify`, which `validate_all.py` shells out to,
 and it is why the run reports sixteen checks against fifteen Python

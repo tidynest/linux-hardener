@@ -309,7 +309,14 @@ Example GitHub Actions workflow:
 
 **Setup**:
 
-The pre-commit hook is already installed and executable in your repository. It will automatically run on every `git commit` command.
+Nothing in this repository installs the hook, so a fresh clone does not have one and runs no naming validation on commit. To add it by hand:
+
+```bash
+printf '#!/bin/sh\nexec ./scripts/validate/validate_naming.py\n' > .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+Once installed it runs on every `git commit` command. Until then, run `./scripts/validate/validate_naming.py` yourself.
 
 **How It Works**:
 

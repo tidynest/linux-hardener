@@ -53,11 +53,13 @@ rustup targets and the desktop and WASM builds are covered in
 
 ### Git Hooks
 
-The repository installs one hook, `.git/hooks/pre-commit`, and it runs
-`scripts/validate/validate_naming.py` and nothing else. **There is no pre-push
-hook in this repository.** Nothing local runs clippy, the tests or the format
-check for you, so a green commit says only that the naming validator was happy.
-Run the four gate commands above yourself.
+This repository tracks no git hooks and nothing in it installs one. A
+`.git/hooks/pre-commit` running `scripts/validate/validate_naming.py` is a local
+convenience some maintainers add by hand; **a fresh clone has none, and there is
+no pre-push hook either.** Nothing local runs clippy, the tests, the format check
+or the naming validator for you, so a green commit says nothing at all unless you
+installed that hook yourself. Run the four gate commands above, and run
+`./scripts/validate/validate_naming.py` before you commit.
 
 ### Finding Something to Work On
 
@@ -322,7 +324,7 @@ linux-system-hardener/
 │   ├── hardener-distro/      # Distribution detection
 │   ├── hardener-plugins/     # Security plugins
 │   ├── hardener-state/       # State management
-│   ├── hardener-compliance/  # Compliance mapping (PDF behind feature flag)
+│   ├── hardener-compliance/  # Compliance mapping (PDF export via the default-on `pdf` feature)
 │   ├── hardener-scheduler/   # Scheduled scanning daemon
 │   ├── hardener-cli/         # Command-line interface (binary "hardener")
 │   └── hardener-ui/          # Leptos WASM frontend
