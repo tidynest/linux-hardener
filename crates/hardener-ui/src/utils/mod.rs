@@ -757,14 +757,25 @@ pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
             error: None,
         },
         RollbackStatus::RolledBack {
-            restored, failed, ..
+            restored,
+            failed,
+            reload_failed,
         } => {
             let mut cells = Vec::new();
             if *restored > 0 {
                 cells.push((format!("{restored} restored"), "score-good"));
             }
             if *failed > 0 {
-                cells.push((format!("{failed} failed"), "score-critical"));
+                // Matches the CLI's `render_rollback_text` wording so the two
+                // surfaces agree: a reload failure means a service is still
+                // on the old configuration, a different problem from a file
+                // that never came back, and the fleet table must say which.
+                let label = if *reload_failed > 0 {
+                    format!("{failed} failed ({reload_failed} due to reload)")
+                } else {
+                    format!("{failed} failed")
+                };
+                cells.push((label, "score-critical"));
             }
             if cells.is_empty() {
                 cells.push(("Nothing restored".to_string(), ""));

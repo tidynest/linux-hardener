@@ -1328,6 +1328,23 @@ fn pre_apply_names(plugin_ids: &[PluginId]) -> Vec<String> {
         .collect()
 }
 
+/// Classifies one restored checkpoint into the `(restored, failed,
+/// reload_failed)` counters `rollback_one` accumulates across a host.
+///
+/// A reload failure is counted whether or not the file restore also failed:
+/// a checkpoint that fails both leaves a service on the old configuration
+/// just as surely as one that fails only its reload, and the operator needs
+/// `reload_failed` to say so in both cases, not just the one where the files
+/// came back.
+fn classify_rollback_outcome(rollback_success: bool, reloads_ok: bool) -> (bool, bool, bool) {
+    match (rollback_success, reloads_ok) {
+        (true, true) => (true, false, false),
+        (true, false) => (false, true, true),
+        (false, true) => (false, true, false),
+        (false, false) => (false, true, true),
+    }
+}
+
 /// Connects to one host, probes privilege (execute path only), selects each
 /// plugin's latest pre-apply checkpoint, and restores them (or previews).
 async fn rollback_one(
@@ -1385,14 +1402,11 @@ async fn rollback_one(
                     // a partial restore's successful files still get offered
                     // to their plugin.
                     super::checkpoint::reload_restored_paths(&ctx, &registry, &mut r).await;
-                    match (r.rollback_success, r.reloads_ok()) {
-                        (true, true) => restored += 1,
-                        (true, false) => {
-                            failed += 1;
-                            reload_failed += 1;
-                        }
-                        (false, _) => failed += 1,
-                    }
+                    let (r_restored, r_failed, r_reload_failed) =
+                        classify_rollback_outcome(r.rollback_success, r.reloads_ok());
+                    restored += usize::from(r_restored);
+                    failed += usize::from(r_failed);
+                    reload_failed += usize::from(r_reload_failed);
                 }
                 Err(_) => failed += 1,
             }

@@ -211,9 +211,14 @@ fn confirm_view(
 
 /// The Result stage: outcome header, summary, per-file list, Done.
 fn result_view(result: RollbackResult, close: impl Fn(bool) + 'static + Copy) -> impl IntoView {
-    let success = result.rollback_success;
+    // A rollback that put every file back but left a plugin running the old
+    // configuration is not a success the desktop should celebrate: the CLI
+    // already exits 1 for exactly this case (`reloads_ok()`), and the two
+    // surfaces must agree on what "restored" means.
+    let success = result.rollback_success && result.reloads_ok();
     let summary = rollback_summary_sentence(&result);
     let files = result.rollback_files.clone();
+    let reloads = result.rollback_reloads.clone();
     view! {
         <div class=move || if success { "rollback-outcome ok" } else { "rollback-outcome fail" }>
             {if success {
@@ -246,6 +251,29 @@ fn result_view(result: RollbackResult, close: impl Fn(bool) + 'static + Copy) ->
                 }
             }).collect::<Vec<_>>()}
         </ul>
+        {(!reloads.is_empty()).then(|| view! {
+            <p class="rollback-body">"Configuration reload:"</p>
+            <ul class="rollback-file-list">
+                {reloads.iter().map(|r| {
+                    let plugin = r.reload_plugin_id.clone();
+                    let action = r.reload_action.clone();
+                    let ok = r.reload_success;
+                    let err = r.reload_error.clone();
+                    view! {
+                        <li class=if ok { "restore-ok" } else { "restore-fail" }>
+                            {if ok {
+                                view! { <IconCheck class="restore-icon".to_string() /> }.into_any()
+                            } else {
+                                view! { <IconX class="restore-icon".to_string() /> }.into_any()
+                            }}
+                            <code>{plugin}</code>
+                            <span class="restore-action">{action}</span>
+                            {err.map(|e| view! { <span class="restore-error">{e}</span> })}
+                        </li>
+                    }
+                }).collect::<Vec<_>>()}
+            </ul>
+        })}
         <div class="modal-actions">
             <button class="btn btn-primary" on:click=move |_| close(true)>"Done"</button>
         </div>

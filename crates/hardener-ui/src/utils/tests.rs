@@ -1032,6 +1032,28 @@ fn rollback_cells_rolled_back_with_failures() {
     );
 }
 
+/// A reload failure must be named the way the CLI names it (`(N due to
+/// reload)`), not silently folded into the plain failed count: an operator
+/// scanning the fleet table otherwise cannot tell a checkpoint whose files
+/// never came back from one whose files came back but left a service on the
+/// old configuration.
+#[test]
+fn rollback_cells_rolled_back_with_reload_failures() {
+    let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {
+        restored: 2,
+        failed: 2,
+        reload_failed: 1,
+    }));
+    assert_eq!(v.glyph, OutcomeGlyph::Failed);
+    assert_eq!(
+        v.cells,
+        vec![
+            ("2 restored".to_string(), "score-good"),
+            ("2 failed (1 due to reload)".to_string(), "score-critical"),
+        ]
+    );
+}
+
 #[test]
 fn rollback_cells_rolled_back_nothing_shows_muted_fallback() {
     let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {

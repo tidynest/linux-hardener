@@ -401,6 +401,23 @@ fn render_rollback_text_names_a_reload_failure_separately_from_a_file_failure() 
     );
 }
 
+/// A checkpoint that fails both its file restore and its reload must still
+/// be counted as a reload failure: the service is left on the old
+/// configuration exactly as it is when only the reload fails, and an
+/// operator reading `reload_failed: 0` on a checkpoint that also failed to
+/// restore would wrongly conclude no service is stuck on stale config.
+#[test]
+fn classify_rollback_outcome_counts_reload_failure_in_every_failing_arm() {
+    assert_eq!(classify_rollback_outcome(true, true), (true, false, false));
+    assert_eq!(classify_rollback_outcome(true, false), (false, true, true));
+    assert_eq!(classify_rollback_outcome(false, true), (false, true, false));
+    assert_eq!(
+        classify_rollback_outcome(false, false),
+        (false, true, true),
+        "both the file restore and the reload failed - reload_failed must still be set"
+    );
+}
+
 #[test]
 fn render_rollback_json_tags_state() {
     let json = render_rollback_json(&[ro(RollbackStatus::RolledBack {
