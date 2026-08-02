@@ -725,6 +725,7 @@ fn rollback_summary_counts_successes_over_total() {
             restore(FileRestoreAction::Restored, true),
             restore(FileRestoreAction::Removed, false),
         ],
+        rollback_reloads: Vec::new(),
     };
     assert_eq!(rollback_summary_sentence(&result), "2 of 3 files restored.");
 }

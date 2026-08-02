@@ -1266,6 +1266,7 @@ impl CheckpointManager {
             rollback_checkpoint_name: checkpoint.checkpoint_name,
             rollback_success: all_ok,
             rollback_files: files,
+            rollback_reloads: Vec::new(),
         })
     }
 }

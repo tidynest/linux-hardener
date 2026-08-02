@@ -823,6 +823,19 @@ pub struct FileRestoreResult {
     pub restore_error: Option<String>,
 }
 
+/// Outcome of asking one plugin to re-read configuration a rollback restored.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ReloadResult {
+    /// Plugin that was asked to reload.
+    pub reload_plugin_id: String,
+    /// What was done, in the operator's words: "sshd restarted".
+    pub reload_action: String,
+    /// Whether the reload succeeded.
+    pub reload_success: bool,
+    /// Error message if the reload failed.
+    pub reload_error: Option<String>,
+}
+
 /// Results of a full rollback operation.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RollbackResult {
@@ -834,6 +847,21 @@ pub struct RollbackResult {
     pub rollback_success: bool,
     /// Per-file restore results.
     pub rollback_files: Vec<FileRestoreResult>,
+    /// Per-plugin reload results. Empty when no restored path needed a reload,
+    /// and empty when the payload came from a release that predates them.
+    #[serde(default)]
+    pub rollback_reloads: Vec<ReloadResult>,
+}
+
+impl RollbackResult {
+    /// Whether every reload that was attempted succeeded.
+    ///
+    /// Vacuously true when none was attempted, which is what makes a payload
+    /// from an older binary read as "nothing failed" rather than as a failure.
+    /// Derived rather than stored: two fields that must agree can disagree.
+    pub fn reloads_ok(&self) -> bool {
+        self.rollback_reloads.iter().all(|r| r.reload_success)
+    }
 }
 
 // ============================================================================

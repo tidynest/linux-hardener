@@ -633,3 +633,67 @@ mod policy_exception_tests {
         assert_eq!(live.evidence_label(), "CRITICAL");
     }
 }
+mod rollback_result_tests {
+    use crate::*;
+
+    #[test]
+    fn reloads_ok_is_true_when_every_reload_succeeded() {
+        let result = RollbackResult {
+            rollback_checkpoint_id: "cp_1".to_string(),
+            rollback_checkpoint_name: "before-upgrade".to_string(),
+            rollback_success: true,
+            rollback_files: Vec::new(),
+            rollback_reloads: vec![ReloadResult {
+                reload_plugin_id: "ssh-hardening".to_string(),
+                reload_action: "sshd restarted".to_string(),
+                reload_success: true,
+                reload_error: None,
+            }],
+        };
+        assert!(result.reloads_ok());
+    }
+
+    #[test]
+    fn reloads_ok_is_false_when_any_reload_failed() {
+        let result = RollbackResult {
+            rollback_checkpoint_id: "cp_1".to_string(),
+            rollback_checkpoint_name: "before-upgrade".to_string(),
+            rollback_success: true,
+            rollback_files: Vec::new(),
+            rollback_reloads: vec![
+                ReloadResult {
+                    reload_plugin_id: "ssh-hardening".to_string(),
+                    reload_action: "sshd restarted".to_string(),
+                    reload_success: true,
+                    reload_error: None,
+                },
+                ReloadResult {
+                    reload_plugin_id: "audit-hardening".to_string(),
+                    reload_action: "audit rules reloaded".to_string(),
+                    reload_success: false,
+                    reload_error: Some("augenrules exited 1".to_string()),
+                },
+            ],
+        };
+        assert!(!result.reloads_ok());
+        assert!(
+            result.rollback_success,
+            "file restores are reported separately"
+        );
+    }
+
+    /// A payload written by a binary that predates the reload field must read as
+    /// "nothing failed", never as a failure.
+    #[test]
+    fn a_payload_without_reloads_reports_reloads_ok() {
+        let json = r#"{
+            "rollback_checkpoint_id": "cp_1",
+            "rollback_checkpoint_name": "before-upgrade",
+            "rollback_success": true,
+            "rollback_files": []
+        }"#;
+        let result: RollbackResult = serde_json::from_str(json).expect("older payload must parse");
+        assert!(result.rollback_reloads.is_empty());
+        assert!(result.reloads_ok());
+    }
+}
