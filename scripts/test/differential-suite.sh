@@ -564,6 +564,142 @@ seeded_baseline_value() {
     printf '%s' "$value"
 }
 
+# Task 7's acceptance criterion (issue #67): a rollback restored files but
+# never asked sshd to reload them, so a host kept enforcing hardening it had
+# just been told to undo. Every other block in this file reads a document
+# apply or scan already produced; this one is the exception, because the
+# defect is in a step neither of those documents can see. It runs its own
+# apply, on ssh-hardening alone, then its own rollback, and asks sshd -T
+# directly at three points rather than reading anything the tool wrote.
+#
+# It has to run before every other apply in this file, seeded or otherwise:
+# the baseline it rolls back to is "whatever this container shipped", and a
+# seed or an apply above it would make that baseline a value this suite wrote
+# rather than the host's own starting point.
+#
+# Two watched directives, not one: both are unseeded SSH_CHECKS rows the tool
+# always drives to 'no' (see SSH_CHECKS above), so a working apply is
+# guaranteed to move at least one of them off whatever the distribution
+# shipped, whatever that default happens to be.
+ROLLBACK_RELOAD_DIRECTIVES=(PermitRootLogin PasswordAuthentication)
+
+# Both watched directives from one sshd -T dump, joined into a single string
+# so one equality covers both and a difference in either is caught. Built
+# through extract_sshd_value, the primitive every other ssh reading in this
+# file already goes through, rather than a second grep over the raw dump: two
+# readers of the same output agreeing with each other is exactly the failure
+# this suite exists to catch (see the file header).
+rollback_reload_snapshot() {
+    local capture="$1" directive value out=""
+    for directive in "${ROLLBACK_RELOAD_DIRECTIVES[@]}"; do
+        if ! value="$(extract_sshd_value "$capture" "$directive")"; then
+            echo "FATAL: sshd -T does not report '$directive' for the rollback reload check" >&2
+            return 1
+        fi
+        out+="${out:+ }${directive}=${value}"
+    done
+    printf '%s' "$out"
+}
+
+# sshd -T, reduced to the one string the checks below compare, with the same
+# host-key prerequisite every other capture point in this file carries. A
+# single call for run_rollback_reload_check to make at each of its three
+# points, and one seam for self_test to stub the same way ssh_oracle_init's
+# proof already does.
+rollback_reload_capture() {
+    local out
+    ensure_host_keys || return 1
+    out="$(capture_sshd_effective)" || return 1
+    rollback_reload_snapshot "$out"
+}
+
+# The positive control, Task 7 step 3, and it is not optional: without it, a
+# rollback that restores files sshd never re-reads would still pass the
+# restoration check below, because sshd's answer would never have moved away
+# from the baseline in the first place, and nothing would show the apply
+# reached sshd at all.
+rollback_reload_assert_changed() {
+    local baseline="$1" after_apply="$2"
+    if [[ "$after_apply" != "$baseline" ]]; then
+        record_pass "rollback reload positive control: sshd enforced '$baseline' before apply and '$after_apply' after, so the apply reached sshd and the rollback below is testing something real"
+    else
+        record_fail "rollback reload positive control: sshd still enforces '$baseline' after apply; the apply did not change what sshd enforces, so a rollback that appears to restore it would prove nothing"
+    fi
+}
+
+# The assertion issue #67 is about. Once the checkpoint the apply took has
+# been rolled back, does sshd, asked directly, enforce what it enforced before
+# the apply, or did the files come back with nobody telling the running daemon?
+rollback_reload_assert_restored() {
+    local baseline="$1" after_rollback="$2"
+    if [[ "$after_rollback" == "$baseline" ]]; then
+        record_pass "rollback reload: sshd enforces '$after_rollback' after rollback, exactly what it enforced before apply, so the reload the rollback triggers reached sshd"
+    else
+        record_fail "rollback reload: sshd enforced '$baseline' before apply but enforces '$after_rollback' after rollback; the files were restored without sshd being told to reload, which is issue #67"
+    fi
+}
+
+# The orchestrator. Unlike every apply elsewhere in this file it shells out on
+# its own rather than through apply_hardening: apply_hardening covers every
+# plugin in DIFF_PLUGINS and is called after the seeds and captures below have
+# already been taken, and this check has to run before all of that with only
+# ssh-hardening in scope, so the checkpoint it rolls back really is named
+# 'ssh-hardening-pre-apply' and really does hold the container's own starting
+# values.
+#
+# Every path records exactly two checks, whatever goes wrong and wherever:
+# the positive control and the restoration assertion. A capture, apply,
+# checkpoint lookup or rollback that fails is recorded as a failure of
+# whichever check(s) it leaves unanswered rather than aborting the run, so a
+# fixture where this block cannot complete is a visible FAIL in the summary
+# and not two checks the total silently stopped expecting.
+run_rollback_reload_check() {
+    local baseline apply_out apply_status=0 after_apply
+    local list_json checkpoint_id rollback_out rollback_status=0 after_rollback
+
+    if ! baseline="$(rollback_reload_capture)"; then
+        record_fail "rollback reload positive control: sshd -T could not be read before apply, so nothing shows the apply reached sshd"
+        record_fail "rollback reload: sshd -T could not be read before apply, so there is no baseline to roll back to"
+        return 0
+    fi
+
+    apply_out="$("$BINARY" apply --plugin ssh-hardening 2>&1)" || apply_status=$?
+    bump_apply_generation
+    echo "rollback reload: apply exit status $apply_status"
+    while IFS= read -r line; do
+        printf '  rollback-reload apply| %s\n' "$line"
+    done <<<"$apply_out"
+
+    if ! after_apply="$(rollback_reload_capture)"; then
+        record_fail "rollback reload positive control: sshd -T could not be read after apply"
+        record_fail "rollback reload: sshd -T could not be read after apply, so there is no post-apply state to roll back from"
+        return 0
+    fi
+    rollback_reload_assert_changed "$baseline" "$after_apply"
+
+    if ! list_json="$("$BINARY" --format json checkpoint list --all 2>&1)"; then
+        record_fail "rollback reload: 'checkpoint list' failed, so no checkpoint id could be found to roll back to"
+        return 0
+    fi
+    checkpoint_id="$(jq -r '[.[] | select(.checkpoint_name == "ssh-hardening-pre-apply")] | map(.checkpoint_id) | first // empty' <<<"$list_json" 2>/dev/null)"
+    if [[ -z "$checkpoint_id" ]]; then
+        record_fail "rollback reload: no 'ssh-hardening-pre-apply' checkpoint was found in 'checkpoint list', so there is nothing to roll back to"
+        return 0
+    fi
+
+    rollback_out="$("$BINARY" rollback "$checkpoint_id" 2>&1)" || rollback_status=$?
+    echo "rollback reload: rollback exit status $rollback_status"
+    while IFS= read -r line; do
+        printf '  rollback-reload rollback| %s\n' "$line"
+    done <<<"$rollback_out"
+
+    if ! after_rollback="$(rollback_reload_capture)"; then
+        record_fail "rollback reload: sshd -T could not be read after rollback"
+        return 0
+    fi
+    rollback_reload_assert_restored "$baseline" "$after_rollback"
+}
+
 # login.defs supplies defaults for NEW accounts only, so the only honest way to
 # ask what it currently means is to create a user and read what shadow gave it.
 # chage -l on an account that already exists reports that account's /etc/shadow
@@ -2312,6 +2448,13 @@ require_check_tables() {
 # captured whether or not the fixture is booted, and the finding ids in them are
 # the tool's own report rather than a reading off /proc/sys.
 #
+# The rollback-reload check (Task 7, issue #67) adds a flat two: the positive
+# control and the restoration assertion, neither counted off a table because
+# the check is not table-driven, it runs its own apply-then-rollback cycle once.
+# Both modes get the same two, taking the unbooted total from 68 to 70 and the
+# booted one from 81 to 83: sshd -T needs neither the kernel oracle nor a
+# booted network namespace, so the mode makes no difference to it either.
+#
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
 # police: emptying that table would drop the number from 28 to 14 and
@@ -2329,7 +2472,8 @@ expected_check_total() {
             + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED - 1 \
             + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
             + DIFF_PLUGINS_EXPECTED + 1 \
-            + DIFF_PLUGINS_EXPECTED + 1 ))"
+            + DIFF_PLUGINS_EXPECTED + 1 \
+            + 2 ))"
         return
     fi
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
@@ -2339,7 +2483,8 @@ expected_check_total() {
         + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
         + KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED \
         + DIFF_PLUGINS_EXPECTED + 1 \
-        + DIFF_PLUGINS_EXPECTED + 1 ))"
+        + DIFF_PLUGINS_EXPECTED + 1 \
+        + 2 ))"
 }
 
 # The three plugins spell their finding ids differently, and a filter written for
@@ -3681,6 +3826,77 @@ Number of days of warning before password expires	: 7"
     SSHD_EFFECTIVE_GENERATION=""
     unset -f ensure_host_keys capture_sshd_effective
 
+    # The rollback-reload check (Task 7, issue #67). run_rollback_reload_check
+    # itself shells out to $BINARY and is not driven here, the same reason
+    # apply_hardening is not; what is proven here is that its two recording
+    # functions actually distinguish agreement from disagreement, because a
+    # check that always passes is the exact defect this repository keeps
+    # finding in this file.
+    local rr_fixture="PermitRootLogin no
+PasswordAuthentication yes
+X11Forwarding no"
+    check_eq "$(rollback_reload_snapshot "$rr_fixture")" \
+        "PermitRootLogin=no PasswordAuthentication=yes" \
+        "rollback_reload_snapshot joins both watched directives into one string"
+    check_status 1 "rollback_reload_snapshot fails when a watched directive is absent" \
+        rollback_reload_snapshot "PermitRootLogin no"
+
+    # rollback_reload_capture's own plumbing: ensure_host_keys and
+    # capture_sshd_effective stubbed the same way ssh_oracle_init's proof
+    # above stubs them, so this runs with no root and no container.
+    local rr_capture="$rr_fixture"
+    ensure_host_keys() { :; }
+    capture_sshd_effective() { printf '%s' "$rr_capture"; }
+    check_eq "$(rollback_reload_capture)" "PermitRootLogin=no PasswordAuthentication=yes" \
+        "rollback_reload_capture joins ensure_host_keys and capture_sshd_effective through the snapshot"
+    capture_sshd_effective() { return 1; }
+    check_status 1 "rollback_reload_capture fails when sshd -T itself fails" \
+        rollback_reload_capture
+    unset -f ensure_host_keys capture_sshd_effective
+
+    # rollback_reload_assert_changed and rollback_reload_assert_restored both
+    # call record_pass/record_fail directly, like compare_directive above, so
+    # they are proven the same way: the delta in the three counters around one
+    # call, with the totals restored immediately after so this proof cannot
+    # move the run's own count.
+    local rr_before_total=$CHECKS_TOTAL rr_before_passed=$CHECKS_PASSED rr_before_failed=$CHECKS_FAILED
+
+    rollback_reload_assert_changed "PermitRootLogin=yes PasswordAuthentication=yes" \
+        "PermitRootLogin=no PasswordAuthentication=no" >/dev/null
+    check_eq "$((CHECKS_TOTAL - rr_before_total))" "1" \
+        "the positive control contributes exactly one check"
+    check_eq "$((CHECKS_PASSED - rr_before_passed))" "1" \
+        "and passes when the apply moved sshd's answer away from the baseline"
+    CHECKS_TOTAL=$rr_before_total CHECKS_PASSED=$rr_before_passed CHECKS_FAILED=$rr_before_failed
+
+    rollback_reload_assert_changed "PermitRootLogin=no PasswordAuthentication=no" \
+        "PermitRootLogin=no PasswordAuthentication=no" >/dev/null
+    check_eq "$((CHECKS_FAILED - rr_before_failed))" "1" \
+        "the positive control fails when apply left sshd's answer exactly where it started, which would let the restoration check below pass by accident"
+    CHECKS_TOTAL=$rr_before_total CHECKS_PASSED=$rr_before_passed CHECKS_FAILED=$rr_before_failed
+
+    # The case Task 7 asks for by name: a recorded baseline and a
+    # post-rollback reading that disagree must fail this check. A rollback
+    # that silently restored files sshd was never told to re-read would
+    # otherwise report success here, which is the shipped defect issue #67
+    # describes, so a section that cannot fail this way is not proving
+    # anything.
+    rollback_reload_assert_restored "PermitRootLogin=yes PasswordAuthentication=yes" \
+        "PermitRootLogin=no PasswordAuthentication=no" >/dev/null
+    check_eq "$((CHECKS_FAILED - rr_before_failed))" "1" \
+        "a post-rollback reading that disagrees with the pre-apply baseline fails the restoration check"
+    check_eq "$((CHECKS_PASSED - rr_before_passed))" "0" \
+        "and records no pass alongside that failure"
+    CHECKS_TOTAL=$rr_before_total CHECKS_PASSED=$rr_before_passed CHECKS_FAILED=$rr_before_failed
+
+    rollback_reload_assert_restored "PermitRootLogin=yes PasswordAuthentication=yes" \
+        "PermitRootLogin=yes PasswordAuthentication=yes" >/dev/null
+    check_eq "$((CHECKS_PASSED - rr_before_passed))" "1" \
+        "and passes when the post-rollback reading matches the pre-apply baseline"
+    check_eq "$((CHECKS_FAILED - rr_before_failed))" "0" \
+        "with no failure recorded alongside that pass"
+    CHECKS_TOTAL=$rr_before_total CHECKS_PASSED=$rr_before_passed CHECKS_FAILED=$rr_before_failed
+
     # The login.defs oracle. The fixture values are deliberately unlike the
     # targets (1, 90, 7) and unlike the values the shipped defect leaves behind
     # (0, 99999, 7): against either of those a stub returning a constant would
@@ -4352,9 +4568,9 @@ Number of days of warning before password expires	: 11"
     # whatever mode the environment happened to ask for would make the
     # self-test go red on a maintainer who exported the runner's signal.
     pinned_total="$(KERNEL_BOOTED=0 expected_check_total)"
-    check_eq "$pinned_total" "68" \
-        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, one introduced-finding row per plugin and its own control, plus one pre-apply control per seeded directive"
-    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "81" \
+    check_eq "$pinned_total" "70" \
+        "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, one introduced-finding row per plugin and its own control, plus one pre-apply control per seeded directive, plus the rollback-reload check's own two"
+    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "83" \
         "a booted run is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control on top of that, which is the only arithmetic difference the mode makes"
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
@@ -6118,6 +6334,14 @@ run_full_suite() {
     # Which arithmetic applied, printed where the reader of a log meets it. A
     # 0 here is why 11 kernel rows below read as unaskable rather than missing.
     echo "Booted (kernel oracle): $KERNEL_BOOTED"
+
+    # Task 7's acceptance criterion, and it runs first, above every seed and
+    # every capture below: its own baseline is "whatever this container
+    # shipped", which is only true while nothing else here has touched
+    # sshd_config yet. It records its own checks and never aborts the run, so
+    # a failure inside it is a FAIL in the summary rather than a stop.
+    run_rollback_reload_check
+
     # Before every capture below, because all of them describe a container that
     # has to already be holding the seed.
     seed_stricter_than_baseline || return 1
