@@ -261,6 +261,18 @@ extract_chage_value() {
 extract_passwd_status_value() {
     local output="$1" field="$2"
     local -a parts
+    # The index is checked before it is used, and against the seven fields
+    # rather than merely for being a number. An empty or non-numeric subscript
+    # is arithmetic 0, and bash reads a subscript of -1 as the LAST element, so
+    # a table row that had lost its fourth column would have answered
+    # PASS_MIN_DAYS with the inactivity period: a wrong value that reads like a
+    # real one, which is the single outcome this suite must never produce. An
+    # index past the end fails differently and no better, aborting the run under
+    # `set -u` with no message at all.
+    if ! [[ "$field" =~ ^[1-7]$ ]]; then
+        echo "FATAL: '$field' is not one of the seven passwd -S fields" >&2
+        return 1
+    fi
     read -r -a parts <<<"$output"
     if (( ${#parts[@]} != 7 )); then
         return 1
@@ -3979,6 +3991,20 @@ Number of days of warning before password expires	: 7"
         extract_passwd_status_value "hardenerdiffprobe P" 4
     check_status 1 "empty passwd -S output returns non-zero" \
         extract_passwd_status_value "" 4
+
+    # The subscript itself, which is the sharper hazard of the two. A row that
+    # lost its fourth column hands this an empty string, and an empty subscript
+    # is arithmetic 0, which bash reads as -1 and answers from the END of the
+    # line. Unchecked, that returns the inactivity period as though it were the
+    # directive's value.
+    check_eq "$(extract_passwd_status_value "$passwd_status_fixture" "" 2>/dev/null)" "" \
+        "an absent field index yields no value, rather than the last field counted backwards"
+    check_status 1 "an absent field index is refused" \
+        extract_passwd_status_value "$passwd_status_fixture" ""
+    check_status 1 "a non-numeric field index is refused rather than read as zero" \
+        extract_passwd_status_value "$passwd_status_fixture" "min"
+    check_status 1 "a field index past the seven documented fields is refused" \
+        extract_passwd_status_value "$passwd_status_fixture" 8
 
     # The banner that lets a log name the binary that produced it. All three
     # branches, because the dangerous one is the quiet one: a --version that
