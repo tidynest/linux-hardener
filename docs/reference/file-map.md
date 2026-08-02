@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated:** 2026-08-01
+**Last Updated**: 2026-08-01
 
 This document lists all source files with their purpose and key exports.
 
@@ -42,14 +42,14 @@ pub fn unchecked_summary(...)  // the one roll-up line every CLI renderer prints
 pub struct UncheckedTally { total, needing_privilege }  // and privilege_would_help()
 
 // Compliance report types
-pub struct ComplianceReport { report_framework, report_generated_at, report_controls, report_summary }
+pub struct ComplianceReport { report_framework, report_profile, report_generated_at, report_controls, report_summary }
 pub struct ControlResult { control_id, control_title, control_section, control_status, control_findings }
 pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_failing, ... }
 
 // Fleet scan types
 pub enum FleetHostStatus { Ok, Failed(String) }
 pub struct SeverityTallies { critical, high, medium, low, info: u32 }
-pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: SeverityTallies, scan_results: Vec<ScanResult> }
+pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: SeverityTallies, scan_results: Vec<ScanResult>, compliance: Vec<FleetFrameworkPosture> }
 ```
 
 ---
@@ -85,7 +85,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/report/tests.rs` | Unit tests for `src/commands/report.rs` | Test-only; `super` resolves to `crate::commands::report`, so its imports carried across unchanged |
 | `src/commands/report_wizard/tests.rs` | Unit tests for `src/commands/report_wizard.rs` | Test-only; `super` resolves to `crate::commands::report_wizard`, so its imports carried across unchanged |
 | `src/commands/history/tests.rs` | Unit tests for `src/commands/history.rs` | Test-only; `super` resolves to `crate::commands::history`, so its imports carried across unchanged |
-| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 62 tests, the largest inline block in the workspace | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
+| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 62 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
 | `src/commands/state/tests.rs` | Unit tests for `src/commands/state.rs` | Test-only; `super` resolves to `crate::commands::state`, so its imports carried across unchanged |
 | `src/commands/privilege/tests.rs` | Unit tests for `src/commands/privilege.rs` | Test-only; `super` resolves to `crate::commands::privilege`, so its imports carried across unchanged |
 
@@ -139,7 +139,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/lib.rs` | Module exports | Re-exports |
 | `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (backwards compatibility) |
 | `src/error.rs` | Error types | `HardeningError`, `Result<T>` |
-| `src/logging.rs` | Logging setup | `init_logging()` |
+| `src/logging.rs` | Logging setup | `init_logger()` |
 | `src/file_utils.rs` | File utilities | `update_file_atomically()`, `read_config_file()`, `set_config_directive()`, `create_timestamped_backup()` |
 | `src/binary_utils.rs` | Safe binary path resolution (CWE-426 prevention) | `resolve_binary()`, `TRUSTED_PATH` |
 | `src/executor/mod.rs` | Executor abstraction (trait + types) | `SystemExecutor`, `CommandOutput`, `FileMetadata` |
@@ -171,7 +171,7 @@ pub trait HardeningPlugin: Send + Sync {
 
 | Plugin File | Category | Key Checks |
 |-------------|----------|------------|
-| `src/ssh/mod.rs` | Network | PermitRootLogin, PasswordAuthentication, MaxAuthTries, X11Forwarding, Protocol, ClientAliveInterval |
+| `src/ssh/mod.rs` | Network | PermitRootLogin, PasswordAuthentication, PermitEmptyPasswords, MaxAuthTries, X11Forwarding, ClientAliveInterval, ClientAliveCountMax |
 | `src/ssh/dropin.rs` | Network | Writes SSH hardening to `/etc/ssh/sshd_config.d/00-hardener.conf`, which sorts before the fragments distributions ship, so sshd takes this file's values first. Precedence is verified after writing by re-resolving, never assumed from the filename, and an empty directive set removes the file rather than leaving an empty one | `DROPIN_PATH`, `Directive`, `render()`, `write_dropin()` |
 | `src/ssh/include.rs` | Network | Resolves `Include` directives in sshd's own order, so scan reports the value sshd will actually use and names the file supplying it. sshd takes the **first** value it obtains and distributions put the Include above everything this tool writes, so a drop-in silently won while the tool reported its own write |
 | `src/kernel/mod.rs` | Kernel | ASLR, kptr_restrict, dmesg_restrict, ptrace_scope, suid_dumpable, rp_filter, tcp_syncookies |
@@ -189,7 +189,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/mac/mod.rs` | MAC | SELinux/AppArmor status |
 | `src/tests.rs` | Tests | Unit tests for the crate root | Test-only; reached the crate through `crate::` already, so no import changed |
 | `src/audit/tests.rs` | Tests | Unit tests for `src/audit/mod.rs` | Test-only; `super` resolves to `crate::audit` |
-| `src/firewall/tests.rs` | Tests | Unit tests for `src/firewall/mod.rs`, 21 of them | Test-only; `super` resolves to `crate::firewall` |
+| `src/firewall/tests.rs` | Tests | Unit tests for `src/firewall/mod.rs`, 26 of them | Test-only; `super` resolves to `crate::firewall` |
 | `src/kernel/tests.rs` | Tests | Unit tests for `src/kernel/mod.rs` | Test-only; `super` resolves to `crate::kernel` |
 | `src/kernel/persistence/tests.rs` | Tests | Unit tests for `src/kernel/persistence.rs` | Test-only; `super` resolves to `crate::kernel::persistence` |
 | `src/mac/tests.rs` | Tests | Unit tests for `src/mac/mod.rs` | Test-only; `super` resolves to `crate::mac` |
@@ -216,9 +216,14 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
 
 **Kernel (kernel/mod.rs):**
 ```rust
-const KERNEL_PARAMS: &[(&str, &str, &str, Severity)] = &[
-    ("kernel.randomize_va_space", "2", "Enable ASLR", Severity::High),
-    ("kernel.kptr_restrict", "2", "Hide kernel pointers", Severity::Medium),
+const KERNEL_PARAMS: &[KernelParameter] = &[
+    KernelParameter {
+        kernel_parameter_name: "kernel.randomize_va_space",
+        kernel_secure_value: "2",
+        kernel_description: "Enable full address space layout randomisation (ASLR)",
+        kernel_severity: Severity::High,
+        kernel_compare: Strictness::AtLeast,
+    },
     // ... 18 total
 ];
 ```
@@ -238,7 +243,7 @@ const KERNEL_PARAMS: &[(&str, &str, &str, Severity)] = &[
 | `src/db.rs` | Database schema | `init_db()` |
 | `src/scan_history.rs` | GUI scan session types | `ScanSessionId`, `ScanStatus`, `ScanSession` |
 | `src/scan_manager.rs` | GUI scan persistence | `ScanHistoryManager` |
-| `src/manager/tests.rs` | Unit tests for `src/manager.rs`, 33 of them | Test-only; `super` resolves to `crate::manager`, so imports carried across unchanged |
+| `src/manager/tests.rs` | Unit tests for `src/manager.rs`, 37 of them | Test-only; `super` resolves to `crate::manager`, so imports carried across unchanged |
 | `src/hash_chain/tests.rs` | Unit tests for `src/hash_chain.rs` | Test-only; same shape |
 | `src/signing/tests.rs` | Unit tests for `src/signing.rs` | Test-only; same shape |
 | `src/db/tests.rs` | Unit tests for `src/db.rs` | Test-only; same shape |
@@ -252,6 +257,7 @@ pub struct Checkpoint {
     pub checkpoint_timestamp: i64,
     pub checkpoint_username: String,
     pub checkpoint_signature: Vec<u8>,
+    pub host_key: String,
 }
 
 pub struct FileState {
@@ -260,6 +266,8 @@ pub struct FileState {
     pub file_permissions: u32,
     pub file_owner_uid: u32,
     pub file_owner_gid: u32,
+    pub file_link_target: Option<String>,
+    pub file_content_absence: Option<ContentAbsence>,
 }
 ```
 
@@ -277,7 +285,7 @@ pub struct FileState {
 | `src/frameworks/mod.rs` | Framework routing and curated catalogue aggregation | `curated_controls()` |
 | `src/frameworks/cis.rs` | CIS Benchmark curated catalogue | `get_controls()` (CIS control definitions) |
 | `src/frameworks/iso27001.rs` | ISO/IEC 27001:2022 Annex A curated catalogue | `get_controls()` (93 controls across 4 themes: Organizational, People, Physical, Technological) |
-| `src/output/mod.rs` | Formatter routing | `format_report()` |
+| `src/output/mod.rs` | Formatter routing | `CsvFormatter`, `HtmlFormatter`, `JsonFormatter`, `PdfFormatter`, `TextFormatter` (re-exports) |
 | `src/output/text.rs` | Text formatter | `TextFormatter` |
 | `src/output/json.rs` | JSON formatter | `JsonFormatter` |
 | `src/output/csv.rs` | CSV formatter | `CsvFormatter` |
@@ -321,7 +329,7 @@ pub struct FileState {
 | `src/lib.rs` | Module exports | Re-exports public types |
 | `src/config.rs` | Scheduler configuration | `SchedulerConfig`, `StorageConfig`, `NotificationConfig`, `EmailConfig`, `WebhookConfig` |
 | `src/db.rs` | SQLite scan history | `ScanHistoryManager`, `ScanSession`, `ScanFinding`, `SeverityCounts` |
-| `src/json_store.rs` | JSON file storage | `JsonStore`, `StoredScan` |
+| `src/json_store.rs` | JSON file storage | `JsonStore` |
 | `src/runner.rs` | Scan execution orchestrator | `ScanRunner`, `ScanSummary`, `TriggerType` |
 | `src/daemon.rs` | Cron-scheduled scanning daemon | `Daemon` |
 | `src/notification/mod.rs` | Notification system module | `Notifier`, `NotificationResult`, `parse_severity()`, `meets_severity_threshold()` |
@@ -434,6 +442,7 @@ pub struct NotificationDispatcher {
     notifiers: Vec<Box<dyn Notifier>>,
     min_severity: Severity,
     db: Arc<ScanHistoryManager>,
+    mode: NotifyMode,
 }
 
 impl NotificationDispatcher {
@@ -466,6 +475,7 @@ pub struct ScanSummary {
     pub json_path: Option<String>,
     pub json_hash: Option<String>,
     pub had_errors: bool,
+    pub regression: Option<RegressionInfo>,
 }
 
 /// Orchestrates plugin scans with database and JSON persistence.
@@ -475,6 +485,7 @@ pub struct ScanRunner {
     min_severity: Severity,
     plugins: Vec<String>,
     host: String,
+    dispatcher: Option<NotificationDispatcher>,
 }
 ```
 
@@ -617,7 +628,7 @@ pub async fn invoke_disconnect_remote() -> Result<(), String>;
 pub async fn invoke_remote_scan(plugin_ids: Option<Vec<String>>) -> Result<Vec<ScanResult>, String>;
 
 // Fleet scanning (read-only, multiple inventory hosts)
-pub async fn invoke_fleet_scan(host_names: Vec<String>, plugin_ids: Vec<String>) -> Result<Vec<FleetHostScan>, String>;
+pub async fn invoke_fleet_scan(host_names: Vec<String>, adhoc: Vec<String>, plugin_ids: Option<Vec<String>>) -> Result<Vec<FleetHostScan>, String>;
 
 // Scheduler
 pub async fn invoke_get_scheduler_config() -> Result<SchedulerUiConfig, String>;
@@ -885,15 +896,15 @@ workspace run itself for what passed.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
-| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs` | 89 |
+| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 92 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 86 |
-| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs` | 85 |
+| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 89 |
 | hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 100 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and nine of `commands/`: `apply.rs`, `batch.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 160 |
-| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, every plugin module | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs` | 544 |
-| hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 128 |
-| hardener-types | `lib.rs`, `remote.rs` | - | 41 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and nine of `commands/`: `apply.rs`, `batch.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 165 |
+| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and seven of the eight plugin modules (`ssh/mod.rs` carries none; `ssh/dropin.rs` and `ssh/include.rs` do) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 568 |
+| hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 129 |
+| hardener-types | `lib.rs`, `remote.rs` | - | 43 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 99 |
 
 ### Executor and Mock Test Files
@@ -903,9 +914,9 @@ counts measured the same way and on the same date as the table above.
 
 | File | Purpose | Annotations |
 |------|---------|-------------|
-| `hardener-core/tests/mock_executor_tests.rs` | MockExecutor unit tests | 14 |
+| `hardener-core/tests/mock_executor_tests.rs` | MockExecutor unit tests | 15 |
 | `hardener-core/tests/ssh_executor_tests.rs` | SshExecutor unit/integration tests | 14 |
-| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (8 files) | 359 |
+| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (8 files) | 374 |
 | `hardener-plugins/tests/ssh_integration_tests.rs` | Plugin SSH integration tests | 11 |
 
 ---

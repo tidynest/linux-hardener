@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated:** 2026-08-01
+**Last Updated**: 2026-08-01
 **Version:** 1.5.1
 
 This document describes the data flow for all major operations in the system.
@@ -206,9 +206,12 @@ could not be read is reported as an `UncheckedCheck` rather than as an absence.
 ┌──────────────────────────────────────────────────────────────┐
 │  Pre-Apply: Create Checkpoint                                │
 │  ├─ Identify affected files for this plugin                  │
-│  │   • SSH: ["/etc/ssh/sshd_config"]                         │
-│  │   • Kernel: ["/etc/sysctl.conf", "/etc/sysctl.d/"]        │
-│  │   • Firewall: ["/etc/nftables.conf", "/etc/firewalld/"]   │
+│  │   • SSH: ["/etc/ssh/sshd_config",                         │
+│  │            "/etc/ssh/sshd_config.d/00-hardener.conf"]     │
+│  │   • Kernel: ["/etc/sysctl.conf", "/etc/sysctl.d",         │
+│  │               "/etc/sysctl.d/99-hardener.conf"]           │
+│  │   • Firewall: ["/etc/nftables.conf", "/etc/firewalld",    │
+│  │                 "/etc/ufw"]                               │
 │  ├─ CheckpointManager::create_checkpoint()                   │
 │  │   ├─ Generate checkpoint ID                               │
 │  │   ├─ For each file:                                       │
@@ -252,7 +255,7 @@ could not be read is reported as an `UncheckedCheck` rather than as an absence.
 │               change_type: KernelParameter,                  │
 │               change_success: true }                         │
 │    ],                                                        │
-│    apply_checkpoint_id: Some("cp_1700000000_abc123"),        │
+│    apply_checkpoint_id: Some("cp_1700000000000_a1b2c3d4"),   │
 │    apply_error: None                                         │
 │  }                                                           │
 └────────┬─────────────────────────────────────────────────────┘
@@ -261,13 +264,13 @@ could not be read is reported as an `UncheckedCheck` rather than as an absence.
 ┌──────────────────────────────────────────────────────────────┐
 │  Audit Log Entry                                             │
 │  {                                                           │
-│    timestamp: "2024-11-26T12:00:00Z",                        │
-│    action_type: Apply,                                       │
-│    user: "root",                                             │
-│    target: "kernel-hardening",                               │
-│    result: Success,                                          │
-│    details: { "changes": "12 parameters applied" },          │
-│    hash: SHA256(previous_entry + this_entry)                 │
+│    entry_timestamp: "2024-11-26T12:00:00Z",                  │
+│    entry_action_type: Apply,                                 │
+│    entry_user: "root",                                       │
+│    entry_target: "Kernel Hardening",                         │
+│    entry_result: Success,                                    │
+│    entry_details: {},                                        │
+│    entry_hash: SHA256(prev_entry + this_entry)               │
 │  }                                                           │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -294,7 +297,7 @@ a checkpoint or a skip is never counted as a hardening change.
 
 ## 3. Checkpoint Creation Flow
 
-**Command:** `sudo hardener checkpoint create --name "before-upgrade"`
+**Command:** `sudo hardener checkpoint create "before-upgrade"`
 
 ```
 ┌──────────────────┐
@@ -368,17 +371,17 @@ a checkpoint or a skip is never counted as a hardening change.
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  Store in SQLite                                             │
-│  ├─ INSERT INTO checkpoints (id, name, timestamp, sig)       │
-│  └─ INSERT INTO file_states (checkpoint_id, path, content..) │
+│  ├─ INSERT INTO checkpoints (id, name, timestamp, signature) │
+│  └─ INSERT INTO file_states (checkpoint_id, file_path, ...)  │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  Audit Log Entry                                             │
 │  {                                                           │
-│    action_type: CheckpointCreate,                            │
-│    target: "cp_1700000000000_a1b2c3d4",                      │
-│    details: { "files_captured": 5, "name": "before-upgrade" }│
+│    entry_action_type: CheckpointCreate,                      │
+│    entry_target: "before-upgrade",                           │
+│    entry_details: {},                                        │
 │  }                                                           │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -471,10 +474,10 @@ a checkpoint or a skip is never counted as a hardening change.
 ┌──────────────────────────────────────────────────────────────┐
 │  Audit Log Entry                                             │
 │  {                                                           │
-│    action_type: Rollback,                                    │
-│    target: "cp_1700000000000_a1b2c3d4",                      │
-│    result: Success,                                          │
-│    details: { "files_restored": 5 }                          │
+│    entry_action_type: Rollback,                              │
+│    entry_target: "cp_1700000000000_a1b2c3d4",                │
+│    entry_result: Success,                                    │
+│    entry_details: {},                                        │
 │  }                                                           │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -790,9 +793,9 @@ The audit log uses a hash chain for tamper detection:
 │ action: Scan    │     │ action: Apply   │     │ action: Rollback│
 │ ...             │     │ ...             │     │ ...             │
 │ hash: SHA256(   │────▶│ hash: SHA256(   │────▶│ hash: SHA256(   │
-│   "genesis"     │     │   entry1.hash + │     │   entry2.hash + │
-│ )               │     │   entry2.data   │     │   entry3.data   │
-│                 │     │ )               │     │ )               │
+│   0x00 * 32 +   │     │   entry1.hash + │     │   entry2.hash + │
+│   entry1.data   │     │   entry2.data   │     │   entry3.data   │
+│ )               │     │ )               │     │ )               │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
@@ -911,7 +914,7 @@ evidence still, so a `stat` that merely failed is never read as absence.
    Note: remote chmod/chown/rm run without sudo, so a non-root remote restore
    degrades to content-only for privileged paths; binary files are not
    checkpointed remotely.
-2. **SystemInfo**: Detected from remote host via SSH commands
+2. **SystemInfo**: Local only. `Context::with_executor` calls `SystemInfo::detect()` whatever the executor, so an SSH scan reports the operator's own distribution, hostname and kernel rather than the target's
 3. **Privileged operations**: May require sudo on remote (user configures)
 4. **Network latency**: Each operation involves SSH round-trip
 
@@ -956,7 +959,7 @@ evidence still, so a `stat` that merely failed is never read as absence.
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  PluginManager::execute_scan(ctx)                            │
+│  PluginManager::execute_scan(ctx, config)                    │
 │  ├─ Resolve dependencies (topological sort)                  │
 │  ├─ Execute each plugin's scan() sequentially, in            │
 │  │   dependency order (unlike the concurrent CLI paths)      │
@@ -990,11 +993,11 @@ evidence still, so a `stat` that merely failed is never read as absence.
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  JsonStore::write(session_id, export_payload)                │
-│  ├─ Create timestamped filename: {session_id}_{timestamp}.json│
+│  ├─ Filename: scan_{YYYYMMDD_HHMMSS}_{session_id[..8]}.json   │
 │  ├─ Serialize JSON with:                                     │
 │  │   host, timestamp, min_severity, plugins_scanned,         │
 │  │   findings (full details), plugin_errors                  │
-│  ├─ Write to storage_json_output_dir                         │
+│  ├─ Write to config.storage.json_output_dir                  │
 │  └─ Return (file_path, sha256_hash)                          │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -1022,7 +1025,7 @@ evidence still, so a `stat` that merely failed is never read as absence.
 │    medium_count: 4,                                          │
 │    low_count: 1,                                             │
 │    info_count: 0,                                            │
-│    json_path: "/var/lib/hardener/scans/abc123_2025...json",  │
+│    json_path: ".../scan_20260801_143022_abc123de.json",      │
 │    json_hash: "sha256:a1b2c3...",                            │
 │    had_errors: false                                         │
 │  }                                                           │
@@ -1168,7 +1171,7 @@ pub struct Daemon {
          ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  Daemon::execute_scan()                                      │
-│  ├─ Check scan_in_progress.compare_exchange() atomically     │
+│  ├─ Check scan_in_progress.swap(true, SeqCst) atomically     │
 │  ├─ If already running: skip (warn log)                      │
 │  ├─ Run ScanRunner::run() with TriggerType::Scheduled        │
 │  └─ Clear scan_in_progress flag on completion                │
@@ -1378,11 +1381,11 @@ pub enum FleetHostStatus {
 
 /// Per-severity finding counts derived from a host's ScanResults.
 pub struct SeverityTallies {
-    pub critical: usize,
-    pub high: usize,
-    pub medium: usize,
-    pub low: usize,
-    pub info: usize,
+    pub critical: u32,
+    pub high: u32,
+    pub medium: u32,
+    pub low: u32,
+    pub info: u32,
 }
 
 impl SeverityTallies {
@@ -1421,7 +1424,7 @@ pub struct ApplyOutcome {
 /// Result of applying (or validating) one host.
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum ApplyStatus {
-    Validated { plugins: usize, would_change: usize, failed: usize },
+    Validated { plugins: usize, would_change: usize, compliant: usize, failed: usize },
     Applied   { ok: usize, failed: usize },
     Failed    { error: String },
 }
