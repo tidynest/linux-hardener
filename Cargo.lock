@@ -2198,6 +2198,7 @@ dependencies = [
  "hardener-common",
  "hardener-core",
  "hardener-state",
+ "hardener-types",
  "nix",
  "tempfile",
  "tokio",

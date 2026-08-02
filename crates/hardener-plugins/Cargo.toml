@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 hardener-common = { path = "../hardener-common" }
 hardener-core   = { path = "../hardener-core" }
+hardener-types  = { workspace = true }
 nix = { workspace = true, features = ["fs"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
