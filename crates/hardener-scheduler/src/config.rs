@@ -14,6 +14,10 @@ fn default_data_dir() -> PathBuf {
     // Check if running as root
     #[cfg(unix)]
     {
+        // SAFETY: geteuid() is a pure read of the calling process's effective
+        // uid. It takes no arguments, touches no memory the caller owns, and
+        // POSIX requires it to always succeed, so there is no failure mode and
+        // no thread-safety condition to observe.
         if unsafe { libc::geteuid() } == 0 {
             return PathBuf::from("/var/lib/linux-hardener");
         }

@@ -120,7 +120,7 @@ pub enum Command {
         #[arg(long)]
         profile: Option<String>,
 
-        /// Output format (text, json).
+        /// Output format (text, json, csv, html, pdf).
         #[arg(long, default_value = "text")]
         report_format: String,
 
