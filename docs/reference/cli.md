@@ -212,6 +212,29 @@ checkpoint still restores normally. A path that really is still absent restores
 as a silent no-op, so a host that genuinely lacks an optional file is
 unaffected.
 
+**Restored files are reloaded.** Writing the bytes back is only half of a
+rollback: until the services that read them re-read them, the machine keeps
+running the configuration you just undid. Once the files are restored, every
+plugin that owns one of the restored paths is asked to re-read it, and each
+reload is listed in the output with what it did. Six plugins have something to
+reload: `sshd` is restarted, kernel parameters go through `sysctl --system`,
+the firewall backend re-reads its own configuration (`firewall-cmd --reload`,
+`nft -f /etc/nftables.conf` or `ufw reload`, and never a start or an enable),
+audit rules go through `augenrules --load`, systemd gets a `daemon-reload`, and
+the MAC policy is put back with `setenforce` or `systemctl reload apparmor`.
+`pam` and `permissions` reload nothing, because their changes take effect the
+moment the file is written. A plugin with nothing to reload produces no line
+rather than an empty one.
+
+**Exit codes:** `0` = every file restored and every reload succeeded; `1` = the
+rollback did not fully succeed, which now covers two distinct cases the message
+tells apart. Either some files were not restored, or the files were restored
+and a service refused to reload, in which case that service is still running
+the previous configuration and needs attention even though the disk is correct.
+A reload the host genuinely cannot perform is not counted as a failure: a
+kernel audit configuration locked with `-e 2` is reported as restored but not
+loaded until the next reboot, and exits `0`.
+
 ---
 
 ## checkpoint
