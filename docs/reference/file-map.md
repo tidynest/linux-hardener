@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-02
 
 This document lists all source files with their purpose and key exports.
 
@@ -85,7 +85,8 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/report/tests.rs` | Unit tests for `src/commands/report.rs` | Test-only; `super` resolves to `crate::commands::report`, so its imports carried across unchanged |
 | `src/commands/report_wizard/tests.rs` | Unit tests for `src/commands/report_wizard.rs` | Test-only; `super` resolves to `crate::commands::report_wizard`, so its imports carried across unchanged |
 | `src/commands/history/tests.rs` | Unit tests for `src/commands/history.rs` | Test-only; `super` resolves to `crate::commands::history`, so its imports carried across unchanged |
-| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 62 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
+| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 64 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
+| `src/commands/checkpoint/tests.rs` | Unit tests for `src/commands/checkpoint.rs` | Test-only; `super` resolves to `crate::commands::checkpoint`, so its imports carried across unchanged |
 | `src/commands/state/tests.rs` | Unit tests for `src/commands/state.rs` | Test-only; `super` resolves to `crate::commands::state`, so its imports carried across unchanged |
 | `src/commands/privilege/tests.rs` | Unit tests for `src/commands/privilege.rs` | Test-only; `super` resolves to `crate::commands::privilege`, so its imports carried across unchanged |
 
@@ -125,7 +126,8 @@ pub trait HardeningPlugin: Send + Sync {
     fn dependencies(&self) -> Vec<PluginId>;
     async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult>;
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
+    fn reloads_for_path(&self, path: &Path) -> bool { false }
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> { Ok(None) }
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
 }
 ```
@@ -162,7 +164,7 @@ pub trait HardeningPlugin: Send + Sync {
 
 | File | Purpose | Plugin Struct |
 |------|---------|---------------|
-| `src/lib.rs` | Module exports, helpers | `create_checkpoint_for_apply()`, `create_checkpoint_metadata_only_for_apply()`, `checkpoint_change()` (shared `ChangeType::Checkpoint` bookkeeping change), `rollback_files_from_checkpoint()`, `create_plugin_registry()`, `compliance_coverage()` |
+| `src/lib.rs` | Module exports, helpers | `create_checkpoint_for_apply()`, `create_checkpoint_metadata_only_for_apply()`, `checkpoint_change()` (shared `ChangeType::Checkpoint` bookkeeping change), `reload_plugins_after_rollback()`, `create_plugin_registry()`, `compliance_coverage()` |
 | `src/macros.rs` | Plugin definition macro | `define_plugin!` |
 | `src/scan_outcome.rs` | Turns per-plugin scan results into the flat lists a compliance report consumes. A plugin that contributed no evidence gets an entry carrying its whole declared coverage, so its controls route to Manual Review instead of passing on the silence its own absence caused; a run that could not enumerate its plugins at all gets one carrying the engine's whole coverage, for the same reason at the only scope left. Shared by the CLI and the desktop, beside the coverage table it depends on | `Unassessed`, `flatten_scans()`, `flatten_persisted_scans()`, `failed_scan()`, `unassessed_check()` |
 | `src/strictness.rs` | The one definition of which direction counts as stricter for a configuration value, shared by the pam, ssh and kernel plugins. Comparing a host's value against the baseline for equality has no direction, so a stricter host reads as violating and apply writes the baseline over it; every variant here carries a direction, and there is deliberately no equality variant to give a directive added later. Also the single place an operator's directive override is clamped, so an override can tighten a target but never relax it | `Strictness` (`AtMost`, `AtLeast`, `NonZeroAtMost`, `Ranked`), `clamp_target()`, `violated_by()`, `resolved_target()` |
@@ -188,8 +190,9 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/audit/mod.rs` | Audit | auditd rules for time, users, permissions |
 | `src/mac/mod.rs` | MAC | SELinux/AppArmor status |
 | `src/tests.rs` | Tests | Unit tests for the crate root | Test-only; reached the crate through `crate::` already, so no import changed |
+| `src/reload_tests.rs` | Tests | Unit tests for `reload_plugins_after_rollback()` in `src/lib.rs`, against four stub plugins rather than any real plugin's `scan`/`apply`/`validate` | Test-only; reached the crate through `crate::` already, so no import changed |
 | `src/audit/tests.rs` | Tests | Unit tests for `src/audit/mod.rs` | Test-only; `super` resolves to `crate::audit` |
-| `src/firewall/tests.rs` | Tests | Unit tests for `src/firewall/mod.rs`, 26 of them | Test-only; `super` resolves to `crate::firewall` |
+| `src/firewall/tests.rs` | Tests | Unit tests for `src/firewall/mod.rs`, 28 of them | Test-only; `super` resolves to `crate::firewall` |
 | `src/kernel/tests.rs` | Tests | Unit tests for `src/kernel/mod.rs` | Test-only; `super` resolves to `crate::kernel` |
 | `src/kernel/persistence/tests.rs` | Tests | Unit tests for `src/kernel/persistence.rs` | Test-only; `super` resolves to `crate::kernel::persistence` |
 | `src/mac/tests.rs` | Tests | Unit tests for `src/mac/mod.rs` | Test-only; `super` resolves to `crate::mac` |
@@ -199,6 +202,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/permissions/tests.rs` | Tests | Unit tests for `src/permissions/mod.rs` | Test-only; `super` resolves to `crate::permissions` |
 | `src/services/tests.rs` | Tests | Unit tests for `src/services/mod.rs` | Test-only; `super` resolves to `crate::services` |
 | `src/scan_outcome/tests.rs` | Tests | Unit tests for `src/scan_outcome.rs` | Test-only; `super` resolves to `crate::scan_outcome` |
+| `src/ssh/tests.rs` | Tests | Unit tests for `src/ssh/mod.rs` | Test-only; `super` resolves to `crate::ssh` |
 | `src/ssh/dropin/tests.rs` | Tests | Unit tests for `src/ssh/dropin.rs` | Test-only; `super` resolves to `crate::ssh::dropin` |
 | `src/ssh/include/tests.rs` | Tests | Unit tests for `src/ssh/include.rs` | Test-only; `super` resolves to `crate::ssh::include` |
 | `src/strictness/tests.rs` | Tests | Unit tests for `src/strictness.rs` | Test-only; `super` resolves to `crate::strictness` |
@@ -889,7 +893,7 @@ purpose-named directories.
 Unit tests sit beside the source file they exercise, in a `#[cfg(test)]` module of their own file rather than inside it: `foo.rs` is accompanied by `foo/tests.rs`, and a `foo/mod.rs` by `foo/tests.rs` in the directory it already owns. They are still child modules, so they still read private items; only their location changed. Integration tests, which see the public API only, remain in each crate's `tests/` directory. The **Unit Tests** column below names the source files under test, not the files the tests live in.
 
 The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
-tree on **2026-08-01**, not a run total: a run also executes doctests and, for
+tree on **2026-08-02**, not a run total: a run also executes doctests and, for
 `hardener-ui`, `wasm_bindgen_test` cases that no annotation count here covers.
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
@@ -901,11 +905,11 @@ workspace run itself for what passed.
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 89 |
 | hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 100 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and nine of `commands/`: `apply.rs`, `batch.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 165 |
-| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and seven of the eight plugin modules (`ssh/mod.rs` carries none; `ssh/dropin.rs` and `ssh/include.rs` do) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 568 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and ten of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 172 |
+| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and all eight plugin modules (`ssh/dropin.rs` and `ssh/include.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 591 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 129 |
-| hardener-types | `lib.rs`, `remote.rs` | - | 43 |
-| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 99 |
+| hardener-types | `lib.rs`, `remote.rs` | - | 46 |
+| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 100 |
 
 ### Executor and Mock Test Files
 
@@ -916,7 +920,7 @@ counts measured the same way and on the same date as the table above.
 |------|---------|-------------|
 | `hardener-core/tests/mock_executor_tests.rs` | MockExecutor unit tests | 15 |
 | `hardener-core/tests/ssh_executor_tests.rs` | SshExecutor unit/integration tests | 14 |
-| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (8 files) | 374 |
+| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (8 files) | 375 |
 | `hardener-plugins/tests/ssh_integration_tests.rs` | Plugin SSH integration tests | 11 |
 
 ---
@@ -968,4 +972,4 @@ counts measured the same way and on the same date as the table above.
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-02

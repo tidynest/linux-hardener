@@ -1,6 +1,6 @@
 # Plugin authoring guide
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-02
 
 How to write a new hardening plugin. The 8 existing plugins in
 `crates/hardener-plugins/src/` are the best worked examples; this page
@@ -23,14 +23,19 @@ pub trait HardeningPlugin: Send + Sync {
     fn dependencies(&self) -> Vec<PluginId>;
     async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult>;
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
+    fn reloads_for_path(&self, path: &Path) -> bool { false }
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> { Ok(None) }
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
 }
 ```
 
 The lifecycle is: registration, dependency resolution (dependencies are
 topologically ordered and processed first), `scan()`, `validate()` (dry-run),
-`apply()`, and `rollback()` when a restore is requested.
+`apply()`, and `reload_after_rollback()` when a checkpoint restore touches one
+of this plugin's paths. There is no plugin-level rollback method: restoring
+files is `CheckpointManager::rollback`'s job (see
+`docs/reference/data-flow.md`), and a plugin only re-enters the picture to
+tell the running system to pick the restored files back up.
 
 Per-method contract:
 
@@ -38,7 +43,8 @@ Per-method contract:
   `plugin_version`, `plugin_description`, `plugin_category`). The
   `define_plugin!` macro in `crates/hardener-plugins/src/macros.rs` generates
   the struct, `metadata()`, and `dependencies()` from a declaration block, so
-  new plugins only hand-write the four async methods.
+  new plugins only hand-write `scan()`, `apply()` and `validate()`; the two
+  reload methods below are opt-in overrides with defaults.
 - **`dependencies()`**: plugin IDs that must run before this one. Most
   plugins return an empty list.
 - **`scan()`**: read-only. Must never modify the system. Returns a
@@ -75,10 +81,20 @@ Per-method contract:
   back to. Where a failure makes the remaining work impossible rather than
   merely failed, record the one cause and return the result early: a list of
   failures for steps that were never reached says the wrong thing.
-- **`rollback()`**: restores the plugin's files from the given checkpoint.
-  The shared helper `hardener_plugins::rollback_files_from_checkpoint`
-  handles the common restore-files pattern; add service restarts after it if
-  the subsystem needs them.
+- **`reloads_for_path()`**: answers whether a rollback that restored `path`
+  needs this plugin to reload. Defaults to `false`. Implement it when the
+  plugin owns a file a running service only re-reads on request, so the
+  restored bytes and the running configuration would otherwise disagree
+  until the next reboot.
+- **`reload_after_rollback()`**: re-reads configuration this plugin owns,
+  after a rollback restored it, and returns what was done for the operator
+  (`Some("sshd restarted")`); `None` means there was nothing to reload.
+  Defaults to `Ok(None)`. Six plugins implement both methods (kernel, ssh,
+  firewall, audit, services, mac); pam and permissions take the defaults,
+  because their changes take effect immediately and there is nothing left to
+  reload. `hardener_plugins::reload_plugins_after_rollback` is the caller: it
+  maps a rollback's successfully restored paths onto plugins via
+  `reloads_for_path()` and reloads each matching plugin once.
 
 ## Always go through the executor
 

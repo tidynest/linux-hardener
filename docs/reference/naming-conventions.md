@@ -1,7 +1,7 @@
 # Naming Conventions Reference
 
 **Author**: Eric Jingryd
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-02
 **Purpose**: Complete and authoritative naming standards for all identifiers in the project
 
 ---
@@ -648,7 +648,7 @@ pub fn sysctl(&self, p: &str, v: &str) { }        // Unclear action, abbreviatio
 // ✅ GOOD (Plugin trait methods):
 async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> { }
 async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
-async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
+async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> { }
 async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }
 
 // ✅ GOOD (Supporting methods):
@@ -1206,7 +1206,8 @@ impl HardeningPlugin for KernelHardeningPlugin {
     fn dependencies(&self) -> Vec<PluginId> { }
     async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult> { }
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> { }
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()> { }
+    fn reloads_for_path(&self, path: &Path) -> bool { }
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> { }
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> { }
 }
 
@@ -1799,7 +1800,7 @@ When naming any identifier in this project, verify:
 
 ---
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-02
 
 ### 2025-12-05 (GUI Styling)
 

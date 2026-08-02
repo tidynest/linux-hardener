@@ -509,9 +509,10 @@ each plugin on each host, not a nominated run.
 
 Tiered exit codes: `0` = every host restored or previewed cleanly, including
 hosts with nothing to roll back; `1` = at least one checkpoint failed to
-restore; `2` = at least one host-level error, which covers a failed connection,
-a host without root or passwordless sudo, a checkpoint store that could not be
-read, and a rollback task that did not finish.
+restore, or restored cleanly but whose plugin failed to reload; `2` = at
+least one host-level error, which covers a failed connection, a host without
+root or passwordless sudo, a checkpoint store that could not be read, and a
+rollback task that did not finish.
 
 **Examples:**
 
@@ -702,4 +703,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path | `session-<first 8 chars of id>.json` |
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-02

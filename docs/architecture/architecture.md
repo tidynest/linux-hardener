@@ -1,6 +1,6 @@
 # Linux System Hardener - Architecture Documentation
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-02
 **Version:** 1.5.1
 
 ---
@@ -331,7 +331,8 @@ pub trait HardeningPlugin: Send + Sync {
     fn dependencies(&self) -> Vec<PluginId>;
     async fn scan(&self, ctx: &Context, config: &PluginConfig) -> Result<ScanResult>;
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
-    async fn rollback(&self, ctx: &mut Context, checkpoint: &Checkpoint) -> Result<()>;
+    fn reloads_for_path(&self, path: &Path) -> bool { false }
+    async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> { Ok(None) }
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
 }
 ```
