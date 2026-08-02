@@ -380,6 +380,67 @@ pinned, which are the ones that have drifted. And the tests badge has no
 authority: its `+` makes it a floor rather than a count, and pinning it to a
 measured figure would make this gate depend on a full workspace test run.
 
+### Policy exception sites
+
+```bash
+python3 scripts/validate/validate_policy_exception_sites.py
+```
+
+Checks that every scan finding hardcoding `finding_policy_exception: None`
+carries a comment above the field saying why.
+
+`ReportGenerator::has_live_finding` fails a compliance control on any finding
+whose exception is `None`, so a hardcoded `None` is not a missing feature: it
+silently overrides a deviation the operator wrote down and approved. Six of
+these shipped at once across firewall, mac and audit and none was a decision
+anyone had taken, while pam's module-absence finding is deliberate and says so
+at the site. Counting the sites cannot tell an oversight from a decision, and
+neither can a test, because a test asserting the field is `None` passes just as
+happily on either. A comment beside it can, and it travels with the exemption.
+
+### .SRCINFO
+
+```bash
+python3 scripts/validate/validate_srcinfo.py
+```
+
+Checks that `packaging/.SRCINFO` says what `packaging/PKGBUILD` declares.
+
+`.SRCINFO` is generated rather than edited, and it is the only file the AUR
+reads: the web interface, the search index and every helper resolve a package's
+version, dependencies and sources from it and never from the PKGBUILD beside it.
+It had fallen three releases behind, `pkgver` reading 1.2.2 against a PKGBUILD
+of 1.5.1, with the `source` line derived from it pointing at the wrong tarball.
+
+It asks twice on purpose. A full `makepkg --printsrcinfo` regeneration compared
+byte for byte is the whole truth and catches a field this check has never
+thought about, but it needs `makepkg` and so cannot run on the project's Ubuntu
+CI. A pure-Python comparison of the scalars, plus the assertion that no line
+carries a version string other than `pkgver`, needs nothing and still fails on
+the exact drift that happened. Where `makepkg` is absent that is reported as a
+reduced run rather than a pass, because a check that quietly skips itself
+off-platform is a control that cannot fail.
+
+### CHANGELOG headings
+
+```bash
+python3 scripts/validate/validate_changelog_headings.py
+```
+
+Checks that no release entry in `CHANGELOG.md` repeats a change-type heading.
+
+A second `### Fixed` under one `## [version]` hides its own entries from anyone
+who found the first, and a release whose notes are cut from the file publishes
+the same heading twice with its entries split between them on no principle. It
+had happened seven times across three releases and nothing had looked.
+
+The comparison is on the exact heading text, which is deliberately narrow:
+`[1.0.3]` writes `### Added (Testing Infrastructure)` beside `### Fixed (GUI
+Tests)`, two different sections rather than a duplicate pair, so matching on a
+normalised prefix would fail a file doing nothing wrong. Everything below the
+last release entry is ignored, so the link-reference definitions and the
+version-history summary are not read as part of the release above them.
+
 ### CLI documentation (slower)
 
 ```bash
