@@ -316,6 +316,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An Arch upgrade no longer replaces the configuration the operator wrote.**
+  `package()` installs `config.toml` into `/etc` and the PKGBUILD declared no
+  `backup` array, so pacman treated it as an ordinary owned file: a routine
+  `pacman -Syu` overwrote it with the shipped default, taking the operator's
+  policy exceptions with their reasons, approvers and expiry dates, along with
+  any directive overrides, and left no `.pacnew` to recover them from. Nothing
+  was printed at any point. The other packagings were never affected, since the
+  RPM marks the same path `%config(noreplace)` and the Debian package gets
+  conffile handling from debhelper for anything under `/etc`, which is what
+  `docs/guide/installation.md` has always promised for all of them.
+
+  The array is declared now, and pacman applies it retroactively: a host
+  installed before this release is protected by the upgrade that carries the
+  fix, not only by the ones after it. An operator who has edited the file gets a
+  `.pacnew` to merge whenever the shipped default changes, exactly as RPM and
+  Debian users already do.
+
 - **A rollback no longer reports success for a file whose bytes it never
   restored.** A checkpoint that could not read a file's content stored a row
   identical to one captured metadata-only on purpose: no content, a real mode,

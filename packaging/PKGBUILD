@@ -39,6 +39,12 @@ optdepends=(
     'polkit-kde-agent: polkit agent for KDE Plasma'
     'xfce-polkit: native polkit agent for XFCE'
 )
+# package() installs config.toml into /etc, so without this pacman replaces it
+# on every upgrade and an operator's exceptions, approvers and directive
+# overrides are gone with no .pacnew to recover them from. The RPM says the same
+# thing as %config(noreplace) and the Debian package gets it from debhelper,
+# which is what docs/guide/installation.md promises for every packaging.
+backup=('etc/linux-hardener/config.toml')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/tidynest/$pkgname/archive/refs/tags/v$pkgver.tar.gz")
 # sha256 of the v1.5.1 source tarball - regenerate once the tag is pushed:
 #   updpkgsums  &&  makepkg --printsrcinfo > .SRCINFO

@@ -32,6 +32,7 @@ pkgbase = linux-system-hardener
 	optdepends = polkit-gnome: polkit agent for GNOME, XFCE, Hyprland, Sway, i3
 	optdepends = polkit-kde-agent: polkit agent for KDE Plasma
 	optdepends = xfce-polkit: native polkit agent for XFCE
+	backup = etc/linux-hardener/config.toml
 	source = linux-system-hardener-1.5.1.tar.gz::https://github.com/tidynest/linux-system-hardener/archive/refs/tags/v1.5.1.tar.gz
 	sha256sums = SKIP
 
