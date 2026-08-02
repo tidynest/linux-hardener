@@ -167,7 +167,7 @@ DE testing under v0.4.0 §D, names its issue.
 | Browser mode fix | Web UI renders correctly without Tauri | Critical | ✅ Complete |
 | Timestamp formatting | Format raw timestamp numbers on Checkpoints page | Medium | ✅ Complete |
 | Background personalisation | 5 security-focused themes (Fortress, Sentinel, Command, Guardian, Daywatch) | Low | ✅ Complete |
-| Responsive layout | Mobile-first responsive design | Medium | ✅ Complete |
+| Responsive layout | Desktop-first responsive design | Medium | ✅ Complete |
 | Navigation restructure | 5 pages (Dashboard, Analysis, Hardening, Remote, Scheduler) - superseded by the GUI/UX redesign below (7 pages behind a grouped sidebar) | Low | ✅ Complete |
 | GUI functional testing | Verify all GUI features work correctly | High | ✅ Complete |
 | CLI functional testing | Verify all CLI commands work (97 tests: 31 unit + 66 functional) | High | ✅ Complete |
@@ -236,7 +236,8 @@ sudo ./scripts/test/root-test-suite.sh --apply      # Full tests (apply + rollba
 
 ### v0.3.2: Frontend Layout & Accessibility ✅
 
-> **Implementation Guide**: See [docs/archive/FRONTEND_LAYOUT_PLAN.md](archive/FRONTEND_LAYOUT_PLAN.md)
+> **Implementation Guide**: `docs/archive/FRONTEND_LAYOUT_PLAN.md`, an internal
+> working document that is not published in this repository.
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
@@ -293,7 +294,8 @@ sudo ./scripts/test/root-test-suite.sh --apply      # Full tests (apply + rollba
 - [x] Filter select: focus ring with accent colour
 - [x] E2E tests: TC-11 to TC-14 all passed
 
-> **Test Plan**: See `docs/archive/GUI_V031_TEST_PLAN.md`
+> **Test Plan**: `docs/archive/GUI_V031_TEST_PLAN.md`, an internal working
+> document that is not published in this repository.
 
 #### E. Final Polish (Session 5) ✅
 

@@ -2,14 +2,14 @@
 
 Commands for validating and auto-updating project documentation.
 
-`scripts/validate/` holds eighteen Python 3 scripts: the master runner
-`validate_all.py`, the auto-updater `update_all_docs.py`, the fifteen
+`scripts/validate/` holds nineteen Python 3 scripts: the master runner
+`validate_all.py`, the auto-updater `update_all_docs.py`, the sixteen
 validators `validate_all.py` runs, and `validate_naming.py`, which is
 standalone and is what a hand-installed pre-commit hook runs, if there is one.
 The one check that is not
 Python lives elsewhere: version consistency is
 `scripts/release/release.sh --verify`, which `validate_all.py` shells out to,
-and it is why the run reports sixteen checks against fifteen Python
+and it is why the run reports seventeen checks against sixteen Python
 validators.
 
 ---
@@ -441,6 +441,28 @@ Tests)`, two different sections rather than a duplicate pair, so matching on a
 normalised prefix would fail a file doing nothing wrong. Everything below the
 last release entry is ignored, so the link-reference definitions and the
 version-history summary are not read as part of the release above them.
+
+### Markdown links
+
+```bash
+python3 scripts/validate/validate_doc_links.py
+```
+
+Checks that every markdown link in a tracked `.md` resolves for a reader who
+has only the repository.
+
+A link to a missing file is the obvious half. The half this exists for is
+invisible to the maintainer by construction: a link whose target sits on their
+disk but is gitignored. It opens in their editor, on every check they think to
+run, and 404s for everyone who clones. It had happened twice, both times into
+`docs/archive/`, which `.gitignore` lists file by file under the heading
+"Internal development documents (not for public repositories)".
+
+Relative targets are resolved against the linking file's own directory rather
+than matched as text, which is the whole point: the hand audit that missed
+`../archive/browser-automation.md` had grepped for `docs/archive/`, and those
+are the same directory written from one level down. Anchors are not resolved,
+because a hand audit of all 63 in the corpus found none broken.
 
 ### CLI documentation (slower)
 

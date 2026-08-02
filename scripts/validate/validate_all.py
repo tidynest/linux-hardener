@@ -84,6 +84,7 @@ def main():
         ("Policy Exception Sites", "validate_policy_exception_sites.py", []),
         (".SRCINFO", "validate_srcinfo.py", []),
         ("CHANGELOG Headings", "validate_changelog_headings.py", []),
+        ("Markdown Links", "validate_doc_links.py", []),
     ]
 
     # Add slower validators unless in quick mode

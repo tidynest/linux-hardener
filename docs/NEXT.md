@@ -23,6 +23,10 @@ filed on 2026-08-01 covering everything known and unfixed; #18 and #19 predate
 them and are also open. Where a heading below still describes an open item, it
 names its issue.
 
+**The specs and plans this file cites under `docs/superpowers/` are a local
+working area, not part of the repository.** Those paths are named so the
+maintainer can find them on their own disk; they resolve nowhere in a clone.
+
 One representative piece of that unreleased work, because several documents
 link to it: the permissions plugin's vendor layer (`f008a10`). When
 a critical path is absent from `/etc`, the scan now assesses the distribution's

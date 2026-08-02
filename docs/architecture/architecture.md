@@ -262,14 +262,17 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
 
 **Responsive CSS Design:**
 
-The UI uses a mobile-first responsive approach with CSS custom properties:
+The UI uses a desktop-first responsive approach with CSS custom properties. The
+base rules are the wide-window layout and each query narrows it further: every
+media query in `styles.css` is `max-width`, and there is not one `min-width`
+query in the stylesheet.
 
 | Breakpoint | Target | Layout Behaviour |
 |------------|--------|------------------|
-| < 480px | Mobile | Single column, sidebar shown as a collapsed icon rail |
-| 480-768px | Tablet | 2-column grids, adapted spacing |
-| 768-1024px | Small desktop | Full layouts, scanner sidebar |
-| > 1024px | Desktop | Full 2-column configure layout |
+| > 1024px | Desktop | Base rules: `.configure-layout` is a 2-column grid (`minmax(0, 1fr) minmax(220px, 300px)`) with a sticky `.configure-aside` |
+| <= 1024px | Small desktop, large tablet | `.configure-layout` collapses to a single flex column and `.configure-aside` unsticks; `.security-score` padding compacts |
+| <= 768px | Tablet | `--content-padding: 16px`; `.analysis-header` and `.tab-bar` stack vertically and `.tab-button` left-aligns |
+| <= 480px | Mobile | `--content-padding: 12px` and a smaller `.btn-large` |
 
 Navigation itself is a grouped left sidebar (`aside.sidebar`, `components/sidebar.rs`; groups Local and Fleet plus a pinned Settings area), not the old top nav bar. Independent of the CSS breakpoints above, the sidebar auto-collapses to an icon rail below a 900px viewport width via a JS resize listener, unless the user has an explicit collapse preference stored, which wins in both directions.
 
@@ -309,7 +312,9 @@ Browser mode enables automated UI testing via Playwright MCP. Configure `playwri
 }
 ```
 
-See [browser-automation.md](../archive/browser-automation.md) for complete setup and troubleshooting guide.
+The block above is the whole of the required configuration. Fuller setup and
+troubleshooting notes are kept in an internal working document that is not
+published in this repository.
 
 ---
 

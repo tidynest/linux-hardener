@@ -775,7 +775,13 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/validate_cli_docs.py` | CLI command documentation validator |
 | `scripts/validate/validate_compliance_docs.py` | Compliance framework documentation validator |
 | `scripts/validate/validate_doc_attachment.py` | Loose doc comment validator: an undocumented free function beside a long doc block |
+| `scripts/validate/validate_badges.py` | README badge validator |
+| `scripts/validate/validate_changelog_headings.py` | CHANGELOG heading validator: no release entry repeats a change-type heading |
+| `scripts/validate/validate_doc_links.py` | Markdown link validator: every link in a tracked `.md` must resolve for a reader who has only the repository, so a target that is missing or gitignored fails |
+| `scripts/validate/validate_doc_targets.py` | Doc sync target validator |
 | `scripts/validate/validate_file_map.py` | file-map.md accuracy validator |
+| `scripts/validate/validate_policy_exception_sites.py` | Policy exception site registry |
+| `scripts/validate/validate_srcinfo.py` | `.SRCINFO` validator: the AUR reads it and never the PKGBUILD beside it, so the two must agree |
 | `scripts/validate/validate_last_updated.py` | Last Updated timestamp validator |
 | `scripts/validate/validate_plugin_docs.py` | Plugin documentation validator |
 | `scripts/validate/validate_tauri_docs.py` | Tauri integration documentation validator |
