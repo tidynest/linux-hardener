@@ -433,6 +433,25 @@ pub fn checkpoint_created(format: &OutputFormat, id: &hardener_state::Checkpoint
     }
 }
 
+/// Reports a checkpoint that was removed. Shaped after `checkpoint_created`,
+/// its opposite number: a mutating verb says on stdout which row it acted on,
+/// rather than leaving a machine consumer to read success out of an empty
+/// stream. The claim is only safe to print because a delete that removed
+/// nothing is now an error and never reaches here.
+pub fn checkpoint_deleted(format: &OutputFormat, id: &hardener_state::CheckpointId) {
+    match format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::json!({ "deleted": true, "checkpoint_id": id.as_str() })
+            );
+        }
+        _ => {
+            println!("{} Checkpoint deleted: {}", "✓".green(), id.as_str().cyan());
+        }
+    }
+}
+
 pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files: &[FileState]) {
     match format {
         OutputFormat::Json => {

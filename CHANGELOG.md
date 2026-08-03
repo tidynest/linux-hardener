@@ -391,6 +391,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`checkpoint delete` says which row it removed, and refuses an id that
+  matched none.** Under `--format json` a successful delete wrote nothing at
+  all, so a machine consumer had to read success out of a zero-byte stream; the
+  only line it ever produced was an intent announcement on stderr, printed
+  before the work and suppressed under `--quiet`. Making that report honest
+  required fixing what sat underneath it: `DELETE ... WHERE` matching no rows
+  is a successful statement, and the row count was never inspected, so deleting
+  an id that never existed committed a transaction, returned `Ok`, exited 0 and
+  wrote a success into the audit log. The manager's own documentation already
+  said it "returns an error if checkpoint doesn't exist", so the contract was
+  right and the implementation was not. A delete that removed nothing is now an
+  error, and a successful one prints `{"deleted": true, "checkpoint_id": ...}`
+  under `--format json` and a `✓` line otherwise, matching `checkpoint create`.
+  Both outcomes are now written to the audit log, before anything is printed:
+  a delete that found no such row is an operator action on the checkpoint store
+  just as much as one that succeeded, and it is the shape a probe takes, so
+  returning early would have removed it from the trail entirely. `rollback` and
+  `apply` already recorded both. This also restores the desktop's fallback to
+  the system checkpoint database: it treated any non-error as proof of
+  deletion, so on a machine that had ever run the GUI it stopped there and a
+  root-owned checkpoint was silently never deleted while the interface reported
+  success. One consequence to know about: the desktop now reaches its `pkexec`
+  fallback for an id in neither database, so clicking Delete on a stale row
+  raises an authentication prompt for an operation that then fails, where it
+  previously reported success without prompting. A second: `file_states` rows
+  orphaned from their checkpoint, which nothing in the current code can create,
+  were previously swept by deleting their absent parent and now cannot be. The
+  container suite's existing delete row matches the reported outcome rather
+  than the exit status, without adding a check.
 - **`history export -o report.pdf` is refused instead of writing JSON into
   that name.** Narrowing the global `--format` closed the half of this defect
   that needed a refused format value; `--output` reached the same wrong

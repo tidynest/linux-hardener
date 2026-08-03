@@ -561,7 +561,16 @@ test_checkpoint_operations() {
     if [[ -n "$checkpoint_id" ]]; then
         log_info "Found checkpoint: $checkpoint_id"
         run_test "checkpoint show" "\"$BINARY\" checkpoint show \"$checkpoint_id\""
-        run_test "checkpoint delete" "\"$BINARY\" checkpoint delete \"$checkpoint_id\""
+        # Matched on output rather than on exit status: a delete that removed
+        # nothing used to exit 0 in silence, so the status alone cannot tell a
+        # removal from a no-op. This is the only place the text success report
+        # is exercised, because it needs a checkpoint that exists and creating
+        # one needs root. Note the trade: run_test_output greps stdout and does
+        # not check the exit code, where run_test checked the code and not the
+        # output.
+        run_test_output "checkpoint delete" \
+            "\"$BINARY\" checkpoint delete \"$checkpoint_id\"" \
+            "Checkpoint deleted"
     else
         log_skip "checkpoint show (no checkpoint ID found)"
         log_skip "checkpoint delete (no checkpoint ID found)"

@@ -1,13 +1,13 @@
-//! Whether the file a command writes is the file its path was asked for,
-//! driven through the built binary.
+//! What a command reports about what it actually did, driven through the built
+//! binary: whether the file it writes is the file its path asked for, and
+//! whether a mutating verb distinguishes having acted from having found
+//! nothing to act on.
 //!
-//! These run the binary rather than calling the check directly, because a
+//! These run the binary rather than calling the checks directly, because a
 //! validator tested on its own passes every assertion while nothing calls it.
-//! The refusals below happen before any database is opened, so no fixture
-//! session is needed and nothing of the operator's is read.
 //!
-//! Every child is given a scratch `HOME`, so a run that gets past a refusal
-//! looks for its history there and not in the operator's own.
+//! Every child is given a scratch `HOME`, so nothing of the operator's is read
+//! and the state any run touches is its own.
 
 use std::process::{Command, Output};
 
@@ -103,5 +103,37 @@ fn history_export_accepts_a_dotted_name_that_is_not_a_document_type() {
         !versioned.contains(CANNOT_PRODUCE),
         "a version-stamped name has extension '1' and is not a document type \
          either; got: {versioned}"
+    );
+}
+
+#[test]
+fn checkpoint_delete_does_not_report_removing_a_row_that_was_not_there() {
+    let out = run(&[
+        "--format",
+        "json",
+        "checkpoint",
+        "delete",
+        "cp_0_doesnotexist",
+    ]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "deleting a checkpoint that does not exist removed nothing and must not \
+         exit 0; got exit {:?} with stdout: {stdout}",
+        out.status.code()
+    );
+    // The run must fail for this reason and not because the database could not
+    // be opened at all, which would make the assertion above pass without
+    // reaching the check under test.
+    assert!(
+        stderr.contains("no checkpoint with id") && stderr.contains("cp_0_doesnotexist"),
+        "the refusal names the row it could not find, rather than reporting a \
+         database that would not open; got: {stderr}"
+    );
+    assert!(
+        !stdout.contains("deleted"),
+        "nothing was deleted, so no success envelope may be printed; got: {stdout}"
     );
 }

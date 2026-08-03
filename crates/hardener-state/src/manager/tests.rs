@@ -1658,3 +1658,55 @@ fn a_row_with_no_recorded_absence_hashes_exactly_as_it_did_before_the_field() {
         "the two absences must be distinguishable to the signature as well"
     );
 }
+
+#[tokio::test]
+async fn deleting_a_checkpoint_that_exists_removes_it() {
+    let exec = MockExecutor::new().with_file("/etc/sysctl.conf", "kernel.kptr_restrict = 1\n");
+    let manager = test_manager().await;
+    let id = manager
+        .create_checkpoint(&exec, "t", &[std::path::Path::new("/etc/sysctl.conf")])
+        .await
+        .expect("create_checkpoint");
+
+    manager
+        .delete_checkpoint(&id)
+        .await
+        .expect("deleting a checkpoint that exists succeeds");
+
+    assert!(
+        manager.get_checkpoint(&id).await.is_err(),
+        "the checkpoint must be gone after a successful delete"
+    );
+
+    // The file rows go with it. Asserting only on the metadata row leaves the
+    // `file_states` delete free to be removed entirely, which would leak every
+    // captured file of every deleted checkpoint while this test stayed green.
+    let orphans: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM file_states WHERE checkpoint_id = ?")
+            .bind(id.as_str())
+            .fetch_one(&manager.db_pool)
+            .await
+            .expect("the file_states rows are countable");
+    assert_eq!(
+        orphans, 0,
+        "a deleted checkpoint must leave none of its file rows behind"
+    );
+}
+
+#[tokio::test]
+async fn deleting_a_checkpoint_that_never_existed_is_an_error() {
+    let manager = test_manager().await;
+
+    let result = manager
+        .delete_checkpoint(&CheckpointId::new("cp_0_doesnotexist"))
+        .await;
+
+    // `DELETE ... WHERE` matching nothing is a successful statement, so the
+    // database cannot tell these two outcomes apart on its own. Reporting
+    // success here is a claim that a checkpoint was removed, which is what the
+    // desktop reads to decide it need not retry against the system database.
+    assert!(
+        result.is_err(),
+        "a delete that removed nothing must not report that it removed something"
+    );
+}

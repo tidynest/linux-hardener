@@ -337,6 +337,12 @@ in the database, so it names one row on its own. This is deliberately unlike
 list` is deleted by a plain `hardener checkpoint delete <id>`, which is also the
 only way to clear the rows of a host that no longer answers.
 
+A successful delete names the row it removed on stdout, as `checkpoint create`
+names the one it made, so `--format json` yields `{"deleted": true,
+"checkpoint_id": "..."}` rather than an empty stream. An id matching no
+checkpoint is an error, exit 1: nothing was removed, so there is nothing to
+report as removed.
+
 ### checkpoint show
 
 Display full details of a specific checkpoint.

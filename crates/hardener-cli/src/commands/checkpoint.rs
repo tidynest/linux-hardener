@@ -83,19 +83,30 @@ pub async fn delete(checkpoint_id: &str, format: OutputFormat, quiet: bool) -> R
         output::status(&format, &format!("Deleting checkpoint: {checkpoint_id}"));
     }
 
-    manager.delete_checkpoint(&id).await?;
-
+    // Recorded either way, and before anything is printed. A delete that found
+    // no such row is an operator action on the checkpoint store just as much as
+    // one that succeeded, and it is the shape a probe takes: returning early on
+    // the error would leave the attempt absent from the audit trail entirely,
+    // which is the one place it needs to appear. `rollback` and `apply` already
+    // log both outcomes.
+    let outcome = manager.delete_checkpoint(&id).await;
     if let Some(logger) = get_audit_logger().await {
         let _ = logger
             .log_action(
                 ActionType::CheckpointDelete,
                 effective_user(),
                 checkpoint_id.to_string(),
-                ActionResult::Success,
+                if outcome.is_ok() {
+                    ActionResult::Success
+                } else {
+                    ActionResult::Failure
+                },
             )
             .await;
     }
+    outcome?;
 
+    output::checkpoint_deleted(&format, &id);
     Ok(())
 }
 

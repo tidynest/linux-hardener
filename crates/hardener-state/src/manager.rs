@@ -841,11 +841,24 @@ impl CheckpointManager {
             .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         // Delete checkpoint metadata
-        sqlx::query("DELETE FROM checkpoints WHERE id = ?")
+        let removed = sqlx::query("DELETE FROM checkpoints WHERE id = ?")
             .bind(checkpoint_id.as_str())
             .execute(&mut *tx)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
+
+        // A `DELETE ... WHERE` that matches nothing is a successful statement,
+        // so the row count is the only thing that separates "removed it" from
+        // "there was nothing to remove". Returning `Ok` for both made every
+        // caller report a deletion that never happened: the CLI exited 0, the
+        // audit log recorded a success, and the desktop stopped before its
+        // fallback to the system database, having concluded the row was gone.
+        if removed.rows_affected() == 0 {
+            return Err(HardeningError::Database(format!(
+                "no checkpoint with id '{}'",
+                checkpoint_id.as_str()
+            )));
+        }
 
         tx.commit()
             .await
