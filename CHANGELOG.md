@@ -323,6 +323,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`scan --ssh` filed a remote host's findings under the operator's own host
+  name.** The scan itself was already remote-correct, because `--ssh` builds an
+  `SshExecutor` and every plugin asks the host through it. Only the history key
+  was not: the session was identified by reading the **controller's**
+  `/etc/hostname` with `std::fs`, so scanning a fleet from one workstation piled
+  every remote's findings into the workstation's own row. Anything derived from
+  that database read the wrong host: `history trends` and `history regressions`
+  reported an invented history for the controller and none at all for the hosts
+  actually scanned, and a regression on a remote could be masked by, or falsely
+  attributed to, a change on the controller. A remote is now keyed by the target it was
+  reached at, the same derivation that scopes checkpoints, rather than by the
+  name it reports: `/etc/hostname` is neither unique, since two fresh Rocky
+  hosts both answer `localhost.localdomain`, nor stable, since a session that
+  could not read it would key the same host differently. A host reached both by
+  name and by address therefore gets two rows, which loses continuity but
+  corrupts nothing, and is what `batch` has always done. The local key stays the
+  host's own name so that history written by earlier releases keeps its rows,
+  and an unreadable or empty name there falls back to the same derivation rather
+  than to the literal `localhost`, which cannot be told apart from a real
+  remote's row. The scheduler daemon writes the same table and derived that key
+  separately, by asking the kernel for its nodename and falling back to the
+  literal `localhost`, so a machine whose static name and transient name differ,
+  or whose `/etc/hostname` cannot be read, held two disjoint histories: each
+  side saw no earlier scan, and the daemon's own regression comparison ran on
+  half the rows. Both surfaces now share one derivation, which lives beside the
+  checkpoint host key. It also reads `/etc/hostname` as `hostname(5)` defines
+  it, taking the first line that is neither blank nor a comment, where a
+  whole-file trim would have made a commented file's key the name, a newline and
+  the comment. `batch` never shared this path and its history is unaffected;
+  existing rows are not rewritten, so a database written by an earlier release
+  still holds the mixed rows it recorded, and a host the daemon had keyed on a
+  transient name keeps those rows under it.
+
+- **Arch hosts were told `PASS_MIN_DAYS` was enforced when no account receives
+  it.** `apply` writes the directive into `/etc/login.defs`, and `scan` reported
+  no finding for it, but Arch builds shadow with no minimum password age at all:
+  `chage` there has no `-m/--mindays`, and `useradd` leaves the field empty
+  while honouring `PASS_MAX_DAYS` and `PASS_WARN_AGE` from the same file. One
+  `useradd` run taking two of the three directives and dropping the third is
+  what rules out a file-reading problem. The scan now asks `chage` whether the
+  field exists at all, through the executor so a remote scan asks the remote
+  host, and reports the directive as **not enforced** where it does not. The
+  value is left in `/etc/login.defs`, because it is already correct and would
+  take effect if the build ever gained the field. A probe that cannot be run is
+  reported as unchecked rather than as either answer. Affected hosts should
+  rely on `pam_pwhistory`, which this plugin also manages, for password reuse.
+  Other distributions are unaffected.
+
 - **Arch hosts were told `PASS_MIN_DAYS` was enforced when no account receives
   it.** `apply` writes the directive into `/etc/login.defs`, and `scan` reported
   no finding for it, but Arch builds shadow with no minimum password age at all:

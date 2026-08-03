@@ -11,6 +11,7 @@ use crate::{
 };
 use hardener_common::{
     error::{HardeningError, Result},
+    executor::hostname_file_name,
     types::Severity,
 };
 use hardener_core::{ConfigLoader, Context, HardenerConfig, PluginManager, ScanResult};
@@ -173,9 +174,20 @@ impl ScanRunner {
         db: Arc<ScanHistoryManager>,
         json_store: Arc<JsonStore>,
     ) -> ScanRunner {
-        let host = hostname::get()
-            .map(|h| h.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "localhost".to_string());
+        // The same key the CLI's `scan` writes, by the same rule, because both
+        // write the same `scan_sessions` table and a machine keyed two ways
+        // holds two disjoint histories: each side sees no earlier scan, so the
+        // daemon's own regression comparison and `history trends` are built on
+        // half the rows. This read is direct rather than through an executor
+        // because the daemon only ever scans the host it runs on, and it is
+        // reached from a synchronous path; `"local"` is what `host_key_for`
+        // answers for that host. The kernel's nodename is deliberately not
+        // consulted: it is the transient name, which DHCP, cloud-init and
+        // `systemd-nspawn --machine=` all set independently of this file.
+        let host = std::fs::read_to_string("/etc/hostname")
+            .ok()
+            .and_then(|contents| hostname_file_name(&contents).map(str::to_string))
+            .unwrap_or_else(|| "local".to_string());
 
         ScanRunner {
             db: Arc::clone(&db),

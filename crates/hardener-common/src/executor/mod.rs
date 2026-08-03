@@ -192,6 +192,63 @@ pub fn host_key_for(executor: &dyn SystemExecutor) -> String {
     }
 }
 
+/// The scan-history key for one session: the host that was actually scanned.
+///
+/// Single source of truth for that key, and it is here rather than beside
+/// either caller because both write the same `scan_sessions` table: the CLI's
+/// `scan`, and the scheduler daemon's own runs. They derived it separately for
+/// as long as they both existed, so one machine could hold two series and each
+/// side would see no history at all before its own first row.
+///
+/// **A remote is keyed by the target it was reached at, not by the name it
+/// reports.** Asking the remote for its `/etc/hostname` would move the
+/// collision rather than remove it: the name is not unique, since two fresh
+/// Rocky hosts both answer `localhost.localdomain` and would share one row, and
+/// it is not stable either, since a session that could not read the file would
+/// key the same host differently from one that could. [`host_key_for`] is
+/// unique per target and is already what scopes checkpoints, so the two agree.
+/// A host reached both by name and by address does get two rows, which loses
+/// continuity but corrupts nothing, and it is what `batch` has always done.
+///
+/// The local key stays the host's own name so that history written by earlier
+/// releases keeps its rows. `hostname(5)` allows comment lines and permits the
+/// name to be followed by anything, so the first line that is neither blank nor
+/// a comment is the name; the rest of the file is not part of the key. A file
+/// that cannot be read, or that holds no such line, falls back to
+/// [`host_key_for`], which is `"local"`, rather than to the literal `localhost`
+/// this used before: that name is indistinguishable from a real remote's, and
+/// on the daemon's side it was the fallback whenever the kernel could not
+/// answer at all.
+pub async fn session_host_key(executor: &dyn SystemExecutor) -> String {
+    if executor.is_remote() {
+        return host_key_for(executor);
+    }
+    let Ok(contents) = executor.read_file(Path::new("/etc/hostname")).await else {
+        return host_key_for(executor);
+    };
+    hostname_file_name(&contents)
+        .map(str::to_string)
+        .unwrap_or_else(|| host_key_for(executor))
+}
+
+/// The name a `/etc/hostname` file declares, if it declares one.
+///
+/// Separate from [`session_host_key`] because the scheduler daemon needs the
+/// same rule without an executor: it only ever runs against the host it is on,
+/// and it is built on a synchronous path. Keeping the rule in one place is what
+/// matters, since the two surfaces write the same table and a machine whose
+/// name is read differently by each of them holds two disjoint histories.
+///
+/// `hostname(5)` allows blank lines and `#` comments, and says the name ends at
+/// the first whitespace, so the first line that is neither blank nor a comment
+/// is the name and the rest of the file is not part of it.
+pub fn hostname_file_name(contents: &str) -> Option<&str> {
+    contents
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))
+}
+
 /// Whether the executor's session is already uid 0.
 ///
 /// One definition because two grew independently and each answered a slightly

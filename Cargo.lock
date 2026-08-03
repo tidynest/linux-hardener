@@ -2216,7 +2216,6 @@ dependencies = [
  "hardener-common",
  "hardener-core",
  "hex",
- "hostname",
  "lettre",
  "libc",
  "reqwest 0.12.25",

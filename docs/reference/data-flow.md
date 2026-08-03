@@ -926,11 +926,22 @@ evidence still, so a `stat` that merely failed is never read as absence.
    become one the moment a plugin started branching on it. The plugins that do
    need the target's identity ask the executor: see `detect_host_profile` in
    `hardener-cli`, which reads the target's own `/etc/os-release` through it
-3. **Scan history is keyed by the CONTROLLER's hostname**, not the target's.
-   `persist_scan_session` runs unconditionally after a scan and reads the local
-   `/etc/hostname`, so `hardener --ssh user@remote scan` files the remote's
-   findings under the operator's own host name. `batch` does not share this
-   path. Unlike the entry above, this one is observable
+3. **Scan history is keyed by the TARGET, not by the controller.**
+   `persist_scan_session` runs unconditionally after a scan and asks
+   `session_host_key`. A **remote** is keyed by `host_key_for`, the same
+   derivation that scopes checkpoints, so the key is unique per target and
+   independent of anything the remote reports: `/etc/hostname` is neither
+   unique (two fresh Rocky hosts both answer `localhost.localdomain`) nor
+   stable (a session that could not read it would key the same host
+   differently). A host reached both by name and by address gets two rows,
+   which loses continuity but corrupts nothing, and matches `batch`. A **local**
+   scan keeps the host's own `/etc/hostname` so that history written by earlier
+   releases keeps its rows, falling back to `host_key_for` when that is
+   unreadable or empty, rather than to the literal `localhost` it used before. Until
+   this was fixed the remote's findings landed under the operator's own host
+   name, where they collided with the operator's own rows and corrupted any
+   per-host trend or regression built on that database. `batch` never shared the
+   path: it keys on the host profile
 4. **Privileged operations**: May require sudo on remote (user configures)
 5. **Network latency**: Each operation involves SSH round-trip
 

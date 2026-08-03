@@ -41,7 +41,6 @@ chrono = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
 
 # System
-hostname = { workspace = true }
 dirs = { workspace = true }
 url = "2.5.7"
 

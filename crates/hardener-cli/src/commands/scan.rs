@@ -7,7 +7,8 @@ use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
 use hardener_core::{
-    ConfigLoader, Context, HardenerConfig, PluginMetadata, ScanResult, executor::SystemExecutor,
+    ConfigLoader, Context, HardenerConfig, PluginMetadata, ScanResult,
+    executor::{SystemExecutor, session_host_key},
 };
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
@@ -160,7 +161,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     }
 
     // Persist scan session to history database
-    persist_scan_session(&all_results).await;
+    persist_scan_session(&all_results, opts.executor.as_ref()).await;
 
     // Handle exit code flag. An incomplete scan exits non-zero too: a clean
     // exit is a positive claim about the host, and a plugin that never ran
@@ -236,7 +237,10 @@ fn plugin_id_list(plugins: &[&PluginMetadata]) -> String {
 ///
 /// Failures are logged but do not propagate; scan output is already displayed,
 /// so history persistence is best-effort.
-async fn persist_scan_session(results: &[(PluginMetadata, ScanResult)]) {
+async fn persist_scan_session(
+    results: &[(PluginMetadata, ScanResult)],
+    executor: &dyn SystemExecutor,
+) {
     let db = match open_history_db().await {
         Ok(db) => db,
         Err(_) => return,
@@ -246,9 +250,7 @@ async fn persist_scan_session(results: &[(PluginMetadata, ScanResult)]) {
         .iter()
         .map(|(m, _)| m.plugin_id.to_string())
         .collect();
-    let hostname = std::fs::read_to_string("/etc/hostname")
-        .map(|h| h.trim().to_string())
-        .unwrap_or_else(|_| "localhost".to_string());
+    let hostname = session_host_key(executor).await;
 
     let session_id = match db.create_session("cli", &hostname, &plugins).await {
         Ok(id) => id,
