@@ -323,6 +323,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The cross-distro runner's clean run no longer reads as three silent
+  failures.** A complete, correct sweep printed `146/149 passed, 9 skipped` and
+  named no failure count at all, so a reader was left to infer one from
+  arithmetic that does not work: `TESTS_TOTAL` counts announcements, a skip
+  taken after one occupies a slot that never becomes a pass, and a skip taken
+  before one never enters the total. The maintainer read that line as three
+  failures on a run that had none. Both result-line paths now come from one shared
+  function, and both summary tables from another, so a clean run and a failed one
+  carry the same fields wherever they are printed. The skips are split into the
+  ones the total holds and the ones it never saw: `149 declared, 146 passed, 0
+  failed, 9 skipped (3 declared without a verdict, 6 never declared)`. That
+  first number is derived as declared minus resolved, so it is named for what it
+  measures rather than for what it is usually taken to mean: a check announced
+  and then left without any verdict at all would land there too, and calling it
+  a skip would report a hole confidently. The two summary tables gain the same
+  split, and an `Unask` column beside it, because `summary.txt` is the file this
+  project's own suite calls the one most likely to be looked at first. A
+  `--differential` run reconciles by construction, since a check it cannot
+  determine is recorded as a failure rather than as a skip, so the reconciliation
+  was nothing but zeroes there while the count that does move between fixtures,
+  the rows declared unaskable and never asked, went unmentioned: the runner reads
+  that line now and the result line names it. Counts that cannot be reconciled
+  print `?` rather than a negative, and the serial failure line now reports the
+  exit status it never used to. The shared formatter refuses a call it cannot
+  read rather than reporting one, because nothing binds its single call site to
+  its seven arguments and the transposition that costs the most is silent: with
+  the distribution's name where the exit code belongs, the arithmetic test reads
+  an unset name as zero and every distribution reports a pass. The runner gains
+  its first `--self-test`, 33 assertions over the parser, the arithmetic, both
+  result paths and that refusal, needing no root, no container and no binary, and
+  it refuses any other argument beside it: it runs above the pre-flight and above
+  the line that creates the results directory, so `--apply --booted --self-test`
+  would otherwise exit 0 in a second having entered no container, leaving the
+  previous run's `summary.txt` to be read as this run's. Closes the reporting
+  half of the "146 is correct and complete" confusion; the counts themselves
+  never moved.
+
 - **`report --interactive` scanned the controller after announcing a connection
   to a remote, and scored every host against the generic profile.** Two faults
   in one surface. The wizard built its own `LocalExecutor` instead of taking the

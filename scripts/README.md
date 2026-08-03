@@ -1255,12 +1255,14 @@ sudo ./scripts/test/run-cross-distro-tests.sh
 | Flag | Description |
 |------|-------------|
 | `--apply` | Enable destructive tests (apply + rollback) inside containers |
+| `--booted` | Boot the container under systemd instead of `--pipe`, so services, audit and firewall are testable |
 | `--gui` | Run Playwright GUI tests after CLI tests (requires WASM build in `dist/`) |
 | `--distro NAME` | Test single distro: `arch`, `debian`, `fedora`, `rhel`, `opensuse` |
 | `--parallel` | Run distros in parallel instead of serially (~5x speedup) |
 | `--jobs N` | Max parallel jobs (with `--parallel`; default: 3) |
 | `--rebuild` | Build musl static binary before testing |
 | `--differential` | Run `differential-suite.sh` instead of `full-test-suite.sh` |
+| `--self-test` | Assert the runner's own count parsing and reporting, then exit. Needs no root, no container and no binary, and refuses any other flag beside it |
 | `--help` | Show usage |
 
 **`--differential`** runs a different kind of test. Instead of comparing the

@@ -262,7 +262,34 @@ On an `--apply --booted` run every distribution skips exactly 9, and the same 9:
 
 Skips 1 to 6 are never recorded as checks. Skips 7 to 9 are recorded and then
 skipped, which is why 146 passed and 0 failed out of 149 recorded rather than
-149 passed. Section 23 pairs each rollback with its own apply through
+149 passed. The runner now prints that split rather than leaving it to be
+worked out: a clean run reads `149 declared, 146 passed, 0 failed, 9 skipped (3
+declared without a verdict, 6 never declared)`, so the row adds up on the page.
+It used to read `146/149 passed, 9 skipped` with no failure count at all, which
+was read as three silent failures on a run that had none. The first number in
+the bracket is derived as declared minus resolved, so it says what it measures
+rather than what it is usually taken to mean: on a clean run those are the
+skips taken after the check was announced, and a check that fell out of its
+section without any verdict at all would land there too.
+
+A `--differential` run reports a fifth number instead. Its checks reconcile by
+construction, since a check it cannot determine is recorded as a failure rather
+than as a skip, so the split above is nothing but zeroes; what moves between
+fixtures is the count of rows declared unaskable and never asked, and the line
+now names it: `81 declared, 81 passed, 0 failed, 0 skipped, 9 unaskable and
+never asked`. Both summary tables carry it as their `Unask` column beside
+`NoVdt`, the checks a run declared without giving a verdict to.
+
+`run-cross-distro-tests.sh --self-test` asserts the arithmetic, both the clean
+and the failed line, the differential shape and the refusal of a call it cannot
+read, and it needs no root, no container and no binary. It refuses any other
+argument beside it rather than accepting one: it sits above the pre-flight and
+above the line that creates the results directory, so a run asked for as
+`--apply --booted --self-test` would otherwise exit 0 in a second having
+entered no container, leaving the previous run's `summary.txt` to be read as
+this run's.
+
+Section 23 pairs each rollback with its own apply through
 `ApplyResult::apply_checkpoint_id`, so a plugin whose apply took no checkpoint is
 reported as such instead of being rolled back to some other apply's checkpoint.
 
