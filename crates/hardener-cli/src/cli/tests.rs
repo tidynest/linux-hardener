@@ -462,3 +462,198 @@ fn test_cli_parse_history_export_with_output() {
         panic!("Expected History command");
     }
 }
+
+/// Every invocation that must keep working, so the refusals below cannot be
+/// read as "the flag is refused wherever it was not obviously needed".
+///
+/// The last two are the ones that would cost the most: `batch` carries its own
+/// `--ssh` on each subcommand, and a refusal matching the flag as a token
+/// rather than as the parsed global would refuse every ad-hoc fleet run,
+/// including the desktop's, which composes exactly this vector.
+#[test]
+fn the_commands_that_reach_a_host_still_take_ssh() {
+    let honoured: Vec<Vec<&str>> = vec![
+        vec!["hardener", "--ssh", "web-01", "scan"],
+        vec!["hardener", "--ssh", "web-01", "apply", "--all"],
+        vec!["hardener", "--ssh", "web-01", "rollback", "cp_1"],
+        vec![
+            "hardener",
+            "--ssh",
+            "web-01",
+            "report",
+            "--framework",
+            "cis",
+        ],
+        vec!["hardener", "--ssh", "web-01", "report", "--interactive"],
+        vec!["hardener", "--ssh", "web-01", "checkpoint", "list"],
+        vec!["hardener", "--ssh", "web-01", "checkpoint", "create", "pre"],
+    ];
+
+    for argv in honoured {
+        let cli = Cli::parse_from(&argv);
+        assert!(
+            cli.command.ssh_refusal().is_none(),
+            "{} must keep honouring --ssh",
+            argv.join(" ")
+        );
+        assert_eq!(cli.ssh.as_deref(), Some("web-01"));
+    }
+}
+
+/// `--ssh` and batch's own `--ssh` are one argument, in either position.
+///
+/// This is the assertion the whole refusal rests on, and it was written after
+/// the opposite was assumed: clap resolves the global argument and the one
+/// each batch subcommand declares to a single argument, because the
+/// identifiers match. So both forms below fill the global field AND batch's
+/// ad-hoc target list, and refusing `batch` on the strength of the global
+/// field being set would refuse every ad-hoc fleet run, the desktop's
+/// included. If a clap upgrade ever separates them, this fails here rather
+/// than in somebody's fleet.
+#[test]
+fn a_batch_ad_hoc_target_is_the_same_argument_as_the_global_flag() {
+    for argv in [
+        vec!["hardener", "batch", "scan", "--ssh", "root@10.0.0.5:22"],
+        vec!["hardener", "--ssh", "root@10.0.0.5:22", "batch", "scan"],
+    ] {
+        let cli = Cli::parse_from(&argv);
+
+        assert_eq!(
+            cli.ssh.as_deref(),
+            Some("root@10.0.0.5:22"),
+            "{}: the global field carries it whichever side of the subcommand it was typed",
+            argv.join(" ")
+        );
+        assert!(
+            cli.command.ssh_refusal().is_none(),
+            "{}: batch consumes this flag rather than ignoring it",
+            argv.join(" ")
+        );
+        if let Command::Batch { action } = &cli.command
+            && let BatchAction::Scan { ssh, .. } = action
+        {
+            assert_eq!(
+                ssh,
+                &vec!["root@10.0.0.5:22".to_string()],
+                "{}: and it reaches batch's ad-hoc target list",
+                argv.join(" ")
+            );
+        } else {
+            panic!("Expected Batch Scan");
+        }
+    }
+}
+
+/// The commands that never receive the executor. Each is named in the refusal,
+/// because "--ssh is not supported" on a five-word command line leaves the
+/// operator to work out which of the five words was the problem.
+#[test]
+fn the_commands_that_never_reach_a_host_refuse_ssh() {
+    let refused: Vec<(Vec<&str>, &str)> = vec![
+        (vec!["hardener", "--ssh", "web-01", "plugins"], "plugins"),
+        (
+            vec!["hardener", "--ssh", "web-01", "daemon", "start"],
+            "daemon start",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "daemon", "run-once"],
+            "daemon run-once",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "daemon", "status"],
+            "daemon status",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "systemd", "generate"],
+            "systemd generate",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "systemd", "install"],
+            "systemd install",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "systemd", "uninstall"],
+            "systemd uninstall",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "systemd", "status"],
+            "systemd status",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "history", "list"],
+            "history list",
+        ),
+        (
+            vec![
+                "hardener", "--ssh", "web-01", "history", "trends", "--host", "web-01",
+            ],
+            "history trends",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "history", "regressions"],
+            "history regressions",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "history", "show", "s1"],
+            "history show",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "history", "export", "s1"],
+            "history export",
+        ),
+        (
+            vec!["hardener", "--ssh", "web-01", "checkpoint", "show", "cp_1"],
+            "checkpoint show",
+        ),
+        (
+            vec![
+                "hardener",
+                "--ssh",
+                "web-01",
+                "checkpoint",
+                "delete",
+                "cp_1",
+            ],
+            "checkpoint delete",
+        ),
+    ];
+
+    for (argv, name) in refused {
+        let cli = Cli::parse_from(&argv);
+        let refusal = cli
+            .command
+            .ssh_refusal()
+            .unwrap_or_else(|| panic!("{} must refuse --ssh", argv.join(" ")));
+        assert_eq!(refusal.command, name);
+        assert!(
+            refusal.because.starts_with("it ") || refusal.because.starts_with("the "),
+            "{name}'s reason must complete the sentence it is printed in rather than restate the command"
+        );
+    }
+}
+
+/// The two halves of one checkpoint group answer differently, which is the
+/// case a per-command classification would get wrong.
+///
+/// `list` and `create` reach the host; `show` and `delete` address one row of
+/// this host's own database by an id that is unique across every host in it. A
+/// classification written per command rather than per action would have to
+/// pick one answer for all four, and either choice is wrong for two of them.
+#[test]
+fn one_command_group_can_answer_both_ways() {
+    let reaching = Cli::parse_from(["hardener", "--ssh", "web-01", "checkpoint", "list"]);
+    let local = Cli::parse_from([
+        "hardener",
+        "--ssh",
+        "web-01",
+        "checkpoint",
+        "delete",
+        "cp_1",
+    ]);
+
+    assert!(reaching.command.ssh_refusal().is_none());
+    assert_eq!(
+        local.command.ssh_refusal().map(|r| r.command),
+        Some("checkpoint delete")
+    );
+}

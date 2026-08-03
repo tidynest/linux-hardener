@@ -297,10 +297,34 @@ Path to a configuration file.
 Overrides the default search paths.
 .TP
 .BI \-\-ssh " HOST"
-Remote host to scan via SSH.
+Remote host to act on via SSH.
 Accepts
 .IR user@host
 format.
+Honoured by
+.BR scan ,
+.BR apply ,
+.BR rollback ,
+.BR report
+and
+.BR batch ,
+whose own
+.B \-\-ssh
+is the same argument.
+.B checkpoint list
+and
+.B checkpoint create
+reach the target; the other two checkpoint verbs address a row of this host's
+database by id and do not.
+Refused, with exit status 2 and before any connection is opened, by
+.BR daemon ,
+.BR systemd ,
+.BR history ,
+.BR plugins ,
+.B "checkpoint show"
+and
+.BR "checkpoint delete" ,
+which act on this host alone.
 .TP
 .BI \-\-port " PORT"
 SSH port number.
@@ -502,6 +526,12 @@ is not set, the exit status does not reflect whether findings exist.
 An error occurred, or findings exist when
 .B \-\-exit\-code
 is specified.
+.TP
+.B 2
+A usage error. In particular
+.B \-\-ssh
+given to a command that acts on this host alone, which is refused before any
+connection is opened.
 .PP
 For
 .BR "batch scan" ,

@@ -33,7 +33,8 @@ pub struct Cli {
     /// Path to configuration file.
     #[arg(global = true, short = 'C', long, value_name = "FILE")]
     pub config: Option<std::path::PathBuf>,
-    /// Remote host to scan via SSH (user@host or host).
+    /// Remote host to act on via SSH (user@host or host). Refused, before any
+    /// connection, by the commands that act on this host alone.
     #[arg(global = true, long, value_name = "HOST")]
     pub ssh: Option<String>,
     /// SSH port.
@@ -286,6 +287,150 @@ pub enum BatchAction {
         #[arg(long)]
         output: Option<String>,
     },
+}
+
+/// One command's refusal of the global `--ssh` flag: what to call the command,
+/// and what it acts on instead.
+///
+/// A pair rather than a finished sentence so the wording is assembled at the
+/// one place that prints it, and each arm below states only what is true of
+/// itself.
+pub struct SshRefusal {
+    /// The invocation as an operator types it, such as `history list`.
+    pub command: &'static str,
+    /// What the command acts on, phrased to follow "because".
+    pub because: &'static str,
+}
+
+impl Command {
+    /// `None` where the global `--ssh` reaches this command's work, and a
+    /// refusal where it does not.
+    ///
+    /// One executor is built for the whole process and then handed to some
+    /// commands and not to others. Until this existed, the difference was
+    /// invisible from the outside: a command that never receives it opened the
+    /// connection, announced it unless `--quiet` had silenced that line, and
+    /// then acted on the controller. The flag's only live effect on those
+    /// commands was that an unreachable host stopped them, so it could refuse
+    /// work but never redirect it, and under `--quiet` it did both silently.
+    ///
+    /// The answer is a property of the parse alone, so the refusal can be made
+    /// before the connection is attempted: a refused command costs no round
+    /// trip, no key prompt and no host-key decision.
+    ///
+    /// **`batch` is not one of the refusals, and the reason is worth knowing
+    /// before changing this.** Each of its four subcommands declares an `ssh`
+    /// argument of its own; clap resolves that and the global one to a single
+    /// argument, since the identifiers are the same. `--ssh host batch scan`
+    /// and `batch scan --ssh host` therefore produce one identical parse, in
+    /// which the global field and batch's ad-hoc target list both hold the
+    /// value. Refusing `batch` here would refuse every ad-hoc fleet run,
+    /// including the desktop's, which composes exactly that vector.
+    pub fn ssh_refusal(&self) -> Option<SshRefusal> {
+        let refuse = |command, because| Some(SshRefusal { command, because });
+        match self {
+            // These four thread the executor through to the host they name.
+            Command::Scan { .. }
+            | Command::Apply { .. }
+            | Command::Rollback { .. }
+            | Command::Report { .. } => None,
+
+            // `list` and `create` ask the target through the executor: the
+            // first scopes its rows to that host's key, the second captures
+            // that host's files. `show` and `delete` address one row of this
+            // host's own database by an id that is unique across every host in
+            // it, so the flag selects nothing there. Scoping those two to a
+            // host was tried and reverted: the key of a decommissioned host
+            // cannot be produced without connecting to it, so its rows became
+            // undeletable, and the desktop deletes by id with no flags at all.
+            Command::Checkpoint { action } => match action {
+                CheckpointAction::List { .. } | CheckpointAction::Create { .. } => None,
+                CheckpointAction::Show { .. } => refuse(
+                    "checkpoint show",
+                    "it reads one row of this host's checkpoint database, by an \
+                     id that names it whichever host it was captured from",
+                ),
+                CheckpointAction::Delete { .. } => refuse(
+                    "checkpoint delete",
+                    "it removes one row from this host's checkpoint database, by \
+                     an id that names it whichever host it was captured from",
+                ),
+            },
+
+            // `batch` honours it, and not by accident of naming: each of its
+            // four subcommands declares an `ssh` argument of its own, and clap
+            // resolves both to one argument because the identifiers match. So
+            // `--ssh host batch scan` and `batch scan --ssh host` are the same
+            // parse, and both fill batch's ad-hoc target list. Measured, not
+            // assumed, and asserted below in `cli/tests.rs`.
+            Command::Batch { .. } => None,
+            Command::Plugins => refuse(
+                "plugins",
+                "it lists the plugins compiled into this binary and asks no host \
+                 anything",
+            ),
+            Command::Daemon { action } => match action {
+                DaemonAction::Start => refuse(
+                    "daemon start",
+                    "the scheduling daemon runs on this host, on this host's \
+                     timer, and writes this host's database",
+                ),
+                DaemonAction::RunOnce => refuse(
+                    "daemon run-once",
+                    "it scans through a local context and files the result under \
+                     this host; scanning a remote is `--ssh HOST scan`",
+                ),
+                DaemonAction::Status { .. } => refuse(
+                    "daemon status",
+                    "it reads this host's own scheduler database",
+                ),
+            },
+            Command::Systemd { action } => match action {
+                SystemdAction::Generate { .. } => refuse(
+                    "systemd generate",
+                    "it writes a unit file naming this host's binary and this \
+                     host's configuration",
+                ),
+                SystemdAction::Install { .. } => refuse(
+                    "systemd install",
+                    "it installs unit files into this host's own systemd",
+                ),
+                SystemdAction::Uninstall { .. } => refuse(
+                    "systemd uninstall",
+                    "it removes unit files from this host's own systemd",
+                ),
+                SystemdAction::Status { .. } => {
+                    refuse("systemd status", "it reads this host's own systemd")
+                }
+            },
+            Command::History { action } => match action {
+                HistoryAction::List { .. } => refuse(
+                    "history list",
+                    "it reads this host's own scan history, in which a host is \
+                     selected with --host",
+                ),
+                HistoryAction::Trends { .. } => refuse(
+                    "history trends",
+                    "it reads this host's own scan history, and it already takes \
+                     the host as --host",
+                ),
+                HistoryAction::Regressions { .. } => refuse(
+                    "history regressions",
+                    "it reads this host's own scan history, in which a host is \
+                     selected with --host",
+                ),
+                HistoryAction::Show { .. } => refuse(
+                    "history show",
+                    "it reads one session out of this host's own scan history",
+                ),
+                HistoryAction::Export { .. } => refuse(
+                    "history export",
+                    "it writes one session out of this host's own scan history \
+                     to a file on this host",
+                ),
+            },
+        }
+    }
 }
 
 #[derive(Subcommand)]

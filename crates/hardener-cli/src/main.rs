@@ -25,9 +25,31 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // Create executor based on SSH flags
+    // A command that cannot honour --ssh refuses it here, before the
+    // connection is opened. Every command used to accept the flag while only
+    // some received the executor built from it, so the rest announced a
+    // connection, silently under --quiet, and then acted on this host. The
+    // check is on the parsed global field: `batch` has its own --ssh for
+    // ad-hoc targets, and matching the flag as a token would refuse that too.
+    if cli.ssh.is_some()
+        && let Some(refusal) = cli.command.ssh_refusal()
+    {
+        eprintln!(
+            "Error: --ssh is not honoured by `{}`, because {}.",
+            refusal.command, refusal.because
+        );
+        eprintln!("Re-run without --ssh, which changed nothing here but the exit status.");
+        std::process::exit(2);
+    }
+
+    // Create executor based on SSH flags. Batch keeps a case of its own: its
+    // subcommands declare an `ssh` argument that clap resolves to the same
+    // argument as the global one, so `--ssh host batch scan` fills batch's
+    // ad-hoc target list rather than asking for a session here. Connecting
+    // would open a second, unused session to a host batch is about to reach on
+    // its own terms.
     let executor: Arc<dyn SystemExecutor> = if matches!(cli.command, Command::Batch { .. }) {
-        Arc::new(LocalExecutor::new()) // unused by batch; avoids a global SSH connect
+        Arc::new(LocalExecutor::new())
     } else if let Some(ref ssh_target) = cli.ssh {
         let ssh_config = SshConnectionConfig::from_cli(
             ssh_target,

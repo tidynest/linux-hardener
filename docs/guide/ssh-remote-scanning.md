@@ -12,8 +12,21 @@ SSH remote scanning allows you to:
 - **Rollback** changes using checkpoints
 - **Generate** compliance reports from remote systems
 
-All operations happen over SSH - the hardener tool runs locally and executes
-commands on the remote host.
+All four happen over SSH: the hardener tool runs locally and executes commands
+on the remote host.
+
+**`--ssh` is refused by the commands that cannot honour it**, exiting 2 before
+any connection is opened and naming themselves in the message. Those are
+`daemon`, `systemd`, `history`, `plugins` and the two checkpoint verbs that
+address a row by id, `show` and `delete`; each acts on the machine you are
+typing on. The daemon runs on this host and writes this host's database,
+`systemd` manages this host's unit files, `history` reads this host's own scan
+history, `plugins` lists what is compiled into the binary, and the checkpoint
+database is this host's however many hosts it holds rows for. Every release up
+to and including 1.5.1 accepted the flag on all of them, connected, said so
+unless `--quiet` had silenced the line, and then acted on this host anyway. Use
+`--host` to select a host within your history, and `hardener --ssh HOST scan` to
+scan a remote.
 
 ## Prerequisites
 
@@ -493,7 +506,8 @@ Current limitations of SSH remote scanning:
 | No password authentication      | Key or agent only; a password-only host fails at connect     |
 | ssh config `Port` ignored       | `--port` is always sent and outranks the config file          |
 | Non-root sessions only half elevate | Only file writes go through `sudo`; other commands do not |
-| Local checkpoints               | Checkpoint data stored on local machine                      |
+| Local checkpoints               | Checkpoint data stored on local machine. `list` and `rollback` are scoped to the host `--ssh` selects; `show` and `delete` address any row by id and refuse the flag |
+| Scheduling is local only        | `daemon` and `systemd` refuse `--ssh`: a remote is scheduled by installing the tool on it, or by scheduling `--ssh HOST scan` here |
 | Vendor-layer permissions        | On a layering host, scan reports permission findings apply cannot fix |
 
 The last one needs explaining, because a run looks inconsistent with itself.

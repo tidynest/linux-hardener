@@ -165,6 +165,12 @@ against a remote target appears under `hardener --ssh user@host checkpoint list`
 and not under a plain local listing. Remote checkpoints are still stored in the
 local database; only the restore reaches the remote host.
 
+`checkpoint show` and `checkpoint delete` work the other way round: they name a
+row by an id that is unique across every host, so they take no `--ssh` and
+refuse it if given one. That is what makes the rows of a host you can no longer
+reach removable: `hardener checkpoint delete <id>` clears them whether or not
+the machine still answers.
+
 ## The scheduled daemon refuses to start
 
 `hardener daemon start` exits immediately when the scheduler is disabled.

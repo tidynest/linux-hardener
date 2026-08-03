@@ -164,6 +164,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`--ssh` is refused by the commands that never acted on the target, instead
+  of being accepted and discarded.** One executor is built for the whole
+  process and handed to some commands and not to others, and from the outside
+  the difference was invisible: `daemon`, `systemd`, `history`, `plugins` and
+  the two checkpoint verbs that address a row by id opened the connection,
+  announced it unless `--quiet` had silenced that line, and then read and wrote
+  the controller. `hardener --ssh web-01 daemon run-once` scanned the machine it
+  was typed on and filed the result under that machine's name; `hardener --ssh
+  web-01 history list` printed the controller's own history, which an operator
+  could easily read as the remote's. The flag's only live effect on those
+  commands was that an unreachable target stopped them, so it could refuse work
+  and never redirect it, and under `--quiet` it did both without a word. **They
+  now exit 2 with a message naming themselves and what they act on instead,
+  before any connection is opened**, so a refused command costs no round trip,
+  no key prompt and no host-key decision. `history` says in the same breath that
+  a host inside the history is selected with `--host`, which is the question its
+  operators were really asking, and `daemon run-once` names `hardener --ssh HOST
+  scan`. **This is a behaviour change**: a command line that used to run, having
+  quietly done the wrong thing, now fails. Nothing that reaches a host changes:
+  `scan`, `apply`, `rollback`, `report`, `checkpoint list`, `checkpoint create`
+  and `batch` all keep the flag, and `batch`'s own `--ssh` is the same argument
+  as the global one, so `--ssh host batch scan` and `batch scan --ssh host`
+  remain one invocation naming one ad-hoc target. `checkpoint show` and
+  `checkpoint delete` are refused rather than scoped deliberately: their id is
+  unique across every host in the database, and scoping them to a host would
+  have made the rows of a decommissioned host unreachable, since its key cannot
+  be produced without connecting to it.
+
 - **`UncheckedCheck` records what blocked a check rather than a single
   boolean.** `unchecked_needs_privilege: bool` is replaced by
   `unchecked_blocker`, one of `Privilege`, `Environment` or `Unknown`. The

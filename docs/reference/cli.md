@@ -18,8 +18,8 @@ These flags can be placed before or after any subcommand.
 | `-f`, `--format <FORMAT>` | Output format: `text`, `json`, `csv`, `html`, `pdf` | `text` |
 | `-q`, `--quiet` | Suppress non-essential output | off |
 | `-C`, `--config <FILE>` | Path to TOML configuration file | auto-detected |
-| `--ssh <HOST>` | Remote host to scan via SSH (`user@host` or `host`) | local |
-| `--port <PORT>` | SSH port (only with `--ssh`; a `batch` target carries its own port) | `22` |
+| `--ssh <HOST>` | Remote host to act on via SSH (`user@host` or `host`). Accepted by the commands that reach a host, refused by the ones that do not: see below | local |
+| `--port <PORT>` | SSH port for `--ssh`. It does **not** reach `batch`, whose targets carry their own port and otherwise default to 22 | `22` |
 | `--ssh-key <FILE>` | SSH private key file. Also the fallback for any `batch` host that names no key of its own | SSH agent |
 | `--ssh-timeout <SECONDS>` | SSH connection timeout. Also applies to every `batch` connection | `30` |
 | `--ssh-no-verify` | Skip SSH host key verification (insecure). With `batch` it reaches ad-hoc `--ssh` targets only; inventory hosts keep their own `host_key_checking` | off |
@@ -46,6 +46,36 @@ it, and each still evaluates the host against the system and user configuration:
   resolved profile is printed before the reports are generated, whichever way it
   was arrived at.
 - `batch rollback`, which reads no `config.toml` at all.
+
+**Where `--ssh` takes effect, and where it is refused.** It is honoured by
+`scan`, `apply`, `rollback`, `report` (including `--interactive`), `checkpoint
+list` and `checkpoint create`, and by `batch`, whose own `--ssh` is the same
+argument: `hardener --ssh web-01 batch scan` and `hardener batch scan --ssh
+web-01` are one invocation naming one ad-hoc target.
+
+Every other command **refuses it, exiting 2 before any connection is opened**,
+and names itself in the refusal:
+
+- `daemon start`, `run-once` and `status`, which run on this host, on this
+  host's timer, and read and write this host's scheduler database. Scanning a
+  remote is `hardener --ssh HOST scan`.
+- `systemd generate`, `install`, `uninstall` and `status`, which write and
+  manage this host's own unit files.
+- `history list`, `trends`, `regressions`, `show` and `export`, which read this
+  host's own scan history. A host **within** that history is selected with
+  `--host`, which is a different question from which host to connect to.
+- `checkpoint show` and `checkpoint delete`, which address one row of this
+  host's checkpoint database by an id that names it whichever host it was
+  captured from. Their two siblings do reach a host: `list` scopes its rows to
+  the target's key, and `create` captures the target's files.
+- `plugins`, which lists what is compiled into this binary and asks no host
+  anything.
+
+Every release up to and including 1.5.1 accepted the flag on all of those,
+opened the connection, announced it unless `--quiet` had silenced that line,
+and then acted on this host regardless. The flag's only effect there was that
+an unreachable target stopped the command, so it could refuse work and never
+redirect it.
 
 `daemon` is separate again: it resolves the `[scheduler]` section through its own
 path search rather than the loader (see
@@ -303,6 +333,12 @@ Delete a checkpoint by its ID.
 hardener checkpoint delete <CHECKPOINT_ID>
 ```
 
+**Not host-scoped, and it refuses `--ssh`.** The id is unique across every host
+in the database, so it names one row on its own. This is deliberately unlike
+`list`, which is scoped: an id copied out of `hardener --ssh web-01 checkpoint
+list` is deleted by a plain `hardener checkpoint delete <id>`, which is also the
+only way to clear the rows of a host that no longer answers.
+
 ### checkpoint show
 
 Display full details of a specific checkpoint.
@@ -310,6 +346,9 @@ Display full details of a specific checkpoint.
 ```
 hardener checkpoint show <CHECKPOINT_ID>
 ```
+
+**Not host-scoped, and it refuses `--ssh`, on the same rule as `checkpoint
+delete`.**
 
 ---
 
