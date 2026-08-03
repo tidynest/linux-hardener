@@ -463,3 +463,140 @@ fn pam_reloads_for_nothing_because_its_changes_are_immediate() {
     assert!(!plugin.reloads_for_path(Path::new("/etc/pam.d/system-auth")));
     assert!(!plugin.reloads_for_path(Path::new("/etc/security/faillock.conf")));
 }
+
+// === PASS_MIN_DAYS on a shadow that cannot enforce it (issue #69) ===
+//
+// Arch builds shadow without the minimum-password-age field. `chage` there has
+// no `-m/--mindays`, and `useradd` leaves `sp_min` empty while honouring
+// PASS_MAX_DAYS and PASS_WARN_AGE from the same `/etc/login.defs`. Measured on
+// a freshly recreated arch container: the probe account came back with max 90
+// and warn 7 and no minimum at all. Writing PASS_MIN_DAYS there changes nothing
+// any account will ever see, so reporting no finding for it was claiming a
+// compliance the system does not have.
+
+/// `chage --help` as shadow prints it where the field exists.
+fn chage_help_with_mindays() -> hardener_common::executor::CommandOutput {
+    hardener_common::executor::CommandOutput {
+        stdout: "Usage: chage [options] LOGIN\n\nOptions:\n  \
+                 -m, --mindays MIN_DAYS        set minimum number of days before password\n  \
+                 -M, --maxdays MAX_DAYS        set maximum number of days before password\n"
+            .to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
+/// And as Arch prints it, where it does not.
+fn chage_help_without_mindays() -> hardener_common::executor::CommandOutput {
+    hardener_common::executor::CommandOutput {
+        stdout: "Usage: chage [options] LOGIN\n\nOptions:\n  \
+                 -M, --maxdays MAX_DAYS        set maximum number of days before password\n  \
+                 -W, --warndays WARN_DAYS      set expiration warning days to WARN_DAYS\n"
+            .to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
+#[tokio::test]
+async fn min_days_is_enforceable_where_chage_offers_the_flag() {
+    use hardener_common::executor::MockExecutor;
+    use std::sync::Arc;
+
+    let executor =
+        MockExecutor::new().with_command("chage", &["--help"], chage_help_with_mindays());
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    assert_eq!(min_days_enforceable(&ctx).await, Some(true));
+}
+
+#[tokio::test]
+async fn min_days_is_not_enforceable_where_chage_lacks_the_flag() {
+    use hardener_common::executor::MockExecutor;
+    use std::sync::Arc;
+
+    let executor =
+        MockExecutor::new().with_command("chage", &["--help"], chage_help_without_mindays());
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    assert_eq!(min_days_enforceable(&ctx).await, Some(false));
+}
+
+#[tokio::test]
+async fn a_chage_that_prints_nothing_is_undetermined_rather_than_unsupported() {
+    use hardener_common::executor::{CommandOutput, MockExecutor};
+    use std::sync::Arc;
+
+    // The dangerous answer is the confident one. A probe that could not run
+    // must not read as "the flag is absent", which would report every host as
+    // unable to enforce the directive.
+    let executor = MockExecutor::new().with_command(
+        "chage",
+        &["--help"],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 127,
+        },
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    assert_eq!(min_days_enforceable(&ctx).await, None);
+}
+
+#[tokio::test]
+async fn the_probe_reads_a_usage_printed_on_stderr() {
+    use hardener_common::executor::MockExecutor;
+    use std::sync::Arc;
+
+    // Several shadow builds print usage to stderr and exit non-zero. Judging
+    // the probe by its exit status would call those hosts unsupported.
+    let mut help = chage_help_with_mindays();
+    help.stderr = std::mem::take(&mut help.stdout);
+    help.exit_code = 1;
+    let executor = MockExecutor::new().with_command("chage", &["--help"], help);
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    assert_eq!(min_days_enforceable(&ctx).await, Some(true));
+}
+
+#[tokio::test]
+async fn a_host_whose_chage_cannot_be_probed_still_has_its_value_checked() {
+    use hardener_common::executor::MockExecutor;
+    use std::sync::Arc;
+
+    // The regression the gate caught. Diverting on an undetermined probe threw
+    // away a check that already worked: two mock scans that had always flagged
+    // a wrong PASS_MIN_DAYS stopped flagging it, because their executor knows
+    // nothing about chage. Only a positive "no such field" may divert.
+    let executor = MockExecutor::new();
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    assert_eq!(
+        min_days_enforceable(&ctx).await,
+        None,
+        "an executor that cannot run chage must answer None, not Some(false)"
+    );
+}
+
+#[test]
+fn the_unenforceable_finding_says_the_value_reaches_no_account() {
+    let directive = PAM_DIRECTIVES
+        .iter()
+        .find(|d| d.pam_directive_name == MIN_DAYS_DIRECTIVE)
+        .expect("PASS_MIN_DAYS is a directive this plugin manages");
+
+    let finding = min_days_unenforceable_finding(directive);
+
+    assert_eq!(finding.finding_id, "pam-PASS_MIN_DAYS");
+    assert_eq!(finding.finding_current_value, "not enforced");
+    assert!(
+        finding.finding_description.contains("shadow"),
+        "the description must name what cannot enforce it, got: {}",
+        finding.finding_description
+    );
+    assert!(
+        !finding.finding_remediation_steps.is_empty(),
+        "a finding the operator cannot fix still has to say what to do about it"
+    );
+}

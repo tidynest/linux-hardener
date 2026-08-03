@@ -619,6 +619,23 @@ impl HardeningPlugin for PamHardeningPlugin {
                 ModulePresence::InStack | ModulePresence::NoModule => {}
             }
 
+            // A correct value in a file no consumer reads is not compliance.
+            // Asked before the value is compared, because on an affected host
+            // the comparison would pass: apply writes the target, the file
+            // holds it, and no account ever receives it. See issue #69.
+            //
+            // Only a positive "this build has no such field" diverts. An
+            // undetermined probe falls through to the ordinary comparison,
+            // because the value can still be read and a wrong one is still
+            // worth reporting: suppressing it would trade a rare false pass for
+            // losing the check on every host whose chage could not be run.
+            if directive.pam_directive_name == MIN_DAYS_DIRECTIVE
+                && min_days_enforceable(ctx).await == Some(false)
+            {
+                findings.push(min_days_unenforceable_finding(directive));
+                continue;
+            }
+
             let current_value =
                 match observed_pam_value(ctx, directive, &pwquality, &login_defs_read).await {
                     PamObserved::Value(v) => Some(v),
@@ -1399,6 +1416,82 @@ fn module_not_loaded_message(conf_path: &str, module: &str) -> String {
 /// root-only `pwquality.conf` logged the failed read and then reported six
 /// directives as set in it. Every claim here is now about the stack, which is
 /// the thing that was actually read.
+/// The one directive whose enforcement depends on how shadow was built.
+const MIN_DAYS_DIRECTIVE: &str = "PASS_MIN_DAYS";
+
+/// Whether this host's shadow implements a minimum password age at all.
+///
+/// Arch builds it without one. `chage` there has no `-m/--mindays`, prints no
+/// minimum line, and `useradd` leaves `sp_min` empty while honouring
+/// `PASS_MAX_DAYS` and `PASS_WARN_AGE` from the same `/etc/login.defs`. That
+/// last part is what rules out a file-reading problem: one `useradd` run took
+/// two of the three directives and dropped the third. So writing
+/// `PASS_MIN_DAYS` there changes nothing any account will ever see.
+///
+/// Asked of `chage` through the executor, so a remote scan asks the remote
+/// host rather than this one. `chage` is shadow's own reader for these fields
+/// and ships with `useradd`, which makes its usage text the closest thing to a
+/// direct question about the build.
+///
+/// Judged on the usage text rather than the exit status, because shadow builds
+/// differ on whether `--help` exits zero and several print it to stderr.
+/// `None` means the probe could not be run, which callers must not collapse
+/// into either answer: a confident "unsupported" derived from a failed probe
+/// would report every host as unable to enforce the directive.
+async fn min_days_enforceable(ctx: &Context) -> Option<bool> {
+    let output = ctx
+        .executor()
+        .execute_command("chage", &["--help"])
+        .await
+        .ok()?;
+    let usage = format!("{}{}", output.stdout, output.stderr);
+    if usage.trim().is_empty() {
+        return None;
+    }
+    Some(usage.contains("--mindays"))
+}
+
+/// The finding for a directive the host's shadow cannot act on.
+///
+/// Shaped like [`module_absent_finding`], because it is the same defect: a
+/// value written into a file that nothing on this host will ever read. The
+/// remediation cannot be "set it correctly", since it already is set correctly.
+fn min_days_unenforceable_finding(directive: &PamDirective) -> Finding {
+    Finding {
+        finding_id: format!("pam-{}", directive.pam_directive_name),
+        finding_category: FindingCategory::Authentication,
+        finding_current_value: "not enforced".to_string(),
+        finding_description: format!(
+            "'{}' is not enforced: this system's shadow provides no minimum \
+             password age, so the value in /etc/login.defs reaches no account",
+            directive.pam_directive_name
+        ),
+        finding_explanation: directive.pam_description.to_string(),
+        finding_impact:
+            "New accounts are created with no minimum password age whatever the file says, \
+             so a user can change a password repeatedly to cycle back to an old one"
+                .to_string(),
+        finding_recommended_value: directive.pam_secure_value.to_string(),
+        finding_remediation_steps: vec![
+            "This is a property of the distribution's shadow build, not of the configuration: \
+             the value in /etc/login.defs is already correct and is left in place"
+                .to_string(),
+            "Confirm with `chage --help`, which offers no -m/--mindays on an affected host"
+                .to_string(),
+            "Enforce password-reuse limits through pam_pwhistory instead, which this plugin \
+             also manages"
+                .to_string(),
+        ],
+        finding_severity: directive.pam_severity,
+        finding_title: format!("PAM setting not enforced: {}", directive.pam_directive_name),
+        finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
+        // Never excepted, for the same reason as the module-absent finding: an
+        // exception documents a value the operator accepts, and this is not
+        // about the value. The value is already correct.
+        finding_policy_exception: None,
+    }
+}
+
 fn module_absent_finding(directive: &PamDirective, module: &str, conf_path: &str) -> Finding {
     Finding {
         finding_id: format!("pam-{}", directive.pam_directive_name),

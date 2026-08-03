@@ -323,6 +323,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Arch hosts were told `PASS_MIN_DAYS` was enforced when no account receives
+  it.** `apply` writes the directive into `/etc/login.defs`, and `scan` reported
+  no finding for it, but Arch builds shadow with no minimum password age at all:
+  `chage` there has no `-m/--mindays`, and `useradd` leaves the field empty
+  while honouring `PASS_MAX_DAYS` and `PASS_WARN_AGE` from the same file. One
+  `useradd` run taking two of the three directives and dropping the third is
+  what rules out a file-reading problem. The scan now asks `chage` whether the
+  field exists at all, through the executor so a remote scan asks the remote
+  host, and reports the directive as **not enforced** where it does not. The
+  value is left in `/etc/login.defs`, because it is already correct and would
+  take effect if the build ever gained the field. A probe that cannot be run is
+  reported as unchecked rather than as either answer. Affected hosts should
+  rely on `pam_pwhistory`, which this plugin also manages, for password reuse.
+  Other distributions are unaffected.
+
 - **The differential test suite can reach a clean run on Arch and on RHEL.**
   Two of its own pre-apply controls could never be satisfied there, so neither
   distribution could be used as a merge gate however often the run was
