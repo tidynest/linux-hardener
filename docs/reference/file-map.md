@@ -1,6 +1,6 @@
 # Linux System Hardener - File Map
 
-**Last Updated**: 2026-08-02
+**Last Updated**: 2026-08-03
 
 This document lists all source files with their purpose and key exports.
 
@@ -893,22 +893,22 @@ purpose-named directories.
 Unit tests sit beside the source file they exercise, in a `#[cfg(test)]` module of their own file rather than inside it: `foo.rs` is accompanied by `foo/tests.rs`, and a `foo/mod.rs` by `foo/tests.rs` in the directory it already owns. They are still child modules, so they still read private items; only their location changed. Integration tests, which see the public API only, remain in each crate's `tests/` directory. The **Unit Tests** column below names the source files under test, not the files the tests live in.
 
 The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
-tree on **2026-08-02**, not a run total: a run also executes doctests and, for
+tree on **2026-08-03**, not a run total: a run also executes doctests and, for
 `hardener-ui`, `wasm_bindgen_test` cases that no annotation count here covers.
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
-| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 92 |
+| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 98 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 86 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 89 |
 | hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 100 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and ten of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 172 |
-| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and all eight plugin modules (`ssh/dropin.rs` and `ssh/include.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 591 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and ten of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`) | 176 |
+| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and all eight plugin modules (`ssh/dropin.rs` and `ssh/include.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 608 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 129 |
-| hardener-types | `lib.rs`, `remote.rs` | - | 46 |
+| hardener-types | `lib.rs`, `remote.rs` | - | 47 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 100 |
 
 ### Executor and Mock Test Files
@@ -972,4 +972,4 @@ counts measured the same way and on the same date as the table above.
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-08-02
+**Last Updated**: 2026-08-03

@@ -43,6 +43,20 @@ TEST_ATTRIBUTE = re.compile(r"^[ \t]*#\[(?:tokio::)?test\]", re.MULTILINE)
 # maintained by hand.
 CLAIMED_TEST_COUNT = re.compile(r"\b(\d+) tests\b")
 
+# A row of the per-crate summary table near the foot of file-map.md, whose last
+# column is that crate's whole test-annotation count:
+#
+#     | hardener-cli | `cli.rs`, ... | `batch_ssh_integration.rs` | 180 |
+#
+# Checked for the same reason as the per-file claims above and after the same
+# history: this column drifted three times in two days, every time because a
+# commit added tests somewhere else in the branch, and nothing looked at it. The
+# per-file rule could not catch it, because these rows name a crate rather than
+# a file and carry no "N tests" phrase for it to match.
+CRATE_ANNOTATION_ROW = re.compile(
+    r"^\|\s*(hardener-\w+|src-tauri)\s*\|.*\|\s*(\d+)\s*\|\s*$"
+)
+
 # ANSI colour codes
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
@@ -127,6 +141,16 @@ def count_test_attributes(source: Path) -> int:
     return len(TEST_ATTRIBUTE.findall(source.read_text(encoding="utf-8")))
 
 
+def count_crate_test_attributes(crate_dir: Path) -> int:
+    """Count the test functions a whole crate declares, tests directory included.
+
+    The same expression the per-file rule uses, over every `.rs` file under the
+    crate, because the table it checks says exactly that: annotations counted in
+    the tree, not a run total.
+    """
+    return sum(count_test_attributes(source) for source in crate_dir.rglob("*.rs"))
+
+
 def generate_stub_entry(file_path: str) -> str:
     """Generate a Markdown table row stub for a missing file."""
     filename = Path(file_path).name
@@ -158,11 +182,19 @@ def main():
     # crate context a row's path needs is resolved once rather than twice.
     current_crate = None
     claimed_test_counts: list[tuple[str, int]] = []
+    claimed_crate_counts: list[tuple[str, int]] = []
     for line in file_map_content.split('\n'):
         # Detect crate section headers like "## hardener-core" or "## hardener-cli (CLI Binary)"
         section_match = re.match(r'^##\s+(hardener-\w+|src-tauri)', line)
         if section_match:
             current_crate = section_match.group(1)
+            continue
+
+        # The per-crate summary rows, which name a crate rather than a file
+        # and so never reach the per-file branch below.
+        crate_row = CRATE_ANNOTATION_ROW.match(line)
+        if crate_row:
+            claimed_crate_counts.append((crate_row.group(1), int(crate_row.group(2))))
             continue
 
         # Match file entries in tables
@@ -235,6 +267,28 @@ def main():
         actual = count_test_attributes(source)
         if actual != claimed:
             miscounted.append((full_path, claimed, actual))
+
+    # And the same question of the per-crate table. A crate the checkout does
+    # not have is skipped rather than reported as a miscount: that is a row
+    # naming a crate that does not exist, which is a different defect from a
+    # number that has drifted.
+    crate_miscounted = []
+    for crate, claimed in claimed_crate_counts:
+        crate_dir = root / ("src-tauri" if crate == "src-tauri" else f"crates/{crate}")
+        if not crate_dir.is_dir():
+            continue
+        actual = count_crate_test_attributes(crate_dir)
+        if actual != claimed:
+            crate_miscounted.append((crate, claimed, actual))
+
+    if crate_miscounted:
+        has_errors = True
+        print(f"{RED}Per-crate annotation counts in file-map.md that the tree does "
+              f"not support ({len(crate_miscounted)}):{NC}\n")
+        for crate, claimed, actual in sorted(crate_miscounted):
+            print(f"  - {crate}: the table says {claimed}, the crate declares {actual}")
+        print()
+        print(f"  {YELLOW}Take the count after the last test in the branch, not before it{NC}\n")
 
     if miscounted:
         has_errors = True

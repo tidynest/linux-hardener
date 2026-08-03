@@ -134,6 +134,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   names, both spellings, so a module that gained an async test cannot start
   undercounting without saying so.
 
+- **The same validator now enforces `file-map.md`'s per-crate annotation
+  counts.** That column names a crate rather than a file and carries no "N
+  tests" phrase, so the per-file rule above could never see it, and it drifted
+  three times in two days: every time because a commit added tests elsewhere in
+  the branch and the number was already written. Each row's last column is
+  checked against the annotations declared across the whole crate, tests
+  directory included, which is exactly what the table says it holds. The count
+  has to be taken after the last test in a branch rather than before it, and
+  the failure message says so.
+
 - **`/etc/sudoers` and `/etc/sudoers.d` are reported on by a compliance
   framework.** Both fell through the catch-all arm of the permissions plugin's
   mapping table, so neither contributed a control identifier and a framework
