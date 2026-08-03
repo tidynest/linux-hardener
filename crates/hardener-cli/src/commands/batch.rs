@@ -199,6 +199,16 @@ struct HostKeyCollision {
 /// is a different identity: it carries no scheme and leaves the user out when
 /// the target did not name one, which is precisely the distinction the host key
 /// loses. Every input is on the profile, so this runs before any connection.
+///
+/// This closes the collision **within one invocation only**. The winner is
+/// chosen across the whole database rather than within a run, so the same harm
+/// is still reachable by running the two targets separately, and by the
+/// single-host verbs, which do not pass through here at all. Only correcting the
+/// key itself closes that, and doing so orphans every checkpoint already filed
+/// under the old one.
+///
+/// Compared pairwise rather than adjacently: a collision between the first and
+/// third target is the same collision.
 fn colliding_host_key(profiles: &[RemoteHostProfile]) -> Option<HostKeyCollision> {
     let mut seen: Vec<(String, String)> = Vec::with_capacity(profiles.len());
     for profile in profiles {
@@ -207,24 +217,40 @@ fn colliding_host_key(profiles: &[RemoteHostProfile]) -> Option<HostKeyCollision
             return Some(HostKeyCollision {
                 key,
                 first: first.clone(),
-                second: profile.target(),
+                second: label(profile),
             });
         }
-        seen.push((key, profile.target()));
+        seen.push((key, label(profile)));
     }
     None
 }
 
+/// How a colliding host is named back to the operator: its inventory name and
+/// its canonical target together. Either alone can be ambiguous in exactly the
+/// case that matters. Two inventory entries for one endpoint have identical
+/// targets and are told apart only by name, while two ad-hoc forms of one
+/// machine share a name (the bare hostname) and are told apart only by target.
+fn label(profile: &RemoteHostProfile) -> String {
+    format!("'{}' ({})", profile.name, profile.target())
+}
+
 /// Refuses a run that writes when its selected hosts cannot file their
-/// checkpoints apart. Called only for `--execute`, because a dry run captures no
-/// checkpoint and restores nothing, so the collision cannot bite it.
+/// checkpoints apart. Called only for `--execute`: a dry run captures no
+/// checkpoint, so the collision cannot bite it, and refusing one would break a
+/// preview that is the operator's way of discovering the problem.
+///
+/// Prints unconditionally, `--quiet` included, because a refusal is an error
+/// rather than progress. Under `--format json` this means the refusal reaches
+/// stderr and stdout stays empty, which is what every other pre-connection
+/// refusal in this file already does.
 fn refuse_colliding_host_keys(profiles: &[RemoteHostProfile]) {
     if let Some(collision) = colliding_host_key(profiles) {
         eprintln!(
-            "'{}' and '{}' would file their checkpoints under one host key ({}), \
-             so this run could not tell their checkpoints apart and a later \
-             rollback could restore the wrong state. Name the remote account on \
-             both targets, or run them one at a time.",
+            "{} and {} would file their checkpoints under one host key ({}), so \
+             this run could not tell their checkpoints apart and a later rollback \
+             could restore the wrong state. If these are two accounts on one \
+             machine, name the account on both targets; if they are one endpoint \
+             listed twice, drop the duplicate; otherwise run them one at a time.",
             collision.first, collision.second, collision.key
         );
         std::process::exit(2);

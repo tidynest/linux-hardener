@@ -8,11 +8,18 @@
 //! floor, and that is exactly how this went unnoticed: the loader's own tests
 //! were green throughout. These run the binary instead.
 //!
-//! Nothing here writes to any host. Every refusal exits before a plugin runs
-//! and before a fleet run opens its first connection, and the runs that are
-//! allowed to proceed are `--dry-run`, which validate and write nothing. Every
-//! child is given a scratch `HOME` so the default config locations are empty,
-//! which is what makes `--config` the only thing deciding the run.
+//! Nothing here writes to any host, and no run here is `--execute`. Every
+//! refusal exits before a plugin runs and before a fleet run opens its first
+//! connection, and the runs allowed to proceed are `--dry-run`, which validate
+//! and write nothing. Every child is given a scratch `HOME` so the default
+//! config locations are empty, which is what makes `--config` the only thing
+//! deciding the run.
+//!
+//! One source is beyond a scratch `HOME`: `/etc/linux-hardener/config.toml` is
+//! an absolute path, and `ConfigLoader::load` merges it before the file named
+//! on the command line. On a host carrying a broken one, a load failure here
+//! names that path rather than the fixture, so the assertions that quote the
+//! fixture path would go red on a correct build.
 
 use std::process::{Command, Output};
 
@@ -160,16 +167,54 @@ fn batch_apply_execute_refuses_a_config_path_that_does_not_exist() {
          `batch` signals as 2 rather than the 1 a bail would give; got stderr: {stderr}"
     );
 
-    // Positive control. The same fleet run without the flag has no named policy
-    // to fail on, so it must not refuse on configuration at all. Without this,
-    // the assertion above would also pass on a `batch apply` that refused for
-    // some unrelated reason, such as resolving the host or opening a database.
-    let control = batch_apply_with(&[], &["--execute"]);
+    // Positive control: the same fleet run without the flag must not refuse on
+    // configuration, so the refusal above is `--config` being honoured rather
+    // than `batch apply` refusing for some unrelated reason.
+    //
+    // Deliberately not `--execute`. This control cannot distinguish the
+    // `config_path.is_some()` half of the guard anyway: with no flag and a
+    // scratch `HOME`, the load succeeds, so it passes whether or not that half
+    // is there. Running it under `--execute` bought nothing and reached
+    // `get_checkpoint_manager`, which under a privileged run materialises
+    // `/var/lib/linux-hardener/checkpoints.db` and the signing key at absolute
+    // paths no scratch `HOME` can move. The parse-failure test below is what
+    // actually pins the guard.
+    let control = batch_apply_with(&[], &[]);
     let control_stderr = String::from_utf8_lossy(&control.stderr);
     assert!(
         !control_stderr.contains("Config error"),
         "without the flag there is no named policy to fail on, so a config \
          refusal here would mean the one above proves nothing; got: {control_stderr}"
+    );
+}
+
+/// A `--config` file that exists and will not parse is refused too.
+///
+/// Without this the guard could be narrowed to "the named path does not exist"
+/// and every assertion in the test above would stay green, while a fleet was
+/// again hardened from the defaults whenever the named file was present but
+/// broken. `ConfigLoader::load` fails for a parse error, a stat failure, a bad
+/// environment override and a rejected directive alike, and all of them are the
+/// same defect: policy the operator named did not decide the run.
+#[test]
+fn batch_apply_execute_refuses_a_config_file_that_will_not_parse() {
+    let path = scratch_home().join("unparseable.toml");
+    std::fs::write(&path, "[global\ndisabled_plugins = broken\n").expect("the fixture is written");
+    let path = path.to_str().expect("a UTF-8 scratch path");
+
+    let out = batch_apply_with(&["--config", path], &["--execute"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !stderr.contains("config load failed, using defaults"),
+        "a named policy that will not parse must refuse rather than harden the \
+         fleet from defaults; got: {stderr}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "and refuses with the same usage tier as a path that is not there; \
+         got stderr: {stderr}"
     );
 }
 

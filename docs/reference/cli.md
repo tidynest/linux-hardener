@@ -514,7 +514,8 @@ three targets.
 
 This applies to `--ssh` targets alone. `--all` and `--host` are taken as given,
 so two inventory entries pointing at one machine, or `--host web-01,web-01`,
-still produce two hosts.
+still produce two hosts. Under `--execute` such a selection is then refused by
+the checkpoint host-key check below, which names both inventory entries.
 
 The history key is a *different* identity: an inventory host files its history
 under its nickname and an ad-hoc target under `user@host:port`. Reaching one
@@ -535,9 +536,22 @@ consequences follow, and both are limitations rather than choices:
   selection, exit `2`, before it connects to anything: their pre-apply
   checkpoints would land under one `(host key, name)` pair, the newest would
   win, and a later rollback could restore state the other target had already
-  hardened while reporting success. Name the account on both targets, or run
-  them one at a time. `batch scan` and `batch report` take no checkpoints and
-  are not affected, nor is a dry run.
+  hardened while reporting success. The refusal names both hosts, by inventory
+  name and canonical target, and says what to change. `batch scan` and `batch
+  report` take no checkpoints and are not affected, nor is a dry run.
+
+> **The refusal covers one invocation, not the underlying collision.** The
+> newest checkpoint per key wins across the whole database rather than within a
+> run, so reaching one machine as `--ssh web-01` in one run and as
+> `--ssh root@web-01` in another files both under the same key with nothing to
+> refuse them, and a later rollback of either can restore the state the other
+> left behind. The single-host `apply` and `rollback` verbs do not pass through
+> this check at all. **Until the key itself is corrected, reach a given machine
+> by one and only one form of target.** Correcting it means resolving the
+> effective remote user when the connection is made, which changes the key and
+> orphans every checkpoint already filed under the old one, so it is deferred
+> rather than done. `checkpoint list` conflates the same pair, for the same
+> reason.
 
 ### batch scan
 

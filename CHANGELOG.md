@@ -29,9 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   colliding pair could restore one target from the other's checkpoint. The key
   itself is unchanged, so no stored checkpoint is affected; correcting it means
   resolving the effective remote user at connect time, which orphans every
-  checkpoint already filed under the old key and is a separate decision. The
-  limitation is now documented in the CLI reference, which had never recorded
-  it despite two commit messages claiming it did.
+  checkpoint already filed under the old key and is a separate decision.
+
+  **This closes the collision within one invocation and not the underlying
+  defect.** The newest checkpoint per key wins across the whole database rather
+  than within a run, so reaching one machine as `--ssh web-01` in one run and as
+  `--ssh root@web-01` in another still files both under one key, with no
+  selection to refuse, and the single-host `apply` and `rollback` verbs never
+  reach this check at all. Until the key is corrected, reach a given machine by
+  one and only one form of target. Both the limitation and the key format are
+  now documented in the CLI reference, which had never recorded either despite
+  two commit messages claiming it did.
 - **`batch apply --execute` hardened an entire fleet from the compiled-in
   defaults when the `--config` path it was given could not be loaded.** The
   fleet loader warned on stderr and fell back for any configuration failure: a
@@ -44,13 +52,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guard could not fire either: it refuses a run that hardened nothing, and the
   defaults enable every plugin. A named `--config` that will not load is now
   fatal for that run, before the first connection is opened, and it exits `2` to
-  match the tier `batch` already uses for its own usage refusals. The verbs that
-  only read a fleet keep the fallback they shipped with: `batch scan`, `batch
-  report` and `batch apply` without `--execute` still warn and continue, because
-  the worst they can do is report against the wrong baseline and say so. This is
-  the fleet half of the single-host `apply` fix, which was deliberately left out
-  of that change because refusing mid-fleet alters fleet behaviour and wanted
+  match the tier `batch` already uses for its own usage refusals. This is the
+  fleet half of the single-host `apply` fix, which was deliberately left out of
+  that change because refusing mid-fleet alters fleet behaviour and wanted
   deciding on its own. `batch rollback` is unaffected: it reads no config at all.
+
+  Two limits of this fix are worth stating rather than leaving to be discovered.
+  **The verbs that do not write to a host keep the fallback**, so `batch scan`,
+  `batch report` and `batch apply` without `--execute` still warn and continue.
+  That is not free: a fleet scan persists a session per host into the scheduler
+  database, and the findings it stores come from the config, so a defaulted run
+  writes a different plugin set at different thresholds into rows that outlive
+  the warning and are later read by `history trends`, `history regressions` and
+  the daemon's regression notifications. It can therefore manufacture or mask a
+  regression on a later run where no warning is in sight. Refusing there too was
+  considered and not taken, because those verbs change no host. **And the guard
+  keys on the flag, not on the outcome**: a run that names no `--config` still
+  degrades to defaults when the controller's own `/etc/linux-hardener/config.toml`
+  is present but broken, which is the behaviour single-host `apply` also keeps.
+  The desktop's Fleet Apply passes no `--config` at all, so it cannot reach this
+  refusal and is exposed to exactly that case.
 - **Debian hosts hardened by any release up to and including 1.5.1 may have no
   firewall at all, while the tool reported one was applied.** `apply --plugin
   firewall-hardening` decided ufw was already enabled when `systemctl is-active
@@ -575,10 +596,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sources into one result and cannot attribute a parse error to one file, and a
   run told to use a named policy should not proceed on a guess about policy.
   Without the flag, a broken config at a default location still degrades to
-  defaults with a warning, which is the behaviour that shipped. **`batch apply`
-  is not covered by this and still falls back to defaults when its `--config`
-  cannot be loaded**, over a whole fleet; that is a separate defect and is not
-  fixed here. All four commands that build a loader now share one definition of
+  defaults with a warning, which is the behaviour that shipped. `batch apply`
+  was not covered by this change and is fixed by its own entry above. All four
+  commands that build a loader now share one definition of
   what the flag means. `docs/reference/cli.md` and `docs/reference/configuration.md`
   described the old behaviour accurately and have been corrected: they recorded a
   defect, and the workaround they offered ("install it at one of the default

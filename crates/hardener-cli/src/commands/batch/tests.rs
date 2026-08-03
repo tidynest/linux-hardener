@@ -1594,8 +1594,12 @@ async fn batch_persistence_handles_concurrent_hosts() {
 /// guard cannot refuse it because by its measure the keys are equal.
 #[test]
 fn colliding_host_key_catches_a_bare_target_against_an_explicit_root() {
+    // The pair is deliberately NOT adjacent. A check that compared each target
+    // only against the one before it would still catch the adjacent case, and
+    // a collision between the first and third selection is the same collision.
     let profiles = vec![
         parse_inline("web-01", 22, None, true),
+        parse_inline("web-02", 22, None, true),
         parse_inline("root@web-01", 22, None, true),
     ];
 
@@ -1610,8 +1614,10 @@ fn colliding_host_key_catches_a_bare_target_against_an_explicit_root() {
     let collision = collision.expect("the pair collides");
     assert_eq!(
         (collision.first.as_str(), collision.second.as_str()),
-        ("web-01:22", "root@web-01:22"),
-        "both targets are named as the operator gave them, in selection order"
+        ("'web-01' (web-01:22)", "'web-01' (root@web-01:22)"),
+        "both are named by inventory name and canonical target together, in \
+         selection order: these two share a name and are told apart only by \
+         target, while two inventory entries for one endpoint are the reverse"
     );
 }
 

@@ -292,6 +292,11 @@ fn a_fleet_run_that_would_collide_two_checkpoints_is_refused_before_connecting()
             "batch",
             "apply",
             "--execute",
+            // Under --quiet, because a refusal is an error rather than
+            // progress: gating it on --quiet would silence the only thing that
+            // says why the fleet was not touched. The rollback test below
+            // leaves --quiet off, so both paths are covered.
+            "--quiet",
             "--plugin",
             "kernel-hardening",
             "--ssh",
@@ -404,5 +409,41 @@ fn a_fleet_rollback_that_would_collide_two_checkpoints_is_refused_before_connect
         !stdout.contains("status:"),
         "the refusal comes before the first connection, so no host outcome is \
          rendered; got stdout: {stdout}"
+    );
+}
+
+/// The control against the refusal reaching a run that cannot be bitten by the
+/// collision. A dry run captures no checkpoint and restores nothing, and it is
+/// how an operator discovers the problem in the first place, so a colliding
+/// selection must get past the check and reach the hosts.
+#[test]
+fn a_dry_run_of_a_colliding_pair_is_not_refused() {
+    let out = run_in(
+        scratch_home_named("collision-dry-run"),
+        &[
+            "batch",
+            "apply",
+            "--plugin",
+            "kernel-hardening",
+            "--ssh",
+            "127.0.0.1",
+            "--ssh",
+            "root@127.0.0.1",
+            "--port",
+            "1",
+            "--ssh-timeout",
+            "2",
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        !stderr.contains("would file their checkpoints"),
+        "a dry run writes no checkpoint, so the pair must not be refused; got: {stderr}"
+    );
+    assert!(
+        stdout.contains("status:"),
+        "and it reaches the hosts, rendering a per-host outcome; got stdout: {stdout}"
     );
 }
