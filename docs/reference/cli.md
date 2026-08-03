@@ -28,10 +28,18 @@ These flags can be placed before or after any subcommand.
 
 **Where `-C`, `--config` takes effect.** clap accepts it anywhere, but only the
 commands that read a `config.toml` act on it: `scan`, `apply`, `report`, `batch
-scan`, `batch report`, `batch apply`, and `systemd generate`/`install`, which
-embed the path in the unit they write. Two surfaces accept the flag and do not
-act on it, and each still evaluates the host against the system and user
-configuration:
+scan`, `batch report`, `batch apply`, `daemon`, `history`, and `systemd
+generate`/`install`, which embed the path in the unit they write.
+
+`daemon` and `history` read only the `[scheduler]` section, and they read it
+from the named file when there is one. A single file carrying both a `[global]`
+and a `[scheduler]` section is therefore honoured whole: before, `scan` took its
+policy from the named file and then wrote its history to whichever database the
+default search happened to find. A named path that is missing or will not parse
+is an error here as it is elsewhere.
+
+Two surfaces accept the flag and do not act on it, and each still evaluates the
+host against the system and user configuration:
 
 - `report --interactive`, which the wizard documents as deliberate: it loads the
   default sources so that it cannot score a host differently from
@@ -76,7 +84,9 @@ an unreachable target stopped the command, so it could refuse work and never
 redirect it.
 
 `daemon` is separate again: it resolves the `[scheduler]` section through its own
-path search rather than the loader (see
+path search rather than the loader, so the merge rules that apply to `[global]`
+do not apply to it, and the first file found wins outright. `-C` is honoured:
+naming a path replaces that search rather than adding to it (see
 [configuration.md](configuration.md#scheduler)).
 
 ---

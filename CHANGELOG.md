@@ -472,6 +472,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`-C`, `--config` was ignored by `daemon` and by all five `history` verbs**,
+  which read the `[scheduler]` section through a loader that took no path and
+  searched the default locations itself. A single file carrying both a
+  `[global]` and a `[scheduler]` section was half honoured: `scan` read its
+  policy from the named file and then wrote its history to whichever database
+  the default search happened to find, so the two halves of one configuration
+  could disagree about where the run's results went. The scheduler section now
+  comes from the named file when one was named, and a named path that is missing
+  or will not parse is an error rather than a fall-through to the defaults, which
+  is what the same flag means everywhere else it is honoured. The default search
+  is unchanged when no path is named. `docs/reference/cli.md` enumerated the
+  surfaces that accept `-C` without acting on it and presented that list as
+  complete while naming neither of these; the list is now correct.
+
 - **`--format json` was ignored by every `systemd` verb, so a caller parsing
   stdout as JSON received a unit file beginning with `#` or a systemctl status
   table.** `main` passed the four verbs no format at all and the module imported

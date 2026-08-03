@@ -240,3 +240,43 @@ fn batch_apply_dry_run_still_falls_back_when_the_named_config_cannot_be_loaded()
          reached the config gate at all rather than exiting earlier; got: {stderr}"
     );
 }
+
+/// `-C` reaches the scheduler section too, not only the hardening policy.
+///
+/// `load_scheduler_config` took no path and searched the default locations
+/// itself, so a single file carrying both a `[global]` and a `[scheduler]`
+/// section was half honoured: `scan` read its policy from the named file and
+/// then wrote its history to whatever database the default search happened to
+/// find. The observable is where the database lands, which is the whole point
+/// of the setting.
+#[test]
+fn the_scheduler_section_comes_from_the_named_config_too() {
+    let home = scratch_home();
+    let db = home.join("named-history.db");
+    let _ = std::fs::remove_file(&db);
+    let config = home.join("with-scheduler.toml");
+    std::fs::write(
+        &config,
+        format!(
+            "[scheduler]\nenabled = true\nschedule = \"0 0 3 * * *\"\nplugins = []\n\
+             min_severity = \"low\"\n\n[scheduler.storage]\ndatabase_path = \"{}\"\n",
+            db.display()
+        ),
+    )
+    .expect("the fixture config is written");
+
+    let out = run(&[
+        "--config",
+        config.to_str().expect("a UTF-8 scratch path"),
+        "history",
+        "list",
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        db.exists(),
+        "the history database must be opened where the named config said, not \
+         where the default search leads; got exit {:?} with stderr: {stderr}",
+        out.status.code()
+    );
+}

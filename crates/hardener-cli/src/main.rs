@@ -285,10 +285,14 @@ async fn main() -> Result<()> {
             }
         },
         Command::Daemon { action } => match action {
-            DaemonAction::Start => commands::daemon::start(format, cli.quiet).await,
-            DaemonAction::RunOnce => commands::daemon::run_once(format, cli.quiet).await,
+            DaemonAction::Start => {
+                commands::daemon::start(format, cli.quiet, cli.config.as_ref()).await
+            }
+            DaemonAction::RunOnce => {
+                commands::daemon::run_once(format, cli.quiet, cli.config.as_ref()).await
+            }
             DaemonAction::Status { limit } => {
-                commands::daemon::status(format, cli.quiet, limit).await
+                commands::daemon::status(format, cli.quiet, limit, cli.config.as_ref()).await
             }
         },
         Command::Systemd { action } => match action {
@@ -315,18 +319,29 @@ async fn main() -> Result<()> {
                 limit,
                 host,
                 status,
-            } => commands::history::list(format, cli.quiet, limit, host, status).await,
+            } => {
+                commands::history::list(format, cli.quiet, limit, host, status, cli.config.as_ref())
+                    .await
+            }
             HistoryAction::Trends { host, limit } => {
-                commands::history::trends(format, cli.quiet, &host, limit).await
+                commands::history::trends(format, cli.quiet, &host, limit, cli.config.as_ref())
+                    .await
             }
             HistoryAction::Regressions { host } => {
-                commands::history::regressions(format, cli.quiet, host).await
+                commands::history::regressions(format, cli.quiet, host, cli.config.as_ref()).await
             }
             HistoryAction::Show { session_id } => {
-                commands::history::show(&session_id, format, cli.quiet).await
+                commands::history::show(&session_id, format, cli.quiet, cli.config.as_ref()).await
             }
             HistoryAction::Export { session_id, output } => {
-                commands::history::export(&session_id, output, format, cli.quiet).await
+                commands::history::export(
+                    &session_id,
+                    output,
+                    format,
+                    cli.quiet,
+                    cli.config.as_ref(),
+                )
+                .await
             }
         },
     };

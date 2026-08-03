@@ -745,6 +745,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         opts.global_no_verify,
         "Assessing",
         config,
+        opts.config.as_ref(),
     )
     .await;
 
@@ -784,8 +785,8 @@ fn display_target(p: &RemoteHostProfile) -> String {
 
 /// Opens the shared history database for batch persistence. Best-effort: on any
 /// error, returns `None` and batch scanning proceeds without persistence.
-async fn open_batch_history() -> Option<Arc<ScanHistoryManager>> {
-    let path = match load_scheduler_config() {
+async fn open_batch_history(config_path: Option<&PathBuf>) -> Option<Arc<ScanHistoryManager>> {
+    let path = match load_scheduler_config(config_path) {
         Ok(config) => config.storage.database_path,
         Err(e) => {
             warn!("batch history disabled: scheduler config unavailable: {e}");
@@ -1145,6 +1146,7 @@ async fn resolve_and_scan(
     global_no_verify: bool,
     verb: &str,
     config: Arc<HardenerConfig>,
+    config_path: Option<&PathBuf>,
 ) -> Vec<HostOutcome> {
     let profiles = resolve_profiles(
         all,
@@ -1156,7 +1158,7 @@ async fn resolve_and_scan(
         quiet,
         verb,
     );
-    let history = open_batch_history().await;
+    let history = open_batch_history(config_path).await;
     scan_all(profiles, concurrency, global_timeout, history, config).await
 }
 
@@ -1774,6 +1776,7 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         opts.global_no_verify,
         "Scanning",
         config,
+        opts.config.as_ref(),
     )
     .await;
 

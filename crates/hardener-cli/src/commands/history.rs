@@ -21,8 +21,9 @@ pub async fn list(
     limit: u32,
     host: Option<String>,
     status: Option<String>,
+    config_path: Option<&PathBuf>,
 ) -> Result<()> {
-    let db = open_database().await?;
+    let db = open_database(config_path).await?;
 
     let filter = SessionFilter {
         limit: Some(limit),
@@ -81,8 +82,14 @@ pub async fn list(
 /// Shows a per-host security trend: completed scans oldest-first, each with its
 /// change from the previous scan. Derived on query from the persisted sessions,
 /// no separate score is stored.
-pub async fn trends(format: OutputFormat, quiet: bool, host: &str, limit: u32) -> Result<()> {
-    let db = open_database().await?;
+pub async fn trends(
+    format: OutputFormat,
+    quiet: bool,
+    host: &str,
+    limit: u32,
+    config_path: Option<&PathBuf>,
+) -> Result<()> {
+    let db = open_database(config_path).await?;
 
     let filter = SessionFilter {
         host: Some(host.to_string()),
@@ -181,8 +188,13 @@ struct TrendPoint {
 /// Reports hosts whose latest completed scan is worse than the previous one
 /// (by severity priority). Exits 1 when any regression is found so it can gate
 /// CI; 0 otherwise. Pass `host` to check a single host.
-pub async fn regressions(format: OutputFormat, quiet: bool, host: Option<String>) -> Result<()> {
-    let db = open_database().await?;
+pub async fn regressions(
+    format: OutputFormat,
+    quiet: bool,
+    host: Option<String>,
+    config_path: Option<&PathBuf>,
+) -> Result<()> {
+    let db = open_database(config_path).await?;
 
     let filter = SessionFilter {
         host,
@@ -299,8 +311,13 @@ impl Regression {
 }
 
 /// Shows details of a specific scan session.
-pub async fn show(session_id: &str, format: OutputFormat, quiet: bool) -> Result<()> {
-    let db = open_database().await?;
+pub async fn show(
+    session_id: &str,
+    format: OutputFormat,
+    quiet: bool,
+    config_path: Option<&PathBuf>,
+) -> Result<()> {
+    let db = open_database(config_path).await?;
 
     let session = db
         .get_session(session_id)
@@ -368,6 +385,7 @@ pub async fn export(
     output_path: Option<PathBuf>,
     format: OutputFormat,
     quiet: bool,
+    config_path: Option<&PathBuf>,
 ) -> Result<()> {
     // Judged before the database is opened: there is nothing to gain by reading
     // a session out in order to refuse where it was going.
@@ -375,7 +393,7 @@ pub async fn export(
         refuse_extension_it_cannot_produce(path)?;
     }
 
-    let db = open_database().await?;
+    let db = open_database(config_path).await?;
 
     let session = db
         .get_session(session_id)
@@ -434,8 +452,8 @@ struct SessionDetail {
 }
 
 /// Opens the scheduler database using config paths.
-async fn open_database() -> Result<ScanHistoryManager> {
-    let config = load_scheduler_config()?;
+async fn open_database(config_path: Option<&PathBuf>) -> Result<ScanHistoryManager> {
+    let config = load_scheduler_config(config_path)?;
     ScanHistoryManager::new(&config.storage.database_path)
         .await
         .map_err(|e| anyhow!("Failed to open database: {}", e))

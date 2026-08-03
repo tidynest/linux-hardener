@@ -10,11 +10,12 @@ use hardener_scheduler::{
     Daemon, JsonStore, ScanHistoryManager, SchedulerConfig, TriggerType, db::SessionFilter,
 };
 use serde::Deserialize;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Starts the daemon and blocks until shutdown signal.
-pub async fn start(format: OutputFormat, quiet: bool) -> Result<()> {
-    let config = load_scheduler_config()?;
+pub async fn start(format: OutputFormat, quiet: bool, config_path: Option<&PathBuf>) -> Result<()> {
+    let config = load_scheduler_config(config_path)?;
 
     if !config.enabled {
         return Err(anyhow!(
@@ -69,8 +70,12 @@ pub async fn start(format: OutputFormat, quiet: bool) -> Result<()> {
 }
 
 /// Runs a single scan immediately.
-pub async fn run_once(format: OutputFormat, quiet: bool) -> Result<()> {
-    let config = load_scheduler_config()?;
+pub async fn run_once(
+    format: OutputFormat,
+    quiet: bool,
+    config_path: Option<&PathBuf>,
+) -> Result<()> {
+    let config = load_scheduler_config(config_path)?;
 
     if !quiet {
         output::status(&format, "Running single scan...");
@@ -127,8 +132,13 @@ pub async fn run_once(format: OutputFormat, quiet: bool) -> Result<()> {
 }
 
 /// Shows daemon status and recent scan history.
-pub async fn status(format: OutputFormat, quiet: bool, limit: u32) -> Result<()> {
-    let config = load_scheduler_config()?;
+pub async fn status(
+    format: OutputFormat,
+    quiet: bool,
+    limit: u32,
+    config_path: Option<&PathBuf>,
+) -> Result<()> {
+    let config = load_scheduler_config(config_path)?;
 
     // Try to connect to database
     let db = ScanHistoryManager::new(&config.storage.database_path)
@@ -193,16 +203,28 @@ struct ConfigFile {
     scheduler: SchedulerConfig,
 }
 
-/// Loads scheduler configuration from standard config file locations.
+/// Loads scheduler configuration, from the path `--config` named if it named
+/// one, else from the standard locations.
+///
+/// This took no path, so `-C` reached the hardening policy and not the
+/// `[scheduler]` section beside it: one file carrying both was half honoured,
+/// and `scan` read its policy from the named file and then wrote its history to
+/// whatever database the default search found. A named path that cannot be read
+/// or parsed is an error rather than a fall-through to the defaults, matching
+/// what the same flag means everywhere else it is honoured, and the default
+/// search is unchanged when no path was named.
 ///
 /// Uses the same paths as `ConfigLoader` to avoid duplication.
-pub fn load_scheduler_config() -> Result<SchedulerConfig> {
+pub fn load_scheduler_config(config_path: Option<&PathBuf>) -> Result<SchedulerConfig> {
     // Check locations in order: user config, then system config
     // (ConfigLoader checks in reverse order for merging, but only the first found is needed)
-    let paths = [
-        ConfigLoader::user_config_path(),
-        ConfigLoader::system_config_path(),
-    ];
+    let paths = match config_path {
+        Some(named) => vec![Some(named.clone())],
+        None => vec![
+            ConfigLoader::user_config_path(),
+            ConfigLoader::system_config_path(),
+        ],
+    };
 
     for path in paths.into_iter().flatten() {
         if path.exists() {
@@ -214,6 +236,12 @@ pub fn load_scheduler_config() -> Result<SchedulerConfig> {
 
             return Ok(config.scheduler);
         }
+    }
+
+    // A path the operator named and that is not there is an error, not a
+    // silent fall-through: the flag exists to decide the run.
+    if let Some(named) = config_path {
+        return Err(anyhow!("Config file not found: {}", named.display()));
     }
 
     // No config file found, use defaults
