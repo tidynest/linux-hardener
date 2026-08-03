@@ -364,7 +364,7 @@ sum to 149. Sections run in the order listed, which is not numeric order:
 | 1 | Basic Commands | 11 | --version, --help, all subcommand help, plus `plugins` listing all 8 |
 | 2 | Scan All Plugins | 10 | Full scan, each of the 8 plugins individually, and a multi-plugin scan |
 | 3 | Scan Filters | 8 | All 5 severity levels, --audit, --exit-code, --quiet |
-| 4 | Scan Output Formats | 5 | text, json, csv, html, plus a JSON structure check |
+| 4 | Scan Output Formats | 5 | text and json rendered, csv and html refused at the parse, plus a JSON structure check |
 | 5 | Reports All Frameworks | 7 | cis, stig, nist, pcidss, hipaa, gdpr, iso27001 |
 | 6 | Reports All Scenarios | 7 | server, workstation, government, healthcare, financial, gdpr, all |
 | 7 | Report Output Formats | 12 | text, json, csv, html and pdf for CIS, plus a PDF for each of the 7 frameworks |

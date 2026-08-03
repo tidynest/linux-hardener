@@ -157,7 +157,7 @@ fn test_cli_parse_checkpoint_create() {
 #[test]
 fn test_cli_global_format_json() {
     let cli = Cli::parse_from(["hardener", "--format", "json", "scan"]);
-    assert!(matches!(cli.format, OutputFormat::Json));
+    assert!(matches!(cli.format, GlobalFormat::Json));
 }
 
 #[test]
@@ -656,4 +656,68 @@ fn one_command_group_can_answer_both_ways() {
         local.command.ssh_refusal().map(|r| r.command),
         Some("checkpoint delete")
     );
+}
+
+/// The global flag renders two formats and now says so at the parse.
+///
+/// It was typed as the compliance crate's five-valued enum, so clap accepted
+/// `csv`, `html` and `pdf` on every command in the binary while not one of them
+/// rendered any of the three: they were byte-identical aliases of `text`, in
+/// `scan`, `history export`, every `checkpoint` verb and all four `batch`
+/// verbs. Refusing them at the parse is what stops a fleet report from being
+/// asked for as csv and handed over as text.
+#[test]
+fn the_global_format_flag_takes_only_what_it_renders() {
+    for accepted in ["text", "json"] {
+        assert!(
+            Cli::try_parse_from(["hardener", "--format", accepted, "scan"]).is_ok(),
+            "--format {accepted} is rendered and must parse"
+        );
+    }
+
+    for refused in ["csv", "html", "pdf"] {
+        let parsed = Cli::try_parse_from(["hardener", "--format", refused, "scan"]);
+        let rendered = match parsed {
+            Ok(_) => panic!("--format {refused} renders nothing and must be refused at the parse"),
+            Err(error) => error.to_string(),
+        };
+
+        assert!(
+            rendered.contains("text") && rendered.contains("json"),
+            "--format {refused} is refused naming what it could have been: {rendered}"
+        );
+    }
+}
+
+/// The conversion every command now flows through, in both directions.
+///
+/// Two same-shaped two-variant enums and a hand-written match is exactly the
+/// place a swapped arm compiles and says nothing: `Text => Json` would make the
+/// default invocation of every command in the binary emit JSON, and no other
+/// test in the crate would notice, because they all assert on the flag rather
+/// than on what it becomes.
+#[test]
+fn the_narrowed_flag_widens_to_the_format_it_names() {
+    assert_eq!(OutputFormat::from(GlobalFormat::Text), OutputFormat::Text);
+    assert_eq!(OutputFormat::from(GlobalFormat::Json), OutputFormat::Json);
+}
+
+/// The rich formats keep their own route, which is the reason the flag above
+/// can be narrowed without taking a capability away.
+///
+/// This asserts the parse alone: `--report-format` is a `String` that
+/// `commands::report` matches at runtime, so what this pins is that the flag
+/// still exists, still takes those three values, and still carries them
+/// through to the command. The runtime match is proved by the suite's own
+/// section 7, which renders all five for every framework in a container.
+#[test]
+fn report_still_takes_the_formats_the_global_flag_does_not() {
+    for format in ["csv", "html", "pdf"] {
+        let cli = Cli::parse_from(["hardener", "report", "--report-format", format]);
+        if let Command::Report { report_format, .. } = cli.command {
+            assert_eq!(report_format, format);
+        } else {
+            panic!("Expected Report command");
+        }
+    }
 }

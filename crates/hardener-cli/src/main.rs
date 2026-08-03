@@ -8,7 +8,8 @@ mod ssh_config;
 use anyhow::Result;
 use clap::Parser;
 use cli::{
-    BatchAction, CheckpointAction, Cli, Command, DaemonAction, HistoryAction, SystemdAction,
+    BatchAction, CheckpointAction, Cli, Command, DaemonAction, HistoryAction, OutputFormat,
+    SystemdAction,
 };
 use commands::scan::ScanOptions;
 use hardener_core::{LocalExecutor, SshExecutor, executor::SystemExecutor};
@@ -24,6 +25,11 @@ async fn main() -> Result<()> {
     hardener_common::logging::init_logger();
 
     let cli = Cli::parse();
+
+    // The flag is two-valued; every command below takes the compliance crate's
+    // wider enum, so the widening happens once, here, rather than at twenty-one
+    // call sites.
+    let format: OutputFormat = cli.format.into();
 
     // A command that cannot honour --ssh refuses it here, before the
     // connection is opened. Every command used to accept the flag while only
@@ -86,7 +92,7 @@ async fn main() -> Result<()> {
             commands::scan::run(ScanOptions {
                 plugin_filter: &plugin,
                 severity_filter: severity,
-                format: cli.format,
+                format,
                 quiet: cli.quiet,
                 config_path: cli.config.as_ref(),
                 audit,
@@ -100,37 +106,26 @@ async fn main() -> Result<()> {
             plugin,
             all,
             dry_run,
-        } => {
-            commands::apply::run(
-                &plugin,
-                all,
-                dry_run,
-                cli.format,
-                cli.quiet,
-                executor.clone(),
-            )
-            .await
-        }
+        } => commands::apply::run(&plugin, all, dry_run, format, cli.quiet, executor.clone()).await,
         Command::Rollback { checkpoint_id } => {
-            commands::checkpoint::rollback(&checkpoint_id, cli.format, cli.quiet, executor.clone())
+            commands::checkpoint::rollback(&checkpoint_id, format, cli.quiet, executor.clone())
                 .await
         }
         Command::Checkpoint { action } => match action {
             CheckpointAction::List { limit, all } => {
-                commands::checkpoint::list(cli.format, cli.quiet, executor.clone(), limit, all)
-                    .await
+                commands::checkpoint::list(format, cli.quiet, executor.clone(), limit, all).await
             }
             CheckpointAction::Create { name } => {
-                commands::checkpoint::create(&name, cli.format, cli.quiet, executor.clone()).await
+                commands::checkpoint::create(&name, format, cli.quiet, executor.clone()).await
             }
             CheckpointAction::Delete { checkpoint_id } => {
-                commands::checkpoint::delete(&checkpoint_id, cli.format, cli.quiet).await
+                commands::checkpoint::delete(&checkpoint_id, format, cli.quiet).await
             }
             CheckpointAction::Show { checkpoint_id } => {
-                commands::checkpoint::show(&checkpoint_id, cli.format, cli.quiet).await
+                commands::checkpoint::show(&checkpoint_id, format, cli.quiet).await
             }
         },
-        Command::Plugins => commands::plugins::run(cli.format, cli.quiet).await,
+        Command::Plugins => commands::plugins::run(format, cli.quiet).await,
         Command::Report {
             scenario,
             framework,
@@ -148,7 +143,7 @@ async fn main() -> Result<()> {
                     profile,
                     report_format,
                     output,
-                    cli.format,
+                    format,
                     cli.quiet,
                     executor.clone(),
                     cli.config.as_ref(),
@@ -170,7 +165,7 @@ async fn main() -> Result<()> {
                     ssh,
                     concurrency,
                     config: cli.config.clone(),
-                    format: cli.format,
+                    format,
                     output,
                     quiet: cli.quiet,
                     global_key: cli
@@ -202,7 +197,7 @@ async fn main() -> Result<()> {
                     framework,
                     profile,
                     scenario,
-                    format: cli.format,
+                    format,
                     output,
                     quiet: cli.quiet,
                     global_key: cli
@@ -232,7 +227,7 @@ async fn main() -> Result<()> {
                     execute,
                     concurrency,
                     config: cli.config.clone(),
-                    format: cli.format,
+                    format,
                     output,
                     quiet: cli.quiet,
                     global_key: cli
@@ -261,7 +256,7 @@ async fn main() -> Result<()> {
                     plugin,
                     execute,
                     concurrency,
-                    format: cli.format,
+                    format,
                     output,
                     quiet: cli.quiet,
                     global_key: cli
@@ -276,10 +271,10 @@ async fn main() -> Result<()> {
             }
         },
         Command::Daemon { action } => match action {
-            DaemonAction::Start => commands::daemon::start(cli.format, cli.quiet).await,
-            DaemonAction::RunOnce => commands::daemon::run_once(cli.format, cli.quiet).await,
+            DaemonAction::Start => commands::daemon::start(format, cli.quiet).await,
+            DaemonAction::RunOnce => commands::daemon::run_once(format, cli.quiet).await,
             DaemonAction::Status { limit } => {
-                commands::daemon::status(cli.format, cli.quiet, limit).await
+                commands::daemon::status(format, cli.quiet, limit).await
             }
         },
         Command::Systemd { action } => match action {
@@ -301,18 +296,18 @@ async fn main() -> Result<()> {
                 limit,
                 host,
                 status,
-            } => commands::history::list(cli.format, cli.quiet, limit, host, status).await,
+            } => commands::history::list(format, cli.quiet, limit, host, status).await,
             HistoryAction::Trends { host, limit } => {
-                commands::history::trends(cli.format, cli.quiet, &host, limit).await
+                commands::history::trends(format, cli.quiet, &host, limit).await
             }
             HistoryAction::Regressions { host } => {
-                commands::history::regressions(cli.format, cli.quiet, host).await
+                commands::history::regressions(format, cli.quiet, host).await
             }
             HistoryAction::Show { session_id } => {
-                commands::history::show(&session_id, cli.format, cli.quiet).await
+                commands::history::show(&session_id, format, cli.quiet).await
             }
             HistoryAction::Export { session_id, output } => {
-                commands::history::export(&session_id, output, cli.format, cli.quiet).await
+                commands::history::export(&session_id, output, format, cli.quiet).await
             }
         },
     };

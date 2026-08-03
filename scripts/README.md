@@ -1136,7 +1136,7 @@ under `--apply`, 143 unbooted, 109 without `--apply`):
 | 1. Basic Commands | --version, --help, all subcommand help |
 | 2. Scan All Plugins | Individual scan for all 8 plugins |
 | 3. Scan Filters | All 5 severity levels, --audit, --exit-code |
-| 4. Scan Output Formats | text, json, csv, html |
+| 4. Scan Output Formats | text and json rendered; csv and html refused at the parse |
 | 5. Reports All Frameworks | cis, stig, nist, pcidss, hipaa, gdpr, iso27001 |
 | 6. Reports All Scenarios | server, workstation, government, healthcare, financial, gdpr, all |
 | 7. Report Output Formats | text, json, csv, html, pdf (generates PDFs for all frameworks) |

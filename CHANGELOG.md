@@ -164,6 +164,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`--format csv`, `--format html` and `--format pdf` are refused rather than
+  rendered as text.** The global `-f`/`--format` flag was typed as the
+  compliance crate's five-valued enum because that enum already existed, so clap
+  accepted all five on every command in the binary while **not one command
+  rendered any of the three**: every renderer matches JSON and sends the rest to
+  a text arm, making csv, html and pdf byte-identical aliases of text. Measured
+  by hashing the output of eight verbs across all five values, rather than
+  inferred. The sharpest edges were `batch report`, the fleet compliance surface,
+  which has no `--report-format` of its own and so had the global flag as its
+  only lever; and `hardener --format pdf history export <id> -o report.pdf`,
+  which wrote a JSON document into a file named `report.pdf` and exited 0. The
+  flag now has its own two-valued type, so clap refuses the other three when the
+  arguments are parsed, exit 2, listing what it does render. **No capability is
+  lost**: the CSV, HTML and PDF formatters were never reachable through this
+  flag, and `report --report-format` and the interactive wizard still reach them.
+  The manual page was wrong in both directions and is corrected: it promised the
+  three on the global flag and denied them on `--report-format`, which is the
+  one flag that has always had them.
+
 - **`--port` reaches a `batch` ad-hoc target instead of being dropped.** The one
   site that parses `--ssh user@host` targets for the fleet verbs passed the
   literal `22`, while `--ssh-key`, `--ssh-timeout` and `--ssh-no-verify` all

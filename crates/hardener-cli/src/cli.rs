@@ -26,7 +26,7 @@ pub struct Cli {
     pub command: Command,
     /// Output format.
     #[arg(global = true, short, long, default_value = "text")]
-    pub format: OutputFormat,
+    pub format: GlobalFormat,
     /// Suppress non-essential output.
     #[arg(global = true, short, long)]
     pub quiet: bool,
@@ -49,6 +49,39 @@ pub struct Cli {
     /// Skip SSH host key verification (insecure).
     #[arg(global = true, long)]
     pub ssh_no_verify: bool,
+}
+
+/// The formats the global `-f`/`--format` flag actually renders.
+///
+/// Deliberately two-valued, where the compliance crate's [`OutputFormat`] has
+/// five. The flag was typed as that enum because it already existed, and clap
+/// therefore accepted `csv`, `html` and `pdf` on every command in the binary
+/// while not one of them rendered any of the three: every renderer matches
+/// `Json` and sends the rest to a text arm, so the three were byte-identical
+/// aliases of `text`. Proved rather than assumed, by hashing the output of
+/// eight verbs across all five values.
+///
+/// The three real formatters are not lost, because the global flag was never
+/// their route: `report --report-format` reaches them, and so does the wizard's
+/// format multiselect. Narrowing the type here means clap refuses the three at
+/// parse time, with the possible values listed, exactly as it already refuses
+/// `--format xml` and as `report --report-format` already refuses a value it
+/// cannot render.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum GlobalFormat {
+    /// Human-readable output for a terminal.
+    Text,
+    /// Machine-readable output for automation.
+    Json,
+}
+
+impl From<GlobalFormat> for OutputFormat {
+    fn from(format: GlobalFormat) -> OutputFormat {
+        match format {
+            GlobalFormat::Text => OutputFormat::Text,
+            GlobalFormat::Json => OutputFormat::Json,
+        }
+    }
 }
 
 #[derive(Subcommand)]

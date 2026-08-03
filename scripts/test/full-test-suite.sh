@@ -51,9 +51,15 @@ FRAMEWORKS_EXPECTED=7
 SCENARIOS=("server" "workstation" "government" "healthcare" "financial" "gdpr" "all")
 SCENARIOS_EXPECTED=7
 
-# Output formats
-FORMATS=("text" "json" "csv" "html")
-FORMATS_EXPECTED=4
+# Output formats. The global --format flag renders two and refuses the rest at
+# the parse, so both halves are exercised and section 4 declares their sum. The
+# refused half was the whole of this table until the flag was narrowed: it
+# accepted csv, html and pdf and rendered text for all three, so these four
+# checks passed while proving nothing about three of them.
+FORMATS=("text" "json")
+FORMATS_EXPECTED=2
+FORMATS_REFUSED=("csv" "html")
+FORMATS_REFUSED_EXPECTED=2
 
 # Severity levels
 SEVERITIES=("info" "low" "medium" "high" "critical")
@@ -199,6 +205,7 @@ require_suite_tables() {
         "FRAMEWORKS ${#FRAMEWORKS[@]} $FRAMEWORKS_EXPECTED" \
         "SCENARIOS ${#SCENARIOS[@]} $SCENARIOS_EXPECTED" \
         "FORMATS ${#FORMATS[@]} $FORMATS_EXPECTED" \
+        "FORMATS_REFUSED ${#FORMATS_REFUSED[@]} $FORMATS_REFUSED_EXPECTED" \
         "SEVERITIES ${#SEVERITIES[@]} $SEVERITIES_EXPECTED"; do
         read -r name got want <<<"$entry"
         if [[ "$got" != "$want" ]]; then
@@ -252,7 +259,7 @@ suite_section_sizes() {
         "1 basic commands|11" \
         "2 scan, all plugins|$((PLUGINS_EXPECTED + 2))" \
         "3 scan filters|$((SEVERITIES_EXPECTED + 3))" \
-        "4 scan output formats|$((FORMATS_EXPECTED + 1))" \
+        "4 scan output formats|$((FORMATS_EXPECTED + FORMATS_REFUSED_EXPECTED + 1))" \
         "5 reports, all frameworks|$FRAMEWORKS_EXPECTED" \
         "6 reports, all scenarios|$SCENARIOS_EXPECTED" \
         "7 report output formats|$((FRAMEWORKS_EXPECTED + 5))" \
@@ -445,6 +452,15 @@ test_scan_output_formats() {
 
     for format in "${FORMATS[@]}"; do
         run_test "Scan --format $format" "\"$BINARY\" --format \"$format\" scan"
+    done
+
+    # The other half of the same question. These three used to be accepted and
+    # rendered as text, so a run that exercised them proved only that the
+    # binary did not crash; the flag now refuses at the parse, and a refusal
+    # that stopped happening would put the silent text back.
+    for format in "${FORMATS_REFUSED[@]}"; do
+        run_test "Scan --format $format is refused" \
+            "\"$BINARY\" --format \"$format\" scan" false
     done
 
     # Verify scan JSON output contains expected structure
@@ -1660,8 +1676,8 @@ test_flag_combinations() {
 
     run_test "scan --quiet --format json" "\"$BINARY\" scan --quiet --format json"
     run_test "scan --audit --format json" "\"$BINARY\" scan --audit --format json"
-    run_test "scan --severity high --plugin kernel-hardening --format csv" \
-        "\"$BINARY\" scan --severity high --plugin kernel-hardening --format csv"
+    run_test "scan --severity high --plugin kernel-hardening --format json" \
+        "\"$BINARY\" scan --severity high --plugin kernel-hardening --format json"
 }
 
 # =============================================================================

@@ -15,7 +15,7 @@ These flags can be placed before or after any subcommand.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-f`, `--format <FORMAT>` | Output format: `text`, `json`, `csv`, `html`, `pdf` | `text` |
+| `-f`, `--format <FORMAT>` | Output format: `text` or `json`. A value it cannot render is refused at the parse, exit 2. The rich formats belong to `report --report-format`, not to this flag | `text` |
 | `-q`, `--quiet` | Suppress non-essential output | off |
 | `-C`, `--config <FILE>` | Path to TOML configuration file | auto-detected |
 | `--ssh <HOST>` | Remote host to act on via SSH (`user@host` or `host`). Accepted by the commands that reach a host, refused by the ones that do not: see below | local |
@@ -377,7 +377,7 @@ hardener report [FLAGS]
 | `-s`, `--scenario <SCENARIO>` | Use case preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | `server` |
 | `--framework <FRAMEWORK>` | Specific framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001`, `soc2`, `800-171`, `fedramp` | |
 | `--profile <PROFILE>` | Compliance ID profile: `generic`, `rhel10` | auto-detect |
-| `--report-format <FORMAT>` | Report format: `text` (or `txt`), `json`, `csv`, `html`, `pdf` | `text` |
+| `--report-format <FORMAT>` | Report format: `text` (or `txt`), `json`, `csv`, `html`, `pdf`. This is the only flag that reaches the CSV, HTML and PDF formatters, none of which the global `--format` renders | `text` |
 | `-o`, `--output <FILE>` | Write to file instead of stdout | stdout |
 | `-i`, `--interactive` | Launch interactive wizard to pick scenario/framework. It prompts for `--scenario`, `--framework`, `--report-format` and `--output`, so those four are ignored beside it; `--profile` is honoured | off |
 
@@ -417,8 +417,11 @@ hardener report --scenario all --output report.json --report-format json
 
 Scan, assess, apply, or roll back hardening across multiple hosts concurrently.
 All four subcommands share the same host-selection flags and accept the global
-`--format text|json` flag. `apply` and `rollback` are **dry-run by default**;
-pass `--execute` to mutate the remote hosts.
+`--format text|json` flag. **There is no `--report-format` on `batch report`**,
+so a fleet compliance report is text or JSON: the CSV, HTML and PDF formatters
+are reachable only per host, through `hardener report --report-format`.
+`apply` and `rollback` are **dry-run by default**; pass `--execute` to mutate
+the remote hosts.
 
 `batch scan`, `batch report` and `batch apply` honour the global `-C`,
 `--config` flag, and without it they load the controller's own system and user

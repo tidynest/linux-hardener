@@ -280,12 +280,13 @@ Subcommands:
 .BR \-f ", " \-\-format " " \fIFORMAT\fR
 Output format.
 One of
-.BR text ,
-.BR json ,
-.BR csv ,
-.BR html ,
+.B text
 or
-.BR pdf .
+.BR json ;
+any other value is refused when the arguments are parsed, with exit status 2.
+The CSV, HTML and PDF formatters belong to
+.B \-\-report\-format
+and to the interactive wizard, not to this flag.
 Default:
 .BR text .
 .TP
@@ -424,9 +425,13 @@ or
 .BI \-\-report\-format " FORMAT"
 Report output format.
 One of
-.BR text
+.BR text " (or " txt ),
+.BR json ,
+.BR csv ,
+.BR html ,
 or
-.BR json .
+.BR pdf .
+This is the only flag that reaches the CSV, HTML and PDF formatters.
 .TP
 .BR \-o ", " \-\-output " " \fIFILE\fR
 Write the report to the specified file path instead of stdout.
@@ -629,7 +634,7 @@ Generate a CIS Benchmark compliance report and save it as PDF:
 .PP
 .RS
 .nf
-hardener report \-\-framework cis \-f pdf \-o report.pdf
+hardener report \-\-framework cis \-\-report\-format pdf \-o report.pdf
 .fi
 .RE
 .PP
