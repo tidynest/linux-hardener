@@ -472,6 +472,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`report --output` wrote the wrong document into a path that named a
+  format.** The extension was added when the path had none and never checked
+  when it had one, and `--report-format` defaults to `text`, so
+  `hardener report --output report.json` wrote a human text report into a file
+  called `report.json`, exited 0 and said it had saved a report. A path whose
+  extension contradicts the selected format is now refused, naming both
+  documents and the flag that would reconcile them. Refusing rather than letting
+  the extension choose the format is deliberate: `report` renders five formats,
+  and an extension that silently overrode `--report-format` would be the same
+  defect pointing the other way, with no way to tell an explicit
+  `--report-format text` from the default. The comparison uses a closed list of
+  the formats this tool actually renders, because `Path::extension` answers
+  "what follows the last dot" rather than "what document is this", so
+  `report.2026.08.03` asks for nothing and is still written as given. That list
+  now lives with the formats themselves as `OutputFormat::from_extension`, the
+  inverse of `extension()`, and `history export` was moved onto it, so the two
+  commands can no longer disagree about what an extension names.
+
 - **The container test suite no longer fails a rollback that did its job.** A
   rollback restores the files and then asks each plugin to reload the service
   that reads them, reporting a reload that did not happen rather than calling

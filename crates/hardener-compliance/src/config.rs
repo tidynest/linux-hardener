@@ -98,6 +98,27 @@ impl OutputFormat {
             OutputFormat::Pdf => "pdf",
         }
     }
+
+    /// The format a file extension names, if it names one this tool renders.
+    ///
+    /// The inverse of [`extension`](Self::extension), and deliberately a closed
+    /// list: `Path::extension` returns whatever follows the last dot of a file
+    /// name, which is not the same question as "what document is this". A dated
+    /// name like `report.2026.08.03` has extension `03` and `session-1.5.1` has
+    /// `1`, and neither operator was asking for a document at all. Only a name
+    /// that really does name one of these formats carries an expectation worth
+    /// acting on. `htm` is accepted beside `html` because they are one document
+    /// type; the comparison is case-insensitive.
+    pub fn from_extension(extension: &str) -> Option<Self> {
+        match extension.to_ascii_lowercase().as_str() {
+            "txt" => Some(OutputFormat::Text),
+            "json" => Some(OutputFormat::Json),
+            "csv" => Some(OutputFormat::Csv),
+            "htm" | "html" => Some(OutputFormat::Html),
+            "pdf" => Some(OutputFormat::Pdf),
+            _ => None,
+        }
+    }
 }
 
 /// Configuration for report generation.

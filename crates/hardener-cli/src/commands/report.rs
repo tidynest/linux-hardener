@@ -118,6 +118,7 @@ pub async fn run(
     // Output result
     if let Some(path) = output {
         // Use provided path, adding extension if missing
+        refuse_extension_that_contradicts(std::path::Path::new(&path), output_format)?;
         let final_path = if std::path::Path::new(&path).extension().is_none() {
             format!("{}.{}", path, output_format.extension())
         } else {
@@ -150,6 +151,43 @@ pub async fn run(
     }
 
     Ok(())
+}
+
+/// Refuses an `--output` path whose extension names a document other than the
+/// one `--report-format` selected.
+///
+/// The extension was added when absent and never checked when present, and
+/// `--report-format` defaults to `text`, so `report --output report.json` wrote
+/// a human text report into a file named `.json` and exited 0 saying it had
+/// saved a report. Unlike `history export`, which has one serialisation and
+/// refuses any foreign document, this command really does render five formats,
+/// so the honest answer is to make the path and the format agree rather than to
+/// pick one for the operator: choosing from the extension would silently
+/// override an explicit `--report-format`, and there is no way to tell an
+/// explicit `--report-format text` from the default.
+fn refuse_extension_that_contradicts(
+    path: &std::path::Path,
+    selected: OutputFormat,
+) -> anyhow::Result<()> {
+    let Some(named) = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(OutputFormat::from_extension)
+    else {
+        return Ok(());
+    };
+    if named == selected {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "--output {} names a {} document, but --report-format selected {}. \
+         Give the path the matching extension, or none at all, or pass \
+         --report-format {}.",
+        path.display(),
+        named.extension(),
+        selected.extension(),
+        named.extension(),
+    )
 }
 
 /// One scan pass: what ran, and what the config stopped from running.

@@ -329,19 +329,6 @@ pub async fn show(session_id: &str, format: OutputFormat, quiet: bool) -> Result
     Ok(())
 }
 
-/// The document types this tool renders somewhere and this command does not.
-///
-/// Deliberately a closed list rather than the inverse rule "anything that is
-/// not `json`". `Path::extension` returns whatever follows the last dot of a
-/// file name, which is not the same question as "what document is this": a
-/// dated file name like `backups/2026.08.03` has extension `03` and
-/// `session-1.5.1` has `1`. Refusing those would break working invocations to
-/// no purpose, since neither operator was asking for a document at all. What is
-/// worth refusing is a path naming one of the formats this tool really does
-/// render, because that is a genuine expectation, reachable through `report
-/// --report-format`, that this command cannot meet.
-const FOREIGN_DOCUMENT_EXTENSIONS: &[&str] = &["csv", "htm", "html", "pdf", "txt"];
-
 /// Refuses an `--output` path whose extension promises a document this exporter
 /// cannot produce.
 ///
@@ -351,13 +338,22 @@ const FOREIGN_DOCUMENT_EXTENSIONS: &[&str] = &["csv", "htm", "html", "pdf", "txt
 /// report formats was answered with JSON bytes in a file called something else,
 /// which exits 0 and looks like it worked.
 fn refuse_extension_it_cannot_produce(path: &std::path::Path) -> Result<()> {
+    // The closed list of documents this tool renders lives with the formats
+    // themselves, so this command and `report` cannot disagree about what an
+    // extension names. Anything else asks for no document at all: a dated name
+    // like `backups/2026.08.03` has extension `03`, and refusing it would break
+    // a working invocation to no purpose. `json` is the one this command does
+    // produce, so it is the one that is not foreign.
     let Some(extension) = path.extension().and_then(|e| e.to_str()) else {
         return Ok(());
     };
-    let extension = extension.to_ascii_lowercase();
-    if !FOREIGN_DOCUMENT_EXTENSIONS.contains(&extension.as_str()) {
+    let Some(named) = hardener_compliance::OutputFormat::from_extension(extension) else {
+        return Ok(());
+    };
+    if named == hardener_compliance::OutputFormat::Json {
         return Ok(());
     }
+    let extension = extension.to_ascii_lowercase();
     bail!(
         "history export writes JSON and cannot produce a '{extension}' document: {}. \
          Give the path a .json extension, or none at all. The rich formats are \

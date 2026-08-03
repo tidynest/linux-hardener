@@ -429,7 +429,15 @@ global `-f`, `--format`, which governs a command's own output. A value the
 formatter does not know is refused rather than silently rendered as text. Two
 notes on file handling: `--output` gains the format's extension when the path
 you give has none (`report.json` from `--output report --report-format json`),
-and `pdf` always writes a file, so without `--output` it saves
+and a path whose extension **contradicts** `--report-format` is refused rather
+than filled with the other document. `--report-format` defaults to `text`, so
+`report --output report.json` used to write a human text report into a file
+named `.json` and exit 0. Only an extension naming one of the five formats this
+command renders (`.txt`, `.json`, `.csv`, `.htm`, `.html`, `.pdf`) counts as a
+contradiction: a path is compared against the same closed list `history export`
+uses, so a name that merely contains dots, such as `report.2026.08.03`, asks for
+no document and is written as given. `pdf` always writes a file, so without
+`--output` it saves
 `compliance-report-<timestamp>.pdf` in the working directory instead of printing
 to stdout.
 
