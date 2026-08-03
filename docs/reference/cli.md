@@ -37,7 +37,14 @@ it, and each still evaluates the host against the system and user configuration:
   file, install it at one of the default locations first.
 - `report --interactive`, which the wizard documents as deliberate: it loads the
   default sources so that it cannot score a host differently from
-  `hardener report`.
+  `hardener report`. The same rule now covers the other two inputs to a score:
+  the wizard scans through the executor the CLI built, so `--ssh` reaches it,
+  and it resolves the compliance profile from the host it scanned rather than
+  defaulting to `generic`. `--profile` overrides that resolution here exactly as
+  it does for `hardener report`, and is parsed before the first prompt so that a
+  name it cannot read is refused before five questions are answered. The
+  resolved profile is printed before the reports are generated, whichever way it
+  was arrived at.
 - `batch rollback`, which reads no `config.toml` at all.
 
 `daemon` is separate again: it resolves the `[scheduler]` section through its own
@@ -333,7 +340,7 @@ hardener report [FLAGS]
 | `--profile <PROFILE>` | Compliance ID profile: `generic`, `rhel10` | auto-detect |
 | `--report-format <FORMAT>` | Report format: `text` (or `txt`), `json`, `csv`, `html`, `pdf` | `text` |
 | `-o`, `--output <FILE>` | Write to file instead of stdout | stdout |
-| `-i`, `--interactive` | Launch interactive wizard to pick scenario/framework | off |
+| `-i`, `--interactive` | Launch interactive wizard to pick scenario/framework. It prompts for `--scenario`, `--framework`, `--report-format` and `--output`, so those four are ignored beside it; `--profile` is honoured | off |
 
 `--scenario` and `--framework` are mutually exclusive. Use `--scenario` for a preset that selects relevant frameworks for your environment, or `--framework` to target a single standard. With neither flag the report falls back to the `server` scenario (CIS plus STIG) and says so on stderr.
 

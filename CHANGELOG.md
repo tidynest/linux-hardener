@@ -323,6 +323,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`report --interactive` scanned the controller after announcing a connection
+  to a remote, and scored every host against the generic profile.** Two faults
+  in one surface. The wizard built its own `LocalExecutor` instead of taking the
+  one the CLI had already connected, so `hardener --ssh user@remote report
+  --interactive` printed "Connecting to remote...", scanned the operator's own
+  workstation, and produced a CIS, STIG or HIPAA report of it. Nothing in a
+  report names the host it describes, so there was nothing on the page to give
+  it away. Separately the wizard passed `ComplianceProfile::default()`, which is
+  `generic`, where the non-interactive `hardener report` resolves the profile
+  from the scanned host: a RHEL 10 host was therefore scored against two
+  different identifier sets depending on which of the two surfaces the operator
+  used, and the pair gave no way to tell which answer was right. The wizard now
+  takes the caller's executor and resolves the profile through it, so both
+  inputs come off the host that was actually scanned. `docs/reference/cli.md`
+  already claimed the wizard "cannot score a host differently from `hardener
+  report`"; the documentation was the correct witness and the code was the
+  defect. `--profile` reaches the wizard for the same reason: `hardener report`
+  honours the flag and falls back to detection, so a wizard that detected
+  regardless overruled the operator without saying so. It is parsed before the
+  first prompt, so a name it cannot read is refused before five questions have
+  been answered, and the resolved profile is now printed before the reports are
+  generated, whichever way it was arrived at: no wizard output named it before,
+  and a report scored against the RHEL 10 identifiers looks exactly like one
+  scored against the generic set.
+
 - **The differential suite's kernel pre-apply control reports a torn capture
   rather than ending the run from an assignment.** The control read each
   parameter out of the pre-apply capture with a bare `reading="$(grep ... | cut

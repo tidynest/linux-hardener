@@ -14,7 +14,7 @@ use hardener_compliance::{
     TextFormatter,
     output::{CsvFormatter, HtmlFormatter, PdfFormatter},
 };
-use hardener_core::{ConfigLoader, LocalExecutor, SystemExecutor};
+use hardener_core::{ConfigLoader, SystemExecutor};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -139,12 +139,33 @@ const SCENARIOS: &[ScenarioInfo] = &[
 ];
 
 /// Run the interactive report wizard.
-pub async fn run(quiet: bool) -> Result<()> {
+///
+/// Takes the executor the caller already built rather than making its own, so
+/// `--ssh` reaches this surface as it reaches every other. A wizard that
+/// scanned the controller after the CLI had announced a connection to a remote
+/// would hand back a compliance report about the wrong machine, and nothing in
+/// the report names a host to give it away.
+///
+/// `profile` is `--profile` as the operator gave it, and it is parsed here,
+/// before the first prompt: `hardener report` honours the flag and falls back
+/// to detection, so a wizard that detected regardless would score the same host
+/// differently from the surface beside it, and a profile name that cannot be
+/// parsed should be refused before the operator has answered five questions.
+pub async fn run(
+    quiet: bool,
+    executor: Arc<dyn SystemExecutor>,
+    profile: Option<String>,
+) -> Result<()> {
     if quiet {
         return Err(anyhow!(
             "Interactive wizard cannot run in quiet mode. Remove --quiet flag."
         ));
     }
+
+    let profile_override = profile
+        .as_deref()
+        .map(super::report::parse_profile)
+        .transpose()?;
 
     // Print welcome banner
     print_welcome();
@@ -160,7 +181,6 @@ pub async fn run(quiet: bool) -> Result<()> {
 
     // Step 3: Run scan
     println!("\n{}", "Running security scan...".cyan());
-    let executor: Arc<dyn SystemExecutor> = Arc::new(LocalExecutor::new());
     // The wizard has no --config flag, but it must still honour the operator's
     // config: scoring the same host differently from `hardener report` would
     // make one of the two surfaces wrong. Invalid config is a hard error here
@@ -168,8 +188,13 @@ pub async fn run(quiet: bool) -> Result<()> {
     let hardener_config = ConfigLoader::new()
         .load()
         .map_err(|e| anyhow!("Config error: {}", e))?;
-    let (findings, unchecked) =
-        run_scan_with_unchecked(false, executor, &CliOutputFormat::Text, &hardener_config).await?;
+    let (findings, unchecked) = run_scan_with_unchecked(
+        false,
+        executor.clone(),
+        &CliOutputFormat::Text,
+        &hardener_config,
+    )
+    .await?;
     println!(
         "{}",
         format!(
@@ -182,17 +207,12 @@ pub async fn run(quiet: bool) -> Result<()> {
     // Step 4: Generate reports
     println!("\n{}", "Generating compliance reports...".cyan());
 
-    let scenario = state
-        .scenario
-        .clone()
-        .ok_or_else(|| anyhow!("No scenario selected"))?;
+    let config = wizard_report_config(&state, executor.as_ref(), profile_override).await?;
 
-    let config = ReportConfig {
-        scenario,
-        formats: state.output_formats.clone(),
-        output_dir: None,
-        profile: ComplianceProfile::default(),
-    };
+    // Said on the page, because the scoring depends on it and until now no
+    // wizard output named it at all: a report scored against the RHEL 10
+    // identifiers looks exactly like one scored against the generic set.
+    println!("{}", format!("Profile: {}", config.profile).dimmed());
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
     let reports = generator.generate(&findings, &unchecked);
@@ -206,6 +226,43 @@ pub async fn run(quiet: bool) -> Result<()> {
     Ok(())
 }
 
+/// The report configuration one wizard run produces.
+///
+/// The profile is resolved from the scanned host through the executor, exactly
+/// as `hardener report` resolves it. It used to be `ComplianceProfile::default()`,
+/// which is `Generic`, so the wizard scored a RHEL 10 host against the generic
+/// identifier set while the non-interactive command scored the same host
+/// against the RHEL 10 one. Two surfaces disagreeing about one host means one
+/// of them is wrong, and the operator has nothing on the page to tell them
+/// which.
+///
+/// Split out because the wizard's own flow is interactive and cannot be
+/// driven from a test, while this, the part of it that has an answer worth
+/// asserting, can.
+async fn wizard_report_config(
+    state: &WizardState,
+    executor: &dyn SystemExecutor,
+    profile_override: Option<ComplianceProfile>,
+) -> Result<ReportConfig> {
+    let scenario = state
+        .scenario
+        .clone()
+        .ok_or_else(|| anyhow!("No scenario selected"))?;
+
+    let profile = match profile_override {
+        Some(profile) => profile,
+        None => super::batch::detect_host_profile(executor).await,
+    };
+
+    Ok(ReportConfig {
+        scenario,
+        formats: state.output_formats.clone(),
+        output_dir: None,
+        profile,
+    })
+}
+
+/// The wizard's opening banner.
 fn print_welcome() {
     println!();
     println!(

@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
             interactive,
         } => {
             if interactive {
-                commands::report_wizard::run(cli.quiet).await
+                commands::report_wizard::run(cli.quiet, executor.clone(), profile).await
             } else {
                 commands::report::run(
                     scenario,
