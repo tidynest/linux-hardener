@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`batch apply --execute` hardened an entire fleet from the compiled-in
+  defaults when the `--config` path it was given could not be loaded.** The
+  fleet loader warned on stderr and fell back for any configuration failure: a
+  mistyped or moved path, a parse error in any source, or a directive the
+  validator rejected. That file decides which plugins write, the values they
+  write and the violations deliberately excepted, so the fallback did not change
+  what was reported about the hosts, it changed what was written to them, over
+  SSH, on every host in the run. Nothing recorded that policy had been
+  defaulted, so the run still exited `0` on success, and the `nothing_ran()`
+  guard could not fire either: it refuses a run that hardened nothing, and the
+  defaults enable every plugin. A named `--config` that will not load is now
+  fatal for that run, before the first connection is opened, and it exits `2` to
+  match the tier `batch` already uses for its own usage refusals. The verbs that
+  only read a fleet keep the fallback they shipped with: `batch scan`, `batch
+  report` and `batch apply` without `--execute` still warn and continue, because
+  the worst they can do is report against the wrong baseline and say so. This is
+  the fleet half of the single-host `apply` fix, which was deliberately left out
+  of that change because refusing mid-fleet alters fleet behaviour and wanted
+  deciding on its own. `batch rollback` is unaffected: it reads no config at all.
 - **Debian hosts hardened by any release up to and including 1.5.1 may have no
   firewall at all, while the tool reported one was applied.** `apply --plugin
   firewall-hardening` decided ufw was already enabled when `systemctl is-active

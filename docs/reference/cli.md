@@ -466,12 +466,23 @@ the remote hosts.
 
 `batch scan`, `batch report` and `batch apply` honour the global `-C`,
 `--config` flag, and without it they load the controller's own system and user
-configuration, as a local `hardener scan` does. They differ from `scan` on the
-failure path only: a config that will not load leaves a batch run on the
-compiled-in defaults with a warning on stderr, where `scan` treats it as a hard
-error. `batch rollback` reads no `config.toml` at all: it restores checkpoints
-and has no directive, exception or plugin list to consult, so `--config` has no
-effect on it.
+configuration, as a local `hardener scan` does. On the failure path they split
+by whether the run writes:
+
+- `batch apply --execute` **refuses**, exit `2`, when a `--config` path was
+  named and will not load. It refuses before opening the first connection, so
+  no host is touched. Falling back here would harden every host in the run from
+  the compiled-in defaults, which enable every plugin and carry no directives
+  and no exceptions, so the fleet would be written to against a policy nobody
+  selected while the run still exited `0`.
+- `batch scan`, `batch report` and `batch apply` without `--execute` keep the
+  fallback: a config that will not load leaves the run on the compiled-in
+  defaults with a warning on stderr. These verbs only read the hosts, so the
+  worst outcome is a report against the wrong baseline, and the warning says so.
+
+`batch rollback` reads no `config.toml` at all: it restores checkpoints and has
+no directive, exception or plugin list to consult, so `--config` has no effect
+on it.
 
 > **Remote hosts are evaluated against the controller's configuration, not
 > their own.** Directive overrides, policy exceptions and the plugin lists all

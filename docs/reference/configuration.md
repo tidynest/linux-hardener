@@ -35,7 +35,10 @@ ones:
 Rules worth knowing:
 
 - A missing system or user config is fine; a missing `--config` file is an
-  error.
+  error. The one exception is the batch verbs that only read a fleet
+  (`batch scan`, `batch report`, and `batch apply` without `--execute`), which
+  warn on stderr and fall back to the compiled-in defaults. `batch apply
+  --execute` refuses like the rest, because it writes.
 - When running as root (including via pkexec from the desktop app), the user
   config is **skipped** so that unprivileged per-user settings cannot influence
   root-level hardening. `ConfigLoader::load` tests the effective UID for this,

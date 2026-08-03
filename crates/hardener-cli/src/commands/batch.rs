@@ -649,7 +649,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         }
     };
 
-    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet));
+    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet, false));
     let outcomes = resolve_and_scan(
         opts.all,
         &opts.host,
@@ -1018,9 +1018,26 @@ fn resolve_profiles(
 /// operator maintains it, and a target that supplied its own could otherwise
 /// weaken the audit reporting on it. Matches single-host `--ssh`, which already
 /// evaluates a remote host against the local config file.
-fn load_batch_config(config_path: Option<&PathBuf>, quiet: bool) -> HardenerConfig {
+///
+/// `writes` is the caller's answer to "will this run change the hosts it
+/// reaches". Only then is a named `--config` that will not load fatal, because
+/// only then does falling back to the compiled-in defaults harden a whole fleet
+/// against a policy nobody selected: every plugin enabled, no directives and no
+/// exceptions. A verb that only reads keeps the fallback it shipped with, since
+/// the worst it can do is report against the wrong baseline and say so on
+/// stderr. The named-path half of the test is the same rule single-host `apply`
+/// uses: a run told to use a policy should not continue on a guess about
+/// policy, while a broken *default* config still degrades to defaults.
+fn load_batch_config(config_path: Option<&PathBuf>, quiet: bool, writes: bool) -> HardenerConfig {
     match super::config_loader(config_path).load() {
         Ok(config) => config,
+        Err(e) if writes && config_path.is_some() => {
+            // Exit rather than bail: `batch` reports its own usage refusals as
+            // 2, which is the tier `cli.md` documents for it, and returning the
+            // error would surface as 1.
+            eprintln!("Config error: {e}");
+            std::process::exit(2);
+        }
         Err(e) => {
             if !quiet {
                 eprintln!("config load failed, using defaults: {e}");
@@ -1495,7 +1512,11 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
     }
 
     let plugin_ids = Arc::new(resolve_plugin_ids(&opts.plugin)?);
-    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet));
+    let config = Arc::new(load_batch_config(
+        opts.config.as_ref(),
+        opts.quiet,
+        opts.execute,
+    ));
     let checkpoint = if opts.execute {
         Some(get_checkpoint_manager().await?)
     } else {
@@ -1651,7 +1672,7 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
 
 /// CLI entry point for `hardener batch scan`.
 pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
-    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet));
+    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet, false));
     let outcomes = resolve_and_scan(
         opts.all,
         &opts.host,

@@ -31,7 +31,9 @@ fn batch_honours_an_explicit_config_path() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "[global]\ndisabled_plugins = [\"ssh-hardening\"]").unwrap();
 
-    let config = load_batch_config(Some(&file.path().to_path_buf()), true);
+    // `writes` is the writing verb's answer, so this covers the arm a fleet
+    // `apply --execute` takes: a named config that loads is used, not refused.
+    let config = load_batch_config(Some(&file.path().to_path_buf()), true, true);
 
     assert!(
         !config.is_plugin_enabled("ssh-hardening"),
