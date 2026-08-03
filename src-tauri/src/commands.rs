@@ -957,12 +957,49 @@ pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
         return Ok(true);
     }
 
-    // Fall back to system database (needs pkexec for root-owned checkpoints)
+    // Escalate only when the row could plausibly be there. The fallback exists
+    // for root-owned checkpoints and is right, but an id in NEITHER database is
+    // what a stale list, a double click, or a row already removed from the CLI
+    // produces, and raising an authentication dialog for an operation that
+    // cannot succeed is a prompt the operator can do nothing with.
+    //
+    // The system database cannot always answer: it is root-owned, so an
+    // unprivileged desktop may be unable to read it. Absence of an answer is
+    // not an answer, so the only case treated as decisive is the one that is:
+    // the database is reachable and says the row is not there. Anything else,
+    // including a database this process may not read, still escalates, so a
+    // root-owned checkpoint is never left undeletable.
+    if system_database_denies(&get_system_db_path(), &cp_id).await {
+        return Err(format!("no checkpoint with id '{checkpoint_id}'"));
+    }
+
     let args = vec!["checkpoint", "delete", &checkpoint_id];
     run_privileged_command(&args)
         .await
         .map(|_| true)
         .map_err(safe_err)
+}
+
+/// Whether the system database is readable and positively lacks this row.
+///
+/// `false` whenever the question cannot be answered, which is the safe
+/// direction: it means "escalate and let the privileged run decide", which is
+/// what happened unconditionally before.
+async fn system_database_denies(system_db: &std::path::Path, checkpoint_id: &CheckpointId) -> bool {
+    if !system_db.exists() {
+        // A desktop that has never run a privileged apply has no system
+        // database at all, and that is a definite answer.
+        return true;
+    }
+    let Ok(manager) = create_checkpoint_manager(system_db).await else {
+        return false;
+    };
+    let Ok(checkpoints) = manager.list_checkpoints().await else {
+        return false;
+    };
+    !checkpoints
+        .iter()
+        .any(|c| &c.checkpoint_id == checkpoint_id)
 }
 
 /// Parses framework name strings into `ComplianceFramework` enum values.
@@ -2282,6 +2319,11 @@ fn parse_outcomes<T: serde::de::DeserializeOwned>(stdout: &str) -> Result<Vec<T>
 
 #[cfg(test)]
 mod fleet_tests;
+
+/// Tests for the guard that decides whether deleting a checkpoint is worth an
+/// authentication prompt.
+#[cfg(test)]
+mod delete_escalation_tests;
 
 /// Tests for `fail_session_on_err`, the helper `run_scan`/`run_deep_scan`
 /// use to mark an aborted scan's history row Failed instead of orphaning

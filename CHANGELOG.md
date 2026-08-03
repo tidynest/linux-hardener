@@ -472,6 +472,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop raised an authentication prompt to delete a checkpoint that
+  does not exist.** Delete tries the user database and falls back to a
+  privileged `hardener checkpoint delete` for root-owned rows. The fallback is
+  right, and it became reachable once the delete stopped reporting success for a
+  row it had not removed, but it fired for an id in neither database too, which
+  is what a stale list, a double click, or a row already removed from the CLI
+  produces: a polkit dialog appeared and the operation then failed. It now
+  escalates only when the row could plausibly be there. The system database is
+  root-owned and an unprivileged desktop may be unable to read it, so the only
+  case treated as decisive is the one that is: a reachable system database that
+  positively lacks the row, or no system database at all, which is every desktop
+  that has never run a privileged apply. A database that cannot be read is not
+  an answer and still escalates, so a root-owned checkpoint is never left
+  undeletable.
+
 - **`-C`, `--config` was ignored by `daemon` and by all five `history` verbs**,
   which read the `[scheduler]` section through a loader that took no path and
   searched the default locations itself. A single file carrying both a

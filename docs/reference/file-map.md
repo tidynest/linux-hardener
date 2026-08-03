@@ -657,6 +657,7 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | `src/decoration_tests.rs` | Unit tests for `desktop_is_tiling()` in `src/main.rs` | Test-only; `main.rs` is the crate root, so this sits beside it exactly as `acl_tests.rs` does |
 | `src/validation/tests.rs` | Unit tests for `src/validation.rs` | Test-only; `super` resolves to `crate::validation` |
 | `src/commands/fleet_tests.rs` | Fleet command tests, the first of the three test modules `src/commands.rs` carried | Test-only; `super` resolves to `crate::commands` |
+| `src/commands/delete_escalation_tests.rs` | Tests for the guard deciding whether deleting a checkpoint is worth an authentication prompt | Test-only; `super` resolves to `crate::commands`. Takes the database path as a parameter so it runs the same on a host with a system database and one without |
 | `src/commands/fail_session_on_err_tests.rs` | Tests for `fail_session_on_err`, the helper that marks an aborted scan's history row Failed rather than orphaning it as running | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/compliance_source_tests.rs` | Tests for the compliance report's source selection | Test-only; `super` resolves to `crate::commands` |
 
