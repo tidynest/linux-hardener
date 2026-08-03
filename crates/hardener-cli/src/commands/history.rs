@@ -4,7 +4,7 @@
 
 use crate::cli::OutputFormat;
 use crate::commands::daemon::load_scheduler_config;
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use chrono::{DateTime, Local, Utc};
 use hardener_scheduler::{
     ScanHistoryManager,
@@ -329,6 +329,43 @@ pub async fn show(session_id: &str, format: OutputFormat, quiet: bool) -> Result
     Ok(())
 }
 
+/// The document types this tool renders somewhere and this command does not.
+///
+/// Deliberately a closed list rather than the inverse rule "anything that is
+/// not `json`". `Path::extension` returns whatever follows the last dot of a
+/// file name, which is not the same question as "what document is this": a
+/// dated file name like `backups/2026.08.03` has extension `03` and
+/// `session-1.5.1` has `1`. Refusing those would break working invocations to
+/// no purpose, since neither operator was asking for a document at all. What is
+/// worth refusing is a path naming one of the formats this tool really does
+/// render, because that is a genuine expectation, reachable through `report
+/// --report-format`, that this command cannot meet.
+const FOREIGN_DOCUMENT_EXTENSIONS: &[&str] = &["csv", "htm", "html", "pdf", "txt"];
+
+/// Refuses an `--output` path whose extension promises a document this exporter
+/// cannot produce.
+///
+/// The export is one serialisation of one struct and is always JSON: the help
+/// text, the reference and the default filename all say so, and there is no
+/// second formatter behind this command to reach. A path naming one of the
+/// report formats was answered with JSON bytes in a file called something else,
+/// which exits 0 and looks like it worked.
+fn refuse_extension_it_cannot_produce(path: &std::path::Path) -> Result<()> {
+    let Some(extension) = path.extension().and_then(|e| e.to_str()) else {
+        return Ok(());
+    };
+    let extension = extension.to_ascii_lowercase();
+    if !FOREIGN_DOCUMENT_EXTENSIONS.contains(&extension.as_str()) {
+        return Ok(());
+    }
+    bail!(
+        "history export writes JSON and cannot produce a '{extension}' document: {}. \
+         Give the path a .json extension, or none at all. The rich formats are \
+         produced by `hardener report --report-format`.",
+        path.display()
+    )
+}
+
 /// Exports a scan session to a JSON file.
 pub async fn export(
     session_id: &str,
@@ -336,6 +373,12 @@ pub async fn export(
     format: OutputFormat,
     quiet: bool,
 ) -> Result<()> {
+    // Judged before the database is opened: there is nothing to gain by reading
+    // a session out in order to refuse where it was going.
+    if let Some(path) = output_path.as_deref() {
+        refuse_extension_it_cannot_produce(path)?;
+    }
+
     let db = open_database().await?;
 
     let session = db

@@ -391,6 +391,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`history export -o report.pdf` is refused instead of writing JSON into
+  that name.** Narrowing the global `--format` closed the half of this defect
+  that needed a refused format value; `--output` reached the same wrong
+  artefact with no format flag involved at all, because the extension was
+  produced when building the default filename and never read when the operator
+  supplied one. The command exited 0 and reported success, leaving a file whose
+  name promised a document nobody could open. This exporter serialises one
+  struct and has no second formatter behind it, which the help text, the
+  reference and the default filename all already said, so the honest answer is
+  to refuse the path rather than invent renderers. What is refused is a closed
+  list of the formats this tool genuinely renders elsewhere, reachable through
+  `report --report-format`: `.csv`, `.htm`, `.html`, `.pdf` and `.txt`, in any
+  casing. The inverse rule, refusing anything that is not `.json`, was rejected
+  because a path's last dotted segment is not a document type: a dated backup
+  name like `backups.2026.08.03` would have been refused for an "extension" of
+  `03`, breaking an invocation that asks for nothing this command cannot give.
+  The refusal happens before the database is opened, so a rejected run reads
+  nothing, writes nothing, and leaves no file under the misleading name. No
+  caller in this repository passes a refused path.
 - **A `batch` run no longer silently drops a host you named, and no longer
   scans one machine twice.** Ad-hoc `--ssh` targets were de-duplicated on
   `name`, which is not an identity: for an ad-hoc target it is the bare
