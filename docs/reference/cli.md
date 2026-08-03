@@ -15,7 +15,7 @@ These flags can be placed before or after any subcommand.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-f`, `--format <FORMAT>` | Output format: `text` or `json`. A value it cannot render is refused at the parse, exit 2. The rich formats belong to `report --report-format`, not to this flag | `text` |
+| `-f`, `--format <FORMAT>` | Output format: `text` or `json`. A value it cannot render is refused at the parse, exit 2. The rich formats belong to `report --report-format`, not to this flag. One exception: on `report` this flag governs only the command's own progress, because the report body is what `--report-format` selects | `text` |
 | `-q`, `--quiet` | Suppress non-essential output | off |
 | `-C`, `--config <FILE>` | Path to TOML configuration file | auto-detected |
 | `--ssh <HOST>` | Remote host to act on via SSH (`user@host` or `host`). Accepted by the commands that reach a host, refused by the ones that do not: see below | local |
@@ -749,6 +749,16 @@ hardener daemon status [FLAGS]
 ## systemd
 
 Generate, install, and manage systemd unit files for scheduled scanning.
+
+All four verbs honour the global `-f`, `--format`. Under `--format json` each
+prints one envelope on stdout instead of its human text: `generate` carries the
+two units as `service` and `timer` objects, or the paths it wrote as
+`generated`; `install` carries `installed` and `timer_enabled`; `uninstall`
+carries `removed`, which is empty when there was nothing to remove; and `status`
+carries `user_mode`, `exit_code`, `stdout` and `stderr`. `status` reports the
+exit code rather than discarding it, because an inactive timer and a unit that
+does not exist both make `systemctl` return non-zero and nothing else
+distinguishes them without reading prose.
 
 ### systemd generate
 

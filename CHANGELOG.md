@@ -472,6 +472,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--format json` was ignored by every `systemd` verb, so a caller parsing
+  stdout as JSON received a unit file beginning with `#` or a systemctl status
+  table.** `main` passed the four verbs no format at all and the module imported
+  no `OutputFormat`. All four now honour the flag and print one envelope each:
+  `generate` carries the units it produced, or the paths it wrote; `install`
+  carries the paths and whether the timer was enabled; `uninstall` carries what
+  it removed, which is empty rather than absent when there was nothing to
+  remove; and `status` carries `user_mode`, `exit_code`, `stdout` and `stderr`.
+  `status` reports the exit code rather than discarding it, because an inactive
+  timer and a unit that does not exist both make `systemctl` return non-zero and
+  nothing else tells them apart without reading prose. The text rendering is
+  unchanged. `--quiet` continues to suppress progress and never a result, so
+  `generate` writing units to stdout still prints them.
+
+  The other half of the same report was **`report` ignoring the global
+  `--format`, and that is by design**: `--report-format` selects the report
+  body, and the global flag governs only the command's own progress. The
+  reference already said so where `--report-format` is described; it now says so
+  in the global flag's own row as well, which is where a reader looking for the
+  promise would start.
+
 - **`report --output` wrote the wrong document into a path that named a
   format.** The extension was added when the path had none and never checked
   when it had one, and `--report-format` defaults to `text`, so

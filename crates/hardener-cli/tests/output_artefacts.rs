@@ -137,3 +137,35 @@ fn checkpoint_delete_does_not_report_removing_a_row_that_was_not_there() {
         "nothing was deleted, so no success envelope may be printed; got: {stdout}"
     );
 }
+
+/// The global `--format json` promises JSON on stdout, and `systemd` emitted
+/// human text regardless: `main` passed the four verbs no format at all and
+/// `commands/systemd.rs` imported no `OutputFormat`. A caller parsing stdout as
+/// JSON got a unit file beginning with `#`, or a systemctl status table.
+///
+/// `generate` without `--output` is the cheapest of the four to drive: it writes
+/// to stdout, shells out to nothing and touches no unit on this host.
+#[test]
+fn systemd_generate_honours_the_global_json_format() {
+    let out = run(&["--format", "json", "systemd", "generate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("stdout must parse as JSON, got {e}: {stdout}"));
+    assert!(
+        parsed.get("service").is_some() && parsed.get("timer").is_some(),
+        "the envelope carries both units it generated, so a caller need not \
+         scrape them out of a comment header; got: {parsed}"
+    );
+
+    // The control: without the flag the same run still prints the unit files as
+    // text, so the change is the flag being honoured rather than the text
+    // rendering being replaced.
+    let control = run(&["systemd", "generate"]);
+    let control_stdout = String::from_utf8_lossy(&control.stdout);
+    assert!(
+        control_stdout.contains("[Unit]"),
+        "the text rendering is unchanged and still prints the unit files; \
+         got: {control_stdout}"
+    );
+}

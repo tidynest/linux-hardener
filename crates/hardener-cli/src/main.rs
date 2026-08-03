@@ -296,14 +296,19 @@ async fn main() -> Result<()> {
                 output,
                 binary,
                 schedule,
-            } => commands::systemd::generate(output, binary, schedule, cli.config, cli.quiet).await,
+            } => {
+                commands::systemd::generate(output, binary, schedule, cli.config, format, cli.quiet)
+                    .await
+            }
             SystemdAction::Install { user, schedule } => {
-                commands::systemd::install(user, schedule, cli.config, cli.quiet).await
+                commands::systemd::install(user, schedule, cli.config, format, cli.quiet).await
             }
             SystemdAction::Uninstall { user } => {
-                commands::systemd::uninstall(user, cli.quiet).await
+                commands::systemd::uninstall(user, format, cli.quiet).await
             }
-            SystemdAction::Status { user } => commands::systemd::status(user, cli.quiet).await,
+            SystemdAction::Status { user } => {
+                commands::systemd::status(user, format, cli.quiet).await
+            }
         },
         Command::History { action } => match action {
             HistoryAction::List {
