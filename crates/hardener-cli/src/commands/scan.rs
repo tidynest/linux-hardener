@@ -7,7 +7,7 @@ use crate::output;
 use anyhow::Result;
 use hardener_common::types::Severity;
 use hardener_core::{
-    ConfigLoader, Context, HardenerConfig, PluginMetadata, ScanResult,
+    Context, HardenerConfig, PluginMetadata, ScanResult,
     executor::{SystemExecutor, session_host_key},
 };
 use hardener_scheduler::ScanHistoryManager;
@@ -185,11 +185,7 @@ fn load_config(config_path: Option<&PathBuf>, mode: ScanMode) -> Result<Hardener
         return Ok(HardenerConfig::default());
     }
 
-    let mut loader = ConfigLoader::new();
-    if let Some(path) = config_path {
-        loader = loader.with_cli_config(path.clone());
-    }
-    loader
+    super::config_loader(config_path)
         .load()
         .map_err(|e| anyhow::anyhow!("Config error: {}", e))
 }

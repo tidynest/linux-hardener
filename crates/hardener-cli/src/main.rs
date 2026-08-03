@@ -106,7 +106,18 @@ async fn main() -> Result<()> {
             plugin,
             all,
             dry_run,
-        } => commands::apply::run(&plugin, all, dry_run, format, cli.quiet, executor.clone()).await,
+        } => {
+            commands::apply::run(
+                &plugin,
+                all,
+                dry_run,
+                format,
+                cli.quiet,
+                cli.config.as_ref(),
+                executor.clone(),
+            )
+            .await
+        }
         Command::Rollback { checkpoint_id } => {
             commands::checkpoint::rollback(&checkpoint_id, format, cli.quiet, executor.clone())
                 .await

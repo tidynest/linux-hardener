@@ -27,14 +27,12 @@ These flags can be placed before or after any subcommand.
 | `-V`, `--version` | Print version | |
 
 **Where `-C`, `--config` takes effect.** clap accepts it anywhere, but only the
-commands that read a `config.toml` act on it: `scan`, `report`, `batch scan`,
-`batch report`, `batch apply`, and `systemd generate`/`install`, which embed the
-path in the unit they write. Three surfaces accept the flag and do not act on
-it, and each still evaluates the host against the system and user configuration:
+commands that read a `config.toml` act on it: `scan`, `apply`, `report`, `batch
+scan`, `batch report`, `batch apply`, and `systemd generate`/`install`, which
+embed the path in the unit they write. Two surfaces accept the flag and do not
+act on it, and each still evaluates the host against the system and user
+configuration:
 
-- `apply` (`commands::apply::run` builds its loader with `ConfigLoader::new()`
-  and never calls `with_cli_config`), so to preview or apply against a specific
-  file, install it at one of the default locations first.
 - `report --interactive`, which the wizard documents as deliberate: it loads the
   default sources so that it cannot score a host differently from
   `hardener report`. The same rule now covers the other two inputs to a score:

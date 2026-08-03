@@ -43,8 +43,8 @@ Rules worth knowing:
 - `--config` is an addition to those sources rather than a replacement for them:
   the file named on the command line is merged on top of whatever the system and
   user files already contributed. It also reaches only the commands that pass it
-  to the loader; `apply`, `report --interactive` and `batch rollback` accept the
-  flag and do not act on it. See [cli.md](cli.md) for the full list.
+  to the loader; `report --interactive` and `batch rollback` accept the flag and
+  do not act on it. See [cli.md](cli.md) for the full list.
 - Directive and exception maps **merge** across sources (later keys override
   same-named earlier keys). The `[global]` plugin lists **replace** rather than
   merge: a non-empty list in a later source wins outright.

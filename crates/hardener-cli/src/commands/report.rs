@@ -9,8 +9,8 @@ use hardener_compliance::{
     TextFormatter, profile_label,
 };
 use hardener_core::{
-    ConfigLoader, Context, Finding, HardenerConfig, PluginMetadata, ScanResult,
-    executor::SystemExecutor, plugin::UncheckedCheck,
+    Context, Finding, HardenerConfig, PluginMetadata, ScanResult, executor::SystemExecutor,
+    plugin::UncheckedCheck,
 };
 use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
@@ -73,11 +73,9 @@ pub async fn run(
     // report reflects config the same way `scan`/`apply` do. Report has no
     // audit mode, so a `--config` path is always honoured (missing/invalid
     // is a hard error, matching `scan`'s `load_config`).
-    let mut loader = ConfigLoader::new();
-    if let Some(path) = config_path {
-        loader = loader.with_cli_config(path.clone());
-    }
-    let hardener_config = loader.load().map_err(|e| anyhow!("Config error: {}", e))?;
+    let hardener_config = super::config_loader(config_path)
+        .load()
+        .map_err(|e| anyhow!("Config error: {}", e))?;
 
     // Run scan to get findings and the checks the current privilege level
     // could not evaluate.

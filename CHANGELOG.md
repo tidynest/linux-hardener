@@ -391,6 +391,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`apply` acts on the `--config` file it is given, instead of hardening the
+  host against defaults it was never shown.** The flag is global and every other
+  policy-reading command honoured it; `apply` alone built its loader with
+  `ConfigLoader::new()` and never passed the path, so the file decided nothing.
+  That file selects which plugins run, the target values they write and the
+  violations deliberately excepted, which makes this the one verb where losing
+  it changes what is written to the system. It also failed open: a path that
+  does not exist is exit 1 on `scan` and `report`, and was exit 0 on `apply`,
+  which then hardened the host from built-in defaults. A mistyped `--config` was
+  therefore refused by the read-only commands and silently ignored by the one
+  that changes the host. The `nothing_ran()` guard, which exists to refuse
+  exiting 0 having hardened nothing, could not fire for a `--config`-supplied
+  policy either, because the config that would have populated its skip list was
+  never loaded. Naming a `--config` path now makes any configuration failure
+  fatal for that run, whichever source it came from: the loader merges all
+  sources into one result and cannot attribute a parse error to one file, and a
+  run told to use a named policy should not proceed on a guess about policy.
+  Without the flag, a broken config at a default location still degrades to
+  defaults with a warning, which is the behaviour that shipped. **`batch apply`
+  is not covered by this and still falls back to defaults when its `--config`
+  cannot be loaded**, over a whole fleet; that is a separate defect and is not
+  fixed here. All four commands that build a loader now share one definition of
+  what the flag means. `docs/reference/cli.md` and `docs/reference/configuration.md`
+  described the old behaviour accurately and have been corrected: they recorded a
+  defect, and the workaround they offered ("install it at one of the default
+  locations first") did not work for a privileged `apply`, which skips the user
+  config by design.
 - **The cross-distro runner's clean run no longer reads as three silent
   failures.** A complete, correct sweep printed `146/149 passed, 9 skipped` and
   named no failure count at all, so a reader was left to infer one from

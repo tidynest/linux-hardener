@@ -5,8 +5,7 @@ use crate::output;
 use anyhow::{Result, bail};
 use hardener_common::types::PluginId;
 use hardener_core::{
-    ApplyResult, ConfigLoader, Context, HardenerConfig, PluginMetadata, SystemExecutor,
-    ValidationReport,
+    ApplyResult, Context, HardenerConfig, PluginMetadata, SystemExecutor, ValidationReport,
 };
 use hardener_plugins::create_plugin_registry;
 use hardener_state::{ActionResult, ActionType, AuditLogger, CheckpointManager};
@@ -190,6 +189,7 @@ pub async fn run(
     dry_run: bool,
     format: OutputFormat,
     quiet: bool,
+    config_path: Option<&std::path::PathBuf>,
     executor: Arc<dyn SystemExecutor>,
 ) -> Result<()> {
     // Must be privileged (on the target session, local or remote) to apply changes
@@ -204,8 +204,15 @@ pub async fn run(
         bail!("Specify plugins with --plugin or use --all to apply all plugins.");
     }
 
-    let hardener_config = match ConfigLoader::new().load() {
+    // A path the operator named is load-bearing policy: it selects which
+    // plugins write, the values they write and the violations deliberately left
+    // alone, so failing over to defaults would harden this host against a
+    // policy nobody asked for. Refuse instead, as `scan` and `report` already
+    // do for the same flag. Without the flag a broken *default* config still
+    // degrades to defaults, which is the behaviour that shipped.
+    let hardener_config = match super::config_loader(config_path).load() {
         Ok(config) => config,
+        Err(e) if config_path.is_some() => bail!("Config error: {e}"),
         Err(e) => {
             if !quiet {
                 output::warning(&format, &format!("Config load failed, using defaults: {e}"));

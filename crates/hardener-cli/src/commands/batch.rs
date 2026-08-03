@@ -10,8 +10,8 @@ use anyhow::{Result, anyhow, bail};
 use colored::Colorize;
 use hardener_common::types::{ComplianceProfile, PluginId, Severity};
 use hardener_compliance::{ReportConfig, ReportGenerator, Scenario, resolve_profile};
+use hardener_core::HardenerConfig;
 use hardener_core::plugin::{Finding, UncheckedCheck};
-use hardener_core::{ConfigLoader, HardenerConfig};
 use hardener_core::{
     Context, PluginMetadata, ScanResult, SshExecutor,
     executor::{SystemExecutor, host_key_for},
@@ -1000,11 +1000,7 @@ fn resolve_profiles(
 /// weaken the audit reporting on it. Matches single-host `--ssh`, which already
 /// evaluates a remote host against the local config file.
 fn load_batch_config(config_path: Option<&PathBuf>, quiet: bool) -> HardenerConfig {
-    let loader = match config_path {
-        Some(path) => ConfigLoader::new().with_cli_config(path.clone()),
-        None => ConfigLoader::new(),
-    };
-    match loader.load() {
+    match super::config_loader(config_path).load() {
         Ok(config) => config,
         Err(e) => {
             if !quiet {

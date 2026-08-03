@@ -45,7 +45,7 @@ async fn run_bails_with_privilege_message_when_executor_lacks_privilege() {
             .with_command("sudo", &["-n", "true"], fail),
     );
 
-    let err = run(&[], true, false, OutputFormat::Json, true, executor)
+    let err = run(&[], true, false, OutputFormat::Json, true, None, executor)
         .await
         .expect_err("non-privileged executor must not be allowed to apply");
 
