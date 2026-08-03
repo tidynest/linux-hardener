@@ -71,6 +71,51 @@ if [[ "${HARDENER_DIFF_BOOTED:-}" == "1" ]]; then
     KERNEL_BOOTED=1
 fi
 
+# Whether this host's shadow implements a minimum password age at all.
+#
+# The second mode signal, and it works like the one above: declared before any
+# check runs, printed in the header, and the arithmetic below branches on it.
+# Arch builds shadow without the field. `chage` there has no `-m/--mindays` and
+# `useradd` leaves it empty while honouring PASS_MAX_DAYS and PASS_WARN_AGE from
+# the same /etc/login.defs, so PASS_MIN_DAYS can never be carried by an account
+# and there is nothing for the oracle to compare against.
+#
+# 1 means the field exists, which is the default so that a suite sourced but
+# never probed does not silently declare rows unaskable.
+SHADOW_MIN_DAYS=1
+
+# The directive that mode governs. One row, named once.
+MIN_DAYS_DIRECTIVE="PASS_MIN_DAYS"
+
+# Ask chage, which is shadow's own reader for these fields and ships with
+# useradd, so its usage text is the closest thing to a direct question about the
+# build. The plugin asks the same question of the same tool
+# (`min_days_enforceable` in crates/hardener-plugins/src/pam/mod.rs), so the two
+# cannot come to disagree about what the host can do.
+#
+# Judged on the usage text rather than the exit status, because shadow builds
+# differ on whether --help exits zero and several print it to stderr. A probe
+# that printed nothing is FATAL rather than an assumption either way: this
+# decides which totals the run expects, and a mode concluded from a failed read
+# is one value standing for several outcomes. That is stricter than the plugin,
+# which falls through to comparing the value, and deliberately so: the plugin
+# must not lose a check it could still make, and this must not mis-total a run.
+detect_shadow_min_days() {
+    local usage
+    usage="$(LC_ALL=C chage --help 2>&1 || true)"
+    if [[ -z "${usage//[[:space:]]/}" ]]; then
+        echo "FATAL: chage --help printed nothing, so whether this host's shadow" >&2
+        echo "  has a minimum-password-age field could not be determined, and the" >&2
+        echo "  totals below depend on the answer." >&2
+        return 1
+    fi
+    if [[ "$usage" == *--mindays* ]]; then
+        SHADOW_MIN_DAYS=1
+    else
+        SHADOW_MIN_DAYS=0
+    fi
+}
+
 # Every external command the full run depends on.
 #
 # jq is listed first because it is the newest of them and the likeliest to be
@@ -2712,6 +2757,15 @@ require_check_tables() {
 # print_summary would then accept the shorter run, which is the guard asking the
 # tables whether the tables are right.
 expected_check_total() {
+    # PASS_MIN_DAYS contributes two of the login.defs assertions, and on a host
+    # whose shadow has no minimum-password-age field both are declared unaskable
+    # rather than asked. Subtracted from both arms below, because the mode above
+    # is a fact about /proc/sys and this one is a fact about shadow: a run can
+    # be in either, both or neither.
+    local min_days_rows=0
+    if [[ "$SHADOW_MIN_DAYS" != "1" ]]; then
+        min_days_rows=2
+    fi
     if [[ "$KERNEL_BOOTED" != "1" ]]; then
         # The 11 kernel rows are declared unaskable in this mode, so they are
         # not checks the tables ask for either. The pre-apply control goes the
@@ -2724,7 +2778,7 @@ expected_check_total() {
             + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
             + DIFF_PLUGINS_EXPECTED + 1 \
             + DIFF_PLUGINS_EXPECTED + 1 \
-            + 2 ))"
+            + 2 - min_days_rows ))"
         return
     fi
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
@@ -2735,7 +2789,7 @@ expected_check_total() {
         + KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED \
         + DIFF_PLUGINS_EXPECTED + 1 \
         + DIFF_PLUGINS_EXPECTED + 1 \
-        + 2 ))"
+        + 2 - min_days_rows ))"
 }
 
 # The three plugins spell their finding ids differently, and a filter written for
@@ -3587,6 +3641,14 @@ run_login_defs_checks() {
         # that is left, so a three-name unpack would have read the target as
         # "90|5" the moment the passwd -S column was added.
         IFS='|' read -r directive _ target _ <<<"$entry"
+        # Two rows, matching record_unresolved's shape for the same reason: a
+        # directive costs two assertions either way, so the totals stay
+        # comparable between a host that could be asked and one that could not.
+        if [[ "$directive" == "$MIN_DAYS_DIRECTIVE" && "$SHADOW_MIN_DAYS" != "1" ]]; then
+            record_unaskable "pam-hardening $directive: this host's shadow has no minimum-password-age field, so no account can carry the value and there is nothing to compare"
+            record_unaskable "pam-hardening $directive: the tool's verdict is not compared either, because there is no system value to hold it to"
+            continue
+        fi
         if ! system="$(login_defs_system_value "$directive")"; then
             record_unresolved pam-hardening "$directive" "shadow reported no value for the probe account"
             continue
@@ -5102,6 +5164,91 @@ Number of days of warning before password expires	: 7"
     CHECKS_PASSED=$kernel_saved_passed
     CHECKS_FAILED=$kernel_saved_failed
     CHECKS_UNASKABLE=$kernel_saved_unaskable
+
+    # === The shadow minimum-password-age mode (issue #69) ===
+    #
+    # Arch builds shadow without the field, so PASS_MIN_DAYS can never be
+    # carried by an account there and the oracle has nothing to compare. The
+    # rows are declared unaskable rather than failed, the way the kernel rows
+    # are when /proc/sys is the host's, and the expected total moves with them.
+    local md_saved_mode="$SHADOW_MIN_DAYS"
+    local md_with="Usage: chage [options] LOGIN
+  -m, --mindays MIN_DAYS        set minimum number of days
+  -M, --maxdays MAX_DAYS        set maximum number of days"
+    local md_without="Usage: chage [options] LOGIN
+  -M, --maxdays MAX_DAYS        set maximum number of days
+  -W, --warndays WARN_DAYS      set expiration warning days"
+    local md_stub="$md_with"
+    chage() { printf '%s\n' "$md_stub"; }
+
+    SHADOW_MIN_DAYS=0
+    check_status 0 "the shadow probe runs against a usage it can read" detect_shadow_min_days
+    check_eq "$SHADOW_MIN_DAYS" "1" "a chage offering --mindays is read as supported"
+
+    md_stub="$md_without"
+    detect_shadow_min_days
+    check_eq "$SHADOW_MIN_DAYS" "0" "and one that does not is read as unsupported"
+
+    # A usage printed on stderr by a chage that exits non-zero is still a usage.
+    md_stub=""
+    chage() { printf '%s\n' "$md_with" >&2; return 1; }
+    SHADOW_MIN_DAYS=0
+    detect_shadow_min_days
+    check_eq "$SHADOW_MIN_DAYS" "1" \
+        "a usage printed on stderr by a failing chage is still read, because builds differ on both"
+
+    # And a probe that printed nothing is refused, never assumed either way:
+    # this decides which totals the run expects.
+    chage() { return 1; }
+    check_status 1 "a chage that printed nothing is fatal rather than a guess" \
+        detect_shadow_min_days
+    unset -f chage
+
+    # The totals move with the mode, both arms.
+    local md_saved_booted="$KERNEL_BOOTED"
+    SHADOW_MIN_DAYS=1
+    local md_full_booted md_full_unbooted
+    md_full_booted="$(KERNEL_BOOTED=1 expected_check_total)"
+    md_full_unbooted="$(KERNEL_BOOTED=0 expected_check_total)"
+    SHADOW_MIN_DAYS=0
+    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "$(( md_full_booted - 2 ))" \
+        "a host without the shadow field asks for two fewer checks when booted"
+    check_eq "$(KERNEL_BOOTED=0 expected_check_total)" "$(( md_full_unbooted - 2 ))" \
+        "and two fewer when not, because the two modes are independent facts"
+
+    # The runner declares them rather than asking. Driven without a command
+    # substitution, so the counters it moves are the ones read here.
+    local md_before_total=$CHECKS_TOTAL md_before_unaskable=$CHECKS_UNASKABLE
+    local md_before_failed=$CHECKS_FAILED md_saved_chage="$LOGIN_DEFS_CHAGE"
+    local md_saved_gen="$LOGIN_DEFS_CHAGE_GENERATION"
+    LOGIN_DEFS_CHAGE="Maximum number of days between password change		: 90
+Number of days of warning before password expires	: 7"
+    LOGIN_DEFS_CHAGE_GENERATION="$APPLY_GENERATION"
+    LOGIN_DEFS_PASSWD_STATUS=""
+    # Redirected to a file rather than captured with $(...): a command
+    # substitution would move the counters in a subshell and the deltas read
+    # here would all be zero, which is the mistake this suite has made before.
+    local md_log
+    md_log="$(mktemp)"
+    run_login_defs_checks > "$md_log"
+    check_eq "$((CHECKS_UNASKABLE - md_before_unaskable))" "2" \
+        "an unsupported host declares both PASS_MIN_DAYS rows unaskable"
+    # Asserted against the directive by name rather than against the failure
+    # count, which the other two directives move for reasons of their own.
+    check_eq "$(grep -c "FAIL.*$MIN_DAYS_DIRECTIVE" "$md_log")" "0" \
+        "and fails neither of them, because an absent field is a property of the build and not a defect in the host"
+    check_eq "$(grep -c "no minimum-password-age field" "$md_log")" "1" \
+        "with the reason on the log, so a reader meets it where the row would have been"
+    rm -f "$md_log"
+
+    CHECKS_TOTAL=$md_before_total
+    CHECKS_UNASKABLE=$md_before_unaskable
+    CHECKS_FAILED=$md_before_failed
+    LOGIN_DEFS_CHAGE="$md_saved_chage"
+    LOGIN_DEFS_CHAGE_GENERATION="$md_saved_gen"
+    LOGIN_DEFS_PASSWD_STATUS=""
+    KERNEL_BOOTED="$md_saved_booted"
+    SHADOW_MIN_DAYS="$md_saved_mode"
 
     local pinned_total
     # Asked in an explicit mode, both here and below: the totals these two
@@ -6879,6 +7026,8 @@ run_full_suite() {
     # Which arithmetic applied, printed where the reader of a log meets it. A
     # 0 here is why 11 kernel rows below read as unaskable rather than missing.
     echo "Booted (kernel oracle): $KERNEL_BOOTED"
+    detect_shadow_min_days || return 1
+    echo "Shadow minimum password age: $SHADOW_MIN_DAYS"
 
     # Task 7's acceptance criterion, and it runs first, above every seed and
     # every capture below: its own baseline is "whatever this container

@@ -812,6 +812,30 @@ answering `PASS_MAX_DAYS` reads 99 and goes red. Only an absent label falls
 through. A pattern `grep` rejected is a malformed table entry, and answering it
 from elsewhere would hide the defect behind a plausible value.
 
+**On Arch the second reader answers, and the answer is that the host cannot
+carry the value.** `passwd -S` reports the probe account's minimum as `-1`,
+because Arch's `useradd` leaves the field empty while honouring `PASS_MAX_DAYS`
+and `PASS_WARN_AGE` from the same file. One `useradd` run taking two of the
+three directives and dropping the third is what rules out a file-reading
+problem: the file is read, the minimum is simply not implemented.
+
+So `PASS_MIN_DAYS` is **declared unaskable** there, the way the kernel rows are
+when `/proc/sys` is the host's, rather than failed. `SHADOW_MIN_DAYS` is the
+second mode signal and works like `KERNEL_BOOTED`: probed once before any check
+runs, printed in the header as `Shadow minimum password age: 0` or `1`, and the
+expected total branches on it. The two modes are independent facts, so the
+subtraction applies to both arms. Both rows are declared rather than one,
+matching `record_unresolved`, so the totals stay comparable between a host that
+could be asked and one that could not.
+
+The probe asks `chage --help` for `-m/--mindays`, which is the same question
+`min_days_enforceable` in the pam plugin asks of the same tool, so the suite and
+the product cannot come to disagree about what a host can do. A probe that
+printed nothing is **fatal** rather than an assumption either way, because it
+decides which totals the run expects. That is stricter than the plugin, which
+falls through to comparing the value, and deliberately so: the plugin must not
+lose a check it could still make, and the suite must not mis-total a run.
+
 When neither reader has the directive, the failure carries what each of them
 actually printed. The Arch run that raised this said only that the label was
 missing, so the log could not show what `chage` had said and the cause needed a
@@ -916,7 +940,9 @@ defect this project keeps closing. The header prints
 version, so a reader meeting an old log can see which arithmetic applied to it.
 
 **The totals move with the mode, and both kernel tables are pinned.** A run
-records **70 checks when it is not booted and 83 when it is**, and
+records **70 checks when it is not booted and 83 when it is**, less two on a
+host whose shadow has no minimum-password-age field (see below), so **68 and 81
+on Arch**, and
 `expected_check_total` carries an arm for each: the 11 kernel rows and the
 seeded row are checks the tables ask for only where they can be asked at all.
 The unaskable count runs the other way, **7 when booted and 19 when not**, the

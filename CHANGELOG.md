@@ -338,6 +338,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rely on `pam_pwhistory`, which this plugin also manages, for password reuse.
   Other distributions are unaffected.
 
+- **The differential suite declares `PASS_MIN_DAYS` unaskable where shadow has
+  no minimum-password-age field**, rather than failing a host for a target it
+  cannot reach. `SHADOW_MIN_DAYS` is a second mode signal beside
+  `KERNEL_BOOTED`: probed once from `chage --help`, printed in the run header,
+  and the expected totals branch on it, so a run asks for 68 checks unbooted
+  and 81 booted on such a host against 70 and 83 elsewhere. Both rows are
+  declared rather than one, so the totals stay comparable. Arch therefore
+  reaches a clean run again now that the product reports the directive
+  honestly.
+
 - **The differential test suite can reach a clean run on Arch and on RHEL.**
   Two of its own pre-apply controls could never be satisfied there, so neither
   distribution could be used as a merge gate however often the run was
