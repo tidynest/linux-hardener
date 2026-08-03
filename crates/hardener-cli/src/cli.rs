@@ -388,6 +388,11 @@ impl Command {
                     "it removes one row from this host's checkpoint database, by \
                      an id that names it whichever host it was captured from",
                 ),
+                CheckpointAction::Repair { .. } => refuse(
+                    "checkpoint repair",
+                    "it reads and mends this host's own checkpoint database, \
+                     which holds the rows of every host it has ever reached",
+                ),
             },
 
             // `batch` honours it, and not by accident of naming: each of its
@@ -487,6 +492,13 @@ pub enum CheckpointAction {
 
     /// Show checkpoint details.
     Show { checkpoint_id: String },
+
+    /// Report file rows that no checkpoint owns, and optionally remove them.
+    Repair {
+        /// Remove the rows instead of only reporting them.
+        #[arg(long)]
+        execute: bool,
+    },
 }
 
 #[derive(Subcommand)]

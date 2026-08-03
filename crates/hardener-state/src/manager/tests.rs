@@ -1710,3 +1710,115 @@ async fn deleting_a_checkpoint_that_never_existed_is_an_error() {
         "a delete that removed nothing must not report that it removed something"
     );
 }
+
+/// Strands a checkpoint's file rows by removing only its metadata row.
+///
+/// This is deliberately done the one way it can actually happen. The schema
+/// declares `FOREIGN KEY(checkpoint_id) REFERENCES checkpoints(id)` and
+/// `init_db` sets `PRAGMA foreign_keys = ON`, so on a connection this tool
+/// opened the delete below is refused outright and no orphan can be made. The
+/// pragma is per connection and SQLite defaults it OFF, so an operator poking
+/// the database with `sqlite3` has it off and the same delete succeeds. That is
+/// the scenario the repair exists for, and it is what this reproduces.
+async fn strand_file_rows(manager: &CheckpointManager, id: &CheckpointId) {
+    let mut conn = manager
+        .db_pool
+        .acquire()
+        .await
+        .expect("a connection of our own");
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *conn)
+        .await
+        .expect("the pragma is settable, as it is for any external client");
+    sqlx::query("DELETE FROM checkpoints WHERE id = ?")
+        .bind(id.as_str())
+        .execute(&mut *conn)
+        .await
+        .expect("the metadata row goes, leaving its file rows behind");
+}
+
+async fn seeded_orphan(manager: &CheckpointManager) -> CheckpointId {
+    let exec = MockExecutor::new().with_file("/etc/sysctl.conf", "kernel.kptr_restrict = 1\n");
+    let id = manager
+        .create_checkpoint(
+            &exec,
+            "stranded",
+            &[std::path::Path::new("/etc/sysctl.conf")],
+        )
+        .await
+        .expect("create_checkpoint");
+    strand_file_rows(manager, &id).await;
+    id
+}
+
+#[tokio::test]
+async fn a_healthy_database_reports_no_orphans() {
+    let exec = MockExecutor::new().with_file("/etc/sysctl.conf", "kernel.kptr_restrict = 1\n");
+    let manager = test_manager().await;
+    manager
+        .create_checkpoint(&exec, "intact", &[std::path::Path::new("/etc/sysctl.conf")])
+        .await
+        .expect("create_checkpoint");
+
+    let found = manager
+        .orphaned_file_states()
+        .await
+        .expect("the count reads");
+
+    // The positive control for the two tests below: a checkpoint whose metadata
+    // row is present must never be counted, or the repair would delete the file
+    // rows of every live checkpoint.
+    assert_eq!(found.rows, 0, "an intact checkpoint owns its file rows");
+    assert_eq!(found.checkpoints, 0, "and belongs to no stranded id");
+}
+
+#[tokio::test]
+async fn file_rows_whose_checkpoint_is_gone_are_counted() {
+    let manager = test_manager().await;
+    seeded_orphan(&manager).await;
+
+    let found = manager
+        .orphaned_file_states()
+        .await
+        .expect("the count reads");
+
+    assert_eq!(found.rows, 1, "the stranded file row is found");
+    assert_eq!(
+        found.checkpoints, 1,
+        "and is attributed to one absent checkpoint"
+    );
+}
+
+#[tokio::test]
+async fn removing_orphans_leaves_a_live_checkpoint_alone() {
+    let exec = MockExecutor::new().with_file("/etc/login.defs", "PASS_MAX_DAYS 90\n");
+    let manager = test_manager().await;
+    seeded_orphan(&manager).await;
+    let live = manager
+        .create_checkpoint(&exec, "live", &[std::path::Path::new("/etc/login.defs")])
+        .await
+        .expect("create_checkpoint");
+
+    let removed = manager
+        .remove_orphaned_file_states()
+        .await
+        .expect("the removal runs");
+
+    assert_eq!(removed, 1, "only the stranded row is removed");
+    assert_eq!(
+        manager
+            .orphaned_file_states()
+            .await
+            .expect("the count reads")
+            .rows,
+        0,
+        "nothing orphaned is left behind"
+    );
+    // The half that matters: a repair that also emptied a live checkpoint would
+    // satisfy every assertion above while destroying the thing being repaired.
+    let (_, files) = manager
+        .get_checkpoint(&live)
+        .await
+        .expect("the live checkpoint survives");
+    assert_eq!(files.len(), 1, "its captured file row is untouched");
+}

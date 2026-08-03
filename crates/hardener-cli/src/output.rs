@@ -452,6 +452,48 @@ pub fn checkpoint_deleted(format: &OutputFormat, id: &hardener_state::Checkpoint
     }
 }
 
+/// Reports what a database repair found, and what it removed if it was asked to.
+///
+/// `removed` is `None` for a run that only looked, which is the default, so the
+/// two runs are distinguishable in JSON rather than differing only in a count
+/// that happens to be zero.
+pub fn checkpoint_repair(
+    format: &OutputFormat,
+    found: hardener_state::OrphanedFileStates,
+    removed: Option<u64>,
+) {
+    match format {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "orphaned_rows": found.rows,
+                    "orphaned_checkpoints": found.checkpoints,
+                    "executed": removed.is_some(),
+                    "removed_rows": removed,
+                })
+            );
+        }
+        _ if found.rows == 0 => {
+            println!("{} No orphaned file rows.", "✓".green());
+        }
+        _ => match removed {
+            Some(removed) => println!(
+                "{} Removed {} orphaned file row(s) from {} absent checkpoint(s).",
+                "✓".green(),
+                removed.to_string().cyan(),
+                found.checkpoints.to_string().cyan()
+            ),
+            None => println!(
+                "{} orphaned file row(s) from {} absent checkpoint(s). \
+                 Re-run with --execute to remove them.",
+                found.rows.to_string().yellow(),
+                found.checkpoints.to_string().yellow()
+            ),
+        },
+    }
+}
+
 pub fn checkpoint_details(format: &OutputFormat, checkpoint: &Checkpoint, files: &[FileState]) {
     match format {
         OutputFormat::Json => {

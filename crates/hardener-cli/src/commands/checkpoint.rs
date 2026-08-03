@@ -110,6 +110,48 @@ pub async fn delete(checkpoint_id: &str, format: OutputFormat, quiet: bool) -> R
     Ok(())
 }
 
+/// Reports the file rows no checkpoint owns, and removes them under `--execute`.
+///
+/// Reporting is the default because this deletes from the state database, and
+/// the fleet verbs set the precedent that a destructive run is asked for
+/// explicitly. A clean database is the expected answer: the schema declares the
+/// foreign key and `init_db` turns enforcement on, so nothing reaching the
+/// database through this tool can strand a row. What it repairs is a database
+/// edited by something else, `sqlite3` included, which defaults that
+/// enforcement off.
+pub async fn repair(execute: bool, format: OutputFormat, quiet: bool) -> Result<()> {
+    let manager = get_checkpoint_manager().await?;
+    let found = manager.orphaned_file_states().await?;
+
+    if !execute {
+        output::checkpoint_repair(&format, found, None);
+        return Ok(());
+    }
+
+    if !quiet {
+        output::status(&format, "Removing orphaned file rows");
+    }
+    let removed = manager.remove_orphaned_file_states().await?;
+
+    // Logged under the deletion action because that is what it is: rows leave
+    // the state database. A run that removed nothing is still recorded, so the
+    // trail says the database was inspected and found clean.
+    if let Some(logger) = get_audit_logger().await {
+        let _ = logger
+            .log_action(
+                ActionType::CheckpointDelete,
+                effective_user(),
+                format!("orphaned file rows: {removed}"),
+                ActionResult::Success,
+            )
+            .await;
+    }
+
+    output::checkpoint_repair(&format, found, Some(removed));
+    Ok(())
+}
+
+/// Renders one checkpoint's metadata and the files it captured.
 pub async fn show(checkpoint_id: &str, format: OutputFormat, _quiet: bool) -> Result<()> {
     let manager = get_checkpoint_manager().await?;
     let id = CheckpointId::new(checkpoint_id);

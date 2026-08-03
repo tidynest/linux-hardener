@@ -127,6 +127,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`hardener checkpoint repair` reports file rows that no checkpoint owns, and
+  removes them with `--execute`.** A checkpoint is stored as one metadata row
+  plus one file row per captured file. A file row whose checkpoint row is gone
+  can never be listed, restored or deleted: `checkpoint delete` refuses an id
+  matching no metadata row, and it is the only other statement in the tree that
+  removes from that table, so such a row was unreachable. A clean answer is the
+  expected one, because the schema declares the foreign key and the database is
+  opened with enforcement on, so nothing acting through this tool can strand a
+  row. What this repairs is a database edited by something else: `sqlite3`
+  defaults that enforcement off, so deleting a checkpoint row by hand leaves its
+  file rows behind. Reporting is the default and `--execute` is required to
+  delete, matching `batch`, where a destructive run is asked for explicitly.
+  Counting and removal share one SQL predicate, so a repair cannot reach a row
+  its own report did not offer. Under `--format json` a report and a removal are
+  told apart by `executed` rather than by a count that happens to be zero. It
+  refuses `--ssh`, like `checkpoint show` and `delete`, and a removal is written
+  to the audit log.
+
 - **`validate_file_map.py` derives the test counts `file-map.md` claims.** Five
   rows describe a test module by how many tests it holds, and the number was
   kept by hand; it drifted twice in two sessions. Each claim is now checked

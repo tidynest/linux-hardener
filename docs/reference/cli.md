@@ -354,6 +354,43 @@ hardener checkpoint show <CHECKPOINT_ID>
 **Not host-scoped, and it refuses `--ssh`, on the same rule as `checkpoint
 delete`.**
 
+### checkpoint repair
+
+Report file rows that no checkpoint owns, and remove them on request.
+
+```
+hardener checkpoint repair [--execute]
+```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--execute` | Remove the rows instead of only reporting them | off, report only |
+
+A checkpoint is stored across two tables: one metadata row, and one file row per
+captured file tagged with that checkpoint's id. A file row whose checkpoint is
+gone can never be listed, restored or deleted, because `checkpoint delete`
+refuses an id that matches no metadata row and is the only other statement that
+removes from that table.
+
+**A clean answer is the expected one.** The schema declares the foreign key and
+the database is opened with enforcement on, so nothing acting through this tool
+can strand a row. What this repairs is a database edited by something else:
+`sqlite3` defaults that enforcement off, so deleting a checkpoint row by hand
+leaves its file rows behind.
+
+Reporting is the default because the run deletes from the state database,
+matching `batch`, where a destructive run is asked for explicitly. Under
+`--format json` the two runs are distinguishable by `executed` rather than by a
+count that happens to be zero:
+
+```
+{"executed":false,"orphaned_checkpoints":1,"orphaned_rows":2,"removed_rows":null}
+{"executed":true,"orphaned_checkpoints":1,"orphaned_rows":2,"removed_rows":2}
+```
+
+**Not host-scoped, and it refuses `--ssh`**: it mends this host's own checkpoint
+database, which holds the rows of every host it has ever reached.
+
 ---
 
 ## plugins

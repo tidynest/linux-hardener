@@ -135,6 +135,9 @@ async fn main() -> Result<()> {
             CheckpointAction::Show { checkpoint_id } => {
                 commands::checkpoint::show(&checkpoint_id, format, cli.quiet).await
             }
+            CheckpointAction::Repair { execute } => {
+                commands::checkpoint::repair(execute, format, cli.quiet).await
+            }
         },
         Command::Plugins => commands::plugins::run(format, cli.quiet).await,
         Command::Report {

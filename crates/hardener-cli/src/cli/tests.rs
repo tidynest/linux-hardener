@@ -616,6 +616,10 @@ fn the_commands_that_never_reach_a_host_refuse_ssh() {
             ],
             "checkpoint delete",
         ),
+        (
+            vec!["hardener", "--ssh", "web-01", "checkpoint", "repair"],
+            "checkpoint repair",
+        ),
     ];
 
     for (argv, name) in refused {

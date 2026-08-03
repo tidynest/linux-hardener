@@ -85,6 +85,28 @@ enum ContentPolicy {
     BestEffort,
 }
 
+/// Which file rows no checkpoint owns, written once and read by both the count
+/// and the removal so the two can never disagree about what an orphan is.
+///
+/// `NOT EXISTS` rather than `NOT IN`: the latter yields nothing at all if the
+/// sub-select ever produces a NULL, which would silently report a clean
+/// database.
+const ORPHAN_PREDICATE: &str = "NOT EXISTS (SELECT 1 FROM checkpoints \
+                                WHERE checkpoints.id = file_states.checkpoint_id)";
+
+/// A count of the file rows no checkpoint owns.
+///
+/// Two counts of different things, so they are named rather than positional: a
+/// pair of bare integers is the shape that lets a caller transpose them without
+/// anything noticing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct OrphanedFileStates {
+    /// File rows with no owning checkpoint.
+    pub rows: u64,
+    /// Distinct absent checkpoints those rows were captured for.
+    pub checkpoints: u64,
+}
+
 /// Bundled header fields passed to `store_checkpoint` to stay within the argument-count lint.
 struct CheckpointHeader<'a> {
     id: &'a CheckpointId,
@@ -865,6 +887,45 @@ impl CheckpointManager {
             .map_err(|e| HardeningError::Database(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// Counts the file rows that no checkpoint owns.
+    ///
+    /// A row is orphaned when its `checkpoint_id` matches no `checkpoints` row.
+    /// Such a row holds a captured file that nothing can list, restore or
+    /// delete: `delete_checkpoint` refuses when the metadata row is already
+    /// absent, and it is the only other statement in the tree that removes from
+    /// this table.
+    ///
+    /// Nothing in the current code can produce one, because a checkpoint's two
+    /// tables are written in a single transaction. They are reachable from a
+    /// database carried across a version that did not do that, from one edited
+    /// outside this tool, or from a copy taken mid-write.
+    pub async fn orphaned_file_states(&self) -> Result<OrphanedFileStates> {
+        let sql = format!(
+            "SELECT COUNT(*), COUNT(DISTINCT checkpoint_id) FROM file_states WHERE {ORPHAN_PREDICATE}"
+        );
+        let row = sqlx::query(&sql)
+            .fetch_one(&self.db_pool)
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+        Ok(OrphanedFileStates {
+            rows: row.get::<i64, _>(0).max(0) as u64,
+            checkpoints: row.get::<i64, _>(1).max(0) as u64,
+        })
+    }
+
+    /// Removes the file rows that no checkpoint owns, returning how many went.
+    ///
+    /// Counting and removing share one predicate, so a repair cannot reach a
+    /// row its own report did not offer to remove.
+    pub async fn remove_orphaned_file_states(&self) -> Result<u64> {
+        let sql = format!("DELETE FROM file_states WHERE {ORPHAN_PREDICATE}");
+        let removed = sqlx::query(&sql)
+            .execute(&self.db_pool)
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+        Ok(removed.rows_affected())
     }
 
     /// Verifies the cryptographic signature of a checkpoint without restoring files.
