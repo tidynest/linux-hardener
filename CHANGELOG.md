@@ -164,6 +164,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`--port` reaches a `batch` ad-hoc target instead of being dropped.** The one
+  site that parses `--ssh user@host` targets for the fleet verbs passed the
+  literal `22`, while `--ssh-key`, `--ssh-timeout` and `--ssh-no-verify` all
+  reached them, so `hardener --ssh web-01 --port 2222 batch scan` dialled 22.
+  On a host answering on both ports that scanned the wrong daemon, with a
+  different `Port`, `ListenAddress` and `Match` set from the one the operator
+  named, and the report called the host `web-01:22`. It is the same
+  accepted-and-discarded defect as the refusal below, on the one command that
+  shares `--ssh` with the global flag. A port written into the target still
+  outranks the flag, and inventory hosts still carry their own.
+
 - **`--ssh` is refused by the commands that never acted on the target, instead
   of being accepted and discarded.** One executor is built for the whole
   process and handed to some commands and not to others, and from the outside

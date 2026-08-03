@@ -19,7 +19,7 @@ These flags can be placed before or after any subcommand.
 | `-q`, `--quiet` | Suppress non-essential output | off |
 | `-C`, `--config <FILE>` | Path to TOML configuration file | auto-detected |
 | `--ssh <HOST>` | Remote host to act on via SSH (`user@host` or `host`). Accepted by the commands that reach a host, refused by the ones that do not: see below | local |
-| `--port <PORT>` | SSH port for `--ssh`. It does **not** reach `batch`, whose targets carry their own port and otherwise default to 22 | `22` |
+| `--port <PORT>` | SSH port for `--ssh`, and for any `batch` ad-hoc target that names no port of its own. **Only `batch` targets take a `:port` suffix**, and a valid one there outranks this flag; for every other command the whole `--ssh` value is the host, so `web-01:2200` is looked up as that hostname. Inventory hosts carry their own port and default to 22 without it | `22` |
 | `--ssh-key <FILE>` | SSH private key file. Also the fallback for any `batch` host that names no key of its own | SSH agent |
 | `--ssh-timeout <SECONDS>` | SSH connection timeout. Also applies to every `batch` connection | `30` |
 | `--ssh-no-verify` | Skip SSH host key verification (insecure). With `batch` it reaches ad-hoc `--ssh` targets only; inventory hosts keep their own `host_key_checking` | off |
@@ -443,7 +443,7 @@ Host selection (common to all four subcommands):
 |------|-------------|
 | `--all` | Target every host in the inventory (`~/.config/linux-hardener/hosts.toml`) |
 | `--host <NAMES>` | Comma-separated inventory host names (repeatable) |
-| `--ssh <user@host[:port]>` | Ad-hoc host not in the inventory (repeatable) |
+| `--ssh <user@host[:port]>` | Ad-hoc host not in the inventory (repeatable). Without a `:port` it takes the global `--port`, which defaults to 22 |
 
 `--all` and `--host` are mutually exclusive.
 

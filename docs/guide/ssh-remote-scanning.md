@@ -70,7 +70,7 @@ hardener --ssh root@server.example.com report --framework cis --report-format pd
 
 | FLAG               | DESCRIPTION                                        | DEFAULT |
 |--------------------|----------------------------------------------------|---------|
-| --ssh HOST         | Remote host to connect to (user@host or just host) |    -    |
+| --ssh HOST         | Remote host to connect to (user@host or just host; no `:port` suffix here, use --port) |    -    |
 | --port PORT        | SSH port number (always sent, overrides ssh config) |   22    |
 | --ssh-key FILE     | Path to SSH private key                            |    -    |
 | --ssh-timeout SECS | Connection timeout in seconds                      |   30    |
@@ -256,6 +256,9 @@ hardener batch scan --ssh admin@10.0.0.5
 
 # Ad-hoc host on a non-default SSH port (user@host:port)
 hardener batch scan --ssh admin@10.0.0.5:2222
+
+# Or give the whole run a port, for targets that name none of their own
+hardener --port 2222 batch scan --ssh admin@10.0.0.5 --ssh admin@10.0.0.6
 
 # Machine-readable output for automation (global --format flag)
 hardener --format json batch scan --all

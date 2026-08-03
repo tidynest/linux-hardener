@@ -171,7 +171,7 @@ pub enum BatchAction {
         #[arg(long, value_delimiter = ',')]
         host: Vec<String>,
 
-        /// Ad-hoc host not in the inventory (user@host, repeatable).
+        /// Ad-hoc host not in the inventory (user@host[:port], repeatable).
         #[arg(long)]
         ssh: Vec<String>,
 

@@ -177,6 +177,7 @@ async fn main() -> Result<()> {
                         .ssh_key
                         .as_ref()
                         .map(|p| p.to_string_lossy().to_string()),
+                    global_port: cli.port,
                     global_timeout: cli.ssh_timeout,
                     global_no_verify: cli.ssh_no_verify,
                 })
@@ -208,6 +209,7 @@ async fn main() -> Result<()> {
                         .ssh_key
                         .as_ref()
                         .map(|p| p.to_string_lossy().to_string()),
+                    global_port: cli.port,
                     global_timeout: cli.ssh_timeout,
                     global_no_verify: cli.ssh_no_verify,
                 })
@@ -237,6 +239,7 @@ async fn main() -> Result<()> {
                         .ssh_key
                         .as_ref()
                         .map(|p| p.to_string_lossy().to_string()),
+                    global_port: cli.port,
                     global_timeout: cli.ssh_timeout,
                     global_no_verify: cli.ssh_no_verify,
                 })
@@ -265,6 +268,7 @@ async fn main() -> Result<()> {
                         .ssh_key
                         .as_ref()
                         .map(|p| p.to_string_lossy().to_string()),
+                    global_port: cli.port,
                     global_timeout: cli.ssh_timeout,
                     global_no_verify: cli.ssh_no_verify,
                 })

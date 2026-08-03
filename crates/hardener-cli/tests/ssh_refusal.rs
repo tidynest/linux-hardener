@@ -1,4 +1,5 @@
-//! The `--ssh` refusal, driven through the built binary.
+//! The global SSH flags, driven through the built binary: which commands `--ssh`
+//! reaches, and where `--port` lands.
 //!
 //! `Command::ssh_refusal` is unit-tested next to the parser, but the gate that
 //! consults it lives in `main`, which no unit test can enter: deleting that
@@ -6,9 +7,12 @@
 //! binary instead, and they are here rather than in `src/` because a `#[test]`
 //! inside a binary crate cannot execute it.
 //!
-//! Nothing here writes to the host. The refused commands exit before doing
-//! anything at all, the honoured one is pointed at a port nothing listens on,
-//! and `plugins` reads no file and touches no database.
+//! Nothing here writes to the operator's own state. The refused commands exit
+//! before doing anything at all, and `plugins` reads no file and touches no
+//! database, but the `batch` runs below do open a fleet history database, so
+//! every child process is given a scratch `HOME` and `XDG_DATA_HOME` and writes
+//! its rows there. Without that they would file failed scans of `127.0.0.1`
+//! into the maintainer's real history, and under `sudo` into `/var/lib`.
 
 use std::process::{Command, Output};
 
@@ -17,9 +21,21 @@ use std::process::{Command, Output};
 /// than waiting out a timeout.
 const UNREACHABLE: [&str; 5] = ["--ssh", "nobody@127.0.0.1", "--port", "1", "--ssh-timeout"];
 
+/// A scratch state directory for one child, so a `batch` run's history rows
+/// land there rather than in the operator's own database.
+fn scratch_home() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("hardener-ssh-flag-tests-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a scratch state directory");
+    dir
+}
+
 fn run(args: &[&str]) -> Output {
+    let home = scratch_home();
     Command::new(env!("CARGO_BIN_EXE_hardener"))
         .args(args)
+        .env("HOME", &home)
+        .env("XDG_DATA_HOME", home.join("data"))
+        .env("XDG_CONFIG_HOME", home.join("config"))
         .output()
         .expect("the binary under test runs")
 }
@@ -131,4 +147,111 @@ fn without_the_flag_nothing_is_refused() {
 
     assert_eq!(out.status.code(), Some(0), "{stderr}");
     assert!(!stderr.contains("is not honoured by"), "{stderr}");
+}
+
+/// Every fleet verb, because the fix threaded the port through four option
+/// structs and a test of one of them proves three unbound call sites nothing.
+const FLEET_VERBS: [&[&str]; 4] = [
+    &["batch", "scan"],
+    &["batch", "report", "--framework", "cis"],
+    &["batch", "apply"],
+    &["batch", "rollback"],
+];
+
+/// The JSON these runs emit names the host as `"target": "user@host:port"`, so
+/// the closing quote is part of the needle: `:2` on its own also matches `:22`
+/// and `:2222`, which is the prefix the defect used to produce.
+fn target_field(target: &str) -> String {
+    format!("\"{target}\"")
+}
+
+fn run_fleet(verb: &[&str], flags: &[&str]) -> String {
+    let mut argv: Vec<&str> = flags.to_vec();
+    argv.extend_from_slice(verb);
+    argv.extend_from_slice(&["--format", "json"]);
+    let out = run(&argv);
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    )
+}
+
+#[test]
+fn the_global_port_reaches_an_ad_hoc_target_of_every_fleet_verb() {
+    // The port used to be a literal 22 at the one site that parses these
+    // targets, so --port was accepted and dropped for exactly the command that
+    // shares --ssh with the global flag. The parser has always taken a port and
+    // its own tests have always passed one, which is why nothing caught it:
+    // this asserts the call sites rather than the parser.
+    //
+    // Unconditional, so an empty verb list cannot pass this vacuously: the
+    // whole point is that all four call sites are covered, and a table that
+    // shrank would otherwise prove nothing while staying green.
+    assert_eq!(FLEET_VERBS.len(), 4, "every fleet verb is exercised");
+
+    // Two ports rather than one, because a single expected value cannot tell a
+    // flag that arrived from a call site hardcoded to that same number: with
+    // one port, `parse_inline(t, 2, ..)` passed both this test and the
+    // precedence test below. That mutant survived the first version of this
+    // file, and killing it is what the second port is for. Nothing listens on
+    // 2 or 3, so every run fails at connect.
+    for verb in FLEET_VERBS {
+        for port in ["2", "3"] {
+            let merged = run_fleet(
+                verb,
+                &[
+                    "--ssh",
+                    "nobody@127.0.0.1",
+                    "--port",
+                    port,
+                    "--ssh-timeout",
+                    "2",
+                ],
+            );
+
+            assert!(
+                merged.contains(&target_field(&format!("nobody@127.0.0.1:{port}"))),
+                "{verb:?} --port {port}: the global port reaches an ad-hoc target naming none of its own: {merged}"
+            );
+            assert!(
+                !merged.contains(&target_field("nobody@127.0.0.1:22")),
+                "{verb:?} --port {port}: and 22 is not substituted for it: {merged}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_port_named_in_the_target_outranks_the_global_flag() {
+    // Unconditional, so an empty verb list cannot pass this vacuously: the
+    // whole point is that all four call sites are covered, and a table that
+    // shrank would otherwise prove nothing while staying green.
+    assert_eq!(FLEET_VERBS.len(), 4, "every fleet verb is exercised");
+
+    // Documented precedence, and the positive control for the test above: a
+    // change that ignored the target's own port would pass that one and fail
+    // this one, and a call site hardcoded to either test's port fails the other.
+    for verb in FLEET_VERBS {
+        let merged = run_fleet(
+            verb,
+            &[
+                "--ssh",
+                "nobody@127.0.0.1:1",
+                "--port",
+                "65000",
+                "--ssh-timeout",
+                "2",
+            ],
+        );
+
+        assert!(
+            merged.contains(&target_field("nobody@127.0.0.1:1")),
+            "{verb:?}: the target carries its own port: {merged}"
+        );
+        assert!(
+            !merged.contains(&target_field("nobody@127.0.0.1:65000")),
+            "{verb:?}: and the global flag does not override it: {merged}"
+        );
+    }
 }

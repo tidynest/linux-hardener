@@ -594,6 +594,7 @@ pub struct BatchReportOptions {
     pub output: Option<String>,
     pub quiet: bool,
     pub global_key: Option<String>,
+    pub global_port: u16,
     pub global_timeout: u64,
     pub global_no_verify: bool,
 }
@@ -637,6 +638,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         opts.concurrency,
         opts.quiet,
         opts.global_key,
+        opts.global_port,
         opts.global_timeout,
         opts.global_no_verify,
         "Assessing",
@@ -925,6 +927,7 @@ pub struct BatchOptions {
     pub output: Option<String>,
     pub quiet: bool,
     pub global_key: Option<String>,
+    pub global_port: u16,
     pub global_timeout: u64,
     pub global_no_verify: bool,
 }
@@ -933,14 +936,16 @@ pub struct BatchOptions {
 /// applies the global key fallback, and prints the progress line. Shared by all
 /// batch subcommands so the host-resolution path lives in one place. `verb` is
 /// the present participle shown in the progress line ("Scanning" / "Assessing").
-/// Note: SSH-config args (`global_key`, `global_no_verify`) are grouped before
-/// `quiet`/`verb`; their order differs slightly from `resolve_and_scan`.
+/// Note: SSH-config args (`global_key`, `global_port`, `global_no_verify`) are
+/// grouped before `quiet`/`verb`; their order differs slightly from
+/// `resolve_and_scan`.
 #[allow(clippy::too_many_arguments)]
 fn resolve_profiles(
     all: bool,
     host: &[String],
     ssh: &[String],
     global_key: Option<String>,
+    global_port: u16,
     global_no_verify: bool,
     quiet: bool,
     verb: &str,
@@ -955,7 +960,7 @@ fn resolve_profiles(
 
     let inline: Vec<RemoteHostProfile> = ssh
         .iter()
-        .map(|t| parse_inline(t, 22, global_key.clone(), !global_no_verify))
+        .map(|t| parse_inline(t, global_port, global_key.clone(), !global_no_verify))
         .collect();
 
     let mut profiles = match resolve_hosts(&inventory, all, host, inline) {
@@ -1020,12 +1025,22 @@ async fn resolve_and_scan(
     concurrency: usize,
     quiet: bool,
     global_key: Option<String>,
+    global_port: u16,
     global_timeout: u64,
     global_no_verify: bool,
     verb: &str,
     config: Arc<HardenerConfig>,
 ) -> Vec<HostOutcome> {
-    let profiles = resolve_profiles(all, host, ssh, global_key, global_no_verify, quiet, verb);
+    let profiles = resolve_profiles(
+        all,
+        host,
+        ssh,
+        global_key,
+        global_port,
+        global_no_verify,
+        quiet,
+        verb,
+    );
     let history = open_batch_history().await;
     scan_all(profiles, concurrency, global_timeout, history, config).await
 }
@@ -1438,6 +1453,7 @@ pub struct BatchApplyOptions {
     pub output: Option<String>,
     pub quiet: bool,
     pub global_key: Option<String>,
+    pub global_port: u16,
     pub global_timeout: u64,
     pub global_no_verify: bool,
 }
@@ -1454,6 +1470,7 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
         &opts.host,
         &opts.ssh,
         opts.global_key,
+        opts.global_port,
         opts.global_no_verify,
         opts.quiet,
         verb,
@@ -1536,6 +1553,7 @@ pub struct BatchRollbackOptions {
     pub output: Option<String>,
     pub quiet: bool,
     pub global_key: Option<String>,
+    pub global_port: u16,
     pub global_timeout: u64,
     pub global_no_verify: bool,
 }
@@ -1552,6 +1570,7 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
         &opts.host,
         &opts.ssh,
         opts.global_key,
+        opts.global_port,
         opts.global_no_verify,
         opts.quiet,
         verb,
@@ -1625,6 +1644,7 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         opts.concurrency,
         opts.quiet,
         opts.global_key,
+        opts.global_port,
         opts.global_timeout,
         opts.global_no_verify,
         "Scanning",

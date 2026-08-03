@@ -328,6 +328,22 @@ which act on this host alone.
 .TP
 .BI \-\-port " PORT"
 SSH port number.
+Applies to
+.B \-\-ssh
+and to any
+.B batch
+ad-hoc target that names no port of its own.
+Only
+.B batch
+targets take a
+.IB : port
+suffix, and a valid one there outranks this flag; for every other command the
+whole
+.B \-\-ssh
+value is the hostname, so
+.I web-01:2200
+is looked up as that name.
+Inventory hosts carry their own port.
 Default:
 .BR 22 .
 .TP
