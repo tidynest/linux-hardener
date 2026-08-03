@@ -854,9 +854,50 @@ fn resolve_unknown_name_errors() {
 }
 #[test]
 fn resolve_dedups_inline_against_inventory() {
-    let inline = vec![parse_inline("admin@web-01", 22, None, true)];
+    // The fixture's `web-01` connects to `web-01.local`, so this is the same
+    // endpoint reached two ways and one of them is redundant.
+    let inline = vec![parse_inline("admin@web-01.local", 22, None, true)];
     let r = resolve_hosts(&inv(), true, &[], inline).unwrap();
     assert_eq!(r.len(), 2, "inline duplicate of inventory host is dropped");
+}
+#[test]
+fn resolve_keeps_an_inline_host_the_inventory_only_appears_to_hold() {
+    // `web-01` is the fixture's *nickname* for `web-01.local`. An operator who
+    // types `--ssh admin@web-01` is naming a different DNS name, and nothing
+    // else in the tree resolves names to decide two hosts are one.
+    let inline = vec![parse_inline("admin@web-01", 22, None, true)];
+    let r = resolve_hosts(&inv(), true, &[], inline).unwrap();
+    assert_eq!(
+        r.len(),
+        3,
+        "an inventory nickname is not a hostname, so this host was never named twice"
+    );
+}
+#[test]
+fn resolve_keeps_ad_hoc_targets_that_differ_only_by_port() {
+    let inline = vec![
+        parse_inline("admin@web-01:22", 22, None, true),
+        parse_inline("admin@web-01:2222", 22, None, true),
+    ];
+    let r = resolve_hosts(&HostsConfig::default(), false, &[], inline).unwrap();
+    assert_eq!(
+        r.len(),
+        2,
+        "two ports are two endpoints; dropping one scans a host the operator never named"
+    );
+}
+#[test]
+fn resolve_keeps_ad_hoc_targets_that_differ_only_by_user() {
+    let inline = vec![
+        parse_inline("root@web-01", 22, None, true),
+        parse_inline("admin@web-01", 22, None, true),
+    ];
+    let r = resolve_hosts(&HostsConfig::default(), false, &[], inline).unwrap();
+    assert_eq!(
+        r.len(),
+        2,
+        "the account decides which checks can run at all, so two users are two scans"
+    );
 }
 #[test]
 fn resolve_empty_errors() {

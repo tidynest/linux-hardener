@@ -391,6 +391,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `batch` run no longer silently drops a host you named, and no longer
+  scans one machine twice.** Ad-hoc `--ssh` targets were de-duplicated on
+  `name`, which is not an identity: for an ad-hoc target it is the bare
+  hostname, with the user and port already split off, and for an inventory host
+  it is a free-form nickname unrelated to the hostname. Both directions were
+  wrong. `--ssh admin@web-01:22 --ssh admin@web-01:2222` collapsed to one host
+  and reported `Scanning 1 host(s)`, as did `--ssh root@web-01 --ssh
+  admin@web-01`, though the account decides which checks can run at all. This
+  reaches all four batch verbs, so `batch apply --execute` could report success
+  having never hardened a host that was named on the command line. In the other
+  direction, an ad-hoc target genuinely duplicating an inventory host was
+  compared against that host's nickname, never matched, and the same machine
+  was scanned twice under two different history keys. The desktop already
+  de-duplicated its own ad-hoc targets on the canonical form before shelling
+  out, and the CLI then undid that; it has never compared an ad-hoc target
+  against a selected inventory host, and still does not. Targets are now
+  compared on the canonical `user@host:port`, the identity `host_key_of` already
+  reached for the history key of an ad-hoc host. No existing history key is
+  renamed; runs that used to collapse simply write the row for each host they
+  were always asked to scan. Hostnames are still compared as written and never
+  resolved, matching every other host identity in the tree, and only `--ssh`
+  targets are compared at all: `--all` and `--host` are taken as given, so two
+  inventory entries for one machine still produce two hosts. The one existing
+  test asserted the wrong outcome, calling a distinct endpoint a duplicate, and
+  has been corrected. **One collision is left open and is not this change's to
+  close:** `SshExecutor::description` substitutes a literal `root` when `--ssh`
+  named no user, so `--ssh web-01` and `--ssh root@web-01` are now two hosts
+  sharing one checkpoint host key, and under `batch apply --execute` they run
+  concurrently and their pre-apply checkpoints collide. Telling those targets
+  apart is correct; the fabricated `root` is the defect and has to be fixed
+  where it is invented.
 - **`apply --dry-run --quiet` no longer prints its dry-run notice.** Every other
   status line in `apply` is gated on `--quiet` by hand; the announcement that
   opens a dry run was the one that was not, so a run asked for in silence still

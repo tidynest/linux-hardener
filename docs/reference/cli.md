@@ -448,6 +448,25 @@ Host selection (common to all four subcommands):
 
 `--all` and `--host` are mutually exclusive.
 
+An `--ssh` target that names a host already selected is dropped, and the
+inventory entry wins. Two targets are the same host when their canonical
+`user@host:port` matches, so `--ssh admin@web-01` and `--ssh admin@web-01:2222`
+are two targets and both are scanned, as are `--ssh root@web-01` and `--ssh
+admin@web-01`. An inventory entry's name is a nickname rather than an address,
+so an `--ssh` target is compared against the inventory host's connection
+details and not against what it is called. Hostnames are compared as written
+and never resolved: `web-01`, `web-01.local` and the address behind them are
+three targets.
+
+This applies to `--ssh` targets alone. `--all` and `--host` are taken as given,
+so two inventory entries pointing at one machine, or `--host web-01,web-01`,
+still produce two hosts.
+
+The history key is a *different* identity: an inventory host files its history
+under its nickname and an ad-hoc target under `user@host:port`. Reaching one
+machine both ways in separate runs therefore records two series for it, which
+de-duplication cannot help with because only one form is present in each run.
+
 ### batch scan
 
 Scan selected hosts concurrently and print one clearly-headed section per

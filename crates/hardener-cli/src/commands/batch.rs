@@ -119,8 +119,27 @@ pub fn parse_inline(
 }
 
 /// Resolves the host set to scan from inventory selection plus inline hosts.
-/// De-duplicates by `name`, inventory taking precedence. Unknown `--host` names
-/// are an error so a typo never silently scans nothing.
+/// De-duplicates by the canonical `user@host:port` target, inventory taking
+/// precedence. Unknown `--host` names are an error so a typo never silently
+/// scans nothing.
+///
+/// The key is the target rather than `name` because `name` is not an identity:
+/// for an ad-hoc host it is the bare hostname, with the user and port already
+/// split off, and for an inventory host it is a free-form nickname unrelated to
+/// the hostname. Keying on it dropped endpoints that differ by user or port and
+/// kept ones that were genuinely the same machine. `host_key_of` reached the
+/// same conclusion for the history key and says so at its own definition.
+///
+/// Only `--ssh` targets are compared. `--all` and `--host` are taken as the
+/// operator gave them, so two inventory entries for one machine still produce
+/// two hosts.
+///
+/// One caveat this does NOT resolve: `SshExecutor::description`, which supplies
+/// the *checkpoint* host key, substitutes a literal `root` when no user was
+/// given, so `--ssh web-01` and `--ssh root@web-01` are two targets here and
+/// one host key there. Under `batch apply --execute` they run concurrently and
+/// their pre-apply checkpoints collide. Distinguishing them here is right; the
+/// collision belongs to that fabricated `root` and has to be fixed there.
 pub fn resolve_hosts(
     inventory: &HostsConfig,
     all: bool,
@@ -144,7 +163,7 @@ pub fn resolve_hosts(
     };
 
     for profile in inline {
-        if !selected.iter().any(|h| h.name == profile.name) {
+        if !selected.iter().any(|h| h.target() == profile.target()) {
             selected.push(profile);
         }
     }
