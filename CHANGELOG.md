@@ -409,6 +409,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The container test suite no longer fails a rollback that did its job.** A
+  rollback restores the files and then asks each plugin to reload the service
+  that reads them, reporting a reload that did not happen rather than calling
+  the rollback clean. Inside an nspawn container auditd cannot load rules, so
+  `augenrules --load` and `systemctl restart` both fail and the rollback exits 1
+  with every file correctly restored. The suite's two rollback rows asserted
+  exit 0 flatly, so four of five distributions failed a run in which
+  `/etc/audit` came back byte-identical to its pre-apply state and every other
+  assertion in the section passed. Arch was unaffected only because its reload
+  succeeds. The rows now accept a non-zero exit whose cause is the reload alone,
+  which is the allowance the apply row two sections up already carries and
+  states. The allowance is deliberately narrow: a rollback that failed to
+  restore files reports that with a different sentence and still fails the row,
+  and the classification is a function of its own with three self-test
+  assertions covering both halves and neither. No check was added to a section
+  and no declared size moved.
+
 - **`checkpoint delete` says which row it removed, and refuses an id that
   matched none.** Under `--format json` a successful delete wrote nothing at
   all, so a machine consumer had to read success out of a zero-byte stream; the

@@ -142,6 +142,49 @@ run_test() {
     fi
 }
 
+# A rollback in a container succeeds at its own job and can still exit non-zero.
+#
+# `rollback` restores the files and then asks each plugin to reload the service
+# that reads them, and it reports a reload that did not happen rather than
+# calling the rollback clean. auditd cannot load rules inside an nspawn
+# container on most distributions, so `augenrules --load` and `systemctl
+# restart` both fail and the exit code is 1 with every file correctly restored.
+# The apply row two sections up already carries the same allowance, and says so.
+#
+# The allowance is narrow on purpose. A rollback that failed to restore FILES
+# says so with a different message, and that must still fail this row: the whole
+# point of these sections is that the files come back.
+run_rollback_test() {
+    local name="$1"
+    local checkpoint_id="$2"
+
+    log_test "$name"
+
+    local output exit_code=0
+    output=$("$BINARY" rollback "$checkpoint_id" 2>&1) || exit_code=$?
+
+    if (( exit_code == 0 )); then
+        log_pass "$name"
+        return 0
+    fi
+    if rollback_failed_only_to_reload "$output"; then
+        log_pass "$name (exit $exit_code: files restored, service reload unavailable here)"
+        log_info "  the reload cannot succeed in this container; the file assertions below are the real check"
+        return 0
+    fi
+    log_fail "$name (exit code: $exit_code)"
+    surface_tool_output "$output"
+    return 1
+}
+
+# The classification on its own, so the self-test can put every case to it
+# without a checkpoint, a container or a binary. A rollback reports its two
+# failure halves with different sentences, and only one of them is an
+# environment limit rather than a defect.
+rollback_failed_only_to_reload() {
+    grep -qF "a service did not reload" <<<"$1"
+}
+
 run_test_output() {
     local name="$1"
     local cmd="$2"
@@ -878,7 +921,7 @@ test_audit_rollback_restores() {
     # The rollback and what must be true afterwards
     # ------------------------------------------------------------------------
 
-    run_test "Audit rollback: the rollback exits 0" "\"$BINARY\" rollback \"$checkpoint_id\"" || true
+    run_rollback_test "Audit rollback: the rollback exits 0" "$checkpoint_id" || true
 
     find "$audit_tree" | sort > "$work/tree-postrollback"
 
@@ -1062,7 +1105,7 @@ test_services_rollback_restores() {
     # The rollback and what must be true afterwards
     # ------------------------------------------------------------------------
 
-    run_test "Services rollback: the rollback exits 0" "\"$BINARY\" rollback \"$checkpoint_id\"" || true
+    run_rollback_test "Services rollback: the rollback exits 0" "$checkpoint_id" || true
 
     find "$admin_dir" | sort > "$work/tree-postrollback"
 
@@ -1774,6 +1817,20 @@ self_test() {
             failures=$((failures + 1))
         fi
     }
+
+    # A rollback exits non-zero for two different reasons and only one of them
+    # is this container's fault. Getting this wrong in either direction is
+    # costly: too strict and every distribution whose auditd cannot load rules
+    # fails a clean run, too loose and a rollback that never restored the files
+    # passes the row that exists to catch exactly that.
+    check_status 0 "a rollback that could not reload a service is not a failed rollback" \
+        rollback_failed_only_to_reload \
+        "Files were restored, but a service did not reload and is still running the previous configuration"
+    check_status 1 "a rollback that did not restore its files is still a failure" \
+        rollback_failed_only_to_reload \
+        "Rollback completed with errors: some files were not restored"
+    check_status 1 "output naming neither half is not waved through" \
+        rollback_failed_only_to_reload "Error: checkpoint not found"
 
     # A partial apply: the document exists and names the plugin, whatever the
     # exit code said.
