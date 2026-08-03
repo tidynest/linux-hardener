@@ -229,7 +229,7 @@ pub async fn run(
         super::plugin_filter::expand(&plugins, plugin_filter)?
     };
 
-    if dry_run {
+    if dry_run && !quiet {
         output::info(&format, "Dry run - no changes will be made");
     }
 

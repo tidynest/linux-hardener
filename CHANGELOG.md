@@ -391,6 +391,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`apply --dry-run --quiet` no longer prints its dry-run notice.** Every other
+  status line in `apply` is gated on `--quiet` by hand; the announcement that
+  opens a dry run was the one that was not, so a run asked for in silence still
+  wrote a line to stdout ahead of its results. The gating happens at each call
+  site rather than inside the output helper, so nothing type-checks it and no
+  unit test could see the omission. Only text output was affected: under
+  `--format json` this helper already writes to stderr, so no JSON consumer ever
+  saw it. The test drives the built binary and asserts the notice is present
+  without the flag as well as absent with it, since an absence claim alone would
+  hold just as well for a line that had been deleted.
 - **`apply` acts on the `--config` file it is given, instead of hardening the
   host against defaults it was never shown.** The flag is global and every other
   policy-reading command honoured it; `apply` alone built its loader with
