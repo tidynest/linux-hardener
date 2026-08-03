@@ -521,6 +521,24 @@ under its nickname and an ad-hoc target under `user@host:port`. Reaching one
 machine both ways in separate runs therefore records two series for it, which
 de-duplication cannot help with because only one form is present in each run.
 
+The **checkpoint** host key is a third identity, and it is coarser than either.
+It is `ssh://user@host:port`, and a target that named no user is filed under a
+literal `root` whether or not that is the account ssh resolves it to. Two
+consequences follow, and both are limitations rather than choices:
+
+- `hardener --ssh web-01 apply` files its checkpoint under
+  `ssh://root@web-01:22`, so `hardener --ssh admin@web-01 rollback <id>` is
+  refused as belonging to a different host, though it is the same machine. Roll
+  back with the same form of target you applied with.
+- `--ssh web-01` and `--ssh root@web-01` are two targets everywhere else and one
+  checkpoint host key. A fleet run that writes therefore **refuses** such a
+  selection, exit `2`, before it connects to anything: their pre-apply
+  checkpoints would land under one `(host key, name)` pair, the newest would
+  win, and a later rollback could restore state the other target had already
+  hardened while reporting success. Name the account on both targets, or run
+  them one at a time. `batch scan` and `batch report` take no checkpoints and
+  are not affected, nor is a dry run.
+
 ### batch scan
 
 Scan selected hosts concurrently and print one clearly-headed section per

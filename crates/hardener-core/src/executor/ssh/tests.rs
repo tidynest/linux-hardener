@@ -348,3 +348,41 @@ fn metadata_probe_execution_flags_an_existing_unreadable_path_as_unverifiable() 
         "error must say the metadata was unreadable, got: {message}"
     );
 }
+
+/// The checkpoint host key is derived by a free function rather than only
+/// inside `description`, so a fleet run can predict the key a host will file
+/// under before it opens a connection. Deriving it twice would let the
+/// prediction and the record drift, which is the drift `host_key_for`'s own
+/// documentation exists to prevent, so `description` calls this and nothing
+/// else formats the string.
+#[test]
+fn checkpoint_host_key_names_the_account_the_target_gave() {
+    assert_eq!(
+        checkpoint_host_key(Some("admin"), "web-01", 22),
+        "ssh://admin@web-01:22"
+    );
+    assert_eq!(
+        checkpoint_host_key(Some("admin"), "web-01", 2222),
+        "ssh://admin@web-01:2222",
+        "the port is part of the key, so one machine on two ports is two keys"
+    );
+}
+
+/// The substitution this records is a defect being pinned, not a behaviour
+/// being endorsed: a target that named no user is filed under an account it
+/// never mentioned, and is then indistinguishable from one that asked for
+/// `root` outright. Until the key can say what the remote account actually is,
+/// a fleet run has to refuse the pair rather than let their checkpoints collide.
+#[test]
+fn checkpoint_host_key_cannot_tell_a_bare_target_from_an_explicit_root() {
+    assert_eq!(
+        checkpoint_host_key(None, "web-01", 22),
+        "ssh://root@web-01:22",
+        "no user given still produces a key naming root"
+    );
+    assert_eq!(
+        checkpoint_host_key(None, "web-01", 22),
+        checkpoint_host_key(Some("root"), "web-01", 22),
+        "the two forms are one key, which is why they cannot both write checkpoints"
+    );
+}

@@ -150,15 +150,31 @@ impl SshExecutor {
     }
 }
 
+/// The host key a remote target's checkpoints are filed under, derived from the
+/// target alone so a run can know it before opening a connection.
+///
+/// [`SshExecutor::description`] returns exactly this, and `host_key_for` returns
+/// that description for any remote executor, so this is the one place the string
+/// is built. A caller that needs the key in advance, such as a fleet run
+/// checking that its selected hosts can be told apart, must call this rather
+/// than reassemble the format, or the predicted key and the recorded one could
+/// drift apart without any test noticing.
+///
+/// The `root` substituted for a target that named no user is a known defect and
+/// not a claim about the remote account: ssh resolves a bare target through the
+/// operator's `~/.ssh/config`, so the account it lands on is frequently not
+/// root. It makes `--ssh h` and `--ssh root@h` one key while they are two
+/// targets everywhere else, which is why a run that selects both is refused.
+/// Correcting it means resolving the effective user at connect time, which
+/// orphans every checkpoint already filed under the old key.
+pub fn checkpoint_host_key(user: Option<&str>, host: &str, port: u16) -> String {
+    format!("ssh://{}@{}:{}", user.unwrap_or("root"), host, port)
+}
+
 #[async_trait]
 impl SystemExecutor for SshExecutor {
     fn description(&self) -> String {
-        format!(
-            "ssh://{}@{}:{}",
-            self.user.as_deref().unwrap_or("root"),
-            self.host,
-            self.port,
-        )
+        checkpoint_host_key(self.user.as_deref(), &self.host, self.port)
     }
 
     fn is_remote(&self) -> bool {

@@ -14,7 +14,7 @@ use hardener_core::HardenerConfig;
 use hardener_core::plugin::{Finding, UncheckedCheck};
 use hardener_core::{
     Context, PluginMetadata, ScanResult, SshExecutor,
-    executor::{SystemExecutor, host_key_for},
+    executor::{SystemExecutor, host_key_for, ssh::checkpoint_host_key},
 };
 use hardener_distro::Distribution;
 use hardener_scheduler::ScanHistoryManager;
@@ -137,9 +137,9 @@ pub fn parse_inline(
 /// One caveat this does NOT resolve: `SshExecutor::description`, which supplies
 /// the *checkpoint* host key, substitutes a literal `root` when no user was
 /// given, so `--ssh web-01` and `--ssh root@web-01` are two targets here and
-/// one host key there. Under `batch apply --execute` they run concurrently and
-/// their pre-apply checkpoints collide. Distinguishing them here is right; the
-/// collision belongs to that fabricated `root` and has to be fixed there.
+/// one host key there. Distinguishing them here is right; the collision belongs
+/// to that fabricated `root`. Until it can be corrected, a run that writes
+/// refuses such a selection outright: see [`colliding_host_key`].
 pub fn resolve_hosts(
     inventory: &HostsConfig,
     all: bool,
@@ -172,6 +172,63 @@ pub fn resolve_hosts(
         bail!("no hosts selected: use --all, --host <names>, or --ssh <user@host>");
     }
     Ok(selected)
+}
+
+/// Two selected targets that a writing run cannot tell apart, and the single
+/// key they would both have written under.
+struct HostKeyCollision {
+    key: String,
+    first: String,
+    second: String,
+}
+
+/// The first pair of selected hosts that would file their checkpoints under one
+/// host key, if any.
+///
+/// Checkpoints are scoped by `(host_key, name)` and the newest per key wins, so
+/// two targets sharing a key do not merely share a namespace: under `--execute`
+/// each captures a pre-apply checkpoint under the same pair, and the survivor
+/// can be the one taken after the other target had already hardened the machine.
+/// A later rollback then reports the host restored while restoring the hardened
+/// state, and the cross-host guard cannot refuse it, because by its measure the
+/// keys are equal. Neither is this a race that concurrency introduced:
+/// `--concurrency 1` serialises the two captures and still writes both under one
+/// key.
+///
+/// The key comes from [`checkpoint_host_key`] rather than from `target()`, which
+/// is a different identity: it carries no scheme and leaves the user out when
+/// the target did not name one, which is precisely the distinction the host key
+/// loses. Every input is on the profile, so this runs before any connection.
+fn colliding_host_key(profiles: &[RemoteHostProfile]) -> Option<HostKeyCollision> {
+    let mut seen: Vec<(String, String)> = Vec::with_capacity(profiles.len());
+    for profile in profiles {
+        let key = checkpoint_host_key(profile.user.as_deref(), &profile.hostname, profile.port);
+        if let Some((_, first)) = seen.iter().find(|(seen_key, _)| *seen_key == key) {
+            return Some(HostKeyCollision {
+                key,
+                first: first.clone(),
+                second: profile.target(),
+            });
+        }
+        seen.push((key, profile.target()));
+    }
+    None
+}
+
+/// Refuses a run that writes when its selected hosts cannot file their
+/// checkpoints apart. Called only for `--execute`, because a dry run captures no
+/// checkpoint and restores nothing, so the collision cannot bite it.
+fn refuse_colliding_host_keys(profiles: &[RemoteHostProfile]) {
+    if let Some(collision) = colliding_host_key(profiles) {
+        eprintln!(
+            "'{}' and '{}' would file their checkpoints under one host key ({}), \
+             so this run could not tell their checkpoints apart and a later \
+             rollback could restore the wrong state. Name the remote account on \
+             both targets, or run them one at a time.",
+            collision.first, collision.second, collision.key
+        );
+        std::process::exit(2);
+    }
 }
 
 /// Aggregate rollup across all hosts, for the summary line and JSON.
@@ -1507,6 +1564,9 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
         opts.quiet,
         verb,
     );
+    if opts.execute {
+        refuse_colliding_host_keys(&profiles);
+    }
     if opts.execute && !opts.quiet {
         eprintln!("--execute: applying to {} host(s)", profiles.len());
     }
@@ -1611,6 +1671,9 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
         opts.quiet,
         verb,
     );
+    if opts.execute {
+        refuse_colliding_host_keys(&profiles);
+    }
     if opts.execute && !opts.quiet {
         eprintln!("--execute: rolling back {} host(s)", profiles.len());
     }

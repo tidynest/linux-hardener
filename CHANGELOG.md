@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Two ad-hoc targets for one machine could file their checkpoints under a
+  single key, so a fleet rollback could restore already-hardened state and
+  report success.** The checkpoint host key comes from
+  `SshExecutor::description`, which substitutes a literal `root` when a target
+  named no user, so `--ssh web-01` and `--ssh root@web-01` are two targets
+  everywhere else and one host key there. Checkpoints are scoped by
+  `(host key, name)` and the newest per key wins, so under `batch apply
+  --execute` both captured a pre-apply checkpoint under the same pair and the
+  survivor could be the one taken after the other target had already hardened
+  the machine. The cross-host guard could not refuse the later rollback, because
+  by its measure the two keys are equal. This was not a race introduced by
+  concurrency: `--concurrency 1` serialises the two captures and still writes
+  both under one key. A fleet run that writes now refuses such a selection,
+  exit `2`, before it opens a connection, naming both targets and the single key
+  they would have shared. The refusal covers `batch rollback --execute` as well
+  as `batch apply --execute`: rollback takes its own reversible-rollback
+  snapshot through the same path, and it also *reads* by host key, so a
+  colliding pair could restore one target from the other's checkpoint. The key
+  itself is unchanged, so no stored checkpoint is affected; correcting it means
+  resolving the effective remote user at connect time, which orphans every
+  checkpoint already filed under the old key and is a separate decision. The
+  limitation is now documented in the CLI reference, which had never recorded
+  it despite two commit messages claiming it did.
 - **`batch apply --execute` hardened an entire fleet from the compiled-in
   defaults when the `--config` path it was given could not be loaded.** The
   fleet loader warned on stderr and fell back for any configuration failure: a
