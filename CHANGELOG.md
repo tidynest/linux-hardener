@@ -323,6 +323,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The differential suite's kernel pre-apply control reports a torn capture
+  rather than ending the run from an assignment.** The control read each
+  parameter out of the pre-apply capture with a bare `reading="$(grep ... | cut
+  ...)"`, and under `set -euo pipefail` a parameter the capture holds no line
+  for fails the grep, fails the pipeline, and ends the whole suite from that
+  assignment: exit 1 with not one check printed, which reads as a finding and is
+  not. The capture is built from the same table the control walks, so the two
+  coming apart is a fault in the suite rather than in the host; it is now
+  reported as a named failure. Counting the missing row as a parameter away
+  from target was rejected as the worse answer, because the control would then
+  pass on the strength of a reading nobody took. Two further assignments of the same shape are guarded with it: a `jq`
+  capture in the rollback reload check, which is reached directly and whose
+  `2>/dev/null` would have swallowed the only explanation, and a `pwscore`
+  capture whose non-zero exit is the normal case on the path that calls it. That
+  one is latent rather than live, because every caller today reaches it from
+  inside a command substitution, where `set -e` does not apply unless
+  `inherit_errexit` is set, and this project never sets it. The self-test case
+  that proves all of this carried one of its own, since it arranges a torn
+  capture with a `grep -v`: it is guarded now, and the count of what survives
+  the guard is asserted, because an empty capture would be missing every row and
+  the assertion below it would still have passed, for a reason that has nothing
+  to do with what it claims.
+
 - **`scan --ssh` filed a remote host's findings under the operator's own host
   name.** The scan itself was already remote-correct, because `--ssh` builds an
   `SshExecutor` and every plugin asks the host through it. Only the history key

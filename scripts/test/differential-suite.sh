@@ -862,7 +862,13 @@ rollback_reload_cycle() {
         record_fail "rollback reload: 'checkpoint list' failed, so no checkpoint id could be found to roll back to"
         return 0
     fi
-    checkpoint_id="$(jq -r '[.[] | select(.checkpoint_name == "ssh-hardening-pre-apply")] | map(.checkpoint_id) | first // empty' <<<"$list_json" 2>/dev/null)"
+    # Guarded rather than assigned outright, for the reason the kernel control
+    # gives: this function is called directly, so a jq that exits non-zero on a
+    # document it cannot parse would end the run from this assignment with the
+    # `2>/dev/null` having swallowed the only explanation. The empty-string
+    # branch below is where a missing checkpoint is meant to be reported, and it
+    # cannot be reached from an abort.
+    checkpoint_id="$(jq -r '[.[] | select(.checkpoint_name == "ssh-hardening-pre-apply")] | map(.checkpoint_id) | first // empty' <<<"$list_json" 2>/dev/null || true)"
     if [[ -z "$checkpoint_id" ]]; then
         record_fail "rollback reload: no 'ssh-hardening-pre-apply' checkpoint was found in 'checkpoint list', so there is nothing to roll back to"
         return 0
@@ -1664,7 +1670,13 @@ pwquality_refusal_detail() {
         printf 'pwscore is not installed'
         return 0
     }
-    message="$(printf '%s\n' "$password" | pwscore 2>&1 >/dev/null)"
+    # `|| true` because a non-zero pwscore is the NORMAL case here: this
+    # function is called only on the failure path, so the password has already
+    # been refused and pwscore is being asked why. Every caller today reaches it
+    # from inside a command substitution, where `set -e` does not apply without
+    # `inherit_errexit`, so the abort is latent rather than live: one direct
+    # call would arm it.
+    message="$(printf '%s\n' "$password" | pwscore 2>&1 >/dev/null || true)"
     if [[ -z "$message" ]]; then
         printf 'pwscore refused it and said nothing'
         return 0
@@ -2571,7 +2583,19 @@ run_kernel_preapply_control() {
     fi
     for entry in "${KERNEL_CHECKS[@]}"; do
         IFS='|' read -r name target direction <<<"$entry"
-        reading="$(grep -m1 "^$name=" <<<"$KERNEL_BEFORE" | cut -d= -f2-)"
+        # Guarded rather than assigned outright. A parameter the capture has no
+        # line for fails the grep, and under `set -euo pipefail` a bare
+        # assignment from a failing pipeline ends the whole run from here: exit
+        # 1 with not one check printed, which reads as a finding and is not.
+        # The capture is built from this same table, so the two coming apart is
+        # a fault in the suite rather than in the host, and it is reported as
+        # one instead of being counted as a parameter away from target. Counting
+        # it away would be worse than aborting: the control would then pass on
+        # the strength of a reading nobody took.
+        if ! reading="$(grep -m1 "^$name=" <<<"$KERNEL_BEFORE" | cut -d= -f2-)"; then
+            record_fail "kernel-hardening pre-apply control: the pre-apply capture holds no reading for $name, so the capture and the table have come apart and this control cannot be asked"
+            return 0
+        fi
         if ! kernel_satisfies "$reading" "$target" "$direction"; then
             away=$((away + 1))
             # Named, not just counted. A bare count cannot be reconciled against
@@ -5001,6 +5025,32 @@ Number of days of warning before password expires	: 7"
     check_status 0 "and the pass names how many were away, so a control that counted nothing cannot read as one that counted something" \
         grep -q "1 of the 11 managed parameters were away from target" "$kernel_control_out"
     rm -f "$kernel_control_out"
+
+    # A capture missing a row the table declares. Before this was guarded the
+    # grep below failed, `set -euo pipefail` ended the self-test from the
+    # assignment, and the run exited 1 having printed nothing: a status where a
+    # failure should have been. It is a failure rather than a parameter counted
+    # away, because no reading was taken for it at all.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    local kernel_torn_out kernel_torn_before
+    kernel_torn_before="$KERNEL_BEFORE"
+    # Guarded, and then checked, for the reason the case itself exists: `grep
+    # -v` exits 1 when it emits no lines, so the assignment that arranges a
+    # torn capture could end the run from an assignment. The guard alone would
+    # be worse than the abort, because an empty capture is missing every row
+    # and the assertion below would still pass, for a reason that has nothing
+    # to do with what it claims. The count says which of the two happened.
+    KERNEL_BEFORE="$(grep -v "^net.ipv4.tcp_syncookies=" <<<"$KERNEL_BEFORE" || true)"
+    check_eq "$(grep -c '=' <<<"$KERNEL_BEFORE")" "10" \
+        "the torn capture holds every declared parameter but the one removed, so an empty capture cannot stand in for it"
+    kernel_torn_out="$(mktemp)"
+    KERNEL_BOOTED=1 run_kernel_preapply_control > "$kernel_torn_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a pre-apply capture missing a row the kernel table declares fails the control rather than ending the run from an assignment"
+    check_status 0 "and the failure names the parameter the capture had no reading for, which an abort could never have said" \
+        grep -q "holds no reading for net.ipv4.tcp_syncookies" "$kernel_torn_out"
+    rm -f "$kernel_torn_out"
+    KERNEL_BEFORE="$kernel_torn_before"
 
     unset -f sysctl
     CHECKS_TOTAL=$kernel_saved_total
