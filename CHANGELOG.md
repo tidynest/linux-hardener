@@ -519,15 +519,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than a defect that had been biting, and an unset format is written as the
   documented `generic`.
 
-  **Email is not fixed by this and has the same shape of problem.**
-  `EmailUiConfig` models `enabled`, `recipients` and `from_address`; the backend
-  `EmailConfig` also has `smtp_host`, `smtp_port`, `smtp_tls` and
-  `smtp_username`. Saving from the desktop rewrites the whole `[scheduler]`
-  section from what the form holds, so a hand-written `smtp_host` is replaced by
-  an empty string and `EmailNotifier::new` then returns `None`: the channel
-  reads as enabled and delivers nothing. `[scheduler.storage]` and
-  `notify_mode` are lost the same way. That is pre-existing and unchanged here,
-  and the form offers no way to see or restore any of it.
+- **Saving the desktop's scheduler page destroyed every `[scheduler]` key the
+  form does not model.** The save rewrote the whole section from a UI type that
+  carries a strict subset of the scheduler's, so pressing Save without changing
+  anything deleted `smtp_host`, `smtp_port`, `smtp_tls` and `smtp_username`,
+  the whole of `[scheduler.storage]`, and `notify_mode`. `enabled` *is*
+  modelled, so it survived: the result was a config asserting email
+  notifications were on while `EmailNotifier::new` returned `None` for an empty
+  SMTP host, and a host pointed at a custom `database_path` silently reverting
+  to the default while its history appeared to stop. The form shows none of
+  these fields, so the loss was neither visible nor repairable from the desktop.
+  The save now merges the form over the section already in the file: a key the
+  form does not emit is a key it does not own. Deliberately generic rather than
+  a list of fields to carry across, because a list has to be remembered every
+  time the backend gains a key, which is the same defect one step later. What
+  the form does model it still owns outright, including the endpoint list, so
+  clearing the webhook URL removes the endpoint. Reading that existing section
+  now fails the save rather than falling back to an empty one, since a silent
+  fallback would be this defect again with no bad input required.
 
 - **A `[scheduler]` section that named some of its keys and not others failed
   the whole configuration file, stopping `daemon` and `history` outright.**

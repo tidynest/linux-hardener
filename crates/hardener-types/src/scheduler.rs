@@ -79,7 +79,9 @@ struct WebhookWire {
     url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     format: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    // Always written, empty included: the desktop's save merges over the file's
+    // existing section, so a key it omits is a key it keeps. Skipping an empty
+    // list would make a webhook impossible to delete from the GUI that made it.
     endpoints: Vec<WebhookEndpointWire>,
 }
 

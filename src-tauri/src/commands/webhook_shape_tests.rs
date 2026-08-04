@@ -27,6 +27,122 @@ fn scheduler_section_of(rendered: &str) -> hardener_scheduler::SchedulerConfig {
     parsed.scheduler
 }
 
+/// A file carrying every `[scheduler]` key the desktop form does not model.
+const FULL_SECTION: &str = "\
+[scheduler]
+enabled = false
+schedule = \"0 0 5 * * *\"
+plugins = []
+min_severity = \"low\"
+
+[scheduler.storage]
+database_path = \"/srv/hardener/scheduler.db\"
+retention_count = 400
+
+[scheduler.notifications]
+notify_min_severity = \"high\"
+notify_mode = \"regression\"
+
+[scheduler.notifications.email]
+enabled = true
+smtp_host = \"smtp.example.invalid\"
+smtp_port = 465
+smtp_username = \"hardener\"
+recipients = [\"ops@example.invalid\"]
+from_address = \"scanner@example.invalid\"
+";
+
+/// Every key the form does not model survives a save.
+///
+/// The save rewrote the whole `[scheduler]` section from a UI type that models
+/// a subset, so `smtp_host` became an empty string and `EmailNotifier::new`
+/// then returned `None` while the channel still read as enabled.
+/// `[scheduler.storage]` and `notify_mode` went the same way, and the form has
+/// no field for any of them.
+#[test]
+fn a_save_keeps_the_keys_the_form_does_not_model() {
+    let rendered = render_scheduler_section(
+        &ui_config_with_webhook("https://example.invalid/hook", "slack"),
+        FULL_SECTION,
+    )
+    .expect("the section renders");
+    let scheduler = scheduler_section_of(&rendered);
+
+    assert_eq!(
+        scheduler.notifications.email.smtp_host, "smtp.example.invalid",
+        "the SMTP host must survive: {rendered}"
+    );
+    assert_eq!(scheduler.notifications.email.smtp_port, 465);
+    assert_eq!(
+        scheduler.storage.database_path,
+        std::path::PathBuf::from("/srv/hardener/scheduler.db"),
+        "the storage path must survive: {rendered}"
+    );
+    assert_eq!(
+        scheduler.notifications.notify_mode,
+        hardener_scheduler::config::NotifyMode::Regression
+    );
+}
+
+/// The form still owns what it does model.
+///
+/// The control on the test above: preserving unknown keys must not turn into
+/// preserving everything, or the page would stop saving at all.
+#[test]
+fn a_save_still_overwrites_what_the_form_owns() {
+    let rendered = render_scheduler_section(
+        &ui_config_with_webhook("https://example.invalid/hook", "slack"),
+        FULL_SECTION,
+    )
+    .expect("the section renders");
+    let scheduler = scheduler_section_of(&rendered);
+
+    // The fixture file says false / "0 0 5 * * *" / "low"; the form says the
+    // opposite of each.
+    assert!(scheduler.enabled, "the form's enable flag wins: {rendered}");
+    assert_eq!(scheduler.schedule, "0 0 2 * * *");
+    assert_eq!(scheduler.min_severity, "medium");
+    assert_eq!(
+        scheduler.notifications.webhooks.endpoints[0].url,
+        "https://example.invalid/hook"
+    );
+}
+
+/// Clearing the URL in the form removes the endpoint from the file.
+///
+/// The other half of ownership: a merge that only ever adds would make the
+/// webhook impossible to delete from the desktop that created it.
+#[test]
+fn clearing_the_url_removes_an_endpoint_the_file_already_had() {
+    let with_endpoint = render_scheduler_section(
+        &ui_config_with_webhook("https://example.invalid/hook", "slack"),
+        FULL_SECTION,
+    )
+    .expect("the section renders");
+    assert_eq!(
+        scheduler_section_of(&with_endpoint)
+            .notifications
+            .webhooks
+            .endpoints
+            .len(),
+        1,
+        "precondition: the file now has an endpoint"
+    );
+
+    let cleared = render_scheduler_section(&ui_config_with_webhook("", "slack"), &with_endpoint)
+        .expect("the section renders");
+    let scheduler = scheduler_section_of(&cleared);
+    assert!(
+        scheduler.notifications.webhooks.endpoints.is_empty(),
+        "clearing the URL must remove the endpoint: {cleared}"
+    );
+    // The control: clearing the webhook did not also wipe the unmodelled keys.
+    assert_eq!(
+        scheduler.notifications.email.smtp_host,
+        "smtp.example.invalid"
+    );
+}
+
 fn ui_config_with_webhook(url: &str, format: &str) -> hardener_types::scheduler::SchedulerUiConfig {
     let mut config = hardener_types::scheduler::SchedulerUiConfig {
         enabled: true,
@@ -42,10 +158,10 @@ fn ui_config_with_webhook(url: &str, format: &str) -> hardener_types::scheduler:
 
 #[test]
 fn a_webhook_saved_in_the_desktop_reaches_the_scheduler() {
-    let rendered = render_scheduler_section(&ui_config_with_webhook(
-        "https://example.invalid/hook",
-        "slack",
-    ))
+    let rendered = render_scheduler_section(
+        &ui_config_with_webhook("https://example.invalid/hook", "slack"),
+        "",
+    )
     .expect("the section renders");
 
     let scheduler = scheduler_section_of(&rendered);
@@ -64,10 +180,10 @@ fn a_webhook_saved_in_the_desktop_reaches_the_scheduler() {
 
 #[test]
 fn the_saved_format_is_the_one_the_operator_chose() {
-    let rendered = render_scheduler_section(&ui_config_with_webhook(
-        "https://example.invalid/h",
-        "discord",
-    ))
+    let rendered = render_scheduler_section(
+        &ui_config_with_webhook("https://example.invalid/h", "discord"),
+        "",
+    )
     .expect("the section renders");
     let scheduler = scheduler_section_of(&rendered);
 
@@ -77,10 +193,10 @@ fn the_saved_format_is_the_one_the_operator_chose() {
     );
     // The control against a renderer that hardcodes one format and would pass
     // the assertion above for any input.
-    let rendered = render_scheduler_section(&ui_config_with_webhook(
-        "https://example.invalid/h",
-        "slack",
-    ))
+    let rendered = render_scheduler_section(
+        &ui_config_with_webhook("https://example.invalid/h", "slack"),
+        "",
+    )
     .expect("the section renders");
     assert_eq!(
         scheduler_section_of(&rendered)
@@ -101,9 +217,11 @@ fn the_saved_format_is_the_one_the_operator_chose() {
 /// in `scheduler_section_of` is what catches that here.
 #[test]
 fn an_unchosen_format_still_produces_a_file_the_daemon_can_read() {
-    let rendered =
-        render_scheduler_section(&ui_config_with_webhook("https://example.invalid/hook", ""))
-            .expect("the section renders");
+    let rendered = render_scheduler_section(
+        &ui_config_with_webhook("https://example.invalid/hook", ""),
+        "",
+    )
+    .expect("the section renders");
 
     let scheduler = scheduler_section_of(&rendered);
     assert_eq!(
@@ -148,10 +266,10 @@ fn an_array_of_tables_header_is_moved_whole() {
 /// identifying where the endpoint came from.
 #[test]
 fn the_endpoint_is_named_for_the_desktop_that_wrote_it() {
-    let rendered = render_scheduler_section(&ui_config_with_webhook(
-        "https://example.invalid/h",
-        "slack",
-    ))
+    let rendered = render_scheduler_section(
+        &ui_config_with_webhook("https://example.invalid/h", "slack"),
+        "",
+    )
     .expect("the section renders");
     let scheduler = scheduler_section_of(&rendered);
 
@@ -168,7 +286,7 @@ fn the_endpoint_is_named_for_the_desktop_that_wrote_it() {
 
 #[test]
 fn a_webhook_with_no_url_writes_no_endpoint() {
-    let rendered = render_scheduler_section(&ui_config_with_webhook("", "slack"))
+    let rendered = render_scheduler_section(&ui_config_with_webhook("", "slack"), "")
         .expect("the section renders");
     let scheduler = scheduler_section_of(&rendered);
 

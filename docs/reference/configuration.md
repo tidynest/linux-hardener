@@ -605,10 +605,13 @@ with `name` and `url`, both **required**, plus `format` (`generic`, `slack`, or
 `${ENV_VAR}` expansion).
 
 The desktop offers a single webhook and writes it as one endpoint named
-`desktop`. Saving from the desktop rewrites the whole `[scheduler]` section from
-what its form holds, so a hand-written second endpoint, or any key the form does
-not model, does not survive that save. Keep hand-written endpoint lists on hosts
-you configure by file.
+`desktop`. Saving from the desktop merges its form over the `[scheduler]`
+section already in the file rather than replacing it, so every key the form does
+not model, `[scheduler.storage]`, `notify_mode` and the SMTP settings included,
+survives untouched. What the form does model it owns outright, and that includes
+the endpoint list: it holds one webhook, so saving replaces the whole list with
+that one, and clearing the URL removes it. Keep hand-written multi-endpoint
+lists on hosts you configure by file.
 
 ```toml
 [scheduler]

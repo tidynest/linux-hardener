@@ -1984,12 +1984,66 @@ pub async fn save_scheduler_config(
     document.remove("scheduler");
     let mut output = document.to_string();
 
-    output.push_str(&render_scheduler_section(&config)?);
+    output.push_str(&render_scheduler_section(&config, &content)?);
 
     std::fs::write(&write_path, output)
         .map_err(|e| safe_err(format!("Failed to write config: {e}")))?;
 
     Ok("Configuration saved".to_string())
+}
+
+/// The `[scheduler]` table already in a config file, or an empty one.
+///
+/// Fails closed. Returning an empty table on a parse error would be the very
+/// defect this merge exists to fix, silently and with no bad input required:
+/// every key the form does not model would be dropped on the next save. The
+/// caller has already parsed the same text with `toml_edit`, so an error here
+/// means the two parsers disagree, and refusing the save is the only answer
+/// that cannot lose the operator's settings.
+///
+/// Empty content is not an error, it is a new file with nothing to preserve.
+fn existing_scheduler_table(content: &str) -> Result<toml::Value, String> {
+    let document: toml::Value = toml::from_str(content).map_err(|e| {
+        safe_err(format!(
+            "Failed to read the existing scheduler section: {e}"
+        ))
+    })?;
+    Ok(document
+        .get("scheduler")
+        .cloned()
+        .filter(toml::Value::is_table)
+        .unwrap_or_else(|| toml::Value::Table(toml::map::Map::new())))
+}
+
+/// Writes `incoming` over `destination`, keeping keys `incoming` does not name.
+///
+/// Deliberately generic rather than a list of fields to carry across. The whole
+/// defect was that the desktop's type models a subset of the scheduler's and the
+/// save replaced the section wholesale, so a hardcoded list would have to be
+/// remembered every time the backend gains a key, which is the same failure one
+/// step later. A key the form does not emit is a key the form does not own.
+///
+/// Tables merge; every other value, arrays included, is replaced. That is what
+/// makes `plugins`, `recipients` and the webhook `endpoints` list editable: the
+/// form does emit those, including as an empty array, so clearing one in the GUI
+/// clears it in the file.
+fn overlay(destination: &mut toml::Value, incoming: toml::Value) {
+    match incoming {
+        toml::Value::Table(incoming_table) if destination.is_table() => {
+            let destination_table = destination
+                .as_table_mut()
+                .expect("the guard above proved this is a table");
+            for (key, value) in incoming_table {
+                match destination_table.get_mut(&key) {
+                    Some(slot) => overlay(slot, value),
+                    None => {
+                        destination_table.insert(key, value);
+                    }
+                }
+            }
+        }
+        other => *destination = other,
+    }
 }
 
 /// Renders the desktop's scheduler settings as a `[scheduler]` block.
@@ -2002,8 +2056,14 @@ pub async fn save_scheduler_config(
 /// assertion that could have failed.
 fn render_scheduler_section(
     config: &hardener_types::scheduler::SchedulerUiConfig,
+    existing: &str,
 ) -> Result<String, String> {
-    let scheduler_toml = toml::to_string_pretty(config)
+    let mut merged = existing_scheduler_table(existing)?;
+    let incoming = toml::Value::try_from(config)
+        .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
+    overlay(&mut merged, incoming);
+
+    let scheduler_toml = toml::to_string_pretty(&merged)
         .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
 
     // Split serialised scheduler into top-level keys and subtable sections,
