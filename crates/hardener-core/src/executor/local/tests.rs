@@ -179,3 +179,158 @@ async fn command_exists_answers_against_a_real_shell() {
              could not spawn it, so command_exists must not claim it is there"
     );
 }
+
+/// The probe against real coreutils, which is the only witness for the script
+/// itself: every assertion in `hardener-common` states what the parser does
+/// with an answer, and a fixture cannot say what `readlink` does.
+///
+/// Every case here is correct when the runner is root, which the cross-distro
+/// containers are. A `chmod 000` fixture would express the `EACCES` arm
+/// directly and go vacuous under root, so that arm is reached through the
+/// parent gate instead: a parent that cannot be resolved is refused whether the
+/// reason is absence or permission, and the two arrive identically.
+#[tokio::test]
+async fn the_writer_privilege_probe_reads_a_real_filesystem() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let target = dir.path().join("real.conf");
+    let link = dir.path().join("link.conf");
+    let dangling = dir.path().join("dangling.conf");
+    let orphan = dir.path().join("gone").join("child.conf");
+    std::fs::write(&target, "content\n").expect("write");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+    std::os::unix::fs::symlink(dir.path().join("nothing"), &dangling).expect("symlink");
+
+    let executor = LocalExecutor::new();
+
+    assert_eq!(
+        executor
+            .link_target_as_writer(&target)
+            .await
+            .expect("a regular file is an answer"),
+        None,
+        "a regular file whose parent resolves is positively not a symlink"
+    );
+    assert_eq!(
+        executor
+            .link_target_as_writer(&link)
+            .await
+            .expect("a link is an answer"),
+        Some(target.canonicalize().expect("canonicalize the target")),
+        "a link reports where it finally lands, every component resolved"
+    );
+    assert!(
+        executor.link_target_as_writer(&dangling).await.is_err(),
+        "a link pointing at nothing has no destination to judge, so it refuses"
+    );
+    assert!(
+        executor.link_target_as_writer(&orphan).await.is_err(),
+        "a path whose parent does not resolve cannot be probed, so it refuses: \
+         this is the arm that answers 'not a symlink' before the fix"
+    );
+}
+
+/// The path shapes that defeated the probe during review, pinned against a real
+/// filesystem rather than against a fixture that could only restate the claim.
+///
+/// A trailing slash, and a trailing `/.`, both make the kernel resolve the
+/// final named component before the `lstat` behind `test -h`, so a symlink
+/// answered `NOTLINK`. That is the **admitting** answer, and a write to such a
+/// path lands somewhere the gate never judged. Nothing in `hardener-common`
+/// runs the script, so this is the only place the script text itself is
+/// witnessed.
+#[tokio::test]
+async fn the_probe_is_not_defeated_by_a_trailing_slash_or_dot_segment() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let target_dir = dir.path().join("realdir");
+    let target_file = target_dir.join("child.conf");
+    std::fs::create_dir(&target_dir).expect("create realdir");
+    std::fs::write(&target_file, "content\n").expect("write");
+
+    let dir_link = dir.path().join("linkdir");
+    let file_link = dir.path().join("filelink");
+    std::os::unix::fs::symlink(&target_dir, &dir_link).expect("symlink dir");
+    std::os::unix::fs::symlink(&target_file, &file_link).expect("symlink file");
+
+    let executor = LocalExecutor::new();
+    let resolved_dir = target_dir.canonicalize().expect("canonicalize realdir");
+
+    for spelling in [dir_link.clone(), dir_link.join("")] {
+        assert_eq!(
+            executor
+                .link_target_as_writer(&spelling)
+                .await
+                .expect("a link is an answer"),
+            Some(resolved_dir.clone()),
+            "a trailing slash must not turn a symlink into the admitting \
+             'not a symlink' answer: {}",
+            spelling.display()
+        );
+    }
+
+    // A trailing slash on a link to a regular file does not resolve at all, and
+    // answered NOTLINK before the normalisation landed.
+    assert_eq!(
+        executor
+            .link_target_as_writer(&file_link.join(""))
+            .await
+            .expect("a link is an answer"),
+        Some(target_file.canonicalize().expect("canonicalize child")),
+        "a link to a regular file must answer the same with a trailing slash"
+    );
+
+    // A dot segment has no final named component for the gate to be scoped to,
+    // so it refuses rather than guessing. Resolving it by name would disagree
+    // with the kernel whenever the component before it is a link.
+    for shape in [dir_link.join("."), dir_link.join("..")] {
+        assert!(
+            executor.link_target_as_writer(&shape).await.is_err(),
+            "a trailing dot segment must refuse rather than admit: {}",
+            shape.display()
+        );
+    }
+
+    // The control, and it is what stops the two assertions above being
+    // satisfied by a probe that refuses everything: an ordinary dotfile is not
+    // a dot segment and must still be answered.
+    let dotfile = dir.path().join(".hidden.conf");
+    std::fs::write(&dotfile, "content\n").expect("write dotfile");
+    assert_eq!(
+        executor
+            .link_target_as_writer(&dotfile)
+            .await
+            .expect("a dotfile is an answer"),
+        None,
+        "an ordinary dotfile must be answered, or the refusal above proves nothing"
+    );
+}
+
+/// A symlinked directory component is resolved, not flattened by name.
+///
+/// `<dir>/dlink/../victim` is `<dir>/victim` as a string and
+/// `<outside>/victim` on the filesystem, and the difference is the whole
+/// reason the probe asks `readlink -e` rather than following one hop.
+#[tokio::test]
+async fn the_probe_resolves_a_symlinked_directory_component() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let outside = tempfile::tempdir().expect("outside tempdir");
+    std::fs::create_dir(outside.path().join("sub")).expect("create sub");
+    let victim = outside.path().join("victim");
+    std::fs::write(&victim, "not ours\n").expect("write victim");
+
+    let dlink = dir.path().join("dlink");
+    std::os::unix::fs::symlink(outside.path().join("sub"), &dlink).expect("symlink dir");
+    let followed = dir.path().join("followed.conf");
+    std::os::unix::fs::symlink(dir.path().join("dlink/../victim"), &followed).expect("symlink");
+
+    let executor = LocalExecutor::new();
+
+    assert_eq!(
+        executor
+            .link_target_as_writer(&followed)
+            .await
+            .expect("the link resolves"),
+        Some(victim.canonicalize().expect("canonicalize the victim")),
+        "the destination is the one the kernel reaches, not the one string \
+         surgery predicts"
+    );
+}
