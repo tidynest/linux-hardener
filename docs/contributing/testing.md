@@ -885,49 +885,73 @@ looks like the obvious candidate: 2 there ranks below strict mode 1, so seeding
 it would seed a looser value, a correct tool would tighten it, and the check
 would report a defect against every distribution.
 
-**One other row is seeded LOOSER than the tool's target**, and it is the mirror
-of the seed above rather than a repeat of it. The stricter seed proves the tool
-declines to un-harden a host already above its target; nothing proved the
-opposite question could be asked at all on a host that arrived compliant. The
-RHEL container is exactly that host: it ships every managed parameter at or
+**The other ten rows are seeded LOOSER than the tool's target**, and that is the
+mirror of the seed above rather than a repeat of it. The stricter seed proves
+the tool declines to un-harden a host already above its target; nothing proved
+the opposite question could be asked at all on a host that arrived compliant.
+The RHEL container is exactly that host: it ships every managed parameter at or
 above its target, so `run_kernel_preapply_control` correctly refused to certify
 checks that would have passed whether or not the tool had run, and the container
-could not reach a clean total however often the run was repeated. The seed is
-`net.ipv4.conf.all.accept_source_route` written to `1` against a tool target of
-`0`. That row is scored `at-most`, so 1 is unambiguously looser in the one
-direction it is compared in, and no supported distribution ships source routing
-on, which means a pre-apply reading of 1 exists only where the seed took effect.
-`rp_filter` is the trap here rather than the obvious alternative: its space is
-ranked weakest-first, so its looser value is 0 and not the larger number.
+could not reach a clean total however often the run was repeated.
 
-Two properties of that seed are deliberate.
+The looser value each row carries is not arbitrary, and follows from the
+direction that scores it:
 
-**It is written on every distribution**, not only where the control would
+| direction | seed | why that value |
+|---|---|---|
+| `at-most 0` | `1` | unambiguously looser in the one direction the row is compared in |
+| `at-least 1` | `0` | the same, the other way up |
+| `ranked:0,2,1` | `0` | the weakest position in the declared space |
+
+`rp_filter` is the trap in that last row rather than the obvious case: its space
+is ranked weakest-first, so its looser value is 0 and **not** the larger number.
+Seeding 2 would seed loose mode, which ranks below strict mode 1, and a correct
+tool would tighten it.
+
+`tcp_syncookies` is the eleventh row and is deliberately absent from the looser
+table, because the stricter table has it. One parameter cannot carry both seeds:
+whichever write landed second would decide the reading, and the check that lost
+would be scoring the other one's seed. Its `KERNEL_CHECKS` row is therefore
+still vacuous, and `run_seeded_kernel_check` asks the sharper question about it
+instead. The self-test pins the arithmetic, so an eleventh askable parameter
+cannot be added without a seed in one table or the other.
+
+Three properties of the looser seeds are deliberate.
+
+**They are written on every distribution**, not only where the control would
 otherwise fail. Seeding only the hosts that needed it would have the five runs
 measuring five different things, and the one host whose behaviour had changed
 would be the one with nothing to be compared against.
 
-**The write is read back before the run continues.** The stricter seed needs no
+**Each write is read back before the run continues.** The stricter seed needs no
 read-back because `run_seeded_kernel_check` reads that parameter again after the
 apply, so a write the kernel accepted and then ignored fails there. The looser
-seed has no row of its own: it adds no assertion, and what it changes is whether
-the existing control can be satisfied. Unread, a seed that did not take would
-leave the control scoring the value the container shipped while the log said a
-seed had been placed. The control's pass names the seeded parameter as seeded,
-for the same reason: every run now arrives holding one, and evidence that read
-the same for a seeded row and a naturally away one would let a log claim a
-container was non-compliant when the suite had made it so.
+seeds have no rows of their own: they add no assertion, and what they change is
+whether the existing control can be satisfied. Unread, a seed that did not take
+would leave the control scoring the value the container shipped while the log
+said a seed had been placed. The read-back is per parameter, so a seed loop that
+wrote every row and then checked only the first is caught. The control's pass
+names the seeded parameters as seeded, for the same reason: every run now
+arrives holding ten, and evidence that read the same for a seeded row and a
+naturally away one would let a log claim a container was non-compliant when the
+suite had made it so.
+
+**The control fails a seeded row it finds already at its target.** The seed's own
+read-back cannot see that case: it proves what the kernel reported at seed time,
+and the control scores a capture taken afterwards. Without the check the control
+would pass on the nine rows that did arrive loosened while the tenth went into
+the run exactly as vacuous as it was before being seeded.
 
 **Be clear about what this costs the control.** On a booted run it can no longer
-record a failure: the seed aborts unless its read-back returns the loosened
-value, the pre-apply capture is taken from that same kernel, and the row is
-scored `at-most 0`, so at least one parameter is always away. The control has
-become an assertion that the seed took rather than a discovery about the host.
-That is a tautology, not a hole, and the difference matters: if the kernel
-plugin did nothing at all, the seed would still be standing afterwards and
-`run_kernel_checks` would fail that row. Nothing goes green that should not. The
-ten unseeded rows are as vacuous on an already-compliant host as they were
-before, and making each of them ask a real question is what #47 is for.
+record the failure it was written for: the seeds abort unless their read-backs
+return the loosened values, the pre-apply capture is taken from that same
+kernel, and ten rows are then away by construction. The control has become an
+assertion that the seeds took rather than a discovery about the host. That is a
+tautology, not a hole, and the difference matters: if the kernel plugin did
+nothing at all, the seeds would still be standing afterwards and
+`run_kernel_checks` would fail all ten rows. Nothing goes green that should not,
+and since #47 the ten rows that used to pass on an already-compliant host
+whether or not the tool ran now cannot.
 
 **A run that is not booted asks the kernel nothing.** The signal is
 `HARDENER_DIFF_BOOTED`, exported by `run-cross-distro-tests.sh` on the
@@ -944,10 +968,13 @@ records **70 checks when it is not booted and 83 when it is**, less two on a
 host whose shadow has no minimum-password-age field (see below), so **68 and 81
 on Arch**, and
 `expected_check_total` carries an arm for each: the 11 kernel rows and the
-seeded row are checks the tables ask for only where they can be asked at all.
+stricter-seeded row are checks the tables ask for only where they can be asked
+at all. The ten looser-seeded rows move no total, because the rows they loosen
+are already counted among the 11 and what the seeds change is whether the
+control can be satisfied rather than how many assertions a run makes.
 The unaskable count runs the other way, **7 when booted and 19 when not**, the
 19 being the 11 rows the mode puts out of reach, the 7 the mount does, and the
-seeded row whose seed could not be written. `KERNEL_CHECKS_EXPECTED` and
+stricter-seeded row whose seed could not be written. `KERNEL_CHECKS_EXPECTED` and
 `KERNEL_UNASKABLE_EXPECTED` are both pinned in `require_check_tables`, for one
 reason beyond the usual: the failure mode here is a red row being quietly
 "fixed" by moving it out of `KERNEL_CHECKS` and into `KERNEL_UNASKABLE`, and
