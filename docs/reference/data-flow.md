@@ -916,13 +916,16 @@ Every path is shell-escaped before interpolation (`shell_escape` in
 | `read_dir(path)` | `find {path} -mindepth 1 -maxdepth 1 2>/dev/null` |
 | `execute_command(prog, args)` | Direct SSH command execution |
 | `read_link(path)` | `readlink -n -- {path}` (trait default, not SSH-specific) |
+| `link_target_as_writer(path)` | `sh -c <probe> _ {path} "sudo -n"`, with the path and the elevation both passed as positional arguments. The probe runs its whole body inside one `sudo -n sh -c` invocation, so it answers at the privilege `write_file` writes at (trait default; a local executor passes an empty elevation instead) |
 | `command_exists(prog)` | `sh -c <probe> sh {prog}`, a `command -v` probe with the name passed as a positional argument so metacharacters cannot alter what runs (trait default) |
 
 `file_metadata` asks two questions in one round trip on purpose: the `E`/`N`
 marker positively confirms existence, and a parsed `stat` line is stronger
 evidence still, so a `stat` that merely failed is never read as absence.
-`read_link` and `command_exists` are provided methods on `SystemExecutor` in
-`hardener-common`, so local and remote answer them identically.
+`read_link`, `link_target_as_writer` and `command_exists` are provided methods
+on `SystemExecutor` in `hardener-common`, so local and remote answer them
+identically. `link_target_as_writer` is the only one of the three that
+elevates, and it elevates exactly when the executor's own `write_file` does.
 
 ### Key Differences from Local Execution
 
