@@ -610,8 +610,14 @@ section already in the file rather than replacing it, so every key the form does
 not model, `[scheduler.storage]`, `notify_mode` and the SMTP settings included,
 survives untouched. What the form does model it owns outright, and that includes
 the endpoint list: it holds one webhook, so saving replaces the whole list with
-that one, and clearing the URL removes it. Keep hand-written multi-endpoint
-lists on hosts you configure by file.
+that one, and clearing the URL removes it.
+
+Ownership of the list reaches inside it. An endpoint the desktop writes carries
+`name`, `url` and `format` and nothing else, so a hand-written `headers` table,
+or a `name` you chose, is replaced on the first save from the GUI, even a save
+that changed nothing about the webhook. That applies to a single hand-written
+endpoint as much as to several. Configure webhooks by file on any host where a
+webhook needs an authentication header.
 
 ```toml
 [scheduler]

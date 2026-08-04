@@ -534,9 +534,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a list of fields to carry across, because a list has to be remembered every
   time the backend gains a key, which is the same defect one step later. What
   the form does model it still owns outright, including the endpoint list, so
-  clearing the webhook URL removes the endpoint. Reading that existing section
-  now fails the save rather than falling back to an empty one, since a silent
-  fallback would be this defect again with no bad input required.
+  clearing the webhook URL removes the endpoint. Ownership reaches inside that
+  list: an endpoint the desktop writes carries `name`, `url` and `format` only,
+  so a hand-written `headers` table is replaced by the first save from the GUI,
+  which the reference now states for a single endpoint and not only for a
+  multi-endpoint list. Reading the existing section fails the save rather than
+  falling back to an empty one, since a silent fallback would be this defect
+  again with no bad input required.
+
+  The merge needed two things retired with it. The flat `url`/`format` pair
+  earlier builds wrote is now deleted rather than merely not written: under a
+  merge, a key the form does not emit is a key it keeps, and the read path
+  prefers that pair whenever the endpoint list is empty, so a webhook deleted in
+  the GUI reappeared on the next load and went live again on the save after
+  that, with the daemon posting to an endpoint the operator had removed. And the
+  rendered section is now serialised nested under its own key instead of having
+  each table header re-prefixed textually afterwards. That pass could not tell a
+  header from a line of a multi-line string starting with `[`, and once the
+  merge began carrying every existing string through, each save nested such a
+  value one level deeper than the last.
 
 - **A `[scheduler]` section that named some of its keys and not others failed
   the whole configuration file, stopping `daemon` and `history` outright.**

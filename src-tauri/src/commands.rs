@@ -2062,57 +2062,47 @@ fn render_scheduler_section(
     let incoming = toml::Value::try_from(config)
         .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
     overlay(&mut merged, incoming);
+    drop_superseded_webhook_keys(&mut merged);
 
-    let scheduler_toml = toml::to_string_pretty(&merged)
+    // Serialised nested under its own key, so the serialiser emits
+    // `[scheduler]` and `[scheduler.notifications.email]` itself. This replaced
+    // a pass that re-prefixed each rendered header textually, which could not
+    // tell a header from a line of a multi-line string beginning with `[`: it
+    // rewrote those too, and since the merge now carries every existing string
+    // through, each save nested the mangled value one level deeper than the
+    // last. Letting the serialiser name the tables removes the question.
+    let mut wrapper = toml::map::Map::new();
+    wrapper.insert("scheduler".to_string(), merged);
+    let rendered = toml::to_string_pretty(&toml::Value::Table(wrapper))
         .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
 
-    // Split serialised scheduler into top-level keys and subtable sections,
-    // prefixing each [table] header with "scheduler.".
-    let mut top_keys = String::new();
-    let mut subtables = String::new();
-    for line in scheduler_toml.lines() {
-        if line.starts_with('[') || !subtables.is_empty() {
-            subtables.push_str(&prefix_table_header(line));
-            subtables.push('\n');
-        } else {
-            top_keys.push_str(line);
-            top_keys.push('\n');
-        }
-    }
-
-    let mut section = String::from("\n[scheduler]\n");
-    section.push_str(&top_keys);
-    if !subtables.is_empty() {
-        section.push('\n');
-        section.push_str(&subtables);
-    }
-    Ok(section)
+    Ok(format!("\n{rendered}"))
 }
 
-/// Moves one serialised table header under `[scheduler]`.
+/// Removes the flat webhook keys earlier desktop builds wrote.
 ///
-/// An array of tables opens with two brackets, and replacing only the first
-/// produced `[scheduler.[notifications.webhooks.endpoints]]`, which is not a
-/// header at all: the file it was written into no longer parsed. Nothing hit
-/// that while the desktop's own types rendered no list, which is exactly as
-/// long as the webhook settings were reaching nothing.
+/// `WebhookWire` stopped emitting `url`/`format`, which was enough to retire
+/// them while the save replaced the whole section. Under the merge it is not:
+/// a key the form does not emit is a key the form keeps, so they would survive
+/// every save, and the read path prefers them whenever the endpoint list is
+/// empty. Clearing the URL in the GUI wrote `endpoints = []`, the next load
+/// showed the deleted URL again, and the save after that promoted it back to a
+/// live endpoint the daemon posts to.
 ///
-/// A line not starting with `[` is returned unchanged, so the caller can hand
-/// every line of a subtable through one path. That test is textual, not
-/// structural: a content line of a multi-line `"""` string that happens to
-/// begin with `[` is rewritten too, which corrupts the value. Reaching it needs
-/// a newline inside `min_severity`, `notify_min_severity` or `format`, the three
-/// strings that cross the IPC boundary without `validate_ipc_string`. It cannot
-/// inject a table, because the serialiser switches to a `'''` literal when the
-/// content would close the string early, so the damage stops at a mangled value.
-fn prefix_table_header(line: &str) -> String {
-    if let Some(rest) = line.strip_prefix("[[") {
-        return format!("[[scheduler.{rest}");
-    }
-    if let Some(rest) = line.strip_prefix('[') {
-        return format!("[scheduler.{rest}");
-    }
-    line.to_string()
+/// Narrow on purpose: these two are the desktop's own historical spelling of a
+/// setting it still owns, and nothing in `hardener-scheduler` has ever read
+/// them. They are the exception that proves the ownership rule rather than a
+/// hole in it.
+fn drop_superseded_webhook_keys(scheduler: &mut toml::Value) {
+    let Some(webhooks) = scheduler
+        .get_mut("notifications")
+        .and_then(|notifications| notifications.get_mut("webhooks"))
+        .and_then(toml::Value::as_table_mut)
+    else {
+        return;
+    };
+    webhooks.remove("url");
+    webhooks.remove("format");
 }
 
 /// Sends a test notification through all enabled channels.
