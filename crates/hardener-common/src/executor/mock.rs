@@ -21,6 +21,7 @@ type LogStore = Arc<Mutex<MockExecutorLog>>;
 type PermissionDeniedStore = Arc<Mutex<HashSet<PathBuf>>>;
 type PathExistsStore = Arc<Mutex<HashMap<PathBuf, bool>>>;
 type SymlinkStore = Arc<Mutex<HashMap<PathBuf, String>>>;
+type UnprobeableStore = Arc<Mutex<HashSet<PathBuf>>>;
 
 /// Records of operations performed on the mock executor.
 #[derive(Clone, Debug, Default)]
@@ -65,6 +66,7 @@ pub struct MockExecutor {
     path_exists_error: PermissionDeniedStore,
     path_exists_override: PathExistsStore,
     symlinks: SymlinkStore,
+    unprobeable: UnprobeableStore,
     log: LogStore,
     is_remote: bool,
     description: String,
@@ -91,6 +93,7 @@ impl MockExecutor {
             path_exists_error: Arc::new(Mutex::new(HashSet::new())),
             path_exists_override: Arc::new(Mutex::new(HashMap::new())),
             symlinks: Arc::new(Mutex::new(HashMap::new())),
+            unprobeable: Arc::new(Mutex::new(HashSet::new())),
             log: Arc::new(Mutex::new(MockExecutorLog::default())),
             is_remote: false,
             description: "mock".to_string(),
@@ -118,6 +121,31 @@ impl MockExecutor {
             .lock()
             .expect("symlinks mutex poisoned")
             .insert(PathBuf::from(path), target.to_string());
+    }
+
+    /// Registers `path` as one the writer-privilege probe cannot answer for.
+    ///
+    /// The condition behind issue #83 and the one a symlink registry cannot
+    /// express: a path that is neither a known link nor a known plain file,
+    /// because looking at it failed. A fixture needs to be able to say so, or
+    /// the rollback guard's fail-closed arm has no caller-level test at all.
+    pub fn with_unprobeable(self, path: &str) -> Self {
+        self.add_unprobeable(path);
+        self
+    }
+
+    /// Registers `path` as unprobeable after the executor has been built.
+    ///
+    /// The builder form describes one unchanging host, and the rollback guard
+    /// exists for a host that changed: a path that answered cleanly at
+    /// capture time and cannot be looked at by the time the restore reaches
+    /// it. Expressing that needs the registry written between the two calls,
+    /// the same reasoning as [`Self::add_symlink`].
+    pub fn add_unprobeable(&self, path: &str) {
+        self.unprobeable
+            .lock()
+            .expect("unprobeable mutex poisoned")
+            .insert(PathBuf::from(path));
     }
 
     /// Sets the executor to behave as remote.
@@ -507,6 +535,35 @@ impl SystemExecutor for MockExecutor {
             .expect("symlinks mutex poisoned")
             .get(path)
             .cloned())
+    }
+
+    /// Overridden for the reason [`Self::read_link`] is: the provided body runs
+    /// a shell script, and the mock registers no such command.
+    ///
+    /// A registered link reports its target as the resolved destination; this
+    /// does not simulate a chain, for the reason the old `canonical_path`
+    /// override gave, and chains, relative targets, symlinked parents and loops
+    /// are covered against a real filesystem instead. A path named by
+    /// [`Self::with_unprobeable`] is the refusing answer; anything else is
+    /// positively not a symlink.
+    async fn link_target_as_writer(&self, path: &Path) -> Result<Option<PathBuf>> {
+        if self
+            .unprobeable
+            .lock()
+            .expect("unprobeable mutex poisoned")
+            .contains(path)
+        {
+            return Err(anyhow!(
+                "Mock: could not determine whether {} is a symlink",
+                path.display()
+            ));
+        }
+        Ok(self
+            .symlinks
+            .lock()
+            .expect("symlinks mutex poisoned")
+            .get(path)
+            .map(PathBuf::from))
     }
 
     /// Overridden for the reason [`Self::read_link`] is: the provided body runs

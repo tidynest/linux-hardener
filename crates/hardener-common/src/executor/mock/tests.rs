@@ -173,3 +173,36 @@ async fn path_exists_error_is_not_reported_as_absence() {
         .await
         .expect_err("an unverifiable path must error, never report exists: false");
 }
+
+/// The mock owns its filesystem, so it must answer the writer-privilege probe
+/// from its registries rather than by running a script it registers no command
+/// for. Three outcomes, and a fixture has to be able to state all three.
+#[tokio::test]
+async fn the_writer_privilege_probe_answers_from_the_registries() {
+    let exec = MockExecutor::new()
+        .with_symlink("/etc/link.conf", "/usr/etc/plain.conf")
+        .with_unprobeable("/root/.ssh/authorized_keys");
+
+    assert_eq!(
+        exec.link_target_as_writer(Path::new("/etc/link.conf"))
+            .await
+            .expect("a registered link is an answer"),
+        Some(PathBuf::from("/usr/etc/plain.conf")),
+        "a registered link reports its target"
+    );
+    assert_eq!(
+        exec.link_target_as_writer(Path::new("/etc/plain.conf"))
+            .await
+            .expect("an unregistered path is an answer"),
+        None,
+        "a path with no registered link is positively not a symlink, which is \
+         what keeps every fixture written before symlinks existed meaningful"
+    );
+    assert!(
+        exec.link_target_as_writer(Path::new("/root/.ssh/authorized_keys"))
+            .await
+            .is_err(),
+        "a path a fixture calls unprobeable must fail closed, so the guard's \
+         refusing arm is reachable at the caller"
+    );
+}
