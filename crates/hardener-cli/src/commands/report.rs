@@ -57,6 +57,15 @@ pub async fn run(
         }
     };
 
+    // Judged before the scan, not at the point of writing: this is an argument
+    // contradicting an argument, and running eight plugins, or a whole remote
+    // scan under `--ssh`, before saying so wastes everything it cost. `history
+    // export` judges its own path before it opens the database for the same
+    // reason.
+    if let Some(path) = output.as_deref() {
+        refuse_extension_that_contradicts(std::path::Path::new(path), output_format)?;
+    }
+
     // Build config
     let config = ReportConfig {
         scenario,
@@ -118,7 +127,6 @@ pub async fn run(
     // Output result
     if let Some(path) = output {
         // Use provided path, adding extension if missing
-        refuse_extension_that_contradicts(std::path::Path::new(&path), output_format)?;
         let final_path = if std::path::Path::new(&path).extension().is_none() {
             format!("{}.{}", path, output_format.extension())
         } else {
@@ -165,7 +173,7 @@ pub async fn run(
 /// pick one for the operator: choosing from the extension would silently
 /// override an explicit `--report-format`, and there is no way to tell an
 /// explicit `--report-format text` from the default.
-fn refuse_extension_that_contradicts(
+pub(crate) fn refuse_extension_that_contradicts(
     path: &std::path::Path,
     selected: OutputFormat,
 ) -> anyhow::Result<()> {
@@ -179,10 +187,13 @@ fn refuse_extension_that_contradicts(
     if named == selected {
         return Ok(());
     }
+    // The flag is not named: `report` selects with `--report-format` and the
+    // `batch` verbs, which share this check, select with the global `--format`.
+    // Naming one of them would be wrong for the other half of the callers.
     anyhow::bail!(
-        "--output {} names a {} document, but --report-format selected {}. \
-         Give the path the matching extension, or none at all, or pass \
-         --report-format {}.",
+        "--output {} names a {} document, but the selected format is {}. \
+         Give the path the extension of the format you chose, or none at all, \
+         or choose {}.",
         path.display(),
         named.extension(),
         selected.extension(),

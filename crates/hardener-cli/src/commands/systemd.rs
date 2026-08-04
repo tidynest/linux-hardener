@@ -60,8 +60,9 @@ pub async fn generate(
         None => {
             // The units themselves are the output here, so they are the
             // envelope's body rather than something a caller has to scrape out
-            // from between two comment headers. Never suppressed by --quiet:
-            // this is the command's result, not progress about it.
+            // from between two comment headers. `false` for `quiet`, because
+            // this is the command's whole result and printing it is the point
+            // of the invocation, in either rendering.
             report(
                 &format,
                 serde_json::json!({
@@ -123,7 +124,7 @@ pub async fn install(
         .await
         .context("Failed to write timer file")?;
 
-    if !quiet {
+    if !quiet && !matches!(format, OutputFormat::Json) {
         println!("Installed: {}", service_path.display());
         println!("Installed: {}", timer_path.display());
     }
@@ -147,20 +148,30 @@ pub async fn install(
         vec!["enable", "--now", timer_name()]
     };
 
-    Command::new("systemctl")
+    // `.status()` only errors when the process cannot be spawned, so a
+    // non-zero exit was being discarded and the envelope asserted an outcome
+    // nothing had checked. Report what happened.
+    let enabled = Command::new("systemctl")
         .args(&enable_args)
         .status()
         .await
-        .context("Failed to enable timer")?;
+        .context("Failed to enable timer")?
+        .success();
 
     report(
         &format,
         serde_json::json!({
             "installed": [service_path.display().to_string(), timer_path.display().to_string()],
-            "timer_enabled": true,
+            "timer_enabled": enabled,
         }),
         quiet,
-        || println!("Timer enabled and started"),
+        || {
+            if enabled {
+                println!("Timer enabled and started");
+            } else {
+                println!("Units installed, but enabling the timer failed");
+            }
+        },
     );
 
     Ok(())
@@ -279,12 +290,16 @@ pub async fn status(user_mode: bool, format: OutputFormat, quiet: bool) -> Resul
 /// verb's JSON body differs, so what is shared is only the choice between them
 /// and the rule that `--quiet` suppresses progress and never a result.
 fn report(format: &OutputFormat, envelope: serde_json::Value, quiet: bool, text: impl FnOnce()) {
-    if quiet {
+    // The envelope is the result, so `--quiet` does not remove it: a caller
+    // asking for JSON and silence wants the machine-readable answer without the
+    // chatter, not an empty stdout it then fails to parse. The human lines keep
+    // the rule they shipped with, where `--quiet` does suppress them.
+    if matches!(format, OutputFormat::Json) {
+        println!("{envelope}");
         return;
     }
-    match format {
-        OutputFormat::Json => println!("{envelope}"),
-        _ => text(),
+    if !quiet {
+        text();
     }
 }
 

@@ -85,7 +85,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/report/tests.rs` | Unit tests for `src/commands/report.rs` | Test-only; `super` resolves to `crate::commands::report`, so its imports carried across unchanged |
 | `src/commands/report_wizard/tests.rs` | Unit tests for `src/commands/report_wizard.rs` | Test-only; `super` resolves to `crate::commands::report_wizard`, so its imports carried across unchanged |
 | `src/commands/history/tests.rs` | Unit tests for `src/commands/history.rs` | Test-only; `super` resolves to `crate::commands::history`, so its imports carried across unchanged |
-| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 69 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
+| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 71 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
 | `src/commands/checkpoint/tests.rs` | Unit tests for `src/commands/checkpoint.rs` | Test-only; `super` resolves to `crate::commands::checkpoint`, so its imports carried across unchanged |
 | `src/commands/state/tests.rs` | Unit tests for `src/commands/state.rs` | Test-only; `super` resolves to `crate::commands::state`, so its imports carried across unchanged |
 | `src/commands/privilege/tests.rs` | Unit tests for `src/commands/privilege.rs` | Test-only; `super` resolves to `crate::commands::privilege`, so its imports carried across unchanged |
@@ -902,11 +902,11 @@ workspace run itself for what passed.
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 98 |
-| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 86 |
+| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 88 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 94 |
 | hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 100 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and ten of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 214 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and ten of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 217 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and all eight plugin modules (`ssh/dropin.rs` and `ssh/include.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 608 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 131 |
 | hardener-types | `lib.rs`, `remote.rs` | - | 47 |

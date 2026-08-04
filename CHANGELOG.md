@@ -495,9 +495,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the default search happened to find, so the two halves of one configuration
   could disagree about where the run's results went. The scheduler section now
   comes from the named file when one was named, and a named path that is missing
-  or will not parse is an error rather than a fall-through to the defaults, which
-  is what the same flag means everywhere else it is honoured. The default search
-  is unchanged when no path is named. `docs/reference/cli.md` enumerated the
+  or will not parse is an error rather than a fall-through to the defaults. That
+  is not universal and the reference now says so: `batch scan`, `batch report`
+  and `batch apply --dry-run` deliberately keep their fallback, warning on
+  stderr, because they change no host. The default search is unchanged when no
+  path is named. One consequence is worth knowing before passing `-C` to these
+  verbs: the `[scheduler]` section does not merge, so a named file that has no
+  `[scheduler]` section yields the compiled-in defaults rather than the settings
+  in your system or user config, and a partial `[scheduler]` table will not parse
+  at all. `docs/reference/cli.md` enumerated the
   surfaces that accept `-C` without acting on it and presented that list as
   complete while naming neither of these; the list is now correct.
 
@@ -511,7 +517,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remove; and `status` carries `user_mode`, `exit_code`, `stdout` and `stderr`.
   `status` reports the exit code rather than discarding it, because an inactive
   timer and a unit that does not exist both make `systemctl` return non-zero and
-  nothing else tells them apart without reading prose. The text rendering is
+  nothing else tells them apart without reading prose. `install` reports
+  `timer_enabled` from what `systemctl enable --now` actually returned, rather
+  than asserting an outcome nothing had checked. The text rendering is
   unchanged. `--quiet` continues to suppress progress and never a result, so
   `generate` writing units to stdout still prints them.
 
@@ -536,9 +544,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the formats this tool actually renders, because `Path::extension` answers
   "what follows the last dot" rather than "what document is this", so
   `report.2026.08.03` asks for nothing and is still written as given. That list
-  now lives with the formats themselves as `OutputFormat::from_extension`, the
-  inverse of `extension()`, and `history export` was moved onto it, so the two
-  commands can no longer disagree about what an extension names.
+  now lives with the formats themselves as `OutputFormat::from_extension`, a
+  left inverse of `extension()` (`htm` maps to HTML, which writes `html`), and
+  `history export` and `batch`'s `--output` writer were moved onto it, so the
+  commands that judge a path can no longer disagree about what an extension
+  names. `history export` accepts and refuses exactly what it did before: the
+  two predicates are the same set. The wizard behind `report --interactive`
+  carried the same defect on its own code path and is refused there too.
 
 - **The container test suite no longer fails a rollback that did its job.** A
   rollback restores the files and then asks each plugin to reload the service

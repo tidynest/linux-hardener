@@ -152,10 +152,19 @@ fn systemd_generate_honours_the_global_json_format() {
 
     let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
         .unwrap_or_else(|e| panic!("stdout must parse as JSON, got {e}: {stdout}"));
+    // Asserted on content, not key presence: `Value::get` returns `Some(&Null)`
+    // for a key holding null, so a `"service": null` envelope satisfied the
+    // weaker form while carrying nothing a caller could use.
+    let service = parsed["service"]["content"].as_str().unwrap_or_default();
+    let timer = parsed["timer"]["content"].as_str().unwrap_or_default();
     assert!(
-        parsed.get("service").is_some() && parsed.get("timer").is_some(),
-        "the envelope carries both units it generated, so a caller need not \
-         scrape them out of a comment header; got: {parsed}"
+        service.contains("[Unit]") && service.contains("ExecStart="),
+        "the envelope carries the service unit itself, so a caller need not \
+         scrape it out of a comment header; got: {parsed}"
+    );
+    assert!(
+        timer.contains("[Timer]"),
+        "and the timer unit beside it; got: {parsed}"
     );
 
     // The control: without the flag the same run still prints the unit files as
@@ -167,5 +176,55 @@ fn systemd_generate_honours_the_global_json_format() {
         control_stdout.contains("[Unit]"),
         "the text rendering is unchanged and still prints the unit files; \
          got: {control_stdout}"
+    );
+}
+
+/// The refusal driven through the binary, not called directly.
+///
+/// This file's own header says why: a validator tested on its own passes every
+/// assertion while nothing calls it. That is not hypothetical here. Replacing
+/// the call in `report` with `let _ = refuse_extension_that_contradicts(..)`
+/// compiles, passes clippy at `-D warnings`, leaves every unit test green, and
+/// restores the defect in full.
+///
+/// It also pins that the refusal comes before the scan: eight plugins, or a
+/// whole remote scan, must not be paid for before one argument is compared with
+/// another.
+#[test]
+fn report_refuses_an_output_path_that_contradicts_the_format() {
+    // Absolute, under the scratch home. A relative path is resolved against the
+    // child's working directory, which is this crate's source directory, so a
+    // run that failed to refuse would drop the file into the repository.
+    let wrong = scratch_home().join("wrong-document.json");
+    let _ = std::fs::remove_file(&wrong);
+    let wrong = wrong.to_str().expect("a UTF-8 scratch path");
+
+    let out = run(&["report", "--output", wrong]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "a text report must not be written into a path naming JSON; got exit {:?} \
+         with stderr: {stderr}",
+        out.status.code()
+    );
+    assert!(
+        !std::path::Path::new(wrong).exists(),
+        "and no file is left behind by the refused run"
+    );
+    assert!(
+        !stderr.contains("Generating compliance report"),
+        "the refusal comes before the scan, so nothing is scanned or generated \
+         for a run that cannot write its result; got: {stderr}"
+    );
+
+    // The control: the same path with the format it names is accepted and
+    // reaches the scan, so the refusal is the contradiction rather than
+    // `--output` being broken.
+    let control = run(&["report", "--report-format", "json", "--output", "/dev/null"]);
+    let control_stderr = String::from_utf8_lossy(&control.stderr);
+    assert!(
+        !control_stderr.contains("names a json document"),
+        "a path agreeing with the format is not refused; got: {control_stderr}"
     );
 }

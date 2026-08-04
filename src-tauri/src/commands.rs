@@ -986,10 +986,19 @@ pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
 /// direction: it means "escalate and let the privileged run decide", which is
 /// what happened unconditionally before.
 async fn system_database_denies(system_db: &std::path::Path, checkpoint_id: &CheckpointId) -> bool {
-    if !system_db.exists() {
-        // A desktop that has never run a privileged apply has no system
-        // database at all, and that is a definite answer.
-        return true;
+    // `try_exists`, not `exists`. `Path::exists` is `metadata(..).is_ok()`, so
+    // it answers `false` for a file it merely may not stat, and the system
+    // database lives under a root-owned directory that an unprivileged desktop
+    // frequently cannot search: this host's is `drwx------ root`. Reading that
+    // `false` as "no such database" would make every root-owned checkpoint
+    // undeletable, which is the precise opposite of leaving the fallback
+    // reachable.
+    match system_db.try_exists() {
+        // Definitely not there: the answer this guard exists to act on.
+        Ok(false) => return true,
+        // Cannot even be asked. Not an answer, so the privileged run decides.
+        Err(_) => return false,
+        Ok(true) => {}
     }
     let Ok(manager) = create_checkpoint_manager(system_db).await else {
         return false;

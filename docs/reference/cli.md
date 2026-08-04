@@ -35,11 +35,23 @@ generate`/`install`, which embed the path in the unit they write.
 from the named file when there is one. A single file carrying both a `[global]`
 and a `[scheduler]` section is therefore honoured whole: before, `scan` took its
 policy from the named file and then wrote its history to whichever database the
-default search happened to find. A named path that is missing or will not parse
-is an error here as it is elsewhere.
+default search happened to find.
 
-Two surfaces accept the flag and do not act on it, and each still evaluates the
-host against the system and user configuration:
+**That section does not merge**, so naming a file replaces the search rather
+than adding to it. A file with no `[scheduler]` section yields the compiled-in
+defaults rather than the ones in your system or user config, which means a
+policy-only file passed to `scan` sends that run's history to the default
+database, and `daemon start` refuses with the scheduler disabled. A named path
+that is missing or will not parse is an error for these verbs. It is not
+everywhere: `batch scan`, `batch report` and `batch apply --dry-run`
+deliberately keep their fallback to the compiled-in defaults, warning on stderr,
+because they change no host.
+
+Every other command accepts the flag, because clap declares it globally, and
+does nothing with it: `rollback`, all five `checkpoint` verbs, `plugins`, and
+`systemd uninstall`/`status` read no configuration at all. Two are worth naming
+because they do read configuration and still ignore the flag, each evaluating
+the host against the system and user configuration instead:
 
 - `report --interactive`, which the wizard documents as deliberate: it loads the
   default sources so that it cannot score a host differently from
@@ -911,4 +923,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path. JSON is the only document this command produces, so a path ending in one of the report formats this tool renders elsewhere (`.csv`, `.htm`, `.html`, `.pdf`, `.txt`) is refused rather than filled with JSON. Any other path is written as given, including one with no extension and one whose name merely contains dots, such as `backups.2026.08.03` | `session-<first 8 chars of id>.json` |
 
-**Last Updated**: 2026-08-02
+**Last Updated**: 2026-08-04

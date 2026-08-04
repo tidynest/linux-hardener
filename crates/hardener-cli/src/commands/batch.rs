@@ -495,7 +495,19 @@ fn strip_ansi(s: &str) -> String {
 /// Writes rendered output to `path` for `--output`, colour-free: the escapes
 /// `colored` emitted for a colour-capable stdout are stripped first, so saved
 /// files match what a piped (non-tty) run prints. Shared by all four verbs.
-fn write_output(path: &str, rendered: &str) -> Result<()> {
+///
+/// A path whose extension names a document this tool renders but not the one
+/// `--format` selected is refused, as `hardener report --output` refuses it:
+/// `batch report --output fleet.json` under the default text format wrote a
+/// human fleet table into a file called `fleet.json` and exited on the report's
+/// own code. Batch renders only text and JSON, so a path naming CSV, HTML or
+/// PDF is a contradiction here whichever way `--format` is set.
+fn write_output(path: &str, format: CliOutputFormat, rendered: &str) -> Result<()> {
+    let selected = match format {
+        CliOutputFormat::Json => hardener_compliance::OutputFormat::Json,
+        _ => hardener_compliance::OutputFormat::Text,
+    };
+    super::report::refuse_extension_that_contradicts(std::path::Path::new(path), selected)?;
     std::fs::write(path, strip_ansi(rendered)).map_err(|e| anyhow!("failed to write {path}: {e}"))
 }
 
@@ -756,7 +768,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         _ => render_report_text(&reports),
     };
     match opts.output {
-        Some(path) => write_output(&path, &rendered)?,
+        Some(path) => write_output(&path, opts.format, &rendered)?,
         None => println!("{rendered}"),
     }
 
@@ -1659,7 +1671,7 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
         _ => render_apply_text(&outcomes),
     };
     match opts.output {
-        Some(path) => write_output(&path, &rendered)?,
+        Some(path) => write_output(&path, opts.format, &rendered)?,
         None => println!("{rendered}"),
     }
     std::process::exit(apply_exit_code(&outcomes));
@@ -1755,7 +1767,7 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
         _ => render_rollback_text(&outcomes),
     };
     match opts.output {
-        Some(path) => write_output(&path, &rendered)?,
+        Some(path) => write_output(&path, opts.format, &rendered)?,
         None => println!("{rendered}"),
     }
     std::process::exit(rollback_exit_code(&outcomes));
@@ -1785,7 +1797,7 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         _ => render_text(&outcomes),
     };
     match opts.output {
-        Some(path) => write_output(&path, &rendered)?,
+        Some(path) => write_output(&path, opts.format, &rendered)?,
         None => println!("{rendered}"),
     }
 

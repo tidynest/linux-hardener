@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-04
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -531,11 +531,20 @@ and `hardener batch`. It lives in the same `config.toml`, but is read
 directly from the first file found (user config first, then system config)
 rather than merged across sources.
 
-Two rules from the top of this page do not reach it. `--config` is not consulted
-(`load_scheduler_config` in the CLI's `commands/daemon.rs` searches the two
-default paths itself), and the user config is **not** skipped under root here, so
+One rule from the top of this page does not reach it: the user config is **not**
+skipped under root here, so
 a root daemon reads `~/.config/linux-hardener/config.toml` when that path exists
-and resolves. Keep the scheduler settings in the system config on any host where
+and resolves.
+
+`--config` **is** consulted, and it replaces that search rather than adding to
+it: the section is read from the named file alone. Two consequences follow from
+its not merging. A named file with no `[scheduler]` section yields the
+compiled-in defaults, not the settings in your system or user config, so a
+policy-only file passed to `scan` sends that run's history to the default
+database and `daemon start` reports the scheduler disabled. And a partial
+`[scheduler]` table will not parse at all, because `enabled`, `schedule`,
+`plugins` and `min_severity` have no defaults. Put the whole section in any file
+you intend to pass with `-C`, or leave the flag off for the scheduler verbs. Keep the scheduler settings in the system config on any host where
 that distinction matters.
 
 | Key | Type | Default | Effect |

@@ -556,7 +556,15 @@ fn output_reports(
         match &state.output_path {
             Some(base_path) => {
                 let path = if state.output_formats.len() == 1 {
-                    // Single format - use path as-is or add extension
+                    // Single format - use path as-is or add extension.
+                    //
+                    // Same contradiction `hardener report --output` refuses: the
+                    // extension is added when absent and, before this, never
+                    // checked when present, so answering `report.json` and then
+                    // picking Text saved a text report into `report.json` and
+                    // said "Saved Text report to". Refused here through the same
+                    // check, so the wizard and the flag cannot disagree.
+                    super::report::refuse_extension_that_contradicts(base_path, *format)?;
                     let mut p = base_path.clone();
                     if p.extension().is_none() {
                         p.set_extension(format.extension());

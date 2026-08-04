@@ -56,3 +56,48 @@ async fn a_system_database_that_cannot_be_read_is_not_an_answer() {
          privileged run must still get its chance to decide"
     );
 }
+
+/// The branch that made this guard dangerous, and the reason it uses
+/// `try_exists` rather than `exists`.
+///
+/// `Path::exists` is `metadata(..).is_ok()`, so it answers `false` for a path it
+/// may not stat, and the real system database sits under a root-owned directory
+/// an unprivileged desktop often cannot search: this project's is `drwx------
+/// root` on the maintainer's own machine. Treating that as "no such database"
+/// would refuse every root-owned checkpoint instead of escalating for it, which
+/// is worse than the prompt this guard removes.
+///
+/// A directory with no permissions reproduces it without root: stat on a path
+/// inside it fails with `EACCES`, exactly as it does for `/var/lib`.
+#[tokio::test]
+async fn a_database_that_cannot_even_be_stated_is_not_a_definite_no() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join(format!("hardener-unstatable-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+    let inside = dir.join("checkpoints.db");
+    std::fs::write(&inside, b"present but unreachable").expect("the fixture is written");
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o000))
+        .expect("the directory is closed");
+
+    let unstatable = inside.try_exists().is_err();
+    let denies = system_database_denies(&inside, &CheckpointId::new("cp_1_00000000")).await;
+
+    // Restore before asserting, so a failure does not leave an unreadable
+    // directory behind for the next run of this test.
+    let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        unstatable,
+        "the fixture must actually be unstatable, or this test proves nothing; \
+         running as root would make it statable and this assertion says so"
+    );
+    assert!(
+        !denies,
+        "a database that cannot be stated says nothing about the row, so the \
+         privileged run must still get its chance rather than the delete being \
+         refused outright"
+    );
+}

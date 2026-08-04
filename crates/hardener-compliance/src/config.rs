@@ -144,3 +144,56 @@ impl Default for ReportConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The extension-to-format mapping is the shared judgement behind two
+    /// commands' `--output` refusals, and it lived in neither's tests: a
+    /// one-word edit here silently changed what `history export` accepts and
+    /// what `report --output` refuses, with nothing red.
+    #[test]
+    fn every_format_is_found_by_the_extension_it_writes() {
+        for format in [
+            OutputFormat::Text,
+            OutputFormat::Json,
+            OutputFormat::Csv,
+            OutputFormat::Html,
+            OutputFormat::Pdf,
+        ] {
+            assert_eq!(
+                OutputFormat::from_extension(format.extension()),
+                Some(format),
+                "{format:?} must be recoverable from the extension it writes, or \
+                 a path this tool produced would be refused by the check that \
+                 reads it back"
+            );
+        }
+        assert_eq!(
+            OutputFormat::from_extension("HTM"),
+            Some(OutputFormat::Html),
+            "htm is html, and the comparison ignores case"
+        );
+    }
+
+    /// The control against the list being widened. `Path::extension` answers
+    /// "what follows the last dot", so these are what a dated or versioned file
+    /// name yields, and treating them as documents would refuse working
+    /// invocations that asked for no document at all.
+    #[test]
+    fn a_suffix_that_names_no_document_maps_to_nothing() {
+        for suffix in ["03", "1", "gz", "md", "xml", "", "tar"] {
+            assert_eq!(
+                OutputFormat::from_extension(suffix),
+                None,
+                "'{suffix}' names no document this tool renders"
+            );
+        }
+        assert_eq!(
+            OutputFormat::from_extension("json"),
+            Some(OutputFormat::Json),
+            "and the list has not been emptied, which would make the control vacuous"
+        );
+    }
+}
