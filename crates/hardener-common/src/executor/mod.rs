@@ -42,19 +42,52 @@ pub struct FileMetadata {
 /// rather than baked into the script: see [`SystemExecutor::link_target_as_writer`]
 /// for what each shipped executor passes and why.
 ///
+/// `PATH` is pinned to the same list [`crate::binary_utils::TRUSTED_PATH`]
+/// holds, and for the same reason: every other command this crate runs is
+/// resolved through `resolve_binary` as an explicit CWE-426 mitigation, and
+/// the four commands inside this script, `id`, `dirname`, `test` and
+/// `readlink`, are resolved by the shell instead. Without the assignment they
+/// would come off whatever `PATH` the session happened to carry, on the one
+/// call path whose next step is a write as root.
+///
+/// **The whole probe body runs inside one elevated invocation.** The outer
+/// script decides the elevation and then runs an inner script through it,
+/// handing the path down positionally a second time. That shape is what makes
+/// the answer trustworthy: if the elevation refuses to run anything at all, a
+/// `sudo` rule scoped to a command list or an absent `sudo` binary, the inner
+/// script never runs, prints no token, and the empty stdout classifies as the
+/// refusing answer. Elevating each command separately, as this once did, gave
+/// the `else` branch of `test -h` three meanings at once, "not a link", "could
+/// not `lstat`" and "the elevated command never ran", and printed the
+/// **admitting** answer for all three.
+///
+/// The command substitution is deliberate, rather than `exec`: the outer
+/// script must still exit 0 for every outcome of its own, including a failed
+/// elevation, so a non-zero status keeps its single meaning of "the probe did
+/// not run to completion". Stderr is left alone, so a `sudo` refusal still
+/// reaches the caller's error message.
+///
 /// The uid check stays regardless of what `$2` holds. A session that is
 /// already root needs no elevation even when asked for one, and a root
 /// container may ship no `sudo` binary at all; `E` is empty whenever the
 /// session is root, so that case is unaffected by `$2`.
 ///
-/// The parent gate is what makes `NOTLINK` trustworthy. GNU `readlink` exits 1
-/// for "not a symlink", for `ENOENT` and for a traversal it may not make, one
-/// status for three meanings, and only the first is an answer. A parent that
-/// resolves proves traverse permission is held, so the `lstat` behind `test -h`
-/// looked at something rather than failing to look. Telling the three apart by
-/// reading errno text instead was rejected: those strings are locale-dependent,
-/// which would turn this gate into a coin flip on a host with `LC_MESSAGES`
-/// set.
+/// The parent gate stays too, but not for the reason once claimed here. GNU
+/// `readlink` exits 1 for "not a symlink", for `ENOENT` and for a traversal it
+/// may not make, one status for three meanings, and only the first is an
+/// answer. A resolving parent does **not** prove traverse permission on the
+/// directory the path sits in: `readlink -e -- "$d"` needs search permission
+/// on `$d`'s ancestors, while `test -h "$d/name"` needs it on `$d` itself, so
+/// a link inside a 0000 directory whose own parent is traversable still
+/// answers `NOTLINK`. What the gate does earn is the other two meanings: a
+/// dangling link and a missing parent component are both caught before the
+/// `test -h`, and neither is a path this guard may admit. The guarantee that
+/// replaces the withdrawn one is the elevation itself, stated at
+/// [`SystemExecutor::link_target_as_writer`]: the probe and the write run at
+/// the same privilege, so a directory the probe cannot look into is one the
+/// write cannot reach either. Telling the three statuses apart by reading
+/// errno text instead was rejected: those strings are locale-dependent, which
+/// would turn this gate into a coin flip on a host with `LC_MESSAGES` set.
 ///
 /// `readlink -e` resolves **every** component, which is why the link is not
 /// followed hop by hop with `..` flattened by name. With `<allowed>/dlink` a
@@ -62,14 +95,18 @@ pub struct FileMetadata {
 /// collapses by name to `<allowed>/victim`, which an allowlist admits, while
 /// the write lands on `<outside>/victim`. Only the kernel knows that `..`
 /// follows `dlink` first.
-pub(crate) const LINK_PROBE_SCRIPT: &str = r#"if [ "$(id -u)" -eq 0 ]; then E=""; else E="$2"; fi
-d=$(dirname -- "$1")
-$E readlink -e -n -- "$d" >/dev/null 2>&1 || { printf UNDETERMINED; exit 0; }
-if $E test -h "$1"; then
-  t=$($E readlink -e -n -- "$1") && printf 'LINK %s' "$t" || printf UNDETERMINED
+pub(crate) const LINK_PROBE_SCRIPT: &str = r#"PATH=/usr/bin:/usr/sbin:/bin:/sbin:/usr/local/bin:/usr/local/sbin
+export PATH
+inner='d=$(dirname -- "$1")
+readlink -e -n -- "$d" >/dev/null 2>&1 || { printf UNDETERMINED; exit 0; }
+if test -h "$1"; then
+  t=$(readlink -e -n -- "$1") && printf "LINK %s" "$t" || printf UNDETERMINED
 else
   printf NOTLINK
-fi"#;
+fi'
+if [ "$(id -u)" -eq 0 ]; then E=""; else E="$2"; fi
+answer=$($E sh -c "$inner" _ "$1")
+printf '%s' "$answer""#;
 
 /// Classifies the stdout of [`LINK_PROBE_SCRIPT`].
 ///
@@ -220,6 +257,18 @@ pub trait SystemExecutor: Send + Sync {
     /// executor's own [`Self::write_file`], so it asks at whatever privilege
     /// that write happens at and refuses whatever it cannot see. Reasoning
     /// for the script itself is at [`LINK_PROBE_SCRIPT`].
+    ///
+    /// **What makes `Ok(None)` trustworthy is the matched privilege, not the
+    /// script's parent gate.** The gate catches a dangling link and a missing
+    /// parent component, and it earns its place for those, but it does not
+    /// prove traverse permission on the directory the path sits in: resolving
+    /// the parent needs search permission on that parent's *ancestors*, while
+    /// the `lstat` behind `test -h` needs it on the parent *itself*. The
+    /// honest guarantee is the one this method's whole existence rests on: the
+    /// probe and the write run at the same privilege, so a directory the probe
+    /// cannot look into is a directory the write cannot reach either, and a
+    /// probe that cannot elevate produces no answer rather than an admitting
+    /// one.
     ///
     /// The elevation is this executor's own property, taken from
     /// [`Self::is_remote`], because the two shipped implementations disagree

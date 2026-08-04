@@ -47,14 +47,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the row and root wrote through whatever actually stood there. `/root` is in
   `DEFAULT_ROLLBACK_PREFIXES` and is 0700 on an ordinary host. The guard now
   asks through `link_target_as_writer`, which elevates exactly as the write
-  does and believes a negative only when the path's parent resolves, proving
-  traverse permission was held; anything undeterminable refuses. Rollback
-  already required root or passwordless sudo on the target session, so this
-  demands nothing new. Checkpoint capture is deliberately unchanged, because it
-  reads content as the login user and its degrading to content-only is an
-  accepted ceiling. **Stated ceiling:** the guard still judges the final
-  component alone, so a regular file under a symlinked parent directory is
-  admitted without resolution, as it always was.
+  does; anything undeterminable refuses. The whole probe body runs inside one
+  elevated invocation, so an elevation that refuses to run anything, a `sudo`
+  rule scoped to a command list among them, yields no answer rather than the
+  admitting one, and the probe pins its own `PATH` to the same trusted list
+  `resolve_binary` uses. What makes the negative trustworthy is that matched
+  privilege, not the parent gate the probe also applies: resolving a parent
+  needs search permission on that parent's ancestors while the `lstat` behind
+  `test -h` needs it on the parent itself, so the gate is kept for the two
+  cases it does settle, a dangling link and a missing parent component, and is
+  claimed for nothing more. Rollback already required root or passwordless
+  sudo on the target session, so this demands nothing new. Checkpoint capture
+  is deliberately unchanged, because it reads content as the login user and
+  its degrading to content-only is an accepted ceiling. **Stated ceiling:**
+  the guard still judges the final component alone, so a regular file under a
+  symlinked parent directory is admitted without resolution, as it always was;
+  and a checkpoint row whose parent directory has since been removed is now
+  refused at the guard rather than admitted, where the restore used to run
+  `ensure_directory` and recreate the tree with `mkdir -p`. That is the
+  fail-closed direction, and it is a behaviour change rather than a defect
+  fixed: the probe cannot say what a path under an absent parent would become.
 
   The probe elevates exactly when the executor's own `write_file` does.
   `SshExecutor::write_file` goes through `sudo tee`, so a remote probe

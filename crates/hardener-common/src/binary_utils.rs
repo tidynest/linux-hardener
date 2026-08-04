@@ -7,7 +7,13 @@ use std::path::PathBuf;
 
 /// Trusted directories to search for system binaries, in priority order.
 /// Only well-known system paths are included, no user-writable directories.
-const TRUSTED_PATH: &[&str] = &[
+///
+/// Visible to the crate so a shell script that cannot go through
+/// [`resolve_binary`] can still pin the same list: see the `PATH` assignment
+/// at the top of [`crate::executor::LINK_PROBE_SCRIPT`], which resolves its
+/// own `id`, `dirname`, `test` and `readlink` and so must be pinned in the
+/// shell rather than in Rust.
+pub(crate) const TRUSTED_PATH: &[&str] = &[
     "/usr/bin",
     "/usr/sbin",
     "/bin",
