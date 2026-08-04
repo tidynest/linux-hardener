@@ -22,6 +22,7 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
+use std::cmp::Ordering;
 use std::path::Path;
 use std::time::Instant;
 use tracing::{info, warn};
@@ -346,34 +347,178 @@ fn action_override_is_allowed(baseline: &str, requested: &str) -> bool {
     }
 }
 
+/// How much traffic one field value matches, which is the only question the
+/// field clamp asks of it.
+///
+/// Deliberately **not** containment. Two ranges of the same width compare
+/// `Equal` here even where they cover different addresses, so `127.0.0.1/8`
+/// becoming `10.0.0.0/8` is admitted. That ceiling is #64's, decided rather
+/// than overlooked: closing it needs CIDR containment across both address
+/// families, and this plugin does not own an address comparator.
+#[derive(PartialEq)]
+enum FieldBreadth {
+    /// Everything the field can express, however it was spelled: `any`, `all`,
+    /// and any prefix of length zero in either family.
+    Everything,
+    /// A share of one address family's space, as a prefix length. Fewer bits
+    /// is a broader match, so the ordering runs backwards from the number.
+    Addresses { ipv6: bool, prefix_bits: u8 },
+    /// A count of ports, which is what makes `1-65535` a widening of `22` and
+    /// `2222` not one.
+    Ports(u32),
+    /// One named protocol. Every named protocol is the same width as any
+    /// other, so `tcp` becoming `udp` moves rather than widens.
+    OneProtocol,
+}
+
+/// Reads a field value as a breadth, or `None` where it cannot be read as one.
+///
+/// `None` is a refusal, never a default: a value this cannot measure is not a
+/// tightening it can vouch for. The address itself is not validated, only its
+/// prefix, because what a malformed address does is the backend's answer to
+/// give and this function's question is width alone.
+fn field_breadth(field: &str, value: &str) -> Option<FieldBreadth> {
+    match field {
+        "source" => {
+            if value == "any" {
+                return Some(FieldBreadth::Everything);
+            }
+            let ipv6 = value.contains(':');
+            let family_bits = if ipv6 { 128 } else { 32 };
+            let (address, prefix_bits) = match value.split_once('/') {
+                Some((address, bits)) => (address, bits.parse::<u8>().ok()?),
+                None => (value, family_bits),
+            };
+            if address.is_empty() || prefix_bits > family_bits {
+                return None;
+            }
+            // A prefix of zero is the whole family, and the whole of either
+            // family is the whole of what an accepting rule can admit. Ordered
+            // as Everything rather than as a 0-bit prefix so that it compares
+            // against `any` and across families instead of being refused as
+            // incomparable with them.
+            match prefix_bits {
+                0 => Some(FieldBreadth::Everything),
+                _ => Some(FieldBreadth::Addresses { ipv6, prefix_bits }),
+            }
+        }
+        "protocol" => match value {
+            // The baseline says `all` and the configuration layer accepts
+            // `any`. Both name every protocol, so both are the same breadth.
+            "any" | "all" => Some(FieldBreadth::Everything),
+            "tcp" | "udp" => Some(FieldBreadth::OneProtocol),
+            _ => None,
+        },
+        "port" => {
+            if value == "any" {
+                return Some(FieldBreadth::Everything);
+            }
+            let (low, high) = match value.split_once('-') {
+                Some((low, high)) => (low.parse::<u16>().ok()?, high.parse::<u16>().ok()?),
+                None => {
+                    let single = value.parse::<u16>().ok()?;
+                    (single, single)
+                }
+            };
+            match high < low {
+                true => None,
+                false => Some(FieldBreadth::Ports(u32::from(high) - u32::from(low) + 1)),
+            }
+        }
+        _ => None,
+    }
+}
+
+/// How `requested` compares in breadth to `baseline`, or `None` where the two
+/// cannot be compared at all.
+///
+/// Two address ranges in different families have no shared space to be measured
+/// in, so they are incomparable rather than equal, and a caller reading `None`
+/// refuses.
+fn breadth_order(baseline: &FieldBreadth, requested: &FieldBreadth) -> Option<Ordering> {
+    match (baseline, requested) {
+        (FieldBreadth::Everything, FieldBreadth::Everything) => Some(Ordering::Equal),
+        (FieldBreadth::Everything, _) => Some(Ordering::Less),
+        (_, FieldBreadth::Everything) => Some(Ordering::Greater),
+        (
+            FieldBreadth::Addresses {
+                ipv6: baseline_ipv6,
+                prefix_bits: baseline_bits,
+            },
+            FieldBreadth::Addresses {
+                ipv6: requested_ipv6,
+                prefix_bits: requested_bits,
+            },
+        ) => match baseline_ipv6 == requested_ipv6 {
+            // Fewer bits is a broader match, so the comparison runs the other
+            // way round from the numbers.
+            true => Some(baseline_bits.cmp(requested_bits)),
+            false => None,
+        },
+        (FieldBreadth::Ports(baseline_ports), FieldBreadth::Ports(requested_ports)) => {
+            Some(requested_ports.cmp(baseline_ports))
+        }
+        (FieldBreadth::OneProtocol, FieldBreadth::OneProtocol) => Some(Ordering::Equal),
+        _ => None,
+    }
+}
+
+/// Whether a `source`, `protocol` or `port` override may replace the baseline
+/// on a rule carrying `action`.
+///
+/// The direction is the rule's, not the field's, and it is why #64 could not be
+/// answered by clamping each field the way `action` is clamped. An **accepting**
+/// rule admits what it matches, so it weakens as it matches MORE. A **blocking**
+/// rule refuses what it matches, so it weakens as it matches LESS: narrowing the
+/// catch-all drop to one subnet stops everything outside that subnet being
+/// dropped at all, which is the sharpest of the four cases and the one an
+/// operator is least likely to read as a loosening.
+///
+/// Equal breadth is admitted in both directions. That is what keeps
+/// `ssh.port = 2222`, the configuration reference's own worked example, working,
+/// and it is the same decision as the ceiling stated on [`FieldBreadth`].
+///
+/// Fail-closed on anything else, including an action this cannot reason about.
+fn field_override_is_allowed(action: &str, field: &str, baseline: &str, requested: &str) -> bool {
+    if baseline == requested {
+        return true;
+    }
+    let (Some(baseline_breadth), Some(requested_breadth)) = (
+        field_breadth(field, baseline),
+        field_breadth(field, requested),
+    ) else {
+        return false;
+    };
+    let Some(order) = breadth_order(&baseline_breadth, &requested_breadth) else {
+        return false;
+    };
+    match action {
+        "drop" | "reject" => order != Ordering::Less,
+        "accept" => order != Ordering::Greater,
+        _ => false,
+    }
+}
+
 /// Applies directive overrides to a single firewall rule.
 ///
 /// Directives use `<rule_id>.<field>` keys:
 /// - `ssh.port` = "2222"
 /// - `ssh.source` = "10.0.0.0/8"
 ///
-/// **`action` is clamped and the other three are not**, which is a deliberate
-/// and stated ceiling rather than an oversight. This plugin was the last one
-/// applying an operator's override exactly as given, so
-/// `drop_default.action = "accept"` turned the catch-all into an accepting rule
-/// and the tool wrote it, against what the configuration reference promises for
-/// every plugin. `action` has a direction that holds for any rule; `source` and
-/// `protocol` weaken or strengthen depending on the rule's action, and deciding
-/// that needs CIDR containment and a protocol lattice rather than a comparison;
-/// `port` merely moves, and changing the SSH port is the documented worked
-/// example of a legitimate override. Widening `source` on an accepting rule is
-/// therefore still honoured, and `docs/reference/configuration.md` says so
-/// rather than promising a clamp this does not perform.
+/// **All four fields are clamped**, `action` against the direction that holds
+/// for any rule and the other three against the direction the rule's own action
+/// gives them. See [`field_override_is_allowed`] for why those three could not
+/// be clamped the way `action` is, and [`FieldBreadth`] for the one thing this
+/// still admits: a value of the same width as the baseline but covering a
+/// different range.
+///
+/// **`action` is applied first, and the order is load-bearing.** The other
+/// three are judged against the action the rule ends up carrying, so an
+/// operator tightening the SSH rule into a blocking one may widen its port in
+/// the same config: on a blocking rule that is a tightening. Judged against the
+/// accepting baseline it would have been refused, and the operator would have
+/// been talked out of a stricter ruleset.
 fn apply_rule_directives(rule: &mut Rule, id: &str, config: &PluginConfig) {
-    if let Some(port) = config.directives.get(&format!("{id}.port")) {
-        rule.rule_port = port.clone();
-    }
-    if let Some(source) = config.directives.get(&format!("{id}.source")) {
-        rule.rule_source = source.clone();
-    }
-    if let Some(protocol) = config.directives.get(&format!("{id}.protocol")) {
-        rule.rule_protocol = protocol.clone();
-    }
     match config.directives.get(&format!("{id}.action")) {
         Some(action) if action_override_is_allowed(&rule.rule_action, action) => {
             rule.rule_action = action.clone();
@@ -385,6 +530,28 @@ fn apply_rule_directives(rule: &mut Rule, id: &str, config: &PluginConfig) {
             rule.rule_description, rule.rule_action
         ),
         None => {}
+    }
+
+    // One loop rather than three near-identical blocks, and the field name is
+    // needed anyway: it is both half the directive key and what tells
+    // `field_breadth` which value space it is reading.
+    for (field, current) in [
+        ("port", &mut rule.rule_port),
+        ("source", &mut rule.rule_source),
+        ("protocol", &mut rule.rule_protocol),
+    ] {
+        let Some(requested) = config.directives.get(&format!("{id}.{field}")) else {
+            continue;
+        };
+        match field_override_is_allowed(&rule.rule_action, field, current, requested) {
+            true => *current = requested.clone(),
+            false => warn!(
+                "Ignoring firewall directive '{id}.{field} = {requested}': on a \
+                 '{}' rule it would weaken the '{}' rule from '{current}'. Record \
+                 a deliberate deviation as a policy exception instead.",
+                rule.rule_action, rule.rule_description
+            ),
+        }
     }
 }
 
