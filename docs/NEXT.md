@@ -442,8 +442,8 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC
-- **1401 Passing Tests** (plus 43 ignored: root-, SSH- or backend-gated), measured
-  2026-08-01 with `cargo test --workspace --no-fail-fast`; re-measure before
+- **1599 Passing Tests** (plus 43 ignored: root-, SSH- or backend-gated), measured
+  2026-08-04 with `cargo test --workspace --no-fail-fast`; re-measure before
   quoting it, this number moves most weeks
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
 - **Current Version**: 1.5.1 (code, tag and repo packaging; AUR bump follows the
