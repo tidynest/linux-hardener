@@ -461,7 +461,11 @@ named `.json` and exit 0. Only an extension naming one of the five formats this
 command renders (`.txt`, `.json`, `.csv`, `.htm`, `.html`, `.pdf`) counts as a
 contradiction: a path is compared against the same closed list `history export`
 uses, so a name that merely contains dots, such as `report.2026.08.03`, asks for
-no document and is written as given. `pdf` always writes a file, so without
+no document and is written as given. An extension naming something this command
+does not render is written as given too, and nothing converts or compresses it:
+`--output archive.tar.gz` under the default `text` puts a plain text report in a
+file called `.tar.gz`. The list is closed on purpose, because
+`Path::extension()` cannot tell a format from a date. `pdf` always writes a file, so without
 `--output` it saves
 `compliance-report-<timestamp>.pdf` in the working directory instead of printing
 to stdout.
@@ -808,6 +812,23 @@ hardener systemd generate [FLAGS]
 | `--binary <PATH>` | Path to the hardener binary | auto-detected |
 | `-s`, `--schedule <EXPR>` | systemd calendar expression (e.g. `daily`, `*-*-* 02:00:00`) | `daily` |
 
+**The global `-C`, `--config` is written into the unit, not just used to
+generate it.** Given `-C`, the service runs
+`hardener --config <path> daemon run-once`; without it, plain
+`hardener daemon run-once`, which resolves the config at each run through the
+normal search order. Two consequences, both of the embedded path rather than of
+the flag:
+
+- **The path is embedded exactly as you typed it.** A relative `-C` produces a
+  relative `ExecStart` argument, which systemd resolves against the service's
+  working directory (`/` for a system unit) rather than yours. Give `-C` an
+  absolute path here.
+- **The unit is pinned to that file for as long as it is installed.** A named
+  path that is later moved, renamed or deleted does not fall back to the search
+  order: the scheduled run exits non-zero every time, because a `--config` that
+  will not load is fatal wherever it is named. Regenerate or reinstall after
+  moving the file.
+
 ### systemd install
 
 Install unit files to systemd. Requires root for system-level install.
@@ -822,6 +843,10 @@ sudo hardener systemd install [FLAGS]
 | `-s`, `--schedule <EXPR>` | systemd calendar expression | `daily` |
 
 **System vs user install:** System install (`sudo`, no `--user`) runs as root and can apply all hardening changes. User install (`--user`, no sudo) runs under your user account, suitable for scan-only monitoring.
+
+`install` writes the same units `generate` prints, so the global `-C` is
+embedded here on the same terms: see the note under
+[systemd generate](#systemd-generate).
 
 ### systemd uninstall
 

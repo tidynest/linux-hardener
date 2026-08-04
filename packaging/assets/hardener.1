@@ -391,7 +391,10 @@ Accepted anywhere, acted on by
 .BR history ,
 and
 .BR "systemd generate" / install ,
-which embed the path in the unit they write.
+which embed the path in the unit they write, exactly as it was typed: give those
+two an absolute path, since systemd resolves a relative one against the
+service's working directory rather than yours, and regenerate the unit if the
+file later moves, because the embedded path has no fallback.
 Every other command accepts it and does nothing with it.
 .IP
 A named path that cannot be read is fatal for the commands that write or that
