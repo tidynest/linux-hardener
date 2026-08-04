@@ -8,20 +8,9 @@
 
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_export_report, invoke_generate_report};
-use crate::types::ControlStatus;
+use crate::utils::control_status_class;
 use crate::utils::{score_band, score_band_class};
 use leptos::prelude::*;
-
-/// The existing `.status-*` colour class for a control status pill. Manual
-/// review maps to the amber `.status-manual` (honesty bucket), never red.
-fn control_status_class(status: &ControlStatus) -> &'static str {
-    match status {
-        ControlStatus::Pass => "status-pass",
-        ControlStatus::Fail => "status-fail",
-        ControlStatus::ManualReview => "status-manual",
-        ControlStatus::NotApplicable => "status-na",
-    }
-}
 
 /// Compliance tab: framework chip picker, per-framework reports, and a
 /// persistent Export/Generate footer.
