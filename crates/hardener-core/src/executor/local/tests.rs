@@ -232,12 +232,28 @@ async fn the_writer_privilege_probe_reads_a_real_filesystem() {
 /// The path shapes that defeated the probe during review, pinned against a real
 /// filesystem rather than against a fixture that could only restate the claim.
 ///
-/// A trailing slash, and a trailing `/.`, both make the kernel resolve the
-/// final named component before the `lstat` behind `test -h`, so a symlink
-/// answered `NOTLINK`. That is the **admitting** answer, and a write to such a
-/// path lands somewhere the gate never judged. Nothing in `hardener-common`
-/// runs the script, so this is the only place the script text itself is
-/// witnessed.
+/// Only the trailing-slash assertions below witness the script text itself.
+/// Nothing in `hardener-common` runs a real shell, so its fixtures can only
+/// state what `test -h` and `readlink -e` are claimed to do against a
+/// directory symlink and a file symlink, never prove it against real
+/// coreutils; the loop over `dir_link` and the assertion against `file_link`
+/// do. `normalise_probe_path` strips the trailing slash in Rust before either
+/// spelling in the loop reaches the script, so both spellings there drive the
+/// identical script invocation, and what the pair proves is that the
+/// stripping changes no answer.
+///
+/// The dot-segment assertions witness something else entirely.
+/// `normalise_probe_path` refuses `dir_link.join(".")` and `dir_link.join("..")`
+/// in Rust before any command is built, so no mutation to `LINK_PROBE_SCRIPT`
+/// can ever turn them red. What they prove instead is that the refusal reaches
+/// a caller through the real `LocalExecutor`, which the pure unit test on
+/// `normalise_probe_path` in `hardener-common` cannot show: that test calls
+/// the function directly and never touches an executor at all.
+///
+/// A trailing slash forces the kernel to resolve the terminal component
+/// before the `lstat` behind `test -h`, which reads a symlink as `NOTLINK`.
+/// That is the **admitting** answer, and a write to such a path lands
+/// somewhere the gate never judged.
 #[tokio::test]
 async fn the_probe_is_not_defeated_by_a_trailing_slash_or_dot_segment() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -301,6 +317,65 @@ async fn the_probe_is_not_defeated_by_a_trailing_slash_or_dot_segment() {
             .expect("a dotfile is an answer"),
         None,
         "an ordinary dotfile must be answered, or the refusal above proves nothing"
+    );
+}
+
+/// The argv claim behind `LINK_PROBE_SCRIPT`'s positional-argument design,
+/// proved against a real shell rather than only asserted in that doc comment:
+/// a path holding a space and a semicolon is one argv entry, not shell text
+/// that could end the intended command and start another.
+///
+/// The symlink's own name also carries a leading dash, the shape `--` ahead
+/// of the path in the script's `readlink` and `test` calls exists to guard
+/// against. That guard is not what this assertion exercises: every path
+/// reaching the probe here is absolute, built from a tempdir, so the dash
+/// sits on the final named component and never on the first character of the
+/// `$1` token itself, which is the one character an option parser looks at.
+/// What this assertion does prove is that a name shaped like an option is
+/// still answered correctly end to end; it is not proof that `--` is
+/// load-bearing on this call path.
+#[tokio::test]
+async fn a_dangerous_name_never_reaches_the_shell_as_text() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let target = dir.path().join("real.conf");
+    std::fs::write(&target, "content\n").expect("write target");
+
+    let plain = dir.path().join("a file; touch pwned.conf");
+    std::fs::write(&plain, "content\n").expect("write plain");
+
+    let link = dir.path().join("-dashed name.conf");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+
+    let executor = LocalExecutor::new();
+
+    assert_eq!(
+        executor
+            .link_target_as_writer(&plain)
+            .await
+            .expect("a regular file with a dangerous name is still an answer"),
+        None,
+        "a name holding a space and a semicolon must not stop the probe \
+         reporting NOTLINK for an ordinary file"
+    );
+    assert_eq!(
+        executor
+            .link_target_as_writer(&link)
+            .await
+            .expect("a symlink with a leading dash is still an answer"),
+        Some(target.canonicalize().expect("canonicalize the target")),
+        "a name shaped like an option must still be answered correctly"
+    );
+    assert!(
+        !dir.path().join("pwned.conf").exists(),
+        "a pwned.conf file appearing here would mean the semicolon in the \
+         file's name reached the shell as text instead of arriving as one \
+         opaque argv entry"
+    );
+    assert!(
+        !dir.path().join("pwned").exists(),
+        "a pwned file appearing here would mean the semicolon in the file's \
+         name reached the shell as text instead of arriving as one opaque \
+         argv entry"
     );
 }
 

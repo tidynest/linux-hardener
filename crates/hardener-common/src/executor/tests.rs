@@ -179,6 +179,128 @@ async fn a_commented_name_file_keys_on_the_name_and_not_on_the_comment() {
     assert_eq!(session_host_key(&executor).await, "box");
 }
 
+/// A host that runs commands for real via `std::process::Command`, in the
+/// same spirit as [`WhichlessHost`]: only `execute_command` is implemented,
+/// so a method under test is still exercised through the trait's own default
+/// body rather than through an override that could answer a different
+/// question.
+///
+/// Used to prove [`LINK_PROBE_SCRIPT`]'s `$E` handling against a real shell:
+/// a fixture that fakes stdout, as [`ScriptedProbeHost`] does below, can only
+/// state what the script does with its elevation argument, never prove it.
+struct RealShellHost;
+
+#[async_trait]
+impl SystemExecutor for RealShellHost {
+    fn description(&self) -> String {
+        "real-shell".to_string()
+    }
+
+    fn is_remote(&self) -> bool {
+        false
+    }
+
+    async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput> {
+        let output = std::process::Command::new(program)
+            .args(args)
+            .output()
+            .map_err(|e| anyhow!("failed to execute {program}: {e}"))?;
+        Ok(CommandOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            exit_code: output.status.code().unwrap_or(-1),
+        })
+    }
+
+    async fn read_file(&self, _path: &Path) -> Result<String> {
+        Err(anyhow!("unused"))
+    }
+    async fn read_file_optional(&self, _path: &Path) -> Result<Option<String>> {
+        Err(anyhow!("unused"))
+    }
+    async fn write_file(&self, _path: &Path, _content: &str) -> Result<()> {
+        Err(anyhow!("unused"))
+    }
+    async fn path_exists(&self, _path: &Path) -> Result<bool> {
+        Err(anyhow!("unused"))
+    }
+    async fn file_metadata(&self, _path: &Path) -> Result<FileMetadata> {
+        Err(anyhow!("unused"))
+    }
+    async fn read_dir(&self, _path: &Path) -> Result<Vec<PathBuf>> {
+        Err(anyhow!("unused"))
+    }
+}
+
+/// Proves the word-splitting `LINK_PROBE_SCRIPT` relies on: it sets
+/// `E="$2"` and later runs `$E readlink ...` and `$E test ...` unquoted,
+/// precisely so a two-word elevation prefix such as `sudo -n` splits into a
+/// command and its flag. Nothing else in this suite runs the script through a
+/// real shell with a real multi-word prefix; [`ScriptedProbeHost`] only ever
+/// fakes the answer.
+///
+/// `sudo` itself cannot be exercised here without privilege, and a test that
+/// needed passwordless sudo would fail on a contributor's machine that lacks
+/// it, so this proves the mechanism with a harmless stand-in instead: `env -u
+/// LINK_PROBE_UNSET_MARKER`, a two-word prefix that unsets a variable nothing
+/// sets and then runs the command that follows unchanged, needing no
+/// privilege at all. If `$E` were ever quoted as `"$E"`, that whole two-word
+/// string would be looked up as a single command name, no `env
+/// -u LINK_PROBE_UNSET_MARKER` binary exists, the run would fail, and the
+/// answer would degrade to `UNDETERMINED` rather than the correct one.
+///
+/// The uid check in the script sets `E=""` whenever the runner is root,
+/// regardless of `$2`, which would make the two-word case indistinguishable
+/// from the empty one under a root test runner. This is not hidden: both
+/// elevations are asserted against the one outcome that is true either way,
+/// so under a root runner this test proves only that the empty-elevation path
+/// answers correctly, and it does that honestly rather than by skipping.
+#[tokio::test]
+async fn the_elevation_prefix_is_word_split_by_a_real_shell() {
+    async fn probe(host: &RealShellHost, path: &Path, elevation: &str) -> Result<Option<PathBuf>> {
+        let path_str = path.to_string_lossy();
+        let output = host
+            .execute_command("sh", &["-c", LINK_PROBE_SCRIPT, "_", &path_str, elevation])
+            .await
+            .expect("sh runs");
+        assert_eq!(
+            output.exit_code, 0,
+            "the script itself always exits 0 for every one of its own outcomes"
+        );
+        parse_link_probe(&output.stdout)
+    }
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let target = dir.path().join("real.conf");
+    let link = dir.path().join("link.conf");
+    std::fs::write(&target, "content\n").expect("write target");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+    let resolved_target = target.canonicalize().expect("canonicalize target");
+
+    let host = RealShellHost;
+
+    for elevation in ["", "env -u LINK_PROBE_UNSET_MARKER"] {
+        assert_eq!(
+            probe(&host, &link, elevation)
+                .await
+                .expect("a link is an answer"),
+            Some(resolved_target.clone()),
+            "elevation {elevation:?} must still answer LINK for a real symlink: \
+             if $E were quoted this two-word prefix would be one unfindable \
+             command name and the answer would degrade to UNDETERMINED instead"
+        );
+        assert_eq!(
+            probe(&host, &target, elevation)
+                .await
+                .expect("a file is an answer"),
+            None,
+            "elevation {elevation:?} must still answer NOTLINK for a real file: \
+             if $E were quoted this two-word prefix would be one unfindable \
+             command name and the answer would degrade to UNDETERMINED instead"
+        );
+    }
+}
+
 /// A host that answers the link probe with whatever a fixture states, and
 /// records the argv it was handed.
 ///
