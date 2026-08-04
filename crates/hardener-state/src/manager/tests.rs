@@ -1961,3 +1961,84 @@ async fn a_symlink_on_the_controller_does_not_refuse_a_remote_rollback() {
         exec.log().files_written
     );
 }
+
+/// Issue #83, at the caller: a path the probe could not look at must not be
+/// written through.
+///
+/// The condition is a remote host where the login user cannot traverse to an
+/// allow-listed path while the write happens as root, so the probe's answer and
+/// the write's reach disagree. Before the fix the guard was told "not a
+/// symlink", admitted the row, and root wrote through whatever stood there.
+///
+/// The second file is what makes the refusal observable. With the unprobeable
+/// row alone every path is refused, `restorable.is_empty()` aborts the run, and
+/// "nothing was written" would then hold because nothing was written at all,
+/// which is an assertion no mutation can turn red.
+#[tokio::test]
+async fn a_path_the_probe_cannot_answer_for_is_refused() {
+    use hardener_common::executor::CommandOutput;
+
+    let ok = || CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let unreachable = "/etc/x/sshd_config";
+    let plain = "/etc/x/login.defs";
+    let exec = MockExecutor::new()
+        .remote()
+        .with_directory("/etc/x")
+        .with_file(unreachable, "captured\n")
+        .with_file(plain, "captured\n")
+        .with_command_program("chmod", ok())
+        .with_command_program("chown", ok());
+    let manager = test_manager_with_etc_x().await;
+
+    let id = manager
+        .create_checkpoint(&exec, "remote", &[Path::new(unreachable), Path::new(plain)])
+        .await
+        .expect("create_checkpoint");
+
+    // Capture succeeded as the login user; the restore is what runs as root,
+    // so the probe stops being answerable only now.
+    exec.add_unprobeable(unreachable);
+
+    let result = manager.rollback(&exec, &id).await.expect("rollback");
+
+    let entry = |p: &str| {
+        result
+            .rollback_files
+            .iter()
+            .find(|f| f.restore_path == p)
+            .unwrap_or_else(|| panic!("{p} missing from the result"))
+    };
+    let refused = entry(unreachable);
+    assert!(
+        !refused.restore_success,
+        "a path the probe could not answer for must not be written"
+    );
+    assert!(
+        refused
+            .restore_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("cannot be determined"),
+        "the refusal must say the probe could not tell, not that the path is a \
+         symlink: got {:?}",
+        refused.restore_error
+    );
+    assert!(
+        !exec
+            .log()
+            .files_written
+            .iter()
+            .any(|(p, _)| p == Path::new(unreachable)),
+        "nothing may be written to a path the guard could not judge, got: {:?}",
+        exec.log().files_written
+    );
+    assert!(
+        entry(plain).restore_success,
+        "the row the probe could answer for must still be restored, got: {:?}",
+        entry(plain).restore_error
+    );
+}

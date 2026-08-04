@@ -433,12 +433,12 @@ a checkpoint or a skip is never counted as a hardening change.
 │  │   without the symlink check, since `ln -sfn` and `rm -f`  │
 │  │   land on the path itself and follow nothing              │
 │  ├─ Otherwise ask the EXECUTOR, so a remote rollback asks    │
-│  │   the target host and never the controller: `read_link`   │
-│  │   for whether the path is a link, `canonical_path`        │
-│  │   (`realpath`) for where it leads, every component        │
-│  │   resolved by the filesystem that owns them. Resolving    │
-│  │   outside the allowlist, or not resolving at all, is      │
-│  │   Skipped: fail closed                                    │
+│  │   the target host and never the controller, at the        │
+│  │   privilege its own write uses: `link_target_as_writer`.  │
+│  │   `Ok(None)` is not a symlink; `Ok(Some(p))` is where it  │
+│  │   leads, every component resolved. `Err` could not be     │
+│  │   determined, and refuses rather than guessing: fail      │
+│  │   closed                                                  │
 │  └─ Nothing admitted at all: abort, so no orphan snapshot    │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -916,13 +916,16 @@ Every path is shell-escaped before interpolation (`shell_escape` in
 | `read_dir(path)` | `find {path} -mindepth 1 -maxdepth 1 2>/dev/null` |
 | `execute_command(prog, args)` | Direct SSH command execution |
 | `read_link(path)` | `readlink -n -- {path}` (trait default, not SSH-specific) |
+| `link_target_as_writer(path)` | `sh -c <probe> _ {path} "sudo -n"`, with the path and the elevation both passed as positional arguments. The probe runs its whole body inside one `sudo -n sh -c` invocation, so it answers at the privilege `write_file` writes at (trait default; a local executor passes an empty elevation instead) |
 | `command_exists(prog)` | `sh -c <probe> sh {prog}`, a `command -v` probe with the name passed as a positional argument so metacharacters cannot alter what runs (trait default) |
 
 `file_metadata` asks two questions in one round trip on purpose: the `E`/`N`
 marker positively confirms existence, and a parsed `stat` line is stronger
 evidence still, so a `stat` that merely failed is never read as absence.
-`read_link` and `command_exists` are provided methods on `SystemExecutor` in
-`hardener-common`, so local and remote answer them identically.
+`read_link`, `link_target_as_writer` and `command_exists` are provided methods
+on `SystemExecutor` in `hardener-common`, so local and remote answer them
+identically. `link_target_as_writer` is the only one of the three that
+elevates, and it elevates exactly when the executor's own `write_file` does.
 
 ### Key Differences from Local Execution
 

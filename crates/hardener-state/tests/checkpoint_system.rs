@@ -624,11 +624,12 @@ async fn rollback_removes_the_mask_symlink_an_apply_created() {
 ///
 /// The unit tests of the guard use a `MockExecutor`, which answers from a
 /// registry rather than by running anything, and a mock can only report what a
-/// fixture already stated. [`DiskExecutor`] inherits the provided `read_link`
-/// and `canonical_path`, which run `readlink` for real, so this test is where
-/// the *resolution semantics* are checked against coreutils rather than against
-/// a fixture's own claim. It says nothing about which host is asked; the two
-/// remote unit tests are what pin that.
+/// fixture already stated. [`DiskExecutor`] inherits the provided
+/// `link_target_as_writer`, the one primitive the guard now asks, and it runs
+/// `readlink` for real, so this test is where the *resolution semantics* are
+/// checked against coreutils rather than against a fixture's own claim. It says
+/// nothing about which host is asked; the two remote unit tests are what pin
+/// that.
 ///
 /// Relative deliberately. `systemctl enable` writes relative targets, and a
 /// relative one is the case a string-prefix allowlist cannot judge unaided:
@@ -706,7 +707,7 @@ async fn a_rollback_refuses_a_real_relative_symlink_that_leaves_the_allowlist() 
 ///
 /// So the resolution has to canonicalise every component the way `realpath`
 /// does, on the host that will be written, which is what the executor's
-/// `canonical_path` asks. `Path::canonicalize` did exactly this before the
+/// `link_target_as_writer` asks. `Path::canonicalize` did exactly this before the
 /// guard moved onto the executor, and it must not be traded away to get there.
 #[tokio::test]
 async fn a_rollback_resolves_a_symlinked_directory_component_and_not_just_the_name() {
@@ -794,8 +795,8 @@ async fn a_rollback_refuses_a_symlink_loop_rather_than_following_it() {
             .restore_error
             .as_deref()
             .unwrap_or_default()
-            .contains("cannot be resolved"),
-        "a loop must be refused for being unresolvable, got: {entry:?}"
+            .contains("cannot be determined"),
+        "a loop must be refused for being undeterminable, got: {entry:?}"
     );
     assert!(
         restore_entry(&result, &sibling).restore_success,

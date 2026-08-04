@@ -358,7 +358,7 @@ pub trait SystemExecutor: Send + Sync {
     // answer them identically. Both run a POSIX command through
     // `execute_command`, so an implementor never needs to override them.
     async fn read_link(&self, path: &Path) -> Result<Option<String>> { /* readlink */ }
-    async fn canonical_path(&self, path: &Path) -> Result<Option<PathBuf>> { /* readlink -e */ }
+    async fn link_target_as_writer(&self, path: &Path) -> Result<Option<PathBuf>> { /* sh -c <probe> */ }
     async fn command_exists(&self, program: &str) -> Result<bool> { /* command -v */ }
 }
 ```
@@ -369,14 +369,27 @@ not be answered. `Err` is never read as "not a symlink", because a checkpoint
 that stored a symlink's followed content instead of its target could not
 restore it: the write would travel through the link into whatever it points at.
 
-`canonical_path` answers a different question and the two are not
-interchangeable. `read_link` is about one name; `canonical_path` is `realpath`,
-every component resolved, which is what a decision about where a write would
-*land* needs. Following the chain by hand instead, one `read_link` at a time
-with `..` flattened by name, disagrees with the kernel whenever the component
-before a `..` is itself a link, and disagrees in the admitting direction. Its
-`Ok(None)` means "does not resolve to a path that exists" and is the refusing
-answer, the opposite polarity to `read_link`'s.
+`link_target_as_writer` answers a different question and the two are not
+interchangeable. `read_link` is about one name, asked at the login user's
+privilege; `link_target_as_writer` asks both halves at once, whether the final
+component is a link and where it finally lands, with every component resolved
+as `realpath(3)` does. That resolution is what a decision about where a write
+would *land* needs. Following the chain by hand instead, one `read_link` at a
+time with `..` flattened by name, disagrees with the kernel whenever the
+component before a `..` is itself a link, and disagrees in the admitting
+direction.
+
+It is also **the only provided method that elevates**. It exists for the
+rollback guard, which authorises a write that happens as the executor's own
+`write_file`, so the probe asks at that same privilege: a remote executor's
+`write_file` goes through `sudo tee` and its probe therefore runs under
+`sudo -n`, while a local executor's writes as the process user and its probe
+elevates not at all. The whole probe body runs inside that one elevated
+invocation, so an elevation that cannot run produces no answer instead of an
+admitting one. `Ok(None)` here means "positively not a symlink" and is the
+**admitting** answer, so anything undeterminable arrives as `Err` and the
+caller must refuse. Checkpoint capture deliberately keeps using `read_link`,
+because it reads content as the login user anyway.
 
 Implementations:
 - `LocalExecutor` - Wraps `std::fs` and `std::process::Command`

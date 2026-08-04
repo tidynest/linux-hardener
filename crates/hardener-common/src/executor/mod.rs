@@ -34,6 +34,153 @@ pub struct FileMetadata {
     pub gid: u32,
 }
 
+/// The one round trip behind [`SystemExecutor::link_target_as_writer`].
+///
+/// `$1` is the path, passed as a positional argument rather than interpolated,
+/// so no quoting is involved anywhere and a path holding a space or a `;` is
+/// one argument. `$2` is the elevation to use, also a positional argument
+/// rather than baked into the script: see [`SystemExecutor::link_target_as_writer`]
+/// for what each shipped executor passes and why.
+///
+/// `PATH` is pinned to the same list [`crate::binary_utils::TRUSTED_PATH`]
+/// holds, and for the same reason: every other command this crate runs is
+/// resolved through `resolve_binary` as an explicit CWE-426 mitigation, and
+/// the four commands inside this script, `id`, `dirname`, `test` and
+/// `readlink`, are resolved by the shell instead. Without the assignment they
+/// would come off whatever `PATH` the session happened to carry, on the one
+/// call path whose next step is a write as root.
+///
+/// **The whole probe body runs inside one elevated invocation.** The outer
+/// script decides the elevation and then runs an inner script through it,
+/// handing the path down positionally a second time. That shape is what makes
+/// the answer trustworthy: if the elevation refuses to run anything at all, a
+/// `sudo` rule scoped to a command list or an absent `sudo` binary, the inner
+/// script never runs, prints no token, and the empty stdout classifies as the
+/// refusing answer. Elevating each command separately, as this once did, gave
+/// the `else` branch of `test -h` three meanings at once, "not a link", "could
+/// not `lstat`" and "the elevated command never ran", and printed the
+/// **admitting** answer for all three.
+///
+/// The command substitution is deliberate, rather than `exec`: the outer
+/// script must still exit 0 for every outcome of its own, including a failed
+/// elevation, so a non-zero status keeps its single meaning of "the probe did
+/// not run to completion". Stderr is left alone, so a `sudo` refusal still
+/// reaches the caller's error message.
+///
+/// The uid check stays regardless of what `$2` holds. A session that is
+/// already root needs no elevation even when asked for one, and a root
+/// container may ship no `sudo` binary at all; `E` is empty whenever the
+/// session is root, so that case is unaffected by `$2`.
+///
+/// The parent gate stays too, but not for the reason once claimed here. GNU
+/// `readlink` exits 1 for "not a symlink", for `ENOENT` and for a traversal it
+/// may not make, one status for three meanings, and only the first is an
+/// answer. A resolving parent does **not** prove traverse permission on the
+/// directory the path sits in: `readlink -e -- "$d"` needs search permission
+/// on `$d`'s ancestors, while `test -h "$d/name"` needs it on `$d` itself, so
+/// a link inside a 0000 directory whose own parent is traversable still
+/// answers `NOTLINK`. What the gate does earn is the other two meanings: a
+/// dangling link and a missing parent component are both caught before the
+/// `test -h`, and neither is a path this guard may admit. The guarantee that
+/// replaces the withdrawn one is the elevation itself, stated at
+/// [`SystemExecutor::link_target_as_writer`]: the probe and the write run at
+/// the same privilege, so a directory the probe cannot look into is one the
+/// write cannot reach either. Telling the three statuses apart by reading
+/// errno text instead was rejected: those strings are locale-dependent, which
+/// would turn this gate into a coin flip on a host with `LC_MESSAGES` set.
+///
+/// `readlink -e` resolves **every** component, which is why the link is not
+/// followed hop by hop with `..` flattened by name. With `<allowed>/dlink` a
+/// link to a directory outside the allowlist, `<allowed>/f -> dlink/../victim`
+/// collapses by name to `<allowed>/victim`, which an allowlist admits, while
+/// the write lands on `<outside>/victim`. Only the kernel knows that `..`
+/// follows `dlink` first.
+pub(crate) const LINK_PROBE_SCRIPT: &str = r#"PATH=/usr/bin:/usr/sbin:/bin:/sbin:/usr/local/bin:/usr/local/sbin
+export PATH
+inner='d=$(dirname -- "$1")
+readlink -e -n -- "$d" >/dev/null 2>&1 || { printf UNDETERMINED; exit 0; }
+if test -h "$1"; then
+  t=$(readlink -e -n -- "$1") && printf "LINK %s" "$t" || printf UNDETERMINED
+else
+  printf NOTLINK
+fi'
+if [ "$(id -u)" -eq 0 ]; then E=""; else E="$2"; fi
+answer=$($E sh -c "$inner" _ "$1")
+printf '%s' "$answer""#;
+
+/// Classifies the stdout of [`LINK_PROBE_SCRIPT`].
+///
+/// Exact matching, not a prefix or a substring search: a login banner, a sudo
+/// lecture or any other shell noise must not be folded into a positive answer.
+/// Everything the script cannot have printed, `UNDETERMINED` included, is the
+/// refusing answer, so the fail-closed arm is reached by anything unexpected
+/// rather than only by the one token that names it. Pure, so the
+/// classification is unit-testable without a live connection.
+pub(crate) fn parse_link_probe(stdout: &str) -> Result<Option<PathBuf>> {
+    let answer = stdout.trim();
+
+    if answer == "NOTLINK" {
+        return Ok(None);
+    }
+    if let Some(target) = answer.strip_prefix("LINK ")
+        && !target.is_empty()
+    {
+        return Ok(Some(PathBuf::from(target)));
+    }
+
+    Err(crate::error::HardeningError::Executor(format!(
+        "could not determine whether the path is a symlink; the probe said {answer:?}"
+    ))
+    .into())
+}
+
+/// Strips the trailing `/` characters from `path` before it is handed to
+/// [`LINK_PROBE_SCRIPT`], and refuses a path whose final named component is
+/// `.` or `..`.
+///
+/// A trailing slash makes `test -h` follow the link: POSIX requires a
+/// trailing slash to resolve the component it follows, so the terminal
+/// component is dereferenced before the `lstat` behind `test -h` ever runs.
+/// That turns the probe's admitting answer, `NOTLINK`, into a lie about a
+/// path that is in fact a symlink. Trimming the slash names the same inode a
+/// write would land on, so this changes no answer that was already correct;
+/// it only stops the terminal component being resolved away before the check
+/// is made.
+///
+/// An all-slash path trims to nothing, which is not a path the script can be
+/// handed, so that case is mapped back to `/`: the filesystem root, which is
+/// what an all-slash path names.
+///
+/// A trailing `/.` or `/..` dereferences the terminal component for the
+/// identical reason a trailing slash does, and a bare `.` or `..` has no
+/// other component to be about. This is not the same defect read twice: with
+/// `linkdir` a symlink to `realdir`, `test -h linkdir/.` genuinely answers
+/// false, because `linkdir/.` genuinely names `realdir`, not `linkdir`, so
+/// the shell is behaving correctly. The defect is that `NOTLINK` is this
+/// probe's **admitting** answer, so a correct shell answer to a question the
+/// gate never meant to ask still lets a write through a location the gate
+/// never judged. Resolving the dot segment ourselves to recover an answer was
+/// rejected for the reason [`LINK_PROBE_SCRIPT`]'s own doc gives for `..`:
+/// flattening it by name disagrees with the kernel whenever the component
+/// before it is a symlink, and disagrees in the admitting direction. So this
+/// is refused outright rather than guessed at: a path whose final component
+/// is `.` or `..` names no final component the probe can answer about.
+pub(crate) fn normalise_probe_path(path: &str) -> Result<String> {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Ok("/".to_string());
+    }
+    let final_component = trimmed.rsplit('/').next().unwrap_or(trimmed);
+    if final_component == "." || final_component == ".." {
+        return Err(crate::error::HardeningError::Executor(format!(
+            "the link probe refuses {trimmed:?}: a path whose final component is \
+             `.` or `..` names no final component the probe can answer about"
+        ))
+        .into());
+    }
+    Ok(trimmed.to_string())
+}
+
 /// Trait for abstracting file and command operations.
 ///
 /// Implementations can target local systems or remote systems via SSH.
@@ -91,34 +238,84 @@ pub trait SystemExecutor: Send + Sync {
         }
     }
 
-    /// Where `path` leads once **every** component of it is resolved, or `None`
-    /// if it does not resolve to a path that exists.
+    /// Where `path` leads, asked at the privilege the restoring write uses.
     ///
-    /// `realpath(3)` semantics, and the distinction from [`Self::read_link`] is
-    /// the whole of why this exists. `read_link` answers about one name; a
-    /// decision about where a write would *land* needs the parents resolved
-    /// too. A caller that follows one hop at a time and flattens `..` itself
-    /// gets a different answer from the kernel's whenever the component before
-    /// a `..` is a link, and gets it in the admitting direction: with
-    /// `a/dlink -> /elsewhere/sub`, resolving `a/dlink/../victim` by name alone
-    /// yields `a/victim` while the write lands on `/elsewhere/victim`.
+    /// Three outcomes, the contract shape [`Self::file_metadata`] establishes:
     ///
-    /// `None` for every unresolvable path, rather than distinguishing them:
-    /// `readlink` gives a dangling target, a missing component, a traversal it
-    /// may not make and a symlink loop the same status, and unlike
-    /// [`Self::read_link`]'s `None` this one is the *refusing* answer, so
-    /// collapsing them costs a caller nothing. A caller that admits `None` has
-    /// read it backwards.
+    /// - `Ok(None)`: **positively** not a symlink. The caller may write the
+    ///   path itself.
+    /// - `Ok(Some(p))`: a symlink, with every component resolved, matching
+    ///   `realpath(3)`.
+    /// - `Err`: could not be determined. The caller must refuse, and must
+    ///   never read this as "not a symlink".
+    ///
+    /// Distinct from [`Self::read_link`] on both axes. `read_link` answers
+    /// about one name at the login user's privilege, which suits checkpoint
+    /// capture: capture reads content with `cat` as that same user, and its
+    /// degrading to content-only is an accepted ceiling. This one is for the
+    /// rollback guard, which authorises a write that happens as this
+    /// executor's own [`Self::write_file`], so it asks at whatever privilege
+    /// that write happens at and refuses whatever it cannot see. Reasoning
+    /// for the script itself is at [`LINK_PROBE_SCRIPT`].
+    ///
+    /// **What makes `Ok(None)` trustworthy is the matched privilege, not the
+    /// script's parent gate.** The gate catches a dangling link and a missing
+    /// parent component, and it earns its place for those, but it does not
+    /// prove traverse permission on the directory the path sits in: resolving
+    /// the parent needs search permission on that parent's *ancestors*, while
+    /// the `lstat` behind `test -h` needs it on the parent *itself*. The
+    /// honest guarantee is the one this method's whole existence rests on: the
+    /// probe and the write run at the same privilege, so a directory the probe
+    /// cannot look into is a directory the write cannot reach either, and a
+    /// probe that cannot elevate produces no answer rather than an admitting
+    /// one.
+    ///
+    /// The elevation is this executor's own property, taken from
+    /// [`Self::is_remote`], because the two shipped implementations disagree
+    /// on it. `SshExecutor::write_file` goes through `sudo tee`, so its writes
+    /// elevate and its probe must ask `sudo -n` too, or it would answer for a
+    /// different user than the one that acts. `LocalExecutor::write_file`
+    /// calls `std::fs::write` directly with no elevation at all, so a probe
+    /// that asked for `sudo -n` on a local session would answer as root for a
+    /// write that happens as the process user, the same mismatch this guard
+    /// exists to remove, pointed the other way. A remote executor therefore
+    /// passes `sudo -n` as the script's elevation argument and a local one
+    /// passes nothing.
     ///
     /// Provided rather than required, for the reason [`Self::read_link`] is:
-    /// `readlink -e` is what `Path::canonicalize` was, and one implementation
-    /// keeps local and remote answering alike.
-    async fn canonical_path(&self, path: &Path) -> Result<Option<PathBuf>> {
+    /// local and remote must not come to ask different questions, and the call
+    /// still routes through this executor's own [`Self::execute_command`], so
+    /// the probe runs on whichever host that executor targets.
+    ///
+    /// The exit status is checked before stdout is read at all. The script
+    /// reports its own outcome on stdout and exits 0 for all three of its own
+    /// outcomes, so a non-zero status can only mean it did not run to
+    /// completion, `sh` absent (127) or the process killed after it had
+    /// already flushed a token that happens to parse, and that is the
+    /// refusing answer rather than whatever stdout holds.
+    ///
+    /// `path` is expected to be absolute. A relative one would have its
+    /// parent gate resolved against the shell's working directory, which is
+    /// unspecified for both the local and the SSH executor.
+    async fn link_target_as_writer(&self, path: &Path) -> Result<Option<PathBuf>> {
         let path_str = path.to_string_lossy();
+        let normalised = normalise_probe_path(&path_str)?;
+        let elevation = if self.is_remote() { "sudo -n" } else { "" };
         let output = self
-            .execute_command("readlink", &["-e", "-n", "--", &path_str])
+            .execute_command(
+                "sh",
+                &["-c", LINK_PROBE_SCRIPT, "_", &normalised, elevation],
+            )
             .await?;
-        Ok((output.exit_code == 0).then(|| PathBuf::from(output.stdout.trim())))
+        if output.exit_code != 0 {
+            return Err(crate::error::HardeningError::Executor(format!(
+                "the link probe exited {}: {}",
+                output.exit_code,
+                output.stderr.trim()
+            ))
+            .into());
+        }
+        parse_link_probe(&output.stdout)
     }
 
     /// Reads metadata for `path`.

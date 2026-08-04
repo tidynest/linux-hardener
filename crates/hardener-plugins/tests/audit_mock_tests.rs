@@ -1644,8 +1644,8 @@ impl SystemExecutor for MkdirCreatesTheDirectory {
     /// listed separately: a wrapper that forwards one and inherits the other
     /// runs a command no fixture registered, and fails for a reason that names
     /// neither the test nor the wrapper.
-    async fn canonical_path(&self, path: &Path) -> anyhow::Result<Option<PathBuf>> {
-        self.inner.canonical_path(path).await
+    async fn link_target_as_writer(&self, path: &Path) -> anyhow::Result<Option<PathBuf>> {
+        self.inner.link_target_as_writer(path).await
     }
 
     async fn file_metadata(&self, path: &Path) -> anyhow::Result<FileMetadata> {
