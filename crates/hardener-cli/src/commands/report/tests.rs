@@ -311,3 +311,54 @@ async fn report_scan_path_honours_config_exceptions() {
         "an excepted finding must not fail its mapped control"
     );
 }
+
+/// `--output report.json` under the default `--report-format text` wrote a
+/// human text report into a file named `.json`, exited 0 and said "Report saved
+/// to". The extension was added when absent and never checked when present.
+#[test]
+fn an_output_path_naming_another_format_is_refused() {
+    let refusal =
+        refuse_extension_that_contradicts(std::path::Path::new("report.json"), OutputFormat::Text)
+            .expect_err("a .json path under --report-format text must be refused");
+    let refusal = refusal.to_string();
+
+    assert!(
+        refusal.contains("json") && refusal.contains("txt"),
+        "the refusal names both documents by extension, which is the vocabulary \
+         `--report-format` itself accepts; got: {refusal}"
+    );
+    assert!(
+        refuse_extension_that_contradicts(std::path::Path::new("report.json"), OutputFormat::Json,)
+            .is_ok(),
+        "the same path agrees with --report-format json and must be allowed"
+    );
+}
+
+/// The control against the check being made too broad. `Path::extension`
+/// answers "what follows the last dot", not "what document is this", so a dated
+/// or versioned name asks for nothing and must not be refused. Judged against
+/// the closed list of formats this tool actually renders, exactly as
+/// `history export` judges its own.
+#[test]
+fn an_output_path_that_names_no_document_is_left_alone() {
+    // Judged against Json, not against the default Text: a list broadened to
+    // map `03` to Text would leave this green under Text, because the mapping
+    // would then agree with the selection and nothing would contradict.
+    for path in ["report.2026.08.03", "session-1.5.1", "report", "a.tar.gz"] {
+        assert!(
+            refuse_extension_that_contradicts(std::path::Path::new(path), OutputFormat::Json)
+                .is_ok(),
+            "'{path}' names no document this tool renders and must not be refused"
+        );
+    }
+    assert!(
+        refuse_extension_that_contradicts(std::path::Path::new("REPORT.HTML"), OutputFormat::Text)
+            .is_err(),
+        "the comparison is case-insensitive, so an upper-case extension is still a document"
+    );
+    assert!(
+        refuse_extension_that_contradicts(std::path::Path::new("report.htm"), OutputFormat::Html)
+            .is_ok(),
+        "htm and html are one document type, so neither contradicts the other"
+    );
+}

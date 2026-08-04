@@ -28,7 +28,7 @@ use tempfile::tempdir;
 #[test]
 fn the_recorded_plugin_list_covers_only_what_the_config_enables() {
     let mut config = HardenerConfig::default();
-    config.kernel.enabled = false;
+    config.kernel.enabled = Some(false);
 
     let recorded = scannable_plugins(
         vec!["ssh-hardening".to_string(), "kernel-hardening".to_string()],

@@ -117,13 +117,26 @@ impl PrivilegedOpGuard {
     }
 }
 
+/// Starts the cooldown. Called where a privileged subprocess actually ran.
+///
+/// Not from the guard's `Drop`, which is where it used to be. Every command
+/// takes the guard before it validates its arguments, so arming on drop paced
+/// the next privileged operation after a mistyped plugin name, an id in neither
+/// checkpoint database, or any other refusal that raised no authentication
+/// prompt at all. The limit exists to pace prompts, so it begins when one has
+/// been raised.
+fn mark_privileged_operation_completed() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    PRIVILEGED_OP_LAST_COMPLETED.store(now, Ordering::SeqCst);
+}
+
 impl Drop for PrivilegedOpGuard {
     fn drop(&mut self) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        PRIVILEGED_OP_LAST_COMPLETED.store(now, Ordering::SeqCst);
+        // Only the mutual exclusion. Whether this run earned a cooldown is not
+        // something the guard can see from here.
         PRIVILEGED_OP_RUNNING.store(false, Ordering::SeqCst);
     }
 }
@@ -357,6 +370,11 @@ async fn run_privileged(args: &[&str]) -> Result<PrivilegedOutput, PrivilegedCom
         .output()
         .await
         .map_err(|e| PrivilegedCommandError::ExecutionFailed(e.to_string()))?;
+
+    // pkexec ran, so an authentication prompt was reachable from here whatever
+    // it went on to return. A refused or cancelled one counts: pacing retries
+    // is the point. A failure to spawn it at all does not, and returns above.
+    mark_privileged_operation_completed();
 
     match output.status.code() {
         Some(126) => {
@@ -821,36 +839,86 @@ pub async fn run_apply_dry_run(
     Err(sanitise_error(&format!("Dry-run failed: {}", stderr)))
 }
 
+/// The argv for a privileged `hardener rollback`.
+///
+/// The checkpoint id goes last, behind `--`, so an id that begins with a hyphen
+/// cannot be read as a flag. That also means **nothing may be appended after
+/// it**: everything past `--` is a positional, and `rollback` takes exactly one,
+/// so an appended flag is not ignored, it makes clap refuse the command. A
+/// `--config` used to be pushed there.
+fn rollback_args(checkpoint_id: &str) -> Vec<&str> {
+    vec!["rollback", "--format", "json", "--", checkpoint_id]
+}
+
 /// Rolls back to a previous checkpoint.
 ///
 /// Uses pkexec to run the CLI with root privileges.
 /// Takes a checkpoint ID and restores the system state to that point.
+///
+/// Takes no config path, and deliberately. `rollback` restores the files a
+/// checkpoint captured and consults no directive, exception or plugin list, so
+/// there is no policy for one to decide, exactly as `batch rollback` reads no
+/// `config.toml` at all. Passing one was worse than useless: it went into the
+/// argv after the `--` that separates the checkpoint id, so clap read `--config`
+/// as a second positional and refused the whole command with "unexpected
+/// argument", exit 2. Every rollback from the desktop failed for any operator
+/// who had set a config file.
 #[tauri::command]
-pub async fn run_rollback(
-    checkpoint_id: String,
-    config_path: Option<String>,
-) -> Result<RollbackResult, String> {
+pub async fn run_rollback(checkpoint_id: String) -> Result<RollbackResult, String> {
     let _guard = PrivilegedOpGuard::acquire()?;
     validate_checkpoint_id(&checkpoint_id)?;
-    if let Some(ref path) = config_path {
-        validate_privileged_config_path(path)?;
-    }
 
-    let mut args: Vec<&str> = vec!["rollback", "--format", "json", "--", &checkpoint_id];
-
-    // Inject config file path if set
-    let config_flag;
-    if let Some(ref path) = config_path {
-        config_flag = path.clone();
-        args.push("--config");
-        args.push(&config_flag);
-    }
+    let args = rollback_args(&checkpoint_id);
 
     // Exit 1 with a parseable result is a partial-failure rollback, not a
     // transport error: the CLI prints the result before `bail!`ing when any
     // file failed to restore.
     let raw = run_privileged(&args).await.map_err(safe_err)?;
     accept_json_output(&raw).map_err(safe_err)
+}
+
+/// Whether one checkpoint database could be consulted.
+///
+/// `Absent` and `Unreadable` were one case while this used `Path::exists`,
+/// which is `metadata(..).is_ok()` and so answers `false` for a file it merely
+/// may not stat. They are not the same: one means there is nothing to show, the
+/// other means there may be something that cannot be shown.
+#[derive(Debug, PartialEq, Eq)]
+enum DatabaseReach {
+    /// Definitely not there, so nothing is missing from the list.
+    Absent,
+    /// Opened and listed. Its rows, if any, are in the list.
+    Read,
+    /// Present, or impossible to ask about, and not readable from here.
+    Unreadable,
+}
+
+/// Adds one database's checkpoints to `entries`, skipping ids already present.
+///
+/// De-duplicating on the id matters because the same checkpoint can be reached
+/// through either database, and the first database consulted keeps the row.
+async fn collect_checkpoints(
+    db: &std::path::Path,
+    entries: &mut Vec<(Checkpoint, CheckpointManager)>,
+) -> DatabaseReach {
+    if matches!(db.try_exists(), Ok(false)) {
+        return DatabaseReach::Absent;
+    }
+    let Ok(manager) = create_checkpoint_manager(db).await else {
+        return DatabaseReach::Unreadable;
+    };
+    let Ok(checkpoints) = manager.list_checkpoints().await else {
+        return DatabaseReach::Unreadable;
+    };
+    for checkpoint in checkpoints {
+        if !entries
+            .iter()
+            .any(|(seen, _)| seen.checkpoint_id == checkpoint.checkpoint_id)
+        {
+            entries.push((checkpoint, manager.clone()));
+        }
+    }
+    DatabaseReach::Read
 }
 
 /// Retrieves a list of all available checkpoints from both user and system databases.
@@ -862,37 +930,20 @@ pub async fn run_rollback(
 pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
     let mut entries: Vec<(Checkpoint, CheckpointManager)> = Vec::new();
 
-    // Collect checkpoints from user database
-    let user_db = get_user_db_path();
-    if user_db.exists()
-        && let Ok(manager) = create_checkpoint_manager(&user_db).await
-        && let Ok(checkpoints) = manager.list_checkpoints().await
-    {
-        for cp in checkpoints {
-            let Ok(mgr) = create_checkpoint_manager(&user_db).await else {
-                continue;
-            };
-            entries.push((cp, mgr));
-        }
-    }
+    collect_checkpoints(&get_user_db_path(), &mut entries).await;
 
-    // Collect checkpoints from system database
+    // The system database is root-owned, so an unprivileged desktop often
+    // cannot read it, and a list silently missing every privileged checkpoint
+    // looks exactly like a host that has none. Say so where it can be
+    // diagnosed rather than leaving the operator to wonder where a checkpoint
+    // they watched being created went.
     let system_db = get_system_db_path();
-    if system_db.exists()
-        && let Ok(manager) = create_checkpoint_manager(&system_db).await
-        && let Ok(checkpoints) = manager.list_checkpoints().await
-    {
-        for cp in checkpoints {
-            if !entries
-                .iter()
-                .any(|(e, _)| e.checkpoint_id == cp.checkpoint_id)
-            {
-                let Ok(mgr) = create_checkpoint_manager(&system_db).await else {
-                    continue;
-                };
-                entries.push((cp, mgr));
-            }
-        }
+    if collect_checkpoints(&system_db, &mut entries).await == DatabaseReach::Unreadable {
+        tracing::warn!(
+            "system checkpoint database at {} could not be read; any checkpoint \
+             it holds is missing from this list",
+            system_db.display()
+        );
     }
 
     // Sort by timestamp descending (newest first)
@@ -948,21 +999,91 @@ pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
 
     let cp_id = CheckpointId::new(&checkpoint_id);
 
-    // Try user database first
-    let user_db = get_user_db_path();
+    match resolve_delete(&get_user_db_path(), &get_system_db_path(), &cp_id).await {
+        DeleteResolution::Removed => Ok(true),
+        DeleteResolution::NotFound => Err(format!("no checkpoint with id '{checkpoint_id}'")),
+        DeleteResolution::NeedsPrivilege => {
+            let args = vec!["checkpoint", "delete", &checkpoint_id];
+            run_privileged_command(&args)
+                .await
+                .map(|_| true)
+                .map_err(safe_err)
+        }
+    }
+}
+
+/// What a delete should do, decided without escalating anything.
+///
+/// Split out so the decision can be tested. Everything the branch turns on is a
+/// pair of databases and an id; only the consequence of `NeedsPrivilege` needs
+/// `pkexec`, and that is exactly what a test must not run. Returning the
+/// decision rather than acting on it means an inverted branch is a failing test
+/// rather than a defect nobody can reach.
+#[derive(Debug, PartialEq, Eq)]
+enum DeleteResolution {
+    /// The user database held the row and it is gone.
+    Removed,
+    /// Neither database has it, so escalating could only fail.
+    NotFound,
+    /// It may be a root-owned row, or the system database could not be asked.
+    NeedsPrivilege,
+}
+
+/// Decides a delete from the two databases alone.
+///
+/// The user database is tried first because the desktop's own checkpoints live
+/// there and need no privilege. Failing that, the fallback exists for root-owned
+/// rows and is right, but an id in NEITHER database is what a stale list, a
+/// double click, or a row already removed from the CLI produces, and raising an
+/// authentication dialog for an operation that cannot succeed is a prompt the
+/// operator can do nothing with.
+async fn resolve_delete(
+    user_db: &std::path::Path,
+    system_db: &std::path::Path,
+    checkpoint_id: &CheckpointId,
+) -> DeleteResolution {
     if user_db.exists()
-        && let Ok(manager) = create_checkpoint_manager(&user_db).await
-        && manager.delete_checkpoint(&cp_id).await.is_ok()
+        && let Ok(manager) = create_checkpoint_manager(user_db).await
+        && manager.delete_checkpoint(checkpoint_id).await.is_ok()
     {
-        return Ok(true);
+        return DeleteResolution::Removed;
     }
 
-    // Fall back to system database (needs pkexec for root-owned checkpoints)
-    let args = vec!["checkpoint", "delete", &checkpoint_id];
-    run_privileged_command(&args)
-        .await
-        .map(|_| true)
-        .map_err(safe_err)
+    if system_database_denies(system_db, checkpoint_id).await {
+        return DeleteResolution::NotFound;
+    }
+    DeleteResolution::NeedsPrivilege
+}
+
+/// Whether the system database is readable and positively lacks this row.
+///
+/// `false` whenever the question cannot be answered, which is the safe
+/// direction: it means "escalate and let the privileged run decide", which is
+/// what happened unconditionally before.
+async fn system_database_denies(system_db: &std::path::Path, checkpoint_id: &CheckpointId) -> bool {
+    // `try_exists`, not `exists`. `Path::exists` is `metadata(..).is_ok()`, so
+    // it answers `false` for a file it merely may not stat, and the system
+    // database lives under a root-owned directory that an unprivileged desktop
+    // frequently cannot search: this host's is `drwx------ root`. Reading that
+    // `false` as "no such database" would make every root-owned checkpoint
+    // undeletable, which is the precise opposite of leaving the fallback
+    // reachable.
+    match system_db.try_exists() {
+        // Definitely not there: the answer this guard exists to act on.
+        Ok(false) => return true,
+        // Cannot even be asked. Not an answer, so the privileged run decides.
+        Err(_) => return false,
+        Ok(true) => {}
+    }
+    let Ok(manager) = create_checkpoint_manager(system_db).await else {
+        return false;
+    };
+    let Ok(checkpoints) = manager.list_checkpoints().await else {
+        return false;
+    };
+    !checkpoints
+        .iter()
+        .any(|c| &c.checkpoint_id == checkpoint_id)
 }
 
 /// Parses framework name strings into `ComplianceFramework` enum values.
@@ -1863,38 +1984,125 @@ pub async fn save_scheduler_config(
     document.remove("scheduler");
     let mut output = document.to_string();
 
-    let scheduler_toml = toml::to_string_pretty(&config)
-        .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
-
-    // Split serialised scheduler into top-level keys and subtable sections,
-    // prefixing each [table] header with "scheduler.".
-    let mut top_keys = String::new();
-    let mut subtables = String::new();
-    for line in scheduler_toml.lines() {
-        if line.starts_with('[') || !subtables.is_empty() {
-            if line.starts_with('[') {
-                subtables.push_str(&line.replacen('[', "[scheduler.", 1));
-            } else {
-                subtables.push_str(line);
-            }
-            subtables.push('\n');
-        } else {
-            top_keys.push_str(line);
-            top_keys.push('\n');
-        }
-    }
-
-    output.push_str("\n[scheduler]\n");
-    output.push_str(&top_keys);
-    if !subtables.is_empty() {
-        output.push('\n');
-        output.push_str(&subtables);
-    }
+    output.push_str(&render_scheduler_section(&config, &content)?);
 
     std::fs::write(&write_path, output)
         .map_err(|e| safe_err(format!("Failed to write config: {e}")))?;
 
     Ok("Configuration saved".to_string())
+}
+
+/// The `[scheduler]` table already in a config file, or an empty one.
+///
+/// Fails closed. Returning an empty table on a parse error would be the very
+/// defect this merge exists to fix, silently and with no bad input required:
+/// every key the form does not model would be dropped on the next save. The
+/// caller has already parsed the same text with `toml_edit`, so an error here
+/// means the two parsers disagree, and refusing the save is the only answer
+/// that cannot lose the operator's settings.
+///
+/// Empty content is not an error, it is a new file with nothing to preserve.
+fn existing_scheduler_table(content: &str) -> Result<toml::Value, String> {
+    let document: toml::Value = toml::from_str(content).map_err(|e| {
+        safe_err(format!(
+            "Failed to read the existing scheduler section: {e}"
+        ))
+    })?;
+    Ok(document
+        .get("scheduler")
+        .cloned()
+        .filter(toml::Value::is_table)
+        .unwrap_or_else(|| toml::Value::Table(toml::map::Map::new())))
+}
+
+/// Writes `incoming` over `destination`, keeping keys `incoming` does not name.
+///
+/// Deliberately generic rather than a list of fields to carry across. The whole
+/// defect was that the desktop's type models a subset of the scheduler's and the
+/// save replaced the section wholesale, so a hardcoded list would have to be
+/// remembered every time the backend gains a key, which is the same failure one
+/// step later. A key the form does not emit is a key the form does not own.
+///
+/// Tables merge; every other value, arrays included, is replaced. That is what
+/// makes `plugins`, `recipients` and the webhook `endpoints` list editable: the
+/// form does emit those, including as an empty array, so clearing one in the GUI
+/// clears it in the file.
+fn overlay(destination: &mut toml::Value, incoming: toml::Value) {
+    match incoming {
+        toml::Value::Table(incoming_table) if destination.is_table() => {
+            let destination_table = destination
+                .as_table_mut()
+                .expect("the guard above proved this is a table");
+            for (key, value) in incoming_table {
+                match destination_table.get_mut(&key) {
+                    Some(slot) => overlay(slot, value),
+                    None => {
+                        destination_table.insert(key, value);
+                    }
+                }
+            }
+        }
+        other => *destination = other,
+    }
+}
+
+/// Renders the desktop's scheduler settings as a `[scheduler]` block.
+///
+/// A seam, not decoration: what the desktop writes has to be what the scheduler
+/// reads, and until now nothing checked that. `WebhookUiConfig` rendered a flat
+/// `url`/`format` pair into a table whose backend struct expects `endpoints`,
+/// nothing rejects an unknown key, and so a saved webhook reached the daemon as
+/// an empty list. Testing it through the real `SchedulerConfig` is the only
+/// assertion that could have failed.
+fn render_scheduler_section(
+    config: &hardener_types::scheduler::SchedulerUiConfig,
+    existing: &str,
+) -> Result<String, String> {
+    let mut merged = existing_scheduler_table(existing)?;
+    let incoming = toml::Value::try_from(config)
+        .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
+    overlay(&mut merged, incoming);
+    drop_superseded_webhook_keys(&mut merged);
+
+    // Serialised nested under its own key, so the serialiser emits
+    // `[scheduler]` and `[scheduler.notifications.email]` itself. This replaced
+    // a pass that re-prefixed each rendered header textually, which could not
+    // tell a header from a line of a multi-line string beginning with `[`: it
+    // rewrote those too, and since the merge now carries every existing string
+    // through, each save nested the mangled value one level deeper than the
+    // last. Letting the serialiser name the tables removes the question.
+    let mut wrapper = toml::map::Map::new();
+    wrapper.insert("scheduler".to_string(), merged);
+    let rendered = toml::to_string_pretty(&toml::Value::Table(wrapper))
+        .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
+
+    Ok(format!("\n{rendered}"))
+}
+
+/// Removes the flat webhook keys earlier desktop builds wrote.
+///
+/// `WebhookWire` stopped emitting `url`/`format`, which was enough to retire
+/// them while the save replaced the whole section. Under the merge it is not:
+/// a key the form does not emit is a key the form keeps, so they would survive
+/// every save, and the read path prefers them whenever the endpoint list is
+/// empty. Clearing the URL in the GUI wrote `endpoints = []`, the next load
+/// showed the deleted URL again, and the save after that promoted it back to a
+/// live endpoint the daemon posts to.
+///
+/// Narrow on purpose: these two are the desktop's own historical spelling of a
+/// setting it still owns, and nothing in `hardener-scheduler` has ever read
+/// them. They are the exception that proves the ownership rule rather than a
+/// hole in it.
+fn drop_superseded_webhook_keys(scheduler: &mut toml::Value) {
+    let Some(webhooks) = scheduler
+        .get_mut("notifications")
+        .and_then(|notifications| notifications.get_mut("webhooks"))
+        .and_then(toml::Value::as_table_mut)
+    else {
+        return;
+    };
+    webhooks.remove("url");
+    webhooks.remove("format");
 }
 
 /// Sends a test notification through all enabled channels.
@@ -2021,7 +2229,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
 
             let enabled_plugins: Vec<String> = plugin_sections
                 .iter()
-                .filter(|(_, plugin_config)| plugin_config.enabled)
+                .filter(|(_, plugin_config)| plugin_config.is_enabled())
                 .map(|(name, _)| (*name).to_string())
                 .collect();
 
@@ -2283,6 +2491,11 @@ fn parse_outcomes<T: serde::de::DeserializeOwned>(stdout: &str) -> Result<Vec<T>
 #[cfg(test)]
 mod fleet_tests;
 
+/// Tests for the guard that decides whether deleting a checkpoint is worth an
+/// authentication prompt.
+#[cfg(test)]
+mod delete_escalation_tests;
+
 /// Tests for `fail_session_on_err`, the helper `run_scan`/`run_deep_scan`
 /// use to mark an aborted scan's history row Failed instead of orphaning
 /// it as 'running' forever. The commands themselves are thin wrappers over
@@ -2294,3 +2507,6 @@ mod fail_session_on_err_tests;
 
 #[cfg(test)]
 mod compliance_source_tests;
+
+#[cfg(test)]
+mod webhook_shape_tests;

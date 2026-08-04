@@ -24,7 +24,7 @@ fn generate_service_basic() {
     assert!(service.contains("[Unit]"));
     assert!(service.contains("[Service]"));
     assert!(service.contains("Type=oneshot"));
-    assert!(service.contains("/usr/bin/hardener daemon run-once"));
+    assert!(service.contains(r#""/usr/bin/hardener" daemon run-once"#));
     assert!(service.contains("NoNewPrivileges=true"));
 }
 
@@ -34,7 +34,52 @@ fn generate_service_with_config() {
         .with_config(PathBuf::from("/etc/hardener/config.toml"));
     let service = generator.generate_service();
 
-    assert!(service.contains("--config /etc/hardener/config.toml"));
+    assert!(service.contains(r#"--config "/etc/hardener/config.toml""#));
+}
+
+#[test]
+fn a_path_with_a_space_stays_one_argument() {
+    // systemd re-tokenises `ExecStart` on whitespace, so an unquoted path
+    // containing a space reached the process as two arguments: measured argv
+    // was `--config` `/etc/my` `conf.toml` `daemon` `run-once`, which clap
+    // refuses outright with `unrecognized subcommand 'conf.toml'`, exit 2, at
+    // every scheduled run and reported nowhere.
+    let generator = SystemdGenerator::new(PathBuf::from("/opt/my tools/hardener"), "daily")
+        .with_config(PathBuf::from("/etc/my conf.toml"));
+    let service = generator.generate_service();
+
+    assert!(
+        service
+            .contains(r#""/opt/my tools/hardener" --config "/etc/my conf.toml" daemon run-once"#),
+        "both paths must be one word each: {service}"
+    );
+    // The control against quoting the whole line rather than each path, which
+    // would make the assertion above pass while handing systemd a single word.
+    assert!(
+        service.contains("daemon run-once\n"),
+        "the subcommand stays outside the quotes: {service}"
+    );
+}
+
+#[test]
+fn a_percent_in_a_path_is_not_a_systemd_specifier() {
+    // `%` introduces a specifier that systemd expands before it splits the
+    // line, inside quotes as readily as outside: `%h` became the home
+    // directory in a live unit. `%%` is the escape for a literal `%`.
+    let generator = SystemdGenerator::new(PathBuf::from("/usr/bin/hardener"), "daily")
+        .with_config(PathBuf::from("/etc/100%/conf.toml"));
+    let service = generator.generate_service();
+
+    assert!(
+        service.contains(r#"--config "/etc/100%%/conf.toml""#),
+        "a literal percent is escaped: {service}"
+    );
+    // The control: escaping must not reach a path that has no percent in it,
+    // which would double every specifier-free unit's path characters instead.
+    assert!(
+        service.contains(r#""/usr/bin/hardener" --config"#),
+        "an unaffected path is untouched: {service}"
+    );
 }
 
 #[test]

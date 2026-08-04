@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-04
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -35,7 +35,10 @@ ones:
 Rules worth knowing:
 
 - A missing system or user config is fine; a missing `--config` file is an
-  error.
+  error. The one exception is the batch verbs that only read a fleet
+  (`batch scan`, `batch report`, and `batch apply` without `--execute`), which
+  warn on stderr and fall back to the compiled-in defaults. `batch apply
+  --execute` refuses like the rest, because it writes.
 - When running as root (including via pkexec from the desktop app), the user
   config is **skipped** so that unprivileged per-user settings cannot influence
   root-level hardening. `ConfigLoader::load` tests the effective UID for this,
@@ -48,13 +51,16 @@ Rules worth knowing:
 - Directive and exception maps **merge** across sources (later keys override
   same-named earlier keys). The `[global]` plugin lists **replace** rather than
   merge: a non-empty list in a later source wins outright.
-- A section's `enabled` key is taken from the **later source outright**, and
-  `true` is its default value, so a later file that omits a section supplies
-  `enabled = true` for it. A user config therefore restores a plugin the system
-  config turned off through `[ssh] enabled = false`. To disable a plugin so that
-  no later source can revive it, name it in `[global] disabled_plugins`, which
-  merges by replacement only when the later source sets a non-empty list of its
-  own.
+- A section's `enabled` key is decided by the **last source that states it**. A
+  file that mentions a section without the key, for a directive or an exception,
+  says nothing about whether the plugin runs, so an earlier `[ssh] enabled =
+  false` stands. Only an explicit `enabled = true` in a later source revives it.
+  This matters most for `--config`, which is typically partial and, since
+  `apply` began honouring it, reaches the verb that writes: naming a section to
+  tighten one directive no longer switches the plugin back on. `[global]
+  disabled_plugins` remains the stronger statement, because it refuses a plugin
+  whatever its own section says, and it merges by replacement only when the
+  later source sets a non-empty list of its own.
 - Size limits: a config file may be at most 1 MiB, with at most 500 `directives`
   and 200 exceptions per plugin section.
 
@@ -106,7 +112,7 @@ Every section accepts the same three keys:
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
-| `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final within one merged config: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. Across sources the key behaves differently; see the merge rule under File locations and precedence. |
+| `enabled` | bool | `true` when no source states it | Set `false` to stop this plugin from running. Disabled anywhere is final within one merged config: it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. Across sources, the last source that *states* the key decides it, and a section mentioned without it decides nothing; see the merge rule under File locations and precedence. |
 | `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Directives are clamped tighten-only: completely in `[kernel]`, `[ssh]`, `[pam]` and `[permissions]`, and on the `action` field alone in `[firewall]`, whose `port`, `source` and `protocol` are applied as given. See below. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
@@ -528,12 +534,37 @@ and `hardener batch`. It lives in the same `config.toml`, but is read
 directly from the first file found (user config first, then system config)
 rather than merged across sources.
 
-Two rules from the top of this page do not reach it. `--config` is not consulted
-(`load_scheduler_config` in the CLI's `commands/daemon.rs` searches the two
-default paths itself), and the user config is **not** skipped under root here, so
+One rule from the top of this page does not reach it: the user config is **not**
+skipped under root here, so
 a root daemon reads `~/.config/linux-hardener/config.toml` when that path exists
-and resolves. Keep the scheduler settings in the system config on any host where
-that distinction matters.
+and resolves.
+
+`--config` **is** consulted, and it joins the front of that search rather than
+replacing it: the named file is looked at first, and the first file that
+actually configures the scheduler wins whole. A named file with no
+`[scheduler]` section is not that file configuring it, so your system or user
+config still decides, which is what keeps a timer installed against a
+policy-only file running on your real scheduler settings rather than the
+compiled-in ones.
+
+A **partial** `[scheduler]` table is allowed: every key in the table below, and
+in the `storage` and `notifications` tables under it, has a default, so a
+section naming only `enabled` is a valid section and the rest takes the defaults
+listed here. The one exception is a webhook endpoint, where `name` and `url`
+remain required, because neither has an answer worth guessing; `format` does
+default.
+
+A typo is the cost of this. Nothing rejects an unknown key, here or anywhere
+else in the file, so `scheduel = "0 0 5 * * *"` is not an error and not a
+setting: the daemon runs on the 02:00 default and no command says otherwise.
+Check `hardener daemon status`, which prints the schedule it actually resolved.
+
+What a partial table does **not** do is merge across files. The first file
+carrying a `[scheduler]` section still wins whole, so a partial section in your
+user config hides a complete one in the system config, and the keys it omits
+come from these defaults rather than from the file it hid. Keep the scheduler
+settings in the system config on any host where that distinction matters, and
+keep them in one file.
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
@@ -569,8 +600,24 @@ Email (`[scheduler.notifications.email]`): `enabled` (default `false`),
 
 Webhooks (`[scheduler.notifications.webhooks]`): `enabled` (default `false`)
 plus one `[[scheduler.notifications.webhooks.endpoints]]` block per endpoint
-with `name`, `url`, `format` (`generic`, `slack`, or `discord`) and optional
-`headers` (values support `${ENV_VAR}` expansion).
+with `name` and `url`, both **required**, plus `format` (`generic`, `slack`, or
+`discord`; default `generic`) and optional `headers` (values support
+`${ENV_VAR}` expansion).
+
+The desktop offers a single webhook and writes it as one endpoint named
+`desktop`. Saving from the desktop merges its form over the `[scheduler]`
+section already in the file rather than replacing it, so every key the form does
+not model, `[scheduler.storage]`, `notify_mode` and the SMTP settings included,
+survives untouched. What the form does model it owns outright, and that includes
+the endpoint list: it holds one webhook, so saving replaces the whole list with
+that one, and clearing the URL removes it.
+
+Ownership of the list reaches inside it. An endpoint the desktop writes carries
+`name`, `url` and `format` and nothing else, so a hand-written `headers` table,
+or a `name` you chose, is replaced on the first save from the GUI, even a save
+that changed nothing about the webhook. That applies to a single hand-written
+endpoint as much as to several. Configure webhooks by file on any host where a
+webhook needs an authentication header.
 
 ```toml
 [scheduler]

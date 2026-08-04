@@ -2,7 +2,7 @@
 .\" Copyright 2026 Eric Jingryd
 .\" Licensed under the Apache License, Version 2.0
 .\"
-.TH HARDENER 1 "2026-06-24" "1.5.1" "Linux System Hardener"
+.TH HARDENER 1 "2026-08-04" "1.5.1" "Linux System Hardener"
 .
 .SH NAME
 hardener \- comprehensive Linux security automation tool with multi-distribution support
@@ -222,6 +222,27 @@ On
 each host receives an automatic host-keyed checkpoint (for rollback via
 .BR "sudo hardener \-\-ssh <host> rollback" )
 and a best-effort audit-log entry.
+Two refusals happen with
+.BR \-\-execute ,
+both before the first connection, both exit status 2.
+A
+.B \-\-config
+path that will not load is fatal rather than a fall-back to built-in defaults,
+which would otherwise harden every host in the run against a policy nobody
+selected.
+And a selection whose hosts cannot file their checkpoints apart is refused: the
+checkpoint host key is
+.IR ssh://user@host:port ,
+with a literal
+.I root
+substituted for a target that named no user, so
+.B "\-\-ssh web\-01"
+and
+.B "\-\-ssh root@web\-01"
+are two targets sharing one key.
+The same two refusals apply to
+.B "batch rollback \-\-execute" ,
+which also writes checkpoints.
 See
 .B Batch Apply Options
 and
@@ -266,6 +287,46 @@ Subcommands:
 .BR install ,
 .BR uninstall ,
 .BR status .
+All four honour the global
+.BR \-\-format .
+Under
+.B json
+each prints one envelope:
+.B generate
+carries the two units as
+.I service
+and
+.I timer
+objects, or the paths it wrote as
+.IR generated ;
+.B install
+carries
+.I installed
+and
+.IR timer_enabled ,
+the latter reporting what
+.B "systemctl enable \-\-now"
+actually returned;
+.B uninstall
+carries
+.IR removed ,
+which is empty rather than absent when there was nothing to remove, and
+.IR timer_disabled ,
+reporting what
+.B "systemctl disable \-\-now"
+returned; expect
+.I false
+where the timer was never enabled, since systemctl fails for a unit that does
+not exist, so it is worth reading only beside a non-empty
+.IR removed ;
+and
+.B status
+carries
+.IR user_mode ", " exit_code ", " stdout " and " stderr .
+The exit code is carried because an inactive timer and a unit that does not
+exist both make
+.B systemctl
+return non-zero.
 .TP
 .B history
 View and export scan history.
@@ -287,6 +348,19 @@ any other value is refused when the arguments are parsed, with exit status 2.
 The CSV, HTML and PDF formatters belong to
 .B \-\-report\-format
 and to the interactive wizard, not to this flag.
+On
+.B report
+this flag governs the command's own progress only, because the report body is
+what
+.B \-\-report\-format
+selects.
+Under
+.B json
+each
+.B systemd
+verb prints one envelope on standard output in place of its human text, and
+.B \-\-quiet
+suppresses progress but never that envelope.
 Default:
 .BR text .
 .TP
@@ -295,7 +369,54 @@ Suppress non-essential output.
 .TP
 .BR \-C ", " \-\-config " " \fIFILE\fR
 Path to a configuration file.
-Overrides the default search paths.
+For plugin policy this is an
+.I addition
+to the default sources, merged on top of whatever the system and user files
+contributed, not a replacement for them.
+For the
+.B [scheduler]
+section it joins the
+.I front
+of the search rather than replacing it, because that section is read from the
+first file that configures it rather than merged: a file with no
+.B [scheduler]
+section is not that file configuring it, so the system or user config still
+decides.
+A
+.I partial
+.B [scheduler]
+table is valid and takes the documented default for every key it omits, but the
+section still does not merge, so a partial one hides a complete one in a
+later-searched file and takes those defaults rather than that file's values.
+.IP
+Accepted anywhere, acted on by
+.BR scan ,
+.BR apply ,
+.BR report ,
+.BR "batch scan" ,
+.BR "batch report" ,
+.BR "batch apply" ,
+.BR daemon ,
+.BR history ,
+and
+.BR "systemd generate" / install ,
+which embed the path in the unit they write, exactly as it was typed: give those
+two an absolute path, since systemd resolves a relative one against the
+service's working directory rather than yours, and regenerate the unit if the
+file later moves, because the embedded path has no fallback.
+Every other command accepts it and does nothing with it.
+.IP
+A named path that cannot be read is fatal for the commands that write or that
+read the scheduler section, rather than falling back to built-in defaults.
+.B "batch scan"
+and
+.BR "batch report" ,
+and
+.B "batch apply"
+without
+.BR \-\-execute ,
+deliberately keep that fallback and warn on standard error, because they change
+no host.
 .TP
 .BI \-\-ssh " HOST"
 Remote host to act on via SSH.
@@ -435,6 +556,25 @@ This is the only flag that reaches the CSV, HTML and PDF formatters.
 .TP
 .BR \-o ", " \-\-output " " \fIFILE\fR
 Write the report to the specified file path instead of stdout.
+The format's extension is added when the path has none.
+A path whose extension names one of the formats this tool renders but
+.I not
+the one selected is refused, before the scan runs, with exit status 1 for
+.B report
+and 2 for the
+.B batch
+verbs, which count it among their usage errors: a text report is never written
+into a file called
+.IR report.json .
+Only the six extensions this tool actually produces count
+.RB ( .txt ", " .json ", " .csv ", " .htm ", " .html ", " .pdf ),
+so a merely dotted name such as
+.I report.2026.08.03
+asks for no document and is written as given.
+The same refusal covers the interactive wizard and
+.BR batch 's
+own
+.BR \-\-output .
 .TP
 .BR \-i ", " \-\-interactive
 Launch the interactive report wizard.
@@ -554,6 +694,29 @@ A usage error. In particular
 given to a command that acts on this host alone, which is refused before any
 connection is opened.
 .PP
+Two argument errors exit
+.B 1
+rather than 2, because they are detected by the command rather than by the
+argument parser: for
+.BR report ,
+an
+.B \-\-output
+path whose extension contradicts
+.BR \-\-report\-format ;
+and a
+.B \-\-config
+path that will not load for
+.B daemon
+or
+.BR history .
+The
+.B batch
+verbs judge their own
+.B \-\-output
+before contacting anything and exit
+.B 2
+for it, with their other usage refusals.
+.PP
 For
 .BR "batch scan" ,
 .BR "batch report" ,
@@ -576,9 +739,24 @@ or a checkpoint restore failure
 .B 2
 At least one host errored, was unreachable, or failed a privilege probe
 .RB ( "batch apply" " or " "batch rollback" " with " \-\-execute ),
-or a usage error occurred (no hosts selected, unknown
+or a usage error occurred: no hosts selected, an unknown
 .B \-\-host
-name).
+name, a
+.B \-\-config
+path that will not load under
+.BR \-\-execute ,
+or a selection whose hosts would file their checkpoints under one host key.
+The last two are refused before any connection is opened, so no host is
+touched.
+An
+.B \-\-output
+path naming a document other than the one
+.B \-\-format
+selected is refused here too, before any host is contacted.
+A fleet report is text or JSON only, so a path naming CSV, HTML or PDF
+contradicts it whichever way
+.B \-\-format
+is set.
 .
 .SH EXAMPLES
 Scan all plugins and display results as text:

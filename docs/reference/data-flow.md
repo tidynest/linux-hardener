@@ -426,6 +426,24 @@ a checkpoint or a skip is never counted as a hardening change.
          │
          ▼
 ┌──────────────────────────────────────────────────────────────┐
+│  Sort Targets Before Any Write (rollback_target_refusal)     │
+│  ├─ Path outside the rollback allowlist, relative, or        │
+│  │   containing `..`: Skipped with a named reason            │
+│  ├─ A row carrying link_target, or recorded absent: admitted │
+│  │   without the symlink check, since `ln -sfn` and `rm -f`  │
+│  │   land on the path itself and follow nothing              │
+│  ├─ Otherwise ask the EXECUTOR, so a remote rollback asks    │
+│  │   the target host and never the controller: `read_link`   │
+│  │   for whether the path is a link, `canonical_path`        │
+│  │   (`realpath`) for where it leads, every component        │
+│  │   resolved by the filesystem that owns them. Resolving    │
+│  │   outside the allowlist, or not resolving at all, is      │
+│  │   Skipped: fail closed                                    │
+│  └─ Nothing admitted at all: abort, so no orphan snapshot    │
+└────────┬─────────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────────┐
 │  Snapshot Current State (reversible-rollback guarantee)      │
 │  ├─ Capture the live state of the files about to be restored │
 │  │   (mirrors each entry: content vs metadata-only)          │
@@ -808,7 +826,7 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 | Data | Location | Format |
 |------|----------|--------|
 | Checkpoint DB | root: `/var/lib/linux-hardener/checkpoints.db`; unprivileged: `~/.local/share/linux-hardener/checkpoints.db` | SQLite |
-| Signing Keys | root: `/etc/linux-hardener/signing.key`; unprivileged: `~/.local/share/linux-hardener/signing.key` | Ed25519 |
+| Signing Keys | root: `/etc/linux-hardener/signing.key`; unprivileged: `~/.local/share/linux-hardener/signing.key`. A `signing.pub` sits beside each one, and a reader that cannot read the private key uses it to verify without signing | Ed25519 |
 | Audit Log | root: `/var/log/linux-hardener/audit.log`; unprivileged: `~/.local/share/linux-hardener/audit.log` | JSONL hash chain |
 | Scan History DB | root: `/var/lib/linux-hardener/scheduler.db`; unprivileged: `~/.local/share/linux-hardener/scheduler.db` | SQLite (scheduler, host-aware; see section 8) |
 | User Config | `~/.config/linux-hardener/config.toml` | TOML |

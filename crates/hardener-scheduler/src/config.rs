@@ -35,7 +35,24 @@ fn default_data_dir() -> PathBuf {
 /// Root scheduler configuration.
 ///
 /// Loaded from `[scheduler]` section in config.toml
+///
+/// `#[serde(default)]` on the struct, as on every table below it except
+/// [`WebhookEndpoint`], whose `name` and `url` stay required. This is the table
+/// an operator writes by hand, and without it the four scalar fields were all
+/// mandatory together: `[scheduler]` with `enabled = true` and nothing else
+/// failed the file with ``missing field `schedule` ``. The section is read from
+/// whichever file in the search order carries it, and a parse error there is
+/// fatal, so one partial section stopped `daemon` and `history` outright rather
+/// than the section falling back to these defaults.
+///
+/// The price, stated because nothing else catches it: the mandatory group was
+/// an accidental typo detector, and a misspelled key is now accepted in silence
+/// where it used to be a hard error. `deny_unknown_fields` would restore that,
+/// and is deliberately not used here: no configuration struct in this workspace
+/// sets it, and making this one table reject an unknown key would refuse a file
+/// written for a newer version on an older binary.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub struct SchedulerConfig {
     /// Enable scheduled scanning daemon.
     pub enabled: bool,
@@ -46,10 +63,8 @@ pub struct SchedulerConfig {
     /// Minimum severity to include in results.
     pub min_severity: String,
     /// Storage configuration.
-    #[serde(default)]
     pub storage: StorageConfig,
     /// Notification configuration.
-    #[serde(default)]
     pub notifications: NotificationConfig,
 }
 
@@ -164,6 +179,13 @@ pub struct WebhookEndpoint {
     /// Webhook URL.
     pub url: String,
     /// Payload format (slack, discord, generic).
+    ///
+    /// Defaulted, unlike `name` and `url` beside it: `WebhookFormat` already
+    /// declares `Generic` as its default and the reference documents it, so an
+    /// endpoint that omitted the key failed the whole file rather than taking
+    /// the format it had been promised. The other two stay required because
+    /// neither has an answer worth guessing.
+    #[serde(default)]
     pub format: WebhookFormat,
     /// Additional HTTP headers (supports `${ENV_VAR}` expansion).
     #[serde(default)]

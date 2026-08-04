@@ -9,6 +9,140 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The rollback symlink guard asked the machine running the tool, not the
+  machine being rolled back.** `rollback_target_refusal` decided whether a
+  restore may write a path by calling `Path::is_symlink` and
+  `Path::canonicalize`, both `std::fs` syscalls against the controller's own
+  filesystem, while the path named belongs to the target host. Both remote
+  rollback paths reach it with an `SshExecutor` active, single-host
+  `hardener rollback --ssh` and per-host `hardener batch rollback`, and it was
+  wrong in both directions. Fail-open: a remote path the checkpoint recorded as
+  a regular file, standing now as a symlink into a directory the allowlist
+  excludes, does not exist on the controller, so `is_symlink` answered false,
+  the prefix allowlist became the whole check, and the restore wrote a captured
+  copy through the link. The identical local case has always been refused.
+  False refusal: a link the controller happened to hold at an allow-listed path,
+  resolving outside it, refused a remote rollback of that path with a message
+  naming a path the operator reads as the remote's, and if every restorable row
+  was such a path the whole rollback aborted. The check now resolves through
+  `SystemExecutor::read_link`, the same primitive capture has used since
+  `link_target_of`, for the question of whether the path is a link at all, and
+  through a new `SystemExecutor::canonical_path` for the question of where it
+  leads. Two questions, two primitives, and the split is the load-bearing part:
+  `canonical_path` is `realpath` semantics, every component resolved by the
+  filesystem that owns them, which is exactly what `Path::canonicalize` gave and
+  must not be given up to reach the target host. Resolving the chain here
+  instead, one hop at a time with `..` flattened by name, is wrong wherever the
+  component before a `..` is itself a link: with `<allowed>/dlink` pointing at a
+  directory outside the allowlist, `<allowed>/f -> dlink/../victim` collapses by
+  name to `<allowed>/victim` and is admitted, while the write lands on
+  `<outside>/victim`. That was measured on a real filesystem, not reasoned
+  about, and it is why the resolution is asked rather than computed. A path that
+  does not resolve to something that exists, whether from a dangling target, a
+  missing component, a traversal that is refused or a symlink loop, is refused:
+  what the write would reach is unknown, and that is the same answer
+  `canonicalize` returning `Err` produced. Unchanged: the prefix allowlist, the
+  exemption for a row carrying a link target, and the exemption for a row
+  recorded absent, both of which restore onto the path itself and follow
+  nothing; and the scope of the check, which is still a path whose own final
+  component is a link, since a regular file under a symlinked parent was
+  admitted by `Path::is_symlink` too.
+
+- **The shared IPC string guard let U+007F through the check that exists to
+  reject control characters.** `validate_ipc_string` tested `b < 0x20`, and DEL
+  is `0x7F`, so the one ASCII control character above space passed a guard whose
+  name, doc comment and error message all say it rejects control characters. It
+  is the check on 31 call sites, among them `webhook_url`, `from_address`,
+  `email_recipient`, `schedule`, `checkpoint_name`, `config_path`,
+  `output_path`, `key_file` and `hostname`. Reached live rather than reasoned
+  about: a `Delete` keypress that inserts a literal DEL left one in the
+  desktop's webhook URL field, and the save wrote it into the config as an
+  endpoint URL. No caller mishandles it today, and the TOML serialiser escapes
+  the byte so nothing breaks out of its string; the defect is that a guard did
+  not do what every description of it says. Tab stays permitted, deliberately.
+  The C1 range is still accepted, because it is multi-byte in UTF-8 and no
+  single-byte comparison reaches it; that is recorded at the function rather
+  than left to be discovered.
+
+- **A partial `--config` re-enabled a plugin the system configuration had
+  disabled, on the verb that writes.** A plugin section's `enabled` key was a
+  `bool` defaulting to `true`, so a later source that mentioned a section for
+  any reason at all, a single directive included, supplied `enabled = true` for
+  it. A file that asked for the plugin and a file that merely named it were
+  indistinguishable. Site policy disabling `mac-hardening` was therefore undone
+  by `sudo hardener apply --all --config /tmp/tighten-ssh.toml`, and the plugin
+  was applied; the desktop makes this the ordinary case, since it persists a
+  user-picked config file and passes it to the privileged apply, and such files
+  are typically partial. The key is now an `Option`, so a section that does not
+  state it decides nothing and the earlier decision stands. An explicit
+  `enabled = true` still revives a plugin, and an explicit `enabled = false`
+  still disables one. Read it through `PluginConfig::is_enabled`, which answers
+  `true` when no source stated it, so a configuration that mentions the key
+  nowhere behaves exactly as it always has.
+
+- **Two ad-hoc targets for one machine could file their checkpoints under a
+  single key, so a fleet rollback could restore already-hardened state and
+  report success.** The checkpoint host key comes from
+  `SshExecutor::description`, which substitutes a literal `root` when a target
+  named no user, so `--ssh web-01` and `--ssh root@web-01` are two targets
+  everywhere else and one host key there. Checkpoints are scoped by
+  `(host key, name)` and the newest per key wins, so under `batch apply
+  --execute` both captured a pre-apply checkpoint under the same pair and the
+  survivor could be the one taken after the other target had already hardened
+  the machine. The cross-host guard could not refuse the later rollback, because
+  by its measure the two keys are equal. This was not a race introduced by
+  concurrency: `--concurrency 1` serialises the two captures and still writes
+  both under one key. A fleet run that writes now refuses such a selection,
+  exit `2`, before it opens a connection, naming both targets and the single key
+  they would have shared. The refusal covers `batch rollback --execute` as well
+  as `batch apply --execute`: rollback takes its own reversible-rollback
+  snapshot through the same path, and it also *reads* by host key, so a
+  colliding pair could restore one target from the other's checkpoint. The key
+  itself is unchanged, so no stored checkpoint is affected; correcting it means
+  resolving the effective remote user at connect time, which orphans every
+  checkpoint already filed under the old key and is a separate decision.
+
+  **This closes the collision within one invocation and not the underlying
+  defect.** The newest checkpoint per key wins across the whole database rather
+  than within a run, so reaching one machine as `--ssh web-01` in one run and as
+  `--ssh root@web-01` in another still files both under one key, with no
+  selection to refuse, and the single-host `apply` and `rollback` verbs never
+  reach this check at all. Until the key is corrected, reach a given machine by
+  one and only one form of target. Both the limitation and the key format are
+  now documented in the CLI reference, which had never recorded either despite
+  two commit messages claiming it did.
+- **`batch apply --execute` hardened an entire fleet from the compiled-in
+  defaults when the `--config` path it was given could not be loaded.** The
+  fleet loader warned on stderr and fell back for any configuration failure: a
+  mistyped or moved path, a parse error in any source, or a directive the
+  validator rejected. That file decides which plugins write, the values they
+  write and the violations deliberately excepted, so the fallback did not change
+  what was reported about the hosts, it changed what was written to them, over
+  SSH, on every host in the run. Nothing recorded that policy had been
+  defaulted, so the run still exited `0` on success, and the `nothing_ran()`
+  guard could not fire either: it refuses a run that hardened nothing, and the
+  defaults enable every plugin. A named `--config` that will not load is now
+  fatal for that run, before the first connection is opened, and it exits `2` to
+  match the tier `batch` already uses for its own usage refusals. This is the
+  fleet half of the single-host `apply` fix, which was deliberately left out of
+  that change because refusing mid-fleet alters fleet behaviour and wanted
+  deciding on its own. `batch rollback` is unaffected: it reads no config at all.
+
+  Two limits of this fix are worth stating rather than leaving to be discovered.
+  **The verbs that do not write to a host keep the fallback**, so `batch scan`,
+  `batch report` and `batch apply` without `--execute` still warn and continue.
+  That is not free: a fleet scan persists a session per host into the scheduler
+  database, and the findings it stores come from the config, so a defaulted run
+  writes a different plugin set at different thresholds into rows that outlive
+  the warning and are later read by `history trends`, `history regressions` and
+  the daemon's regression notifications. It can therefore manufacture or mask a
+  regression on a later run where no warning is in sight. Refusing there too was
+  considered and not taken, because those verbs change no host. **And the guard
+  keys on the flag, not on the outcome**: a run that names no `--config` still
+  degrades to defaults when the controller's own `/etc/linux-hardener/config.toml`
+  is present but broken, which is the behaviour single-host `apply` also keeps.
+  The desktop's Fleet Apply passes no `--config` at all, so it cannot reach this
+  refusal and is exposed to exactly that case.
 - **Debian hosts hardened by any release up to and including 1.5.1 may have no
   firewall at all, while the tool reported one was applied.** `apply --plugin
   firewall-hardening` decided ufw was already enabled when `systemctl is-active
@@ -409,6 +543,323 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The merged checkpoint list's de-duplication had no test, and the case it
+  guards cannot be built through the public API.** `collect_checkpoints` merges
+  the user and system databases and drops an id it has already seen, first-wins.
+  That guard is what stands between the operator and the same checkpoint offered
+  twice, and which copy survives is load-bearing rather than cosmetic: the
+  manager kept beside the row decides the verification flag and where a later
+  operation acts. Every write generates a fresh id, so one id in two databases
+  is unconstructible by creating checkpoints; the fixture copies the database
+  instead and lets the second directory keep a signing key of its own, which is
+  what a real host has and what makes the surviving pairing observable. Covered
+  now, and proved by two mutations: removing the guard lists the row twice, and
+  making it last-wins keeps the count at one while pairing the row with the key
+  that did not sign it.
+
+- **`report --interactive` put its own chatter on stdout, so a redirected JSON
+  report was not JSON.** The wizard decorated its prompts with `println!`: the
+  banner, the three step headings, the review block, the progress lines and the
+  completion summary all went to stdout, and the summary is printed *after* the
+  report body is written there. `hardener report --interactive > report.json`,
+  choosing JSON with stdout as the destination, therefore produced a file with a
+  banner above the document and a summary below it. The non-interactive path had
+  been disciplined about this all along, which is what made the difference easy
+  to miss. All fifty of those calls now write to stderr, where `dialoguer`
+  already puts the prompts they decorate, and the single `writeln!` that emits
+  the report body is the only thing left addressing stdout.
+
+- **`systemd uninstall` said "Systemd units removed" whatever happened, and
+  discarded the one outcome that could contradict it.** The `disable --now` exit
+  status went to `let _`, so an uninstall that removed the unit files but failed
+  to stop the timer reported plain success, and a host with nothing installed
+  reported a removal it had not performed. The JSON envelope now carries
+  `timer_disabled` beside `removed`, matching the `timer_enabled` that `install`
+  reports forty-eight lines above, and the text line says which of the three
+  things happened. Expect `timer_disabled: false` where the timer was never
+  enabled, because `systemctl` fails for a unit that does not exist; it is worth
+  reading beside a non-empty `removed`, where it means the files are gone and
+  the timer may still be running. The same function decided whether to remove a
+  file with `Path::exists`, which is `metadata(..).is_ok()` and answers `false`
+  for a unit this process may not stat, so it could report a clean uninstall
+  having touched nothing; that check is now `try_exists` and its error is
+  surfaced.
+
+- **A webhook configured in the desktop never reached the daemon, and both
+  sides reported success.** `WebhookUiConfig` serialised its own flat shape, so
+  the desktop wrote `url` and `format` into
+  `[scheduler.notifications.webhooks]`, whose backend struct has neither field
+  and expects an `endpoints` list. Nothing rejects an unknown key, so the file
+  saved without complaint, `endpoints` stayed empty, and the dispatcher built no
+  notifier. `get_scheduler_config` read the file back through the same UI type
+  that wrote it, so the round trip was self-consistent: the operator saved a
+  URL, reopened the page and saw their URL, and only the daemon disagreed, by
+  doing nothing. The desktop's single webhook is now converted to and from the
+  one-entry endpoint list the scheduler reads, under the name `desktop`. A
+  config written by an earlier build is still read, so an existing setting
+  reaches the form instead of coming back blank and being discarded on the next
+  save. Driven on a real desktop before release: the GUI now writes an
+  `[[scheduler.notifications.webhooks.endpoints]]` block, the daemon parses that
+  file, and navigating away and back reads the URL out of the list again.
+
+  Two things found while fixing it, both of which would have defeated the fix on
+  their own. The section writer moved each serialised table header under
+  `[scheduler]` by replacing the first `[`, which turns an array-of-tables
+  header into `[scheduler.[notifications.webhooks.endpoints]]` and leaves the
+  file unparseable; nothing had met that because the desktop rendered no list.
+  And `WebhookUiConfig::default()` leaves `format` empty while the scheduler
+  page sets the form straight from it, so a fresh form saved unchanged carried
+  an empty format through. As a flat key that was inert, since the backend never
+  read it; inside an endpoint it is fatal, because `""` is not one of the three
+  variants the enum accepts and the whole file then fails to parse. Measured
+  both ways. The guard is therefore part of making the endpoint list safe rather
+  than a defect that had been biting, and an unset format is written as the
+  documented `generic`.
+
+- **Saving the desktop's scheduler page destroyed every `[scheduler]` key the
+  form does not model.** The save rewrote the whole section from a UI type that
+  carries a strict subset of the scheduler's, so pressing Save without changing
+  anything deleted `smtp_host`, `smtp_port`, `smtp_tls` and `smtp_username`,
+  the whole of `[scheduler.storage]`, and `notify_mode`. `enabled` *is*
+  modelled, so it survived: the result was a config asserting email
+  notifications were on while `EmailNotifier::new` returned `None` for an empty
+  SMTP host, and a host pointed at a custom `database_path` silently reverting
+  to the default while its history appeared to stop. The form shows none of
+  these fields, so the loss was neither visible nor repairable from the desktop.
+  The save now merges the form over the section already in the file: a key the
+  form does not emit is a key it does not own. Deliberately generic rather than
+  a list of fields to carry across, because a list has to be remembered every
+  time the backend gains a key, which is the same defect one step later. What
+  the form does model it still owns outright, including the endpoint list, so
+  clearing the webhook URL removes the endpoint. Ownership reaches inside that
+  list: an endpoint the desktop writes carries `name`, `url` and `format` only,
+  so a hand-written `headers` table is replaced by the first save from the GUI,
+  which the reference now states for a single endpoint and not only for a
+  multi-endpoint list. Reading the existing section fails the save rather than
+  falling back to an empty one, since a silent fallback would be this defect
+  again with no bad input required.
+
+  The merge needed two things retired with it. The flat `url`/`format` pair
+  earlier builds wrote is now deleted rather than merely not written: under a
+  merge, a key the form does not emit is a key it keeps, and the read path
+  prefers that pair whenever the endpoint list is empty, so a webhook deleted in
+  the GUI reappeared on the next load and went live again on the save after
+  that, with the daemon posting to an endpoint the operator had removed. And the
+  rendered section is now serialised nested under its own key instead of having
+  each table header re-prefixed textually afterwards. That pass could not tell a
+  header from a line of a multi-line string starting with `[`, and once the
+  merge began carrying every existing string through, each save nested such a
+  value one level deeper than the last.
+
+- **A `[scheduler]` section that named some of its keys and not others failed
+  the whole configuration file, stopping `daemon` and `history` outright.**
+  `SchedulerConfig` was the only struct in that tree without a struct-level
+  `#[serde(default)]`, so its four scalar keys were mandatory as a group even
+  though each one is documented with a default: `[scheduler]` followed by
+  `enabled = true` was refused with ``missing field `schedule` ``. It is also the
+  one table in that tree an operator writes by hand. The section is read from
+  whichever file in the search order carries it and a parse failure there is
+  returned rather than skipped, so a partial section anywhere in that search was
+  fatal to `daemon` and to every `history` verb. The other two callers that open
+  the same database, `scan` and `batch`, swallow the error instead, so for them
+  the same file silently dropped scan-history persistence and still exited 0,
+  which is the quieter half of the same defect and was reported nowhere. Each
+  key now falls back to the default the reference already listed for it. The
+  same omission one level down, on `WebhookEndpoint`'s `format`, is fixed with
+  it, and `name` and `url` stay required because neither has an answer worth
+  guessing. The section still does not merge across files, so a partial section
+  in the user config hides a complete one in the system config and takes these
+  defaults for what it omits rather than that file's values; `configuration.md`
+  said the opposite of the new behaviour and has been corrected. One thing is
+  given up: the mandatory group was an accidental typo detector, so a misspelled
+  key is now accepted in silence. Nothing in this workspace sets
+  `deny_unknown_fields`, and setting it here alone would refuse a file written
+  for a newer version, so the trade is recorded rather than taken back.
+
+- **A configuration path containing a space or a `%` produced a systemd unit
+  that could never run.** `systemd generate` and `install` interpolate `-C` and
+  the binary path straight into `ExecStart=`, which is neither a shell line nor
+  a value passed through untouched: systemd expands `%` specifiers over it and
+  then splits it on whitespace. Measured on a live unit, `--config
+  /etc/my conf.toml` reached the process as the two arguments `/etc/my` and
+  `conf.toml`, so clap refused the command with `unrecognized subcommand
+  'conf.toml'` and exited 2 at every scheduled run, reported nowhere because
+  nothing watches a timer's exit status by default; `%h` in a path was replaced
+  by the home directory before the process saw it. Both paths are now emitted as
+  quoted words with `%` escaped, so what the operator typed is what the
+  scheduled run receives.
+
+- **A refused desktop operation blocked the next real one for five seconds.**
+  The rate limit that paces privileged operations was started by the RAII
+  guard's `Drop`, and every command takes that guard *before* it validates its
+  arguments. So a mistyped plugin name, a checkpoint id in neither database, or
+  any other refusal that raised no authentication prompt still armed the
+  cooldown, and the operator's next genuine apply, rollback or checkpoint met
+  "Rate limit: please wait N seconds". Deleting a checkpoint from a stale list
+  made that the ordinary case. The cooldown now starts where `pkexec` actually
+  ran, so it paces prompts rather than attempts. A prompt that was refused or
+  cancelled still counts, because pacing retries is the point; a failure to
+  launch `pkexec` at all does not. The guard keeps the mutual exclusion it also
+  provides, which was never the part at fault.
+
+- **Verification-only signing never engaged for the readers it was built for, so
+  the desktop could not open the system checkpoint database at all.** The mode
+  exists so a reader holding the public key can check signatures without the
+  private one, and it was selected only when the private key was **absent**.
+  That is not the shipped layout: a root-owned `signing.key` at 0400 sits beside
+  a readable `signing.pub`, so for every unprivileged reader the private key is
+  present and unreadable. Construction took the load path, failed on permission,
+  and the public key next to it was never tried. The desktop therefore could
+  neither list nor verify any privileged checkpoint, whatever else it did. Being
+  unable to read the private key now selects the same mode as not having one.
+  The absence test also moves from `Path::exists` to `try_exists`, so a key
+  under a directory this process cannot search is no longer mistaken for a key
+  that is not there: that distinction is what decides whether a fresh key is
+  generated, and generating one where a key already exists would void the
+  signature of every checkpoint already written. When neither half can be read,
+  the error now says so rather than reporting whatever a write into an
+  unreachable directory happened to fail with.
+
+- **The desktop's checkpoint list could omit every privileged checkpoint and
+  look like a host that had none.** It decided whether to consult the system
+  database with `Path::exists`, which is `metadata(..).is_ok()` and therefore
+  answers `false` for a file this process merely may not stat. That database is
+  root-owned, and its directory is `drwx------` on at least one real host, so an
+  unprivileged desktop read "cannot see it" as "not there" and silently dropped
+  its rows. The two are now told apart, and a system database that cannot be
+  reached is logged as such, so a checkpoint an operator watched being created
+  and then cannot find is diagnosable rather than a mystery. The same conflation
+  was fixed in the delete path in this release; this was the other half of it.
+  The two near-identical collection blocks also become one, which removes a
+  redundant manager construction per checkpoint.
+
+- **The desktop's Rollback failed outright for any operator who had set a
+  configuration file.** It appended `--config <path>` to the CLI argv *after*
+  the `--` that shields the checkpoint id, so clap read `--config` as a second
+  positional, refused the command with "unexpected argument" and exited 2 before
+  anything was restored; the desktop then surfaced that as a parse failure
+  rather than as the reason. The flag had nothing to do there in the first
+  place: `rollback` restores the files a checkpoint captured and consults no
+  directive, exception or plugin list, exactly as `batch rollback` reads no
+  `config.toml` at all. The path is gone from the Tauri command, the frontend
+  binding and the modal that called it, rather than merely moved earlier in the
+  argv. The argv is now built by one function whose test asserts the id is last
+  and behind the separator, because anything appended after it is a positional
+  the command does not take.
+
+- **A timer installed against a policy file ran its scheduled scan on the
+  compiled-in scheduler defaults.** `systemd generate` and `systemd install`
+  embed the `--config` path in the unit they write, and making `-C` reach the
+  `[scheduler]` section had it replace the search rather than join it, so a
+  named file with no `[scheduler]` section meant "use the defaults" rather than
+  "this file does not configure the scheduler". Measured: with a real config
+  enabling a 04:00 scan into a chosen database, the same host under
+  `--config policy.toml` reported the scheduler **disabled**, on another
+  schedule, writing to the default database, and said nothing about it. Since
+  the unit embeds that path, the misconfiguration was permanent and silent, and
+  every scheduled scan it produced would have been skipped.
+  The named path is now searched **first** rather than instead, and a file
+  without the section is not treated as configuring it, so the operator's own
+  settings still decide. The section still does not merge: the first file that
+  actually configures it wins whole. This also corrects the same shadowing
+  between the default locations, where a user config mentioning only `[global]`
+  silenced a system config that had the settings.
+
+- **A fleet run whose `--output` named the wrong document scanned the whole
+  fleet before saying so.** The check sat at the point of writing, so `batch
+  report --output fleet.json` under the default text format contacted every
+  host, produced the report, and only then refused its destination. It also
+  exited 1 from there, while every other pre-connection refusal in `batch` exits
+  2, the tier the reference documents for a batch usage error. Two arguments
+  contradicting each other is knowable before a single host is reached, so all
+  four fleet verbs now judge `--output` first: refused runs cost no fleet work
+  and exit 2 with the rest. `report` still exits 1 for its own, which is not a
+  tier but the ordinary error path of a command with no per-host tiering, and
+  both references now say which is which. The fleet message is worded
+  separately from `report`'s, which offers the named format as an alternative:
+  that advice is wrong here, because a fleet report is text or JSON only and the
+  CSV, HTML and PDF formatters are reachable per host alone.
+
+- **The desktop raised an authentication prompt to delete a checkpoint that
+  does not exist.** Delete tries the user database and falls back to a
+  privileged `hardener checkpoint delete` for root-owned rows. The fallback is
+  right, and it became reachable once the delete stopped reporting success for a
+  row it had not removed, but it fired for an id in neither database too, which
+  is what a stale list, a double click, or a row already removed from the CLI
+  produces: a polkit dialog appeared and the operation then failed. It now
+  escalates only when the row could plausibly be there. The system database is
+  root-owned and an unprivileged desktop may be unable to read it, so the only
+  case treated as decisive is the one that is: a reachable system database that
+  positively lacks the row, or no system database at all, which is every desktop
+  that has never run a privileged apply. A database that cannot be read is not
+  an answer and still escalates, so a root-owned checkpoint is never left
+  undeletable.
+
+- **`-C`, `--config` was ignored by `daemon` and by all five `history` verbs**,
+  which read the `[scheduler]` section through a loader that took no path and
+  searched the default locations itself. A single file carrying both a
+  `[global]` and a `[scheduler]` section was half honoured: `scan` read its
+  policy from the named file and then wrote its history to whichever database
+  the default search happened to find, so the two halves of one configuration
+  could disagree about where the run's results went. The scheduler section now
+  comes from the named file when one was named, and a named path that is missing
+  or will not parse is an error rather than a fall-through to the defaults. That
+  is not universal and the reference now says so: `batch scan`, `batch report`
+  and `batch apply --dry-run` deliberately keep their fallback, warning on
+  stderr, because they change no host. The default search is unchanged when no
+  path is named. One consequence is worth knowing before passing `-C` to these
+  verbs: the `[scheduler]` section does not merge, so a named file that has no
+  `[scheduler]` section yields the compiled-in defaults rather than the settings
+  in your system or user config, and a partial `[scheduler]` table will not parse
+  at all. `docs/reference/cli.md` enumerated the
+  surfaces that accept `-C` without acting on it and presented that list as
+  complete while naming neither of these; the list is now correct.
+
+- **`--format json` was ignored by every `systemd` verb, so a caller parsing
+  stdout as JSON received a unit file beginning with `#` or a systemctl status
+  table.** `main` passed the four verbs no format at all and the module imported
+  no `OutputFormat`. All four now honour the flag and print one envelope each:
+  `generate` carries the units it produced, or the paths it wrote; `install`
+  carries the paths and whether the timer was enabled; `uninstall` carries what
+  it removed, which is empty rather than absent when there was nothing to
+  remove; and `status` carries `user_mode`, `exit_code`, `stdout` and `stderr`.
+  `status` reports the exit code rather than discarding it, because an inactive
+  timer and a unit that does not exist both make `systemctl` return non-zero and
+  nothing else tells them apart without reading prose. `install` reports
+  `timer_enabled` from what `systemctl enable --now` actually returned, rather
+  than asserting an outcome nothing had checked. The text rendering is
+  unchanged. `--quiet` continues to suppress progress and never a result, so
+  `generate` writing units to stdout still prints them.
+
+  The other half of the same report was **`report` ignoring the global
+  `--format`, and that is by design**: `--report-format` selects the report
+  body, and the global flag governs only the command's own progress. The
+  reference already said so where `--report-format` is described; it now says so
+  in the global flag's own row as well, which is where a reader looking for the
+  promise would start.
+
+- **`report --output` wrote the wrong document into a path that named a
+  format.** The extension was added when the path had none and never checked
+  when it had one, and `--report-format` defaults to `text`, so
+  `hardener report --output report.json` wrote a human text report into a file
+  called `report.json`, exited 0 and said it had saved a report. A path whose
+  extension contradicts the selected format is now refused, naming both
+  documents and the flag that would reconcile them. Refusing rather than letting
+  the extension choose the format is deliberate: `report` renders five formats,
+  and an extension that silently overrode `--report-format` would be the same
+  defect pointing the other way, with no way to tell an explicit
+  `--report-format text` from the default. The comparison uses a closed list of
+  the formats this tool actually renders, because `Path::extension` answers
+  "what follows the last dot" rather than "what document is this", so
+  `report.2026.08.03` asks for nothing and is still written as given. That list
+  now lives with the formats themselves as `OutputFormat::from_extension`, a
+  left inverse of `extension()` (`htm` maps to HTML, which writes `html`), and
+  `history export` and `batch`'s `--output` writer were moved onto it, so the
+  commands that judge a path can no longer disagree about what an extension
+  names. `history export` accepts and refuses exactly what it did before: the
+  two predicates are the same set. The wizard behind `report --interactive`
+  carried the same defect on its own code path and is refused there too.
+
 - **The container test suite no longer fails a rollback that did its job.** A
   rollback restores the files and then asks each plugin to reload the service
   that reads them, reporting a reload that did not happen rather than calling
@@ -533,10 +984,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sources into one result and cannot attribute a parse error to one file, and a
   run told to use a named policy should not proceed on a guess about policy.
   Without the flag, a broken config at a default location still degrades to
-  defaults with a warning, which is the behaviour that shipped. **`batch apply`
-  is not covered by this and still falls back to defaults when its `--config`
-  cannot be loaded**, over a whole fleet; that is a separate defect and is not
-  fixed here. All four commands that build a loader now share one definition of
+  defaults with a warning, which is the behaviour that shipped. `batch apply`
+  was not covered by this change and is fixed by its own entry above. All four
+  commands that build a loader now share one definition of
   what the flag means. `docs/reference/cli.md` and `docs/reference/configuration.md`
   described the old behaviour accurately and have been corrected: they recorded a
   defect, and the workaround they offered ("install it at one of the default

@@ -14,7 +14,7 @@
 //! so `super` still resolves to `crate::commands::batch` and every import carried
 //! across unchanged, private items included.
 //!
-//! 1469 test lines across 62 tests, the largest inline block anywhere in the workspace and the reason this crate was left until last.
+//! 1671 test lines across 70 tests, the largest inline block anywhere in the workspace and the reason this crate was left until last.
 
 use super::*;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity};
@@ -31,7 +31,9 @@ fn batch_honours_an_explicit_config_path() {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     writeln!(file, "[global]\ndisabled_plugins = [\"ssh-hardening\"]").unwrap();
 
-    let config = load_batch_config(Some(&file.path().to_path_buf()), true);
+    // `writes` is the writing verb's answer, so this covers the arm a fleet
+    // `apply --execute` takes: a named config that loads is used, not refused.
+    let config = load_batch_config(Some(&file.path().to_path_buf()), true, true);
 
     assert!(
         !config.is_plugin_enabled("ssh-hardening"),
@@ -47,7 +49,7 @@ fn batch_honours_an_explicit_config_path() {
 async fn a_remote_host_is_scanned_against_the_config_it_is_given() {
     use hardener_core::MockExecutor;
     let mut config = HardenerConfig::default();
-    config.ssh.enabled = false;
+    config.ssh.enabled = Some(false);
 
     let outcome = scan_with_executor(
         "h".into(),
@@ -1580,4 +1582,89 @@ async fn batch_persistence_handles_concurrent_hosts() {
 
     let all = mgr.list_sessions(&SessionFilter::default()).await.unwrap();
     assert_eq!(all.len(), 3, "all concurrent host sessions persisted");
+}
+
+/// Two ad-hoc targets for one machine are correctly two hosts here, but
+/// `SshExecutor::description` substitutes a literal `root` for a target that
+/// named no user, so both file their checkpoints under one key. Under
+/// `--execute` each captures a pre-apply checkpoint under `(host_key, name)`,
+/// and `select_latest_named` keeps the newest per key, so the survivor can hold
+/// content the other target had already hardened. A later rollback then reports
+/// the host restored while restoring the hardened state, and the cross-host
+/// guard cannot refuse it because by its measure the keys are equal.
+#[test]
+fn colliding_host_key_catches_a_bare_target_against_an_explicit_root() {
+    // The pair is deliberately NOT adjacent. A check that compared each target
+    // only against the one before it would still catch the adjacent case, and
+    // a collision between the first and third selection is the same collision.
+    let profiles = vec![
+        parse_inline("web-01", 22, None, true),
+        parse_inline("web-02", 22, None, true),
+        parse_inline("root@web-01", 22, None, true),
+    ];
+
+    let collision = colliding_host_key(&profiles);
+
+    assert_eq!(
+        collision.as_ref().map(|c| c.key.as_str()),
+        Some("ssh://root@web-01:22"),
+        "the one key both targets would write under is named, so the refusal can \
+         say what collided"
+    );
+    let collision = collision.expect("the pair collides");
+    assert_eq!(
+        (collision.first.as_str(), collision.second.as_str()),
+        ("'web-01' (web-01:22)", "'web-01' (root@web-01:22)"),
+        "both are named by inventory name and canonical target together, in \
+         selection order: these two share a name and are told apart only by \
+         target, while two inventory entries for one endpoint are the reverse"
+    );
+}
+
+/// The control against the refusal being made too broad. Distinct machines, and
+/// distinct accounts on one machine, are exactly what a fleet run is for: only
+/// the pair that a fabricated `root` collapses may be refused.
+#[test]
+fn colliding_host_key_passes_targets_that_stay_distinct() {
+    let distinct = vec![
+        parse_inline("web-01", 22, None, true),
+        parse_inline("web-02", 22, None, true),
+        parse_inline("admin@web-01", 22, None, true),
+        parse_inline("root@web-01:2222", 22, None, true),
+    ];
+
+    assert!(
+        colliding_host_key(&distinct).is_none(),
+        "two machines, a second account, and a second port are four keys; \
+         refusing any of them would refuse a fleet the operator may legitimately run"
+    );
+    assert!(
+        colliding_host_key(&[]).is_none(),
+        "an empty selection collides with nothing"
+    );
+}
+
+/// `batch report --output fleet.json` under the default text format wrote a
+/// human fleet table into a file named `.json`, the same contradiction
+/// `hardener report --output` refuses, and it was only noticed at the point of
+/// writing: after the whole fleet had been scanned.
+///
+/// This pins the mapping the fleet verbs judge against. Batch renders text and
+/// JSON only, so getting it wrong would either refuse a correct path or accept
+/// a contradicting one, and neither is visible without it.
+#[test]
+fn a_fleet_verb_judges_a_path_against_the_document_its_format_selects() {
+    use hardener_compliance::OutputFormat;
+
+    assert_eq!(
+        selected_document(CliOutputFormat::Json),
+        OutputFormat::Json,
+        "--format json selects the JSON document, so a .json path agrees with it"
+    );
+    assert_eq!(
+        selected_document(CliOutputFormat::Text),
+        OutputFormat::Text,
+        "and the default selects text, which is what made `--output fleet.json` \
+         a contradiction rather than a preference"
+    );
 }

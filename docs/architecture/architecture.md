@@ -358,6 +358,7 @@ pub trait SystemExecutor: Send + Sync {
     // answer them identically. Both run a POSIX command through
     // `execute_command`, so an implementor never needs to override them.
     async fn read_link(&self, path: &Path) -> Result<Option<String>> { /* readlink */ }
+    async fn canonical_path(&self, path: &Path) -> Result<Option<PathBuf>> { /* readlink -e */ }
     async fn command_exists(&self, program: &str) -> Result<bool> { /* command -v */ }
 }
 ```
@@ -367,6 +368,15 @@ a positive "not a symlink" (`Ok(None)`), or `Err` meaning the question could
 not be answered. `Err` is never read as "not a symlink", because a checkpoint
 that stored a symlink's followed content instead of its target could not
 restore it: the write would travel through the link into whatever it points at.
+
+`canonical_path` answers a different question and the two are not
+interchangeable. `read_link` is about one name; `canonical_path` is `realpath`,
+every component resolved, which is what a decision about where a write would
+*land* needs. Following the chain by hand instead, one `read_link` at a time
+with `..` flattened by name, disagrees with the kernel whenever the component
+before a `..` is itself a link, and disagrees in the admitting direction. Its
+`Ok(None)` means "does not resolve to a path that exists" and is the refusing
+answer, the opposite polarity to `read_link`'s.
 
 Implementations:
 - `LocalExecutor` - Wraps `std::fs` and `std::process::Command`

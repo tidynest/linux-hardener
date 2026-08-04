@@ -10,11 +10,12 @@ use hardener_scheduler::{
     Daemon, JsonStore, ScanHistoryManager, SchedulerConfig, TriggerType, db::SessionFilter,
 };
 use serde::Deserialize;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Starts the daemon and blocks until shutdown signal.
-pub async fn start(format: OutputFormat, quiet: bool) -> Result<()> {
-    let config = load_scheduler_config()?;
+pub async fn start(format: OutputFormat, quiet: bool, config_path: Option<&PathBuf>) -> Result<()> {
+    let config = load_scheduler_config(config_path)?;
 
     if !config.enabled {
         return Err(anyhow!(
@@ -69,8 +70,12 @@ pub async fn start(format: OutputFormat, quiet: bool) -> Result<()> {
 }
 
 /// Runs a single scan immediately.
-pub async fn run_once(format: OutputFormat, quiet: bool) -> Result<()> {
-    let config = load_scheduler_config()?;
+pub async fn run_once(
+    format: OutputFormat,
+    quiet: bool,
+    config_path: Option<&PathBuf>,
+) -> Result<()> {
+    let config = load_scheduler_config(config_path)?;
 
     if !quiet {
         output::status(&format, "Running single scan...");
@@ -127,8 +132,13 @@ pub async fn run_once(format: OutputFormat, quiet: bool) -> Result<()> {
 }
 
 /// Shows daemon status and recent scan history.
-pub async fn status(format: OutputFormat, quiet: bool, limit: u32) -> Result<()> {
-    let config = load_scheduler_config()?;
+pub async fn status(
+    format: OutputFormat,
+    quiet: bool,
+    limit: u32,
+    config_path: Option<&PathBuf>,
+) -> Result<()> {
+    let config = load_scheduler_config(config_path)?;
 
     // Try to connect to database
     let db = ScanHistoryManager::new(&config.storage.database_path)
@@ -187,35 +197,79 @@ pub async fn status(format: OutputFormat, quiet: bool, limit: u32) -> Result<()>
 }
 
 /// Configuration file structure for parsing scheduler section.
+///
+/// `Option`, not a defaulted `SchedulerConfig`: a file that says nothing about
+/// the scheduler is not that file configuring the scheduler, and the two were
+/// indistinguishable while the section defaulted. That mattered most where the
+/// section is read from the first file found rather than merged, because
+/// "found" then meant "the first file that exists" rather than "the first file
+/// that configures this", so a config mentioning only `[global]` silenced the
+/// one that had the settings.
 #[derive(Deserialize)]
 struct ConfigFile {
     #[serde(default)]
-    scheduler: SchedulerConfig,
+    scheduler: Option<SchedulerConfig>,
 }
 
-/// Loads scheduler configuration from standard config file locations.
+/// Loads scheduler configuration: the path `--config` named, if it named one
+/// and that file configures the scheduler, else the standard locations.
+///
+/// This took no path at all, so `-C` reached the hardening policy and not the
+/// `[scheduler]` section beside it: one file carrying both was half honoured,
+/// and `scan` read its policy from the named file and then wrote its history to
+/// whatever database the default search found.
+///
+/// The named path is searched **first**, not **instead**. A file that says
+/// nothing about the scheduler is not that file configuring the scheduler, so
+/// the search goes on. Replacing the search outright looked equivalent and was
+/// not: `systemd generate`/`install` embed the `--config` path in the unit they
+/// write, so a timer installed against a policy file got a scheduled scan on
+/// the compiled-in defaults, which is disabled, on another schedule, writing to
+/// another database, while the operator's own config said otherwise and nothing
+/// reported it.
+///
+/// The section still does not merge. The first file that configures it wins
+/// whole, which is what `configuration.md` describes; the named path only joins
+/// the front of that order. A named path that is missing, unreadable or
+/// unparseable is an error, because the flag exists to decide the run.
 ///
 /// Uses the same paths as `ConfigLoader` to avoid duplication.
-pub fn load_scheduler_config() -> Result<SchedulerConfig> {
-    // Check locations in order: user config, then system config
-    // (ConfigLoader checks in reverse order for merging, but only the first found is needed)
-    let paths = [
-        ConfigLoader::user_config_path(),
-        ConfigLoader::system_config_path(),
-    ];
-
-    for path in paths.into_iter().flatten() {
-        if path.exists() {
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| anyhow!("Failed to read config file {}: {}", path.display(), e))?;
-
-            let config: ConfigFile = toml::from_str(&content)
-                .map_err(|e| anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
-
-            return Ok(config.scheduler);
+pub fn load_scheduler_config(config_path: Option<&PathBuf>) -> Result<SchedulerConfig> {
+    if let Some(named) = config_path {
+        if !named.exists() {
+            return Err(anyhow!("Config file not found: {}", named.display()));
+        }
+        if let Some(scheduler) = read_scheduler_section(named)? {
+            return Ok(scheduler);
         }
     }
 
-    // No config file found, use defaults
+    // Then the default locations, user config before system config.
+    // (ConfigLoader checks in reverse order for merging, but only the first
+    // found is needed.)
+    for path in [
+        ConfigLoader::user_config_path(),
+        ConfigLoader::system_config_path(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if path.exists()
+            && let Some(scheduler) = read_scheduler_section(&path)?
+        {
+            return Ok(scheduler);
+        }
+    }
+
+    // Nothing configures the scheduler, so the defaults are the honest answer.
     Ok(SchedulerConfig::default())
+}
+
+/// The `[scheduler]` section of one file, or `None` when the file has none.
+fn read_scheduler_section(path: &std::path::Path) -> Result<Option<SchedulerConfig>> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| anyhow!("Failed to read config file {}: {}", path.display(), e))?;
+    let config: ConfigFile = toml::from_str(&content)
+        .map_err(|e| anyhow!("Failed to parse config file {}: {}", path.display(), e))?;
+    Ok(config.scheduler)
 }

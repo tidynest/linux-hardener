@@ -148,22 +148,14 @@ async fn rollback_refuses_to_delete_every_undeletable_path_recorded_as_absent() 
     let mut exercised = 0usize;
 
     for path in UNDELETABLE_ROLLBACK_PATHS {
-        // rollback()'s Phase 1 runs path.is_symlink()/canonicalize() against
-        // the real local filesystem before the guard under test is ever
-        // reached. If one of these paths happens to be a symlink on the
-        // machine running the test, resolving outside
-        // DEFAULT_ROLLBACK_PREFIXES, Phase 1 aborts the whole rollback for a
-        // reason unrelated to this guard, and the unwrap_or_else below would
-        // panic on a contributor's own /etc rather than on a real defect.
-        // Skip such a path rather than let the test depend on the local
-        // filesystem; every other entry is still exercised in full.
-        if Path::new(path).is_symlink() {
-            eprintln!(
-                "rollback_refuses_to_delete_every_undeletable_path_recorded_as_absent: \
-                 skipping {path}, it is a symlink on this machine"
-            );
-            continue;
-        }
+        // No skip for a path that is a symlink on the machine running this.
+        // There used to be one, because Phase 1 asked the local filesystem
+        // whether these paths were links and could abort the whole rollback
+        // over a contributor's own /etc. It asks the executor now, and the
+        // executor here is a mock that knows of no symlink at all, so every
+        // entry is exercised on every machine. The guard would exempt these
+        // rows in any case: a row recorded absent restores by unlinking the
+        // path itself, which follows nothing.
         exercised += 1;
 
         // Capture believes the path is absent: nothing registered on the
@@ -981,9 +973,6 @@ async fn one_unrestorable_path_does_not_abort_the_whole_rollback() {
     let root = dir.path().to_path_buf();
     let good = root.join("good.conf");
     let outward = root.join("outward.link");
-    std::fs::write(&good, "current\n").expect("write good");
-    // Resolves outside the allowlist, exactly as a stock unit symlink does.
-    std::os::unix::fs::symlink("/etc", &outward).expect("symlink");
 
     let manager = test_manager_with_allowlist(vec![root.to_string_lossy().into_owned()]).await;
     // chmod and chown are registered because a restore issues both after the
@@ -1006,6 +995,12 @@ async fn one_unrestorable_path_does_not_abort_the_whole_rollback() {
         .create_checkpoint(&exec, "mixed", &[good.as_path(), outward.as_path()])
         .await
         .expect("create_checkpoint");
+
+    // Resolves outside the allowlist, exactly as a stock unit symlink does.
+    // Registered on the executor and after the capture, so the row is recorded
+    // as the regular file it was and the guard meets the link the way a rollback
+    // does: by asking the host it is about to write to.
+    exec.add_symlink(&outward.to_string_lossy(), "/etc");
 
     let result = manager
         .rollback(&exec, &id)
@@ -1821,4 +1816,148 @@ async fn removing_orphans_leaves_a_live_checkpoint_alone() {
         .await
         .expect("the live checkpoint survives");
     assert_eq!(files.len(), 1, "its captured file row is untouched");
+}
+
+/// The guard must ask the host the write lands on, not the host running the tool.
+///
+/// `rollback_target_refusal` called `Path::is_symlink` and `Path::canonicalize`,
+/// both `std::fs` syscalls against the controller's own filesystem, while
+/// `file_state.file_path` names a path on the target. Both remote rollback
+/// paths, single-host and per-host fleet, reach it with an `SshExecutor` active,
+/// where the path does not exist on the controller at all: `is_symlink` answered
+/// false for every remote row, and the prefix allowlist became the whole check.
+///
+/// So a row captured as a regular file, whose remote path is now a symlink
+/// pointing outside the allowlist, was admitted and the restore followed it,
+/// writing a captured copy into a directory this tool never modifies. The
+/// identical local case is refused, and was throughout.
+///
+/// The second file is what makes the skip observable. With the symlinked row
+/// alone every path is refused, `restorable.is_empty()` aborts the run, and
+/// "nothing was written through the link" then holds because nothing was written
+/// at all, which is an assertion no mutation can turn red.
+#[tokio::test]
+async fn a_remote_path_that_became_an_out_of_bounds_symlink_is_refused() {
+    use hardener_common::executor::CommandOutput;
+
+    let ok = || CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let followed = "/etc/x/sshd_config";
+    let plain = "/etc/x/login.defs";
+    let exec = MockExecutor::new()
+        .remote()
+        .with_directory("/etc/x")
+        .with_file(followed, "captured\n")
+        .with_file(plain, "captured\n")
+        .with_command_program("chmod", ok())
+        .with_command_program("chown", ok());
+    let manager = test_manager_with_etc_x().await;
+
+    let id = manager
+        .create_checkpoint(&exec, "remote", &[Path::new(followed), Path::new(plain)])
+        .await
+        .expect("create_checkpoint");
+
+    // The target host changed after the capture, which is the whole condition:
+    // registered here rather than at construction so the row above is recorded
+    // as the regular file it was, without a `file_link_target` to exempt it.
+    exec.add_symlink(followed, "/usr/lib/systemd/system/sshd.service");
+
+    let result = manager.rollback(&exec, &id).await.expect("rollback");
+
+    let entry = |p: &str| {
+        result
+            .rollback_files
+            .iter()
+            .find(|f| f.restore_path == p)
+            .unwrap_or_else(|| panic!("{p} missing from the result"))
+    };
+    let refused = entry(followed);
+    assert!(
+        !refused.restore_success,
+        "a remote path standing as a symlink out of the allowlist must not be written"
+    );
+    assert!(
+        refused
+            .restore_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("resolves outside"),
+        "the refusal must say why, got: {:?}",
+        refused.restore_error
+    );
+    assert!(
+        !exec
+            .log()
+            .files_written
+            .iter()
+            .any(|(p, _)| p == Path::new(followed)),
+        "nothing may be written through the link, got: {:?}",
+        exec.log().files_written
+    );
+    assert!(
+        entry(plain).restore_success,
+        "the row that is still a regular file must be restored, got: {:?}",
+        entry(plain).restore_error
+    );
+}
+
+/// The other direction of the same defect, and it is silent.
+///
+/// A symlink the *controller* happens to hold at an allow-listed path, resolving
+/// outside the allowlist, refused a remote rollback of that path, with a message
+/// naming a path the operator reads as the remote's. The target host knows
+/// nothing about it. Here the remote holds an ordinary file and the controller
+/// holds a link to `/etc`, so the pre-fix guard refuses the only restorable row
+/// and `restorable.is_empty()` aborts the whole rollback.
+#[tokio::test]
+async fn a_symlink_on_the_controller_does_not_refuse_a_remote_rollback() {
+    use hardener_common::executor::CommandOutput;
+
+    let ok = || CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().to_path_buf();
+    let path = root.join("sshd_config");
+    let path_str = path.to_string_lossy().into_owned();
+    // The controller's own filesystem, which the target has never heard of.
+    std::os::unix::fs::symlink("/etc", &path).expect("symlink");
+
+    let exec = MockExecutor::new()
+        .remote()
+        .with_directory(&root.to_string_lossy())
+        .with_file(&path_str, "captured\n")
+        .with_command_program("chmod", ok())
+        .with_command_program("chown", ok());
+    let manager = test_manager_with_allowlist(vec![root.to_string_lossy().into_owned()]).await;
+
+    let id = manager
+        .create_checkpoint(&exec, "remote", &[path.as_path()])
+        .await
+        .expect("create_checkpoint");
+
+    let result = manager
+        .rollback(&exec, &id)
+        .await
+        .expect("a link on the controller must not refuse a rollback of the remote");
+
+    assert!(
+        result.rollback_success,
+        "the remote row is an ordinary file and must be restored, got: {:?}",
+        result.rollback_files
+    );
+    assert!(
+        exec.log()
+            .files_written
+            .iter()
+            .any(|(p, _)| p == path.as_path()),
+        "the captured content must reach the target, got: {:?}",
+        exec.log().files_written
+    );
 }

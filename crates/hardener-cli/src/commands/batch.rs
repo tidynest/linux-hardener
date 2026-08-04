@@ -14,7 +14,7 @@ use hardener_core::HardenerConfig;
 use hardener_core::plugin::{Finding, UncheckedCheck};
 use hardener_core::{
     Context, PluginMetadata, ScanResult, SshExecutor,
-    executor::{SystemExecutor, host_key_for},
+    executor::{SystemExecutor, host_key_for, ssh::checkpoint_host_key},
 };
 use hardener_distro::Distribution;
 use hardener_scheduler::ScanHistoryManager;
@@ -137,9 +137,9 @@ pub fn parse_inline(
 /// One caveat this does NOT resolve: `SshExecutor::description`, which supplies
 /// the *checkpoint* host key, substitutes a literal `root` when no user was
 /// given, so `--ssh web-01` and `--ssh root@web-01` are two targets here and
-/// one host key there. Under `batch apply --execute` they run concurrently and
-/// their pre-apply checkpoints collide. Distinguishing them here is right; the
-/// collision belongs to that fabricated `root` and has to be fixed there.
+/// one host key there. Distinguishing them here is right; the collision belongs
+/// to that fabricated `root`. Until it can be corrected, a run that writes
+/// refuses such a selection outright: see [`colliding_host_key`].
 pub fn resolve_hosts(
     inventory: &HostsConfig,
     all: bool,
@@ -172,6 +172,141 @@ pub fn resolve_hosts(
         bail!("no hosts selected: use --all, --host <names>, or --ssh <user@host>");
     }
     Ok(selected)
+}
+
+/// The document a fleet verb's `--format` selects.
+///
+/// Batch renders text and JSON only: the CSV, HTML and PDF formatters are
+/// reachable per host through `report --report-format` and never here, so a
+/// path naming one of them contradicts a fleet run whichever way `--format` is
+/// set.
+fn selected_document(format: CliOutputFormat) -> hardener_compliance::OutputFormat {
+    match format {
+        CliOutputFormat::Json => hardener_compliance::OutputFormat::Json,
+        _ => hardener_compliance::OutputFormat::Text,
+    }
+}
+
+/// Refuses an `--output` path naming a document other than the one `--format`
+/// selected, before the fleet is contacted.
+///
+/// Judged here rather than at the point of writing, which is where it started.
+/// Two arguments contradicting each other is knowable before a single host is
+/// reached, and refusing at write time meant a whole fleet was scanned, or
+/// hardened, and then told its destination was wrong. It also exited 1 through
+/// the writer while every other pre-connection refusal in this file exits 2,
+/// which is the tier `cli.md` documents for a batch usage error.
+fn refuse_output_contradiction(output: Option<&String>, format: CliOutputFormat) {
+    let Some(path) = output else {
+        return;
+    };
+    let Some(named) = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(hardener_compliance::OutputFormat::from_extension)
+    else {
+        return;
+    };
+    let selected = selected_document(format);
+    if named == selected {
+        return;
+    }
+    // Worded here rather than shared with `report`, whose message offers the
+    // named format as an alternative. That advice is wrong for a fleet: batch
+    // cannot render CSV, HTML or PDF at all, so "choose pdf" names something
+    // this command has no way to produce.
+    eprintln!(
+        "--output {path} names a {} document, but --format selected {}. A fleet \
+         report is text or JSON only; the CSV, HTML and PDF formatters are \
+         reachable per host, through `report --report-format`. Give the path the \
+         matching extension, or none at all.",
+        named.extension(),
+        selected.extension(),
+    );
+    std::process::exit(2);
+}
+
+/// Two selected targets that a writing run cannot tell apart, and the single
+/// key they would both have written under.
+struct HostKeyCollision {
+    key: String,
+    first: String,
+    second: String,
+}
+
+/// The first pair of selected hosts that would file their checkpoints under one
+/// host key, if any.
+///
+/// Checkpoints are scoped by `(host_key, name)` and the newest per key wins, so
+/// two targets sharing a key do not merely share a namespace: under `--execute`
+/// each captures a pre-apply checkpoint under the same pair, and the survivor
+/// can be the one taken after the other target had already hardened the machine.
+/// A later rollback then reports the host restored while restoring the hardened
+/// state, and the cross-host guard cannot refuse it, because by its measure the
+/// keys are equal. Neither is this a race that concurrency introduced:
+/// `--concurrency 1` serialises the two captures and still writes both under one
+/// key.
+///
+/// The key comes from [`checkpoint_host_key`] rather than from `target()`, which
+/// is a different identity: it carries no scheme and leaves the user out when
+/// the target did not name one, which is precisely the distinction the host key
+/// loses. Every input is on the profile, so this runs before any connection.
+///
+/// This closes the collision **within one invocation only**. The winner is
+/// chosen across the whole database rather than within a run, so the same harm
+/// is still reachable by running the two targets separately, and by the
+/// single-host verbs, which do not pass through here at all. Only correcting the
+/// key itself closes that, and doing so orphans every checkpoint already filed
+/// under the old one.
+///
+/// Compared pairwise rather than adjacently: a collision between the first and
+/// third target is the same collision.
+fn colliding_host_key(profiles: &[RemoteHostProfile]) -> Option<HostKeyCollision> {
+    let mut seen: Vec<(String, String)> = Vec::with_capacity(profiles.len());
+    for profile in profiles {
+        let key = checkpoint_host_key(profile.user.as_deref(), &profile.hostname, profile.port);
+        if let Some((_, first)) = seen.iter().find(|(seen_key, _)| *seen_key == key) {
+            return Some(HostKeyCollision {
+                key,
+                first: first.clone(),
+                second: label(profile),
+            });
+        }
+        seen.push((key, label(profile)));
+    }
+    None
+}
+
+/// How a colliding host is named back to the operator: its inventory name and
+/// its canonical target together. Either alone can be ambiguous in exactly the
+/// case that matters. Two inventory entries for one endpoint have identical
+/// targets and are told apart only by name, while two ad-hoc forms of one
+/// machine share a name (the bare hostname) and are told apart only by target.
+fn label(profile: &RemoteHostProfile) -> String {
+    format!("'{}' ({})", profile.name, profile.target())
+}
+
+/// Refuses a run that writes when its selected hosts cannot file their
+/// checkpoints apart. Called only for `--execute`: a dry run captures no
+/// checkpoint, so the collision cannot bite it, and refusing one would break a
+/// preview that is the operator's way of discovering the problem.
+///
+/// Prints unconditionally, `--quiet` included, because a refusal is an error
+/// rather than progress. Under `--format json` this means the refusal reaches
+/// stderr and stdout stays empty, which is what every other pre-connection
+/// refusal in this file already does.
+fn refuse_colliding_host_keys(profiles: &[RemoteHostProfile]) {
+    if let Some(collision) = colliding_host_key(profiles) {
+        eprintln!(
+            "{} and {} would file their checkpoints under one host key ({}), so \
+             this run could not tell their checkpoints apart and a later rollback \
+             could restore the wrong state. If these are two accounts on one \
+             machine, name the account on both targets; if they are one endpoint \
+             listed twice, drop the duplicate; otherwise run them one at a time.",
+            collision.first, collision.second, collision.key
+        );
+        std::process::exit(2);
+    }
 }
 
 /// Aggregate rollup across all hosts, for the summary line and JSON.
@@ -622,6 +757,7 @@ pub struct BatchReportOptions {
 /// (`scan_all`) verbatim, then assesses each host's findings against the chosen
 /// framework/scenario and prints a fleet posture table.
 pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
+    refuse_output_contradiction(opts.output.as_ref(), opts.format);
     let scenario = match crate::commands::report::resolve_scenario(
         opts.framework,
         opts.scenario,
@@ -649,7 +785,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         }
     };
 
-    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet));
+    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet, false));
     let outcomes = resolve_and_scan(
         opts.all,
         &opts.host,
@@ -662,6 +798,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         opts.global_no_verify,
         "Assessing",
         config,
+        opts.config.as_ref(),
     )
     .await;
 
@@ -701,8 +838,8 @@ fn display_target(p: &RemoteHostProfile) -> String {
 
 /// Opens the shared history database for batch persistence. Best-effort: on any
 /// error, returns `None` and batch scanning proceeds without persistence.
-async fn open_batch_history() -> Option<Arc<ScanHistoryManager>> {
-    let path = match load_scheduler_config() {
+async fn open_batch_history(config_path: Option<&PathBuf>) -> Option<Arc<ScanHistoryManager>> {
+    let path = match load_scheduler_config(config_path) {
         Ok(config) => config.storage.database_path,
         Err(e) => {
             warn!("batch history disabled: scheduler config unavailable: {e}");
@@ -1018,9 +1155,26 @@ fn resolve_profiles(
 /// operator maintains it, and a target that supplied its own could otherwise
 /// weaken the audit reporting on it. Matches single-host `--ssh`, which already
 /// evaluates a remote host against the local config file.
-fn load_batch_config(config_path: Option<&PathBuf>, quiet: bool) -> HardenerConfig {
+///
+/// `writes` is the caller's answer to "will this run change the hosts it
+/// reaches". Only then is a named `--config` that will not load fatal, because
+/// only then does falling back to the compiled-in defaults harden a whole fleet
+/// against a policy nobody selected: every plugin enabled, no directives and no
+/// exceptions. A verb that only reads keeps the fallback it shipped with, since
+/// the worst it can do is report against the wrong baseline and say so on
+/// stderr. The named-path half of the test is the same rule single-host `apply`
+/// uses: a run told to use a policy should not continue on a guess about
+/// policy, while a broken *default* config still degrades to defaults.
+fn load_batch_config(config_path: Option<&PathBuf>, quiet: bool, writes: bool) -> HardenerConfig {
     match super::config_loader(config_path).load() {
         Ok(config) => config,
+        Err(e) if writes && config_path.is_some() => {
+            // Exit rather than bail: `batch` reports its own usage refusals as
+            // 2, which is the tier `cli.md` documents for it, and returning the
+            // error would surface as 1.
+            eprintln!("Config error: {e}");
+            std::process::exit(2);
+        }
         Err(e) => {
             if !quiet {
                 eprintln!("config load failed, using defaults: {e}");
@@ -1045,6 +1199,7 @@ async fn resolve_and_scan(
     global_no_verify: bool,
     verb: &str,
     config: Arc<HardenerConfig>,
+    config_path: Option<&PathBuf>,
 ) -> Vec<HostOutcome> {
     let profiles = resolve_profiles(
         all,
@@ -1056,7 +1211,7 @@ async fn resolve_and_scan(
         quiet,
         verb,
     );
-    let history = open_batch_history().await;
+    let history = open_batch_history(config_path).await;
     scan_all(profiles, concurrency, global_timeout, history, config).await
 }
 
@@ -1475,6 +1630,7 @@ pub struct BatchApplyOptions {
 
 /// CLI entry point for `hardener batch apply`. Dry-run unless `--execute`.
 pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
+    refuse_output_contradiction(opts.output.as_ref(), opts.format);
     let verb = if opts.execute {
         "Applying to"
     } else {
@@ -1490,12 +1646,19 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
         opts.quiet,
         verb,
     );
+    if opts.execute {
+        refuse_colliding_host_keys(&profiles);
+    }
     if opts.execute && !opts.quiet {
         eprintln!("--execute: applying to {} host(s)", profiles.len());
     }
 
     let plugin_ids = Arc::new(resolve_plugin_ids(&opts.plugin)?);
-    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet));
+    let config = Arc::new(load_batch_config(
+        opts.config.as_ref(),
+        opts.quiet,
+        opts.execute,
+    ));
     let checkpoint = if opts.execute {
         Some(get_checkpoint_manager().await?)
     } else {
@@ -1575,6 +1738,7 @@ pub struct BatchRollbackOptions {
 
 /// CLI entry point for `hardener batch rollback`. Dry-run unless `--execute`.
 pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
+    refuse_output_contradiction(opts.output.as_ref(), opts.format);
     let verb = if opts.execute {
         "Rolling back"
     } else {
@@ -1590,6 +1754,9 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
         opts.quiet,
         verb,
     );
+    if opts.execute {
+        refuse_colliding_host_keys(&profiles);
+    }
     if opts.execute && !opts.quiet {
         eprintln!("--execute: rolling back {} host(s)", profiles.len());
     }
@@ -1651,7 +1818,8 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
 
 /// CLI entry point for `hardener batch scan`.
 pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
-    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet));
+    refuse_output_contradiction(opts.output.as_ref(), opts.format);
+    let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet, false));
     let outcomes = resolve_and_scan(
         opts.all,
         &opts.host,
@@ -1664,6 +1832,7 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         opts.global_no_verify,
         "Scanning",
         config,
+        opts.config.as_ref(),
     )
     .await;
 

@@ -13,3 +13,7 @@ chrono = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+# Test-only, so the WASM artefact is unaffected. The webhook config's whole
+# subject is the shape it takes in a TOML file, and an array of tables is a
+# rendering JSON has no equivalent for.
+toml = { workspace = true }

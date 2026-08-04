@@ -98,6 +98,27 @@ impl OutputFormat {
             OutputFormat::Pdf => "pdf",
         }
     }
+
+    /// The format a file extension names, if it names one this tool renders.
+    ///
+    /// The inverse of [`extension`](Self::extension), and deliberately a closed
+    /// list: `Path::extension` returns whatever follows the last dot of a file
+    /// name, which is not the same question as "what document is this". A dated
+    /// name like `report.2026.08.03` has extension `03` and `session-1.5.1` has
+    /// `1`, and neither operator was asking for a document at all. Only a name
+    /// that really does name one of these formats carries an expectation worth
+    /// acting on. `htm` is accepted beside `html` because they are one document
+    /// type; the comparison is case-insensitive.
+    pub fn from_extension(extension: &str) -> Option<Self> {
+        match extension.to_ascii_lowercase().as_str() {
+            "txt" => Some(OutputFormat::Text),
+            "json" => Some(OutputFormat::Json),
+            "csv" => Some(OutputFormat::Csv),
+            "htm" | "html" => Some(OutputFormat::Html),
+            "pdf" => Some(OutputFormat::Pdf),
+            _ => None,
+        }
+    }
 }
 
 /// Configuration for report generation.
@@ -121,5 +142,58 @@ impl Default for ReportConfig {
             output_dir: None,
             profile: ComplianceProfile::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The extension-to-format mapping is the shared judgement behind two
+    /// commands' `--output` refusals, and it lived in neither's tests: a
+    /// one-word edit here silently changed what `history export` accepts and
+    /// what `report --output` refuses, with nothing red.
+    #[test]
+    fn every_format_is_found_by_the_extension_it_writes() {
+        for format in [
+            OutputFormat::Text,
+            OutputFormat::Json,
+            OutputFormat::Csv,
+            OutputFormat::Html,
+            OutputFormat::Pdf,
+        ] {
+            assert_eq!(
+                OutputFormat::from_extension(format.extension()),
+                Some(format),
+                "{format:?} must be recoverable from the extension it writes, or \
+                 a path this tool produced would be refused by the check that \
+                 reads it back"
+            );
+        }
+        assert_eq!(
+            OutputFormat::from_extension("HTM"),
+            Some(OutputFormat::Html),
+            "htm is html, and the comparison ignores case"
+        );
+    }
+
+    /// The control against the list being widened. `Path::extension` answers
+    /// "what follows the last dot", so these are what a dated or versioned file
+    /// name yields, and treating them as documents would refuse working
+    /// invocations that asked for no document at all.
+    #[test]
+    fn a_suffix_that_names_no_document_maps_to_nothing() {
+        for suffix in ["03", "1", "gz", "md", "xml", "", "tar"] {
+            assert_eq!(
+                OutputFormat::from_extension(suffix),
+                None,
+                "'{suffix}' names no document this tool renders"
+            );
+        }
+        assert_eq!(
+            OutputFormat::from_extension("json"),
+            Some(OutputFormat::Json),
+            "and the list has not been emptied, which would make the control vacuous"
+        );
     }
 }

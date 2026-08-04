@@ -161,7 +161,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     }
 
     // Persist scan session to history database
-    persist_scan_session(&all_results, opts.executor.as_ref()).await;
+    persist_scan_session(&all_results, opts.executor.as_ref(), opts.config_path).await;
 
     // Handle exit code flag. An incomplete scan exits non-zero too: a clean
     // exit is a positive claim about the host, and a plugin that never ran
@@ -236,8 +236,9 @@ fn plugin_id_list(plugins: &[&PluginMetadata]) -> String {
 async fn persist_scan_session(
     results: &[(PluginMetadata, ScanResult)],
     executor: &dyn SystemExecutor,
+    config_path: Option<&PathBuf>,
 ) {
-    let db = match open_history_db().await {
+    let db = match open_history_db(config_path).await {
         Ok(db) => db,
         Err(_) => return,
     };
@@ -269,8 +270,8 @@ async fn persist_scan_session(
 }
 
 /// Opens the scan history database using scheduler config paths.
-async fn open_history_db() -> Result<ScanHistoryManager> {
-    let config = load_scheduler_config()?;
+async fn open_history_db(config_path: Option<&PathBuf>) -> Result<ScanHistoryManager> {
+    let config = load_scheduler_config(config_path)?;
     ScanHistoryManager::new(&config.storage.database_path)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to open history database: {}", e))

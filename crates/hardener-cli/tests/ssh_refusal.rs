@@ -24,13 +24,29 @@ const UNREACHABLE: [&str; 5] = ["--ssh", "nobody@127.0.0.1", "--port", "1", "--s
 /// A scratch state directory for one child, so a `batch` run's history rows
 /// land there rather than in the operator's own database.
 fn scratch_home() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("hardener-ssh-flag-tests-{}", std::process::id()));
+    scratch_home_named("shared")
+}
+
+/// A scratch state directory of a test's own. Tests in one binary run
+/// concurrently, and two `--execute` children sharing one state directory
+/// contend on the checkpoint database, which leaves a run with no host outcome
+/// to print. A test that reads stdout would then fail for a reason that has
+/// nothing to do with its subject, and only on a machine that happened to
+/// interleave them.
+fn scratch_home_named(label: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "hardener-ssh-flag-tests-{}-{label}",
+        std::process::id()
+    ));
     std::fs::create_dir_all(&dir).expect("a scratch state directory");
     dir
 }
 
 fn run(args: &[&str]) -> Output {
-    let home = scratch_home();
+    run_in(scratch_home(), args)
+}
+
+fn run_in(home: std::path::PathBuf, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_hardener"))
         .args(args)
         .env("HOME", &home)
@@ -254,4 +270,256 @@ fn a_port_named_in_the_target_outranks_the_global_flag() {
             "{verb:?}: and the global flag does not override it: {merged}"
         );
     }
+}
+
+/// A fleet run that would file two hosts' checkpoints under one key is refused
+/// before it connects.
+///
+/// `SshExecutor::description` substitutes a literal `root` for a target that
+/// named no user, and that string is the checkpoint host key, so `--ssh h` and
+/// `--ssh root@h` are two targets with one key. Both capture a pre-apply
+/// checkpoint under `(host_key, name)`, and the newest per key wins, so the
+/// surviving pre-apply state can be content the other target already hardened.
+///
+/// Driven through the binary because the refusal has to sit on the path `main`
+/// wires up: the pure check is unit-tested next to the parser, and a unit test
+/// of it stays green whether or not any verb consults it.
+#[test]
+fn a_fleet_run_that_would_collide_two_checkpoints_is_refused_before_connecting() {
+    let out = run_in(
+        scratch_home_named("collision"),
+        &[
+            "batch",
+            "apply",
+            "--execute",
+            // Under --quiet, because a refusal is an error rather than
+            // progress: gating it on --quiet would silence the only thing that
+            // says why the fleet was not touched. The rollback test below
+            // leaves --quiet off, so both paths are covered.
+            "--quiet",
+            "--plugin",
+            "kernel-hardening",
+            "--ssh",
+            "127.0.0.1",
+            "--ssh",
+            "root@127.0.0.1",
+            "--port",
+            "1",
+            "--ssh-timeout",
+            "2",
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "a selection that cannot file its checkpoints apart is a usage error, \
+         which `batch` signals as 2; got stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("ssh://root@127.0.0.1:1"),
+        "the refusal names the single key both targets would have written under, \
+         because that is the thing the operator has to change; got: {stderr}"
+    );
+    // The connection is what proves the refusal came first: a run that reached
+    // the host would render a per-host outcome, failed or otherwise.
+    assert!(
+        !stdout.contains("status:"),
+        "the refusal comes before the first connection, so no host outcome is \
+         rendered; got stdout: {stdout}"
+    );
+}
+
+/// The control against the refusal being made too broad: two accounts on one
+/// machine are two keys and a legitimate fleet run, so this must get past the
+/// check and fail at the connection instead.
+#[test]
+fn a_fleet_run_naming_two_real_accounts_is_not_refused() {
+    let out = run_in(
+        scratch_home_named("two-accounts"),
+        &[
+            "batch",
+            "apply",
+            "--execute",
+            "--plugin",
+            "kernel-hardening",
+            "--ssh",
+            "admin@127.0.0.1",
+            "--ssh",
+            "root@127.0.0.1",
+            "--port",
+            "1",
+            "--ssh-timeout",
+            "2",
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        !stderr.contains("would file their checkpoints"),
+        "distinct accounts produce distinct keys and must not be refused; got: {stderr}"
+    );
+    assert!(
+        stdout.contains("status:"),
+        "this run gets past the check and reaches the connection, so it renders \
+         a per-host outcome; got stdout: {stdout}"
+    );
+}
+
+/// The same refusal on the other verb that writes. `batch rollback --execute`
+/// takes the reversible-rollback snapshot through the same
+/// `persist_signed_checkpoint`, and it also *reads* by host key, so a colliding
+/// pair can restore one target from the other's checkpoint. A check wired only
+/// into `apply` would leave that reachable, and the unit test of the pure
+/// function stays green either way.
+#[test]
+fn a_fleet_rollback_that_would_collide_two_checkpoints_is_refused_before_connecting() {
+    let out = run_in(
+        scratch_home_named("collision-rollback"),
+        &[
+            "batch",
+            "rollback",
+            "--execute",
+            "--ssh",
+            "127.0.0.1",
+            "--ssh",
+            "root@127.0.0.1",
+            "--port",
+            "1",
+            "--ssh-timeout",
+            "2",
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "the refusal is the same usage error on either verb; got stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("ssh://root@127.0.0.1:1"),
+        "and names the same single key; got: {stderr}"
+    );
+    assert!(
+        !stdout.contains("status:"),
+        "the refusal comes before the first connection, so no host outcome is \
+         rendered; got stdout: {stdout}"
+    );
+}
+
+/// The control against the refusal reaching a run that cannot be bitten by the
+/// collision. A dry run captures no checkpoint and restores nothing, and it is
+/// how an operator discovers the problem in the first place, so a colliding
+/// selection must get past the check and reach the hosts.
+#[test]
+fn a_dry_run_of_a_colliding_pair_is_not_refused() {
+    let out = run_in(
+        scratch_home_named("collision-dry-run"),
+        &[
+            "batch",
+            "apply",
+            "--plugin",
+            "kernel-hardening",
+            "--ssh",
+            "127.0.0.1",
+            "--ssh",
+            "root@127.0.0.1",
+            "--port",
+            "1",
+            "--ssh-timeout",
+            "2",
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        !stderr.contains("would file their checkpoints"),
+        "a dry run writes no checkpoint, so the pair must not be refused; got: {stderr}"
+    );
+    assert!(
+        stdout.contains("status:"),
+        "and it reaches the hosts, rendering a per-host outcome; got stdout: {stdout}"
+    );
+}
+
+/// Every fleet verb judges `--output` before it contacts anything.
+///
+/// The check began at the point of writing, which meant a whole fleet was
+/// scanned, or hardened, and only then told its destination named the wrong
+/// document. It also exited 1 from there, where every other pre-connection
+/// refusal in `batch` exits 2, the tier the reference documents for a batch
+/// usage error. Judged up front it is neither.
+///
+/// `.pdf` is the needle because batch renders text and JSON only, so it
+/// contradicts a fleet run whichever way `--format` is set, and all four verbs
+/// can be driven with one path.
+#[test]
+fn every_fleet_verb_refuses_an_output_path_naming_another_document() {
+    let home = scratch_home_named("output-contradiction");
+    let mut refused = 0;
+    for verb in FLEET_VERBS {
+        let target = home.join("fleet.pdf");
+        let target = target.to_str().expect("a UTF-8 scratch path");
+        let mut argv: Vec<&str> = verb.to_vec();
+        argv.extend_from_slice(&["--output", target, "--ssh", "127.0.0.1", "--port", "1"]);
+        let out = run_in(home.clone(), &argv);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{verb:?} must refuse a .pdf destination as the usage error it is; \
+             got stderr: {stderr}"
+        );
+        assert!(
+            !stdout.contains("status:"),
+            "{verb:?} must refuse before it contacts a host, so no per-host \
+             outcome is rendered; got stdout: {stdout}"
+        );
+        assert!(
+            !std::path::Path::new(target).exists(),
+            "{verb:?} must not create the file it refused"
+        );
+        refused += 1;
+    }
+
+    assert_eq!(
+        refused,
+        FLEET_VERBS.len(),
+        "every fleet verb is covered, not whichever one the loop reached first"
+    );
+
+    // The control: a path agreeing with the selected format gets past the check
+    // and reaches the hosts, so the refusal is the contradiction rather than
+    // `--output` being refused wholesale.
+    let ok = scratch_home_named("output-agreeing").join("fleet.json");
+    let ok = ok.to_str().expect("a UTF-8 scratch path");
+    let control = run_in(
+        scratch_home_named("output-agreeing"),
+        &[
+            "batch",
+            "scan",
+            "--format",
+            "json",
+            "--output",
+            ok,
+            "--ssh",
+            "127.0.0.1",
+            "--port",
+            "1",
+        ],
+    );
+    let control_stderr = String::from_utf8_lossy(&control.stderr);
+    assert!(
+        !control_stderr.contains("names a"),
+        "a .json path under --format json agrees and must not be refused; \
+         got: {control_stderr}"
+    );
 }

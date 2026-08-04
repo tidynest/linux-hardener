@@ -147,7 +147,7 @@ async fn apply_host_dry_run_validates_without_mutation() {
 #[tokio::test]
 async fn a_section_disabled_plugin_is_skipped_by_apply() {
     let mut config = HardenerConfig::default();
-    config.ssh.enabled = false;
+    config.ssh.enabled = Some(false);
 
     let result = apply_host(
         Arc::new(MockExecutor::new()),

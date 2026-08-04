@@ -121,3 +121,59 @@ fn full_config_deserialises_from_toml() {
         WebhookFormat::Slack
     );
 }
+
+#[test]
+fn partial_section_takes_defaults_for_what_it_omits() {
+    // Every nested struct here already defaults field by field, so the one
+    // table an operator actually writes was the only one that did not: a
+    // `[scheduler]` section naming `enabled` and nothing else failed the whole
+    // file with `missing field `schedule``, and that error is raised for any
+    // file in the search order, so one partial section in the system config
+    // stopped `daemon` and `history` outright.
+    let config: SchedulerConfig = toml::from_str("enabled = true").unwrap();
+
+    // The given field survives: this fails if the section is discarded for a
+    // wholesale `SchedulerConfig::default()`, whose `enabled` is false.
+    assert!(config.enabled);
+    // The omitted fields take the same values a file with no section takes.
+    assert_eq!(config.schedule, SchedulerConfig::default().schedule);
+    assert_eq!(config.min_severity, SchedulerConfig::default().min_severity);
+}
+
+#[test]
+fn a_webhook_endpoint_may_omit_the_format_it_does_not_care_about() {
+    // The same fatal-parse defect, one level down and reached by the same
+    // route: an endpoint naming only `name` and `url` failed the whole file
+    // with ``missing field `format` ``, exit 1 from `daemon` and `history`,
+    // even though `WebhookFormat` declares `Generic` as its default and the
+    // reference documents it. `name` and `url` stay required, because neither
+    // has an answer worth guessing.
+    let toml_str = r#"
+        [notifications.webhooks]
+        enabled = true
+
+        [[notifications.webhooks.endpoints]]
+        name = "ops"
+        url = "https://example.invalid/hook"
+    "#;
+
+    let config: SchedulerConfig = toml::from_str(toml_str).unwrap();
+    let endpoint = &config.notifications.webhooks.endpoints[0];
+    assert_eq!(endpoint.format, WebhookFormat::Generic);
+    // The control: the field is defaulted, not ignored. A mutant that dropped
+    // the key entirely would satisfy the assertion above, since `Generic` is
+    // what an ignored field would leave behind too.
+    let named: SchedulerConfig = toml::from_str(
+        r#"
+        [[notifications.webhooks.endpoints]]
+        name = "ops"
+        url = "https://example.invalid/hook"
+        format = "discord"
+    "#,
+    )
+    .unwrap();
+    assert_eq!(
+        named.notifications.webhooks.endpoints[0].format,
+        WebhookFormat::Discord
+    );
+}

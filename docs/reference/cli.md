@@ -15,7 +15,7 @@ These flags can be placed before or after any subcommand.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-f`, `--format <FORMAT>` | Output format: `text` or `json`. A value it cannot render is refused at the parse, exit 2. The rich formats belong to `report --report-format`, not to this flag | `text` |
+| `-f`, `--format <FORMAT>` | Output format: `text` or `json`. A value it cannot render is refused at the parse, exit 2. The rich formats belong to `report --report-format`, not to this flag. One exception: on `report` this flag governs only the command's own progress, because the report body is what `--report-format` selects | `text` |
 | `-q`, `--quiet` | Suppress non-essential output | off |
 | `-C`, `--config <FILE>` | Path to TOML configuration file | auto-detected |
 | `--ssh <HOST>` | Remote host to act on via SSH (`user@host` or `host`). Accepted by the commands that reach a host, refused by the ones that do not: see below | local |
@@ -28,10 +28,33 @@ These flags can be placed before or after any subcommand.
 
 **Where `-C`, `--config` takes effect.** clap accepts it anywhere, but only the
 commands that read a `config.toml` act on it: `scan`, `apply`, `report`, `batch
-scan`, `batch report`, `batch apply`, and `systemd generate`/`install`, which
-embed the path in the unit they write. Two surfaces accept the flag and do not
-act on it, and each still evaluates the host against the system and user
-configuration:
+scan`, `batch report`, `batch apply`, `daemon`, `history`, and `systemd
+generate`/`install`, which embed the path in the unit they write.
+
+`daemon` and `history` read only the `[scheduler]` section, and they read it
+from the named file when there is one. A single file carrying both a `[global]`
+and a `[scheduler]` section is therefore honoured whole: before, `scan` took its
+policy from the named file and then wrote its history to whichever database the
+default search happened to find.
+
+**That section does not merge**, and the named file is searched **first** rather
+than instead: the first file that actually configures the scheduler wins whole.
+A file with no `[scheduler]` section is not that file configuring it, so your
+system or user config still decides. That matters because `systemd
+generate`/`install` embed the `--config` path in the unit they write, so a timer
+installed against a policy file would otherwise run its scheduled scan on the
+compiled-in defaults, disabled and writing elsewhere, while your own config said
+otherwise. A named path that is missing or will not parse is an error for these
+verbs. It is not
+everywhere: `batch scan`, `batch report` and `batch apply --dry-run`
+deliberately keep their fallback to the compiled-in defaults, warning on stderr,
+because they change no host.
+
+Every other command accepts the flag, because clap declares it globally, and
+does nothing with it: `rollback`, all five `checkpoint` verbs, `plugins`, and
+`systemd uninstall`/`status` read no configuration at all. Two are worth naming
+because they do read configuration and still ignore the flag, each evaluating
+the host against the system and user configuration instead:
 
 - `report --interactive`, which the wizard documents as deliberate: it loads the
   default sources so that it cannot score a host differently from
@@ -76,7 +99,9 @@ an unreachable target stopped the command, so it could refuse work and never
 redirect it.
 
 `daemon` is separate again: it resolves the `[scheduler]` section through its own
-path search rather than the loader (see
+path search rather than the loader, so the merge rules that apply to `[global]`
+do not apply to it, and the first file found wins outright. `-C` is honoured:
+naming a path replaces that search rather than adding to it (see
 [configuration.md](configuration.md#scheduler)).
 
 ---
@@ -429,7 +454,19 @@ global `-f`, `--format`, which governs a command's own output. A value the
 formatter does not know is refused rather than silently rendered as text. Two
 notes on file handling: `--output` gains the format's extension when the path
 you give has none (`report.json` from `--output report --report-format json`),
-and `pdf` always writes a file, so without `--output` it saves
+and a path whose extension **contradicts** `--report-format` is refused rather
+than filled with the other document. `--report-format` defaults to `text`, so
+`report --output report.json` used to write a human text report into a file
+named `.json` and exit 0. Only an extension naming one of the five formats this
+command renders (`.txt`, `.json`, `.csv`, `.htm`, `.html`, `.pdf`) counts as a
+contradiction: a path is compared against the same closed list `history export`
+uses, so a name that merely contains dots, such as `report.2026.08.03`, asks for
+no document and is written as given. An extension naming something this command
+does not render is written as given too, and nothing converts or compresses it:
+`--output archive.tar.gz` under the default `text` puts a plain text report in a
+file called `.tar.gz`. The list is closed on purpose, because
+`Path::extension()` cannot tell a format from a date. `pdf` always writes a file, so without
+`--output` it saves
 `compliance-report-<timestamp>.pdf` in the working directory instead of printing
 to stdout.
 
@@ -466,12 +503,23 @@ the remote hosts.
 
 `batch scan`, `batch report` and `batch apply` honour the global `-C`,
 `--config` flag, and without it they load the controller's own system and user
-configuration, as a local `hardener scan` does. They differ from `scan` on the
-failure path only: a config that will not load leaves a batch run on the
-compiled-in defaults with a warning on stderr, where `scan` treats it as a hard
-error. `batch rollback` reads no `config.toml` at all: it restores checkpoints
-and has no directive, exception or plugin list to consult, so `--config` has no
-effect on it.
+configuration, as a local `hardener scan` does. On the failure path they split
+by whether the run writes:
+
+- `batch apply --execute` **refuses**, exit `2`, when a `--config` path was
+  named and will not load. It refuses before opening the first connection, so
+  no host is touched. Falling back here would harden every host in the run from
+  the compiled-in defaults, which enable every plugin and carry no directives
+  and no exceptions, so the fleet would be written to against a policy nobody
+  selected while the run still exited `0`.
+- `batch scan`, `batch report` and `batch apply` without `--execute` keep the
+  fallback: a config that will not load leaves the run on the compiled-in
+  defaults with a warning on stderr. These verbs only read the hosts, so the
+  worst outcome is a report against the wrong baseline, and the warning says so.
+
+`batch rollback` reads no `config.toml` at all: it restores checkpoints and has
+no directive, exception or plugin list to consult, so `--config` has no effect
+on it.
 
 > **Remote hosts are evaluated against the controller's configuration, not
 > their own.** Directive overrides, policy exceptions and the plugin lists all
@@ -503,12 +551,44 @@ three targets.
 
 This applies to `--ssh` targets alone. `--all` and `--host` are taken as given,
 so two inventory entries pointing at one machine, or `--host web-01,web-01`,
-still produce two hosts.
+still produce two hosts. Under `--execute` such a selection is then refused by
+the checkpoint host-key check below, which names both inventory entries.
 
 The history key is a *different* identity: an inventory host files its history
 under its nickname and an ad-hoc target under `user@host:port`. Reaching one
 machine both ways in separate runs therefore records two series for it, which
 de-duplication cannot help with because only one form is present in each run.
+
+The **checkpoint** host key is a third identity, and it is coarser than either.
+It is `ssh://user@host:port`, and a target that named no user is filed under a
+literal `root` whether or not that is the account ssh resolves it to. Two
+consequences follow, and both are limitations rather than choices:
+
+- `hardener --ssh web-01 apply` files its checkpoint under
+  `ssh://root@web-01:22`, so `hardener --ssh admin@web-01 rollback <id>` is
+  refused as belonging to a different host, though it is the same machine. Roll
+  back with the same form of target you applied with.
+- `--ssh web-01` and `--ssh root@web-01` are two targets everywhere else and one
+  checkpoint host key. A fleet run that writes therefore **refuses** such a
+  selection, exit `2`, before it connects to anything: their pre-apply
+  checkpoints would land under one `(host key, name)` pair, the newest would
+  win, and a later rollback could restore state the other target had already
+  hardened while reporting success. The refusal names both hosts, by inventory
+  name and canonical target, and says what to change. `batch scan` and `batch
+  report` take no checkpoints and are not affected, nor is a dry run.
+
+> **The refusal covers one invocation, not the underlying collision.** The
+> newest checkpoint per key wins across the whole database rather than within a
+> run, so reaching one machine as `--ssh web-01` in one run and as
+> `--ssh root@web-01` in another files both under the same key with nothing to
+> refuse them, and a later rollback of either can restore the state the other
+> left behind. The single-host `apply` and `rollback` verbs do not pass through
+> this check at all. **Until the key itself is corrected, reach a given machine
+> by one and only one form of target.** Correcting it means resolving the
+> effective remote user when the connection is made, which changes the key and
+> orphans every checkpoint already filed under the old one, so it is deferred
+> rather than done. `checkpoint list` conflates the same pair, for the same
+> reason.
 
 ### batch scan
 
@@ -612,6 +692,13 @@ hardener batch apply (--all | --host a,b | --ssh user@host) [FLAGS]
 | `--output <FILE>` | Write report to a file instead of stdout | stdout |
 
 Tiered exit codes: `0` = clean; `1` = apply or validation failure; `2` = connect, privilege, or usage error.
+The usage errors refused before any connection are: no hosts selected, an
+unknown `--host` name, a `--config` that will not load under `--execute`, and a
+selection whose hosts share one checkpoint host key, and an `--output` path whose
+extension contradicts `--format`. All four are judged before anything is
+contacted, so a refused run costs no fleet work. A fleet report is text or JSON
+only, so a path naming CSV, HTML or PDF contradicts it whichever way `--format`
+is set.
 
 **Examples:**
 
@@ -649,7 +736,9 @@ hosts with nothing to roll back; `1` = at least one checkpoint failed to
 restore, or restored cleanly but whose plugin failed to reload; `2` = at
 least one host-level error, which covers a failed connection, a host without
 root or passwordless sudo, a checkpoint store that could not be read, and a
-rollback task that did not finish.
+rollback task that did not finish. `2` also covers the selection refusals, which
+happen before any connection: no hosts selected, an unknown `--host` name, and a
+selection whose hosts would file their checkpoints under one host key.
 
 **Examples:**
 
@@ -699,6 +788,21 @@ hardener daemon status [FLAGS]
 
 Generate, install, and manage systemd unit files for scheduled scanning.
 
+All four verbs honour the global `-f`, `--format`. Under `--format json` each
+prints one envelope on stdout instead of its human text: `generate` carries the
+two units as `service` and `timer` objects, or the paths it wrote as
+`generated`; `install` carries `installed` and `timer_enabled`; `uninstall`
+carries `removed`, which is empty when there was nothing to remove, and
+`timer_disabled`, which reports what `systemctl disable --now` returned. Expect
+that to be `false` on a host where the timer was never enabled, since
+`systemctl` fails for a unit that does not exist; it is worth reading only
+alongside a non-empty `removed`, where it means the units are gone and the timer
+may still be running. And `status`
+carries `user_mode`, `exit_code`, `stdout` and `stderr`. `status` reports the
+exit code rather than discarding it, because an inactive timer and a unit that
+does not exist both make `systemctl` return non-zero and nothing else
+distinguishes them without reading prose.
+
 ### systemd generate
 
 Generate timer and service unit files. Prints to stdout by default.
@@ -712,6 +816,28 @@ hardener systemd generate [FLAGS]
 | `-o`, `--output <DIR>` | Write files to a directory instead of stdout | stdout |
 | `--binary <PATH>` | Path to the hardener binary | auto-detected |
 | `-s`, `--schedule <EXPR>` | systemd calendar expression (e.g. `daily`, `*-*-* 02:00:00`) | `daily` |
+
+**The global `-C`, `--config` is written into the unit, not just used to
+generate it.** Given `-C`, the service runs
+`hardener --config <path> daemon run-once`; without it, plain
+`hardener daemon run-once`, which resolves the config at each run through the
+normal search order. Two consequences, both of the embedded path rather than of
+the flag:
+
+- **The path is embedded verbatim, and it reaches the scheduled run intact.**
+  It is written as a quoted `ExecStart` word with any `%` escaped, so a path
+  holding a space or a percent sign is delivered to the process as you typed it
+  rather than being re-split or specifier-expanded by systemd. What is *not*
+  done for you is resolving it: a relative `-C` produces a relative argument,
+  which systemd resolves against the service's working directory (`/` for a
+  system unit) rather than yours. Give `-C` an absolute path here.
+- **The unit is pinned to that file for as long as it is installed.** A named
+  path that is later moved, renamed or deleted does not fall back to the search
+  order: the scheduled run exits non-zero every time, because the unit runs
+  `daemon run-once`, and a `--config` that will not load is fatal for that verb.
+  (It is not fatal everywhere; see the [global flags](#global-flags) for the
+  three `batch` verbs that keep the fallback.) Regenerate or reinstall after
+  moving the file.
 
 ### systemd install
 
@@ -727,6 +853,14 @@ sudo hardener systemd install [FLAGS]
 | `-s`, `--schedule <EXPR>` | systemd calendar expression | `daily` |
 
 **System vs user install:** System install (`sudo`, no `--user`) runs as root and can apply all hardening changes. User install (`--user`, no sudo) runs under your user account, suitable for scan-only monitoring.
+
+`install` embeds the global `-C` on exactly the terms described under
+[systemd generate](#systemd-generate). The units themselves are not identical,
+because `generate` has no `--user` flag and always prints the system unit: under
+`--user` the sandbox collapses to `NoNewPrivileges=true` alone and `WantedBy`
+becomes `default.target`. That difference reaches the `-C` advice in one place.
+A user unit's working directory is your home directory, not `/`, so a relative
+`-C` resolves somewhere else again. Absolute either way.
 
 ### systemd uninstall
 
@@ -840,4 +974,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path. JSON is the only document this command produces, so a path ending in one of the report formats this tool renders elsewhere (`.csv`, `.htm`, `.html`, `.pdf`, `.txt`) is refused rather than filled with JSON. Any other path is written as given, including one with no extension and one whose name merely contains dots, such as `backups.2026.08.03` | `session-<first 8 chars of id>.json` |
 
-**Last Updated**: 2026-08-02
+**Last Updated**: 2026-08-04

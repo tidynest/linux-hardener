@@ -321,15 +321,13 @@ pub async fn invoke_get_checkpoint_detail(
 
 /// Invokes the run_rollback Tauri command.
 ///
-/// Restores system state to the specified checkpoint.
-/// Pass a config path to use a custom configuration file.
-pub async fn invoke_rollback(
-    checkpoint_id: String,
-    config_path: Option<String>,
-) -> Result<RollbackResult, String> {
+/// Restores system state to the specified checkpoint. Takes no config path:
+/// `rollback` consults no policy, and the one that used to be sent reached the
+/// CLI after the `--` separator, where clap read it as a second positional and
+/// refused the command outright.
+pub async fn invoke_rollback(checkpoint_id: String) -> Result<RollbackResult, String> {
     let args = serde_wasm_bindgen::to_value(&serde_json::json!({
         "checkpointId": checkpoint_id,
-        "configPath": config_path,
     }))
     .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
 

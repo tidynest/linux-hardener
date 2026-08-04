@@ -221,7 +221,9 @@ impl ConfigLoader {
         }
 
         Ok(PluginConfig {
-            enabled: overlay.enabled,
+            // `or`, not the overlay outright: a source that did not mention
+            // the key has not decided it, so the earlier decision stands.
+            enabled: overlay.enabled.or(base.enabled),
             directives,
             exceptions,
         })
