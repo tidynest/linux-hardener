@@ -366,13 +366,17 @@ to the default sources, merged on top of whatever the system and user files
 contributed, not a replacement for them.
 For the
 .B [scheduler]
-section it
-.I does
-replace the search, because that section is read from the first file found
-rather than merged: a file with no
+section it joins the
+.I front
+of the search rather than replacing it, because that section is read from the
+first file that configures it rather than merged: a file with no
 .B [scheduler]
-section therefore yields the compiled-in scheduler defaults, and a partial one
-will not parse at all.
+section is not that file configuring it, so the system or user config still
+decides.
+A
+.I partial
+.B [scheduler]
+table will not parse at all, since four of its keys have no defaults.
 .IP
 Accepted anywhere, acted on by
 .BR scan ,

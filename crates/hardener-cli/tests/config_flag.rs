@@ -306,6 +306,53 @@ fn the_scheduler_section_comes_from_the_named_config_too() {
     );
 }
 
+/// A file that says nothing about the scheduler does not silence the file that
+/// does.
+///
+/// `systemd generate`/`install` embed the `--config` path in the unit they
+/// write, so an operator who installs a timer against a policy file had a
+/// scheduled scan whose `[scheduler]` resolved to the compiled-in defaults:
+/// disabled, on the default schedule, writing to the default database, while
+/// their own config said otherwise and nothing said so. A section absent from a
+/// file is not that file configuring the section, so the search continues.
+#[test]
+fn a_config_without_a_scheduler_section_does_not_shadow_the_one_that_has_it() {
+    let home = scratch_home();
+    let (_, configured) = scheduler_fixture("fallthrough");
+    // The fixture's own file becomes this run's *user* config, so the named
+    // policy file is the only thing that could shadow it.
+    let user_config_dir = home.join("config").join("linux-hardener");
+    std::fs::create_dir_all(&user_config_dir).expect("a user config directory");
+    std::fs::copy(
+        home.join("fallthrough-scheduler.toml"),
+        user_config_dir.join("config.toml"),
+    )
+    .expect("the user config is installed");
+
+    let policy = home.join("policy-only.toml");
+    std::fs::write(
+        &policy,
+        "[global]\ndisabled_plugins = [\"mac-hardening\"]\n",
+    )
+    .expect("the policy fixture is written");
+
+    let out = run(&[
+        "--config",
+        policy.to_str().expect("a UTF-8 scratch path"),
+        "history",
+        "list",
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        configured.exists(),
+        "a named file with no [scheduler] section must leave the operator's own \
+         scheduler settings in force, not replace them with the compiled-in \
+         defaults; got exit {:?} with stderr: {stderr}",
+        out.status.code()
+    );
+}
+
 /// `scan` persists its own history, and it reached `-C` for policy while its
 /// history went wherever the default search led. One file, two halves,
 /// disagreeing about where the run's results were recorded.

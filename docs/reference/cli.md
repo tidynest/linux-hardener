@@ -37,12 +37,15 @@ and a `[scheduler]` section is therefore honoured whole: before, `scan` took its
 policy from the named file and then wrote its history to whichever database the
 default search happened to find.
 
-**That section does not merge**, so naming a file replaces the search rather
-than adding to it. A file with no `[scheduler]` section yields the compiled-in
-defaults rather than the ones in your system or user config, which means a
-policy-only file passed to `scan` sends that run's history to the default
-database, and `daemon start` refuses with the scheduler disabled. A named path
-that is missing or will not parse is an error for these verbs. It is not
+**That section does not merge**, and the named file is searched **first** rather
+than instead: the first file that actually configures the scheduler wins whole.
+A file with no `[scheduler]` section is not that file configuring it, so your
+system or user config still decides. That matters because `systemd
+generate`/`install` embed the `--config` path in the unit they write, so a timer
+installed against a policy file would otherwise run its scheduled scan on the
+compiled-in defaults, disabled and writing elsewhere, while your own config said
+otherwise. A named path that is missing or will not parse is an error for these
+verbs. It is not
 everywhere: `batch scan`, `batch report` and `batch apply --dry-run`
 deliberately keep their fallback to the compiled-in defaults, warning on stderr,
 because they change no host.

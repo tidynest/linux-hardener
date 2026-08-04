@@ -472,6 +472,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A timer installed against a policy file ran its scheduled scan on the
+  compiled-in scheduler defaults.** `systemd generate` and `systemd install`
+  embed the `--config` path in the unit they write, and making `-C` reach the
+  `[scheduler]` section had it replace the search rather than join it, so a
+  named file with no `[scheduler]` section meant "use the defaults" rather than
+  "this file does not configure the scheduler". Measured: with a real config
+  enabling a 04:00 scan into a chosen database, the same host under
+  `--config policy.toml` reported the scheduler **disabled**, on another
+  schedule, writing to the default database, and said nothing about it. Since
+  the unit embeds that path, the misconfiguration was permanent and silent, and
+  every scheduled scan it produced would have been skipped.
+  The named path is now searched **first** rather than instead, and a file
+  without the section is not treated as configuring it, so the operator's own
+  settings still decide. The section still does not merge: the first file that
+  actually configures it wins whole. This also corrects the same shadowing
+  between the default locations, where a user config mentioning only `[global]`
+  silenced a system config that had the settings.
+
 - **A fleet run whose `--output` named the wrong document scanned the whole
   fleet before saying so.** The check sat at the point of writing, so `batch
   report --output fleet.json` under the default text format contacted every

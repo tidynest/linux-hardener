@@ -536,15 +536,16 @@ skipped under root here, so
 a root daemon reads `~/.config/linux-hardener/config.toml` when that path exists
 and resolves.
 
-`--config` **is** consulted, and it replaces that search rather than adding to
-it: the section is read from the named file alone. Two consequences follow from
-its not merging. A named file with no `[scheduler]` section yields the
-compiled-in defaults, not the settings in your system or user config, so a
-policy-only file passed to `scan` sends that run's history to the default
-database and `daemon start` reports the scheduler disabled. And a partial
-`[scheduler]` table will not parse at all, because `enabled`, `schedule`,
-`plugins` and `min_severity` have no defaults. Put the whole section in any file
-you intend to pass with `-C`, or leave the flag off for the scheduler verbs. Keep the scheduler settings in the system config on any host where
+`--config` **is** consulted, and it joins the front of that search rather than
+replacing it: the named file is looked at first, and the first file that
+actually configures the scheduler wins whole. A named file with no
+`[scheduler]` section is not that file configuring it, so your system or user
+config still decides, which is what keeps a timer installed against a
+policy-only file running on your real scheduler settings rather than the
+compiled-in ones. One consequence of the section not merging remains: a
+**partial** `[scheduler]` table will not parse at all, because `enabled`,
+`schedule`, `plugins` and `min_severity` have no defaults. Put the whole section
+in any file that has one. Keep the scheduler settings in the system config on any host where
 that distinction matters.
 
 | Key | Type | Default | Effect |
