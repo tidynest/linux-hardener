@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The rollback symlink guard asked the machine running the tool, not the
+  machine being rolled back.** `rollback_target_refusal` decided whether a
+  restore may write a path by calling `Path::is_symlink` and
+  `Path::canonicalize`, both `std::fs` syscalls against the controller's own
+  filesystem, while the path named belongs to the target host. Both remote
+  rollback paths reach it with an `SshExecutor` active, single-host
+  `hardener rollback --ssh` and per-host `hardener batch rollback`, and it was
+  wrong in both directions. Fail-open: a remote path the checkpoint recorded as
+  a regular file, standing now as a symlink into a directory the allowlist
+  excludes, does not exist on the controller, so `is_symlink` answered false,
+  the prefix allowlist became the whole check, and the restore wrote a captured
+  copy through the link. The identical local case has always been refused.
+  False refusal: a link the controller happened to hold at an allow-listed path,
+  resolving outside it, refused a remote rollback of that path with a message
+  naming a path the operator reads as the remote's, and if every restorable row
+  was such a path the whole rollback aborted. The check now resolves through
+  `SystemExecutor::read_link`, the same primitive capture has used since
+  `link_target_of`, for the question of whether the path is a link at all, and
+  through a new `SystemExecutor::canonical_path` for the question of where it
+  leads. Two questions, two primitives, and the split is the load-bearing part:
+  `canonical_path` is `realpath` semantics, every component resolved by the
+  filesystem that owns them, which is exactly what `Path::canonicalize` gave and
+  must not be given up to reach the target host. Resolving the chain here
+  instead, one hop at a time with `..` flattened by name, is wrong wherever the
+  component before a `..` is itself a link: with `<allowed>/dlink` pointing at a
+  directory outside the allowlist, `<allowed>/f -> dlink/../victim` collapses by
+  name to `<allowed>/victim` and is admitted, while the write lands on
+  `<outside>/victim`. That was measured on a real filesystem, not reasoned
+  about, and it is why the resolution is asked rather than computed. A path that
+  does not resolve to something that exists, whether from a dangling target, a
+  missing component, a traversal that is refused or a symlink loop, is refused:
+  what the write would reach is unknown, and that is the same answer
+  `canonicalize` returning `Err` produced. Unchanged: the prefix allowlist, the
+  exemption for a row carrying a link target, and the exemption for a row
+  recorded absent, both of which restore onto the path itself and follow
+  nothing; and the scope of the check, which is still a path whose own final
+  component is a link, since a regular file under a symlinked parent was
+  admitted by `Path::is_symlink` too.
+
 - **The shared IPC string guard let U+007F through the check that exists to
   reject control characters.** `validate_ipc_string` tested `b < 0x20`, and DEL
   is `0x7F`, so the one ASCII control character above space passed a guard whose

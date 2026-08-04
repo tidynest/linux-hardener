@@ -1640,6 +1640,14 @@ impl SystemExecutor for MkdirCreatesTheDirectory {
         self.inner.read_link(path).await
     }
 
+    /// Delegated for the same reason as `read_link` above, and it has to be
+    /// listed separately: a wrapper that forwards one and inherits the other
+    /// runs a command no fixture registered, and fails for a reason that names
+    /// neither the test nor the wrapper.
+    async fn canonical_path(&self, path: &Path) -> anyhow::Result<Option<PathBuf>> {
+        self.inner.canonical_path(path).await
+    }
+
     async fn file_metadata(&self, path: &Path) -> anyhow::Result<FileMetadata> {
         self.inner.file_metadata(path).await
     }

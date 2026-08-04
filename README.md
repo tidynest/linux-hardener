@@ -438,7 +438,7 @@ hardened host still carries is in [upgrading](docs/guide/upgrading.md).
 ### Tests
 
 ```
-Rust workspace:  1594 passed, 0 failed, 43 ignored
+Rust workspace:  1599 passed, 0 failed, 43 ignored
 ```
 
 The 43 ignored tests need root, a live SSH host, or a specific firewall backend,

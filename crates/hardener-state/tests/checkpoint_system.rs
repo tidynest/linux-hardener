@@ -559,10 +559,11 @@ async fn rollback_recreates_the_directory_a_restored_symlink_needs() {
 /// that is a different symptom from the measured one, where the rest of the
 /// checkpoint came back and only the mask was skipped.
 ///
-/// [`DiskExecutor`] rather than a `MockExecutor`, and unavoidably so: the guard
-/// asks the local filesystem whether the path is a symlink and what it resolves
-/// to, without going through the executor at all, so a mock's virtual
-/// filesystem cannot express the condition under test.
+/// [`DiskExecutor`] rather than a `MockExecutor`, and still deliberately so
+/// although the guard now asks the executor rather than the local filesystem: a
+/// mock could express the condition, but the assertion below is that the mask
+/// symlink is *gone from disk*, and only a real filesystem can be read back for
+/// that. The unit tests covering the guard's own answer use a mock.
 #[tokio::test]
 async fn rollback_removes_the_mask_symlink_an_apply_created() {
     let fixture = TestFixture::new().await;
@@ -615,5 +616,190 @@ async fn rollback_removes_the_mask_symlink_an_apply_created() {
         result.rollback_success,
         "a rollback that restored every path is a successful one, got: {:?}",
         result.rollback_files
+    );
+}
+
+/// The guard, driven end to end against a real filesystem and the real
+/// `readlink`.
+///
+/// The unit tests of the guard use a `MockExecutor`, which answers from a
+/// registry rather than by running anything, and a mock can only report what a
+/// fixture already stated. [`DiskExecutor`] inherits the provided `read_link`
+/// and `canonical_path`, which run `readlink` for real, so this test is where
+/// the *resolution semantics* are checked against coreutils rather than against
+/// a fixture's own claim. It says nothing about which host is asked; the two
+/// remote unit tests are what pin that.
+///
+/// Relative deliberately. `systemctl enable` writes relative targets, and a
+/// relative one is the case a string-prefix allowlist cannot judge unaided:
+/// `<allowed>/../<other>/victim.conf` still starts with `<allowed>`.
+///
+/// The assertion is on the victim's bytes rather than on the reported action,
+/// because overwriting a file outside the allowlist is the harm and a reported
+/// skip is only a claim about it. The untouched sibling keeps the run from
+/// aborting over an empty restorable set, which would leave the victim intact
+/// for a reason that has nothing to do with the guard.
+#[tokio::test]
+async fn a_rollback_refuses_a_real_relative_symlink_that_leaves_the_allowlist() {
+    let fixture = TestFixture::new().await;
+    let outside = tempfile::tempdir().expect("a directory the allowlist does not cover");
+    let victim = outside.path().join("victim.conf");
+    std::fs::write(&victim, "not ours to write\n").expect("write victim");
+
+    let followed = fixture.create_test_file("followed.conf", "captured\n");
+    let sibling = fixture.create_test_file("sibling.conf", "captured\n");
+
+    let checkpoint_id = fixture
+        .fixture_checkpoint_manager
+        .create_checkpoint(&DiskExecutor, "pre-apply", &[&followed, &sibling])
+        .await
+        .expect("Failed to create checkpoint");
+
+    // The host changes after the capture, so the row stays a regular file's and
+    // carries no link target to exempt it. Relative, and resolved by name from
+    // the link's own directory: two sibling directories under the same parent.
+    let relative = Path::new("..")
+        .join(outside.path().file_name().expect("the temp dir has a name"))
+        .join("victim.conf");
+    std::fs::remove_file(&followed).expect("remove the captured regular file");
+    std::os::unix::fs::symlink(&relative, &followed).expect("symlink");
+
+    let result = fixture
+        .fixture_checkpoint_manager
+        .rollback(&DiskExecutor, &checkpoint_id)
+        .await
+        .expect("a refused path must not abort a rollback that has another");
+
+    let entry = restore_entry(&result, &followed);
+    assert_eq!(
+        std::fs::read_to_string(&victim).expect("the victim must still be there"),
+        "not ours to write\n",
+        "nothing outside the allowlist may be written through a link, but the rollback \
+         reported: {entry:?}"
+    );
+    assert!(
+        entry
+            .restore_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("resolves outside"),
+        "the refusal must say why, got: {entry:?}"
+    );
+    assert!(
+        restore_entry(&result, &sibling).restore_success,
+        "the ordinary file must still be restored, got: {:?}",
+        restore_entry(&result, &sibling)
+    );
+}
+
+/// A `..` is only meaningful once the component before it is known, and only
+/// the target host knows that.
+///
+/// Resolving a link one name at a time and flattening `..` by string surgery
+/// gets this wrong in the fail-open direction, which is the direction that
+/// costs something. `<allowed>/followed.conf -> dlink/../victim`, where
+/// `<allowed>/dlink` is itself a link to a directory outside the allowlist:
+/// deleting `dlink/..` by name yields `<allowed>/victim`, inside the allowlist,
+/// while the kernel resolves `dlink` first and writes to `<outside>/victim`.
+/// Measured, not reasoned about: with the collapse in place the victim below
+/// ended up holding the checkpoint's bytes.
+///
+/// So the resolution has to canonicalise every component the way `realpath`
+/// does, on the host that will be written, which is what the executor's
+/// `canonical_path` asks. `Path::canonicalize` did exactly this before the
+/// guard moved onto the executor, and it must not be traded away to get there.
+#[tokio::test]
+async fn a_rollback_resolves_a_symlinked_directory_component_and_not_just_the_name() {
+    let fixture = TestFixture::new().await;
+    let outside = tempfile::tempdir().expect("a directory the allowlist does not cover");
+    std::fs::create_dir(outside.path().join("sub")).expect("create sub");
+    let victim = outside.path().join("victim");
+    std::fs::write(&victim, "not ours to write\n").expect("write victim");
+
+    let followed = fixture.create_test_file("followed.conf", "captured\n");
+    let sibling = fixture.create_test_file("sibling.conf", "captured\n");
+
+    let checkpoint_id = fixture
+        .fixture_checkpoint_manager
+        .create_checkpoint(&DiskExecutor, "pre-apply", &[&followed, &sibling])
+        .await
+        .expect("Failed to create checkpoint");
+
+    // A link to a directory outside the allowlist, standing inside it.
+    std::os::unix::fs::symlink(
+        outside.path().join("sub"),
+        fixture.fixture_temp_dir.path().join("dlink"),
+    )
+    .expect("symlink the directory");
+    std::fs::remove_file(&followed).expect("remove the captured regular file");
+    std::os::unix::fs::symlink("dlink/../victim", &followed).expect("symlink");
+
+    let result = fixture
+        .fixture_checkpoint_manager
+        .rollback(&DiskExecutor, &checkpoint_id)
+        .await
+        .expect("a refused path must not abort a rollback that has another");
+
+    let entry = restore_entry(&result, &followed);
+    assert_eq!(
+        std::fs::read_to_string(&victim).expect("the victim must still be there"),
+        "not ours to write\n",
+        "a `..` after a symlinked directory must be resolved by the filesystem, not by \
+         string surgery, but the rollback reported: {entry:?}"
+    );
+    assert!(
+        restore_entry(&result, &sibling).restore_success,
+        "the ordinary file must still be restored, got: {:?}",
+        restore_entry(&result, &sibling)
+    );
+}
+
+/// A link this tool cannot follow to an end is refused, not admitted.
+///
+/// Two links pointing at each other have no target for the allowlist to judge,
+/// and admitting one would send a captured copy through a chain nobody
+/// resolved. Against a real filesystem deliberately: a loop is `ELOOP`, the
+/// kernel's own answer and its own bound, and a mock asserting a hop counter
+/// would only be asserting arithmetic this code no longer does.
+///
+/// Both links sit *inside* the allowlist, so the prefix check cannot be what
+/// refuses them. Only the resolution can, which is what makes the refusal
+/// evidence about the resolution.
+#[tokio::test]
+async fn a_rollback_refuses_a_symlink_loop_rather_than_following_it() {
+    let fixture = TestFixture::new().await;
+    let looping = fixture.create_test_file("a.conf", "captured\n");
+    let sibling = fixture.create_test_file("sibling.conf", "captured\n");
+    let partner = fixture.fixture_temp_dir.path().join("b.conf");
+
+    let checkpoint_id = fixture
+        .fixture_checkpoint_manager
+        .create_checkpoint(&DiskExecutor, "pre-apply", &[&looping, &sibling])
+        .await
+        .expect("Failed to create checkpoint");
+
+    std::fs::remove_file(&looping).expect("remove the captured regular file");
+    std::os::unix::fs::symlink(&partner, &looping).expect("symlink a -> b");
+    std::os::unix::fs::symlink(&looping, &partner).expect("symlink b -> a");
+
+    let result = fixture
+        .fixture_checkpoint_manager
+        .rollback(&DiskExecutor, &checkpoint_id)
+        .await
+        .expect("a refused path must not abort a rollback that has another");
+
+    let entry = restore_entry(&result, &looping);
+    assert!(
+        entry
+            .restore_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("cannot be resolved"),
+        "a loop must be refused for being unresolvable, got: {entry:?}"
+    );
+    assert!(
+        restore_entry(&result, &sibling).restore_success,
+        "the ordinary file must still be restored, got: {:?}",
+        restore_entry(&result, &sibling)
     );
 }

@@ -91,6 +91,36 @@ pub trait SystemExecutor: Send + Sync {
         }
     }
 
+    /// Where `path` leads once **every** component of it is resolved, or `None`
+    /// if it does not resolve to a path that exists.
+    ///
+    /// `realpath(3)` semantics, and the distinction from [`Self::read_link`] is
+    /// the whole of why this exists. `read_link` answers about one name; a
+    /// decision about where a write would *land* needs the parents resolved
+    /// too. A caller that follows one hop at a time and flattens `..` itself
+    /// gets a different answer from the kernel's whenever the component before
+    /// a `..` is a link, and gets it in the admitting direction: with
+    /// `a/dlink -> /elsewhere/sub`, resolving `a/dlink/../victim` by name alone
+    /// yields `a/victim` while the write lands on `/elsewhere/victim`.
+    ///
+    /// `None` for every unresolvable path, rather than distinguishing them:
+    /// `readlink` gives a dangling target, a missing component, a traversal it
+    /// may not make and a symlink loop the same status, and unlike
+    /// [`Self::read_link`]'s `None` this one is the *refusing* answer, so
+    /// collapsing them costs a caller nothing. A caller that admits `None` has
+    /// read it backwards.
+    ///
+    /// Provided rather than required, for the reason [`Self::read_link`] is:
+    /// `readlink -e` is what `Path::canonicalize` was, and one implementation
+    /// keeps local and remote answering alike.
+    async fn canonical_path(&self, path: &Path) -> Result<Option<PathBuf>> {
+        let path_str = path.to_string_lossy();
+        let output = self
+            .execute_command("readlink", &["-e", "-n", "--", &path_str])
+            .await?;
+        Ok((output.exit_code == 0).then(|| PathBuf::from(output.stdout.trim())))
+    }
+
     /// Reads metadata for `path`.
     ///
     /// The three outcomes are a contract every implementation must honour,
