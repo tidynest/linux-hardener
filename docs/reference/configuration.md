@@ -113,7 +113,7 @@ Every section accepts the same three keys:
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
 | `enabled` | bool | `true` when no source states it | Set `false` to stop this plugin from running. Disabled anywhere is final within one merged config: it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. Across sources, the last source that *states* the key decides it, and a section mentioned without it decides nothing; see the merge rule under File locations and precedence. |
-| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Directives are clamped tighten-only: completely in `[kernel]`, `[ssh]`, `[pam]` and `[permissions]`, and on the `action` field alone in `[firewall]`, whose `port`, `source` and `protocol` are applied as given. See below. |
+| `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Directives are clamped tighten-only: completely in `[kernel]`, `[ssh]`, `[pam]` and `[permissions]`, and in `[firewall]` on all four fields, `action` on its own terms and `port`, `source` and `protocol` against the direction the rule's action gives them. See below. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
 > **Removed: `custom_directives`.** Earlier releases accepted and validated a
@@ -304,14 +304,35 @@ works everywhere: a loosening override is refused wherever it can be recognised
 as one, and simply has no effect. An exception carries a reason, an approver and
 an expiry, and the report shows it instead of silently lowering the bar.
 
-**One gap, stated rather than implied.** In `[firewall]` only the `action` field
-is clamped, because it is the only one whose direction holds for any rule:
-`accept` admits what `drop` and `reject` refuse, so a blocking rule cannot be
-overridden into an accepting one. `source` and `protocol` weaken or strengthen
-depending on the rule's own action, and `port` merely moves, which is why
-changing the SSH port is a legitimate override. Widening `source` on an
-accepting rule is therefore honoured as written, and an exception is the only
-thing that records it as a decision.
+**`[firewall]` clamps all four fields, and the direction is the rule's.** The
+`action` field is clamped on its own terms, because its direction holds for any
+rule: `accept` admits what `drop` and `reject` refuse, so a blocking rule cannot
+be overridden into an accepting one. `source`, `protocol` and `port` have no
+direction of their own, so each is judged against the action the rule ends up
+carrying:
+
+- On an **accepting** rule, a value that matches **more** is refused.
+  `loopback.source = "0.0.0.0/0"`, `ssh.protocol = "any"` and
+  `ssh.port = "1-65535"` are all loosenings and all ignored.
+- On a **blocking** rule, a value that matches **less** is refused. Narrowing the
+  catch-all drop, as in `drop_default.source = "10.0.0.0/8"`, stops everything
+  outside that subnet from being dropped at all.
+
+`action` is applied first, so tightening a rule and widening its match in the
+same config works: on a rule you have just turned into a `drop`, a wider port is
+a stricter ruleset.
+
+A value of the **same width** as the baseline is admitted in either direction.
+That is what keeps `ssh.port = "2222"` working, and it is a stated ceiling: a
+source of the same prefix length but a different address, such as `loopback`
+moving from `127.0.0.1/8` to `10.0.0.0/8`, is honoured. Refusing that needs CIDR
+containment across both address families, which this plugin deliberately does
+not implement. Anything the clamp cannot measure at all, including a source in
+the other address family and a prefix longer than its family allows, is refused
+rather than guessed at.
+
+A refused directive is ignored and logged; the rule keeps its baseline value.
+An exception is still the route that records a deviation as a decision.
 
 ---
 

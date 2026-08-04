@@ -1030,10 +1030,163 @@ fn an_override_may_swap_one_blocking_action_for_the_other() {
     assert_eq!(rule.rule_action, "reject");
 }
 
-/// The three fields that are not clamped, pinned as a positive control. Without
-/// them a clamp that refused every override would pass the assertions above,
-/// and changing the SSH port is the configuration reference's own worked
-/// example of a legitimate override.
+/// Applies one directive to one baseline rule and hands the rule back, which is
+/// what every clamp assertion below needs and nothing else.
+fn rule_after_directive(id: &str, field: &str, value: &str) -> Rule {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert(format!("{id}.{field}"), value.to_string());
+    let mut rule = get_baseline_rules()
+        .into_iter()
+        .find(|r| rule_id(r) == id)
+        .expect("the baseline carries the rule this test names");
+    apply_rule_directives(&mut rule, id, &config);
+    rule
+}
+
+/// An accepting rule admits what it matches, so it weakens as it matches more.
+/// Loopback is the only accepting baseline rule with a source narrower than
+/// everything, which makes it the only one this can be asked of: the SSH rule
+/// the issue's own worked example names is already `any`, so `0.0.0.0/0` there
+/// changes nothing and would have passed a clamp that did not exist.
+#[test]
+fn a_source_that_widens_an_accepting_rule_is_refused() {
+    let rule = rule_after_directive("loopback", "source", "0.0.0.0/0");
+    assert_eq!(rule.rule_source, "127.0.0.1/8");
+
+    // The same value written the other way up, because a check that refused the
+    // literal `0.0.0.0/0` and nothing else would pass the assertion above while
+    // admitting every other spelling of the whole address space.
+    let rule = rule_after_directive("loopback", "source", "8.8.8.8/0");
+    assert_eq!(rule.rule_source, "127.0.0.1/8");
+}
+
+/// The direction the issue does not name, and the sharpest of the four. A
+/// blocking rule refuses what it matches, so narrowing the catch-all drop to
+/// one subnet stops everything outside that subnet from being dropped at all.
+#[test]
+fn a_source_that_narrows_a_blocking_rule_is_refused() {
+    let rule = rule_after_directive("drop_default", "source", "10.0.0.0/8");
+    assert_eq!(rule.rule_source, "any");
+}
+
+/// Narrowing the catch-all by protocol or by port has the same effect, and the
+/// port case carries a second one: `sets_default_target` in the firewalld
+/// backend is gated on this rule still holding `any`, so an override here also
+/// silently stopped the zone's default target being set to DROP.
+#[test]
+fn a_protocol_or_port_that_narrows_a_blocking_rule_is_refused() {
+    let rule = rule_after_directive("drop_default", "protocol", "tcp");
+    assert_eq!(rule.rule_protocol, "all");
+
+    let rule = rule_after_directive("drop_default", "port", "22");
+    assert_eq!(rule.rule_port, "any");
+}
+
+/// `port` does not merely move. `1-65535` passes the configuration layer's
+/// range check, and on the accepting SSH rule it is accept-all-TCP.
+#[test]
+fn a_port_range_that_widens_an_accepting_rule_is_refused() {
+    let rule = rule_after_directive("ssh", "port", "1-65535");
+    assert_eq!(rule.rule_port, "22");
+
+    // A range that widens without covering everything, so the refusal is not
+    // resting on the full span being recognised as a special case.
+    let rule = rule_after_directive("ssh", "port", "80-90");
+    assert_eq!(rule.rule_port, "22");
+}
+
+/// `any` is a protocol the configuration layer accepts, and on an accepting
+/// rule it admits every protocol rather than the one the baseline named.
+#[test]
+fn a_protocol_that_widens_an_accepting_rule_is_refused() {
+    let rule = rule_after_directive("ssh", "protocol", "any");
+    assert_eq!(rule.rule_protocol, "tcp");
+}
+
+/// The stated ceiling, asserted rather than described. Two ranges of the same
+/// size are ordered equal, so a source of the same width but a different
+/// address is admitted. Closing this needs CIDR containment across both
+/// families, which is the comparator #64 decided this plugin would not own.
+///
+/// This is also the control for every refusal above: a clamp that refused
+/// everything would satisfy all of them and fail here.
+#[test]
+fn a_source_of_the_same_width_is_admitted_and_that_ceiling_is_deliberate() {
+    let rule = rule_after_directive("loopback", "source", "10.0.0.0/8");
+    assert_eq!(rule.rule_source, "10.0.0.0/8");
+}
+
+/// The prefix comparison itself, in both directions, which is the one thing
+/// every assertion above leaves untested: they compare equal widths, or compare
+/// against a value that is the whole space and never reaches the prefix
+/// arithmetic at all. Fewer bits is a broader match, so the comparison runs the
+/// opposite way round from the numbers, and a mutant that reversed it survived
+/// the whole file until these two were written.
+#[test]
+fn a_bounded_source_is_measured_by_its_prefix_in_both_directions() {
+    // Narrower than the baseline's /8, so an accepting rule admits it.
+    let rule = rule_after_directive("loopback", "source", "127.0.0.1/16");
+    assert_eq!(rule.rule_source, "127.0.0.1/16");
+
+    // Broader than the baseline's /8 without being the whole space, so the
+    // refusal cannot be resting on `Everything` being recognised.
+    let rule = rule_after_directive("loopback", "source", "10.0.0.0/4");
+    assert_eq!(rule.rule_source, "127.0.0.1/8");
+}
+
+/// A prefix of length zero is the whole of its family, and the whole of a
+/// family is the whole of what the field can express. Without that an operator
+/// spelling the catch-all's existing `any` as `0.0.0.0/0` would be refused for
+/// narrowing a blocking rule, which is a refusal of a change that changes
+/// nothing.
+#[test]
+fn a_zero_length_prefix_is_the_same_breadth_as_any() {
+    let rule = rule_after_directive("drop_default", "source", "0.0.0.0/0");
+    assert_eq!(rule.rule_source, "0.0.0.0/0");
+}
+
+/// Fail-closed where the two values cannot be compared at all. An IPv6 source
+/// against an IPv4 baseline has no shared space to be measured in, and a
+/// prefix this cannot read is not a narrowing it can vouch for.
+#[test]
+fn a_source_this_cannot_compare_is_refused_rather_than_guessed_at() {
+    let rule = rule_after_directive("loopback", "source", "::1/128");
+    assert_eq!(rule.rule_source, "127.0.0.1/8");
+
+    let rule = rule_after_directive("loopback", "source", "10.0.0.0/33");
+    assert_eq!(rule.rule_source, "127.0.0.1/8");
+}
+
+/// The order the two clamps run in is load-bearing. `action` is applied first,
+/// so the field clamps are judged against the action the rule will actually
+/// carry: tightening SSH into a drop rule makes a wider port a TIGHTENING, and
+/// judging it against the accepting baseline would refuse a stricter ruleset.
+#[test]
+fn the_fields_are_judged_against_the_action_the_rule_ends_up_with() {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("ssh.action".to_string(), "drop".to_string());
+    config
+        .directives
+        .insert("ssh.port".to_string(), "1-65535".to_string());
+
+    let mut rule = get_baseline_rules()
+        .into_iter()
+        .find(|r| rule_id(r) == "ssh")
+        .expect("the baseline carries an ssh rule");
+    apply_rule_directives(&mut rule, "ssh", &config);
+
+    assert_eq!(rule.rule_action, "drop");
+    assert_eq!(rule.rule_port, "1-65535");
+}
+
+/// The three fields that are clamped only by direction, pinned as a positive
+/// control. Without them a clamp that refused every override would pass the
+/// assertions above, and changing the SSH port is the configuration
+/// reference's own worked example of a legitimate override.
 #[test]
 fn port_source_and_protocol_overrides_are_still_applied() {
     let mut config = PluginConfig::default();

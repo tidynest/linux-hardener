@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A firewall `source`, `protocol` or `port` directive could weaken the
+  ruleset and the tool applied it as written.** `apply_rule_directives` clamped
+  the `action` field alone; the other three were assigned onto the rule exactly
+  as the operator gave them. All four are now clamped, and the direction is the
+  rule's rather than the field's: an **accepting** rule admits what it matches
+  and so weakens as it matches more, a **blocking** rule refuses what it matches
+  and so weakens as it matches less. The sharpest case was the second kind and
+  went unnamed in #64: `drop_default.source = "10.0.0.0/8"` narrows the catch-all
+  drop so that everything outside that subnet stops being dropped at all, and on
+  firewalld it also silently stopped the zone's default target being set to DROP,
+  because `sets_default_target` is gated on that rule still holding `any`.
+  `port` is clamped too, contrary to the belief that it merely moves: the
+  configuration layer accepts `1-65535` as a range, so `ssh.port = "1-65535"`
+  was accept-all-TCP through a validated config. Breadth is measured rather than
+  matched textually, so every spelling of the whole address space is caught,
+  `any` and `0.0.0.0/0` and `8.8.8.8/0` alike. The `action` clamp now runs
+  **first**, so the other three are judged against the action the rule ends up
+  carrying: tightening a rule into a `drop` and widening its port in the same
+  config is a stricter ruleset and is admitted. Refusals are logged and the
+  baseline value stands. **Stated ceiling:** two values of the same width
+  compare equal, so a source of the same prefix length covering a different
+  range, `127.0.0.1/8` becoming `10.0.0.0/8`, is still honoured. Refusing that
+  needs CIDR containment across both address families, and this plugin
+  deliberately does not own an address comparator. Anything the clamp cannot
+  measure, including a source in the other family and a prefix longer than its
+  family allows, is refused rather than guessed at. The issue's own worked
+  example, `ssh.source = "0.0.0.0/0"`, turned out to widen nothing: that rule's
+  baseline source is already `any`. Closes #64.
+
 - **The rollback symlink guard asked the machine running the tool, not the
   machine being rolled back.** `rollback_target_refusal` decided whether a
   restore may write a path by calling `Path::is_symlink` and
