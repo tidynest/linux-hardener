@@ -245,3 +245,42 @@ async fn a_database_that_is_not_there_is_told_apart_from_one_that_cannot_be_read
     );
     assert!(entries.is_empty(), "neither case invents a checkpoint");
 }
+
+/// The cooldown paces privileged operations, and it was armed by the guard's
+/// `Drop` instead: every early return armed it, including a validation failure
+/// and the delete refusal for an id that is in neither database. A stale list,
+/// double-clicked, then blocked the operator's next genuine apply or rollback
+/// for five seconds, having escalated nothing.
+///
+/// Mutates the process-wide counters, so it restores them; nothing else in this
+/// binary touches them.
+#[test]
+fn a_run_that_escalated_nothing_does_not_pace_the_next_one() {
+    use std::sync::atomic::Ordering;
+
+    PRIVILEGED_OP_LAST_COMPLETED.store(0, Ordering::SeqCst);
+
+    // A guard taken and dropped without a privileged subprocess running.
+    drop(PrivilegedOpGuard::acquire().expect("the first acquisition succeeds"));
+
+    let immediately_after = PrivilegedOpGuard::acquire();
+    let allowed = immediately_after.is_ok();
+    drop(immediately_after);
+
+    // And the marker the privileged runner calls does still arm it.
+    mark_privileged_operation_completed();
+    let after_escalating = PrivilegedOpGuard::acquire();
+    let refused = after_escalating.is_err();
+    drop(after_escalating);
+
+    PRIVILEGED_OP_LAST_COMPLETED.store(0, Ordering::SeqCst);
+
+    assert!(
+        allowed,
+        "a run that raised no authentication prompt must not pace the next one"
+    );
+    assert!(
+        refused,
+        "while a run that did escalate still does, or the rate limit would be gone"
+    );
+}

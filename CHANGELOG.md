@@ -472,6 +472,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A refused desktop operation blocked the next real one for five seconds.**
+  The rate limit that paces privileged operations was started by the RAII
+  guard's `Drop`, and every command takes that guard *before* it validates its
+  arguments. So a mistyped plugin name, a checkpoint id in neither database, or
+  any other refusal that raised no authentication prompt still armed the
+  cooldown, and the operator's next genuine apply, rollback or checkpoint met
+  "Rate limit: please wait N seconds". Deleting a checkpoint from a stale list
+  made that the ordinary case. The cooldown now starts where `pkexec` actually
+  ran, so it paces prompts rather than attempts. A prompt that was refused or
+  cancelled still counts, because pacing retries is the point; a failure to
+  launch `pkexec` at all does not. The guard keeps the mutual exclusion it also
+  provides, which was never the part at fault.
+
 - **Verification-only signing never engaged for the readers it was built for, so
   the desktop could not open the system checkpoint database at all.** The mode
   exists so a reader holding the public key can check signatures without the

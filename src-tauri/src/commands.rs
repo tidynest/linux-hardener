@@ -117,13 +117,26 @@ impl PrivilegedOpGuard {
     }
 }
 
+/// Starts the cooldown. Called where a privileged subprocess actually ran.
+///
+/// Not from the guard's `Drop`, which is where it used to be. Every command
+/// takes the guard before it validates its arguments, so arming on drop paced
+/// the next privileged operation after a mistyped plugin name, an id in neither
+/// checkpoint database, or any other refusal that raised no authentication
+/// prompt at all. The limit exists to pace prompts, so it begins when one has
+/// been raised.
+fn mark_privileged_operation_completed() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    PRIVILEGED_OP_LAST_COMPLETED.store(now, Ordering::SeqCst);
+}
+
 impl Drop for PrivilegedOpGuard {
     fn drop(&mut self) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        PRIVILEGED_OP_LAST_COMPLETED.store(now, Ordering::SeqCst);
+        // Only the mutual exclusion. Whether this run earned a cooldown is not
+        // something the guard can see from here.
         PRIVILEGED_OP_RUNNING.store(false, Ordering::SeqCst);
     }
 }
@@ -357,6 +370,11 @@ async fn run_privileged(args: &[&str]) -> Result<PrivilegedOutput, PrivilegedCom
         .output()
         .await
         .map_err(|e| PrivilegedCommandError::ExecutionFailed(e.to_string()))?;
+
+    // pkexec ran, so an authentication prompt was reachable from here whatever
+    // it went on to return. A refused or cancelled one counts: pacing retries
+    // is the point. A failure to spawn it at all does not, and returns above.
+    mark_privileged_operation_completed();
 
     match output.status.code() {
         Some(126) => {
