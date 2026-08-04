@@ -794,8 +794,8 @@ async fn a_rollback_refuses_a_symlink_loop_rather_than_following_it() {
             .restore_error
             .as_deref()
             .unwrap_or_default()
-            .contains("cannot be resolved"),
-        "a loop must be refused for being unresolvable, got: {entry:?}"
+            .contains("cannot be determined"),
+        "a loop must be refused for being undeterminable, got: {entry:?}"
     );
     assert!(
         restore_entry(&result, &sibling).restore_success,

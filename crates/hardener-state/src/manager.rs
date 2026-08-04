@@ -8,7 +8,7 @@ use hardener_common::error::{HardeningError, Result};
 use hardener_common::executor::{SystemExecutor, host_key_for};
 use hardener_types::UNDELETABLE_ROLLBACK_PATHS;
 use sqlx::{Row, SqlitePool};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// The mode every symlink on Linux has: the link type bit and 0777.
 ///
@@ -986,6 +986,18 @@ impl CheckpointManager {
     /// remote path standing as a symlink out of the allowlist read as "not a
     /// symlink" and was followed, and a link the controller happened to hold at
     /// the same path refused a rollback that had nothing to do with it.
+    ///
+    /// The symlink half is asked at the privilege the write uses, through
+    /// [`SystemExecutor::link_target_as_writer`], and an answer that could not
+    /// be determined refuses. Probing as the login user while writing as root
+    /// was issue #83: `readlink` exits 1 both for "not a symlink" and for a
+    /// path it may not reach, so a path the login user could not traverse was
+    /// admitted and root wrote through whatever stood there.
+    ///
+    /// The scope is still the final component alone. A regular file under a
+    /// symlinked parent directory is admitted without resolution, which is a
+    /// ceiling carried over deliberately rather than one this fix introduced,
+    /// and closing it is a separate decision.
     async fn rollback_target_refusal(
         &self,
         executor: &dyn SystemExecutor,
@@ -1034,14 +1046,14 @@ impl CheckpointManager {
             return None;
         }
 
-        match resolved_link_target(executor, path).await {
+        match executor.link_target_as_writer(path).await {
             Ok(None) => None,
             Ok(Some(resolved)) if within(&resolved.to_string_lossy()) => None,
             Ok(Some(_)) => Some(format!(
                 "Rollback symlink {path_str} resolves outside allowed directories"
             )),
             Err(e) => Some(format!(
-                "Rollback target is a symlink that cannot be resolved: {path_str}: {e}"
+                "Rollback target cannot be determined to be safe to write: {path_str}: {e}"
             )),
         }
     }
@@ -1444,47 +1456,6 @@ async fn ensure_directory(executor: &dyn SystemExecutor, dir: &Path) -> Option<S
 /// survived its own rollback.
 fn recorded_absent(file_state: &FileState) -> bool {
     file_state.file_content.is_none() && file_state.file_permissions == 0
-}
-
-/// Where `path` finally leads on the executor's host, or `None` if it is not a
-/// symlink at all.
-///
-/// Two questions, and they need two different primitives. Whether the path is a
-/// link at all is [`SystemExecutor::read_link`], which is what
-/// `Path::is_symlink` was: an answer about the final name only, and the same
-/// scope the guard has always had, so a regular file under a symlinked parent
-/// stays admitted here exactly as it always was. Where it leads is
-/// [`SystemExecutor::canonical_path`], which is what `Path::canonicalize` was:
-/// every component resolved, by the filesystem that owns them.
-///
-/// Resolving it here instead, hop by hop with `..` flattened by name, was
-/// measurably wrong. With `<allowed>/dlink` a link to a directory outside the
-/// allowlist, `<allowed>/f -> dlink/../victim` collapses by name to
-/// `<allowed>/victim`, which the allowlist admits, while the write lands on
-/// `<outside>/victim`. Only the kernel knows that `..` follows `dlink` first.
-///
-/// An unresolvable path is an `Err` the caller refuses on, which is what
-/// `canonicalize` returning `Err` did: a dangling target, a component that is
-/// not there, a traversal the executor may not make and a symlink loop all
-/// arrive the same way, and what the write would reach is unknown in every one
-/// of them.
-async fn resolved_link_target(
-    executor: &dyn SystemExecutor,
-    path: &Path,
-) -> Result<Option<PathBuf>> {
-    if executor.read_link(path).await?.is_none() {
-        return Ok(None);
-    }
-    executor
-        .canonical_path(path)
-        .await?
-        .map(Some)
-        .ok_or_else(|| {
-            HardeningError::Executor(format!(
-                "{} does not resolve to a path that exists",
-                path.display()
-            ))
-        })
 }
 
 /// Handles a checkpoint row whose action is [`FileRestoreAction::Removed`]:
