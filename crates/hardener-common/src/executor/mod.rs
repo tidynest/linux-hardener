@@ -38,17 +38,14 @@ pub struct FileMetadata {
 ///
 /// `$1` is the path, passed as a positional argument rather than interpolated,
 /// so no quoting is involved anywhere and a path holding a space or a `;` is
-/// one argument.
+/// one argument. `$2` is the elevation to use, also a positional argument
+/// rather than baked into the script: see [`SystemExecutor::link_target_as_writer`]
+/// for what each shipped executor passes and why.
 ///
-/// It elevates the way the write it guards does. `SshExecutor::write_file`
-/// goes through `sudo tee`, so a probe running bare answers for a different
-/// user than the one that acts, and a guard answering for the wrong user is
-/// not guarding the action. `E` is empty on a session that is already root, so
-/// a container with no `sudo` binary is unaffected; where elevation is needed
-/// and unavailable the first elevated call fails and the answer is
-/// `UNDETERMINED`, which the caller refuses on. Rollback already requires root
-/// or passwordless sudo on the target session, so this asks for nothing the
-/// command did not already demand.
+/// The uid check stays regardless of what `$2` holds. A session that is
+/// already root needs no elevation even when asked for one, and a root
+/// container may ship no `sudo` binary at all; `E` is empty whenever the
+/// session is root, so that case is unaffected by `$2`.
 ///
 /// The parent gate is what makes `NOTLINK` trustworthy. GNU `readlink` exits 1
 /// for "not a symlink", for `ENOENT` and for a traversal it may not make, one
@@ -65,7 +62,7 @@ pub struct FileMetadata {
 /// collapses by name to `<allowed>/victim`, which an allowlist admits, while
 /// the write lands on `<outside>/victim`. Only the kernel knows that `..`
 /// follows `dlink` first.
-pub(crate) const LINK_PROBE_SCRIPT: &str = r#"if [ "$(id -u)" -eq 0 ]; then E=""; else E="sudo -n"; fi
+pub(crate) const LINK_PROBE_SCRIPT: &str = r#"if [ "$(id -u)" -eq 0 ]; then E=""; else E="$2"; fi
 d=$(dirname -- "$1")
 $E readlink -e -n -- "$d" >/dev/null 2>&1 || { printf UNDETERMINED; exit 0; }
 if $E test -h "$1"; then
@@ -115,7 +112,7 @@ pub(crate) fn parse_link_probe(stdout: &str) -> Result<Option<PathBuf>> {
 /// An all-slash path trims to nothing, which is not a path the script can be
 /// handed, so that case is mapped back to `/`: the filesystem root, which is
 /// what an all-slash path names.
-pub(crate) fn normalize_probe_path(path: &str) -> String {
+pub(crate) fn normalise_probe_path(path: &str) -> String {
     let trimmed = path.trim_end_matches('/');
     if trimmed.is_empty() {
         "/".to_string()
@@ -196,9 +193,22 @@ pub trait SystemExecutor: Send + Sync {
     /// about one name at the login user's privilege, which suits checkpoint
     /// capture: capture reads content with `cat` as that same user, and its
     /// degrading to content-only is an accepted ceiling. This one is for the
-    /// rollback guard, which authorises a write that happens as root, so it
-    /// asks as root and refuses whatever it cannot see. Reasoning for the
-    /// script itself is at [`LINK_PROBE_SCRIPT`].
+    /// rollback guard, which authorises a write that happens as this
+    /// executor's own [`Self::write_file`], so it asks at whatever privilege
+    /// that write happens at and refuses whatever it cannot see. Reasoning
+    /// for the script itself is at [`LINK_PROBE_SCRIPT`].
+    ///
+    /// The elevation is this executor's own property, taken from
+    /// [`Self::is_remote`], because the two shipped implementations disagree
+    /// on it. `SshExecutor::write_file` goes through `sudo tee`, so its writes
+    /// elevate and its probe must ask `sudo -n` too, or it would answer for a
+    /// different user than the one that acts. `LocalExecutor::write_file`
+    /// calls `std::fs::write` directly with no elevation at all, so a probe
+    /// that asked for `sudo -n` on a local session would answer as root for a
+    /// write that happens as the process user, the same mismatch this guard
+    /// exists to remove, pointed the other way. A remote executor therefore
+    /// passes `sudo -n` as the script's elevation argument and a local one
+    /// passes nothing.
     ///
     /// Provided rather than required, for the reason [`Self::read_link`] is:
     /// local and remote must not come to ask different questions, and the call
@@ -218,9 +228,13 @@ pub trait SystemExecutor: Send + Sync {
     /// non-absolute path before it ever probes.
     async fn link_target_as_writer(&self, path: &Path) -> Result<Option<PathBuf>> {
         let path_str = path.to_string_lossy();
-        let normalized = normalize_probe_path(&path_str);
+        let normalised = normalise_probe_path(&path_str);
+        let elevation = if self.is_remote() { "sudo -n" } else { "" };
         let output = self
-            .execute_command("sh", &["-c", LINK_PROBE_SCRIPT, "_", &normalized])
+            .execute_command(
+                "sh",
+                &["-c", LINK_PROBE_SCRIPT, "_", &normalised, elevation],
+            )
             .await?;
         if output.exit_code != 0 {
             return Err(crate::error::HardeningError::Executor(format!(

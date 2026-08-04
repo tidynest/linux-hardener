@@ -194,6 +194,10 @@ struct ScriptedProbeHost {
     /// a test can state the shape of a run that did not complete, `sh` absent
     /// or the process killed after flushing partial output.
     exit_code: i32,
+    /// What [`SystemExecutor::is_remote`] reports, which is what
+    /// [`SystemExecutor::link_target_as_writer`] chooses the probe's
+    /// elevation argument from.
+    remote: bool,
     /// The argv of the last `execute_command`, for asserting how the path
     /// reaches the script.
     seen: std::sync::Mutex<Vec<String>>,
@@ -204,6 +208,7 @@ impl ScriptedProbeHost {
         Self {
             answer,
             exit_code: 0,
+            remote: true,
             seen: std::sync::Mutex::new(Vec::new()),
         }
     }
@@ -212,6 +217,18 @@ impl ScriptedProbeHost {
         Self {
             answer,
             exit_code,
+            remote: true,
+            seen: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// A local, non-remote variant of [`Self::answering`], for asserting what
+    /// a local executor passes as the probe's elevation argument.
+    fn answering_as_local(answer: &'static str) -> Self {
+        Self {
+            answer,
+            exit_code: 0,
+            remote: false,
             seen: std::sync::Mutex::new(Vec::new()),
         }
     }
@@ -224,7 +241,7 @@ impl SystemExecutor for ScriptedProbeHost {
     }
 
     fn is_remote(&self) -> bool {
-        true
+        self.remote
     }
 
     async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput> {
@@ -282,13 +299,68 @@ async fn the_probed_path_is_passed_as_argv_and_never_interpolated() {
     assert_eq!(seen[0], "sh", "the probe runs one shell");
     assert_eq!(seen[1], "-c", "the script arrives as -c");
     assert_eq!(
-        seen.last().map(String::as_str),
-        Some("/etc/x/a file; rm -rf /tmp"),
-        "the path is the last positional, verbatim and unescaped"
+        seen.len(),
+        6,
+        "argv is sh, -c, script, $0, path, elevation: a shift here means a \
+         positional slid into the wrong slot"
+    );
+    assert_eq!(
+        seen[4], "/etc/x/a file; rm -rf /tmp",
+        "the path is the second-to-last positional, verbatim and unescaped, \
+         with the elevation argument after it"
     );
     assert!(
         !seen[2].contains("rm -rf"),
         "the path must never be interpolated into the script itself"
+    );
+}
+
+/// The elevation the probe asks for is the executor's own property, not a
+/// constant: it must match whatever that executor's own `write_file`
+/// elevates with, or the probe answers for a different user than the one
+/// that acts.
+///
+/// `SshExecutor::write_file` goes through `sudo tee`, so a remote probe must
+/// ask `sudo -n` too. `LocalExecutor::write_file` calls `std::fs::write`
+/// directly with no elevation at all, so a local probe must ask for none: a
+/// local session asking for `sudo -n` would answer as root for a write that
+/// in fact happens as the process user, which is the same mismatch this
+/// guard exists to remove, pointed the other way. It also has a second cost
+/// left unfixed: on a local session without passwordless sudo, every probe
+/// would answer UNDETERMINED, failing any test that exercises this path on a
+/// non-root contributor machine.
+#[tokio::test]
+async fn the_elevation_argument_matches_this_executors_own_write_privilege() {
+    let remote_host = ScriptedProbeHost::answering("NOTLINK");
+    remote_host
+        .link_target_as_writer(Path::new("/etc/x/plain.conf"))
+        .await
+        .expect("the probe answers");
+    let remote_seen = remote_host
+        .seen
+        .lock()
+        .expect("seen mutex poisoned")
+        .clone();
+    assert_eq!(
+        remote_seen.last().map(String::as_str),
+        Some("sudo -n"),
+        "a remote executor's write_file elevates via sudo tee, so its probe \
+         must ask for sudo -n or it answers for a different user than the \
+         one that will act"
+    );
+
+    let local_host = ScriptedProbeHost::answering_as_local("NOTLINK");
+    local_host
+        .link_target_as_writer(Path::new("/etc/x/plain.conf"))
+        .await
+        .expect("the probe answers");
+    let local_seen = local_host.seen.lock().expect("seen mutex poisoned").clone();
+    assert_eq!(
+        local_seen.last().map(String::as_str),
+        Some(""),
+        "a local executor's write_file never elevates, so its probe must ask \
+         for nothing: asking sudo -n here would answer as root for a write \
+         that in fact happens as the process user"
     );
 }
 
@@ -386,12 +458,15 @@ async fn a_trailing_slash_is_stripped_before_the_script_ever_sees_it() {
         .await
         .expect("the probe answers");
 
-    assert_eq!(
-        host.seen.lock().expect("seen mutex poisoned").last(),
-        Some(&"/etc/x/linkdir".to_string()),
-        "the trailing slash must not reach the script: it would make test -h \
-         follow the link and hide a real symlink as NOTLINK"
-    );
+    {
+        let seen = host.seen.lock().expect("seen mutex poisoned");
+        assert_eq!(
+            seen[seen.len() - 2],
+            "/etc/x/linkdir",
+            "the trailing slash must not reach the script: it would make test -h \
+             follow the link and hide a real symlink as NOTLINK"
+        );
+    }
 
     let root_host = ScriptedProbeHost::answering("NOTLINK");
     root_host
@@ -399,39 +474,40 @@ async fn a_trailing_slash_is_stripped_before_the_script_ever_sees_it() {
         .await
         .expect("the probe answers");
 
+    let seen = root_host.seen.lock().expect("seen mutex poisoned");
     assert_eq!(
-        root_host.seen.lock().expect("seen mutex poisoned").last(),
-        Some(&"/".to_string()),
+        seen[seen.len() - 2],
+        "/",
         "the root must still be probed as / rather than collapsing to an empty argument"
     );
 }
 
-/// Pure unit coverage of [`normalize_probe_path`] itself, independent of the
+/// Pure unit coverage of [`normalise_probe_path`] itself, independent of the
 /// executor plumbing above.
 #[test]
-fn normalize_probe_path_trims_trailing_slashes_and_keeps_the_root() {
+fn normalise_probe_path_trims_trailing_slashes_and_keeps_the_root() {
     assert_eq!(
-        normalize_probe_path("/etc/x/plain.conf"),
+        normalise_probe_path("/etc/x/plain.conf"),
         "/etc/x/plain.conf",
         "a path with no trailing slash must pass through unchanged"
     );
     assert_eq!(
-        normalize_probe_path("/etc/x/linkdir/"),
+        normalise_probe_path("/etc/x/linkdir/"),
         "/etc/x/linkdir",
         "a single trailing slash must be removed"
     );
     assert_eq!(
-        normalize_probe_path("/etc/x/linkdir///"),
+        normalise_probe_path("/etc/x/linkdir///"),
         "/etc/x/linkdir",
         "a run of trailing slashes must all be removed, not just the last one"
     );
     assert_eq!(
-        normalize_probe_path("/"),
+        normalise_probe_path("/"),
         "/",
         "the root must be preserved rather than trimmed to an empty string"
     );
     assert_eq!(
-        normalize_probe_path("//"),
+        normalise_probe_path("//"),
         "/",
         "an all-slash path names the root and must reduce to it, not to empty"
     );
