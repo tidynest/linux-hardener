@@ -554,19 +554,49 @@ seed_kernel_stricter_than_baseline() {
 #
 # Fields: parameter|seed|tool-target, the same shape as SEEDED_KERNEL_CHECKS.
 #
-# accept_source_route is the row, chosen for what it cannot be confused with.
-# The direction is at-most 0, so 1 is unambiguously looser in the one direction
-# the row is scored in, and no supported distribution ships source routing on,
-# which means a pre-apply reading of 1 exists only where this seed took effect.
-# rp_filter is the trap rather than the obvious alternative: its space is ranked
-# 0,2,1 weakest first, so its looser value is 0 and not the larger number.
+# Every askable row but one, which is what #47 asked for. A single seeded row
+# left the other ten passing on an already-compliant host whether or not the
+# tool had run: each read its target before the apply and read it again after,
+# and no mutation of the kernel plugin could have made either reading move. A
+# row that arrives loosened cannot do that. If the plugin does nothing, the seed
+# is still standing when run_kernel_checks reads it, and the row fails.
 #
-# The seed is written on every distribution rather than only where the control
+# tcp_syncookies is the row deliberately NOT here, because SEEDED_KERNEL_CHECKS
+# has it. That table seeds it STRICTER than the tool's target to ask whether an
+# apply un-hardens a host already ahead of it, and the two questions cannot
+# share a parameter: whichever write landed second would decide the reading, and
+# the check that lost would be scoring the other one's seed. Its row is
+# therefore vacuous in KERNEL_CHECKS and answered by run_seeded_kernel_check
+# instead, which is the sharper of the two questions. The self-test pins the
+# arithmetic, so an eleventh parameter cannot be added to the kernel table
+# without a seed in one table or the other.
+#
+# The looser value per direction, and none of them is arbitrary:
+#
+#   at-most 0    seeded 1, unambiguously looser in the one direction the row is
+#                scored in.
+#   at-least 1   seeded 0, the same the other way up.
+#   ranked       seeded 0, the weakest position in the declared space.
+#                rp_filter is the trap here rather than the obvious case: its
+#                space is 0,2,1 weakest first, so 2 is LOOSE mode ranking below
+#                strict mode 1, and the looser value is 0 and not the larger
+#                number.
+#
+# The seeds are written on every distribution rather than only where the control
 # would otherwise fail. Seeding only the hosts that needed it would have the
 # five runs measuring five different things, and the one host whose behaviour
 # had changed would be the one with nothing to be compared against.
 SEEDED_LOOSER_KERNEL_CHECKS=(
+    "net.ipv4.conf.all.rp_filter|0|1"
+    "net.ipv4.conf.default.rp_filter|0|1"
+    "net.ipv4.conf.all.log_martians|0|1"
+    "net.ipv4.conf.default.log_martians|0|1"
     "net.ipv4.conf.all.accept_source_route|1|0"
+    "net.ipv4.conf.default.accept_source_route|1|0"
+    "net.ipv4.conf.all.accept_redirects|1|0"
+    "net.ipv4.conf.default.accept_redirects|1|0"
+    "net.ipv4.conf.all.secure_redirects|1|0"
+    "net.ipv4.conf.default.secure_redirects|1|0"
 )
 
 seed_kernel_looser_than_baseline() {
@@ -2577,6 +2607,12 @@ preapply_kernel_init() {
 # such disagreement, which is what identified the cause.
 run_kernel_preapply_control() {
     local entry name target direction reading away=0 away_names="" note
+    # A seeded row this capture finds already at its target. The seed's own
+    # read-back cannot see it: that proves what the kernel reported at seed
+    # time, and this is a capture taken afterwards. Without this the control
+    # would pass on the rows that did arrive loosened while the one that did not
+    # went into the run exactly as vacuous as it was before it was seeded.
+    local seeded_at_target=""
     if [[ "$KERNEL_BOOTED" != "1" ]]; then
         record_unaskable "kernel-hardening pre-apply control: this run is not booted, so /proc/sys/net is the host's and read-only"
         return 0
@@ -2609,10 +2645,16 @@ run_kernel_preapply_control() {
                 note=", seeded by this suite"
             fi
             away_names+="${away_names:+, }$name was '$reading' against a target of '$target'$note"
+        elif kernel_seeded_looser "$name"; then
+            seeded_at_target+="${seeded_at_target:+, }$name reads '$reading'"
         fi
     done
     if (( away == 0 )); then
         record_fail "kernel-hardening: every managed parameter already met its target before apply, so the checks below would pass without the tool having done anything"
+        return 0
+    fi
+    if [[ -n "$seeded_at_target" ]]; then
+        record_fail "kernel-hardening: this suite loosened a parameter before apply and the pre-apply capture finds it already at its target ($seeded_at_target), so the seed and the capture describe different hosts and that row would pass below without the tool having done anything"
         return 0
     fi
     record_pass "kernel-hardening: $away of the ${#KERNEL_CHECKS[@]} managed parameters were away from target before apply, so the checks below are asking a real question ($away_names)"
@@ -2692,7 +2734,7 @@ SEEDED_KERNEL_CHECKS_EXPECTED=1
 # No total is counted off this one. It records no check of its own: the row it
 # loosens is already in KERNEL_CHECKS, and what the seed changes is whether the
 # pre-apply control can be satisfied, not how many assertions a run makes.
-SEEDED_LOOSER_KERNEL_CHECKS_EXPECTED=1
+SEEDED_LOOSER_KERNEL_CHECKS_EXPECTED=10
 # Pinned for a reason of its own, and it is the KERNEL_UNASKABLE one inverted.
 # No total below is counted off this table's length. What pinning it buys is
 # that a red introduced-finding row cannot be quieted by appending an entry:
@@ -5012,18 +5054,23 @@ Number of days of warning before password expires	: 7"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
         "a container already at every kernel target before apply fails the control, because the checks below would then pass without the tool having done anything"
 
-    # And one parameter away from target is enough to make the checks below a
-    # real question. One rather than all eleven, so the count in the message is
-    # proven to be counted rather than to be the table's length.
+    # One parameter away from target used to be enough to make the checks below
+    # a real question, and since #47 it is not. tcp_syncookies is the one row
+    # this suite does not loosen, so a capture away on that row alone describes
+    # a host where all ten seeded parameters came back at their targets, and
+    # ten of the eleven checks below would pass whether or not the tool ran.
+    # The count in the message is proven to be counted rather than to be the
+    # table's length by the looser-seed block further down, which reaches the
+    # pass this case no longer can.
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
     KERNEL_BEFORE="${KERNEL_BEFORE/net.ipv4.tcp_syncookies=1/net.ipv4.tcp_syncookies=0}"
     local kernel_control_out
     kernel_control_out="$(mktemp)"
     KERNEL_BOOTED=1 run_kernel_preapply_control > "$kernel_control_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
-        "a container with one parameter away from target passes the control"
-    check_status 0 "and the pass names how many were away, so a control that counted nothing cannot read as one that counted something" \
-        grep -q "1 of the 11 managed parameters were away from target" "$kernel_control_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a container away only on the row this suite does not seed fails the control, because every row it does seed came back at its target"
+    check_status 0 "and it fails for that reason rather than for the empty-count one, which is the older rule and would be the wrong diagnosis" \
+        grep -q "the pre-apply capture finds it already at its target" "$kernel_control_out"
     rm -f "$kernel_control_out"
 
     # A capture missing a row the table declares. Before this was guarded the
@@ -5130,48 +5177,94 @@ Number of days of warning before password expires	: 7"
     # satisfied on a container that arrives already at every target. The RHEL
     # container is that container, and the control was correctly refusing to
     # certify checks that would have passed whether or not the tool ran.
-    local looser_name looser_seed looser_target looser_direction
     local looser_saved_booted="$KERNEL_BOOTED"
-    IFS='|' read -r looser_name looser_seed looser_target \
-        <<<"${SEEDED_LOOSER_KERNEL_CHECKS[0]}"
-    # `|| true` so that a seeded parameter absent from KERNEL_CHECKS is REPORTED.
-    # Without it the empty grep fails the pipeline, `set -euo pipefail` aborts
-    # the self-test from an assignment, and the run ends on exit 1 having
-    # printed no failure at all. The assertion below is the evidence; an abort
-    # is only a status.
-    looser_direction="$(printf '%s\n' "${KERNEL_CHECKS[@]}" \
-        | grep -m1 "^$looser_name|" | cut -d'|' -f3 || true)"
-    check_eq "$looser_direction" "at-most" \
-        "the loosened parameter is a row of the kernel table and carries the direction that scores it, so the seed cannot be written into a parameter the control never counts"
-    check_eq "$(kernel_satisfies "$looser_seed" "$looser_target" "$looser_direction" && echo yes || echo no)" "no" \
-        "and the seeded value fails that row's own target, which is the whole point: a seed the target already satisfied would leave the control with nothing to find"
-    check_eq "${SEEDED_LOOSER_KERNEL_CHECKS_EXPECTED}" "1" \
-        "one loosened kernel row, pinned like every other table"
+    local le le_name le_seed le_target le_direction
+    local looser_unlisted="" looser_satisfied="" looser_collides=""
+    for le in "${SEEDED_LOOSER_KERNEL_CHECKS[@]}"; do
+        IFS='|' read -r le_name le_seed le_target <<<"$le"
+        # `|| true` so that a seeded parameter absent from KERNEL_CHECKS is
+        # REPORTED. Without it the empty grep fails the pipeline, `set -euo
+        # pipefail` aborts the self-test from an assignment, and the run ends on
+        # exit 1 having printed no failure at all. The assertions below are the
+        # evidence; an abort is only a status.
+        le_direction="$(printf '%s\n' "${KERNEL_CHECKS[@]}" \
+            | grep -m1 "^$le_name|" | cut -d'|' -f3 || true)"
+        if [[ -z "$le_direction" ]]; then
+            looser_unlisted+="${looser_unlisted:+, }$le_name"
+        fi
+        if kernel_satisfies "$le_seed" "$le_target" "$le_direction"; then
+            looser_satisfied+="${looser_satisfied:+, }$le_name"
+        fi
+        if printf '%s\n' "${SEEDED_KERNEL_CHECKS[@]}" | grep -q "^$le_name|"; then
+            looser_collides+="${looser_collides:+, }$le_name"
+        fi
+    done
+    # Named rather than counted, in all three, because a count cannot say which
+    # row broke the property and every one of these is a table-authoring
+    # mistake somebody has to find in a diff.
+    check_eq "$looser_unlisted" "" \
+        "every loosened parameter is a row of the kernel table and carries the direction that scores it, so no seed can be written into a parameter the control never counts"
+    check_eq "$looser_satisfied" "" \
+        "and no seeded value satisfies its own row's target, which is the whole point: a seed the target already satisfied would leave that row as vacuous as it was unseeded"
+    # The two seed tables ask opposite questions of the same host, so one
+    # parameter cannot serve both: a row seeded stricter and then looser would
+    # arrive at whichever write landed second, and the check that lost would be
+    # scoring the other one's seed.
+    check_eq "$looser_collides" "" \
+        "and no parameter is seeded in both directions"
+    check_eq "${SEEDED_LOOSER_KERNEL_CHECKS_EXPECTED}" "10" \
+        "ten loosened kernel rows, pinned like every other table"
+    # The anti-vacuity property itself, and the reason it is arithmetic rather
+    # than a literal: every askable row is seeded away from its target by one
+    # table or the other, so a row added to KERNEL_CHECKS without a seed fails
+    # here instead of joining the run as a check that passes on an
+    # already-compliant host whether or not the tool ran.
+    check_eq "$(( ${#SEEDED_LOOSER_KERNEL_CHECKS[@]} + ${#SEEDED_KERNEL_CHECKS[@]} ))" \
+        "${#KERNEL_CHECKS[@]}" \
+        "and between the two seed tables every askable kernel row arrives away from its target"
 
     # The seed itself, driven with no root and no writable /proc/sys. The
     # read-back is the assertion that matters: unlike the stricter seed this one
     # has no check of its own after apply, so a write the kernel accepted and
     # then ignored would leave the control measuring what the container shipped
     # while the log said a seed had been placed.
-    local looser_written="" looser_readback="$looser_seed"
+    # The read-back is per parameter rather than one value for the whole table,
+    # so a seed loop that wrote every row and then read only the first cannot
+    # pass this. `target` is the mode that stands for "the kernel ignored the
+    # write", because the target is what the container was already holding.
+    local looser_written="" looser_readback=seed looser_expected=""
     sysctl() {
         if [[ "$1" == "-w" ]]; then
-            looser_written="$2"
+            looser_written+="${looser_written:+ }$2"
             return 0
         fi
-        printf '%s\n' "$looser_readback"
+        local wanted="${2:-}" entry name seed target
+        for entry in "${SEEDED_LOOSER_KERNEL_CHECKS[@]}"; do
+            IFS='|' read -r name seed target <<<"$entry"
+            [[ "$name" == "$wanted" ]] || continue
+            case "$looser_readback" in
+                seed) printf '%s\n' "$seed" ;;
+                *) printf '%s\n' "$target" ;;
+            esac
+            return 0
+        done
+        return 1
     }
+    for le in "${SEEDED_LOOSER_KERNEL_CHECKS[@]}"; do
+        IFS='|' read -r le_name le_seed _ <<<"$le"
+        looser_expected+="${looser_expected:+ }$le_name=$le_seed"
+    done
 
     KERNEL_BOOTED=1
     check_status 0 "the looser seed is written on a booted run" \
         seed_kernel_looser_than_baseline
-    check_eq "$looser_written" "$looser_name=$looser_seed" \
-        "into the parameter the table names, at the value it declares"
+    check_eq "$looser_written" "$looser_expected" \
+        "into every parameter the table names, at the value each declares"
 
-    looser_readback="$looser_target"
+    looser_readback=target
     check_status 1 "a seed the kernel did not take is refused rather than believed" \
         seed_kernel_looser_than_baseline
-    looser_readback="$looser_seed"
+    looser_readback=seed
 
     bump_apply_generation
     check_status 1 "the looser seed refuses to run after an apply" \
@@ -5184,16 +5277,16 @@ Number of days of warning before password expires	: 7"
     check_eq "$looser_written" "" \
         "and writes no seed, because /proc/sys/net is the host's and read-only there"
 
-    # The control's evidence. Every run now arrives holding one loosened
-    # parameter, so a message that read the same for a seeded row and a
+    # The control's evidence. Every run now arrives holding ten loosened
+    # parameters, so a message that read the same for a seeded row and a
     # naturally away one would let a log claim a container was non-compliant
     # when this suite had made it so.
     local looser_saved_before="$KERNEL_BEFORE" looser_control_out ke ke_name ke_target
     KERNEL_BEFORE=""
     for ke in "${KERNEL_CHECKS[@]}"; do
         IFS='|' read -r ke_name ke_target _ <<<"$ke"
-        if [[ "$ke_name" == "$looser_name" ]]; then
-            KERNEL_BEFORE+="$ke_name=$looser_seed"$'\n'
+        if kernel_seeded_looser "$ke_name"; then
+            KERNEL_BEFORE+="$ke_name=$(kernel_reading "$ke_name")"$'\n'
         else
             KERNEL_BEFORE+="$ke_name=$ke_target"$'\n'
         fi
@@ -5202,9 +5295,29 @@ Number of days of warning before password expires	: 7"
     looser_control_out="$(mktemp)"
     KERNEL_BOOTED=1 run_kernel_preapply_control > "$looser_control_out"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
-        "a container at every target except the seeded one passes the control, which is the run RHEL could not previously reach"
-    check_status 0 "and the pass says which parameter this suite loosened, so the log cannot read as a container that arrived that way" \
+        "a container at every target except the seeded ones passes the control, which is the run RHEL could not previously reach"
+    check_status 0 "and the pass says which parameters this suite loosened, so the log cannot read as a container that arrived that way" \
         grep -q "seeded by this suite" "$looser_control_out"
+    check_status 0 "and it counts the seeded rows rather than the table's length, so a seed that reached nothing cannot read as one that reached everything" \
+        grep -q "10 of the 11 managed parameters were away from target" "$looser_control_out"
+    rm -f "$looser_control_out"
+
+    # A seeded row the capture finds already at its target. The seed's own
+    # read-back cannot see this: it proves what the kernel reported at seed
+    # time, and the control scores a capture taken afterwards. Left unchecked
+    # the control would still pass on the nine rows that did arrive loosened,
+    # while the tenth went into the run as vacuous as it was before #47.
+    KERNEL_BEFORE="$(printf '%s\n' "${KERNEL_BEFORE%$'\n'}" \
+        | sed 's/^net\.ipv4\.conf\.all\.accept_redirects=.*/net.ipv4.conf.all.accept_redirects=0/')"
+    check_eq "$(grep -c '=' <<<"$KERNEL_BEFORE")" "11" \
+        "the amended capture still holds one reading per askable parameter, so a capture emptied by the edit cannot stand in for one that disagrees"
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    looser_control_out="$(mktemp)"
+    KERNEL_BOOTED=1 run_kernel_preapply_control > "$looser_control_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a capture that finds a seeded parameter already at its target fails the control, because that row would then pass whether or not the tool ran"
+    check_status 0 "and the failure names the row, which a count of the ones that did arrive loosened could never have said" \
+        grep -q "net.ipv4.conf.all.accept_redirects" "$looser_control_out"
     rm -f "$looser_control_out"
 
     unset -f sysctl

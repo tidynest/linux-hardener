@@ -316,6 +316,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Ten of the eleven kernel rows in the differential suite now arrive loosened,
+  so they can no longer pass on a host that was already compliant.** The suite
+  seeded one parameter below the tool's target before the first apply,
+  `net.ipv4.conf.all.accept_source_route`, and the other ten read their target
+  before the apply and read it again after: no mutation of the kernel plugin
+  could have moved either reading, so ten of the eleven assertions were vacuous
+  on an already-compliant container. `SEEDED_LOOSER_KERNEL_CHECKS` now carries
+  every askable row except `net.ipv4.tcp_syncookies`, each seeded in the
+  direction that scores it, 1 for an `at-most 0` row, 0 for an `at-least 1` row,
+  and 0 for `rp_filter`, whose space is ranked `0,2,1` weakest first and whose
+  looser value is therefore not the larger number. If the plugin does nothing
+  the seeds are still standing when the checks read them, and all ten fail.
+  `tcp_syncookies` is excluded because `SEEDED_KERNEL_CHECKS` seeds it *stricter*
+  to ask whether an apply un-hardens a host already ahead of its target: one
+  parameter cannot carry both seeds, since whichever write landed second would
+  decide the reading and the check that lost would be scoring the other one's
+  seed. That row stays vacuous in `KERNEL_CHECKS` and is answered by
+  `run_seeded_kernel_check` instead. The pre-apply control gained the assertion
+  the seeds' own read-backs cannot make: a seeded parameter the capture finds
+  back at its target fails the control by name, because a read-back proves what
+  the kernel reported at seed time while the control scores a capture taken
+  afterwards, and without it nine loosened rows would carry a tenth that was as
+  vacuous as before. The self-test pins the arithmetic rather than the literal,
+  so a twelfth askable parameter cannot be added without a seed in one table or
+  the other. No total moves: the loosened rows are already counted among the
+  eleven. Part of #47; the remaining plugins there are unaffected.
+
 - **`--format csv`, `--format html` and `--format pdf` are refused rather than
   rendered as text.** The global `-f`/`--format` flag was typed as the
   compliance crate's five-valued enum because that enum already existed, so clap
