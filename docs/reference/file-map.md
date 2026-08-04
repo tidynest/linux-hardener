@@ -704,8 +704,7 @@ pub async fn run_fleet_scan(host_names: Vec<String>,
     app: tauri::AppHandle,) -> Result<Vec<FleetHostScan>, String>
 pub async fn run_remote_scan(plugin_ids: Option<Vec<String>>,
     state: tauri::State<'_, RemoteState>,) -> Result<Vec<ScanResult>, String>
-pub async fn run_rollback(checkpoint_id: String,
-    config_path: Option<String>,) -> Result<RollbackResult, String>
+pub async fn run_rollback(checkpoint_id: String) -> Result<RollbackResult, String>
 pub async fn run_scan(plugin_ids: Option<Vec<String>>,
     config_path: Option<String>,) -> Result<Vec<ScanResult>, String>
 pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String>

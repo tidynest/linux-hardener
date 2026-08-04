@@ -472,6 +472,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop's Rollback failed outright for any operator who had set a
+  configuration file.** It appended `--config <path>` to the CLI argv *after*
+  the `--` that shields the checkpoint id, so clap read `--config` as a second
+  positional, refused the command with "unexpected argument" and exited 2 before
+  anything was restored; the desktop then surfaced that as a parse failure
+  rather than as the reason. The flag had nothing to do there in the first
+  place: `rollback` restores the files a checkpoint captured and consults no
+  directive, exception or plugin list, exactly as `batch rollback` reads no
+  `config.toml` at all. The path is gone from the Tauri command, the frontend
+  binding and the modal that called it, rather than merely moved earlier in the
+  argv. The argv is now built by one function whose test asserts the id is last
+  and behind the separator, because anything appended after it is a positional
+  the command does not take.
+
 - **A timer installed against a policy file ran its scheduled scan on the
   compiled-in scheduler defaults.** `systemd generate` and `systemd install`
   embed the `--config` path in the unit they write, and making `-C` reach the

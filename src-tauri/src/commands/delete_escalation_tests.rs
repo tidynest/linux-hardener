@@ -174,3 +174,28 @@ async fn a_system_database_that_cannot_be_asked_resolves_to_needing_privilege() 
          refusing outright"
     );
 }
+
+/// The desktop's Rollback argv, which was refused by clap rather than merely
+/// carrying something useless.
+///
+/// `--config` was appended after the `--` that shields the checkpoint id, so
+/// the CLI saw a second positional and exited 2 with "unexpected argument"
+/// before doing anything. Every rollback from the desktop failed that way for
+/// an operator who had set a config file, and the desktop then reported a
+/// parse failure rather than the reason.
+#[test]
+fn the_rollback_argv_ends_at_the_checkpoint_id() {
+    let args = rollback_args("cp_1_00000000");
+
+    assert_eq!(
+        args,
+        vec!["rollback", "--format", "json", "--", "cp_1_00000000"],
+        "the id is last and behind the separator, so nothing can be appended \
+         after it without becoming a positional the command does not take"
+    );
+    assert!(
+        !args.contains(&"--config"),
+        "`rollback` restores captured files and consults no policy, so there is \
+         no configuration for a config path to decide"
+    );
+}

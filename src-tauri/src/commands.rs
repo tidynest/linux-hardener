@@ -821,30 +821,36 @@ pub async fn run_apply_dry_run(
     Err(sanitise_error(&format!("Dry-run failed: {}", stderr)))
 }
 
+/// The argv for a privileged `hardener rollback`.
+///
+/// The checkpoint id goes last, behind `--`, so an id that begins with a hyphen
+/// cannot be read as a flag. That also means **nothing may be appended after
+/// it**: everything past `--` is a positional, and `rollback` takes exactly one,
+/// so an appended flag is not ignored, it makes clap refuse the command. A
+/// `--config` used to be pushed there.
+fn rollback_args(checkpoint_id: &str) -> Vec<&str> {
+    vec!["rollback", "--format", "json", "--", checkpoint_id]
+}
+
 /// Rolls back to a previous checkpoint.
 ///
 /// Uses pkexec to run the CLI with root privileges.
 /// Takes a checkpoint ID and restores the system state to that point.
+///
+/// Takes no config path, and deliberately. `rollback` restores the files a
+/// checkpoint captured and consults no directive, exception or plugin list, so
+/// there is no policy for one to decide, exactly as `batch rollback` reads no
+/// `config.toml` at all. Passing one was worse than useless: it went into the
+/// argv after the `--` that separates the checkpoint id, so clap read `--config`
+/// as a second positional and refused the whole command with "unexpected
+/// argument", exit 2. Every rollback from the desktop failed for any operator
+/// who had set a config file.
 #[tauri::command]
-pub async fn run_rollback(
-    checkpoint_id: String,
-    config_path: Option<String>,
-) -> Result<RollbackResult, String> {
+pub async fn run_rollback(checkpoint_id: String) -> Result<RollbackResult, String> {
     let _guard = PrivilegedOpGuard::acquire()?;
     validate_checkpoint_id(&checkpoint_id)?;
-    if let Some(ref path) = config_path {
-        validate_privileged_config_path(path)?;
-    }
 
-    let mut args: Vec<&str> = vec!["rollback", "--format", "json", "--", &checkpoint_id];
-
-    // Inject config file path if set
-    let config_flag;
-    if let Some(ref path) = config_path {
-        config_flag = path.clone();
-        args.push("--config");
-        args.push(&config_flag);
-    }
+    let args = rollback_args(&checkpoint_id);
 
     // Exit 1 with a parseable result is a partial-failure rollback, not a
     // transport error: the CLI prints the result before `bail!`ing when any

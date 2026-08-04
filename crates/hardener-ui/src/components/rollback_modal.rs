@@ -98,7 +98,7 @@ pub fn RollbackModal(
         let id = cp.checkpoint_id.clone();
         stage.set(Stage::Restoring);
         leptos::task::spawn_local(async move {
-            match invoke_rollback(id, app_state.config_path.get_untracked()).await {
+            match invoke_rollback(id).await {
                 Ok(result) => {
                     did_rollback.set(true);
                     stage.set(Stage::Result(result));
