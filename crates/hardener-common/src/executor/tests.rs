@@ -557,6 +557,25 @@ fn ordinary_paths_still_normalise_after_the_dot_segment_refusal() {
         "/",
         "the filesystem root must still be accepted and probed as /"
     );
+    assert_eq!(
+        normalise_probe_path("/etc/x/.env").expect("a dotfile is not a dot segment"),
+        "/etc/x/.env",
+        "an ordinary dotfile is not a dot segment: refusing one would block a rollback \
+         of a real file"
+    );
+    assert_eq!(
+        normalise_probe_path("/etc/x/..bak")
+            .expect("a leading-double-dot name is not a dot segment"),
+        "/etc/x/..bak",
+        "an ordinary dotfile is not a dot segment: refusing one would block a rollback \
+         of a real file"
+    );
+    assert_eq!(
+        normalise_probe_path("/etc/x/...").expect("three dots is not a dot segment"),
+        "/etc/x/...",
+        "an ordinary dotfile is not a dot segment: refusing one would block a rollback \
+         of a real file"
+    );
 }
 
 /// The refusal above must happen before any command is built, not after a

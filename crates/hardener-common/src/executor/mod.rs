@@ -245,10 +245,9 @@ pub trait SystemExecutor: Send + Sync {
     /// already flushed a token that happens to parse, and that is the
     /// refusing answer rather than whatever stdout holds.
     ///
-    /// `path` is expected to be absolute. A relative one is resolved against
-    /// the shell's working directory, which is unspecified for both the local
-    /// and the SSH executor; the rollback guard, the only caller, refuses a
-    /// non-absolute path before it ever probes.
+    /// `path` is expected to be absolute. A relative one would have its
+    /// parent gate resolved against the shell's working directory, which is
+    /// unspecified for both the local and the SSH executor.
     async fn link_target_as_writer(&self, path: &Path) -> Result<Option<PathBuf>> {
         let path_str = path.to_string_lossy();
         let normalised = normalise_probe_path(&path_str)?;
