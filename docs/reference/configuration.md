@@ -334,6 +334,12 @@ rather than guessed at.
 A refused directive is ignored and logged; the rule keeps its baseline value.
 An exception is still the route that records a deviation as a decision.
 
+**A port range is written with a dash**, as in `"80-443"`. That is the one form
+the configuration layer accepts, and a range spelled any other way is refused
+before any plugin sees it. Backends differ on this and the difference is handled
+for you: nftables and firewalld take the dash as written, and ufw, which wants a
+colon and rejects the dash outright, is given `80:443`.
+
 ---
 
 ## Policy exceptions

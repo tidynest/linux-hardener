@@ -34,7 +34,14 @@ pub struct Rule {
     pub rule_description: String,
     /// Protocol (tcp, udp, icmp, all).
     pub rule_protocol: String,
-    /// Port or port range (e.g. "22", "80:443", "any").
+    /// Port or port range (e.g. "22", "80-443", "any").
+    ///
+    /// **The dash is the canonical range separator**, and it is what
+    /// `validate_firewall_value` accepts, so a range spelled any other way
+    /// never reaches a backend through a config. nftables and firewalld take
+    /// this form as it stands; ufw wants a colon and gets one from
+    /// `ufw::ufw_port_syntax`. This doc comment said `"80:443"` until #85, an
+    /// example its own validator refuses.
     pub rule_port: String,
     /// Source address (CIDR notation or "any").
     pub rule_source: String,
