@@ -687,9 +687,11 @@ hardener batch apply (--all | --host a,b | --ssh user@host) [FLAGS]
 Tiered exit codes: `0` = clean; `1` = apply or validation failure; `2` = connect, privilege, or usage error.
 The usage errors refused before any connection are: no hosts selected, an
 unknown `--host` name, a `--config` that will not load under `--execute`, and a
-selection whose hosts share one checkpoint host key. An `--output` path whose
-extension contradicts `--format` exits `1` rather than `2`, as it does for
-`report`.
+selection whose hosts share one checkpoint host key, and an `--output` path whose
+extension contradicts `--format`. All four are judged before anything is
+contacted, so a refused run costs no fleet work. A fleet report is text or JSON
+only, so a path naming CSV, HTML or PDF contradicts it whichever way `--format`
+is set.
 
 **Examples:**
 

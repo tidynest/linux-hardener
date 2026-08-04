@@ -174,6 +174,58 @@ pub fn resolve_hosts(
     Ok(selected)
 }
 
+/// The document a fleet verb's `--format` selects.
+///
+/// Batch renders text and JSON only: the CSV, HTML and PDF formatters are
+/// reachable per host through `report --report-format` and never here, so a
+/// path naming one of them contradicts a fleet run whichever way `--format` is
+/// set.
+fn selected_document(format: CliOutputFormat) -> hardener_compliance::OutputFormat {
+    match format {
+        CliOutputFormat::Json => hardener_compliance::OutputFormat::Json,
+        _ => hardener_compliance::OutputFormat::Text,
+    }
+}
+
+/// Refuses an `--output` path naming a document other than the one `--format`
+/// selected, before the fleet is contacted.
+///
+/// Judged here rather than at the point of writing, which is where it started.
+/// Two arguments contradicting each other is knowable before a single host is
+/// reached, and refusing at write time meant a whole fleet was scanned, or
+/// hardened, and then told its destination was wrong. It also exited 1 through
+/// the writer while every other pre-connection refusal in this file exits 2,
+/// which is the tier `cli.md` documents for a batch usage error.
+fn refuse_output_contradiction(output: Option<&String>, format: CliOutputFormat) {
+    let Some(path) = output else {
+        return;
+    };
+    let Some(named) = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(hardener_compliance::OutputFormat::from_extension)
+    else {
+        return;
+    };
+    let selected = selected_document(format);
+    if named == selected {
+        return;
+    }
+    // Worded here rather than shared with `report`, whose message offers the
+    // named format as an alternative. That advice is wrong for a fleet: batch
+    // cannot render CSV, HTML or PDF at all, so "choose pdf" names something
+    // this command has no way to produce.
+    eprintln!(
+        "--output {path} names a {} document, but --format selected {}. A fleet \
+         report is text or JSON only; the CSV, HTML and PDF formatters are \
+         reachable per host, through `report --report-format`. Give the path the \
+         matching extension, or none at all.",
+        named.extension(),
+        selected.extension(),
+    );
+    std::process::exit(2);
+}
+
 /// Two selected targets that a writing run cannot tell apart, and the single
 /// key they would both have written under.
 struct HostKeyCollision {
@@ -495,19 +547,7 @@ fn strip_ansi(s: &str) -> String {
 /// Writes rendered output to `path` for `--output`, colour-free: the escapes
 /// `colored` emitted for a colour-capable stdout are stripped first, so saved
 /// files match what a piped (non-tty) run prints. Shared by all four verbs.
-///
-/// A path whose extension names a document this tool renders but not the one
-/// `--format` selected is refused, as `hardener report --output` refuses it:
-/// `batch report --output fleet.json` under the default text format wrote a
-/// human fleet table into a file called `fleet.json` and exited on the report's
-/// own code. Batch renders only text and JSON, so a path naming CSV, HTML or
-/// PDF is a contradiction here whichever way `--format` is set.
-fn write_output(path: &str, format: CliOutputFormat, rendered: &str) -> Result<()> {
-    let selected = match format {
-        CliOutputFormat::Json => hardener_compliance::OutputFormat::Json,
-        _ => hardener_compliance::OutputFormat::Text,
-    };
-    super::report::refuse_extension_that_contradicts(std::path::Path::new(path), selected)?;
+fn write_output(path: &str, rendered: &str) -> Result<()> {
     std::fs::write(path, strip_ansi(rendered)).map_err(|e| anyhow!("failed to write {path}: {e}"))
 }
 
@@ -717,6 +757,7 @@ pub struct BatchReportOptions {
 /// (`scan_all`) verbatim, then assesses each host's findings against the chosen
 /// framework/scenario and prints a fleet posture table.
 pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
+    refuse_output_contradiction(opts.output.as_ref(), opts.format);
     let scenario = match crate::commands::report::resolve_scenario(
         opts.framework,
         opts.scenario,
@@ -768,7 +809,7 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         _ => render_report_text(&reports),
     };
     match opts.output {
-        Some(path) => write_output(&path, opts.format, &rendered)?,
+        Some(path) => write_output(&path, &rendered)?,
         None => println!("{rendered}"),
     }
 
@@ -1589,6 +1630,7 @@ pub struct BatchApplyOptions {
 
 /// CLI entry point for `hardener batch apply`. Dry-run unless `--execute`.
 pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
+    refuse_output_contradiction(opts.output.as_ref(), opts.format);
     let verb = if opts.execute {
         "Applying to"
     } else {
@@ -1671,7 +1713,7 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
         _ => render_apply_text(&outcomes),
     };
     match opts.output {
-        Some(path) => write_output(&path, opts.format, &rendered)?,
+        Some(path) => write_output(&path, &rendered)?,
         None => println!("{rendered}"),
     }
     std::process::exit(apply_exit_code(&outcomes));
@@ -1696,6 +1738,7 @@ pub struct BatchRollbackOptions {
 
 /// CLI entry point for `hardener batch rollback`. Dry-run unless `--execute`.
 pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
+    refuse_output_contradiction(opts.output.as_ref(), opts.format);
     let verb = if opts.execute {
         "Rolling back"
     } else {
@@ -1767,7 +1810,7 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
         _ => render_rollback_text(&outcomes),
     };
     match opts.output {
-        Some(path) => write_output(&path, opts.format, &rendered)?,
+        Some(path) => write_output(&path, &rendered)?,
         None => println!("{rendered}"),
     }
     std::process::exit(rollback_exit_code(&outcomes));
@@ -1775,6 +1818,7 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
 
 /// CLI entry point for `hardener batch scan`.
 pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
+    refuse_output_contradiction(opts.output.as_ref(), opts.format);
     let config = Arc::new(load_batch_config(opts.config.as_ref(), opts.quiet, false));
     let outcomes = resolve_and_scan(
         opts.all,
@@ -1797,7 +1841,7 @@ pub async fn run(opts: BatchOptions) -> anyhow::Result<()> {
         _ => render_text(&outcomes),
     };
     match opts.output {
-        Some(path) => write_output(&path, opts.format, &rendered)?,
+        Some(path) => write_output(&path, &rendered)?,
         None => println!("{rendered}"),
     }
 

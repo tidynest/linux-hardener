@@ -14,7 +14,7 @@
 //! so `super` still resolves to `crate::commands::batch` and every import carried
 //! across unchanged, private items included.
 //!
-//! 1693 test lines across 71 tests, the largest inline block anywhere in the workspace and the reason this crate was left until last.
+//! 1671 test lines across 70 tests, the largest inline block anywhere in the workspace and the reason this crate was left until last.
 
 use super::*;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity};
@@ -254,12 +254,7 @@ fn write_output_saves_colour_free_file() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("fleet.txt");
     let path = path.to_str().unwrap();
-    write_output(
-        path,
-        CliOutputFormat::Text,
-        "\x1b[1;36mweb-01\x1b[0m  \x1b[31mFAILED\x1b[0m\n",
-    )
-    .unwrap();
+    write_output(path, "\x1b[1;36mweb-01\x1b[0m  \x1b[31mFAILED\x1b[0m\n").unwrap();
     let saved = std::fs::read_to_string(path).unwrap();
     assert_eq!(
         saved, "web-01  FAILED\n",
@@ -1650,43 +1645,26 @@ fn colliding_host_key_passes_targets_that_stay_distinct() {
 }
 
 /// `batch report --output fleet.json` under the default text format wrote a
-/// human fleet table into a file named `.json` and exited on the report's own
-/// code, the same contradiction `hardener report --output` refuses. All four
-/// batch verbs share this writer, so guarding it covers each of them.
+/// human fleet table into a file named `.json`, the same contradiction
+/// `hardener report --output` refuses, and it was only noticed at the point of
+/// writing: after the whole fleet had been scanned.
+///
+/// This pins the mapping the fleet verbs judge against. Batch renders text and
+/// JSON only, so getting it wrong would either refuse a correct path or accept
+/// a contradicting one, and neither is visible without it.
 #[test]
-fn write_output_refuses_a_path_naming_another_document() {
-    use tempfile::TempDir;
-    let dir = TempDir::new().unwrap();
-    let wrong = dir.path().join("fleet.json");
-    let wrong = wrong.to_str().unwrap();
-
-    let refused = write_output(wrong, CliOutputFormat::Text, "web-01  FAILED\n");
-
-    assert!(
-        refused.is_err(),
-        "a text fleet report must not be written into a path naming JSON"
-    );
-    assert!(
-        !std::path::Path::new(wrong).exists(),
-        "and the refused path is not created, so nothing is left claiming to be \
-         a document it is not"
-    );
-}
-
-/// The control against that refusal being too broad: batch renders text and
-/// JSON, and a path agreeing with the selected one is written as asked.
-#[test]
-fn write_output_accepts_a_path_naming_the_format_it_was_given() {
-    use tempfile::TempDir;
-    let dir = TempDir::new().unwrap();
-    let right = dir.path().join("fleet.json");
-    let right = right.to_str().unwrap();
-
-    write_output(right, CliOutputFormat::Json, "[]\n").unwrap();
+fn a_fleet_verb_judges_a_path_against_the_document_its_format_selects() {
+    use hardener_compliance::OutputFormat;
 
     assert_eq!(
-        std::fs::read_to_string(right).unwrap(),
-        "[]\n",
-        "a path whose extension matches --format is written as given"
+        selected_document(CliOutputFormat::Json),
+        OutputFormat::Json,
+        "--format json selects the JSON document, so a .json path agrees with it"
+    );
+    assert_eq!(
+        selected_document(CliOutputFormat::Text),
+        OutputFormat::Text,
+        "and the default selects text, which is what made `--output fleet.json` \
+         a contradiction rather than a preference"
     );
 }

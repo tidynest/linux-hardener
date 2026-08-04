@@ -447,3 +447,79 @@ fn a_dry_run_of_a_colliding_pair_is_not_refused() {
         "and it reaches the hosts, rendering a per-host outcome; got stdout: {stdout}"
     );
 }
+
+/// Every fleet verb judges `--output` before it contacts anything.
+///
+/// The check began at the point of writing, which meant a whole fleet was
+/// scanned, or hardened, and only then told its destination named the wrong
+/// document. It also exited 1 from there, where every other pre-connection
+/// refusal in `batch` exits 2, the tier the reference documents for a batch
+/// usage error. Judged up front it is neither.
+///
+/// `.pdf` is the needle because batch renders text and JSON only, so it
+/// contradicts a fleet run whichever way `--format` is set, and all four verbs
+/// can be driven with one path.
+#[test]
+fn every_fleet_verb_refuses_an_output_path_naming_another_document() {
+    let home = scratch_home_named("output-contradiction");
+    let mut refused = 0;
+    for verb in FLEET_VERBS {
+        let target = home.join("fleet.pdf");
+        let target = target.to_str().expect("a UTF-8 scratch path");
+        let mut argv: Vec<&str> = verb.to_vec();
+        argv.extend_from_slice(&["--output", target, "--ssh", "127.0.0.1", "--port", "1"]);
+        let out = run_in(home.clone(), &argv);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{verb:?} must refuse a .pdf destination as the usage error it is; \
+             got stderr: {stderr}"
+        );
+        assert!(
+            !stdout.contains("status:"),
+            "{verb:?} must refuse before it contacts a host, so no per-host \
+             outcome is rendered; got stdout: {stdout}"
+        );
+        assert!(
+            !std::path::Path::new(target).exists(),
+            "{verb:?} must not create the file it refused"
+        );
+        refused += 1;
+    }
+
+    assert_eq!(
+        refused,
+        FLEET_VERBS.len(),
+        "every fleet verb is covered, not whichever one the loop reached first"
+    );
+
+    // The control: a path agreeing with the selected format gets past the check
+    // and reaches the hosts, so the refusal is the contradiction rather than
+    // `--output` being refused wholesale.
+    let ok = scratch_home_named("output-agreeing").join("fleet.json");
+    let ok = ok.to_str().expect("a UTF-8 scratch path");
+    let control = run_in(
+        scratch_home_named("output-agreeing"),
+        &[
+            "batch",
+            "scan",
+            "--format",
+            "json",
+            "--output",
+            ok,
+            "--ssh",
+            "127.0.0.1",
+            "--port",
+            "1",
+        ],
+    );
+    let control_stderr = String::from_utf8_lossy(&control.stderr);
+    assert!(
+        !control_stderr.contains("names a"),
+        "a .json path under --format json agrees and must not be refused; \
+         got: {control_stderr}"
+    );
+}

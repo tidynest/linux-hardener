@@ -85,7 +85,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/report/tests.rs` | Unit tests for `src/commands/report.rs` | Test-only; `super` resolves to `crate::commands::report`, so its imports carried across unchanged |
 | `src/commands/report_wizard/tests.rs` | Unit tests for `src/commands/report_wizard.rs` | Test-only; `super` resolves to `crate::commands::report_wizard`, so its imports carried across unchanged |
 | `src/commands/history/tests.rs` | Unit tests for `src/commands/history.rs` | Test-only; `super` resolves to `crate::commands::history`, so its imports carried across unchanged |
-| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 71 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
+| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 70 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
 | `src/commands/checkpoint/tests.rs` | Unit tests for `src/commands/checkpoint.rs` | Test-only; `super` resolves to `crate::commands::checkpoint`, so its imports carried across unchanged |
 | `src/commands/state/tests.rs` | Unit tests for `src/commands/state.rs` | Test-only; `super` resolves to `crate::commands::state`, so its imports carried across unchanged |
 | `src/commands/privilege/tests.rs` | Unit tests for `src/commands/privilege.rs` | Test-only; `super` resolves to `crate::commands::privilege`, so its imports carried across unchanged |

@@ -541,8 +541,12 @@ Write the report to the specified file path instead of stdout.
 The format's extension is added when the path has none.
 A path whose extension names one of the formats this tool renders but
 .I not
-the one selected is refused, before the scan runs, with exit status 1: a text
-report is never written into a file called
+the one selected is refused, before the scan runs, with exit status 1 for
+.B report
+and 2 for the
+.B batch
+verbs, which count it among their usage errors: a text report is never written
+into a file called
 .IR report.json .
 Only the six extensions this tool actually produces count
 .RB ( .txt ", " .json ", " .csv ", " .htm ", " .html ", " .pdf ),
@@ -675,14 +679,25 @@ connection is opened.
 Two argument errors exit
 .B 1
 rather than 2, because they are detected by the command rather than by the
-argument parser: an
+argument parser: for
+.BR report ,
+an
 .B \-\-output
-path whose extension contradicts the selected format, and a
+path whose extension contradicts
+.BR \-\-report\-format ;
+and a
 .B \-\-config
 path that will not load for
 .B daemon
 or
 .BR history .
+The
+.B batch
+verbs judge their own
+.B \-\-output
+before contacting anything and exit
+.B 2
+for it, with their other usage refusals.
 .PP
 For
 .BR "batch scan" ,
@@ -715,11 +730,15 @@ path that will not load under
 or a selection whose hosts would file their checkpoints under one host key.
 The last two are refused before any connection is opened, so no host is
 touched.
+An
 .B \-\-output
-naming a document other than the selected format exits
-.B 1
-instead, as it does for
-.BR report .
+path naming a document other than the one
+.B \-\-format
+selected is refused here too, before any host is contacted.
+A fleet report is text or JSON only, so a path naming CSV, HTML or PDF
+contradicts it whichever way
+.B \-\-format
+is set.
 .
 .SH EXAMPLES
 Scan all plugins and display results as text:

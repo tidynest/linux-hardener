@@ -472,6 +472,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A fleet run whose `--output` named the wrong document scanned the whole
+  fleet before saying so.** The check sat at the point of writing, so `batch
+  report --output fleet.json` under the default text format contacted every
+  host, produced the report, and only then refused its destination. It also
+  exited 1 from there, while every other pre-connection refusal in `batch` exits
+  2, the tier the reference documents for a batch usage error. Two arguments
+  contradicting each other is knowable before a single host is reached, so all
+  four fleet verbs now judge `--output` first: refused runs cost no fleet work
+  and exit 2 with the rest. `report` still exits 1 for its own, which is not a
+  tier but the ordinary error path of a command with no per-host tiering, and
+  both references now say which is which. The fleet message is worded
+  separately from `report`'s, which offers the named format as an alternative:
+  that advice is wrong here, because a fleet report is text or JSON only and the
+  CSV, HTML and PDF formatters are reachable per host alone.
+
 - **The desktop raised an authentication prompt to delete a checkpoint that
   does not exist.** Delete tries the user database and falls back to a
   privileged `hardener checkpoint delete` for root-owned rows. The fallback is
