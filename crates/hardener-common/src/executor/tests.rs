@@ -178,3 +178,176 @@ async fn a_commented_name_file_keys_on_the_name_and_not_on_the_comment() {
 
     assert_eq!(session_host_key(&executor).await, "box");
 }
+
+/// A host that answers the link probe with whatever a fixture states, and
+/// records the argv it was handed.
+///
+/// Only `execute_command` is implemented, so `link_target_as_writer` is
+/// exercised through the trait's own default body rather than through an
+/// override that could answer a different question. That is the same reason
+/// [`WhichlessHost`] exists.
+struct ScriptedProbeHost {
+    /// Exactly what the probe script is to print on stdout.
+    answer: &'static str,
+    /// The argv of the last `execute_command`, for asserting how the path
+    /// reaches the script.
+    seen: std::sync::Mutex<Vec<String>>,
+}
+
+impl ScriptedProbeHost {
+    fn answering(answer: &'static str) -> Self {
+        Self {
+            answer,
+            seen: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl SystemExecutor for ScriptedProbeHost {
+    fn description(&self) -> String {
+        "scripted-probe".to_string()
+    }
+
+    fn is_remote(&self) -> bool {
+        true
+    }
+
+    async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput> {
+        let mut argv = vec![program.to_string()];
+        argv.extend(args.iter().map(|a| a.to_string()));
+        *self.seen.lock().expect("seen mutex poisoned") = argv;
+        Ok(CommandOutput {
+            stdout: self.answer.to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+        })
+    }
+
+    async fn read_file(&self, _path: &Path) -> Result<String> {
+        Err(anyhow!("unused"))
+    }
+    async fn read_file_optional(&self, _path: &Path) -> Result<Option<String>> {
+        Err(anyhow!("unused"))
+    }
+    async fn write_file(&self, _path: &Path, _content: &str) -> Result<()> {
+        Err(anyhow!("unused"))
+    }
+    async fn path_exists(&self, _path: &Path) -> Result<bool> {
+        Err(anyhow!("unused"))
+    }
+    async fn file_metadata(&self, _path: &Path) -> Result<FileMetadata> {
+        Err(anyhow!("unused"))
+    }
+    async fn read_dir(&self, _path: &Path) -> Result<Vec<PathBuf>> {
+        Err(anyhow!("unused"))
+    }
+}
+
+/// The path reaches the script as a positional argument, never as shell text.
+///
+/// This is the assertion that keeps the probe free of quoting bugs: a path
+/// holding a space, a quote or a `;` is one `argv` entry and the script reads
+/// it as `"$1"`. Building a command string instead would put the caller one
+/// missed `shell_escape` away from running the path as code, on a host where
+/// the very next step writes as root.
+#[tokio::test]
+async fn the_probed_path_is_passed_as_argv_and_never_interpolated() {
+    let host = ScriptedProbeHost::answering("NOTLINK");
+    let path = Path::new("/etc/x/a file; rm -rf /");
+
+    host.link_target_as_writer(path)
+        .await
+        .expect("the probe answers");
+
+    let seen = host.seen.lock().expect("seen mutex poisoned").clone();
+    assert_eq!(seen[0], "sh", "the probe runs one shell");
+    assert_eq!(seen[1], "-c", "the script arrives as -c");
+    assert_eq!(
+        seen.last().map(String::as_str),
+        Some("/etc/x/a file; rm -rf /"),
+        "the path is the last positional, verbatim and unescaped"
+    );
+    assert!(
+        !seen[2].contains("rm -rf"),
+        "the path must never be interpolated into the script itself"
+    );
+}
+
+#[tokio::test]
+async fn a_plain_file_is_positively_not_a_symlink() {
+    let host = ScriptedProbeHost::answering("NOTLINK");
+
+    assert_eq!(
+        host.link_target_as_writer(Path::new("/etc/x/plain.conf"))
+            .await
+            .expect("NOTLINK is an answer, not a failure"),
+        None,
+        "NOTLINK is the positive answer the guard admits on"
+    );
+}
+
+#[tokio::test]
+async fn a_link_reports_the_path_it_finally_resolves_to() {
+    let host = ScriptedProbeHost::answering("LINK /usr/lib/systemd/system/sshd.service");
+
+    assert_eq!(
+        host.link_target_as_writer(Path::new("/etc/x/sshd.service"))
+            .await
+            .expect("LINK is an answer"),
+        Some(PathBuf::from("/usr/lib/systemd/system/sshd.service")),
+        "the resolved destination is what the allowlist is judged against"
+    );
+}
+
+/// The whole of issue #83: an answer the probe could not determine must not
+/// arrive as the positive "not a symlink".
+#[tokio::test]
+async fn an_undetermined_probe_is_an_error_and_never_not_a_symlink() {
+    let host = ScriptedProbeHost::answering("UNDETERMINED");
+
+    let outcome = host.link_target_as_writer(Path::new("/root/.ssh/authorized_keys"));
+
+    assert!(
+        outcome.await.is_err(),
+        "a path the probe could not look at must fail closed: reading it as \
+         'not a symlink' is what let root write through a link it never saw"
+    );
+}
+
+/// Noise on stdout is not an answer either.
+///
+/// A login banner, a sudo lecture or a locale-translated warning must not be
+/// folded into a positive. This is the lesson `parse_path_exists_probe` was
+/// written for, applied to a gate that authorises a root write.
+#[test]
+fn unexpected_probe_output_fails_closed() {
+    for noise in [
+        "",
+        "Last login: Tue Aug  4 09:00:00 2026\nNOTLINK",
+        "notlink",
+        "LINK ",
+        "sudo: a terminal is required to read the password",
+    ] {
+        assert!(
+            parse_link_probe(noise).is_err(),
+            "output the probe cannot have produced must refuse, got a pass for {noise:?}"
+        );
+    }
+}
+
+/// The control for the test above, and it is what makes it non-vacuous: a
+/// parser that refused everything would satisfy every assertion there.
+#[test]
+fn the_two_answers_the_probe_can_produce_are_accepted() {
+    assert_eq!(
+        parse_link_probe("NOTLINK").expect("NOTLINK parses"),
+        None,
+        "the positive answer must survive the strictness above"
+    );
+    assert_eq!(
+        parse_link_probe("LINK /etc/target.conf").expect("LINK parses"),
+        Some(PathBuf::from("/etc/target.conf")),
+        "a resolved target must survive the strictness above"
+    );
+}

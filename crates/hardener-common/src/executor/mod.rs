@@ -34,6 +34,72 @@ pub struct FileMetadata {
     pub gid: u32,
 }
 
+/// The one round trip behind [`SystemExecutor::link_target_as_writer`].
+///
+/// `$1` is the path, passed as a positional argument rather than interpolated,
+/// so no quoting is involved anywhere and a path holding a space or a `;` is
+/// one argument.
+///
+/// It elevates the way the write it guards does. `SshExecutor::write_file`
+/// goes through `sudo tee`, so a probe running bare answers for a different
+/// user than the one that acts, and a guard answering for the wrong user is
+/// not guarding the action. `E` is empty on a session that is already root, so
+/// a container with no `sudo` binary is unaffected; where elevation is needed
+/// and unavailable the first elevated call fails and the answer is
+/// `UNDETERMINED`, which the caller refuses on. Rollback already requires root
+/// or passwordless sudo on the target session, so this asks for nothing the
+/// command did not already demand.
+///
+/// The parent gate is what makes `NOTLINK` trustworthy. GNU `readlink` exits 1
+/// for "not a symlink", for `ENOENT` and for a traversal it may not make, one
+/// status for three meanings, and only the first is an answer. A parent that
+/// resolves proves traverse permission is held, so the `lstat` behind `test -h`
+/// looked at something rather than failing to look. Telling the three apart by
+/// reading errno text instead was rejected: those strings are locale-dependent,
+/// which would turn this gate into a coin flip on a host with `LC_MESSAGES`
+/// set.
+///
+/// `readlink -e` resolves **every** component, which is why the link is not
+/// followed hop by hop with `..` flattened by name. With `<allowed>/dlink` a
+/// link to a directory outside the allowlist, `<allowed>/f -> dlink/../victim`
+/// collapses by name to `<allowed>/victim`, which an allowlist admits, while
+/// the write lands on `<outside>/victim`. Only the kernel knows that `..`
+/// follows `dlink` first.
+pub(crate) const LINK_PROBE_SCRIPT: &str = r#"if [ "$(id -u)" -eq 0 ]; then E=""; else E="sudo -n"; fi
+d=$(dirname -- "$1")
+$E readlink -e -n -- "$d" >/dev/null 2>&1 || { printf UNDETERMINED; exit 0; }
+if $E test -h "$1"; then
+  t=$($E readlink -e -n -- "$1") && printf 'LINK %s' "$t" || printf UNDETERMINED
+else
+  printf NOTLINK
+fi"#;
+
+/// Classifies the stdout of [`LINK_PROBE_SCRIPT`].
+///
+/// Exact matching, not a prefix or a substring search: a login banner, a sudo
+/// lecture or any other shell noise must not be folded into a positive answer.
+/// Everything the script cannot have printed, `UNDETERMINED` included, is the
+/// refusing answer, so the fail-closed arm is reached by anything unexpected
+/// rather than only by the one token that names it. Pure, so the
+/// classification is unit-testable without a live connection.
+pub(crate) fn parse_link_probe(stdout: &str) -> Result<Option<PathBuf>> {
+    let answer = stdout.trim();
+
+    if answer == "NOTLINK" {
+        return Ok(None);
+    }
+    if let Some(target) = answer.strip_prefix("LINK ")
+        && !target.is_empty()
+    {
+        return Ok(Some(PathBuf::from(target)));
+    }
+
+    Err(crate::error::HardeningError::Executor(format!(
+        "could not determine whether the path is a symlink; the probe said {answer:?}"
+    ))
+    .into())
+}
+
 /// Trait for abstracting file and command operations.
 ///
 /// Implementations can target local systems or remote systems via SSH.
@@ -89,6 +155,41 @@ pub trait SystemExecutor: Send + Sync {
             ))
             .into()),
         }
+    }
+
+    /// Where `path` leads, asked at the privilege the restoring write uses.
+    ///
+    /// Three outcomes, the contract shape [`Self::file_metadata`] establishes:
+    ///
+    /// - `Ok(None)`: **positively** not a symlink. The caller may write the
+    ///   path itself.
+    /// - `Ok(Some(p))`: a symlink, with every component resolved, matching
+    ///   `realpath(3)`.
+    /// - `Err`: could not be determined. The caller must refuse, and must
+    ///   never read this as "not a symlink".
+    ///
+    /// Distinct from [`Self::read_link`] on both axes. `read_link` answers
+    /// about one name at the login user's privilege, which suits checkpoint
+    /// capture: capture reads content with `cat` as that same user, and its
+    /// degrading to content-only is an accepted ceiling. This one is for the
+    /// rollback guard, which authorises a write that happens as root, so it
+    /// asks as root and refuses whatever it cannot see. Reasoning for the
+    /// script itself is at [`LINK_PROBE_SCRIPT`].
+    ///
+    /// Provided rather than required, for the reason [`Self::read_link`] is:
+    /// local and remote must not come to ask different questions, and the call
+    /// still routes through this executor's own [`Self::execute_command`], so
+    /// the probe runs on whichever host that executor targets.
+    ///
+    /// The exit status is deliberately not consulted. The script reports its
+    /// own outcome on stdout and exits 0 for all three; a failure to run it at
+    /// all leaves stdout empty, which classifies as the refusing answer.
+    async fn link_target_as_writer(&self, path: &Path) -> Result<Option<PathBuf>> {
+        let path_str = path.to_string_lossy();
+        let output = self
+            .execute_command("sh", &["-c", LINK_PROBE_SCRIPT, "_", &path_str])
+            .await?;
+        parse_link_probe(&output.stdout)
     }
 
     /// Where `path` leads once **every** component of it is resolved, or `None`
