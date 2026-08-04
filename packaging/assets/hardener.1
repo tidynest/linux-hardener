@@ -376,7 +376,9 @@ decides.
 A
 .I partial
 .B [scheduler]
-table will not parse at all, since four of its keys have no defaults.
+table is valid and takes the documented default for every key it omits, but the
+section still does not merge, so a partial one hides a complete one in a
+later-searched file and takes those defaults rather than that file's values.
 .IP
 Accepted anywhere, acted on by
 .BR scan ,

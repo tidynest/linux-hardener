@@ -121,3 +121,21 @@ fn full_config_deserialises_from_toml() {
         WebhookFormat::Slack
     );
 }
+
+#[test]
+fn partial_section_takes_defaults_for_what_it_omits() {
+    // Every nested struct here already defaults field by field, so the one
+    // table an operator actually writes was the only one that did not: a
+    // `[scheduler]` section naming `enabled` and nothing else failed the whole
+    // file with `missing field `schedule``, and that error is raised for any
+    // file in the search order, so one partial section in the system config
+    // stopped `daemon` and `history` outright.
+    let config: SchedulerConfig = toml::from_str("enabled = true").unwrap();
+
+    // The given field survives: this fails if the section is discarded for a
+    // wholesale `SchedulerConfig::default()`, whose `enabled` is false.
+    assert!(config.enabled);
+    // The omitted fields take the same values a file with no section takes.
+    assert_eq!(config.schedule, SchedulerConfig::default().schedule);
+    assert_eq!(config.min_severity, SchedulerConfig::default().min_severity);
+}

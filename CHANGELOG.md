@@ -488,6 +488,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `[scheduler]` section that named some of its keys and not others failed
+  the whole configuration file, stopping `daemon` and `history` outright.**
+  `SchedulerConfig` was the only struct in that tree without a struct-level
+  `#[serde(default)]`, so its four scalar keys were mandatory as a group even
+  though each one is documented with a default: `[scheduler]` followed by
+  `enabled = true` was refused with ``missing field `schedule` ``. It is also the
+  one table in that tree an operator writes by hand. The section is read from
+  whichever file in the search order carries it and a parse failure there is
+  fatal, so a partial section in the system config took down every command that
+  opens the scan-history database, not merely the scheduler. Each key now falls
+  back to the default the reference already listed for it. The section still
+  does not merge across files, so a partial section in the user config hides a
+  complete one in the system config and takes these defaults for what it omits
+  rather than that file's values; `configuration.md` said the opposite of the
+  new behaviour and has been corrected.
+
 - **A refused desktop operation blocked the next real one for five seconds.**
   The rate limit that paces privileged operations was started by the RAII
   guard's `Drop`, and every command takes that guard *before* it validates its

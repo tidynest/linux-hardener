@@ -35,7 +35,16 @@ fn default_data_dir() -> PathBuf {
 /// Root scheduler configuration.
 ///
 /// Loaded from `[scheduler]` section in config.toml
+///
+/// `#[serde(default)]` on the struct, matching every nested one below it. This
+/// is the table an operator writes by hand, and without it the four scalar
+/// fields were all mandatory together: `[scheduler]` with `enabled = true` and
+/// nothing else failed the file with `missing field `schedule``. The section is
+/// read from whichever file in the search order carries it, and a parse error
+/// there is fatal, so one partial section stopped `daemon` and `history`
+/// outright rather than the section falling back to these defaults.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub struct SchedulerConfig {
     /// Enable scheduled scanning daemon.
     pub enabled: bool,
@@ -46,10 +55,8 @@ pub struct SchedulerConfig {
     /// Minimum severity to include in results.
     pub min_severity: String,
     /// Storage configuration.
-    #[serde(default)]
     pub storage: StorageConfig,
     /// Notification configuration.
-    #[serde(default)]
     pub notifications: NotificationConfig,
 }
 

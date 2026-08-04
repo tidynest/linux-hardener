@@ -545,11 +545,16 @@ actually configures the scheduler wins whole. A named file with no
 `[scheduler]` section is not that file configuring it, so your system or user
 config still decides, which is what keeps a timer installed against a
 policy-only file running on your real scheduler settings rather than the
-compiled-in ones. One consequence of the section not merging remains: a
-**partial** `[scheduler]` table will not parse at all, because `enabled`,
-`schedule`, `plugins` and `min_severity` have no defaults. Put the whole section
-in any file that has one. Keep the scheduler settings in the system config on any host where
-that distinction matters.
+compiled-in ones.
+
+A **partial** `[scheduler]` table is allowed: every key below has a default, so
+a section naming only `enabled` is a valid section and the rest of the table
+takes the defaults listed here. What that does **not** do is merge across files.
+The first file carrying a `[scheduler]` section still wins whole, so a partial
+section in your user config hides a complete one in the system config, and the
+keys it omits come from these defaults rather than from the file it hid. Keep
+the scheduler settings in the system config on any host where that distinction
+matters, and keep them in one file.
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
