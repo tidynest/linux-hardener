@@ -232,6 +232,118 @@ impl SystemExecutor for RealShellHost {
     }
 }
 
+/// Runs [`LINK_PROBE_SCRIPT`] through a real shell with a stated elevation,
+/// bypassing [`SystemExecutor::link_target_as_writer`]'s own choice of one.
+///
+/// Shared by the two tests below, which is the point: both need to drive the
+/// script with an elevation the trait would never pick, and duplicating the
+/// argv would let the two drift into exercising different invocations.
+///
+/// The script exits 0 for every outcome of its own, a failed elevation
+/// included, so that is asserted here rather than folded into a refusal: a
+/// non-zero status would mean the script did not run to completion at all,
+/// which is a different finding from any answer it prints.
+async fn probe_with_elevation(
+    host: &RealShellHost,
+    path: &Path,
+    elevation: &str,
+) -> Result<Option<PathBuf>> {
+    let path_str = path.to_string_lossy();
+    let output = host
+        .execute_command("sh", &["-c", LINK_PROBE_SCRIPT, "_", &path_str, elevation])
+        .await
+        .expect("sh runs");
+    assert_eq!(
+        output.exit_code, 0,
+        "the script itself always exits 0 for every one of its own outcomes"
+    );
+    parse_link_probe(&output.stdout)
+}
+
+/// Whether the test runner is root, asked of the same shell the probe uses.
+///
+/// [`LINK_PROBE_SCRIPT`] sets `E=""` whenever the runner is root, whatever
+/// `$2` holds, so a test that states something about an elevation argument has
+/// to know which case it is in. Asked rather than assumed: the cross-distro
+/// containers run as root and a contributor's machine does not.
+async fn runner_is_root(host: &RealShellHost) -> bool {
+    let output = host
+        .execute_command("id", &["-u"])
+        .await
+        .expect("id runs on any POSIX host");
+    output.stdout.trim() == "0"
+}
+
+/// The script pins `PATH` to the very list `resolve_binary` searches.
+///
+/// Every other command this crate runs is resolved to an absolute path through
+/// [`crate::binary_utils::resolve_binary`] as an explicit CWE-426 mitigation.
+/// The four commands inside this script are resolved by the shell instead, so
+/// the mitigation has to be re-stated as a `PATH` assignment, and this is what
+/// stops the two lists drifting apart: adding a directory to `TRUSTED_PATH`
+/// without adding it here would leave the probe searching a shorter list than
+/// the rest of the crate, and removing one would leave it searching a longer.
+#[test]
+fn the_probe_pins_path_to_the_same_trusted_list_resolve_binary_uses() {
+    let expected = format!("PATH={}\n", crate::binary_utils::TRUSTED_PATH.join(":"));
+
+    assert!(
+        LINK_PROBE_SCRIPT.starts_with(&expected),
+        "the script must open by pinning PATH to the trusted list, expected to \
+         start with {expected:?}"
+    );
+}
+
+/// An elevation that runs nothing at all must produce no token, not the
+/// admitting one.
+///
+/// This is the assertion the script's single-invocation shape exists for. When
+/// each command elevated separately, the `else` branch of `test -h` inferred
+/// "not a symlink" from an exit status that also meant "could not `lstat`" and
+/// "the elevated command never ran", so a `sudo` rule scoped to a command
+/// list, an absent binary or any transient exec failure printed `NOTLINK` for
+/// a real symlink. `false` stands in for every one of those: it is a real
+/// binary that accepts any arguments, runs nothing and fails, needing no
+/// privilege and no host configuration to reproduce.
+///
+/// The sibling test below asserts the same outcome for two elevations, which
+/// is what makes it blind to the prefix being dropped entirely; this one is
+/// the opposite, an elevation that must **change** the answer.
+///
+/// Under a root runner the script sets `E=""` regardless of `$2`, so `false`
+/// is never reached and the correct answer is the real one. That is asserted
+/// as such rather than skipped, so the test still says something true on the
+/// cross-distro containers instead of quietly passing.
+#[tokio::test]
+async fn an_elevation_that_runs_nothing_yields_no_answer_rather_than_admitting() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let target = dir.path().join("real.conf");
+    let link = dir.path().join("link.conf");
+    std::fs::write(&target, "content\n").expect("write target");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+    let resolved_target = target.canonicalize().expect("canonicalize target");
+
+    let host = RealShellHost;
+    let outcome = probe_with_elevation(&host, &link, "false").await;
+
+    if runner_is_root(&host).await {
+        assert_eq!(
+            outcome.expect("a root runner ignores $2, so this is an ordinary answer"),
+            Some(resolved_target),
+            "a root runner sets E empty whatever $2 holds, so the elevation is \
+             never reached and the real answer stands"
+        );
+        return;
+    }
+
+    assert!(
+        outcome.is_err(),
+        "an elevation that runs nothing must yield no token at all: printing \
+         NOTLINK here is exactly the admitting answer that let root write \
+         through a symlink the probe never looked at"
+    );
+}
+
 /// Proves the word-splitting `LINK_PROBE_SCRIPT` relies on: it sets
 /// `E="$2"` and later runs `$E readlink ...` and `$E test ...` unquoted,
 /// precisely so a two-word elevation prefix such as `sudo -n` splits into a
@@ -255,21 +367,13 @@ impl SystemExecutor for RealShellHost {
 /// elevations are asserted against the one outcome that is true either way,
 /// so under a root runner this test proves only that the empty-elevation path
 /// answers correctly, and it does that honestly rather than by skipping.
+///
+/// Asserting one outcome for both elevations is also this test's blind spot:
+/// a script that ignored `$2` entirely would satisfy every assertion here.
+/// `an_elevation_that_runs_nothing_yields_no_answer_rather_than_admitting`
+/// above is the complement, an elevation that must change the answer.
 #[tokio::test]
 async fn the_elevation_prefix_is_word_split_by_a_real_shell() {
-    async fn probe(host: &RealShellHost, path: &Path, elevation: &str) -> Result<Option<PathBuf>> {
-        let path_str = path.to_string_lossy();
-        let output = host
-            .execute_command("sh", &["-c", LINK_PROBE_SCRIPT, "_", &path_str, elevation])
-            .await
-            .expect("sh runs");
-        assert_eq!(
-            output.exit_code, 0,
-            "the script itself always exits 0 for every one of its own outcomes"
-        );
-        parse_link_probe(&output.stdout)
-    }
-
     let dir = tempfile::tempdir().expect("tempdir");
     let target = dir.path().join("real.conf");
     let link = dir.path().join("link.conf");
@@ -281,7 +385,7 @@ async fn the_elevation_prefix_is_word_split_by_a_real_shell() {
 
     for elevation in ["", "env -u LINK_PROBE_UNSET_MARKER"] {
         assert_eq!(
-            probe(&host, &link, elevation)
+            probe_with_elevation(&host, &link, elevation)
                 .await
                 .expect("a link is an answer"),
             Some(resolved_target.clone()),
@@ -290,7 +394,7 @@ async fn the_elevation_prefix_is_word_split_by_a_real_shell() {
              command name and the answer would degrade to UNDETERMINED instead"
         );
         assert_eq!(
-            probe(&host, &target, elevation)
+            probe_with_elevation(&host, &target, elevation)
                 .await
                 .expect("a file is an answer"),
             None,

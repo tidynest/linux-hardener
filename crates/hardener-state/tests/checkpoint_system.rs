@@ -624,11 +624,12 @@ async fn rollback_removes_the_mask_symlink_an_apply_created() {
 ///
 /// The unit tests of the guard use a `MockExecutor`, which answers from a
 /// registry rather than by running anything, and a mock can only report what a
-/// fixture already stated. [`DiskExecutor`] inherits the provided `read_link`
-/// and `link_target_as_writer`, which run `readlink` for real, so this test is where
-/// the *resolution semantics* are checked against coreutils rather than against
-/// a fixture's own claim. It says nothing about which host is asked; the two
-/// remote unit tests are what pin that.
+/// fixture already stated. [`DiskExecutor`] inherits the provided
+/// `link_target_as_writer`, the one primitive the guard now asks, and it runs
+/// `readlink` for real, so this test is where the *resolution semantics* are
+/// checked against coreutils rather than against a fixture's own claim. It says
+/// nothing about which host is asked; the two remote unit tests are what pin
+/// that.
 ///
 /// Relative deliberately. `systemctl enable` writes relative targets, and a
 /// relative one is the case a string-prefix allowlist cannot judge unaided:
