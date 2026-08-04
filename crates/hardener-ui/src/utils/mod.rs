@@ -5,9 +5,9 @@ pub mod theme;
 
 use crate::types::{ApplyOutcome as FleetApplyOutcome, RollbackOutcome as FleetRollbackOutcome};
 use crate::types::{
-    ApplyResult, Change, CheckpointInfo, ComplianceFramework, FileRestoreAction, Finding,
-    FleetFrameworkPosture, RollbackResult, ScanResult, ScanSessionInfo, Severity, ValidationIssue,
-    ValidationReport,
+    ApplyResult, Change, CheckpointInfo, ComplianceFramework, ControlStatus, FileRestoreAction,
+    Finding, FleetFrameworkPosture, RollbackResult, ScanResult, ScanSessionInfo, Severity,
+    ValidationIssue, ValidationReport,
 };
 use hardener_types::{ApplyStatus, RollbackStatus, UncheckedTally};
 
@@ -621,6 +621,24 @@ pub fn severity_label(sev: Severity) -> &'static str {
         Severity::Medium => "Medium",
         Severity::Low => "Low",
         Severity::Info => "Info",
+    }
+}
+
+/// The existing `.status-*` colour class for a control status pill.
+///
+/// Manual review maps to the amber `.status-manual` and never to red: it is the
+/// honesty bucket for a control the engine does not assess, and colouring it as
+/// a failure would report a gap in coverage as a gap in the host.
+///
+/// Lifted out of `compliance_tab` when the fleet host panel began rendering
+/// control rows too, so the two screens cannot drift to different colours for
+/// the same verdict.
+pub fn control_status_class(status: &ControlStatus) -> &'static str {
+    match status {
+        ControlStatus::Pass => "status-pass",
+        ControlStatus::Fail => "status-fail",
+        ControlStatus::ManualReview => "status-manual",
+        ControlStatus::NotApplicable => "status-na",
     }
 }
 

@@ -1073,14 +1073,60 @@ pub enum FleetHostStatus {
     Failed(String),
 }
 
-/// One framework's compliance posture for a fleet host: summary only (no
-/// per-control detail, which already travels in `FleetHostScan::scan_results`).
+/// One control's verdict on a fleet host, without the findings that produced
+/// it.
+///
+/// This is [`ControlResult`] minus `control_findings`, and the omission is the
+/// point. A control's findings are selected by a pure filter on each finding's
+/// own `finding_compliance` mappings, so a consumer holding the host's
+/// `scan_results` can reproduce them exactly with the same filter, and no
+/// backend judgement is duplicated by doing so. What cannot be reproduced is
+/// the [`ControlStatus`], which needs the exception and coverage logic the
+/// report generator owns, so that is what travels.
+///
+/// Measured on one host across the nine fleet frameworks, 145 controls: these
+/// rows are 23 KB where the full `ControlResult`s are 222 KB, against a fleet
+/// response already carrying 122 KB of `scan_results` per host. Carrying the
+/// findings twice would have roughly tripled a per-host payload that is sent
+/// whether or not anyone drills into it.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ControlOutcome {
+    /// The control identifier (e.g. "1.5.1" for CIS).
+    pub control_id: String,
+    /// Human-readable title of the control.
+    pub control_title: String,
+    /// Section/category within the framework.
+    pub control_section: String,
+    /// Whether the control passed, failed, or needs manual review.
+    pub control_status: ControlStatus,
+}
+
+impl From<&ControlResult> for ControlOutcome {
+    fn from(result: &ControlResult) -> ControlOutcome {
+        ControlOutcome {
+            control_id: result.control_id.clone(),
+            control_title: result.control_title.clone(),
+            control_section: result.control_section.clone(),
+            control_status: result.control_status.clone(),
+        }
+    }
+}
+
+/// One framework's compliance posture for a fleet host: the summary, plus one
+/// verdict per control so the count can be drilled into.
+///
+/// The findings behind each verdict are not here. They already travel in
+/// `FleetHostScan::scan_results`, and [`ControlOutcome`] says how to get from
+/// one to the other.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FleetFrameworkPosture {
     /// The framework this posture is for.
     pub framework: ComplianceFramework,
     /// Pass/fail/manual/NA counts and the overall score.
     pub summary: ComplianceSummary,
+    /// One verdict per control the summary counted, in the generator's own
+    /// order.
+    pub controls: Vec<ControlOutcome>,
 }
 
 /// One host's result row in a fleet scan.

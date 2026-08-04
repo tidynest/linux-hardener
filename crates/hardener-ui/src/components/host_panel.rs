@@ -7,8 +7,8 @@ use crate::components::ConfirmDeleteButton;
 use crate::tauri_bindings::invoke_get_host_history;
 use crate::types::{Finding, FleetHostScan};
 use crate::utils::{
-    checkpoint_time, framework_short_label, group_findings_by_severity, score_band,
-    score_band_class, severity_class, severity_label, split_policy_excepted,
+    checkpoint_time, control_status_class, framework_short_label, group_findings_by_severity,
+    score_band, score_band_class, severity_class, severity_label, split_policy_excepted,
 };
 use hardener_types::remote::{HostSessionInfo, RemoteHostProfile};
 use leptos::prelude::*;
@@ -168,6 +168,16 @@ pub fn HostPanel(
             // --- Compliance detail (above Findings) ---
             {move || {
                 let compliance = scan.get().map(|s| s.compliance).unwrap_or_default();
+                // Frameworks with no control rows are dropped rather than
+                // rendered as an empty expander: a host scanned before this
+                // shipped, or one that failed, carries a summary and nothing
+                // to drill into, and an expander that opens on nothing reads
+                // as a host with no controls rather than as a missing answer.
+                let controls_by_framework: Vec<_> = compliance
+                    .iter()
+                    .filter(|p| !p.controls.is_empty())
+                    .map(|p| (p.framework, p.controls.clone()))
+                    .collect();
                 (!compliance.is_empty()).then(|| view! {
                     <details class="host-collapse" open=true>
                         <summary>
@@ -202,6 +212,44 @@ pub fn HostPanel(
                                 </tbody>
                             </table>
                         </div>
+
+                        // One collapsed list per framework, which is the
+                        // drill-down the score column had no answer for (#50).
+                        // Collapsed by default: nine frameworks of control rows
+                        // would otherwise bury the Findings section below.
+                        //
+                        // The rows reuse the compliance tab's own `control-row`
+                        // markup and `.status-*` classes rather than new ones,
+                        // so one verdict cannot read two ways across two
+                        // screens.
+                        {controls_by_framework.into_iter().map(|(framework, controls)| {
+                            let count = controls.len();
+                            view! {
+                                <details class="host-collapse">
+                                    <summary>
+                                        <span class="host-collapse-chev" aria-hidden="true"></span>
+                                        <span class="host-section-label">
+                                            {framework_short_label(framework)}
+                                            " controls ("{count}")"
+                                        </span>
+                                    </summary>
+                                    <ul class="compliance-controls-list">
+                                        {controls.into_iter().map(|c| {
+                                            let status_class = control_status_class(&c.control_status);
+                                            view! {
+                                                <li class="control-row">
+                                                    <span class="control-id">{c.control_id}</span>
+                                                    <span class="control-title">{c.control_title}</span>
+                                                    <span class=format!("control-status {status_class}")>
+                                                        {c.control_status.to_string()}
+                                                    </span>
+                                                </li>
+                                            }
+                                        }).collect_view()}
+                                    </ul>
+                                </details>
+                            }
+                        }).collect_view()}
                     </details>
                 })
             }}

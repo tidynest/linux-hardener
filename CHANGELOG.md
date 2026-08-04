@@ -338,6 +338,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A fleet host's compliance count can be drilled into.** The Hosts panel
+  showed a score and per-framework pass/fail/manual counts with no way to find
+  out what they were counts of. `FleetFrameworkPosture` now carries one
+  `ControlOutcome` per control the summary counted, and the host panel renders
+  a collapsed list per framework, reusing the compliance tab's own
+  `control-row` markup and `.status-*` classes so one verdict cannot read two
+  ways across two screens. Manual review stays amber and never red: a control
+  the engine does not assess is a gap in coverage, not a gap in the host, and
+  `control_status_class` moved into `utils` so both screens share one mapping.
+  The rows were already being computed and thrown away: `posture_for_findings`
+  generated a full `ComplianceReport` per framework and kept two of its fields.
+  `ControlOutcome` is `ControlResult` without `control_findings`, deliberately:
+  a control's findings are selected by a pure filter on each finding's own
+  `finding_compliance` mappings, so a consumer holding the host's
+  `scan_results` reproduces them exactly and duplicates no backend judgement,
+  while the `ControlStatus` needs the coverage and exception logic the
+  generator owns and so is what travels. Measured on one host across the nine
+  fleet frameworks, 145 controls: these rows are 23 KB against 222 KB for the
+  full `ControlResult`s, on a per-host response already carrying 122 KB of
+  `scan_results`. No IPC command, no capability entry, no database and no
+  migration are involved, contrary to the issue's own description of the work.
+  Closes #50.
+
 - **`hardener checkpoint repair` reports file rows that no checkpoint owns, and
   removes them with `--execute`.** A checkpoint is stored as one metadata row
   plus one file row per captured file. A file row whose checkpoint row is gone

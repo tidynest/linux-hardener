@@ -15,8 +15,9 @@
 
 use super::*;
 use crate::types::{
-    Change, ChangeType, CheckpointInfo, ComplianceSummary, FileRestoreAction, FileRestoreResult,
-    Finding, FindingCategory, PluginId, RollbackResult, ScanSessionInfo, Severity,
+    Change, ChangeType, CheckpointInfo, ComplianceSummary, ControlStatus, FileRestoreAction,
+    FileRestoreResult, Finding, FindingCategory, PluginId, RollbackResult, ScanSessionInfo,
+    Severity,
 };
 
 #[test]
@@ -826,6 +827,10 @@ fn fw_posture(framework: ComplianceFramework, pct: f64) -> FleetFrameworkPosture
             summary_not_applicable: 0,
             summary_score_percentage: pct,
         },
+        // Empty on purpose: every assertion this fixture serves is about the
+        // score strip, which reads the summary alone. A fixture carrying rows
+        // it never looks at would suggest they were part of what is asserted.
+        controls: Vec::new(),
     }
 }
 
@@ -1173,4 +1178,37 @@ fn preset_round_trips() {
             Some(*label)
         );
     }
+}
+
+/// The colour a control verdict is rendered in, which two screens now share:
+/// the compliance tab and the fleet host panel's per-framework drill-down.
+///
+/// Manual review is the one that matters. It is the honesty bucket for a
+/// control the engine does not assess, so it maps to the amber `.status-manual`
+/// and must never map to the red `.status-fail`: a gap in the tool's coverage
+/// is not a gap in the host, and colouring it as a failure would report one as
+/// the other.
+#[test]
+fn a_control_verdict_maps_to_its_own_colour_and_manual_review_is_never_red() {
+    assert_eq!(control_status_class(&ControlStatus::Pass), "status-pass");
+    assert_eq!(control_status_class(&ControlStatus::Fail), "status-fail");
+    assert_eq!(
+        control_status_class(&ControlStatus::ManualReview),
+        "status-manual"
+    );
+    assert_eq!(
+        control_status_class(&ControlStatus::NotApplicable),
+        "status-na"
+    );
+
+    // The four are distinct, so a mapping that collapsed two verdicts into one
+    // colour cannot satisfy the assertions above by accident.
+    let classes = [
+        control_status_class(&ControlStatus::Pass),
+        control_status_class(&ControlStatus::Fail),
+        control_status_class(&ControlStatus::ManualReview),
+        control_status_class(&ControlStatus::NotApplicable),
+    ];
+    let unique: std::collections::HashSet<_> = classes.iter().collect();
+    assert_eq!(unique.len(), 4, "each verdict needs its own class");
 }
