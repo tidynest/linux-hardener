@@ -504,6 +504,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`report --interactive` put its own chatter on stdout, so a redirected JSON
+  report was not JSON.** The wizard decorated its prompts with `println!`: the
+  banner, the three step headings, the review block, the progress lines and the
+  completion summary all went to stdout, and the summary is printed *after* the
+  report body is written there. `hardener report --interactive > report.json`,
+  choosing JSON with stdout as the destination, therefore produced a file with a
+  banner above the document and a summary below it. The non-interactive path had
+  been disciplined about this all along, which is what made the difference easy
+  to miss. All fifty of those calls now write to stderr, where `dialoguer`
+  already puts the prompts they decorate, and the single `writeln!` that emits
+  the report body is the only thing left addressing stdout.
+
 - **`systemd uninstall` said "Systemd units removed" whatever happened, and
   discarded the one outcome that could contradict it.** The `disable --now` exit
   status went to `let _`, so an uninstall that removed the unit files but failed

@@ -69,7 +69,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/checkpoint.rs` | Checkpoint management | `list()`, `create()`, `show()`, `delete()`, `rollback()` |
 | `src/commands/plugins.rs` | List plugins command | `run()` |
 | `src/commands/report.rs` | Compliance report generation | `run()` |
-| `src/commands/report_wizard.rs` | Interactive report wizard | `run()` |
+| `src/commands/report_wizard.rs` | Interactive report wizard | `run()`. Every line it prints goes to stderr, where `dialoguer` puts its prompts; the single `writeln!` to stdout is the report body |
 | `src/commands/daemon.rs` | Daemon management commands | `start()`, `run_once()`, `status()` |
 | `src/commands/systemd.rs` | Systemd unit file commands | `generate()`, `install()`, `uninstall()`, `status()` |
 | `src/commands/history.rs` | Scan history commands | `list()`, `show()`, `export()`, `trends()`, `regressions()` |
@@ -908,7 +908,7 @@ workspace run itself for what passed.
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 95 |
 | hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 104 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and eleven of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 225 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and eleven of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 226 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and all eight plugin modules (`ssh/dropin.rs` and `ssh/include.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 608 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 133 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 53 |

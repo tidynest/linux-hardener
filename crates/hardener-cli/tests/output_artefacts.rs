@@ -228,3 +228,37 @@ fn report_refuses_an_output_path_that_contradicts_the_format() {
         "a path agreeing with the format is not refused; got: {control_stderr}"
     );
 }
+
+/// The wizard's chatter belongs on stderr, like every other command's.
+///
+/// `report --interactive` decorated its prompts with `println!`, so the banner,
+/// the step headings, the progress lines and the completion summary all went to
+/// stdout, and `print_summary` runs *after* the report body is written there.
+/// Redirecting a JSON report to a file therefore produced something that is not
+/// JSON. The non-interactive path is disciplined about exactly this.
+///
+/// Driven without a terminal, which is the one wizard state reachable from a
+/// test: it refuses immediately, so any byte on stdout is chatter rather than a
+/// report, and before the fix there were 585 of them.
+#[test]
+fn the_wizard_puts_no_chatter_on_stdout() {
+    let out = run(&["report", "--interactive"]);
+
+    assert!(
+        !out.status.success(),
+        "precondition: with no terminal the wizard cannot run, so nothing it \
+         printed can be a report"
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "stdout carried {} bytes before any report existed: {}",
+        out.stdout.len(),
+        String::from_utf8_lossy(&out.stdout)
+    );
+    // The control: the run really did produce output, so an empty stdout means
+    // the chatter moved rather than that nothing ran.
+    assert!(
+        !out.stderr.is_empty(),
+        "the refusal must still be reported, on stderr"
+    );
+}

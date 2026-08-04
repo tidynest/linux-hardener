@@ -175,12 +175,12 @@ pub async fn run(
 
     // Step 2: Confirm selections
     if !confirm_selections(&state)? {
-        println!("\n{}", "Report generation cancelled.".yellow());
+        eprintln!("\n{}", "Report generation cancelled.".yellow());
         return Ok(());
     }
 
     // Step 3: Run scan
-    println!("\n{}", "Running security scan...".cyan());
+    eprintln!("\n{}", "Running security scan...".cyan());
     // The wizard has no --config flag, but it must still honour the operator's
     // config: scoring the same host differently from `hardener report` would
     // make one of the two surfaces wrong. Invalid config is a hard error here
@@ -195,7 +195,7 @@ pub async fn run(
         &hardener_config,
     )
     .await?;
-    println!(
+    eprintln!(
         "{}",
         format!(
             "Found {} total findings across all plugins.",
@@ -205,14 +205,14 @@ pub async fn run(
     );
 
     // Step 4: Generate reports
-    println!("\n{}", "Generating compliance reports...".cyan());
+    eprintln!("\n{}", "Generating compliance reports...".cyan());
 
     let config = wizard_report_config(&state, executor.as_ref(), profile_override).await?;
 
     // Said on the page, because the scoring depends on it and until now no
     // wizard output named it at all: a report scored against the RHEL 10
     // identifiers looks exactly like one scored against the generic set.
-    println!("{}", format!("Profile: {}", config.profile).dimmed());
+    eprintln!("{}", format!("Profile: {}", config.profile).dimmed());
 
     let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
     let reports = generator.generate(&findings, &unchecked);
@@ -264,31 +264,31 @@ async fn wizard_report_config(
 
 /// The wizard's opening banner.
 fn print_welcome() {
-    println!();
-    println!(
+    eprintln!();
+    eprintln!(
         "{}",
         "╔═══════════════════════════════════════════════════════════╗"
             .cyan()
             .bold()
     );
-    println!(
+    eprintln!(
         "{}",
         "║       Linux System Hardener - Report Wizard               ║"
             .cyan()
             .bold()
     );
-    println!(
+    eprintln!(
         "{}",
         "╚═══════════════════════════════════════════════════════════╝"
             .cyan()
             .bold()
     );
-    println!();
-    println!(
+    eprintln!();
+    eprintln!(
         "{}",
         "This wizard will help you generate a compliance report.".dimmed()
     );
-    println!();
+    eprintln!();
 }
 
 fn wizard_flow() -> Result<WizardState> {
@@ -304,12 +304,12 @@ fn wizard_flow() -> Result<WizardState> {
 }
 
 fn select_scenario() -> Result<Scenario> {
-    println!("{}", "Step 1: Select Compliance Scenario".bold());
-    println!(
+    eprintln!("{}", "Step 1: Select Compliance Scenario".bold());
+    eprintln!(
         "{}",
         "Choose a preset scenario or select frameworks manually.".dimmed()
     );
-    println!();
+    eprintln!();
 
     let theme = ColorfulTheme::default();
 
@@ -338,7 +338,7 @@ fn select_scenario() -> Result<Scenario> {
             if !frameworks.is_empty() {
                 break Scenario::Custom(frameworks);
             }
-            println!(
+            eprintln!(
                 "{}",
                 "At least one framework must be selected. Try again.".yellow()
             );
@@ -346,13 +346,13 @@ fn select_scenario() -> Result<Scenario> {
         _ => Scenario::Server,
     };
 
-    println!();
+    eprintln!();
     Ok(scenario)
 }
 
 fn select_frameworks() -> Result<Vec<ComplianceFramework>> {
-    println!();
-    println!("{}", "Select frameworks to include:".dimmed());
+    eprintln!();
+    eprintln!("{}", "Select frameworks to include:".dimmed());
 
     let theme = ColorfulTheme::default();
 
@@ -375,12 +375,12 @@ fn select_frameworks() -> Result<Vec<ComplianceFramework>> {
 }
 
 fn select_output_formats() -> Result<Vec<OutputFormat>> {
-    println!("{}", "Step 2: Select Output Format(s)".bold());
-    println!(
+    eprintln!("{}", "Step 2: Select Output Format(s)".bold());
+    eprintln!(
         "{}",
         "You can generate multiple formats simultaneously.".dimmed()
     );
-    println!();
+    eprintln!();
 
     let theme = ColorfulTheme::default();
 
@@ -416,13 +416,13 @@ fn select_output_formats() -> Result<Vec<OutputFormat>> {
         })
         .collect();
 
-    println!();
+    eprintln!();
     Ok(formats)
 }
 
 fn select_output_path() -> Result<Option<PathBuf>> {
-    println!("{}", "Step 3: Output Destination".bold());
-    println!();
+    eprintln!("{}", "Step 3: Output Destination".bold());
+    eprintln!();
 
     let theme = ColorfulTheme::default();
 
@@ -432,8 +432,8 @@ fn select_output_path() -> Result<Option<PathBuf>> {
         .interact()?;
 
     if !save_to_file {
-        println!("{}", "Report will be displayed in terminal.".dimmed());
-        println!();
+        eprintln!("{}", "Report will be displayed in terminal.".dimmed());
+        eprintln!();
         return Ok(None);
     }
 
@@ -443,7 +443,7 @@ fn select_output_path() -> Result<Option<PathBuf>> {
         .default("./compliance-report".to_string())
         .interact_text()?;
 
-    println!();
+    eprintln!();
     Ok(Some(resolve_output_path(&input)))
 }
 
@@ -480,18 +480,18 @@ fn resolve_output_path(input: &str) -> PathBuf {
 }
 
 fn confirm_selections(state: &WizardState) -> Result<bool> {
-    println!("{}", "═══════════════════════════════════════".cyan());
-    println!("{}", "Review Your Selections".bold());
-    println!("{}", "═══════════════════════════════════════".cyan());
-    println!();
+    eprintln!("{}", "═══════════════════════════════════════".cyan());
+    eprintln!("{}", "Review Your Selections".bold());
+    eprintln!("{}", "═══════════════════════════════════════".cyan());
+    eprintln!();
 
     // Show scenario
     if let Some(ref scenario) = state.scenario {
         let frameworks = scenario.frameworks();
         let framework_names: Vec<&str> = frameworks.iter().map(|f| f.full_name()).collect();
 
-        println!("  {} {}", "Scenario:".bold(), scenario.name());
-        println!("  {} {}", "Frameworks:".bold(), framework_names.join(", "));
+        eprintln!("  {} {}", "Scenario:".bold(), scenario.name());
+        eprintln!("  {} {}", "Frameworks:".bold(), framework_names.join(", "));
     }
 
     // Show formats
@@ -506,15 +506,15 @@ fn confirm_selections(state: &WizardState) -> Result<bool> {
             OutputFormat::Pdf => "PDF",
         })
         .collect();
-    println!("  {} {}", "Formats:".bold(), format_names.join(", "));
+    eprintln!("  {} {}", "Formats:".bold(), format_names.join(", "));
 
     // Show output
     match &state.output_path {
-        Some(path) => println!("  {} {}", "Output:".bold(), path.display()),
-        None => println!("  {} stdout", "Output:".bold()),
+        Some(path) => eprintln!("  {} {}", "Output:".bold(), path.display()),
+        None => eprintln!("  {} stdout", "Output:".bold()),
     }
 
-    println!();
+    eprintln!();
 
     let theme = ColorfulTheme::default();
     let confirmed = Confirm::with_theme(&theme)
@@ -593,7 +593,7 @@ fn output_reports(
                 } else {
                     fs::write(&path, &formatted)?;
                 }
-                println!(
+                eprintln!(
                     "  {} Saved {} report to: {}",
                     "✓".green(),
                     format_name(format),
@@ -607,12 +607,12 @@ fn output_reports(
                     let filename = format!("compliance-report-{}.pdf", timestamp);
                     let bytes = PdfFormatter::new().format_bytes(&reports[0]);
                     fs::write(&filename, bytes)?;
-                    println!("  {} Saved PDF report to: {}", "✓".green(), filename);
+                    eprintln!("  {} Saved PDF report to: {}", "✓".green(), filename);
                     continue;
                 }
                 // Print text formats to stdout
                 if state.output_formats.len() > 1 {
-                    println!(
+                    eprintln!(
                         "\n{}\n",
                         format!("═══ {} Report ═══", format_name(format)).cyan()
                     );
@@ -641,11 +641,11 @@ fn print_summary(
     state: &WizardState,
     unchecked: &[hardener_types::UncheckedCheck],
 ) {
-    println!();
-    println!("{}", "═══════════════════════════════════════".green());
-    println!("{}", "Report Generation Complete".green().bold());
-    println!("{}", "═══════════════════════════════════════".green());
-    println!();
+    eprintln!();
+    eprintln!("{}", "═══════════════════════════════════════".green());
+    eprintln!("{}", "Report Generation Complete".green().bold());
+    eprintln!("{}", "═══════════════════════════════════════".green());
+    eprintln!();
 
     for report in reports {
         let summary = &report.report_summary;
@@ -666,7 +666,7 @@ fn print_summary(
             score_text.red()
         };
 
-        println!(
+        eprintln!(
             "  {} {}: {}% ({}/{} controls passing)",
             framework_icon(&report.report_framework),
             framework_display_name(&report.report_framework),
@@ -676,14 +676,14 @@ fn print_summary(
         );
     }
 
-    println!();
+    eprintln!();
 
     if let Some(note) = hardener_types::unchecked_summary(unchecked) {
-        println!("{}", note.dimmed());
+        eprintln!("{}", note.dimmed());
     }
 
     if state.output_path.is_some() {
-        println!(
+        eprintln!(
             "{}",
             "Reports have been saved to the specified location.".dimmed()
         );
