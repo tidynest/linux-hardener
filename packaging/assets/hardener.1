@@ -310,7 +310,16 @@ actually returned;
 .B uninstall
 carries
 .IR removed ,
-which is empty rather than absent when there was nothing to remove; and
+which is empty rather than absent when there was nothing to remove, and
+.IR timer_disabled ,
+reporting what
+.B "systemctl disable \-\-now"
+returned; expect
+.I false
+where the timer was never enabled, since systemctl fails for a unit that does
+not exist, so it is worth reading only beside a non-empty
+.IR removed ;
+and
 .B status
 carries
 .IR user_mode ", " exit_code ", " stdout " and " stderr .

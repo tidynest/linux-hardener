@@ -199,7 +199,18 @@ pub async fn uninstall(user_mode: bool, format: OutputFormat, quiet: bool) -> Re
         vec!["disable", "--now", timer_name()]
     };
 
-    let _ = Command::new("systemctl").args(&stop_args).status().await;
+    // Reported rather than discarded, for the reason `install` reports its
+    // own: `.status()` only errors when the process cannot be spawned, so a
+    // failure to stop the timer was invisible and the envelope described an
+    // uninstall that might have left it running. A unit that was never enabled
+    // also fails here, which is why this is carried as a fact rather than
+    // raised as an error.
+    let timer_disabled = Command::new("systemctl")
+        .args(&stop_args)
+        .status()
+        .await
+        .map(|status| status.success())
+        .unwrap_or(false);
 
     // Remove files
     let service_path = unit_dir.join(service_name());
@@ -207,7 +218,14 @@ pub async fn uninstall(user_mode: bool, format: OutputFormat, quiet: bool) -> Re
 
     let mut removed: Vec<String> = Vec::new();
     for path in [&service_path, &timer_path] {
-        if path.exists() {
+        // `try_exists`, not `exists`: the latter is `metadata(..).is_ok()` and
+        // answers `false` for a unit this process may not stat, which would
+        // report a successful uninstall that removed nothing. Here that answer
+        // decides whether the file is touched at all, so an error is surfaced.
+        let present = path
+            .try_exists()
+            .with_context(|| format!("Failed to check for {}", path.display()))?;
+        if present {
             fs::remove_file(path).await?;
             removed.push(path.display().to_string());
             if !quiet && !matches!(format, OutputFormat::Json) {
@@ -229,14 +247,29 @@ pub async fn uninstall(user_mode: bool, format: OutputFormat, quiet: bool) -> Re
         .await
         .context("Failed to reload systemd")?;
 
+    let summary = uninstall_summary(removed.len(), timer_disabled);
     report(
         &format,
-        serde_json::json!({ "removed": removed }),
+        serde_json::json!({ "removed": removed, "timer_disabled": timer_disabled }),
         quiet,
-        || println!("Systemd units removed"),
+        || println!("{summary}"),
     );
 
     Ok(())
+}
+
+/// The one line `uninstall` prints, chosen from what actually happened.
+///
+/// It used to say "Systemd units removed" unconditionally, which was wrong in
+/// both directions: on a host with nothing installed it claimed a removal that
+/// never happened, and on one where `disable --now` failed it did not mention
+/// that the timer may still be running against units that are now gone.
+fn uninstall_summary(removed: usize, timer_disabled: bool) -> &'static str {
+    match (removed, timer_disabled) {
+        (0, _) => "No systemd units were installed here; nothing to remove",
+        (_, true) => "Systemd units removed",
+        (_, false) => "Systemd units removed, but disabling the timer failed",
+    }
 }
 
 /// Shows systemd timer and service status.
@@ -321,3 +354,6 @@ fn resolve_calendar(schedule: &str) -> String {
         schedule.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests;

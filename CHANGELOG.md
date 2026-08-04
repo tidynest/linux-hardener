@@ -504,6 +504,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`systemd uninstall` said "Systemd units removed" whatever happened, and
+  discarded the one outcome that could contradict it.** The `disable --now` exit
+  status went to `let _`, so an uninstall that removed the unit files but failed
+  to stop the timer reported plain success, and a host with nothing installed
+  reported a removal it had not performed. The JSON envelope now carries
+  `timer_disabled` beside `removed`, matching the `timer_enabled` that `install`
+  reports forty-eight lines above, and the text line says which of the three
+  things happened. Expect `timer_disabled: false` where the timer was never
+  enabled, because `systemctl` fails for a unit that does not exist; it is worth
+  reading beside a non-empty `removed`, where it means the files are gone and
+  the timer may still be running. The same function decided whether to remove a
+  file with `Path::exists`, which is `metadata(..).is_ok()` and answers `false`
+  for a unit this process may not stat, so it could report a clean uninstall
+  having touched nothing; that check is now `try_exists` and its error is
+  surfaced.
+
 - **A webhook configured in the desktop never reached the daemon, and both
   sides reported success.** `WebhookUiConfig` serialised its own flat shape, so
   the desktop wrote `url` and `format` into

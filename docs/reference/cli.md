@@ -792,7 +792,12 @@ All four verbs honour the global `-f`, `--format`. Under `--format json` each
 prints one envelope on stdout instead of its human text: `generate` carries the
 two units as `service` and `timer` objects, or the paths it wrote as
 `generated`; `install` carries `installed` and `timer_enabled`; `uninstall`
-carries `removed`, which is empty when there was nothing to remove; and `status`
+carries `removed`, which is empty when there was nothing to remove, and
+`timer_disabled`, which reports what `systemctl disable --now` returned. Expect
+that to be `false` on a host where the timer was never enabled, since
+`systemctl` fails for a unit that does not exist; it is worth reading only
+alongside a non-empty `removed`, where it means the units are gone and the timer
+may still be running. And `status`
 carries `user_mode`, `exit_code`, `stdout` and `stderr`. `status` reports the
 exit code rather than discarding it, because an inactive timer and a unit that
 does not exist both make `systemctl` return non-zero and nothing else
