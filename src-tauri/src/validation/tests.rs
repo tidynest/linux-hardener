@@ -41,6 +41,22 @@ fn ipc_string_rejects_newline() {
     assert!(validate_ipc_string("line\nbreak", "test").is_err());
 }
 
+/// DEL is the control character that sits above space, not below it.
+///
+/// The guard tested `b < 0x20`, so `0x7F` passed a check whose name, doc
+/// comment and error message all say it rejects control characters. Reached
+/// live: `wtype -k Delete` inserts a literal DEL rather than deleting, so the
+/// desktop's webhook URL field held one and the save wrote it to the config as
+/// an endpoint URL. An operator pasting from a terminal arrives the same way.
+#[test]
+fn ipc_string_rejects_delete_character() {
+    assert!(validate_ipc_string("hello\u{7f}world", "test").is_err());
+    // The control: the boundary either side of DEL is still accepted, so the
+    // fix cannot have been a blanket refusal of everything above `~`.
+    assert!(validate_ipc_string("hello~world", "test").is_ok());
+    assert!(validate_ipc_string("hello\u{80}world", "test").is_ok());
+}
+
 #[test]
 fn ipc_string_rejects_oversize() {
     let big = "a".repeat(MAX_IPC_STRING_LEN + 1);

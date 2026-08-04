@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The shared IPC string guard let U+007F through the check that exists to
+  reject control characters.** `validate_ipc_string` tested `b < 0x20`, and DEL
+  is `0x7F`, so the one ASCII control character above space passed a guard whose
+  name, doc comment and error message all say it rejects control characters. It
+  is the check on 31 call sites, among them `webhook_url`, `from_address`,
+  `email_recipient`, `schedule`, `checkpoint_name`, `config_path`,
+  `output_path`, `key_file` and `hostname`. Reached live rather than reasoned
+  about: a `Delete` keypress that inserts a literal DEL left one in the
+  desktop's webhook URL field, and the save wrote it into the config as an
+  endpoint URL. No caller mishandles it today, and the TOML serialiser escapes
+  the byte so nothing breaks out of its string; the defect is that a guard did
+  not do what every description of it says. Tab stays permitted, deliberately.
+  The C1 range is still accepted, because it is multi-byte in UTF-8 and no
+  single-byte comparison reaches it; that is recorded at the function rather
+  than left to be discovered.
+
 - **A partial `--config` re-enabled a plugin the system configuration had
   disabled, on the verb that writes.** A plugin section's `enabled` key was a
   `bool` defaulting to `true`, so a later source that mentioned a section for

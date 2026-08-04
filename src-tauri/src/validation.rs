@@ -2,7 +2,18 @@ use std::path::{Path, PathBuf};
 
 const MAX_IPC_STRING_LEN: usize = 4096;
 
-/// Rejects control characters (except space) and strings exceeding MAX_IPC_STRING_LEN bytes.
+/// Rejects ASCII control characters, tab excepted, and strings exceeding
+/// MAX_IPC_STRING_LEN bytes.
+///
+/// DEL is named separately because it is the one control character above space
+/// rather than below it, and a `b < b' '` test alone therefore misses it. That
+/// was reached in practice: a `Delete` keypress that inserts a literal U+007F
+/// left one in the desktop's webhook URL field, and the save wrote it to the
+/// config as an endpoint URL. Tab stays permitted, which is deliberate.
+///
+/// The C1 range (U+0080 to U+009F) is **not** refused. It is multi-byte in
+/// UTF-8, so no single-byte comparison reaches it, and refusing it wants a
+/// `chars()` pass and a decision nobody has needed yet.
 pub fn validate_ipc_string(s: &str, field_name: &str) -> Result<(), String> {
     if s.len() > MAX_IPC_STRING_LEN {
         return Err(format!(
@@ -10,7 +21,10 @@ pub fn validate_ipc_string(s: &str, field_name: &str) -> Result<(), String> {
             s.len()
         ));
     }
-    if let Some(pos) = s.bytes().position(|b| b < b' ' && b != b'\t') {
+    if let Some(pos) = s
+        .bytes()
+        .position(|b| (b < b' ' && b != b'\t') || b == b'\x7f')
+    {
         return Err(format!(
             "{field_name} contains invalid control character at byte {pos}"
         ));
