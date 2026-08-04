@@ -541,11 +541,10 @@ impl SystemExecutor for MockExecutor {
     /// a shell script, and the mock registers no such command.
     ///
     /// A registered link reports its target as the resolved destination; this
-    /// does not simulate a chain, for the reason the old `canonical_path`
-    /// override gave, and chains, relative targets, symlinked parents and loops
-    /// are covered against a real filesystem instead. A path named by
-    /// [`Self::with_unprobeable`] is the refusing answer; anything else is
-    /// positively not a symlink.
+    /// does not simulate a chain, and chains, relative targets, symlinked
+    /// parents and loops are covered against a real filesystem instead. A path
+    /// named by [`Self::with_unprobeable`] is the refusing answer; anything
+    /// else is positively not a symlink.
     async fn link_target_as_writer(&self, path: &Path) -> Result<Option<PathBuf>> {
         if self
             .unprobeable
@@ -564,26 +563,6 @@ impl SystemExecutor for MockExecutor {
             .expect("symlinks mutex poisoned")
             .get(path)
             .map(PathBuf::from))
-    }
-
-    /// Overridden for the reason [`Self::read_link`] is: the provided body runs
-    /// `readlink`, which the mock registers no command for.
-    ///
-    /// A fixture states where a link ends; this does not simulate a chain. The
-    /// registered target is reported as the resolved path, and a path with no
-    /// registration resolves to itself. Chains, relative targets, symlinked
-    /// parent directories and loops are the filesystem's own semantics, and a
-    /// mock reimplementing them would only assert its own arithmetic: they are
-    /// covered against a real filesystem instead.
-    async fn canonical_path(&self, path: &Path) -> Result<Option<PathBuf>> {
-        Ok(Some(
-            self.symlinks
-                .lock()
-                .expect("symlinks mutex poisoned")
-                .get(path)
-                .map(PathBuf::from)
-                .unwrap_or_else(|| path.to_path_buf()),
-        ))
     }
 
     async fn file_metadata(&self, path: &Path) -> Result<FileMetadata> {
