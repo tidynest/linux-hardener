@@ -17,8 +17,8 @@ use hardener_state::{
     ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db,
 };
 use hardener_types::{
-    ApplyOutcome, ConfigSummary, FleetFrameworkPosture, FleetHostScan, FleetHostStatus, PluginId,
-    RollbackOutcome, SeverityTallies,
+    ApplyOutcome, ConfigSummary, ControlOutcome, FleetFrameworkPosture, FleetHostScan,
+    FleetHostStatus, PluginId, RollbackOutcome, SeverityTallies,
     remote::{
         FLEET_PROGRESS_EVENT, FleetProgress, HostSessionInfo, HostsConfig, RemoteConnectionInfo,
         RemoteConnectionStatus, RemoteHostProfile,
@@ -1775,6 +1775,9 @@ fn posture_for_findings(
         .into_iter()
         .map(|r| FleetFrameworkPosture {
             framework: r.report_framework,
+            // Built before `summary` is moved out, and from the same report, so
+            // the rows and the counts describe one generation rather than two.
+            controls: r.report_controls.iter().map(ControlOutcome::from).collect(),
             summary: r.report_summary,
         })
         .collect()

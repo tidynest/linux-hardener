@@ -826,6 +826,10 @@ fn fw_posture(framework: ComplianceFramework, pct: f64) -> FleetFrameworkPosture
             summary_not_applicable: 0,
             summary_score_percentage: pct,
         },
+        // Empty on purpose: every assertion this fixture serves is about the
+        // score strip, which reads the summary alone. A fixture carrying rows
+        // it never looks at would suggest they were part of what is asserted.
+        controls: Vec::new(),
     }
 }
 

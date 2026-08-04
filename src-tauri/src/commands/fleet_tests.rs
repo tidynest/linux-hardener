@@ -615,3 +615,42 @@ fn a_scan_entry_without_the_field_is_not_assumed_successful() {
         .unwrap();
     assert!(!result.scan_success, "an unknown outcome must fail closed");
 }
+
+/// The per-control outcomes have to survive `posture_for_findings`, which is
+/// the one place they were computed and dropped: `ReportGenerator::generate`
+/// returns a full `ComplianceReport` per framework and only `report_framework`
+/// and `report_summary` were kept. Without them the fleet view can show a
+/// compliance count and nothing about what it counts, which is #50.
+///
+/// The findings are empty on purpose. A control this host was never assessed
+/// for is `ManualReview` rather than `Pass`, so an empty scan still produces a
+/// full catalogue of outcomes, and the assertion below is about the rows
+/// travelling rather than about any particular verdict.
+#[test]
+fn the_fleet_posture_carries_one_outcome_per_control() {
+    let generator = fleet_report_generator(
+        ComplianceProfile::Generic,
+        hardener_plugins::compliance_coverage(),
+    );
+
+    let posture = posture_for_findings(&generator, &[], &[]);
+
+    assert_eq!(
+        posture.len(),
+        FLEET_FRAMEWORKS.len(),
+        "one posture row per fleet framework"
+    );
+    for framework in &posture {
+        assert_eq!(
+            framework.controls.len(),
+            framework.summary.summary_total_controls,
+            "{:?} must carry an outcome for every control its own summary counted",
+            framework.framework
+        );
+    }
+    assert!(
+        posture.iter().any(|f| !f.controls.is_empty()),
+        "the control rows must not be uniformly empty, which every count-equality \
+         assertion above would also satisfy"
+    );
+}
