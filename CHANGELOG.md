@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A partial `--config` re-enabled a plugin the system configuration had
+  disabled, on the verb that writes.** A plugin section's `enabled` key was a
+  `bool` defaulting to `true`, so a later source that mentioned a section for
+  any reason at all, a single directive included, supplied `enabled = true` for
+  it. A file that asked for the plugin and a file that merely named it were
+  indistinguishable. Site policy disabling `mac-hardening` was therefore undone
+  by `sudo hardener apply --all --config /tmp/tighten-ssh.toml`, and the plugin
+  was applied; the desktop makes this the ordinary case, since it persists a
+  user-picked config file and passes it to the privileged apply, and such files
+  are typically partial. The key is now an `Option`, so a section that does not
+  state it decides nothing and the earlier decision stands. An explicit
+  `enabled = true` still revives a plugin, and an explicit `enabled = false`
+  still disables one. Read it through `PluginConfig::is_enabled`, which answers
+  `true` when no source stated it, so a configuration that mentions the key
+  nowhere behaves exactly as it always has.
+
 - **Two ad-hoc targets for one machine could file their checkpoints under a
   single key, so a fleet rollback could restore already-hardened state and
   report success.** The checkpoint host key comes from

@@ -5,7 +5,7 @@ fn test_default_config() {
     let config = HardenerConfig::default();
     assert!(config.global.enabled_plugins.is_empty());
     assert!(config.global.disabled_plugins.is_empty());
-    assert!(config.ssh.enabled);
+    assert!(config.ssh.is_enabled());
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn section_enabled_false_disables_the_plugin() {
     // is the one an operator reaches for first. Reading only the [global]
     // lists left such a host scanned and hardened anyway, with nothing said.
     let mut config = HardenerConfig::default();
-    config.ssh.enabled = false;
+    config.ssh.enabled = Some(false);
     assert!(!config.is_plugin_enabled("ssh-hardening"));
     assert!(config.is_plugin_enabled("kernel-hardening"));
 }
@@ -57,7 +57,7 @@ fn section_enabled_true_cannot_re_enable_a_globally_disabled_plugin() {
     // mentions the plugin silently defeat [global] disabled_plugins.
     let mut config = HardenerConfig::default();
     config.global.disabled_plugins = vec!["ssh-hardening".to_string()];
-    config.ssh.enabled = true;
+    config.ssh.enabled = Some(true);
     assert!(!config.is_plugin_enabled("ssh-hardening"));
 }
 
@@ -67,7 +67,7 @@ fn section_enabled_false_beats_a_global_enabled_list() {
     // [global] enabled_plugins does not outrank its own section turning it off.
     let mut config = HardenerConfig::default();
     config.global.enabled_plugins = vec!["ssh-hardening".to_string()];
-    config.ssh.enabled = false;
+    config.ssh.enabled = Some(false);
     assert!(!config.is_plugin_enabled("ssh-hardening"));
 }
 
@@ -183,30 +183,38 @@ fn test_has_valid_exception_expired() {
 fn test_get_plugin_config_all_ids() {
     let mut config = HardenerConfig::default();
     // Disable each plugin uniquely so we can verify routing
-    config.ssh.enabled = false;
-    config.kernel.enabled = true;
-    config.firewall.enabled = false;
-    config.pam.enabled = true;
-    config.audit.enabled = false;
-    config.mac.enabled = true;
-    config.permissions.enabled = false;
-    config.services.enabled = true;
+    config.ssh.enabled = Some(false);
+    config.kernel.enabled = Some(true);
+    config.firewall.enabled = Some(false);
+    config.pam.enabled = Some(true);
+    config.audit.enabled = Some(false);
+    config.mac.enabled = Some(true);
+    config.permissions.enabled = Some(false);
+    config.services.enabled = Some(true);
 
-    assert!(!config.get_plugin_config("ssh-hardening").enabled);
-    assert!(config.get_plugin_config("kernel-hardening").enabled);
-    assert!(!config.get_plugin_config("firewall-hardening").enabled);
-    assert!(config.get_plugin_config("pam-hardening").enabled);
-    assert!(!config.get_plugin_config("audit-hardening").enabled);
-    assert!(config.get_plugin_config("mac-hardening").enabled);
-    assert!(!config.get_plugin_config("permissions-hardening").enabled);
-    assert!(config.get_plugin_config("service-minimisation").enabled);
+    assert!(!config.get_plugin_config("ssh-hardening").is_enabled());
+    assert!(config.get_plugin_config("kernel-hardening").is_enabled());
+    assert!(!config.get_plugin_config("firewall-hardening").is_enabled());
+    assert!(config.get_plugin_config("pam-hardening").is_enabled());
+    assert!(!config.get_plugin_config("audit-hardening").is_enabled());
+    assert!(config.get_plugin_config("mac-hardening").is_enabled());
+    assert!(
+        !config
+            .get_plugin_config("permissions-hardening")
+            .is_enabled()
+    );
+    assert!(
+        config
+            .get_plugin_config("service-minimisation")
+            .is_enabled()
+    );
 }
 
 #[test]
 fn test_get_plugin_config_unknown_returns_default() {
     let config = HardenerConfig::default();
     let plugin = config.get_plugin_config("nonexistent-plugin");
-    assert!(plugin.enabled);
+    assert!(plugin.is_enabled());
     assert!(plugin.directives.is_empty());
     assert!(plugin.exceptions.is_empty());
 }
@@ -214,14 +222,14 @@ fn test_get_plugin_config_unknown_returns_default() {
 #[test]
 fn test_get_plugin_config_service_minimisation() {
     let mut config = HardenerConfig::default();
-    config.services.enabled = false;
+    config.services.enabled = Some(false);
     config
         .services
         .directives
         .insert("key".into(), "val".into());
 
     let plugin = config.get_plugin_config("service-minimisation");
-    assert!(!plugin.enabled);
+    assert!(!plugin.is_enabled());
     assert_eq!(plugin.directives.get("key").unwrap(), "val");
 }
 

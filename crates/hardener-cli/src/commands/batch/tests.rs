@@ -49,7 +49,7 @@ fn batch_honours_an_explicit_config_path() {
 async fn a_remote_host_is_scanned_against_the_config_it_is_given() {
     use hardener_core::MockExecutor;
     let mut config = HardenerConfig::default();
-    config.ssh.enabled = false;
+    config.ssh.enabled = Some(false);
 
     let outcome = scan_with_executor(
         "h".into(),

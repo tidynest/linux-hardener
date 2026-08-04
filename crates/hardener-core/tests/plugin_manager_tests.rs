@@ -395,7 +395,7 @@ async fn execute_scan_skips_a_plugin_the_config_disables() {
     let ctx = Context::new();
 
     let mut config = HardenerConfig::default();
-    config.kernel.enabled = false;
+    config.kernel.enabled = Some(false);
 
     let results = manager.execute_scan(&ctx, &config).await.unwrap();
 

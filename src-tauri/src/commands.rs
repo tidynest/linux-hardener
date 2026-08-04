@@ -2142,7 +2142,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
 
             let enabled_plugins: Vec<String> = plugin_sections
                 .iter()
-                .filter(|(_, plugin_config)| plugin_config.enabled)
+                .filter(|(_, plugin_config)| plugin_config.is_enabled())
                 .map(|(name, _)| (*name).to_string())
                 .collect();
 

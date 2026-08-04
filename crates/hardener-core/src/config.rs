@@ -43,25 +43,35 @@ pub struct GlobalConfig {
 }
 
 /// Configuration for an individual plugin.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct PluginConfig {
-    /// Whether this plugin is enabled.
-    #[serde(default = "default_true")]
-    pub enabled: bool,
+    /// Whether this plugin is enabled, when the source said so.
+    ///
+    /// `None` means the file did not mention it, which is not the same as
+    /// mentioning it as `true`. While this was a `bool` defaulting to `true`,
+    /// the two were indistinguishable, so a later source that named a section
+    /// for any reason at all supplied `enabled = true` for it and revived a
+    /// plugin an earlier source had turned off. Read it through
+    /// [`is_enabled`](Self::is_enabled) rather than directly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
     /// Stricter directive values (beyond baseline).
     pub directives: HashMap<String, String>,
     /// Policy exceptions for specific checks.
     pub exceptions: HashMap<String, PolicyException>,
 }
 
-impl Default for PluginConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            directives: HashMap::new(),
-            exceptions: HashMap::new(),
-        }
+impl PluginConfig {
+    /// Whether this plugin runs, as far as this section alone decides.
+    ///
+    /// A section that said nothing about it runs, which is the behaviour that
+    /// shipped and the reason the key defaults the way it does. The `[global]`
+    /// lists are consulted separately, by
+    /// [`HardenerConfig::is_plugin_enabled`], and can still refuse a plugin
+    /// this answers `true` for.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.unwrap_or(true)
     }
 }
 
@@ -129,10 +139,6 @@ pub struct PolicyException {
     pub expires: Option<String>,
 }
 
-fn default_true() -> bool {
-    true
-}
-
 impl HardenerConfig {
     /// Whether a plugin should run, given the `[global]` lists and its own
     /// section's `enabled` key.
@@ -143,7 +149,7 @@ impl HardenerConfig {
     /// it can only ever turn a plugin off: reading it as an override would let a
     /// config that never mentions the plugin defeat `disabled_plugins`.
     pub fn is_plugin_enabled(&self, plugin_id: &str) -> bool {
-        if !self.get_plugin_config(plugin_id).enabled {
+        if !self.get_plugin_config(plugin_id).is_enabled() {
             return false;
         }
 

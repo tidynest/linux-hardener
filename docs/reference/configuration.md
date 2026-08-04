@@ -51,13 +51,16 @@ Rules worth knowing:
 - Directive and exception maps **merge** across sources (later keys override
   same-named earlier keys). The `[global]` plugin lists **replace** rather than
   merge: a non-empty list in a later source wins outright.
-- A section's `enabled` key is taken from the **later source outright**, and
-  `true` is its default value, so a later file that omits a section supplies
-  `enabled = true` for it. A user config therefore restores a plugin the system
-  config turned off through `[ssh] enabled = false`. To disable a plugin so that
-  no later source can revive it, name it in `[global] disabled_plugins`, which
-  merges by replacement only when the later source sets a non-empty list of its
-  own.
+- A section's `enabled` key is decided by the **last source that states it**. A
+  file that mentions a section without the key, for a directive or an exception,
+  says nothing about whether the plugin runs, so an earlier `[ssh] enabled =
+  false` stands. Only an explicit `enabled = true` in a later source revives it.
+  This matters most for `--config`, which is typically partial and, since
+  `apply` began honouring it, reaches the verb that writes: naming a section to
+  tighten one directive no longer switches the plugin back on. `[global]
+  disabled_plugins` remains the stronger statement, because it refuses a plugin
+  whatever its own section says, and it merges by replacement only when the
+  later source sets a non-empty list of its own.
 - Size limits: a config file may be at most 1 MiB, with at most 500 `directives`
   and 200 exceptions per plugin section.
 
@@ -109,7 +112,7 @@ Every section accepts the same three keys:
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
-| `enabled` | bool | `true` | Set `false` to stop this plugin from running. Disabled anywhere is final within one merged config: `enabled = true` is the key's default value, so it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. Across sources the key behaves differently; see the merge rule under File locations and precedence. |
+| `enabled` | bool | `true` when no source states it | Set `false` to stop this plugin from running. Disabled anywhere is final within one merged config: it can only ever turn a plugin off and never re-enable one `[global] disabled_plugins` has already refused, or one a non-empty `[global] enabled_plugins` omits. Across sources, the last source that *states* the key decides it, and a section mentioned without it decides nothing; see the merge rule under File locations and precedence. |
 | `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Directives are clamped tighten-only: completely in `[kernel]`, `[ssh]`, `[pam]` and `[permissions]`, and on the `action` field alone in `[firewall]`, whose `port`, `source` and `protocol` are applied as given. See below. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 

@@ -23,7 +23,7 @@ fn test_default_config() {
     let loader = ConfigLoader::new().skip_defaults();
     let config = loader.load().unwrap();
     assert!(config.global.enabled_plugins.is_empty());
-    assert!(config.ssh.enabled);
+    assert!(config.ssh.is_enabled());
 }
 
 /// `custom_directives` was accepted and validated for several releases
@@ -56,7 +56,7 @@ fn a_config_still_naming_the_removed_custom_directives_loads() {
         .load()
         .expect("a file naming the removed table must still load");
 
-    assert!(config.ssh.enabled);
+    assert!(config.ssh.is_enabled());
     assert_eq!(
         config
             .ssh
@@ -92,7 +92,7 @@ fn test_load_from_file() {
         config.global.disabled_plugins,
         vec!["mac-hardening".to_string()]
     );
-    assert!(config.ssh.enabled);
+    assert!(config.ssh.is_enabled());
 }
 
 #[test]
@@ -110,14 +110,14 @@ fn test_merge_configs() {
     let base = HardenerConfig::default();
     let mut overlay = HardenerConfig::default();
     overlay.global.disabled_plugins = vec!["ssh-hardening".to_string()];
-    overlay.ssh.enabled = false;
+    overlay.ssh.enabled = Some(false);
 
     let merged = ConfigLoader::merge_configs(base, overlay).unwrap();
     assert_eq!(
         merged.global.disabled_plugins,
         vec!["ssh-hardening".to_string()]
     );
-    assert!(!merged.ssh.enabled);
+    assert!(!merged.ssh.is_enabled());
 }
 
 #[test]
@@ -180,5 +180,73 @@ reason = "Print server required"
     assert!(
         plugin.has_valid_exception("cups").is_some(),
         "Exception added under [services] must be reachable via service-minimisation ID"
+    );
+}
+
+/// A later source that merely mentions a section must not re-enable a plugin an
+/// earlier source disabled.
+///
+/// `enabled` defaulted to `true`, so a file that named `[mac]` for any reason,
+/// a single directive included, supplied `enabled = true` for it. That was
+/// indistinguishable from a file that asked for it. Site policy disabling
+/// `mac-hardening` was therefore undone by any partial `--config`, and since
+/// `apply` began honouring that flag the verb that writes was exposed to it: a
+/// plugin the site had turned off would be applied.
+#[test]
+fn a_section_mentioned_without_enabled_does_not_revive_a_disabled_plugin() {
+    let mut base = HardenerConfig::default();
+    base.mac.enabled = Some(false);
+
+    let mut overlay = HardenerConfig::default();
+    overlay
+        .mac
+        .directives
+        .insert("selinux_mode".to_string(), "enforcing".to_string());
+
+    let merged = ConfigLoader::merge_configs(base, overlay).expect("the sources merge");
+
+    assert!(
+        !merged.is_plugin_enabled("mac-hardening"),
+        "a section mentioned for its directives says nothing about whether the \
+         plugin runs, so the earlier decision stands"
+    );
+    assert_eq!(
+        merged
+            .mac
+            .directives
+            .get("selinux_mode")
+            .map(String::as_str),
+        Some("enforcing"),
+        "while the directive it did carry is still merged, or the fix would have \
+         cost the file its actual purpose"
+    );
+}
+
+/// The control, in both directions: a later source that *says* so still decides.
+#[test]
+fn a_section_that_states_enabled_still_decides_it() {
+    let mut base = HardenerConfig::default();
+    base.mac.enabled = Some(false);
+    let mut overlay = HardenerConfig::default();
+    overlay.mac.enabled = Some(true);
+
+    let revived = ConfigLoader::merge_configs(base, overlay).expect("the sources merge");
+    assert!(
+        revived.is_plugin_enabled("mac-hardening"),
+        "an explicit `enabled = true` is a decision and must be honoured"
+    );
+
+    let mut base = HardenerConfig::default();
+    let mut overlay = HardenerConfig::default();
+    overlay.mac.enabled = Some(false);
+    let disabled = ConfigLoader::merge_configs(base.clone(), overlay).expect("the sources merge");
+    assert!(
+        !disabled.is_plugin_enabled("mac-hardening"),
+        "and an explicit `enabled = false` still turns a plugin off"
+    );
+    base.mac.enabled = None;
+    assert!(
+        HardenerConfig::default().is_plugin_enabled("mac-hardening"),
+        "with nothing said anywhere, a plugin runs, which is the shipped default"
     );
 }
