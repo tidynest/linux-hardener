@@ -29,6 +29,36 @@ const DEFAULT_INBOUND_RULE: &str = "Drop all other inbound traffic by default";
 /// less here than it costs.
 const RULE_ALREADY_PRESENT: &str = "Skipping adding existing rule";
 
+/// Spells a port the way ufw spells it.
+///
+/// `Rule::rule_port`'s canonical range separator is the dash, which is what
+/// `validate_firewall_value` accepts and what nftables (`dport 80-443`) and
+/// firewalld (`80-443/tcp`) both take natively. **ufw is the exception**: it
+/// wants a colon, and rejects the dash outright. Measured 2026-08-04:
+///
+/// ```text
+/// $ ufw --dry-run allow to any port 80-443 proto tcp
+/// ERROR: Bad port '80-443'
+/// ```
+///
+/// So the translation belongs here, at the one backend that differs, rather
+/// than in the shared form the other two are already right about.
+///
+/// Anything that is not a dash-separated pair of port numbers is passed through
+/// untouched. That is deliberate: `validate_firewall_value` has already refused
+/// such a value on every path that goes through a config, so a value arriving
+/// here in some other shape is one this function cannot vouch for, and handing
+/// it to ufw unchanged fails loudly at ufw rather than quietly here.
+fn ufw_port_syntax(port: &str) -> String {
+    let Some((low, high)) = port.split_once('-') else {
+        return port.to_string();
+    };
+    match (low.parse::<u16>(), high.parse::<u16>()) {
+        (Ok(low), Ok(high)) => format!("{low}:{high}"),
+        _ => port.to_string(),
+    }
+}
+
 /// UFW firewall backend for Ubuntu/Debian systems.
 pub struct UfwBackend;
 
@@ -101,10 +131,13 @@ impl UfwBackend {
     /// Converts backend-agnostic Rule into UFW command syntax:
     /// e.g., `ufw allow from 192.168.1.0/24 to any port 22 proto tcp`
     ///
+    /// A port range is translated by [`ufw_port_syntax`], because ufw is the
+    /// one backend that does not take the canonical form.
+    ///
     /// The baseline's "drop all other inbound by default" rule is not a
     /// `ufw add`-style rule; ufw's own default-policy switch is
     /// `ufw default deny incoming`.
-    fn build_ufw_rule_args(&self, rule: &Rule) -> Vec<String> {
+    pub(crate) fn build_ufw_rule_args(&self, rule: &Rule) -> Vec<String> {
         if rule.rule_description == DEFAULT_INBOUND_RULE {
             return vec![
                 "default".to_string(),
@@ -135,7 +168,7 @@ impl UfwBackend {
             args.push("to".to_string());
             args.push("any".to_string());
             args.push("port".to_string());
-            args.push(rule.rule_port.clone());
+            args.push(ufw_port_syntax(&rule.rule_port));
 
             if rule.rule_protocol != "all" && rule.rule_protocol != "any" {
                 args.push("proto".to_string());

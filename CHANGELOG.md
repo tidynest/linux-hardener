@@ -599,6 +599,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A firewall port range reached ufw in a syntax ufw refuses.** `rule_port` was
+  passed to each backend as written, and the three backends do not agree on how
+  a range is spelled. nftables (`dport 80-443`) and firewalld (`80-443/tcp`)
+  both take the dash, which is also the one form `validate_firewall_value`
+  accepts, so the dash is the canonical separator. ufw wants a colon and rejects
+  the dash outright, measured rather than inferred: `ufw --dry-run allow to any
+  port 80-443 proto tcp` answers `ERROR: Bad port '80-443'` and exits at the
+  parser, while `80:443` gets past it to the root check. The translation now
+  happens in the ufw backend, at the one place the difference lives, and the
+  other two are untouched. Reachable through `loopback.port = "80-443"`, which
+  narrows an accepting rule whose baseline port is `any` and so passes the
+  directive clamp; on a ufw host the rule then failed at apply time while the
+  same config worked on the other two backends. `Rule::rule_port`'s own doc
+  comment was the other half of the disagreement: it gave `"80:443"` as its
+  example, a value its own validator refuses, and now gives `"80-443"`. A value
+  that is not a dash-separated pair of port numbers is handed to ufw unchanged
+  rather than rewritten, so it fails with ufw's own message instead of being
+  quietly turned into a different malformed value. Closes #85.
+
 - **The merged checkpoint list's de-duplication had no test, and the case it
   guards cannot be built through the public API.** `collect_checkpoints` merges
   the user and system databases and drops an id it has already seen, first-wins.

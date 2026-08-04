@@ -60,7 +60,7 @@ impl NftablesBackend {
     ///
     /// Converts backend-agnostic Rule into nft command syntax:
     /// e.g., `nft add rule inet filter input tcp dport 22 accept`
-    fn build_nft_rule_args(&self, rule: &Rule) -> Vec<String> {
+    pub(crate) fn build_nft_rule_args(&self, rule: &Rule) -> Vec<String> {
         let mut args = vec![
             "add".to_string(),
             "rule".to_string(),

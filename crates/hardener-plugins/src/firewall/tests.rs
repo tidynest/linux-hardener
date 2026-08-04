@@ -1517,3 +1517,87 @@ async fn a_refused_firewall_reload_is_reported_as_an_error() {
         "the error must carry the backend's own stderr, got: {error}"
     );
 }
+
+/// Builds one accepting rule carrying `port`, which is all three assertions
+/// below need and nothing else.
+fn rule_with_port(port: &str) -> Rule {
+    Rule {
+        rule_description: "Allow a range".to_string(),
+        rule_protocol: "tcp".to_string(),
+        rule_port: port.to_string(),
+        rule_source: "any".to_string(),
+        rule_action: "accept".to_string(),
+    }
+}
+
+/// ufw spells a port range with a colon and refuses the dash outright, so the
+/// canonical dash has to be translated at the point it reaches ufw and nowhere
+/// earlier. Measured before this was written: `ufw --dry-run allow to any port
+/// 80-443 proto tcp` answers `ERROR: Bad port '80-443'` and exits 1, while the
+/// colon form gets past the parser to the root check.
+///
+/// The whole argument list is pinned rather than one element of it, so the
+/// command measured against real ufw and the command this backend builds cannot
+/// drift apart.
+#[test]
+fn a_port_range_reaches_ufw_in_ufws_own_syntax() {
+    let args = ufw::UfwBackend::new().build_ufw_rule_args(&rule_with_port("80-443"));
+
+    assert_eq!(
+        args,
+        vec!["allow", "to", "any", "port", "80:443", "proto", "tcp"],
+        "ufw must be given its own range syntax, and the rest of the rule unchanged"
+    );
+}
+
+/// The control that keeps the translation ufw-local. nftables takes the dash
+/// natively, so a fix applied to the shared canonical form rather than to ufw
+/// would break this backend while making the one above pass. firewalld is the
+/// third case and needs the dash too, rendering `80-443/tcp` inside its own
+/// `apply_rules`; it has no pure builder to assert against here, and the rule
+/// it depends on is the one this test pins.
+#[test]
+fn a_port_range_reaches_nftables_in_the_canonical_syntax() {
+    let args = nftables::NftablesBackend::new().build_nft_rule_args(&rule_with_port("80-443"));
+
+    assert!(
+        args.contains(&"80-443".to_string()),
+        "nftables takes the canonical range unchanged, got: {args:?}"
+    );
+}
+
+/// The second control, and the one that says the translation fires on a range
+/// rather than on every port. A single port has no separator to rewrite, and a
+/// translation that reached it would corrupt the one value every baseline rule
+/// carries.
+#[test]
+fn a_single_port_is_untouched_by_either_backend() {
+    let ufw_args = ufw::UfwBackend::new().build_ufw_rule_args(&rule_with_port("22"));
+    let nft_args = nftables::NftablesBackend::new().build_nft_rule_args(&rule_with_port("22"));
+
+    assert!(
+        ufw_args.contains(&"22".to_string()),
+        "ufw must carry a single port through unchanged, got: {ufw_args:?}"
+    );
+    assert!(
+        nft_args.contains(&"22".to_string()),
+        "nftables must carry a single port through unchanged, got: {nft_args:?}"
+    );
+}
+
+/// The guard on the translation, and the reason it is a parse rather than a
+/// blind character swap. A value that is not a dash-separated pair of port
+/// numbers is passed to ufw unchanged, so it fails at ufw with ufw's own
+/// message instead of being quietly rewritten into a different malformed
+/// value here. `validate_firewall_value` refuses such a value on every path
+/// that goes through a config, so this pins intent rather than a reachable
+/// case.
+#[test]
+fn a_value_that_is_not_a_range_is_handed_to_ufw_unchanged() {
+    let args = ufw::UfwBackend::new().build_ufw_rule_args(&rule_with_port("22-"));
+
+    assert!(
+        args.contains(&"22-".to_string()),
+        "an unparseable range must reach ufw as written, got: {args:?}"
+    );
+}
