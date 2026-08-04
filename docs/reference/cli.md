@@ -685,6 +685,11 @@ hardener batch apply (--all | --host a,b | --ssh user@host) [FLAGS]
 | `--output <FILE>` | Write report to a file instead of stdout | stdout |
 
 Tiered exit codes: `0` = clean; `1` = apply or validation failure; `2` = connect, privilege, or usage error.
+The usage errors refused before any connection are: no hosts selected, an
+unknown `--host` name, a `--config` that will not load under `--execute`, and a
+selection whose hosts share one checkpoint host key. An `--output` path whose
+extension contradicts `--format` exits `1` rather than `2`, as it does for
+`report`.
 
 **Examples:**
 
@@ -722,7 +727,9 @@ hosts with nothing to roll back; `1` = at least one checkpoint failed to
 restore, or restored cleanly but whose plugin failed to reload; `2` = at
 least one host-level error, which covers a failed connection, a host without
 root or passwordless sudo, a checkpoint store that could not be read, and a
-rollback task that did not finish.
+rollback task that did not finish. `2` also covers the selection refusals, which
+happen before any connection: no hosts selected, an unknown `--host` name, and a
+selection whose hosts would file their checkpoints under one host key.
 
 **Examples:**
 
