@@ -547,14 +547,24 @@ config still decides, which is what keeps a timer installed against a
 policy-only file running on your real scheduler settings rather than the
 compiled-in ones.
 
-A **partial** `[scheduler]` table is allowed: every key below has a default, so
-a section naming only `enabled` is a valid section and the rest of the table
-takes the defaults listed here. What that does **not** do is merge across files.
-The first file carrying a `[scheduler]` section still wins whole, so a partial
-section in your user config hides a complete one in the system config, and the
-keys it omits come from these defaults rather than from the file it hid. Keep
-the scheduler settings in the system config on any host where that distinction
-matters, and keep them in one file.
+A **partial** `[scheduler]` table is allowed: every key in the table below, and
+in the `storage` and `notifications` tables under it, has a default, so a
+section naming only `enabled` is a valid section and the rest takes the defaults
+listed here. The one exception is a webhook endpoint, where `name` and `url`
+remain required, because neither has an answer worth guessing; `format` does
+default.
+
+A typo is the cost of this. Nothing rejects an unknown key, here or anywhere
+else in the file, so `scheduel = "0 0 5 * * *"` is not an error and not a
+setting: the daemon runs on the 02:00 default and no command says otherwise.
+Check `hardener daemon status`, which prints the schedule it actually resolved.
+
+What a partial table does **not** do is merge across files. The first file
+carrying a `[scheduler]` section still wins whole, so a partial section in your
+user config hides a complete one in the system config, and the keys it omits
+come from these defaults rather than from the file it hid. Keep the scheduler
+settings in the system config on any host where that distinction matters, and
+keep them in one file.
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
@@ -590,8 +600,9 @@ Email (`[scheduler.notifications.email]`): `enabled` (default `false`),
 
 Webhooks (`[scheduler.notifications.webhooks]`): `enabled` (default `false`)
 plus one `[[scheduler.notifications.webhooks.endpoints]]` block per endpoint
-with `name`, `url`, `format` (`generic`, `slack`, or `discord`) and optional
-`headers` (values support `${ENV_VAR}` expansion).
+with `name` and `url`, both **required**, plus `format` (`generic`, `slack`, or
+`discord`; default `generic`) and optional `headers` (values support
+`${ENV_VAR}` expansion).
 
 ```toml
 [scheduler]

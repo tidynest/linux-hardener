@@ -496,13 +496,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `enabled = true` was refused with ``missing field `schedule` ``. It is also the
   one table in that tree an operator writes by hand. The section is read from
   whichever file in the search order carries it and a parse failure there is
-  fatal, so a partial section in the system config took down every command that
-  opens the scan-history database, not merely the scheduler. Each key now falls
-  back to the default the reference already listed for it. The section still
-  does not merge across files, so a partial section in the user config hides a
-  complete one in the system config and takes these defaults for what it omits
-  rather than that file's values; `configuration.md` said the opposite of the
-  new behaviour and has been corrected.
+  returned rather than skipped, so a partial section anywhere in that search was
+  fatal to `daemon` and to every `history` verb. The other two callers that open
+  the same database, `scan` and `batch`, swallow the error instead, so for them
+  the same file silently dropped scan-history persistence and still exited 0,
+  which is the quieter half of the same defect and was reported nowhere. Each
+  key now falls back to the default the reference already listed for it. The
+  same omission one level down, on `WebhookEndpoint`'s `format`, is fixed with
+  it, and `name` and `url` stay required because neither has an answer worth
+  guessing. The section still does not merge across files, so a partial section
+  in the user config hides a complete one in the system config and takes these
+  defaults for what it omits rather than that file's values; `configuration.md`
+  said the opposite of the new behaviour and has been corrected. One thing is
+  given up: the mandatory group was an accidental typo detector, so a misspelled
+  key is now accepted in silence. Nothing in this workspace sets
+  `deny_unknown_fields`, and setting it here alone would refuse a file written
+  for a newer version, so the trade is recorded rather than taken back.
+
+- **A configuration path containing a space or a `%` produced a systemd unit
+  that could never run.** `systemd generate` and `install` interpolate `-C` and
+  the binary path straight into `ExecStart=`, which is neither a shell line nor
+  a value passed through untouched: systemd expands `%` specifiers over it and
+  then splits it on whitespace. Measured on a live unit, `--config
+  /etc/my conf.toml` reached the process as the two arguments `/etc/my` and
+  `conf.toml`, so clap refused the command with `unrecognized subcommand
+  'conf.toml'` and exited 2 at every scheduled run, reported nowhere because
+  nothing watches a timer's exit status by default; `%h` in a path was replaced
+  by the home directory before the process saw it. Both paths are now emitted as
+  quoted words with `%` escaped, so what the operator typed is what the
+  scheduled run receives.
 
 - **A refused desktop operation blocked the next real one for five seconds.**
   The rate limit that paces privileged operations was started by the RAII

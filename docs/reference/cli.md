@@ -819,14 +819,19 @@ generate it.** Given `-C`, the service runs
 normal search order. Two consequences, both of the embedded path rather than of
 the flag:
 
-- **The path is embedded exactly as you typed it.** A relative `-C` produces a
-  relative `ExecStart` argument, which systemd resolves against the service's
-  working directory (`/` for a system unit) rather than yours. Give `-C` an
-  absolute path here.
+- **The path is embedded verbatim, and it reaches the scheduled run intact.**
+  It is written as a quoted `ExecStart` word with any `%` escaped, so a path
+  holding a space or a percent sign is delivered to the process as you typed it
+  rather than being re-split or specifier-expanded by systemd. What is *not*
+  done for you is resolving it: a relative `-C` produces a relative argument,
+  which systemd resolves against the service's working directory (`/` for a
+  system unit) rather than yours. Give `-C` an absolute path here.
 - **The unit is pinned to that file for as long as it is installed.** A named
   path that is later moved, renamed or deleted does not fall back to the search
-  order: the scheduled run exits non-zero every time, because a `--config` that
-  will not load is fatal wherever it is named. Regenerate or reinstall after
+  order: the scheduled run exits non-zero every time, because the unit runs
+  `daemon run-once`, and a `--config` that will not load is fatal for that verb.
+  (It is not fatal everywhere; see the [global flags](#global-flags) for the
+  three `batch` verbs that keep the fallback.) Regenerate or reinstall after
   moving the file.
 
 ### systemd install
@@ -844,9 +849,13 @@ sudo hardener systemd install [FLAGS]
 
 **System vs user install:** System install (`sudo`, no `--user`) runs as root and can apply all hardening changes. User install (`--user`, no sudo) runs under your user account, suitable for scan-only monitoring.
 
-`install` writes the same units `generate` prints, so the global `-C` is
-embedded here on the same terms: see the note under
-[systemd generate](#systemd-generate).
+`install` embeds the global `-C` on exactly the terms described under
+[systemd generate](#systemd-generate). The units themselves are not identical,
+because `generate` has no `--user` flag and always prints the system unit: under
+`--user` the sandbox collapses to `NoNewPrivileges=true` alone and `WantedBy`
+becomes `default.target`. That difference reaches the `-C` advice in one place.
+A user unit's working directory is your home directory, not `/`, so a relative
+`-C` resolves somewhere else again. Absolute either way.
 
 ### systemd uninstall
 

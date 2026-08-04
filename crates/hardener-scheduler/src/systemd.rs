@@ -3,11 +3,34 @@
 //! Generates `.service` and `.timer` unit files for running
 //! scheduled scans via systemd instead of the built-in daemon.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Unit file names.
 const SERVICE_NAME: &str = "linux-hardener.service";
 const TIMER_NAME: &str = "linux-hardener.timer";
+
+/// Renders one path as a single `ExecStart` word.
+///
+/// `ExecStart` is not a shell line and it is not handed to the process as
+/// written. systemd expands `%` specifiers over the whole value and then splits
+/// it on whitespace, so a path was interpolated raw into a setting that reads
+/// neither of those characters literally. Measured on a live unit: a config
+/// path containing one space arrived as two arguments, which clap refuses with
+/// `unrecognized subcommand`, and `%h` arrived as the home directory.
+///
+/// Quoting answers the split, `%%` answers the specifier, and the two C escapes
+/// answer what quoting would otherwise swallow. Applied to the binary path as
+/// well as the config path, because `--binary` takes an operator's path and
+/// `current_exe()` can return one just as awkward.
+fn exec_word(path: &Path) -> String {
+    let escaped = path
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('%', "%%");
+    format!("\"{escaped}\"")
+}
 
 /// Generates systemd unit files for scheduled scanning.
 pub struct SystemdGenerator {
@@ -59,13 +82,10 @@ impl SystemdGenerator {
 
     /// Generates the `.service` unit file content.
     pub fn generate_service(&self) -> String {
+        let binary = exec_word(&self.binary_path);
         let exec_start = match &self.config_path {
-            Some(cfg) => format!(
-                "{} --config {} daemon run-once",
-                self.binary_path.display(),
-                cfg.display()
-            ),
-            None => format!("{} daemon run-once", self.binary_path.display()),
+            Some(cfg) => format!("{binary} --config {} daemon run-once", exec_word(cfg)),
+            None => format!("{binary} daemon run-once"),
         };
 
         // User services cannot use privileged sandboxing directives

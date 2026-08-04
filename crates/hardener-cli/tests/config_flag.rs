@@ -251,21 +251,19 @@ fn batch_apply_dry_run_still_falls_back_when_the_named_config_cannot_be_loaded()
 /// of the setting.
 /// A config naming a scheduler database of this test's own, and that path.
 ///
-/// Every field of `SchedulerConfig` without a serde default has to be present
-/// or the file will not parse at all, which would fail these tests for a reason
-/// that is not their subject. The path is escaped rather than interpolated raw:
-/// a `TMPDIR` containing a backslash or a quote would otherwise produce a
-/// fixture that is not valid TOML.
+/// The four scalar keys are written out although each now has a serde default,
+/// because this fixture's subject is which database a named config selects, and
+/// spelling the schedule out keeps that independent of what the defaults happen
+/// to be. `partial_scheduler_section_reaches_the_loader` covers the omitting
+/// case deliberately. The path is escaped rather than interpolated raw: a
+/// `TMPDIR` containing a backslash or a quote would otherwise produce a fixture
+/// that is not valid TOML.
 fn scheduler_fixture(label: &str) -> (std::path::PathBuf, std::path::PathBuf) {
     let home = scratch_home();
     let db = home.join(format!("{label}-history.db"));
     let config = home.join(format!("{label}-scheduler.toml"));
     let _ = std::fs::remove_file(&db);
-    let escaped = db
-        .display()
-        .to_string()
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"");
+    let escaped = toml_escaped(&db);
     std::fs::write(
         &config,
         format!(
@@ -303,6 +301,84 @@ fn the_scheduler_section_comes_from_the_named_config_too() {
     assert!(
         !unnamed.exists(),
         "a run that was never given the config must not open the database it names"
+    );
+}
+
+/// One path in a TOML string literal, with the two characters that would end it
+/// early escaped. A `TMPDIR` holding a backslash or a quote is legal.
+fn toml_escaped(path: &std::path::Path) -> String {
+    path.display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+}
+
+/// Writes a scheduler config whose `[scheduler]` body is given verbatim, and
+/// returns it beside the database path it names.
+fn scheduler_config_with(label: &str, body: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let home = scratch_home();
+    let db = home.join(format!("{label}-history.db"));
+    let config = home.join(format!("{label}-scheduler.toml"));
+    let _ = std::fs::remove_file(&db);
+    let escaped = toml_escaped(&db);
+    std::fs::write(
+        &config,
+        format!("[scheduler]\n{body}\n[scheduler.storage]\ndatabase_path = \"{escaped}\"\n"),
+    )
+    .expect("the fixture config is written");
+    (config, db)
+}
+
+/// A `[scheduler]` section that omits keys still reaches the loader.
+///
+/// The unit tests prove `SchedulerConfig` deserialises from a partial table.
+/// They cannot prove the CLI ever gets that far: the section is parsed through a
+/// separate `ConfigFile` wrapper in `commands::daemon`, and a parse failure
+/// there is returned rather than skipped, so the whole file was fatal. That is
+/// where the severity lived, and nothing exercised it, so a refactor that
+/// reintroduced a mandatory field at the wrapper would have left the suite
+/// green. The observable is the database, exactly as in the tests above: it can
+/// only appear if the file parsed and the section was honoured.
+#[test]
+fn partial_scheduler_section_reaches_the_loader() {
+    // Both omissions at once, because both were the same defect: three of the
+    // four scalar keys, and a webhook endpoint that does not name its format.
+    let (config, db) = scheduler_config_with(
+        "partial",
+        "enabled = true\n\n\
+         [[scheduler.notifications.webhooks.endpoints]]\n\
+         name = \"ops\"\n\
+         url = \"https://example.invalid/hook\"\n",
+    );
+    let out = run(&[
+        "--config",
+        config.to_str().expect("a UTF-8 scratch path"),
+        "history",
+        "list",
+    ]);
+    assert!(
+        db.exists(),
+        "a section naming only some of its keys must be honoured, not refused; \
+         got exit {:?} with stderr: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The control. A section that genuinely cannot be parsed must still be
+    // fatal, which is what proves the database's existence tracks the parse
+    // outcome rather than appearing for any run at all.
+    let (bad, unparsed) = scheduler_config_with("partial-control", "schedule = 5\n");
+    let refused = run(&[
+        "--config",
+        bad.to_str().expect("a UTF-8 scratch path"),
+        "history",
+        "list",
+    ]);
+    assert!(
+        !unparsed.exists() && !refused.status.success(),
+        "a section whose value has the wrong type must still fail the run; got \
+         exit {:?}",
+        refused.status.code()
     );
 }
 
