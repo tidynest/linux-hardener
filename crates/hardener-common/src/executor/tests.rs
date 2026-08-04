@@ -189,6 +189,11 @@ async fn a_commented_name_file_keys_on_the_name_and_not_on_the_comment() {
 struct ScriptedProbeHost {
     /// Exactly what the probe script is to print on stdout.
     answer: &'static str,
+    /// The exit code `execute_command` reports alongside `answer`. Real runs
+    /// of [`LINK_PROBE_SCRIPT`] never exit non-zero themselves; this exists so
+    /// a test can state the shape of a run that did not complete, `sh` absent
+    /// or the process killed after flushing partial output.
+    exit_code: i32,
     /// The argv of the last `execute_command`, for asserting how the path
     /// reaches the script.
     seen: std::sync::Mutex<Vec<String>>,
@@ -198,6 +203,15 @@ impl ScriptedProbeHost {
     fn answering(answer: &'static str) -> Self {
         Self {
             answer,
+            exit_code: 0,
+            seen: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn answering_with_exit_code(answer: &'static str, exit_code: i32) -> Self {
+        Self {
+            answer,
+            exit_code,
             seen: std::sync::Mutex::new(Vec::new()),
         }
     }
@@ -220,7 +234,7 @@ impl SystemExecutor for ScriptedProbeHost {
         Ok(CommandOutput {
             stdout: self.answer.to_string(),
             stderr: String::new(),
-            exit_code: 0,
+            exit_code: self.exit_code,
         })
     }
 
@@ -254,7 +268,11 @@ impl SystemExecutor for ScriptedProbeHost {
 #[tokio::test]
 async fn the_probed_path_is_passed_as_argv_and_never_interpolated() {
     let host = ScriptedProbeHost::answering("NOTLINK");
-    let path = Path::new("/etc/x/a file; rm -rf /");
+    // No trailing slash: that is a different concern, covered by
+    // `a_trailing_slash_is_stripped_before_the_script_ever_sees_it`, and
+    // mixing it in here would make this assertion fail for a reason that has
+    // nothing to do with quoting.
+    let path = Path::new("/etc/x/a file; rm -rf /tmp");
 
     host.link_target_as_writer(path)
         .await
@@ -265,7 +283,7 @@ async fn the_probed_path_is_passed_as_argv_and_never_interpolated() {
     assert_eq!(seen[1], "-c", "the script arrives as -c");
     assert_eq!(
         seen.last().map(String::as_str),
-        Some("/etc/x/a file; rm -rf /"),
+        Some("/etc/x/a file; rm -rf /tmp"),
         "the path is the last positional, verbatim and unescaped"
     );
     assert!(
@@ -349,5 +367,93 @@ fn the_two_answers_the_probe_can_produce_are_accepted() {
         parse_link_probe("LINK /etc/target.conf").expect("LINK parses"),
         Some(PathBuf::from("/etc/target.conf")),
         "a resolved target must survive the strictness above"
+    );
+}
+
+/// A trailing slash reaches the script with the slash removed, and the root
+/// itself still probes as `/` rather than as an empty string.
+///
+/// A trailing slash forces the kernel to resolve the terminal component
+/// before the `lstat` behind `test -h`, which reads a symlink as `NOTLINK`:
+/// the whole of issue #83's trailing-slash finding. Fixing that in the shell
+/// script would leave the same bug for any other caller of the script; fixing
+/// it in Rust, before the argv is built, is what this test pins down.
+#[tokio::test]
+async fn a_trailing_slash_is_stripped_before_the_script_ever_sees_it() {
+    let host = ScriptedProbeHost::answering("LINK /abs/realdir");
+
+    host.link_target_as_writer(Path::new("/etc/x/linkdir/"))
+        .await
+        .expect("the probe answers");
+
+    assert_eq!(
+        host.seen.lock().expect("seen mutex poisoned").last(),
+        Some(&"/etc/x/linkdir".to_string()),
+        "the trailing slash must not reach the script: it would make test -h \
+         follow the link and hide a real symlink as NOTLINK"
+    );
+
+    let root_host = ScriptedProbeHost::answering("NOTLINK");
+    root_host
+        .link_target_as_writer(Path::new("/"))
+        .await
+        .expect("the probe answers");
+
+    assert_eq!(
+        root_host.seen.lock().expect("seen mutex poisoned").last(),
+        Some(&"/".to_string()),
+        "the root must still be probed as / rather than collapsing to an empty argument"
+    );
+}
+
+/// Pure unit coverage of [`normalize_probe_path`] itself, independent of the
+/// executor plumbing above.
+#[test]
+fn normalize_probe_path_trims_trailing_slashes_and_keeps_the_root() {
+    assert_eq!(
+        normalize_probe_path("/etc/x/plain.conf"),
+        "/etc/x/plain.conf",
+        "a path with no trailing slash must pass through unchanged"
+    );
+    assert_eq!(
+        normalize_probe_path("/etc/x/linkdir/"),
+        "/etc/x/linkdir",
+        "a single trailing slash must be removed"
+    );
+    assert_eq!(
+        normalize_probe_path("/etc/x/linkdir///"),
+        "/etc/x/linkdir",
+        "a run of trailing slashes must all be removed, not just the last one"
+    );
+    assert_eq!(
+        normalize_probe_path("/"),
+        "/",
+        "the root must be preserved rather than trimmed to an empty string"
+    );
+    assert_eq!(
+        normalize_probe_path("//"),
+        "/",
+        "an all-slash path names the root and must reduce to it, not to empty"
+    );
+}
+
+/// A non-zero exit is refused even when stdout already carries a well-formed
+/// `NOTLINK`.
+///
+/// Every outcome the script produces on its own exits 0; a non-zero status
+/// can only mean the script did not run to completion, `sh` absent (127) or
+/// the process killed after flushing a token that happens to parse. Reading
+/// stdout in that case would let a truncated or never-run probe pass as a
+/// real "not a symlink" answer, admitting a write it never checked.
+#[tokio::test]
+async fn a_non_zero_exit_refuses_even_with_well_formed_stdout() {
+    let host = ScriptedProbeHost::answering_with_exit_code("NOTLINK", 127);
+
+    let outcome = host.link_target_as_writer(Path::new("/etc/x/plain.conf"));
+
+    assert!(
+        outcome.await.is_err(),
+        "a non-zero exit must refuse regardless of stdout: sh being absent must \
+         not be read as a well-formed NOTLINK"
     );
 }

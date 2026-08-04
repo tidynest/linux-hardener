@@ -100,6 +100,30 @@ pub(crate) fn parse_link_probe(stdout: &str) -> Result<Option<PathBuf>> {
     .into())
 }
 
+/// Strips the trailing `/` characters from `path` before it is handed to
+/// [`LINK_PROBE_SCRIPT`].
+///
+/// A trailing slash makes `test -h` follow the link: POSIX requires a
+/// trailing slash to resolve the component it follows, so the terminal
+/// component is dereferenced before the `lstat` behind `test -h` ever runs.
+/// That turns the probe's admitting answer, `NOTLINK`, into a lie about a
+/// path that is in fact a symlink. Trimming the slash names the same inode a
+/// write would land on, so this changes no answer that was already correct;
+/// it only stops the terminal component being resolved away before the check
+/// is made.
+///
+/// An all-slash path trims to nothing, which is not a path the script can be
+/// handed, so that case is mapped back to `/`: the filesystem root, which is
+/// what an all-slash path names.
+pub(crate) fn normalize_probe_path(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 /// Trait for abstracting file and command operations.
 ///
 /// Implementations can target local systems or remote systems via SSH.
@@ -181,14 +205,31 @@ pub trait SystemExecutor: Send + Sync {
     /// still routes through this executor's own [`Self::execute_command`], so
     /// the probe runs on whichever host that executor targets.
     ///
-    /// The exit status is deliberately not consulted. The script reports its
-    /// own outcome on stdout and exits 0 for all three; a failure to run it at
-    /// all leaves stdout empty, which classifies as the refusing answer.
+    /// The exit status is checked before stdout is read at all. The script
+    /// reports its own outcome on stdout and exits 0 for all three of its own
+    /// outcomes, so a non-zero status can only mean it did not run to
+    /// completion, `sh` absent (127) or the process killed after it had
+    /// already flushed a token that happens to parse, and that is the
+    /// refusing answer rather than whatever stdout holds.
+    ///
+    /// `path` is expected to be absolute. A relative one is resolved against
+    /// the shell's working directory, which is unspecified for both the local
+    /// and the SSH executor; the rollback guard, the only caller, refuses a
+    /// non-absolute path before it ever probes.
     async fn link_target_as_writer(&self, path: &Path) -> Result<Option<PathBuf>> {
         let path_str = path.to_string_lossy();
+        let normalized = normalize_probe_path(&path_str);
         let output = self
-            .execute_command("sh", &["-c", LINK_PROBE_SCRIPT, "_", &path_str])
+            .execute_command("sh", &["-c", LINK_PROBE_SCRIPT, "_", &normalized])
             .await?;
+        if output.exit_code != 0 {
+            return Err(crate::error::HardeningError::Executor(format!(
+                "the link probe exited {}: {}",
+                output.exit_code,
+                output.stderr.trim()
+            ))
+            .into());
+        }
         parse_link_probe(&output.stdout)
     }
 
