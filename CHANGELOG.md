@@ -504,6 +504,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The merged checkpoint list's de-duplication had no test, and the case it
+  guards cannot be built through the public API.** `collect_checkpoints` merges
+  the user and system databases and drops an id it has already seen, first-wins.
+  That guard is what stands between the operator and the same checkpoint offered
+  twice, and which copy survives is load-bearing rather than cosmetic: the
+  manager kept beside the row decides the verification flag and where a later
+  operation acts. Every write generates a fresh id, so one id in two databases
+  is unconstructible by creating checkpoints; the fixture copies the database
+  instead and lets the second directory keep a signing key of its own, which is
+  what a real host has and what makes the surviving pairing observable. Covered
+  now, and proved by two mutations: removing the guard lists the row twice, and
+  making it last-wins keeps the count at one while pairing the row with the key
+  that did not sign it.
+
 - **`report --interactive` put its own chatter on stdout, so a redirected JSON
   report was not JSON.** The wizard decorated its prompts with `println!`: the
   banner, the three step headings, the review block, the progress lines and the

@@ -246,6 +246,137 @@ async fn a_database_that_is_not_there_is_told_apart_from_one_that_cannot_be_read
     assert!(entries.is_empty(), "neither case invents a checkpoint");
 }
 
+/// The de-duplication the merged list rests on, which decides what the operator
+/// is shown when one id is reachable through both databases at once.
+///
+/// The two are not disjoint. A privileged run writes into the system database
+/// while the desktop writes into the user's own, and the same rows land in both
+/// whenever a database is copied between hosts or a privileged run is pointed
+/// at the user's path, so this guard is the only thing standing between the
+/// operator and the same checkpoint offered to them twice. Which copy survives
+/// is load-bearing rather than cosmetic: the manager kept beside the row is the
+/// one `get_checkpoints` asks for the verification flag and the one a later
+/// operation goes through, and the two databases are signed by different keys.
+///
+/// One id in two databases cannot be built through the public API, which
+/// generates a fresh id per write, so the fixture copies the database instead.
+/// The signing key is not copied with it: each directory keeps a key of its
+/// own, exactly as `/etc/linux-hardener` and the user's data directory do on a
+/// real host, and a row that verifies under one of them and not the other is
+/// the only thing that makes the surviving pairing observable at all.
+#[tokio::test]
+async fn a_checkpoint_in_both_databases_is_listed_once_and_by_the_first_of_them() {
+    use hardener_core::LocalExecutor;
+
+    let root = std::env::temp_dir().join(format!("hardener-duplicate-id-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let first = root.join("first");
+    let second = root.join("second");
+    let first_db = first.join("checkpoints.db");
+    let second_db = second.join("checkpoints.db");
+
+    // The pool is opened here rather than through `create_checkpoint_manager`
+    // so that the copy below can be taken with the only writer known to be
+    // open and idle, and so that it can be closed before the merge reopens the
+    // same file.
+    let pool = init_db(Some(first_db.as_path()))
+        .await
+        .expect("the first database is created");
+    let signer = CheckpointSigner::new_with_path(&first.join("signing.key"))
+        .expect("the first database gets a signing key beside it");
+    let manager = CheckpointManager::new_with_signer(pool.clone(), signer)
+        .expect("a manager over the first database");
+    // No paths to capture, because the row itself is the whole fixture: this
+    // test is about which copy of it survives the merge, not about what it
+    // holds.
+    let checkpoint_id = manager
+        .create_checkpoint(&LocalExecutor::new(), "reachable through both", &[])
+        .await
+        .expect("a checkpoint is written");
+
+    // The database journals ahead of itself, so a freshly written row usually
+    // still lives in the log beside it and the database file alone is a copy of
+    // an empty one. Both are taken, and taken here, while the connection that
+    // wrote them sits idle: nothing can fold one into the other between the two
+    // copies, so the pair the copy receives is the pair the original has. A
+    // closed pool would be tidier and is not reliable, since its connections
+    // are closed on threads of their own and the log is folded back whenever
+    // the last of them happens to get there.
+    std::fs::create_dir_all(&second).expect("a scratch directory for the copy");
+    std::fs::copy(&first_db, &second_db).expect("the database is copied");
+    let log = std::path::PathBuf::from(format!("{}-wal", first_db.display()));
+    if log.exists() {
+        std::fs::copy(
+            &log,
+            std::path::PathBuf::from(format!("{}-wal", second_db.display())),
+        )
+        .expect("the log beside it is copied too");
+    }
+
+    drop(manager);
+    pool.close().await;
+
+    let mut entries = Vec::new();
+    let first_reach = collect_checkpoints(&first_db, &mut entries).await;
+    let second_reach = collect_checkpoints(&second_db, &mut entries).await;
+
+    // Opening the copy on its own answers the question the merged list cannot:
+    // whether there was ever a duplicate to collapse.
+    let copy = create_checkpoint_manager(&second_db)
+        .await
+        .expect("the copy opens");
+    let listed_by_the_copy = copy
+        .list_checkpoints()
+        .await
+        .expect("the copy lists its own rows");
+    let copy_holds_only_the_shared_id = listed_by_the_copy.len() == 1
+        && listed_by_the_copy[0].checkpoint_id.as_str() == checkpoint_id.as_str();
+
+    let verified_by_the_survivor = match entries.first() {
+        Some((_, manager)) => manager.verify_checkpoint(&checkpoint_id).await.is_ok(),
+        None => false,
+    };
+    let verified_by_the_copy = copy.verify_checkpoint(&checkpoint_id).await.is_ok();
+
+    // Restored before asserting, so a failure leaves no scratch database behind
+    // for the next run to inherit.
+    drop(copy);
+    let _ = std::fs::remove_dir_all(&root);
+
+    assert_eq!(
+        (first_reach, second_reach),
+        (DatabaseReach::Read, DatabaseReach::Read),
+        "both databases must have been opened and listed, or a short list would \
+         be measuring an unreadable fixture rather than the de-duplication"
+    );
+    assert!(
+        copy_holds_only_the_shared_id,
+        "the control the count below rests on: the copy has to hold that same \
+         id and nothing else, since one surviving entry proves nothing at all \
+         about de-duplicating a duplicate that was never there"
+    );
+    assert_eq!(
+        entries.len(),
+        1,
+        "the id is reachable through both databases and the operator has one \
+         checkpoint, so the list carries one row rather than the same \
+         checkpoint offered to them twice"
+    );
+    assert!(
+        verified_by_the_survivor,
+        "the row that survives keeps the first database's manager, which is the \
+         only one whose key signed it; the merge consults the user database \
+         first, and a row paired with the wrong manager is reported unverified \
+         and acted on in the wrong place"
+    );
+    assert!(
+        !verified_by_the_copy,
+        "and the copy's own manager genuinely cannot verify it, or the \
+         assertion above would hold whichever database had won and would be \
+         telling us nothing"
+    );
+}
+
 /// The cooldown paces privileged operations, and it was armed by the guard's
 /// `Drop` instead: every early return armed it, including a validation failure
 /// and the delete refusal for an id that is in neither database. A stale list,
