@@ -42,21 +42,46 @@ impl CheckpointSigner {
 
     /// Creates a new signer with a custom key path.
     pub fn new_with_path(key_path: &Path) -> Result<CheckpointSigner> {
-        // Check for public-key-only verification mode
         let pubkey_path = key_path.with_extension("pub");
-        if !key_path.exists() && pubkey_path.exists() {
+
+        // Verification-only mode is for a reader that has the public key and
+        // not the private one, and "has not got it" covers being unable to read
+        // it as well as its being absent. Keying on absence alone left out the
+        // shipped layout, where a root-owned `signing.key` at 0400 sits beside a
+        // readable `signing.pub`: for every unprivileged reader the private key
+        // is present and unreadable, so the load below failed and the public key
+        // sitting next to it was never tried.
+        //
+        // `try_exists` rather than `exists`, so a key under a directory this
+        // process may not search is not mistaken for one that is not there. That
+        // distinction decides whether a key is generated, and generating one
+        // where a key already exists would void the signature of every
+        // checkpoint already written.
+        // Opening it answers both questions at once, and answers them the way
+        // the load would: absent and unreadable both fail here.
+        let private_key_readable = fs::File::open(key_path).is_ok();
+        if !private_key_readable && matches!(pubkey_path.try_exists(), Ok(true)) {
             return Self::load_verifier_only(&pubkey_path);
         }
 
-        let signing_key = if key_path.exists() {
+        let signing_key = if private_key_readable {
             Self::load_key(key_path)?
-        } else {
+        } else if matches!(key_path.try_exists(), Ok(false)) {
             let key = Self::generate_key()?;
             Self::save_key(key_path, &key)?;
             // Also save the public key alongside for verification-only setups
-            let pubkey_path = key_path.with_extension("pub");
             Self::save_public_key(&pubkey_path, &key.verifying_key())?;
             key
+        } else {
+            // The key is there and cannot be read, and there is no public key to
+            // fall back on. Say that, rather than reporting whatever a write
+            // into a directory we cannot even search happens to fail with.
+            return Err(HardeningError::Config(format!(
+                "Signing key at {} could not be read, and no public key was \
+                 available beside it. Run this command with the privileges that \
+                 own the key, or install its public half for verification.",
+                key_path.display()
+            )));
         };
 
         let verifying_key = signing_key.verifying_key();

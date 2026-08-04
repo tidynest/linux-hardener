@@ -472,6 +472,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Verification-only signing never engaged for the readers it was built for, so
+  the desktop could not open the system checkpoint database at all.** The mode
+  exists so a reader holding the public key can check signatures without the
+  private one, and it was selected only when the private key was **absent**.
+  That is not the shipped layout: a root-owned `signing.key` at 0400 sits beside
+  a readable `signing.pub`, so for every unprivileged reader the private key is
+  present and unreadable. Construction took the load path, failed on permission,
+  and the public key next to it was never tried. The desktop therefore could
+  neither list nor verify any privileged checkpoint, whatever else it did. Being
+  unable to read the private key now selects the same mode as not having one.
+  The absence test also moves from `Path::exists` to `try_exists`, so a key
+  under a directory this process cannot search is no longer mistaken for a key
+  that is not there: that distinction is what decides whether a fresh key is
+  generated, and generating one where a key already exists would void the
+  signature of every checkpoint already written. When neither half can be read,
+  the error now says so rather than reporting whatever a write into an
+  unreachable directory happened to fail with.
+
 - **The desktop's checkpoint list could omit every privileged checkpoint and
   look like a host that had none.** It decided whether to consult the system
   database with `Path::exists`, which is `metadata(..).is_ok()` and therefore

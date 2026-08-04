@@ -808,7 +808,7 @@ If any entry is modified, the hash chain breaks and tampering is detected.
 | Data | Location | Format |
 |------|----------|--------|
 | Checkpoint DB | root: `/var/lib/linux-hardener/checkpoints.db`; unprivileged: `~/.local/share/linux-hardener/checkpoints.db` | SQLite |
-| Signing Keys | root: `/etc/linux-hardener/signing.key`; unprivileged: `~/.local/share/linux-hardener/signing.key` | Ed25519 |
+| Signing Keys | root: `/etc/linux-hardener/signing.key`; unprivileged: `~/.local/share/linux-hardener/signing.key`. A `signing.pub` sits beside each one, and a reader that cannot read the private key uses it to verify without signing | Ed25519 |
 | Audit Log | root: `/var/log/linux-hardener/audit.log`; unprivileged: `~/.local/share/linux-hardener/audit.log` | JSONL hash chain |
 | Scan History DB | root: `/var/lib/linux-hardener/scheduler.db`; unprivileged: `~/.local/share/linux-hardener/scheduler.db` | SQLite (scheduler, host-aware; see section 8) |
 | User Config | `~/.config/linux-hardener/config.toml` | TOML |

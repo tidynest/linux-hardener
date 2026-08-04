@@ -77,3 +77,52 @@ fn a_failed_migration_leaves_the_original_key_in_place() {
         "a failed migration must leave the original key exactly as it was"
     );
 }
+
+/// Verification-only mode exists for trust separation (SAM-014): a reader that
+/// has the public key can check signatures without the private one. It engaged
+/// only when the private key was **absent**, which is not the situation it was
+/// built for. The shipped layout is a root-owned `signing.key` at 0400 beside a
+/// world-readable `signing.pub`, so for every unprivileged reader the private
+/// key is present and unreadable, and that took the load path and failed.
+///
+/// The desktop is the reader this stranded: it could not construct a manager
+/// for the system checkpoint database at all, so it could neither list nor
+/// verify any privileged checkpoint.
+#[test]
+fn a_private_key_that_cannot_be_read_falls_back_to_the_public_one() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let key_path = dir.path().join("signing.key");
+
+    // Generate a real pair through the normal path, then close the private key
+    // exactly as the packaging does.
+    let signed_by_owner = CheckpointSigner::new_with_path(&key_path).expect("a generated key");
+    let payload = b"checkpoint bytes";
+    let signature = signed_by_owner.sign(payload).expect("the owner can sign");
+    std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o000))
+        .expect("the private key is closed");
+
+    let unreadable = std::fs::read(&key_path).is_err();
+    let reader = CheckpointSigner::new_with_path(&key_path);
+
+    let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
+
+    assert!(
+        unreadable,
+        "the private key must actually be unreadable, or this test proves \
+         nothing; running as root would read it anyway and this assertion says so"
+    );
+    let reader = reader.expect(
+        "a reader holding only the public key must still get a signer, because \
+         verifying is what it is there to do",
+    );
+    assert!(
+        reader.verify(payload, &signature).is_ok(),
+        "and that signer verifies what the private key signed"
+    );
+    assert!(
+        reader.sign(payload).is_err(),
+        "while still being unable to sign, which is the separation this mode is for"
+    );
+}
