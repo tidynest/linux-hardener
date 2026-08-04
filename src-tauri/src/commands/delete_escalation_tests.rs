@@ -101,3 +101,76 @@ async fn a_database_that_cannot_even_be_stated_is_not_a_definite_no() {
          refused outright"
     );
 }
+
+/// The decision itself, which is what the call site acts on.
+///
+/// The guard's polarity was previously untested: nothing called
+/// `delete_checkpoint`, so inverting its `if` compiled, passed, and both
+/// reintroduced the prompt-for-a-missing-id defect and made every readable
+/// root-owned checkpoint undeletable. `resolve_delete` returns the decision
+/// instead of acting on it, so the branch can be exercised without `pkexec`
+/// ever running, and an inversion is a failing test rather than a defect
+/// nobody can reach.
+#[tokio::test]
+async fn neither_database_holding_the_row_resolves_to_not_found() {
+    let dir = std::env::temp_dir().join(format!("hardener-resolve-none-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+
+    let resolution = resolve_delete(
+        &dir.join("user.db"),
+        &dir.join("system.db"),
+        &CheckpointId::new("cp_1_00000000"),
+    )
+    .await;
+
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(
+        resolution,
+        DeleteResolution::NotFound,
+        "with both databases absent the id is in neither, and escalating could \
+         only raise an authentication prompt for an operation that must fail"
+    );
+}
+
+/// The direction that matters more, because getting it wrong strands data
+/// rather than merely annoying someone: a system database that cannot be
+/// answered for must still reach the privileged run.
+#[tokio::test]
+async fn a_system_database_that_cannot_be_asked_resolves_to_needing_privilege() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join(format!("hardener-resolve-eacces-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+    let closed = dir.join("closed");
+    std::fs::create_dir_all(&closed).expect("a closed directory");
+    let system_db = closed.join("checkpoints.db");
+    std::fs::write(&system_db, b"present but unreachable").expect("the fixture is written");
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o000))
+        .expect("the directory is closed");
+
+    let unaskable = system_db.try_exists().is_err();
+    let resolution = resolve_delete(
+        &dir.join("user.db"),
+        &system_db,
+        &CheckpointId::new("cp_1_00000000"),
+    )
+    .await;
+
+    let _ = std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o700));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(
+        unaskable,
+        "the fixture must actually be unaskable, or this test proves nothing; \
+         running as root would make it readable and this assertion says so"
+    );
+    assert_eq!(
+        resolution,
+        DeleteResolution::NeedsPrivilege,
+        "a root-owned checkpoint must stay deletable: when the system database \
+         cannot be asked, the privileged run decides rather than the desktop \
+         refusing outright"
+    );
+}

@@ -948,36 +948,60 @@ pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
 
     let cp_id = CheckpointId::new(&checkpoint_id);
 
-    // Try user database first
-    let user_db = get_user_db_path();
+    match resolve_delete(&get_user_db_path(), &get_system_db_path(), &cp_id).await {
+        DeleteResolution::Removed => Ok(true),
+        DeleteResolution::NotFound => Err(format!("no checkpoint with id '{checkpoint_id}'")),
+        DeleteResolution::NeedsPrivilege => {
+            let args = vec!["checkpoint", "delete", &checkpoint_id];
+            run_privileged_command(&args)
+                .await
+                .map(|_| true)
+                .map_err(safe_err)
+        }
+    }
+}
+
+/// What a delete should do, decided without escalating anything.
+///
+/// Split out so the decision can be tested. Everything the branch turns on is a
+/// pair of databases and an id; only the consequence of `NeedsPrivilege` needs
+/// `pkexec`, and that is exactly what a test must not run. Returning the
+/// decision rather than acting on it means an inverted branch is a failing test
+/// rather than a defect nobody can reach.
+#[derive(Debug, PartialEq, Eq)]
+enum DeleteResolution {
+    /// The user database held the row and it is gone.
+    Removed,
+    /// Neither database has it, so escalating could only fail.
+    NotFound,
+    /// It may be a root-owned row, or the system database could not be asked.
+    NeedsPrivilege,
+}
+
+/// Decides a delete from the two databases alone.
+///
+/// The user database is tried first because the desktop's own checkpoints live
+/// there and need no privilege. Failing that, the fallback exists for root-owned
+/// rows and is right, but an id in NEITHER database is what a stale list, a
+/// double click, or a row already removed from the CLI produces, and raising an
+/// authentication dialog for an operation that cannot succeed is a prompt the
+/// operator can do nothing with.
+async fn resolve_delete(
+    user_db: &std::path::Path,
+    system_db: &std::path::Path,
+    checkpoint_id: &CheckpointId,
+) -> DeleteResolution {
     if user_db.exists()
-        && let Ok(manager) = create_checkpoint_manager(&user_db).await
-        && manager.delete_checkpoint(&cp_id).await.is_ok()
+        && let Ok(manager) = create_checkpoint_manager(user_db).await
+        && manager.delete_checkpoint(checkpoint_id).await.is_ok()
     {
-        return Ok(true);
+        return DeleteResolution::Removed;
     }
 
-    // Escalate only when the row could plausibly be there. The fallback exists
-    // for root-owned checkpoints and is right, but an id in NEITHER database is
-    // what a stale list, a double click, or a row already removed from the CLI
-    // produces, and raising an authentication dialog for an operation that
-    // cannot succeed is a prompt the operator can do nothing with.
-    //
-    // The system database cannot always answer: it is root-owned, so an
-    // unprivileged desktop may be unable to read it. Absence of an answer is
-    // not an answer, so the only case treated as decisive is the one that is:
-    // the database is reachable and says the row is not there. Anything else,
-    // including a database this process may not read, still escalates, so a
-    // root-owned checkpoint is never left undeletable.
-    if system_database_denies(&get_system_db_path(), &cp_id).await {
-        return Err(format!("no checkpoint with id '{checkpoint_id}'"));
+    if system_database_denies(system_db, checkpoint_id).await {
+        return DeleteResolution::NotFound;
     }
-
-    let args = vec!["checkpoint", "delete", &checkpoint_id];
-    run_privileged_command(&args)
-        .await
-        .map(|_| true)
-        .map_err(safe_err)
+    DeleteResolution::NeedsPrivilege
 }
 
 /// Whether the system database is readable and positively lacks this row.

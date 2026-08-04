@@ -249,34 +249,136 @@ fn batch_apply_dry_run_still_falls_back_when_the_named_config_cannot_be_loaded()
 /// then wrote its history to whatever database the default search happened to
 /// find. The observable is where the database lands, which is the whole point
 /// of the setting.
-#[test]
-fn the_scheduler_section_comes_from_the_named_config_too() {
+/// A config naming a scheduler database of this test's own, and that path.
+///
+/// Every field of `SchedulerConfig` without a serde default has to be present
+/// or the file will not parse at all, which would fail these tests for a reason
+/// that is not their subject. The path is escaped rather than interpolated raw:
+/// a `TMPDIR` containing a backslash or a quote would otherwise produce a
+/// fixture that is not valid TOML.
+fn scheduler_fixture(label: &str) -> (std::path::PathBuf, std::path::PathBuf) {
     let home = scratch_home();
-    let db = home.join("named-history.db");
+    let db = home.join(format!("{label}-history.db"));
+    let config = home.join(format!("{label}-scheduler.toml"));
     let _ = std::fs::remove_file(&db);
-    let config = home.join("with-scheduler.toml");
+    let escaped = db
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
     std::fs::write(
         &config,
         format!(
             "[scheduler]\nenabled = true\nschedule = \"0 0 3 * * *\"\nplugins = []\n\
-             min_severity = \"low\"\n\n[scheduler.storage]\ndatabase_path = \"{}\"\n",
-            db.display()
+             min_severity = \"low\"\n\n[scheduler.storage]\ndatabase_path = \"{escaped}\"\n"
         ),
     )
     .expect("the fixture config is written");
+    (config, db)
+}
 
-    let out = run(&[
-        "--config",
-        config.to_str().expect("a UTF-8 scratch path"),
-        "history",
-        "list",
-    ]);
+/// Runs one verb with the fixture config and reports whether the database the
+/// fixture named was the one opened. The location IS the observable: an empty
+/// history renders identically whichever database answered.
+fn opened_named_database(label: &str, verb: &[&str]) -> bool {
+    let (config, db) = scheduler_fixture(label);
+    let mut argv = vec!["--config", config.to_str().expect("a UTF-8 scratch path")];
+    argv.extend_from_slice(verb);
+    run(&argv);
+    db.exists()
+}
+
+#[test]
+fn the_scheduler_section_comes_from_the_named_config_too() {
+    assert!(
+        opened_named_database("history", &["history", "list"]),
+        "the history database must be opened where the named config said, not \
+         where the default search leads"
+    );
+
+    // The control. Without the flag the fixture's path is named by nothing, so
+    // a database appearing there would mean the assertion above proves nothing.
+    let (_, unnamed) = scheduler_fixture("history-control");
+    run(&["history", "list"]);
+    assert!(
+        !unnamed.exists(),
+        "a run that was never given the config must not open the database it names"
+    );
+}
+
+/// `scan` persists its own history, and it reached `-C` for policy while its
+/// history went wherever the default search led. One file, two halves,
+/// disagreeing about where the run's results were recorded.
+#[test]
+fn scan_writes_its_history_where_the_named_config_says() {
+    assert!(
+        opened_named_database("scan", &["scan", "--plugin", "kernel-hardening"]),
+        "a scan told which config to use must record its session in that \
+         config's database"
+    );
+}
+
+/// The fleet path opens the same database through its own helper, so covering
+/// the single-host one proves nothing about it.
+#[test]
+fn a_fleet_scan_writes_its_history_where_the_named_config_says() {
+    assert!(
+        opened_named_database(
+            "batch",
+            &[
+                "batch",
+                "scan",
+                "--ssh",
+                "nosuchhost.invalid",
+                "--ssh-timeout",
+                "1"
+            ],
+        ),
+        "a fleet scan told which config to use must record its hosts in that \
+         config's database, even when every host fails to connect"
+    );
+}
+
+/// The three `daemon` verbs read this section too, and each was passed nothing.
+#[test]
+fn daemon_reads_the_scheduler_section_from_the_named_config() {
+    assert!(
+        opened_named_database("daemon", &["daemon", "status"]),
+        "a daemon verb told which config to use must read that config's database"
+    );
+}
+
+/// The other half of honouring the flag: a path the operator named and that is
+/// not there is an error rather than a silent fall-through to the defaults.
+///
+/// Driven through `daemon status` deliberately. `scan` and `report` reach
+/// `ConfigLoader` first, which already refuses a missing named path, so they
+/// would pass this whether or not the scheduler loader refuses anything. The
+/// scheduler verbs read no policy, so the refusal here can only be its own.
+#[test]
+fn a_named_config_that_is_not_there_stops_a_scheduler_verb() {
+    let missing = "/nonexistent/hardener-no-such-scheduler-config.toml";
+
+    let out = run(&["--config", missing, "daemon", "status"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
     assert!(
-        db.exists(),
-        "the history database must be opened where the named config said, not \
-         where the default search leads; got exit {:?} with stderr: {stderr}",
+        !out.status.success(),
+        "a scheduler verb told to use a config it cannot read must not continue \
+         on the compiled-in defaults; got exit {:?} with stderr: {stderr}",
         out.status.code()
+    );
+    assert!(
+        stderr.contains(missing),
+        "and the refusal names the path it could not read; got: {stderr}"
+    );
+
+    // The control: the same verb without the flag is not refused for
+    // configuration, so the refusal above is the flag being honoured.
+    let control = run(&["daemon", "status"]);
+    let control_stderr = String::from_utf8_lossy(&control.stderr);
+    assert!(
+        !control_stderr.contains("Config file not found"),
+        "without the flag there is no named path to fail on; got: {control_stderr}"
     );
 }
