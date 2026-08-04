@@ -98,7 +98,8 @@ pub(crate) fn parse_link_probe(stdout: &str) -> Result<Option<PathBuf>> {
 }
 
 /// Strips the trailing `/` characters from `path` before it is handed to
-/// [`LINK_PROBE_SCRIPT`].
+/// [`LINK_PROBE_SCRIPT`], and refuses a path whose final named component is
+/// `.` or `..`.
 ///
 /// A trailing slash makes `test -h` follow the link: POSIX requires a
 /// trailing slash to resolve the component it follows, so the terminal
@@ -112,13 +113,35 @@ pub(crate) fn parse_link_probe(stdout: &str) -> Result<Option<PathBuf>> {
 /// An all-slash path trims to nothing, which is not a path the script can be
 /// handed, so that case is mapped back to `/`: the filesystem root, which is
 /// what an all-slash path names.
-pub(crate) fn normalise_probe_path(path: &str) -> String {
+///
+/// A trailing `/.` or `/..` dereferences the terminal component for the
+/// identical reason a trailing slash does, and a bare `.` or `..` has no
+/// other component to be about. This is not the same defect read twice: with
+/// `linkdir` a symlink to `realdir`, `test -h linkdir/.` genuinely answers
+/// false, because `linkdir/.` genuinely names `realdir`, not `linkdir`, so
+/// the shell is behaving correctly. The defect is that `NOTLINK` is this
+/// probe's **admitting** answer, so a correct shell answer to a question the
+/// gate never meant to ask still lets a write through a location the gate
+/// never judged. Resolving the dot segment ourselves to recover an answer was
+/// rejected for the reason [`LINK_PROBE_SCRIPT`]'s own doc gives for `..`:
+/// flattening it by name disagrees with the kernel whenever the component
+/// before it is a symlink, and disagrees in the admitting direction. So this
+/// is refused outright rather than guessed at: a path whose final component
+/// is `.` or `..` names no final component the probe can answer about.
+pub(crate) fn normalise_probe_path(path: &str) -> Result<String> {
     let trimmed = path.trim_end_matches('/');
     if trimmed.is_empty() {
-        "/".to_string()
-    } else {
-        trimmed.to_string()
+        return Ok("/".to_string());
     }
+    let final_component = trimmed.rsplit('/').next().unwrap_or(trimmed);
+    if final_component == "." || final_component == ".." {
+        return Err(crate::error::HardeningError::Executor(format!(
+            "the link probe refuses {trimmed:?}: a path whose final component is \
+             `.` or `..` names no final component the probe can answer about"
+        ))
+        .into());
+    }
+    Ok(trimmed.to_string())
 }
 
 /// Trait for abstracting file and command operations.
@@ -228,7 +251,7 @@ pub trait SystemExecutor: Send + Sync {
     /// non-absolute path before it ever probes.
     async fn link_target_as_writer(&self, path: &Path) -> Result<Option<PathBuf>> {
         let path_str = path.to_string_lossy();
-        let normalised = normalise_probe_path(&path_str);
+        let normalised = normalise_probe_path(&path_str)?;
         let elevation = if self.is_remote() { "sudo -n" } else { "" };
         let output = self
             .execute_command(

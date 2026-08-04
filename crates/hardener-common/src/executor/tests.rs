@@ -487,29 +487,95 @@ async fn a_trailing_slash_is_stripped_before_the_script_ever_sees_it() {
 #[test]
 fn normalise_probe_path_trims_trailing_slashes_and_keeps_the_root() {
     assert_eq!(
-        normalise_probe_path("/etc/x/plain.conf"),
+        normalise_probe_path("/etc/x/plain.conf").expect("a plain path must normalise"),
         "/etc/x/plain.conf",
         "a path with no trailing slash must pass through unchanged"
     );
     assert_eq!(
-        normalise_probe_path("/etc/x/linkdir/"),
+        normalise_probe_path("/etc/x/linkdir/").expect("a trailing slash must normalise"),
         "/etc/x/linkdir",
         "a single trailing slash must be removed"
     );
     assert_eq!(
-        normalise_probe_path("/etc/x/linkdir///"),
+        normalise_probe_path("/etc/x/linkdir///")
+            .expect("a run of trailing slashes must normalise"),
         "/etc/x/linkdir",
         "a run of trailing slashes must all be removed, not just the last one"
     );
     assert_eq!(
-        normalise_probe_path("/"),
+        normalise_probe_path("/").expect("the root must normalise"),
         "/",
         "the root must be preserved rather than trimmed to an empty string"
     );
     assert_eq!(
-        normalise_probe_path("//"),
+        normalise_probe_path("//").expect("an all-slash path must normalise"),
         "/",
         "an all-slash path names the root and must reduce to it, not to empty"
+    );
+}
+
+/// Issue #83's second finding: a trailing dot segment dereferences the final
+/// named component for the identical reason a trailing slash does, so it
+/// must be refused rather than probed.
+///
+/// `linkdir/.` genuinely names whatever `linkdir` resolves to, so `test -h`
+/// answering false for it is correct POSIX behaviour; the naive fix of
+/// resolving the dot segment ourselves was rejected because doing so by name
+/// disagrees with the kernel whenever the component before it is a symlink,
+/// in the admitting direction. `NOTLINK` is this probe's admitting answer, so
+/// a shape with no final named component to be about must never reach the
+/// script at all.
+#[test]
+fn a_trailing_dot_segment_is_refused_rather_than_probed() {
+    for refused in ["/etc/x/.", "/etc/x/..", "/etc/x/./", ".", ".."] {
+        assert!(
+            normalise_probe_path(refused).is_err(),
+            "a path whose final component is . or .. must refuse, got a pass for {refused:?}: \
+             NOTLINK is the admitting answer, so guessing at what the dot segment names is not \
+             an option"
+        );
+    }
+}
+
+/// The control for the refusal above, and what makes it non-vacuous: a
+/// function that refused every path would satisfy every assertion there too.
+#[test]
+fn ordinary_paths_still_normalise_after_the_dot_segment_refusal() {
+    assert_eq!(
+        normalise_probe_path("/etc/x").expect("an ordinary path with no dot segment must pass"),
+        "/etc/x",
+        "a path with no trailing slash and no dot segment must be accepted unchanged"
+    );
+    assert_eq!(
+        normalise_probe_path("/etc/x/").expect("a plain trailing slash must still normalise"),
+        "/etc/x",
+        "a trailing slash with no dot segment behind it must still be accepted, not \
+         swept up by the new refusal"
+    );
+    assert_eq!(
+        normalise_probe_path("/").expect("the root must still normalise"),
+        "/",
+        "the filesystem root must still be accepted and probed as /"
+    );
+}
+
+/// The refusal above must happen before any command is built, not after a
+/// probe that then gets discarded: a refused shape must never reach
+/// `execute_command` at all.
+#[tokio::test]
+async fn a_refused_dot_segment_never_executes_a_command() {
+    let host = ScriptedProbeHost::answering("NOTLINK");
+
+    let outcome = host.link_target_as_writer(Path::new("/etc/x/.")).await;
+
+    assert!(
+        outcome.is_err(),
+        "a trailing dot segment must refuse rather than being probed"
+    );
+    assert!(
+        host.seen.lock().expect("seen mutex poisoned").is_empty(),
+        "no command may run for a refused shape: an execute_command call recorded here would \
+         mean the refusal happened after the probe ran instead of before it"
     );
 }
 
@@ -531,5 +597,25 @@ async fn a_non_zero_exit_refuses_even_with_well_formed_stdout() {
         outcome.await.is_err(),
         "a non-zero exit must refuse regardless of stdout: sh being absent must \
          not be read as a well-formed NOTLINK"
+    );
+}
+
+/// The sibling case the guard's own doc comment names: a signal-killed
+/// process, not just a positive exit code such as 127.
+///
+/// Both shipped executors report `-1` for a signal-killed process, via
+/// `output.status.code().unwrap_or(-1)`. The source already checks with
+/// `!= 0`, which covers this; this test is what proves it, so a future
+/// narrowing to `> 0` goes red instead of shipping silently.
+#[tokio::test]
+async fn a_negative_exit_code_refuses_even_with_well_formed_stdout() {
+    let host = ScriptedProbeHost::answering_with_exit_code("NOTLINK", -1);
+
+    let outcome = host.link_target_as_writer(Path::new("/etc/x/plain.conf"));
+
+    assert!(
+        outcome.await.is_err(),
+        "a negative exit code must refuse regardless of stdout: a signal-killed probe \
+         flushing a token that happens to parse must not be read as a well-formed NOTLINK"
     );
 }
