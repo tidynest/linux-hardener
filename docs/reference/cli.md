@@ -248,6 +248,12 @@ sudo hardener apply --plugin kernel          # Apply only kernel sysctl hardenin
 
 Restore the system to a previous checkpoint snapshot. Requires root or passwordless sudo on the target session (local, or the `--ssh` host). Rollback is reversible: before restoring, it captures the current state of the affected files as a new checkpoint (named after the one being restored), and fails closed (refuses, writing nothing) if that snapshot cannot be taken.
 
+The symlink guard probes at the same privilege the restoring write uses, and
+refuses any path it cannot determine an answer for rather than treating an
+unreadable path as an ordinary file. The guard judges the final path component;
+a regular file beneath a symlinked parent directory is restored without the
+parent being resolved.
+
 ```
 sudo hardener rollback <CHECKPOINT_ID>
 ```

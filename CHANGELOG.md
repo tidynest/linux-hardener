@@ -38,6 +38,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   example, `ssh.source = "0.0.0.0/0"`, turned out to widen nothing: that rule's
   baseline source is already `any`. Closes #64.
 
+- **A rollback probed as the login user and wrote as root, so a path the probe
+  could not reach was admitted and written through.** `SshExecutor::write_file`
+  goes through `sudo tee` while its command probes ran bare, and GNU `readlink`
+  exits 1 both for "not a symlink" and for a path it may not traverse. The
+  rollback guard read that status as the positive answer, so on a remote host
+  where the login user could not reach an allow-listed path, the guard admitted
+  the row and root wrote through whatever actually stood there. `/root` is in
+  `DEFAULT_ROLLBACK_PREFIXES` and is 0700 on an ordinary host. The guard now
+  asks through `link_target_as_writer`, which elevates exactly as the write
+  does and believes a negative only when the path's parent resolves, proving
+  traverse permission was held; anything undeterminable refuses. Rollback
+  already required root or passwordless sudo on the target session, so this
+  demands nothing new. Checkpoint capture is deliberately unchanged, because it
+  reads content as the login user and its degrading to content-only is an
+  accepted ceiling. **Stated ceiling:** the guard still judges the final
+  component alone, so a regular file under a symlinked parent directory is
+  admitted without resolution, as it always was.
+
+  The probe elevates exactly when the executor's own `write_file` does.
+  `SshExecutor::write_file` goes through `sudo tee`, so a remote probe
+  elevates; `LocalExecutor::write_file` writes as the process user, so a local
+  probe does not. Elevating unconditionally would have made a local probe
+  answer for root while a local write happened as somebody else, which is the
+  same mismatch pointed the other way.
+
+  A path spelled with a trailing slash, or with a trailing `/.` or `/..`, made
+  the kernel resolve the final named component before the check, so a symlink
+  answered "not a symlink", the admitting answer. Trailing slashes are now
+  normalised away, and a path whose final component is `.` or `..` is refused
+  rather than guessed at, because resolving a dot segment by name disagrees
+  with the kernel whenever the component before it is a link.
+
+  `SystemExecutor::canonical_path` was removed. It had no callers once the
+  guard moved, and the reasoning it carried now lives on `LINK_PROBE_SCRIPT`.
+  Closes #83.
+
 - **The rollback symlink guard asked the machine running the tool, not the
   machine being rolled back.** `rollback_target_refusal` decided whether a
   restore may write a path by calling `Path::is_symlink` and

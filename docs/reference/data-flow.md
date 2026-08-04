@@ -433,12 +433,12 @@ a checkpoint or a skip is never counted as a hardening change.
 │  │   without the symlink check, since `ln -sfn` and `rm -f`  │
 │  │   land on the path itself and follow nothing              │
 │  ├─ Otherwise ask the EXECUTOR, so a remote rollback asks    │
-│  │   the target host and never the controller: `read_link`   │
-│  │   for whether the path is a link, `canonical_path`        │
-│  │   (`realpath`) for where it leads, every component        │
-│  │   resolved by the filesystem that owns them. Resolving    │
-│  │   outside the allowlist, or not resolving at all, is      │
-│  │   Skipped: fail closed                                    │
+│  │   the target host and never the controller, at the        │
+│  │   privilege its own write uses: `link_target_as_writer`.  │
+│  │   `Ok(None)` is not a symlink; `Ok(Some(p))` is where it  │
+│  │   leads, every component resolved. `Err` could not be     │
+│  │   determined, and refuses rather than guessing: fail      │
+│  │   closed                                                  │
 │  └─ Nothing admitted at all: abort, so no orphan snapshot    │
 └────────┬─────────────────────────────────────────────────────┘
          │

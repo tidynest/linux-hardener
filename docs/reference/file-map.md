@@ -116,7 +116,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/config_validation/tests.rs` | Unit tests for `src/config_validation.rs` | Test-only; `super` resolves to `crate::config_validation` |
 | `src/plugin/tests.rs` | Unit tests for `src/plugin.rs` | Test-only; `super` resolves to `crate::plugin` |
 | `src/inventory/tests.rs` | Unit tests for `src/inventory.rs` | Test-only; `super` resolves to `crate::inventory` |
-| `src/executor/local/tests.rs` | Unit tests for `src/executor/local.rs` | Test-only; `super` resolves to `crate::executor::local` |
+| `src/executor/local/tests.rs` | Unit tests for `src/executor/local.rs`, 12 of them | Test-only; `super` resolves to `crate::executor::local` |
 | `src/executor/ssh/tests.rs` | Unit tests for `src/executor/ssh.rs` | Test-only; `super` resolves to `crate::executor::ssh` |
 
 ### Key Trait (plugin.rs)
@@ -155,8 +155,8 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/vendor_config/tests.rs` | Unit tests for `src/vendor_config.rs` | Test-only; `super` resolves to `crate::vendor_config` |
 | `src/file_utils/tests.rs` | Unit tests for `src/file_utils.rs`, the first of the two test modules that file carried | Test-only; `super` resolves to `crate::file_utils` |
 | `src/file_utils/global_scope_tests.rs` | The second, kept under its own name: that a directive written at global scope is not confused with the same directive inside an sshd `Match` block | Test-only; `super` resolves to `crate::file_utils` |
-| `src/executor/tests.rs` | Unit tests for `src/executor/mod.rs` | Test-only; that file *is* the module `executor`, so its tests go in the directory it already owns |
-| `src/executor/mock/tests.rs` | Unit tests for `src/executor/mock.rs` | Test-only; `super` resolves to `crate::executor::mock` |
+| `src/executor/tests.rs` | Unit tests for `src/executor/mod.rs`, 23 of them | Test-only; that file *is* the module `executor`, so its tests go in the directory it already owns |
+| `src/executor/mock/tests.rs` | Unit tests for `src/executor/mock.rs`, 11 of them | Test-only; `super` resolves to `crate::executor::mock` |
 
 **Note**: Core types (Severity, FindingCategory, etc.) are now defined in `hardener-types` and re-exported here for backwards compatibility. The executor abstraction (`SystemExecutor`, `CommandOutput`, `FileMetadata`, `MockExecutor`) relocated here from `hardener-core` and is re-exported from that crate for source compatibility.
 
@@ -249,7 +249,7 @@ const KERNEL_PARAMS: &[KernelParameter] = &[
 | `src/db.rs` | Database schema | `init_db()` |
 | `src/scan_history.rs` | GUI scan session types | `ScanSessionId`, `ScanStatus`, `ScanSession` |
 | `src/scan_manager.rs` | GUI scan persistence | `ScanHistoryManager` |
-| `src/manager/tests.rs` | Unit tests for `src/manager.rs`, 44 of them | Test-only; `super` resolves to `crate::manager`, so imports carried across unchanged |
+| `src/manager/tests.rs` | Unit tests for `src/manager.rs`, 45 of them | Test-only; `super` resolves to `crate::manager`, so imports carried across unchanged |
 | `src/hash_chain/tests.rs` | Unit tests for `src/hash_chain.rs` | Test-only; same shape |
 | `src/signing/tests.rs` | Unit tests for `src/signing.rs` | Test-only; same shape |
 | `src/db/tests.rs` | Unit tests for `src/db.rs` | Test-only; same shape |
@@ -903,14 +903,14 @@ workspace run itself for what passed.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
-| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 98 |
+| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 114 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 88 |
-| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 100 |
+| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 101 |
 | hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 104 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and eleven of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 226 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and all eight plugin modules (`ssh/dropin.rs` and `ssh/include.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 622 |
-| hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 133 |
+| hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 137 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 53 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 100 |
 
