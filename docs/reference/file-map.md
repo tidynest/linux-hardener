@@ -13,9 +13,10 @@ This document lists all source files with their purpose and key exports.
 | `src/lib.rs` | All shared type definitions | `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `ComplianceMapping`, `ControlStatus`, `FindingPolicyException`, `PluginMetadata`, `ScanResult`, `Finding`, `UncheckedCheck`, `ApplyResult`, `Change`, `ChangeType`, `ValidationReport`, `ValidationIssue`, `ComplianceReport`, `ControlResult`, `ComplianceSummary`, `ConfigSummary`, `FleetHostScan`, `FleetHostStatus`, `SeverityTallies` |
 | `src/config_picker.rs` | Config file picker types | `ConfigSummary`, WASM-safe validation results for config file picker |
 | `src/remote.rs` | Remote SSH scanning types | `RemoteHostProfile`, `HostsConfig`, `RemoteConnectionStatus`, `RemoteConnectionInfo` |
-| `src/scheduler.rs` | Scheduler UI types | `SchedulerUiConfig`, `NotificationUiConfig`, `EmailUiConfig`, `WebhookUiConfig`, `TestNotificationResult` |
+| `src/scheduler.rs` | Scheduler UI types | `SchedulerUiConfig`, `NotificationUiConfig`, `EmailUiConfig`, `WebhookUiConfig` (converted to the on-disk endpoint list by the private `WebhookWire`), `TestNotificationResult` |
 | `src/tests.rs` | Unit tests for the crate root, seven modules split out of `lib.rs` | Test-only; a child of the crate root, so it still reaches private items |
 | `src/remote/tests.rs` | Unit tests for `src/remote.rs` | Test-only; `super` resolves to `crate::remote`, so its imports carried across unchanged |
+| `src/scheduler/tests.rs` | Unit tests for `src/scheduler.rs` | Test-only; `super` resolves to `crate::scheduler`, so the private webhook wire types stay reachable. Uses `toml` as a dev-dependency, because the webhook config's subject is the shape it takes in a TOML file |
 
 ### Key Types (lib.rs)
 
@@ -660,6 +661,7 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | `src/commands/delete_escalation_tests.rs` | Tests for the guard deciding whether deleting a checkpoint is worth an authentication prompt | Test-only; `super` resolves to `crate::commands`. Takes the database path as a parameter so it runs the same on a host with a system database and one without |
 | `src/commands/fail_session_on_err_tests.rs` | Tests for `fail_session_on_err`, the helper that marks an aborted scan's history row Failed rather than orphaning it as running | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/compliance_source_tests.rs` | Tests for the compliance report's source selection | Test-only; `super` resolves to `crate::commands` |
+| `src/commands/webhook_shape_tests.rs` | Tests that what the desktop writes to `[scheduler.notifications.webhooks]` is what `hardener-scheduler` reads back | Test-only; `super` resolves to `crate::commands`. This crate depends on both, so it is the only place the two shapes meet |
 
 ### Tauri Commands
 ```rust
@@ -908,7 +910,7 @@ workspace run itself for what passed.
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and ten of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 223 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and all eight plugin modules (`ssh/dropin.rs` and `ssh/include.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 608 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 133 |
-| hardener-types | `lib.rs`, `remote.rs` | - | 47 |
+| hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 53 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 100 |
 
 ### Executor and Mock Test Files

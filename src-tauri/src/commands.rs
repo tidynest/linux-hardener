@@ -1984,7 +1984,26 @@ pub async fn save_scheduler_config(
     document.remove("scheduler");
     let mut output = document.to_string();
 
-    let scheduler_toml = toml::to_string_pretty(&config)
+    output.push_str(&render_scheduler_section(&config)?);
+
+    std::fs::write(&write_path, output)
+        .map_err(|e| safe_err(format!("Failed to write config: {e}")))?;
+
+    Ok("Configuration saved".to_string())
+}
+
+/// Renders the desktop's scheduler settings as a `[scheduler]` block.
+///
+/// A seam, not decoration: what the desktop writes has to be what the scheduler
+/// reads, and until now nothing checked that. `WebhookUiConfig` rendered a flat
+/// `url`/`format` pair into a table whose backend struct expects `endpoints`,
+/// nothing rejects an unknown key, and so a saved webhook reached the daemon as
+/// an empty list. Testing it through the real `SchedulerConfig` is the only
+/// assertion that could have failed.
+fn render_scheduler_section(
+    config: &hardener_types::scheduler::SchedulerUiConfig,
+) -> Result<String, String> {
+    let scheduler_toml = toml::to_string_pretty(config)
         .map_err(|e| safe_err(format!("Failed to serialise scheduler config: {e}")))?;
 
     // Split serialised scheduler into top-level keys and subtable sections,
@@ -1993,11 +2012,7 @@ pub async fn save_scheduler_config(
     let mut subtables = String::new();
     for line in scheduler_toml.lines() {
         if line.starts_with('[') || !subtables.is_empty() {
-            if line.starts_with('[') {
-                subtables.push_str(&line.replacen('[', "[scheduler.", 1));
-            } else {
-                subtables.push_str(line);
-            }
+            subtables.push_str(&prefix_table_header(line));
             subtables.push('\n');
         } else {
             top_keys.push_str(line);
@@ -2005,17 +2020,39 @@ pub async fn save_scheduler_config(
         }
     }
 
-    output.push_str("\n[scheduler]\n");
-    output.push_str(&top_keys);
+    let mut section = String::from("\n[scheduler]\n");
+    section.push_str(&top_keys);
     if !subtables.is_empty() {
-        output.push('\n');
-        output.push_str(&subtables);
+        section.push('\n');
+        section.push_str(&subtables);
     }
+    Ok(section)
+}
 
-    std::fs::write(&write_path, output)
-        .map_err(|e| safe_err(format!("Failed to write config: {e}")))?;
-
-    Ok("Configuration saved".to_string())
+/// Moves one serialised table header under `[scheduler]`.
+///
+/// An array of tables opens with two brackets, and replacing only the first
+/// produced `[scheduler.[notifications.webhooks.endpoints]]`, which is not a
+/// header at all: the file it was written into no longer parsed. Nothing hit
+/// that while the desktop's own types rendered no list, which is exactly as
+/// long as the webhook settings were reaching nothing.
+///
+/// A line not starting with `[` is returned unchanged, so the caller can hand
+/// every line of a subtable through one path. That test is textual, not
+/// structural: a content line of a multi-line `"""` string that happens to
+/// begin with `[` is rewritten too, which corrupts the value. Reaching it needs
+/// a newline inside `min_severity`, `notify_min_severity` or `format`, the three
+/// strings that cross the IPC boundary without `validate_ipc_string`. It cannot
+/// inject a table, because the serialiser switches to a `'''` literal when the
+/// content would close the string early, so the damage stops at a mangled value.
+fn prefix_table_header(line: &str) -> String {
+    if let Some(rest) = line.strip_prefix("[[") {
+        return format!("[[scheduler.{rest}");
+    }
+    if let Some(rest) = line.strip_prefix('[') {
+        return format!("[scheduler.{rest}");
+    }
+    line.to_string()
 }
 
 /// Sends a test notification through all enabled channels.
@@ -2420,3 +2457,6 @@ mod fail_session_on_err_tests;
 
 #[cfg(test)]
 mod compliance_source_tests;
+
+#[cfg(test)]
+mod webhook_shape_tests;

@@ -488,6 +488,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A webhook configured in the desktop never reached the daemon, and both
+  sides reported success.** `WebhookUiConfig` serialised its own flat shape, so
+  the desktop wrote `url` and `format` into
+  `[scheduler.notifications.webhooks]`, whose backend struct has neither field
+  and expects an `endpoints` list. Nothing rejects an unknown key, so the file
+  saved without complaint, `endpoints` stayed empty, and the dispatcher built no
+  notifier. `get_scheduler_config` read the file back through the same UI type
+  that wrote it, so the round trip was self-consistent: the operator saved a
+  URL, reopened the page and saw their URL, and only the daemon disagreed, by
+  doing nothing. The desktop's single webhook is now converted to and from the
+  one-entry endpoint list the scheduler reads, under the name `desktop`. A
+  config written by an earlier build is still read, so an existing setting
+  reaches the form instead of coming back blank and being discarded on the next
+  save. Driven on a real desktop before release: the GUI now writes an
+  `[[scheduler.notifications.webhooks.endpoints]]` block, the daemon parses that
+  file, and navigating away and back reads the URL out of the list again.
+
+  Two things found while fixing it, both of which would have defeated the fix on
+  their own. The section writer moved each serialised table header under
+  `[scheduler]` by replacing the first `[`, which turns an array-of-tables
+  header into `[scheduler.[notifications.webhooks.endpoints]]` and leaves the
+  file unparseable; nothing had met that because the desktop rendered no list.
+  And `WebhookUiConfig::default()` leaves `format` empty while the scheduler
+  page sets the form straight from it, so a fresh form saved unchanged carried
+  an empty format through. As a flat key that was inert, since the backend never
+  read it; inside an endpoint it is fatal, because `""` is not one of the three
+  variants the enum accepts and the whole file then fails to parse. Measured
+  both ways. The guard is therefore part of making the endpoint list safe rather
+  than a defect that had been biting, and an unset format is written as the
+  documented `generic`.
+
+  **Email is not fixed by this and has the same shape of problem.**
+  `EmailUiConfig` models `enabled`, `recipients` and `from_address`; the backend
+  `EmailConfig` also has `smtp_host`, `smtp_port`, `smtp_tls` and
+  `smtp_username`. Saving from the desktop rewrites the whole `[scheduler]`
+  section from what the form holds, so a hand-written `smtp_host` is replaced by
+  an empty string and `EmailNotifier::new` then returns `None`: the channel
+  reads as enabled and delivers nothing. `[scheduler.storage]` and
+  `notify_mode` are lost the same way. That is pre-existing and unchanged here,
+  and the form offers no way to see or restore any of it.
+
 - **A `[scheduler]` section that named some of its keys and not others failed
   the whole configuration file, stopping `daemon` and `history` outright.**
   `SchedulerConfig` was the only struct in that tree without a struct-level

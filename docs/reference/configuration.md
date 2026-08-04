@@ -604,6 +604,12 @@ with `name` and `url`, both **required**, plus `format` (`generic`, `slack`, or
 `discord`; default `generic`) and optional `headers` (values support
 `${ENV_VAR}` expansion).
 
+The desktop offers a single webhook and writes it as one endpoint named
+`desktop`. Saving from the desktop rewrites the whole `[scheduler]` section from
+what its form holds, so a hand-written second endpoint, or any key the form does
+not model, does not survive that save. Keep hand-written endpoint lists on hosts
+you configure by file.
+
 ```toml
 [scheduler]
 enabled = true
