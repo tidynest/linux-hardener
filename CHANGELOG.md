@@ -472,6 +472,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop's checkpoint list could omit every privileged checkpoint and
+  look like a host that had none.** It decided whether to consult the system
+  database with `Path::exists`, which is `metadata(..).is_ok()` and therefore
+  answers `false` for a file this process merely may not stat. That database is
+  root-owned, and its directory is `drwx------` on at least one real host, so an
+  unprivileged desktop read "cannot see it" as "not there" and silently dropped
+  its rows. The two are now told apart, and a system database that cannot be
+  reached is logged as such, so a checkpoint an operator watched being created
+  and then cannot find is diagnosable rather than a mystery. The same conflation
+  was fixed in the delete path in this release; this was the other half of it.
+  The two near-identical collection blocks also become one, which removes a
+  redundant manager construction per checkpoint.
+
 - **The desktop's Rollback failed outright for any operator who had set a
   configuration file.** It appended `--config <path>` to the CLI argv *after*
   the `--` that shields the checkpoint id, so clap read `--config` as a second

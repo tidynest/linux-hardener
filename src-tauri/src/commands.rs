@@ -859,6 +859,50 @@ pub async fn run_rollback(checkpoint_id: String) -> Result<RollbackResult, Strin
     accept_json_output(&raw).map_err(safe_err)
 }
 
+/// Whether one checkpoint database could be consulted.
+///
+/// `Absent` and `Unreadable` were one case while this used `Path::exists`,
+/// which is `metadata(..).is_ok()` and so answers `false` for a file it merely
+/// may not stat. They are not the same: one means there is nothing to show, the
+/// other means there may be something that cannot be shown.
+#[derive(Debug, PartialEq, Eq)]
+enum DatabaseReach {
+    /// Definitely not there, so nothing is missing from the list.
+    Absent,
+    /// Opened and listed. Its rows, if any, are in the list.
+    Read,
+    /// Present, or impossible to ask about, and not readable from here.
+    Unreadable,
+}
+
+/// Adds one database's checkpoints to `entries`, skipping ids already present.
+///
+/// De-duplicating on the id matters because the same checkpoint can be reached
+/// through either database, and the first database consulted keeps the row.
+async fn collect_checkpoints(
+    db: &std::path::Path,
+    entries: &mut Vec<(Checkpoint, CheckpointManager)>,
+) -> DatabaseReach {
+    if matches!(db.try_exists(), Ok(false)) {
+        return DatabaseReach::Absent;
+    }
+    let Ok(manager) = create_checkpoint_manager(db).await else {
+        return DatabaseReach::Unreadable;
+    };
+    let Ok(checkpoints) = manager.list_checkpoints().await else {
+        return DatabaseReach::Unreadable;
+    };
+    for checkpoint in checkpoints {
+        if !entries
+            .iter()
+            .any(|(seen, _)| seen.checkpoint_id == checkpoint.checkpoint_id)
+        {
+            entries.push((checkpoint, manager.clone()));
+        }
+    }
+    DatabaseReach::Read
+}
+
 /// Retrieves a list of all available checkpoints from both user and system databases.
 ///
 /// Checkpoints created by the GUI are in the user database, while checkpoints
@@ -868,37 +912,20 @@ pub async fn run_rollback(checkpoint_id: String) -> Result<RollbackResult, Strin
 pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
     let mut entries: Vec<(Checkpoint, CheckpointManager)> = Vec::new();
 
-    // Collect checkpoints from user database
-    let user_db = get_user_db_path();
-    if user_db.exists()
-        && let Ok(manager) = create_checkpoint_manager(&user_db).await
-        && let Ok(checkpoints) = manager.list_checkpoints().await
-    {
-        for cp in checkpoints {
-            let Ok(mgr) = create_checkpoint_manager(&user_db).await else {
-                continue;
-            };
-            entries.push((cp, mgr));
-        }
-    }
+    collect_checkpoints(&get_user_db_path(), &mut entries).await;
 
-    // Collect checkpoints from system database
+    // The system database is root-owned, so an unprivileged desktop often
+    // cannot read it, and a list silently missing every privileged checkpoint
+    // looks exactly like a host that has none. Say so where it can be
+    // diagnosed rather than leaving the operator to wonder where a checkpoint
+    // they watched being created went.
     let system_db = get_system_db_path();
-    if system_db.exists()
-        && let Ok(manager) = create_checkpoint_manager(&system_db).await
-        && let Ok(checkpoints) = manager.list_checkpoints().await
-    {
-        for cp in checkpoints {
-            if !entries
-                .iter()
-                .any(|(e, _)| e.checkpoint_id == cp.checkpoint_id)
-            {
-                let Ok(mgr) = create_checkpoint_manager(&system_db).await else {
-                    continue;
-                };
-                entries.push((cp, mgr));
-            }
-        }
+    if collect_checkpoints(&system_db, &mut entries).await == DatabaseReach::Unreadable {
+        tracing::warn!(
+            "system checkpoint database at {} could not be read; any checkpoint \
+             it holds is missing from this list",
+            system_db.display()
+        );
     }
 
     // Sort by timestamp descending (newest first)

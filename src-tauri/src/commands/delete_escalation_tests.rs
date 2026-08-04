@@ -199,3 +199,49 @@ fn the_rollback_argv_ends_at_the_checkpoint_id() {
          no configuration for a config path to decide"
     );
 }
+
+/// The checkpoint list had the same blind spot the delete guard shed:
+/// `Path::exists` is `metadata(..).is_ok()`, so a database under a directory
+/// this process may not search read as "not there". A list silently missing
+/// every privileged checkpoint then looks exactly like a host that has none.
+#[tokio::test]
+async fn a_database_that_is_not_there_is_told_apart_from_one_that_cannot_be_read() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join(format!("hardener-reach-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+
+    let mut entries = Vec::new();
+    let absent = collect_checkpoints(&dir.join("no-such.db"), &mut entries).await;
+
+    let closed = dir.join("closed");
+    std::fs::create_dir_all(&closed).expect("a closed directory");
+    let hidden = closed.join("checkpoints.db");
+    std::fs::write(&hidden, b"present but unreachable").expect("the fixture is written");
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o000))
+        .expect("the directory is closed");
+    let unstatable = hidden.try_exists().is_err();
+    let unreadable = collect_checkpoints(&hidden, &mut entries).await;
+
+    let _ = std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o700));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(
+        absent,
+        DatabaseReach::Absent,
+        "a database that is genuinely not there leaves nothing out of the list"
+    );
+    assert!(
+        unstatable,
+        "the fixture must actually be unstatable, or the case below is not the \
+         one this test is about; running as root would make it statable"
+    );
+    assert_eq!(
+        unreadable,
+        DatabaseReach::Unreadable,
+        "a database that cannot be reached may hold rows this list cannot show, \
+         which is a different answer from having none and is worth reporting"
+    );
+    assert!(entries.is_empty(), "neither case invents a checkpoint");
+}
