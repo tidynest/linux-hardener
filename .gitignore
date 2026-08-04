@@ -99,3 +99,6 @@ packaging/*.tar.zst
 
 # Brainstorming visual-companion scratch
 .superpowers/
+
+# CodeGraphContext index configuration (per-developer tooling, auto-generated)
+.cgcignore
