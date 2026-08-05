@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because a `drop` verdict in any chain ends a packet's journey and this chain's
   `policy drop` governs whatever its own rules do not accept. A port that must
   stay open is expressed as a directive to this tool.
+  **A second ceiling runs the other way and is stated rather than fixed:** the
+  ruleset is written to `/etc/nftables.conf` and that write replaces the whole
+  file, which on Arch and Debian is where the administrator's own `inet filter`
+  table is defined. Their table survives the apply in the running kernel and is
+  gone at the next boot. Scoping the `nft` load stopped the runtime destruction;
+  it did not stop this one, which is a question about which file the ruleset is
+  written to and is tracked separately.
   Per-rule reporting is unchanged, the diff being taken before the load,
   so `applied_change_count()` and `is_skipped()` keep meaning what they meant.
   `ensure_managed_chain` is deleted and `enable` now only enables the unit at

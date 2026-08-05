@@ -314,24 +314,32 @@ impl Default for NftablesBackend {
 /// this returns `Err`.
 pub(super) fn render_ruleset(rules: &[Rule]) -> Result<String> {
     let backend = NftablesBackend::new();
-    for rule in rules.iter().filter(|rule| rule.rule_source != "any") {
-        parse_source(&rule.rule_source).map_err(|reason| {
-            HardeningError::Plugin(format!(
-                "Refusing to render the nftables ruleset: the source of the rule \
-                 {:?} cannot be matched on, because {reason}. Nothing has been \
-                 written or loaded.",
-                rule.rule_description
-            ))
-        })?;
-    }
+    let mut statements = Vec::with_capacity(rules.len());
 
-    let statements: Vec<String> = rules
-        .iter()
-        .map(|rule| {
-            let args = backend.build_nft_rule_args(rule);
-            format!("        {}", args[5..].join(" "))
-        })
-        .collect();
+    for rule in rules {
+        let args = backend.build_nft_rule_args(rule);
+
+        // Checked against what this rule RENDERS, not against what it carries.
+        // Reading `rule_source` directly refused an apply over a source that
+        // could never reach `nft`: `build_nft_rule_args` returns early for the
+        // loopback and established rules and emits no `saddr` for either, and
+        // the breadth clamp admits junk in a `source` because it measures
+        // prefix width alone. Locating the `saddr` this rule actually emits
+        // keeps the check and the statement describing one thing.
+        if let Some(index) = args.iter().position(|token| token == "saddr") {
+            let source = &args[index + 1];
+            parse_source(source).map_err(|reason| {
+                HardeningError::Plugin(format!(
+                    "Refusing to render the nftables ruleset: the rule {:?} \
+                     matches on the source {source:?}, which cannot be matched \
+                     on, because {reason}. Nothing has been written or loaded.",
+                    rule.rule_description
+                ))
+            })?;
+        }
+
+        statements.push(format!("        {}", args[5..].join(" ")));
+    }
 
     Ok(format!(
         "table inet {NFTABLES_TABLE}\n\

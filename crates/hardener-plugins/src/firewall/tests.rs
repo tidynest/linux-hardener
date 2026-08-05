@@ -1618,13 +1618,21 @@ fn a_value_that_is_not_a_range_is_handed_to_ufw_unchanged() {
 /// Comparing whole lines for equality kills both: a commented-out statement is
 /// not its statement, and a prefixed one is not its statement either.
 fn input_chain_rule_lines(rendered: &str) -> Vec<String> {
-    rendered
+    let after_header = rendered
         .split("chain input {")
         .nth(1)
-        .expect("an input chain must be rendered")
-        .split("chain forward")
-        .next()
+        .expect("an input chain must be rendered");
+
+    // `split(..).next()` was the first form of this and could not fail:
+    // `Split::next` returns `Some` even when the separator is absent, yielding
+    // the whole remainder, so a ruleset with no forward chain silently handed
+    // back the output chain's header and policy line as though they were rules
+    // of the input chain. `split_once` is the form whose `None` means what the
+    // message says.
+    after_header
+        .split_once("chain forward")
         .expect("the input chain must end before the forward chain")
+        .0
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && *line != "}")
@@ -1678,6 +1686,15 @@ fn the_ssh_accept_precedes_the_drop_all_rule() {
          in-flight connection is severed: the input chain's rules were \
          {statements:#?}"
     );
+    // Named separately rather than left to the other two. `drop` is a terminal
+    // verdict, so any accept rendered after it is dead, and rotating the
+    // loopback rule to the end left both assertions above holding while
+    // loopback traffic was dropped.
+    assert!(
+        position("loopback") < position("Drop all other"),
+        "the loopback accept must precede the drop-all rule, or the host cannot \
+         talk to itself: the input chain's rules were {statements:#?}"
+    );
 }
 
 /// The load must replace the plugin's own table outright rather than merge
@@ -1697,12 +1714,17 @@ fn the_rendered_file_replaces_only_its_own_table() {
     let rendered = nftables::render_ruleset(&get_baseline_rules()).expect("the baseline renders");
     let table = nftables::NFTABLES_TABLE;
 
-    assert_ne!(
-        table, "filter",
-        "the owned table must not be named `filter`: that is the conventional \
-         default every distribution's own ruleset uses, so replacing it \
-         replaces whatever the administrator put there"
-    );
+    // Every conventional name, not only `filter`. One literal was one literal
+    // deep: renaming the constant to `nat` left this test green while the
+    // ruleset issued `delete table inet nat` on every apply.
+    for conventional in ["filter", "nat", "route", "mangle", "raw", "security"] {
+        assert_ne!(
+            table, conventional,
+            "the owned table must not take a conventional name: those are the \
+             names distributions and other subsystems give their own tables, so \
+             replacing one replaces whatever its owner put there"
+        );
+    }
     assert!(
         rendered.starts_with(&format!("table inet {table}\ndelete table inet {table}\n")),
         "the file must create, then delete, then rebuild its own table, or a \
@@ -1710,18 +1732,40 @@ fn the_rendered_file_replaces_only_its_own_table() {
          present one: rendered\n{rendered}"
     );
 
-    let deleted: Vec<&str> = rendered
+    // `destroy` is nftables' third destructive verb and was the hole here: a
+    // rendered `destroy table inet filter` was measured live against an
+    // administrator's table holding `tcp dport 443 accept`, the load reported
+    // success, and the table was gone afterwards, with this test green.
+    let destructive: Vec<&str> = rendered
         .lines()
         .map(str::trim)
-        .filter(|line| line.starts_with("delete ") || line.starts_with("flush "))
+        .filter(|line| {
+            matches!(
+                line.split_whitespace().next(),
+                Some("delete") | Some("flush") | Some("destroy")
+            )
+        })
         .collect();
     assert_eq!(
-        deleted,
+        destructive,
         vec![format!("delete table inet {table}")],
         "the ruleset may destroy its own table and nothing else: a \
          `flush ruleset` takes down Docker's and libvirt's tables, and any \
-         delete naming another table takes down whatever its owner put there. \
-         Rendered\n{rendered}"
+         delete or destroy naming another table takes down whatever its owner \
+         put there. Rendered\n{rendered}"
+    );
+
+    // Verb-agnostic, so a destructive statement spelled a way the list above
+    // does not know still cannot name somebody else's table.
+    let foreign: Vec<&str> = rendered
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.contains("table") && !line.contains(&format!("table inet {table}")))
+        .collect();
+    assert!(
+        foreign.is_empty(),
+        "no statement may name a table other than {table}, whatever it does to \
+         it, got {foreign:#?} in\n{rendered}"
     );
 }
 
@@ -1740,6 +1784,11 @@ fn the_input_chain_keeps_its_drop_policy() {
     assert!(
         declares("type filter hook input priority 0; policy drop;"),
         "input must stay policy drop: rendered\n{rendered}"
+    );
+    assert!(
+        declares("type filter hook forward priority 0; policy drop;"),
+        "forward must stay policy drop, or the host silently routes traffic \
+         between its interfaces: rendered\n{rendered}"
     );
     assert!(
         declares("type filter hook output priority 0; policy accept;"),
@@ -1762,6 +1811,15 @@ fn every_baseline_rule_renders_the_statement_the_argv_builder_produces() {
     let rendered = nftables::render_ruleset(&rules).expect("the baseline renders");
     let statements = input_chain_rule_lines(&rendered);
 
+    // Both sides of the comparison below come from `rules`, so an empty
+    // baseline satisfies every one of them: the loop body never runs and
+    // `0 == 0` holds. Refusing that first is what stops this test passing on a
+    // ruleset with no rules in it at all.
+    assert!(
+        !rules.is_empty(),
+        "the baseline must carry rules, or everything below is vacuous"
+    );
+
     for rule in &rules {
         let statement = backend.build_nft_rule_args(rule)[5..].join(" ");
         assert!(
@@ -1772,11 +1830,17 @@ fn every_baseline_rule_renders_the_statement_the_argv_builder_produces() {
         );
     }
 
+    // Order included, not only membership and count. A rotation of the rendered
+    // statements kept every membership assertion and the count holding while
+    // moving an accept behind the terminal `drop`.
+    let expected: Vec<String> = rules
+        .iter()
+        .map(|rule| backend.build_nft_rule_args(rule)[5..].join(" "))
+        .collect();
     assert_eq!(
-        statements.len(),
-        rules.len(),
-        "the input chain must hold one rule per baseline rule and nothing \
-         else: its rules were {statements:#?}"
+        statements, expected,
+        "the input chain must hold one line per baseline rule, in the baseline's \
+         own order and with nothing else among them"
     );
 }
 
@@ -1843,7 +1907,12 @@ fn a_source_that_cannot_be_matched_on_refuses_the_whole_ruleset() {
         "10.0.0.0/eight",
         "",
     ] {
-        let refusal = nftables::render_ruleset(&[rule_with_source(source)]);
+        // Second of two, deliberately. Every fixture here was a one-rule slice
+        // at first, so a check that stopped after the first source passed all
+        // six: a ruleset whose first source is valid and whose second is not
+        // still reached `nft`, and `nft` refuses it after the file is written.
+        let rules = [rule_with_source("10.0.0.0/8"), rule_with_source(source)];
+        let refusal = nftables::render_ruleset(&rules);
 
         assert!(
             refusal.is_err(),

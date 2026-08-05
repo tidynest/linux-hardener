@@ -341,13 +341,22 @@ for you: nftables and firewalld take the dash as written, and ufw, which wants a
 colon and rejects the dash outright, is given `80:443`.
 
 **On the nftables backend the tool owns exactly one table, `inet
-linux_hardener`, and writes nothing else.** It creates that table, replaces it
-outright on every apply so a repeated apply cannot stack duplicate rules, and
-never touches `inet filter` or any other table on the host. `inet filter` is the
-conventional default name rather than an owned one, and most distributions ship
-a packaged ruleset using it, so deleting it would destroy whatever the
-administrator put there. Docker's, libvirt's and `iptables-nft`'s tables are
-left alone for the same reason.
+linux_hardener`.** It creates that table, replaces it outright on every apply so
+a repeated apply cannot stack duplicate rules, and its `nft` load touches no
+other table on the host: not `inet filter`, not Docker's, libvirt's or
+`iptables-nft`'s. `inet filter` is the conventional default name rather than an
+owned one, and most distributions ship a packaged ruleset using it, so deleting
+it would destroy whatever the administrator put there.
+
+**A separate ceiling, and it works the other way.** The rendered ruleset is
+written to `/etc/nftables.conf`, and that write **replaces the whole file**. On
+a distribution that ships a packaged ruleset there, Arch and Debian included,
+that file is where the administrator's own `inet filter` table is defined. Their
+table therefore survives the apply in the running kernel and is gone at the next
+boot, because the file that defined it no longer does. Rolling back restores the
+file; a successful apply that is never rolled back does not. Back up
+`/etc/nftables.conf` before a first apply on a host whose ruleset you maintain
+by hand.
 
 The consequence worth knowing before an apply: this tool's chain hooks `input`
 with `policy drop`, and a `drop` verdict in any chain ends a packet's journey,

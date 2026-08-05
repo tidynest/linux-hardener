@@ -1265,6 +1265,58 @@ fn written_ruleset(executor: &MockExecutor) -> String {
         .expect("apply_rules must write the rendered ruleset to /etc/nftables.conf")
 }
 
+/// A source `nft` cannot match on stops the apply at the host's edge: nothing
+/// is written and nothing is loaded.
+///
+/// The unit tests pin that `render_ruleset` returns `Err`; only this pins that
+/// `apply_rules` acts on it. Turning the `?` at that call site into
+/// `unwrap_or_default()` left every unit test green while writing an EMPTY
+/// ruleset to the boot path and loading it, which replaces the file
+/// `nftables.service` reads and leaves no baseline rule in force.
+#[tokio::test]
+async fn an_unmatchable_source_writes_and_loads_nothing() {
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+    use hardener_plugins::firewall::{FirewallBackend, Rule};
+
+    // Registered so both would SUCCEED if issued. The assertions are then what
+    // refuse them, rather than the mock refusing an unregistered command.
+    let executor = nft_apply_base(NFT_EMPTY_CHAIN);
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let backend = NftablesBackend::new();
+
+    let mut rules = backend.get_default_rules();
+    rules.push(Rule {
+        rule_description: "Allow HTTPS from a source nft cannot read".to_string(),
+        rule_protocol: "tcp".to_string(),
+        rule_port: "443".to_string(),
+        rule_source: "not-an-address".to_string(),
+        rule_action: "accept".to_string(),
+    });
+
+    let refusal = backend.apply_rules(&ctx, &rules).await;
+
+    assert!(
+        refusal.is_err(),
+        "an unmatchable source must fail the whole backend, got: {refusal:?}"
+    );
+    assert!(
+        !executor
+            .files()
+            .contains_key(Path::new("/etc/nftables.conf")),
+        "nothing may be written to the boot path when the ruleset was refused"
+    );
+    assert!(
+        !executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| command == "nft"
+                && args.first().map(String::as_str) == Some("-f")),
+        "nft must not be asked to load a ruleset that was refused, got: {:?}",
+        executor.log().commands_executed
+    );
+}
+
 /// Was `test_nftables_apply_ensures_chain_then_adds_all_rules_when_empty`
 /// before the atomic-load rewrite (issue #92) retired the per-rule `nft add
 /// rule` path it pinned. Its intent survives unchanged - every baseline rule
@@ -1305,7 +1357,13 @@ async fn test_nftables_apply_ensures_chain_then_adds_all_rules_when_empty() {
     // derived; they are pinned against the real builder by the unit tests in
     // `crates/hardener-plugins/src/firewall/tests.rs`
     // (`every_baseline_rule_renders_the_statement_the_argv_builder_produces`).
+    // Matched as whole lines. `contains` over the blob could not fail for the
+    // drop-all rule, whose entire statement is the bare string `drop`: the
+    // chain header `type filter hook input priority 0; policy drop;` contains
+    // it, so the assertion held whether or not the rule rendered at all. That
+    // is the defect issue #96 was filed for, and it was still here.
     let ruleset = written_ruleset(&executor);
+    let lines: Vec<&str> = ruleset.lines().map(str::trim).collect();
     for statement in [
         "iif lo accept",
         "ct state established,related accept",
@@ -1313,9 +1371,9 @@ async fn test_nftables_apply_ensures_chain_then_adds_all_rules_when_empty() {
         "drop",
     ] {
         assert!(
-            ruleset.contains(statement),
+            lines.contains(&statement),
             "the baseline rule rendered as {statement:?} must reach the written \
-             file: ruleset\n{ruleset}"
+             file as a statement of its own: ruleset\n{ruleset}"
         );
     }
 }
