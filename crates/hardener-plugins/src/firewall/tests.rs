@@ -1646,7 +1646,7 @@ fn input_chain_rule_lines(rendered: &str) -> Vec<String> {
 fn the_ssh_accept_precedes_the_drop_all_rule() {
     let backend = nftables::NftablesBackend::new();
     let rules = get_baseline_rules();
-    let rendered = nftables::render_ruleset(&rules);
+    let rendered = nftables::render_ruleset(&rules).expect("the baseline renders");
     let statements = input_chain_rule_lines(&rendered);
 
     let position = |needle: &str| {
@@ -1694,7 +1694,7 @@ fn the_ssh_accept_precedes_the_drop_all_rule() {
 /// this one.
 #[test]
 fn the_rendered_file_replaces_only_its_own_table() {
-    let rendered = nftables::render_ruleset(&get_baseline_rules());
+    let rendered = nftables::render_ruleset(&get_baseline_rules()).expect("the baseline renders");
     let table = nftables::NFTABLES_TABLE;
 
     assert_ne!(
@@ -1734,7 +1734,7 @@ fn the_rendered_file_replaces_only_its_own_table() {
 /// no type or hook is not a filter chain at all.
 #[test]
 fn the_input_chain_keeps_its_drop_policy() {
-    let rendered = nftables::render_ruleset(&get_baseline_rules());
+    let rendered = nftables::render_ruleset(&get_baseline_rules()).expect("the baseline renders");
     let declares = |declaration: &str| rendered.lines().any(|line| line.trim() == declaration);
 
     assert!(
@@ -1759,7 +1759,7 @@ fn the_input_chain_keeps_its_drop_policy() {
 fn every_baseline_rule_renders_the_statement_the_argv_builder_produces() {
     let backend = nftables::NftablesBackend::new();
     let rules = get_baseline_rules();
-    let rendered = nftables::render_ruleset(&rules);
+    let rendered = nftables::render_ruleset(&rules).expect("the baseline renders");
     let statements = input_chain_rule_lines(&rendered);
 
     for rule in &rules {
@@ -1777,6 +1777,86 @@ fn every_baseline_rule_renders_the_statement_the_argv_builder_produces() {
         rules.len(),
         "the input chain must hold one rule per baseline rule and nothing \
          else: its rules were {statements:#?}"
+    );
+}
+
+/// A rule whose only distinguishing feature is the source it matches on.
+///
+/// Deliberately not described as "loopback" or "established and related":
+/// `build_nft_rule_args` branches on the description before it ever reads the
+/// source, and a fixture that tripped one of those branches would render a
+/// statement with no `saddr` in it at all and assert nothing.
+fn rule_with_source(source: &str) -> Rule {
+    Rule {
+        rule_description: format!("Allow SSH from {source}"),
+        rule_protocol: "tcp".to_string(),
+        rule_port: "22".to_string(),
+        rule_source: source.to_string(),
+        rule_action: "accept".to_string(),
+    }
+}
+
+/// `ip` and `ip6` are different match expressions and nft infers neither, so
+/// the family has to come from the address.
+///
+/// An IPv6 source used to render `ip saddr ::1`, which nft refuses with
+/// "Address family for hostname not supported". Under the per-rule path that
+/// cost one rule; under one transaction it costs the whole load, so no baseline
+/// rule lands at all, drop-all included.
+#[test]
+fn a_source_renders_the_match_of_its_own_address_family() {
+    let backend = nftables::NftablesBackend::new();
+
+    for (source, family) in [
+        ("10.0.0.0/8", "ip"),
+        ("127.0.0.1", "ip"),
+        ("::1", "ip6"),
+        ("2001:db8::/32", "ip6"),
+        ("::ffff:10.0.0.1", "ip6"),
+    ] {
+        let args = backend.build_nft_rule_args(&rule_with_source(source));
+        let statement = args[5..].join(" ");
+
+        assert_eq!(
+            statement,
+            format!("{family} saddr {source} tcp dport 22 accept"),
+            "a {source} source must be matched with {family}, or nft refuses \
+             the statement and the whole transaction with it"
+        );
+    }
+}
+
+/// A source nft cannot match on is refused before anything is written.
+///
+/// The order is the point. `apply_rules` writes [`NFTABLES_CONFIG_PATH`] and
+/// then loads it, so a ruleset that renders and then fails at `nft` leaves the
+/// host holding a file `nftables.service` cannot parse, at the path it loads
+/// from at boot, on a unit the same apply already enabled. The refusal has to
+/// land while nothing has happened, which means at render time.
+#[test]
+fn a_source_that_cannot_be_matched_on_refuses_the_whole_ruleset() {
+    for source in [
+        "not-an-address",
+        "999.1.1.1",
+        "10.0.0.0/33",
+        "2001:db8::/129",
+        "10.0.0.0/eight",
+        "",
+    ] {
+        let refusal = nftables::render_ruleset(&[rule_with_source(source)]);
+
+        assert!(
+            refusal.is_err(),
+            "a {source:?} source must refuse the ruleset rather than render a \
+             statement nft will reject after the file is already written, got \
+             {refusal:?}"
+        );
+    }
+
+    assert!(
+        nftables::render_ruleset(&[rule_with_source("10.0.0.0/8")]).is_ok(),
+        "the control: a source that nft can match on must still render, or the \
+         refusal above is measuring nothing"
     );
 }
 

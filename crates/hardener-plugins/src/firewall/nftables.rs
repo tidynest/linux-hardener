@@ -8,6 +8,7 @@ use crate::firewall::{FirewallBackend, Rule, get_baseline_rules};
 use async_trait::async_trait;
 use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Change, ChangeType, context::Context};
+use std::net::IpAddr;
 use std::path::Path;
 use tracing::{info, warn};
 
@@ -117,9 +118,12 @@ impl NftablesBackend {
             return args;
         }
 
-        // Source address filter
+        // Source address filter. `ip` and `ip6` are different match
+        // expressions and nft infers neither, so the family comes from the
+        // address itself. A value that does not parse renders as `ip` here and
+        // is refused outright by `render_ruleset` before it can reach a file.
         if rule.rule_source != "any" {
-            args.push("ip".to_string());
+            args.push(saddr_family(&rule.rule_source).to_string());
             args.push("saddr".to_string());
             args.push(rule.rule_source.clone());
         }
@@ -166,6 +170,51 @@ impl NftablesBackend {
                 Vec::new()
             }
         }
+    }
+}
+
+/// Reads a rule's `source` as an address, with an optional prefix length that
+/// has to fit the family the address is in.
+///
+/// The breadth clamp that guards a `source` directive deliberately measures the
+/// prefix and never the address, and says so at `field_breadth`: what a
+/// malformed address does is the backend's answer to give. This is that answer.
+/// `std::net` is the parser rather than a hand-rolled one, so every form nft
+/// itself accepts (dotted quad, compressed IPv6, IPv4-mapped) is read the way
+/// nft reads it, and the family is taken from what parsed rather than guessed
+/// from the punctuation.
+fn parse_source(source: &str) -> std::result::Result<IpAddr, String> {
+    let (address, prefix) = match source.split_once('/') {
+        Some((address, prefix)) => (address, Some(prefix)),
+        None => (source, None),
+    };
+    let address: IpAddr = address
+        .parse()
+        .map_err(|_| format!("{address:?} is not an IPv4 or IPv6 address"))?;
+
+    if let Some(prefix) = prefix {
+        let family_bits = if address.is_ipv6() { 128 } else { 32 };
+        let bits: u8 = prefix
+            .parse()
+            .map_err(|_| format!("{prefix:?} is not a prefix length"))?;
+        if bits > family_bits {
+            return Err(format!(
+                "a /{bits} prefix does not fit {address}, whose family has \
+                 {family_bits} bits"
+            ));
+        }
+    }
+    Ok(address)
+}
+
+/// The `nft` keyword matching a source address of `source`'s family.
+///
+/// Defaults to `ip` for a value that does not parse, which is never rendered
+/// into a file: [`render_ruleset`] refuses such a rule before writing anything.
+fn saddr_family(source: &str) -> &'static str {
+    match parse_source(source) {
+        Ok(address) if address.is_ipv6() => "ip6",
+        _ => "ip",
     }
 }
 
@@ -253,8 +302,29 @@ impl Default for NftablesBackend {
 /// Statements come from [`NftablesBackend::build_nft_rule_args`], sliced from
 /// index 5 exactly as `apply_rules` slices it, so the file and the diff cannot
 /// come to disagree about what a rule means.
-pub(super) fn render_ruleset(rules: &[Rule]) -> String {
+///
+/// Fallible for one reason, and it is the transaction's own doing. A source
+/// nft cannot read costs one refused `nft add rule` under a per-rule path,
+/// leaving the other baseline rules in force; under one transaction it costs
+/// the entire load, so **no** baseline rule lands, drop-all included. The write
+/// happens before the load, so the host would be left holding a ruleset
+/// `nftables.service` cannot parse at the path it loads at boot, on a unit
+/// `enable` marked to start there earlier in the same apply. Refusing here is
+/// what keeps that file from ever being written: nothing has happened yet when
+/// this returns `Err`.
+pub(super) fn render_ruleset(rules: &[Rule]) -> Result<String> {
     let backend = NftablesBackend::new();
+    for rule in rules.iter().filter(|rule| rule.rule_source != "any") {
+        parse_source(&rule.rule_source).map_err(|reason| {
+            HardeningError::Plugin(format!(
+                "Refusing to render the nftables ruleset: the source of the rule \
+                 {:?} cannot be matched on, because {reason}. Nothing has been \
+                 written or loaded.",
+                rule.rule_description
+            ))
+        })?;
+    }
+
     let statements: Vec<String> = rules
         .iter()
         .map(|rule| {
@@ -263,7 +333,7 @@ pub(super) fn render_ruleset(rules: &[Rule]) -> String {
         })
         .collect();
 
-    format!(
+    Ok(format!(
         "table inet {NFTABLES_TABLE}\n\
          delete table inet {NFTABLES_TABLE}\n\
          table inet {NFTABLES_TABLE} {{\n\
@@ -279,7 +349,7 @@ pub(super) fn render_ruleset(rules: &[Rule]) -> String {
          \x20   }}\n\
          }}\n",
         statements.join("\n")
-    )
+    ))
 }
 
 #[async_trait]
@@ -428,6 +498,13 @@ impl FirewallBackend for NftablesBackend {
         // is reported FirewallRule rather than Skipped, and never the other
         // way round, so a read failure over-counts what changed; it can never
         // hide a rule that genuinely needed adding.
+        //
+        // Rendered first, before the host is touched at all. `render_ruleset`
+        // refuses a rule whose source it cannot express, and a refusal has to
+        // land while nothing has happened yet: the write precedes the load, so
+        // a ruleset rendered and then refused by `nft` would already be sitting
+        // at the boot path.
+        let ruleset = render_ruleset(rules)?;
         let existing = self.existing_input_rules(ctx).await;
         let mut changes = Vec::with_capacity(rules.len());
 
@@ -463,7 +540,6 @@ impl FirewallBackend for NftablesBackend {
         // into a per-rule failed `Change` the way the old per-rule loop did;
         // the caller in `mod.rs` already treats an `Err` from this function as
         // a whole-backend failure.
-        let ruleset = render_ruleset(rules);
         ctx.executor()
             .write_file(Path::new(NFTABLES_CONFIG_PATH), &ruleset)
             .await

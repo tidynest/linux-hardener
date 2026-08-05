@@ -722,6 +722,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An IPv6 firewall `source` rendered an IPv4 match, and under one transaction
+  that cost the entire ruleset.** `build_nft_rule_args` emitted `ip saddr` for
+  every source whatever family it was in, so `ssh.source = "::1"` rendered
+  `ip saddr ::1`, which `nft` refuses with "Address family for hostname not
+  supported". Nothing upstream refused the value: the configuration layer admits
+  a `:` in a source, and the #64 breadth clamp reads `::1` as a narrowing of the
+  baseline `any` and permits it. Under the old per-rule path one bad value cost
+  one rule and the other baseline rules still applied; under the single
+  transaction the load is refused outright, so **no** baseline rule lands, the
+  default drop included. The family now comes from parsing the address with
+  `std::net`, so `ip` and `ip6` are chosen by what the value actually is rather
+  than guessed.
+  A source that parses as neither, which the clamp deliberately does not check
+  because it measures prefix width alone, now **refuses the whole ruleset before
+  anything is written**. That ordering is the second half of the fix: the write
+  precedes the load, so a ruleset that rendered and then failed at `nft` left
+  the host holding a file `nftables.service` cannot parse, at the path it loads
+  from at boot, on a unit the same apply had already enabled. Closes #94.
+
 - **The four tests guarding the rendered nftables ruleset could not fail.**
   Each asserted with `contains` or `find` over the whole rendered blob, which
   anchors a needle to nothing, and two mutations proved the cost while the whole
