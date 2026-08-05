@@ -670,6 +670,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The SSH test-container boot script could not cold-boot a container, which
+  is the only thing it exists to do.** Its registration wait read
+  `machinectl status` into a bare assignment through a pipeline. Until the
+  machine registers that command exits non-zero, `pipefail` promotes it to the
+  pipeline's status, and a bare `x="$(cmd)"` under `set -e` aborts on it, unlike
+  the `local x="$(cmd)"` form. The first loop iteration therefore killed the
+  script silently, before its own timeout branch or `diagnose` could print
+  anything, so the documented 60 second registration window was unreachable. The
+  script only ever succeeded against a machine that was **already** registered.
+  A cold boot left the machine running with its veth down and no address, and
+  the next thing an operator saw was an unrelated SSH timeout against
+  `10.242.117.2`. Because the `#[ignore]` SSH integration tests need this script
+  to bring their fixture up, they have been unrunnable from a cold start.
+  Proved in isolation: `set -euo pipefail; x="$(false | awk '{print}')"` exits 1
+  without reaching the next line, and reaches it with `|| true` appended inside
+  the substitution. Verified live by a real cold boot afterwards.
+
 - **A firewall port range reached ufw in a syntax ufw refuses.** `rule_port` was
   passed to each backend as written, and the three backends do not agree on how
   a range is spelled. nftables (`dport 80-443`) and firewalld (`80-443/tcp`)

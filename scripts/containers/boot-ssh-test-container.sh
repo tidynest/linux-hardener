@@ -56,7 +56,15 @@ diagnose() {
 echo "waiting for machine registration..."
 IFACE=""
 for _ in $(seq 1 30); do
-    IFACE="$(machinectl status "$MACHINE" 2>/dev/null | awk '/Iface:/ {print $2; exit}')"
+    # `|| true` is load-bearing, not defensive. Until the machine registers,
+    # `machinectl status` exits non-zero; `pipefail` promotes that to the
+    # pipeline's status, and a bare `x="$(cmd)"` under `set -e` aborts on it,
+    # unlike `local x="$(cmd)"`. So the first iteration killed the script
+    # silently, before the timeout branch or `diagnose` could run, and the
+    # 60s window below was unreachable. The script therefore only ever
+    # succeeded against a machine that was ALREADY registered, which is the
+    # one case it does not exist to handle.
+    IFACE="$(machinectl status "$MACHINE" 2>/dev/null | awk '/Iface:/ {print $2; exit}' || true)"
     [[ -n "$IFACE" ]] && break
     sleep 2
 done
