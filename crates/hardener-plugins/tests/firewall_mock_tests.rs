@@ -1793,6 +1793,83 @@ async fn a_refused_load_leaves_the_rendered_file_on_disk() {
     );
 }
 
+/// A remote apply that would sever its own session is refused, and the backend
+/// is never asked to install anything.
+///
+/// The pure guard is asserted in the unit tests; this pins that `apply` calls
+/// it and acts on the answer. Without it the guard could be deleted from the
+/// apply path outright with every unit test still green, which is how the
+/// checkpoint wiring was found unpinned earlier.
+///
+/// The fixture excepts `ssh` ALONE, so the ruleset still admits loopback and
+/// established connections. A guard that only asked "does anything survive?"
+/// waves this through, and over SSH the drop policy then goes live with nothing
+/// admitting the connection it arrived on.
+#[tokio::test]
+async fn a_remote_apply_that_would_sever_its_own_session_installs_nothing() {
+    // Every command an apply could reach is registered as succeeding, so the
+    // refusal is the assertion's doing rather than the mock's.
+    let executor = nft_apply_base(NFT_EMPTY_CHAIN)
+        .remote()
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("ufw", false)
+        .with_command_exists("nft", true)
+        .with_command(
+            "nft",
+            &["list", "ruleset"],
+            CommandOutput {
+                stdout: NFT_EMPTY_CHAIN.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "nftables"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let result = FirewallHardeningPlugin::new()
+        .apply(&mut ctx, &ssh_exception_config())
+        .await
+        .expect("the apply must return a result rather than an error");
+
+    assert!(
+        !result.apply_success,
+        "an apply that would sever its own session must not report success"
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|change| !change.change_success
+                && change.change_description.contains("sever the connection")),
+        "the operator must be told why, got: {:?}",
+        result.apply_changes
+    );
+    assert!(
+        !executor
+            .files()
+            .contains_key(Path::new("/etc/nftables.conf")),
+        "nothing may be written to the boot path when the ruleset was refused"
+    );
+    assert!(
+        !executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| command == "nft"
+                && args.first().map(String::as_str) == Some("-f")),
+        "nft must not be asked to load a ruleset the guard refused, got: {:?}",
+        executor.log().commands_executed
+    );
+}
+
 /// A ruleset `nft` will not parse never reaches the boot path.
 ///
 /// The render-time refusal reads a `source` and nothing else, which is an

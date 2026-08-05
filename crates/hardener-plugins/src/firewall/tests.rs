@@ -1211,6 +1211,125 @@ fn port_source_and_protocol_overrides_are_still_applied() {
     assert_eq!(rule.rule_protocol, "udp");
 }
 
+/// An apply that would leave the host admitting nothing is refused, and says
+/// which of the two shapes it is.
+///
+/// The input chain is rendered with `policy drop` whatever it holds, so the
+/// surviving rules are the whole of what the host still admits. An operator
+/// reaches both bad shapes through the sanctioned route rather than by
+/// accident: a policy exception, which is a documented deviation with an
+/// approval date and a reason.
+#[test]
+fn a_ruleset_that_admits_nothing_is_refused() {
+    let baseline = get_baseline_rules();
+    let without = |excepted: &[&str]| -> Vec<Rule> {
+        baseline
+            .iter()
+            .filter(|rule| !excepted.contains(&rule_id(rule).as_str()))
+            .cloned()
+            .collect()
+    };
+
+    // The control, and it must come first: the whole baseline is allowed from
+    // anywhere. Without it a guard that refused everything would satisfy every
+    // refusal assertion below.
+    assert_eq!(ruleset_refusal(&baseline, true), None);
+    assert_eq!(ruleset_refusal(&baseline, false), None);
+
+    // Every rule excepted. Refused whether the session is remote or local: a
+    // chain dropping even loopback is not a stricter firewall, it is an
+    // unreachable host.
+    for remote in [true, false] {
+        let refusal = ruleset_refusal(&[], remote).expect("an empty ruleset must be refused");
+        assert!(
+            refusal.contains("admits nothing"),
+            "the refusal must name the shape, got: {refusal}"
+        );
+    }
+
+    // Only the drop-all rule survives. Not empty, and still admits nothing,
+    // which is why the guard asks about accepting rules rather than about
+    // count.
+    let drop_only = without(&["loopback", "established", "ssh"]);
+    assert_eq!(
+        drop_only.len(),
+        1,
+        "the fixture must not be vacuously empty"
+    );
+    assert!(
+        ruleset_refusal(&drop_only, false)
+            .is_some_and(|refusal| refusal.contains("admits nothing")),
+        "a ruleset of drops alone must be refused"
+    );
+}
+
+/// Excepting the ssh rule alone is refused over SSH and allowed from a console.
+///
+/// The sharper half of #101, and the reason the guard cannot simply ask whether
+/// anything survived: loopback and established are still accepting here, so a
+/// ruleset that admits *something* still severs the session carrying the apply.
+#[test]
+fn excepting_the_ssh_rule_is_refused_only_when_it_would_sever_this_session() {
+    let without_ssh: Vec<Rule> = get_baseline_rules()
+        .into_iter()
+        .filter(|rule| rule_id(rule) != "ssh")
+        .collect();
+
+    assert!(
+        without_ssh.iter().any(|rule| rule.rule_action == "accept"),
+        "the fixture must still admit something, or this measures the other \
+         refusal instead of this one"
+    );
+
+    let refusal = ruleset_refusal(&without_ssh, true)
+        .expect("a remote apply with no ssh accept must be refused");
+    assert!(
+        refusal.contains("sever the connection"),
+        "the refusal must name the harm, got: {refusal}"
+    );
+
+    assert_eq!(
+        ruleset_refusal(&without_ssh, false),
+        None,
+        "from a console the same ruleset is a coherent thing to ask for, and \
+         refusing it would override a decision this tool asked the operator to \
+         record"
+    );
+
+    // The ssh rule SURVIVING is not the same as the ssh rule admitting
+    // anything, and this route needs no exception at all. `ssh.action = "drop"`
+    // is a tightening, so `action_override_is_allowed` permits it, and the rule
+    // stays in the ruleset under its own id while accepting nothing. A guard
+    // that asked only whether an ssh rule was present waved this through, which
+    // a surviving mutant proved before this case existed.
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("ssh.action".to_string(), "drop".to_string());
+    let dropping_ssh: Vec<Rule> = get_baseline_rules()
+        .into_iter()
+        .map(|mut rule| {
+            let id = rule_id(&rule);
+            apply_rule_directives(&mut rule, &id, &config);
+            rule
+        })
+        .collect();
+
+    assert!(
+        dropping_ssh
+            .iter()
+            .any(|rule| rule_id(rule) == "ssh" && rule.rule_action == "drop"),
+        "the fixture must reach a surviving ssh rule that drops, or it is \
+         measuring the excepted case again"
+    );
+    assert!(
+        ruleset_refusal(&dropping_ssh, true)
+            .is_some_and(|refusal| refusal.contains("sever the connection")),
+        "an ssh rule that survives and drops admits nothing, so a remote apply \
+         must be refused exactly as if it had been excepted"
+    );
+}
+
 /// A port reaches the backend as the number this tool validated, not as the
 /// operator spelled it.
 ///

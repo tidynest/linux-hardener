@@ -520,6 +520,62 @@ fn field_override_is_allowed(action: &str, field: &str, baseline: &str, requeste
     }
 }
 
+/// Why this ruleset must not be installed, or `None` if it may be.
+///
+/// The input chain is rendered with `policy drop` whatever it holds, so the
+/// rules are the whole of what the host will still admit. Two shapes of that
+/// are not hardening outcomes, and an operator reaches both through the
+/// sanctioned route rather than by mistake: a policy exception, which is a
+/// documented deviation carrying an approval date and a reason.
+///
+/// **Admitting nothing.** Excepting every rule, or every accepting one, leaves
+/// a chain that drops all inbound traffic including loopback. That is not a
+/// stricter firewall, it is an unreachable host, and nothing in the exception
+/// mechanism's documentation suggests it can produce one.
+///
+/// **Severing the session carrying the apply.** Excepting `ssh` ALONE is
+/// enough, and it is the sharper case because the ruleset still admits
+/// loopback and established connections, so a guard that only asked "does
+/// anything survive?" would wave it through. Over SSH the drop policy then
+/// goes live with no accept for the connection it arrived on, which is issue
+/// #92's outcome reached through configuration rather than through ordering.
+/// The ssh plugin already refuses the same shape at `is_remote_root_session`,
+/// where `PermitRootLogin no` would sever the session that set it; this is that
+/// precedent applied to the rule literally named "Allow SSH to prevent
+/// lockout".
+///
+/// A local apply is left alone in the second case on purpose. An operator at a
+/// console who excepts the SSH rule has said something coherent, and refusing
+/// it would be this tool overriding a decision it asked them to record.
+fn ruleset_refusal(rules: &[Rule], session_is_remote: bool) -> Option<String> {
+    if !rules.iter().any(|rule| rule.rule_action == "accept") {
+        return Some(
+            "it admits nothing at all: the input chain is rendered with \
+             `policy drop`, so a ruleset carrying no accepting rule drops every \
+             inbound packet including loopback. Remove the exception on at \
+             least one accepting rule, or disable the firewall plugin if this \
+             host is not meant to be filtered by it."
+                .to_string(),
+        );
+    }
+
+    let admits_ssh = rules
+        .iter()
+        .any(|rule| rule_id(rule) == "ssh" && rule.rule_action == "accept");
+
+    match session_is_remote && !admits_ssh {
+        true => Some(
+            "it would sever the connection carrying this apply: the rule named \
+             \"Allow SSH to prevent lockout\" is excepted, and the input chain \
+             is rendered with `policy drop`, so nothing would admit this \
+             session once the ruleset loads. Apply from a console, or remove \
+             the exception on the ssh rule."
+                .to_string(),
+        ),
+        false => None,
+    }
+}
+
 /// A directive's value as this tool READ it, rather than as it was spelled.
 ///
 /// Only `port` is rewritten, and the reason is that two readers of the same
@@ -1424,6 +1480,28 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // one recorded change is the right count. ufw cannot reach it at all,
         // since its `apply_rules` records every per-rule failure and returns
         // `Ok`.
+        // Judged before the backend is asked to install anything. A refusal
+        // here is recorded as a failed change rather than propagated, for the
+        // same reason the two failures below are: `apply_changes` already holds
+        // the checkpoint, the enable and every exception the operator declared,
+        // and a `?` would throw all of it away along with the explanation.
+        if let Some(reason) = ruleset_refusal(&rules, ctx.executor().is_remote()) {
+            warn!("Refusing to apply the firewall ruleset: {reason}");
+            apply_changes.push(Change {
+                change_description: format!("Refused to apply the firewall ruleset: {reason}"),
+                change_type: ChangeType::FirewallRule,
+                change_success: false,
+                change_error: Some(reason),
+            });
+            return Ok(ApplyResult {
+                apply_plugin_id,
+                apply_success: false,
+                apply_changes,
+                apply_checkpoint_id: checkpoint_id,
+                apply_error: None,
+            });
+        }
+
         let rules_error = match backend.apply_rules(ctx, &rules).await {
             Ok(mut backend_changes) => {
                 apply_changes.append(&mut backend_changes);
