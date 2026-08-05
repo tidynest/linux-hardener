@@ -156,12 +156,13 @@ that overstates itself is worse than no check:
     confirms only that the named token appears inside a checkpoint declaration
     somewhere in the same plugin directory: the arguments of a
     `create_checkpoint*_for_apply` call, the initialiser of a `Vec<&Path>`
-    binding, or the body of a `config_paths` returning the paths one backend
-    writes. It does not follow the token to a path, does not check that the
-    declaration is the one that runs on the branch reaching the write, and does
-    not know whether the checkpoint is captured before the write. A path
-    appended to a list after its initialiser, as services/mod.rs does with
-    `service_paths.extend(...)`, is not read at all.
+    binding, or the body of a `checkpoint_paths` returning the paths one
+    backend writes. It does not follow the token to a path, does not check
+    that the declaration is the one that runs on the branch reaching the
+    write, and does not know whether the checkpoint is captured before the
+    write. A path appended to a list after its initialiser, as
+    services/mod.rs does with `service_paths.extend(...)`, is not read at
+    all.
   - The directory search is per plugin directory rather than per file because
     ssh/dropin.rs writes a path that ssh/mod.rs declares. That is deliberate,
     and it is also the loosest part of the check: two plugins are never
@@ -189,6 +190,18 @@ arriving unanswered on the new question fails on the count exactly as it does on
 the old one. A pinned count of `declared` sites would add nothing to that and
 would have to be edited every time a site legitimately changed bucket, which is
 how a pin turns into a number people update without reading.
+
+What is pinned is the number of DISTINCT (file, key) patterns, not the number
+of raw regex matches. The two coincided by accident until the nftables
+boot-persistence work gave `write_file(Path::new(NFTABLES_CHECK_PATH)` a
+second call site: `execute_nft_from_string` and
+`refuse_a_ruleset_nft_will_not_parse` both park a candidate ruleset at that
+same scratch path for the same reason and are answered by the same entry, so
+two real call sites now share one registry key. A pin of raw occurrences
+would force the registry to answer the same two questions twice for one
+classification, which is what the shared key is for in the first place; a
+pin of distinct patterns keeps counting every genuinely new site while
+letting a genuinely repeated one stay repeated.
 """
 
 import re
@@ -204,10 +217,13 @@ NC = "\033[0m"  # No colour
 
 PLUGIN_SRC = Path("crates/hardener-plugins/src")
 
-# The number of file-creating call sites in the tree, pinned rather than
-# counted. Counted off the registry it would follow the registry down, and a
-# site added with no entry would be the exact thing this check cannot see.
-EXPECTED_SITE_COUNT = 12
+# The number of distinct (file, key) call-site patterns in the tree, pinned
+# rather than counted. Counted off the registry it would follow the registry
+# down, and a site added with no entry would be the exact thing this check
+# cannot see. Not the same as the raw number of matched calls: two call sites
+# sharing one pattern, as the two writes to NFTABLES_CHECK_PATH now do, are
+# one pattern and answer to one registry entry.
+EXPECTED_SITE_COUNT = 13
 
 # `execute_command` is the escape hatch: it can materialise a path without ever
 # touching `write_file`. Only a literal argv[0] is recognised, and only these.
@@ -241,11 +257,21 @@ CHECKPOINT_PATH_LIST = re.compile(r":\s*Vec<&Path>\s*=")
 # its apply could never create. A row recorded absent is an instruction to
 # delete, so a rollback on such a host would have removed whatever had arrived
 # at that path in the meantime. The declaration now lives on the backend that
-# does the writing, as `FirewallBackend::config_paths`, and `apply` hands that
-# return value straight to `create_checkpoint_for_apply`. Matching the body
-# keeps a per-backend declaration as visible to this check as a literal list.
+# does the writing, as `FirewallBackend::checkpoint_paths`, and `apply` hands
+# that return value straight to `create_checkpoint_for_apply`. Matching the
+# body keeps a per-backend declaration as visible to this check as a literal
+# list.
+#
+# The signature changed once more since: it was `fn config_paths(&self) ->
+# &'static [&'static str]`, a synchronous method returning literal paths,
+# until the nftables backend needed to probe the boot unit through the
+# executor to know which file it was declaring. All three backends carry the
+# new shape, `async fn checkpoint_paths(&self, ctx: &Context) ->
+# Result<Vec<String>>`, whether or not a given backend's own body reads `ctx`,
+# and the parameter is named `ctx` on the one implementation that does and
+# `_ctx` on the two that do not, so both are matched.
 CHECKPOINT_PATHS_FN = re.compile(
-    r"fn config_paths\(&self\)\s*->\s*&'static \[&'static str\]\s*\{"
+    r"fn checkpoint_paths\(&self,\s*_?ctx:\s*&Context\)\s*->\s*Result<Vec<String>>\s*\{"
 )
 
 # `SystemExecutor` (crates/hardener-common/src/executor/mod.rs) has exactly one
@@ -364,34 +390,63 @@ REGISTRY = {
         # is on tmpfs, so anything an interrupted apply leaves behind is gone at
         # the next boot, and it is root-owned, so nobody unprivileged can swap
         # the file between the write and the check. No state of ours outlives a
-        # rollback here: the file the rollback restores is
-        # NFTABLES_CONFIG_PATH, and this path is never loaded, never read back,
-        # and never referenced by the unit.
+        # rollback here: the file the rollback restores is the probed boot
+        # path, and this scratch path is never loaded, never read back, and
+        # never referenced by the unit.
         (
             "exempt",
             "a scratch file removed by the same function that writes it, so no "
             "state of ours outlives a rollback that never removes this file",
         ),
     ),
-    ("firewall/nftables.rs", "write_file(Path::new(NFTABLES_CONFIG_PATH)"): (
+    ("firewall/nftables.rs", "write_file(path"): (
+        # The write inside `ensure_include_line`, appending the include line
+        # to whatever file `boot_ruleset` named. Its parent is almost always
+        # there already, being the distribution's own /etc or /etc/sysconfig;
+        # the one host where it is not, openSUSE's /etc/nftables/rules, is
+        # created immediately above this call, in `apply_rules`'s own
+        # `mkdir -p` loop over `[HARDENER_RULESET_DIR,
+        # parent_of(&boot_path)]`. That loop runs through `execute_command`
+        # rather than `crate::ensure_directory` because one call site has to
+        # cover both directories it is responsible for.
         (
             "exempt",
-            "/etc is the distribution's own directory and is present on every "
-            "host this runs on, so there is no parent for the plugin to ensure",
+            "the parent is created immediately above this call by "
+            "apply_rules's own `mkdir -p` loop over "
+            "[HARDENER_RULESET_DIR, parent_of(&boot_path)], run through "
+            "execute_command rather than crate::ensure_directory because "
+            "one loop covers both directories the apply has to create",
         ),
-        # Declared by this backend's own `config_paths`, which the firewall
-        # apply hands straight to `create_checkpoint_for_apply` once it knows
-        # which backend it selected. A host that never had the file therefore
-        # records it absent and a rollback removes what this write created.
-        # That matters more here than for most entries: the file is what
-        # `nftables.service` loads at boot, so a rollback that left it behind
-        # would leave the applied ruleset coming back on every reboot, which is
-        # the applied posture surviving its own undo. The declaration sits on
-        # the backend rather than in one list at the apply site because that
-        # list also named this path on ufw and firewalld hosts, where no apply
-        # can create it and a rollback would have deleted whatever had arrived
-        # there instead.
-        ("declared", ("NFTABLES_CONFIG_PATH",)),
+        # `boot_path` is the same binding name `checkpoint_paths` returns in
+        # its own `Ok` arm, both read from the same `boot_ruleset` probe, so a
+        # capture taken before this write records whatever stood at that path
+        # beforehand and a rollback restores it, which removes the appended
+        # include line along with anything else this write touched. A host
+        # whose boot path could not be probed never reaches this call at all:
+        # `apply_rules` returns before writing anything once `boot_ruleset`
+        # answers `Err`.
+        ("declared", ("boot_path",)),
+    ),
+    ("firewall/nftables.rs", "write_file(Path::new(HARDENER_RULESET_PATH)"): (
+        # The write in `apply_rules` that lands the whole rendered ruleset in
+        # this plugin's own fragment. Same loop, same reasoning as the site
+        # above: HARDENER_RULESET_DIR is the other directory `mkdir -p`
+        # covers in that one call site.
+        (
+            "exempt",
+            "HARDENER_RULESET_DIR is created immediately above this call by "
+            "the same mkdir -p loop that also covers the boot path's parent, "
+            "run through execute_command rather than crate::ensure_directory "
+            "because one loop covers both directories",
+        ),
+        # Declared by this backend's own `checkpoint_paths`, which the
+        # firewall apply hands straight to `create_checkpoint_for_apply` once
+        # it knows which backend it selected. Nothing but this plugin ever
+        # writes HARDENER_RULESET_PATH, so a checkpoint recording it absent on
+        # a first apply and a rollback removing it afterwards is always the
+        # right answer, unlike the probed boot path beside it, which a
+        # distribution's own package can also own.
+        ("declared", ("HARDENER_RULESET_PATH",)),
     ),
     ("audit/mod.rs", "write_file(Path::new(AUDIT_RULES_PATH)"): (
         ("ensured", "AUDIT_RULES_DIR"),
@@ -784,9 +839,13 @@ def main():
             print("    pass both flags, in the order -p --no-dereference,")
             print("    before the source and destination\n")
 
-    if len(sites) != EXPECTED_SITE_COUNT:
+    # `seen`, not `sites`: two real call sites sharing one (file, key)
+    # pattern, as the two writes to NFTABLES_CHECK_PATH now do, are one
+    # pattern and register once, so the pin counts distinct patterns rather
+    # than raw matches.
+    if len(seen) != EXPECTED_SITE_COUNT:
         problems = True
-        print(f"{RED}Site count is {len(sites)}, expected {EXPECTED_SITE_COUNT}{NC}")
+        print(f"{RED}Site count is {len(seen)}, expected {EXPECTED_SITE_COUNT}{NC}")
         print("  The count is pinned rather than counted off the registry, so")
         print("  that a site added with no entry cannot pass by moving the")
         print("  total with it. Change EXPECTED_SITE_COUNT beside the registry")
