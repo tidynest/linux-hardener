@@ -12,8 +12,9 @@ use std::net::IpAddr;
 use std::path::Path;
 use tracing::{info, warn};
 
-/// The persistent ruleset every distribution's `nftables.service` loads at
-/// boot, and the only nftables file this plugin checkpoints. Named once here
+/// The persistent ruleset `nftables.service` loads at boot on the
+/// distributions that read this path, which is not all of them: Fedora and RHEL
+/// ship `/etc/sysconfig/nftables.conf` instead, and that is issue #52. It is and the only nftables file this plugin checkpoints. Named once here
 /// so the path the checkpoint captures, the path the rollback reloads for, and
 /// the path the reload actually feeds to `nft` cannot drift apart.
 pub(super) const NFTABLES_CONFIG_PATH: &str = "/etc/nftables.conf";
@@ -39,7 +40,15 @@ pub(super) const NFTABLES_CONFIG_PATH: &str = "/etc/nftables.conf";
 /// journey, so this table's `policy drop` governs whatever its own rules do
 /// not accept. A port an operator wants open has to be expressed as a
 /// directive to this tool. That is the same posture the plugin always
-/// intended; what changes is that reaching it no longer destroys anything.
+/// intended; what changes is that the `nft` load reaching it destroys nothing.
+///
+/// **The load. Not the whole apply.** The rendered ruleset is written to
+/// [`NFTABLES_CONFIG_PATH`], and that write replaces the file entire. On a
+/// distribution shipping a packaged ruleset there, Arch and Debian included,
+/// that file is where the administrator's own `inet filter` table is defined,
+/// so their table survives the apply in the running kernel and is gone at the
+/// next boot. Issue #98. Owning a separate table fixed what `nft` destroys and
+/// not what the write does.
 pub(super) const NFTABLES_TABLE: &str = "linux_hardener";
 
 /// Nftables firewall backend for modern Linux systems.
@@ -148,9 +157,11 @@ impl NftablesBackend {
     /// each rule already present, used to skip rules that are already there.
     ///
     /// Fails CLOSED: if the chain cannot be read, an empty list is returned so
-    /// every baseline rule is treated as absent and (re-)added. A duplicate is
-    /// harmless; a silently-missing baseline rule (e.g. the default drop) is a
-    /// real security gap.
+    /// every baseline rule is reported as newly added rather than skipped. That
+    /// over-counts what an apply changed and can never hide a rule that
+    /// genuinely needed adding, which is the direction to fail in. It cannot
+    /// produce a duplicate: the table is replaced outright by the load, so this
+    /// read decides the REPORT and not the ruleset.
     ///
     /// Reads [`NFTABLES_TABLE`] rather than `inet filter` because that is the
     /// table [`render_ruleset`] writes. Reading the other one would compare
@@ -310,8 +321,16 @@ impl Default for NftablesBackend {
 /// happens before the load, so the host would be left holding a ruleset
 /// `nftables.service` cannot parse at the path it loads at boot, on a unit
 /// `enable` marked to start there earlier in the same apply. Refusing here is
-/// what keeps that file from ever being written: nothing has happened yet when
-/// this returns `Err`.
+/// what keeps that file from ever being written.
+///
+/// Two things it does NOT mean. The apply has already taken its checkpoint and
+/// already enabled the unit by the time this runs, so an `Err` here leaves an
+/// enabled unit with no ruleset to load, which is issue #97's state reached by
+/// a route no rollback covers. And this refuses a **source** alone: a `port`
+/// reaches the rendered file as the operator's own string, so `"+22"` renders,
+/// is written, and is refused by `nft` at load, while `"022"` renders, loads,
+/// and means port 18 because `nft` reads a leading zero as octal where the
+/// validator read it as decimal.
 pub(super) fn render_ruleset(rules: &[Rule]) -> Result<String> {
     let backend = NftablesBackend::new();
     let mut statements = Vec::with_capacity(rules.len());

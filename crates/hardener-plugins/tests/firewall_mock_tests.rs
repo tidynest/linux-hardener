@@ -10,6 +10,9 @@ use hardener_core::{
 };
 use hardener_plugins::FirewallHardeningPlugin;
 use std::path::Path;
+
+mod common;
+use common::test_checkpoint_manager;
 use std::sync::Arc;
 
 /// Creates a mock executor where UFW is installed and active.
@@ -1226,8 +1229,9 @@ fn nft_ok() -> CommandOutput {
 /// Registers the `list chain` presence probe returning `chain_body`, plus the
 /// single `nft -f /etc/nftables.conf` load `apply_rules` always issues after
 /// it, regardless of whether every rule the probe found was already present
-/// (see `apply_rules`'s doc comment: loading the same scoped file again is
-/// idempotent, so this is not gated on anything having changed).
+/// (see `render_ruleset`'s doc comment: the table is replaced outright, so
+/// loading the same scoped file again is idempotent and the load is not gated
+/// on anything having changed).
 fn nft_apply_base(chain_body: &str) -> MockExecutor {
     MockExecutor::new()
         .with_command(
@@ -1640,10 +1644,231 @@ async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_presen
         "a whole-ruleset flush would destroy the foreign table this fixture \
          proves exists: ruleset\n{ruleset}"
     );
+    // Asserted against the rendered file, whose only input is the rule slice,
+    // so `foreign` could never appear here whatever the code did: the string
+    // exists solely in this fixture's `nft list ruleset` stdout. Issue #96
+    // names this assertion, and the docstring that used to claim it "proves a
+    // foreign table's presence is left alone by it", as unkillable. What the
+    // load leaves alone is proved by the delete naming exactly one table, which
+    // `the_rendered_file_replaces_only_its_own_table` pins; the honest thing to
+    // assert here is that the fixture's own table survives the render, which is
+    // the delete list again. Kept as a statement about the delete, not the blob.
     assert!(
-        !ruleset.contains("foreign"),
-        "the written file must never name a table this plugin does not own: \
+        !ruleset.contains("delete table ip foreign"),
+        "the load must not delete the foreign table this fixture proves exists: \
          ruleset\n{ruleset}"
+    );
+}
+
+/// The load is refused and the file it was rendered into is already on disk.
+///
+/// The write precedes the load, so this is the one failure mode of the single
+/// transaction that leaves durable state behind: `/etc/nftables.conf` holds a
+/// ruleset the kernel has just rejected, at the path `nftables.service` reads
+/// at boot. Nothing in the suite reached either error branch of write-then-load
+/// before this, which issue #96 lists among its remaining gaps.
+///
+/// The assertion is deliberately that the file IS there. That is the honest
+/// description of the state, and pinning it is what stops a future reader
+/// assuming the apply is atomic all the way to the disk. Recovering it is the
+/// pre-apply checkpoint's job, which `the_apply_checkpoints_the_path_its_backend_writes`
+/// pins separately.
+#[tokio::test]
+async fn a_refused_load_leaves_the_rendered_file_on_disk() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = MockExecutor::new()
+        .with_command(
+            "nft",
+            &["list", "chain", "inet", "linux_hardener", "input"],
+            CommandOutput {
+                stdout: NFT_EMPTY_CHAIN.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "nft",
+            &["-f", "/etc/nftables.conf"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "/etc/nftables.conf:4:19-19: Error: syntax error\n".to_string(),
+                exit_code: 1,
+            },
+        );
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let backend = NftablesBackend::new();
+
+    let failure = backend
+        .apply_rules(&ctx, &backend.get_default_rules())
+        .await
+        .expect_err("a refused load must fail the whole backend");
+
+    assert!(
+        failure.to_string().contains("syntax error"),
+        "the operator must be told what nft said, got: {failure}"
+    );
+    assert!(
+        executor
+            .files()
+            .contains_key(Path::new("/etc/nftables.conf")),
+        "the write precedes the load, so a refused load leaves the rendered \
+         file at the boot path: that is the state, and it is pinned rather \
+         than wished away"
+    );
+}
+
+/// `enable` marks the unit to start at boot and does nothing else.
+///
+/// This function was rewritten by this branch, from four `nft` calls that built
+/// a `policy drop` chain with no rules in it, into a single `systemctl enable`.
+/// That chain running before `apply_rules` installed the accepts is the whole
+/// of issue #92. No test reached the function at all, before or after: every
+/// nftables fixture makes `is_enabled` succeed, so the apply takes the
+/// already-enabled arm and never calls it. Issue #96 lists that gap too.
+#[tokio::test]
+async fn enabling_nftables_only_marks_the_unit_to_start_at_boot() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = MockExecutor::new().with_command(
+        "systemctl",
+        &["enable", "nftables"],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+    );
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    NftablesBackend::new()
+        .enable(&ctx)
+        .await
+        .expect("enabling the unit must succeed");
+
+    let commands: Vec<String> = executor
+        .log()
+        .commands_executed
+        .into_iter()
+        .map(|(program, args)| format!("{program} {}", args.join(" ")))
+        .collect();
+
+    assert_eq!(
+        commands,
+        vec!["systemctl enable nftables".to_string()],
+        "enable must issue exactly one command. A chain built here is live \
+         before `apply_rules` has installed a single accept, which is issue \
+         #92, and a `start` or an `enable --now` would load a ruleset that may \
+         not have been written yet"
+    );
+}
+
+/// A unit that refuses to be enabled is reported, not swallowed.
+#[tokio::test]
+async fn a_refused_enable_is_surfaced_with_systemd_own_words() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = MockExecutor::new().with_command(
+        "systemctl",
+        &["enable", "nftables"],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: "Failed to enable unit: Unit file nftables.service does not exist.\n"
+                .to_string(),
+            exit_code: 1,
+        },
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let failure = NftablesBackend::new()
+        .enable(&ctx)
+        .await
+        .expect_err("a refused enable must be an error");
+
+    assert!(
+        failure.to_string().contains("does not exist"),
+        "systemd's own words must reach the operator, got: {failure}"
+    );
+}
+
+/// The apply hands the SELECTED backend's own paths to the pre-apply
+/// checkpoint, and the checkpoint captures them.
+///
+/// `config_paths` has three unit assertions about what each backend declares,
+/// and until this nothing asserted that `apply` passes them to anything.
+/// Emptying the list at the call site left the whole suite green while the
+/// checkpoint captured nothing, which silently removes the only stated remedy
+/// for the whole-file overwrite of `/etc/nftables.conf` recorded as issue #98.
+#[tokio::test]
+async fn the_apply_checkpoints_the_path_its_backend_writes() {
+    let executor = MockExecutor::new()
+        .with_command_exists("firewall-cmd", false)
+        .with_command_exists("ufw", false)
+        .with_command_exists("nft", true)
+        .with_command(
+            "nft",
+            &["list", "ruleset"],
+            CommandOutput {
+                stdout: NFT_EMPTY_CHAIN.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "nft",
+            &["list", "chain", "inet", "linux_hardener", "input"],
+            CommandOutput {
+                stdout: NFT_EMPTY_CHAIN.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-enabled", "nftables"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok());
+    let mut ctx =
+        Context::with_executor_and_checkpoint(Arc::new(executor), test_checkpoint_manager().await);
+
+    let result = FirewallHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("the apply must not error");
+
+    let checkpoint_id = result
+        .apply_checkpoint_id
+        .clone()
+        .expect("an apply that reaches a backend must take a checkpoint");
+    let (_, captured) = ctx
+        .checkpoint_manager()
+        .expect("the context carries a checkpoint manager")
+        .get_checkpoint(&hardener_state::CheckpointId::new(checkpoint_id))
+        .await
+        .expect("the checkpoint just taken must be readable");
+
+    let paths: Vec<String> = captured.iter().map(|file| file.file_path.clone()).collect();
+
+    assert!(
+        paths.iter().any(|path| path == "/etc/nftables.conf"),
+        "the nftables backend rewrites this file whole, so a rollback is the \
+         only way back to what the administrator had; the checkpoint must \
+         carry it, got {paths:?}"
+    );
+    assert!(
+        !paths
+            .iter()
+            .any(|path| path.starts_with("/etc/ufw") || path.starts_with("/etc/firewalld")),
+        "and it must carry no path another backend owns, because a row \
+         recorded absent is an instruction to delete, got {paths:?}"
     );
 }
 

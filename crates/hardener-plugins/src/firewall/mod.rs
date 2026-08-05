@@ -828,7 +828,18 @@ fn not_at_boot_unchecked(backend: &dyn FirewallBackend) -> UncheckedCheck {
 /// The decision is intended, and nothing about it turns on which command the
 /// reload issues: `reload_after_rollback` never starts or enables a unit
 /// either, so this symlink surviving a rollback is not an asymmetry it grants
-/// on request, it is simply outside every action a rollback takes.
+/// on request.
+///
+/// **One case has escaped this since it was written, and the premise is what
+/// moved.** This paragraph used to close by calling the symlink "simply outside
+/// every action a rollback takes", which held while the rendered nftables
+/// ruleset survived a rollback. It no longer does: `/etc/nftables.conf` is a
+/// file an apply creates and a rollback deliberately deletes, so on a host
+/// where the apply created it, a rollback removes the only file
+/// `nftables.service` names and leaves this symlink pointing at nothing. That
+/// is issue #97, **open and unfixed**: a fix was written and withdrawn because
+/// it disabled the unit on hosts whose `ExecStart` names a different path.
+/// Everywhere else the decision above stands unchanged.
 async fn ensure_unit_wanted_at_boot(ctx: &Context, backend: &dyn FirewallBackend) -> Change {
     let unit = backend.systemd_unit();
     if matches!(
@@ -1270,7 +1281,10 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 change_error: None,
             },
             (false, None) => Change {
-                change_description: format!("Enabled the {} firewall", backend.backend_name()),
+                change_description: format!(
+                    "Enabled the {} firewall to start at boot",
+                    backend.backend_name()
+                ),
                 // A service state change rather than a rule: ufw's enable runs
                 // `ufw --force enable` and firewalld's runs `systemctl start`
                 // plus `systemctl enable`, which is what this variant is for.

@@ -300,9 +300,10 @@ async fn rollback_still_deletes_a_path_an_apply_can_create() {
 /// under the membership rule at [`UNDELETABLE_ROLLBACK_PATHS`] rather than
 /// under any exemption from it: protecting it would leave the rendered ruleset
 /// on disk with `nftables.service` already enabled by the same apply, so the
-/// posture the operator rolled back would return at the next boot, and the
-/// firewall plugin's own `reload_after_rollback` would load it straight back
-/// into the kernel from the file the rollback had just refused to delete.
+/// posture the operator rolled back would return at the next boot. An earlier
+/// wording added that the plugin's own `reload_after_rollback` would load it
+/// straight back in; that route closed when the checkpoint was scoped to the
+/// selected backend's own paths, so the next boot is the reason that stands.
 ///
 /// Same precedent as the kernel plugin's sysctl.d drop-in above and the ssh
 /// plugin's drop-in, which states the rule in its own checkpoint call.

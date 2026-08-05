@@ -1387,7 +1387,8 @@ async fn an_nftables_rollback_reloads_rather_than_installing_a_drop_policy() {
 /// Fedora and RHEL ship `/etc/sysconfig/nftables.conf`, not
 /// `/etc/nftables.conf`. On a host where nftables wins backend detection and
 /// `/etc/nftables.conf` was never present, the checkpoint correctly records
-/// the path as absent and the restore is a no-op, but the reload used to run
+/// the path as absent and the restore DELETES the ruleset the apply rendered
+/// there, leaving nothing to reload, but the reload used to run
 /// `nft -f /etc/nftables.conf` regardless: `nft` exits 1 on a file that is
 /// not there, `execute_nft` turns that into an error, and a rollback that did
 /// everything possible on that host still exited 1 telling the operator a

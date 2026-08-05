@@ -801,10 +801,12 @@ pub const UNDELETABLE_ROLLBACK_PATHS: &[&str] = &[
     // had one, which is exactly the membership rule's disqualifying condition.
     // Protecting it would leave the rendered ruleset on disk with
     // `nftables.service` enabled by the same apply, so the posture the operator
-    // rolled back would return at the next boot, and the firewall plugin's
-    // `reload_after_rollback` would load it back into the kernel from the file
-    // the rollback had refused to delete. Same precedent as the ssh and kernel
-    // drop-ins, each of which states the rule at its own checkpoint call.
+    // rolled back would return at the next boot. An earlier wording added that
+    // the plugin's own `reload_after_rollback` would load it straight back in;
+    // that route closed when the checkpoint was scoped to the selected
+    // backend's own paths, so the next boot is the reason that stands. Same
+    // precedent as the ssh and kernel drop-ins, each of which states the rule
+    // at its own checkpoint call.
     // Directories the plugins write files into, or capture and never touch.
     // `write_file` cannot create a missing parent, so a plugin whose target
     // directory may be absent creates it first: the kernel and audit applies

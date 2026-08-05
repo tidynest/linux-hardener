@@ -52,8 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never had one, that path is **deliberately deletable on rollback** and was
   removed from `UNDELETABLE_ROLLBACK_PATHS`: protecting it would leave the
   rendered ruleset on disk with the unit enabled, so the posture the operator
-  rolled back would return at the next boot and the plugin's own reload would
-  load it straight back in. Same precedent as the ssh and kernel drop-ins.
+  rolled back would return at the next boot, because the unit the same apply
+  enabled loads that file. Same precedent as the ssh and kernel drop-ins.
+  **Back up `/etc/nftables.conf` before a first apply** on a host whose ruleset
+  you maintain by hand, for the reason recorded against #98 above.
   The checkpoint itself is now scoped to the backend that was selected, through
   a new `FirewallBackend::config_paths`, rather than listing all three
   backends' paths on every host. The combined list recorded a row for
