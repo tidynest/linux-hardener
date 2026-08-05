@@ -1601,3 +1601,113 @@ fn a_value_that_is_not_a_range_is_handed_to_ufw_unchanged() {
         "an unparseable range must reach ufw as written, got: {args:?}"
     );
 }
+
+/// The ordering guarantee issue #92 is about, asserted inside the input chain
+/// alone.
+///
+/// Searching the whole rendered file was vacuous: the `forward` chain's own
+/// `policy drop` always follows the statements block, so any "the drop comes
+/// last" assertion held regardless of rule order. The needles come from
+/// `build_nft_rule_args` so the test cannot drift from what a rule renders as.
+#[test]
+fn the_ssh_accept_precedes_the_drop_all_rule() {
+    let backend = nftables::NftablesBackend::new();
+    let rules = get_baseline_rules();
+    let rendered = nftables::render_ruleset(&rules);
+
+    let statement = |needle: &str| {
+        let rule = rules
+            .iter()
+            .find(|r| r.rule_description.contains(needle))
+            .unwrap_or_else(|| panic!("no baseline rule describing {needle:?}"));
+        backend.build_nft_rule_args(rule)[5..].join(" ")
+    };
+
+    // The rule statements alone. Both the input chain's own `policy drop;` and
+    // the forward chain's contain the drop-all rule's entire statement, which
+    // is the bare string `drop`, so any search across the chain header matches
+    // a policy declaration instead of a rule. Two earlier versions of this test
+    // did exactly that, in both directions: one could never fail, one could
+    // never pass.
+    let statements = rendered
+        .split("chain input {")
+        .nth(1)
+        .expect("an input chain must be rendered")
+        .split("chain forward")
+        .next()
+        .expect("the input chain must end before the forward chain")
+        .split_once("policy drop;")
+        .expect("the input chain must declare its policy before its rules")
+        .1;
+
+    let ssh = statements
+        .find(&statement("Allow SSH"))
+        .expect("the SSH accept must be among the input chain's rules");
+    let established = statements
+        .find(&statement("established and related"))
+        .expect("the established/related accept must be among the input chain's rules");
+    let drop_all = statements
+        .find(&statement("Drop all other"))
+        .expect("the drop-all rule must be among the input chain's rules");
+
+    assert!(
+        ssh < drop_all,
+        "the SSH accept must precede the drop-all rule, or a remote apply locks \
+         the operator out: rule statements were\n{statements}"
+    );
+    assert!(
+        established < drop_all,
+        "the established/related accept must precede the drop-all rule, or an \
+         in-flight connection is severed: rule statements were\n{statements}"
+    );
+}
+
+/// The load must replace the live ruleset rather than merge into it, or a
+/// second apply stacks a duplicate of every baseline rule.
+#[test]
+fn the_rendered_file_flushes_before_it_builds() {
+    let rendered = nftables::render_ruleset(&get_baseline_rules());
+
+    assert!(
+        rendered.starts_with("flush ruleset"),
+        "the file must open by flushing, or repeated applies accumulate rules: \
+         rendered\n{rendered}"
+    );
+}
+
+/// The input chain keeps its drop policy. Inside one transaction it is never
+/// live without the accepts, and dropping it would leave a host that fails a
+/// mid-apply error open rather than closed.
+#[test]
+fn the_input_chain_keeps_its_drop_policy() {
+    let rendered = nftables::render_ruleset(&get_baseline_rules());
+
+    assert!(
+        rendered.contains("hook input priority 0; policy drop;"),
+        "input must stay policy drop: rendered\n{rendered}"
+    );
+    assert!(
+        rendered.contains("hook output priority 0; policy accept;"),
+        "output must stay policy accept, or the host cannot reply at all: \
+         rendered\n{rendered}"
+    );
+}
+
+/// The renderer and the incremental path must not disagree about what a rule
+/// means, so both take their statement from `build_nft_rule_args`.
+#[test]
+fn every_baseline_rule_renders_the_statement_the_argv_builder_produces() {
+    let backend = nftables::NftablesBackend::new();
+    let rendered = nftables::render_ruleset(&get_baseline_rules());
+
+    for rule in get_baseline_rules() {
+        let args = backend.build_nft_rule_args(&rule);
+        let statement = args[5..].join(" ");
+        assert!(
+            rendered.contains(&statement),
+            "rule {:?} rendered as something other than {statement:?}: \
+             rendered\n{rendered}",
+            rule.rule_description
+        );
+    }
+}

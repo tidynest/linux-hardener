@@ -204,6 +204,54 @@ impl Default for NftablesBackend {
     }
 }
 
+/// The complete nftables script for `rules`, loaded in one `nft -f`.
+///
+/// One transaction is the whole point. `enable` used to create the input chain
+/// with `policy drop` and no rules, before `apply_rules` added the accepts, so
+/// a remote apply severed the SSH connection carrying the rest of itself and
+/// the baseline rule named "Allow SSH to prevent lockout" was never installed.
+/// nftables applies a file or none of it, so here the policy is never live
+/// without the accepts beside it.
+///
+/// `policy drop` is kept rather than traded for `accept` plus the baseline's
+/// final drop rule: within the transaction it costs nothing, and it means a
+/// host whose load fails outright stays closed rather than open.
+///
+/// Opens with `flush ruleset` because the file is also what the unit loads at
+/// boot, and because a load that merged would stack a duplicate of every
+/// baseline rule on each apply.
+///
+/// Statements come from [`NftablesBackend::build_nft_rule_args`], sliced from
+/// index 5 exactly as `apply_rules` slices it, so the file and the incremental
+/// path cannot come to disagree about what a rule means.
+pub(super) fn render_ruleset(rules: &[Rule]) -> String {
+    let backend = NftablesBackend::new();
+    let statements: Vec<String> = rules
+        .iter()
+        .map(|rule| {
+            let args = backend.build_nft_rule_args(rule);
+            format!("        {}", args[5..].join(" "))
+        })
+        .collect();
+
+    format!(
+        "flush ruleset\n\
+         table inet filter {{\n\
+         \x20   chain input {{\n\
+         \x20       type filter hook input priority 0; policy drop;\n\
+         {}\n\
+         \x20   }}\n\
+         \x20   chain forward {{\n\
+         \x20       type filter hook forward priority 0; policy drop;\n\
+         \x20   }}\n\
+         \x20   chain output {{\n\
+         \x20       type filter hook output priority 0; policy accept;\n\
+         \x20   }}\n\
+         }}\n",
+        statements.join("\n")
+    )
+}
+
 #[async_trait]
 impl FirewallBackend for NftablesBackend {
     fn backend_name(&self) -> &str {
