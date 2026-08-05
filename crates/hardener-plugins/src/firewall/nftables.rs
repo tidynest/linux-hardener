@@ -54,13 +54,16 @@ pub(super) const NFTABLES_CHECK_PATH: &str = "/run/linux-hardener-nftables-check
 /// directive to this tool. That is the same posture the plugin always
 /// intended; what changes is that the `nft` load reaching it destroys nothing.
 ///
-/// **The load. Not the whole apply.** The rendered ruleset is written to
-/// [`NFTABLES_CONFIG_PATH`], and that write replaces the file entire. On a
-/// distribution shipping a packaged ruleset there, Arch and Debian included,
-/// that file is where the administrator's own `inet filter` table is defined,
-/// so their table survives the apply in the running kernel and is gone at the
-/// next boot. Issue #98. Owning a separate table fixed what `nft` destroys and
-/// not what the write does.
+/// **The load. Not the whole apply.** This plugin now owns the file its
+/// ruleset lives in as well as the table: the rendered ruleset is written to
+/// [`HARDENER_RULESET_PATH`], a fragment nothing else writes, and the apply
+/// appends a single glob include line, [`HARDENER_INCLUDE_LINE`], to whatever
+/// file the boot unit loads instead of overwriting it. On a distribution
+/// shipping a packaged ruleset in that file, Arch and Debian included, the
+/// administrator's own `inet filter` table is untouched by the apply, so
+/// there is no longer a file write for it to survive in the running kernel
+/// and then lose at the next boot. That whole-file overwrite is what issue
+/// #98 closed.
 pub(super) const NFTABLES_TABLE: &str = "linux_hardener";
 
 /// The directory this plugin owns for the nftables fragments it writes.

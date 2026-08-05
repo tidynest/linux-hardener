@@ -2477,9 +2477,9 @@ async fn the_apply_checkpoints_the_path_its_backend_writes() {
 
     assert!(
         paths.iter().any(|path| path == "/etc/nftables.conf"),
-        "the nftables backend rewrites this file whole, so a rollback is the \
-         only way back to what the administrator had; the checkpoint must \
-         carry it, got {paths:?}"
+        "the apply appends its include line to this file, so it must be \
+         checkpointed too; a rollback restores it to exactly what the \
+         administrator had, got {paths:?}"
     );
     assert!(
         !paths
