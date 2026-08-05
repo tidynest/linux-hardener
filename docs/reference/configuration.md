@@ -391,7 +391,9 @@ loads live, so the host is filtered now, and the operator is told
 persistence was not achieved rather than left believing it was. An empty
 `/etc/linux-hardener/nftables/` directory can still be left behind by a
 rollback, because removing a file does not remove the directory that held
-it.
+it, and the same is true of the boot file's own parent directory wherever
+the apply had to create one, openSUSE's `/etc/nftables/rules` on a stock
+host.
 
 The consequence worth knowing before an apply: this tool's chain hooks `input`
 with `policy drop`, and a `drop` verdict in any chain ends a packet's journey,

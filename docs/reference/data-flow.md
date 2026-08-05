@@ -210,9 +210,10 @@ could not be read is reported as an `UncheckedCheck` rather than as an absence.
 │  │            "/etc/ssh/sshd_config.d/00-hardener.conf"]     │
 │  │   • Kernel: ["/etc/sysctl.conf", "/etc/sysctl.d",         │
 │  │               "/etc/sysctl.d/99-hardener.conf"]           │
-│  │   • Firewall: the probed boot path's own                  │
-│  │     checkpoint_paths(), never all three: a row recorded   │
-│  │     absent is an instruction to delete                    │
+│  │   • Firewall: the selected backend's own                  │
+│  │     checkpoint_paths(), which probes the boot path, never │
+│  │     all three: a row recorded absent is an instruction to │
+│  │     delete                                                │
 │  ├─ CheckpointManager::create_checkpoint()                   │
 │  │   ├─ Generate checkpoint ID                               │
 │  │   ├─ For each file:                                       │

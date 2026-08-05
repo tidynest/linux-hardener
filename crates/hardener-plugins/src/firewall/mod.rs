@@ -1456,9 +1456,11 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // nftables' `enable` is a `systemctl enable` too now that the atomic
         // load took the table and chain creation out of it, so all three
         // backends leave the unit wanted at boot wherever the enable itself
-        // ran. What remains of #52 is narrower than this comment used to
-        // describe: the unit is enabled on every backend, but the ruleset is
-        // written to `/etc/nftables.conf`, which Fedora and RHEL do not read.
+        // ran. The ruleset itself now persists on every backend as well:
+        // `apply_rules` probes which file `nftables.service` actually loads
+        // rather than assuming `/etc/nftables.conf`, so Fedora and RHEL
+        // persist through `/etc/sysconfig/nftables.conf` and openSUSE through
+        // `/etc/nftables/rules/main.nft`, which closes #52.
         if was_already_enabled {
             let boot_change = ensure_unit_wanted_at_boot(ctx, backend.as_ref()).await;
             apply_changes.push(boot_change);

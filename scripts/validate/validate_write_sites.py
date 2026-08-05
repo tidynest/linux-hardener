@@ -457,13 +457,16 @@ REGISTRY = {
             "one loop covers both directories the apply has to create",
         ),
         # `boot_path` is the same binding name `checkpoint_paths` returns in
-        # its own `Ok` arm, both read from the same `boot_ruleset` probe, so a
-        # capture taken before this write records whatever stood at that path
-        # beforehand and a rollback restores it, which removes the appended
-        # include line along with anything else this write touched. A host
-        # whose boot path could not be probed never reaches this call at all:
-        # `apply_rules` returns before writing anything once `boot_ruleset`
-        # answers `Err`.
+        # its own `Ok` arm, each read by its own call to `boot_ruleset`: once
+        # when the checkpoint is captured (firewall/mod.rs, through
+        # `checkpoint_paths`) and once here, inside `apply_rules`, before this
+        # write. The two calls are independent probes of the same target, not
+        # one shared value, so a capture taken before this write records
+        # whatever stood at that path beforehand and a rollback restores it,
+        # which removes the appended include line along with anything else
+        # this write touched. A host whose boot path could not be probed
+        # never reaches this call at all: `apply_rules` returns before
+        # writing anything once `boot_ruleset` answers `Err`.
         ("declared", ("boot_path",)),
     ),
     ("firewall/nftables.rs", "write_file(Path::new(HARDENER_RULESET_PATH)"): (

@@ -12,13 +12,17 @@ use std::net::IpAddr;
 use std::path::Path;
 use tracing::{info, warn};
 
-/// The persistent ruleset `nftables.service` loads at boot on the distributions
-/// that read this path, which is not all of them: Fedora and RHEL ship
-/// `/etc/sysconfig/nftables.conf` instead, and that is issue #52.
-///
-/// It is also the only nftables file this plugin checkpoints. Named once here
-/// so the path the checkpoint captures, the path the rollback reloads for, and
-/// the path the reload actually feeds to `nft` cannot drift apart.
+/// The persistent ruleset `nftables.service` loads at boot on Arch and
+/// Debian, and only there: Fedora and RHEL load
+/// `/etc/sysconfig/nftables.conf`, and openSUSE loads
+/// `/etc/nftables/rules/main.nft`. [`boot_ruleset`] probes the unit itself to
+/// tell the three apart, so this constant is no longer the path a checkpoint
+/// captures, a rollback restores, or a reload feeds to `nft` in general; it is
+/// one distribution's boot path, kept as a named literal because two things
+/// still read it as exactly that: the over-inclusive, `Context`-free match in
+/// `reloads_for_path` (firewall/mod.rs), which cannot run the probe and so
+/// names every shipped unit's file instead, and this file's own Arch/Debian
+/// test fixtures.
 pub(super) const NFTABLES_CONFIG_PATH: &str = "/etc/nftables.conf";
 
 /// Where a rendered ruleset is parked so `nft --check` can judge it before the
@@ -443,8 +447,8 @@ impl NftablesBackend {
         }
     }
 
-    /// Refuses a rendered ruleset `nft` will not parse, before
-    /// [`NFTABLES_CONFIG_PATH`] is touched.
+    /// Refuses a rendered ruleset `nft` will not parse, before the boot path
+    /// is touched.
     ///
     /// `render_ruleset` already refuses a `source` it cannot read, and that
     /// check is worth keeping because it is pure and costs no host access. It
@@ -477,7 +481,7 @@ impl NftablesBackend {
             .map_err(|e| {
                 HardeningError::Plugin(format!(
                     "Could not write {NFTABLES_CHECK_PATH} to check the ruleset before \
-                     installing it: {e}. {NFTABLES_CONFIG_PATH} is untouched."
+                     installing it: {e}. The boot path is untouched."
                 ))
             })?;
 
@@ -499,14 +503,14 @@ impl NftablesBackend {
         let output = checked.map_err(|e| {
             HardeningError::Plugin(format!(
                 "Could not ask nft to check the ruleset before installing it: {e}. \
-                 {NFTABLES_CONFIG_PATH} is untouched."
+                 The boot path is untouched."
             ))
         })?;
 
         if !output.success() {
             return Err(HardeningError::Plugin(format!(
                 "Refusing to install a ruleset nft will not parse: {}. \
-                 {NFTABLES_CONFIG_PATH} is untouched.",
+                 The boot path is untouched.",
                 output.stderr.trim()
             )));
         }
@@ -885,8 +889,8 @@ impl FirewallBackend for NftablesBackend {
         // on. All that is missing without this call is persistence across a
         // reboot, which `systemctl enable` alone provides. Starting the unit
         // here as well would be redundant at best, and if it ran before
-        // `apply_rules` had ever written `NFTABLES_CONFIG_PATH`, it would ask
-        // the unit to load a file that does not exist yet.
+        // `apply_rules` had ever written the boot path, it would ask the
+        // unit to load a file that does not exist yet.
         let output = ctx
             .executor()
             .execute_command("systemctl", &["enable", self.systemd_unit()])

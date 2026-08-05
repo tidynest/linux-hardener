@@ -2219,11 +2219,14 @@ fn a_source_renders_the_match_of_its_own_address_family() {
 
 /// A source nft cannot match on is refused before anything is written.
 ///
-/// The order is the point. `apply_rules` writes [`NFTABLES_CONFIG_PATH`] and
-/// then loads it, so a ruleset that renders and then fails at `nft` leaves the
-/// host holding a file `nftables.service` cannot parse, at the path it loads
-/// from at boot, on a unit the same apply already enabled. The refusal has to
-/// land while nothing has happened, which means at render time.
+/// This is the cheaper of two refusals, and it still matters with the other
+/// one in place. `refuse_a_ruleset_nft_will_not_parse` asks a real
+/// `nft --check` against a scratch file before `apply_rules` ever touches the
+/// boot path, which is what actually stops a ruleset `nft` rejects from
+/// reaching disk; this one is pure, costs no host access, and answers only
+/// the fields `render_ruleset` itself knows about. Refusing here first means
+/// a source this check alone can already tell is wrong never reaches the
+/// scratch-file round trip at all.
 #[test]
 fn a_source_that_cannot_be_matched_on_refuses_the_whole_ruleset() {
     for source in [

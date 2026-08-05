@@ -637,11 +637,16 @@ async fn a_second_remote_apply_reports_every_rule_already_present() {
 /// ruleset and re-feeds it the boot file, which is the reboot, without
 /// rebooting.
 ///
-/// Every read of container state after the apply happens over a fresh SSH
-/// connection the apply never touched, following the rule the two live
-/// tests above already establish: the apply's own report is not evidence,
-/// because it is assembled before proving the transport, or in this case the
-/// persisted file, actually survived.
+/// Steps 4 to 6, the simulated reboot and the rollback, run over one
+/// independent connection the apply never touched, because what they prove
+/// is that the persisted file survives past the process that wrote it, not
+/// that the process's own connection survived it. That is not what the two
+/// live tests above establish: they deliberately reuse the SAME connection
+/// throughout, to prove the opposite thing, that the connection itself
+/// survives its own hardening. Step 3, which reads the boot file straight
+/// back over `apply_executor`, needs neither guarantee: it is checking what
+/// the apply wrote, not whether the wire it wrote over still stands, so it
+/// reads over the apply's own connection rather than a fresh one.
 ///
 /// # Running it
 ///

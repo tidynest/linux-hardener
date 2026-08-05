@@ -798,6 +798,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   empty `/etc/linux-hardener/nftables/` directory survives a rollback: the
   restore removes files with `rm -f`, which does not remove directories, so
   the now-empty directory this plugin's first apply created is left behind.
+  The same is true of the boot file's own parent directory wherever the apply
+  had to create one, openSUSE's `/etc/nftables/rules` on a stock host: `mkdir
+  -p` brings it into being ahead of the write and nothing removes it either.
   And a host whose unit cannot be read persists nothing at all: the ruleset
   still loads live, so the host is filtered now, a reported change states
   that persistence was not achieved and names why, and nothing is written to

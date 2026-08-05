@@ -807,12 +807,12 @@ pub const UNDELETABLE_ROLLBACK_PATHS: &[&str] = &[
     // backend's own paths, so the next boot is the reason that stands. Same
     // precedent as the ssh and kernel drop-ins, each of which states the rule
     // at its own checkpoint call.
-    // `/etc/linux-hardener/nftables/` is excluded for the same reason as
-    // `/etc/nftables.conf` above: an apply creates that directory and the
-    // fragment inside it, so a checkpoint row recording the fragment absent
-    // is an instruction to delete it on rollback. Protecting the directory
-    // would leave the applied ruleset sitting on disk after an undo, which
-    // is the exact outcome this list exists to prevent. Do not add it here.
+    // `/etc/linux-hardener/nftables/50-linux-hardener.nft` is excluded for
+    // the same reason as `/etc/nftables.conf` above: an apply creates that
+    // fragment, so a checkpoint row recording it absent is an instruction to
+    // delete it on rollback. Protecting it would leave the applied ruleset
+    // sitting on disk after an undo, which is the exact outcome this list
+    // exists to prevent. Do not add it here.
     // Directories the plugins write files into, or capture and never touch.
     // `write_file` cannot create a missing parent, so a plugin whose target
     // directory may be absent creates it first: the kernel and audit applies
