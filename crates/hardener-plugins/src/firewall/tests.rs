@@ -1662,16 +1662,26 @@ fn the_ssh_accept_precedes_the_drop_all_rule() {
     );
 }
 
-/// The load must replace the live ruleset rather than merge into it, or a
-/// second apply stacks a duplicate of every baseline rule.
+/// The load must replace this plugin's own `inet filter` table outright
+/// rather than merge into it, or a second apply stacks a duplicate of every
+/// baseline rule. That replacement must stay scoped to the plugin's own
+/// table: a whole-ruleset flush was the first draft of this file and was
+/// rejected, because it would destroy every other nftables table on the
+/// host, Docker's and libvirt's included, alongside this plugin's own.
 #[test]
-fn the_rendered_file_flushes_before_it_builds() {
+fn the_rendered_file_replaces_only_its_own_table() {
     let rendered = nftables::render_ruleset(&get_baseline_rules());
 
     assert!(
-        rendered.starts_with("flush ruleset"),
-        "the file must open by flushing, or repeated applies accumulate rules: \
-         rendered\n{rendered}"
+        rendered.starts_with("table inet filter\ndelete table inet filter\n"),
+        "the file must create, then delete, then rebuild its own table, or a \
+         second apply either fails against an absent table or merges into a \
+         present one: rendered\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("flush ruleset"),
+        "a whole-ruleset flush would destroy every other nftables table on \
+         the host, not only this plugin's own: rendered\n{rendered}"
     );
 }
 

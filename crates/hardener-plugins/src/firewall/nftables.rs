@@ -191,9 +191,20 @@ impl Default for NftablesBackend {
 /// final drop rule: within the transaction it costs nothing, and it means a
 /// host whose load fails outright stays closed rather than open.
 ///
-/// Opens with `flush ruleset` because the file is also what the unit loads at
-/// boot, and because a load that merged would stack a duplicate of every
-/// baseline rule on each apply.
+/// Replaces only THIS PLUGIN'S `inet filter` table, atomically, and
+/// deliberately leaves every other table on the host alone. A whole-ruleset
+/// `flush ruleset` was the first draft of this file and was rejected: Docker,
+/// libvirt, and iptables-nft all create their own nftables tables on a host
+/// that also runs this plugin (this backend's own `is_enabled` already
+/// documents that), and a `flush ruleset` would tear all of them down on
+/// every apply, taking container and VM networking with it. `table inet
+/// filter` first creates the table if it is absent, so the following `delete
+/// table inet filter` cannot fail on a host that never had one; the final
+/// `table inet filter { ... }` then rebuilds it with the baseline rules. All
+/// three statements land in the one `nft -f`, so the ordering guarantee below
+/// is unaffected: nothing this plugin does not own is ever touched, and this
+/// plugin's own table is still replaced outright rather than merged into,
+/// which is what stops a repeated apply from stacking duplicate rules.
 ///
 /// Statements come from [`NftablesBackend::build_nft_rule_args`], sliced from
 /// index 5 exactly as `apply_rules` slices it, so the file and the incremental
@@ -209,7 +220,8 @@ pub(super) fn render_ruleset(rules: &[Rule]) -> String {
         .collect();
 
     format!(
-        "flush ruleset\n\
+        "table inet filter\n\
+         delete table inet filter\n\
          table inet filter {{\n\
          \x20   chain input {{\n\
          \x20       type filter hook input priority 0; policy drop;\n\
@@ -279,6 +291,15 @@ impl FirewallBackend for NftablesBackend {
         // baseline accepts included, and loads it as one `nft -f` transaction,
         // so the table and chains come into being together with the rules
         // that make `policy drop` survivable.
+        //
+        // Deliberately `enable`, not `enable --now` or a separate `start`:
+        // `apply_rules` runs after this and loads the ruleset itself, so the
+        // firewall is already live by the time this function's caller moves
+        // on. All that is missing without this call is persistence across a
+        // reboot, which `systemctl enable` alone provides. Starting the unit
+        // here as well would be redundant at best, and if it ran before
+        // `apply_rules` had ever written `NFTABLES_CONFIG_PATH`, it would ask
+        // the unit to load a file that does not exist yet.
         let output = ctx
             .executor()
             .execute_command("systemctl", &["enable", self.systemd_unit()])
