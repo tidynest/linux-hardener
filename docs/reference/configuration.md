@@ -356,7 +356,7 @@ table therefore survives the apply in the running kernel and is gone at the next
 boot, because the file that defined it no longer does. Rolling back restores the
 file; a successful apply that is never rolled back does not. Back up
 `/etc/nftables.conf` before a first apply on a host whose ruleset you maintain
-by hand.
+by hand. Tracked as issue #98.
 
 The consequence worth knowing before an apply: this tool's chain hooks `input`
 with `policy drop`, and a `drop` verdict in any chain ends a packet's journey,

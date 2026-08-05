@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   table is defined. Their table survives the apply in the running kernel and is
   gone at the next boot. Scoping the `nft` load stopped the runtime destruction;
   it did not stop this one, which is a question about which file the ruleset is
-  written to and is tracked separately.
+  written to and is tracked as #98.
   Per-rule reporting is unchanged, the diff being taken before the load,
   so `applied_change_count()` and `is_skipped()` keep meaning what they meant.
   `ensure_managed_chain` is deleted and `enable` now only enables the unit at
