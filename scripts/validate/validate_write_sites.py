@@ -14,7 +14,7 @@ Exit codes:
        every `cp` passes both backup flags
     1: A site is unclassified on either question, an entry is stale or
        malformed, a cited ensure or checkpoint declaration is gone, a `cp` is
-       missing a backup flag, or the pinned count moved
+       missing a backup flag, or either pinned count moved
 
 One defect was fixed three times. `460f037` (kernel), `202bb6a` (pam) and
 `6ce1799` (audit) each say the same thing: a file is written into a directory
@@ -191,17 +191,42 @@ the old one. A pinned count of `declared` sites would add nothing to that and
 would have to be edited every time a site legitimately changed bucket, which is
 how a pin turns into a number people update without reading.
 
-What is pinned is the number of DISTINCT (file, key) patterns, not the number
-of raw regex matches. The two coincided by accident until the nftables
-boot-persistence work gave `write_file(Path::new(NFTABLES_CHECK_PATH)` a
-second call site: `execute_nft_from_string` and
-`refuse_a_ruleset_nft_will_not_parse` both park a candidate ruleset at that
-same scratch path for the same reason and are answered by the same entry, so
-two real call sites now share one registry key. A pin of raw occurrences
-would force the registry to answer the same two questions twice for one
-classification, which is what the shared key is for in the first place; a
-pin of distinct patterns keeps counting every genuinely new site while
-letting a genuinely repeated one stay repeated.
+TWO COUNTS ARE PINNED, NOT ONE, AND THEY CATCH DIFFERENT FAILURES
+
+EXPECTED_SITE_COUNT holds the number of DISTINCT (file, key) patterns,
+`len(seen)` in `main`, which the unregistered/stale/malformed checks above it
+already keep equal to `len(REGISTRY)`. What it catches is a genuinely new
+pattern arriving classified: a call site can only reach an unfamiliar key by
+being `unregistered`, or by arriving alongside a new entry that answers for
+it, and in the second case nothing else in this file would ever ask a human
+to notice the total grew. This pin is what does.
+
+EXPECTED_RAW_SITE_COUNT holds `len(sites)`, the count of `.write_file(` and
+recognised `.execute_command(` matches before any of them are folded into a
+pattern. It exists because the fold can hide a genuinely new site behind an
+old key rather than behind a new one. A write site whose first argument
+happens to read the same as an already-registered site's, `write_file(path`
+answering for a second, unrelated path because the new call also binds its
+argument to a local named `path`, is not `unregistered`: its key is already
+in REGISTRY, so it is classified, silently, by an entry written to justify a
+different write. `len(seen)` cannot see this, because a repeated key does not
+grow the set of distinct patterns; only the raw count does. This was proven
+directly: a `write_file(path, ...)` call appended to `firewall/nftables.rs`
+under that reused key passed every check here with EXPECTED_SITE_COUNT alone
+and was refused only once EXPECTED_RAW_SITE_COUNT stood beside it.
+
+The two numbers coincide only while every key in the tree answers for exactly
+one call site, which held until the nftables boot-persistence work gave
+`write_file(Path::new(NFTABLES_CHECK_PATH)` a second call site on purpose:
+`execute_nft_from_string` and `refuse_a_ruleset_nft_will_not_parse` both park
+a candidate ruleset at that same scratch path for the same documented reason,
+so one registry entry now answers for two real writes and `len(sites)` sits
+one above `len(seen)`. That gap is itself information, the number of call
+sites currently sharing a key for a stated reason, and the two constants are
+edited together for a genuinely new pattern and independently whenever a
+sharing like that one is added or removed. Keeping both, rather than folding
+one into the other, is two integers; refusing the one write this file cannot
+see any other way is what the second buys.
 """
 
 import re
@@ -224,6 +249,20 @@ PLUGIN_SRC = Path("crates/hardener-plugins/src")
 # sharing one pattern, as the two writes to NFTABLES_CHECK_PATH now do, are
 # one pattern and answer to one registry entry.
 EXPECTED_SITE_COUNT = 13
+
+# The raw number of `.write_file(`/`.execute_command(` matches, before any of
+# them are folded into a (file, key) pattern. Pinned separately from
+# EXPECTED_SITE_COUNT because the fold is exactly what a new site can hide
+# behind: one whose first argument's text happens to match an already
+# registered key raises `len(sites)` without raising `len(seen)` or
+# registering as `unregistered`, since its key is already in REGISTRY. Proven
+# directly against this file: a `write_file(path, ...)` appended under the
+# reused key `write_file(path` passed with this pin absent and failed once it
+# was restored. Edited together with EXPECTED_SITE_COUNT when a genuinely new
+# pattern arrives; edited alone when an existing pattern gains or loses a
+# call site that deliberately shares its key, as NFTABLES_CHECK_PATH's two
+# sites do.
+EXPECTED_RAW_SITE_COUNT = 14
 
 # `execute_command` is the escape hatch: it can materialise a path without ever
 # touching `write_file`. Only a literal argv[0] is recognised, and only these.
@@ -838,6 +877,22 @@ def main():
                 print("    overwritten has no backup at all")
             print("    pass both flags, in the order -p --no-dereference,")
             print("    before the source and destination\n")
+
+    # `sites`, not `seen`: a new call site that reuses an already-registered
+    # key raises this count without raising the distinct-pattern one below,
+    # since its (file, key) pair is already in REGISTRY and it is therefore
+    # neither `unregistered` nor able to move `len(seen)`. This is the only
+    # check in the file that would refuse such a site.
+    if len(sites) != EXPECTED_RAW_SITE_COUNT:
+        problems = True
+        print(f"{RED}Raw site count is {len(sites)}, expected {EXPECTED_RAW_SITE_COUNT}{NC}")
+        print("  This count is every matched call before folding into (file,")
+        print("  key) patterns, pinned separately from the distinct-pattern")
+        print("  count below because a new site landing under an already")
+        print("  registered key would move this total and not that one.")
+        print("  Change EXPECTED_RAW_SITE_COUNT once the new or removed site")
+        print("  is accounted for, and say in the commit whether it is a")
+        print("  genuinely new pattern or a deliberately shared key.\n")
 
     # `seen`, not `sites`: two real call sites sharing one (file, key)
     # pattern, as the two writes to NFTABLES_CHECK_PATH now do, are one

@@ -556,6 +556,38 @@ impl NftablesBackend {
         }
         Ok(())
     }
+
+    /// Tells a `destroy` that failed because the table was never there from
+    /// one that failed with the table still live. Called from [`Self::reload`]
+    /// once a `destroy` has already failed and been warned about.
+    ///
+    /// A failed `destroy` is ambiguous by itself: an nft older than 1.0.6
+    /// refuses the subcommand outright, whether the table exists or not, and
+    /// an nft new enough to run it can still fail for some other reason with
+    /// the table genuinely still there. `nft list table` tells the two apart:
+    /// it fails when the table is absent, which is the harmless reading the
+    /// caller's warning already covers, and it succeeds when the table is
+    /// still live, which this refuses to let the rollback report past. A
+    /// rollback that says it succeeded while `table inet linux_hardener`
+    /// still carries `policy drop` is the exact defect this exists to close.
+    async fn fail_if_table_survived_a_failed_destroy(
+        &self,
+        ctx: &Context,
+        destroy_error: HardeningError,
+    ) -> Result<()> {
+        let still_present = self
+            .execute_nft(ctx, &["list", "table", "inet", NFTABLES_TABLE])
+            .await
+            .is_ok();
+        if !still_present {
+            return Ok(());
+        }
+
+        Err(HardeningError::Plugin(format!(
+            "the {NFTABLES_TABLE} table is still present after the failed destroy \
+             above, so this rollback cannot report success: {destroy_error}"
+        )))
+    }
 }
 
 /// Reads a rule's `source` as an address, with an optional prefix length that
@@ -879,10 +911,16 @@ impl FirewallBackend for NftablesBackend {
     /// file and loading it does not remove `inet linux_hardener`, because
     /// that file never mentioned it: without this, a rollback reports success
     /// while the host stays hardened until its next reboot. `nft destroy
-    /// table` does not fail on a table that is not there, which is what makes
-    /// issuing it unconditionally safe, and it runs even when the boot path
-    /// below cannot be determined, because removing the applied table is the
-    /// whole of what the rollback is for.
+    /// table` does not fail on a table that is not there, but only on an nft
+    /// new enough to know the subcommand at all: `destroy` landed in nftables
+    /// 1.0.6 (January 2023), and README.md commits this project to RHEL 9 and
+    /// later, whose 9.0 ships 1.0.1, where `destroy` is a parse error and
+    /// exits 1 whatever the table holds. A failed destroy is therefore not by
+    /// itself proof the table survived; [`Self::reload`] asks `nft list
+    /// table` to tell the two cases apart before it decides whether the
+    /// failure was harmless. It runs even when the boot path below cannot be
+    /// determined, because removing the applied table is the whole of what
+    /// the rollback is for.
     ///
     /// [`Self::enable`] is not a substitute for the reload that follows: it
     /// only marks the systemd unit to start at the next boot and never reads
@@ -921,6 +959,7 @@ impl FirewallBackend for NftablesBackend {
             .await
         {
             warn!("Could not remove the {NFTABLES_TABLE} table during rollback: {e}");
+            self.fail_if_table_survived_a_failed_destroy(ctx, e).await?;
         }
 
         // Destructured rather than matched on `probed.loads` directly:

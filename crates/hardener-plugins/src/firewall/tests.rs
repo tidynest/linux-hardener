@@ -2526,6 +2526,67 @@ async fn a_rollback_removes_the_table_the_apply_installed() {
     );
 }
 
+/// A failed `destroy` is not by itself proof the table survived it: an nft
+/// older than 1.0.6 refuses the subcommand outright, table or no table, and
+/// that harmless case must not turn into a reported rollback failure. But
+/// when `nft list table` confirms the table this destroy was meant to remove
+/// is still there, the reload must fail rather than let a rollback report
+/// success while `policy drop` is still live on the host.
+#[tokio::test]
+async fn a_rollback_fails_when_a_failed_destroy_leaves_the_table_present() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("nft", true)
+            .with_command(
+                "nft",
+                &["destroy", "table", "inet", "linux_hardener"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "Error: unknown command destroy".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_command(
+                "nft",
+                &["list", "table", "inet", "linux_hardener"],
+                CommandOutput {
+                    stdout: "table inet linux_hardener {\n\tchain input {\n\t\ttype filter \
+                             hook input priority filter; policy drop;\n\t}\n}\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let error = nftables::NftablesBackend::new()
+        .reload(&ctx)
+        .await
+        .expect_err(
+            "a rollback must not report success while the table it tried to remove is \
+             still there",
+        );
+
+    assert!(
+        error.to_string().contains("linux_hardener"),
+        "the error must name the table that survived the destroy, got: {error}"
+    );
+    let commands = logged_commands(&executor);
+    assert!(
+        commands
+            .iter()
+            .any(|c| c == "nft list table inet linux_hardener"),
+        "a failed destroy must be confirmed against a real list, got: {commands:?}"
+    );
+    assert!(
+        !commands
+            .iter()
+            .any(|c| c.starts_with("systemctl show") || c.starts_with("nft -f")),
+        "the reload must fail before it ever probes the boot path, got: {commands:?}"
+    );
+}
+
 /// Issue #97: an apply enables the unit and creates the file; a rollback
 /// deletes the file and leaves the unit enabled, so Type=oneshot fails at the
 /// next boot and the host comes up unfiltered.

@@ -284,13 +284,29 @@ running the configuration you just undid. Once the files are restored, every
 plugin that owns one of the restored paths is asked to re-read it, and each
 reload is listed in the output with what it did. Six plugins have something to
 reload: `sshd` is restarted, kernel parameters go through `sysctl --system`,
-the firewall backend re-reads its own configuration (`firewall-cmd --reload`,
-`nft -f /etc/nftables.conf` or `ufw reload`, and never a start or an enable),
-audit rules go through `augenrules --load`, systemd gets a `daemon-reload`, and
-the MAC policy is put back with `setenforce` or `systemctl reload apparmor`.
-`pam` and `permissions` reload nothing, because their changes take effect the
-moment the file is written. A plugin with nothing to reload produces no line
-rather than an empty one.
+the firewall backend re-reads its own configuration, audit rules go through
+`augenrules --load`, systemd gets a `daemon-reload`, and the MAC policy is put
+back with `setenforce` or `systemctl reload apparmor`. `pam` and `permissions`
+reload nothing, because their changes take effect the moment the file is
+written. A plugin with nothing to reload produces no line rather than an
+empty one.
+
+The firewall backend's own reload is the least uniform of the six.
+`firewall-cmd --reload` and `ufw reload` are exactly what they say. nftables
+first runs `nft destroy table inet linux_hardener` to remove the table the
+apply installed; if that fails, `nft list table` is asked whether the table
+is genuinely gone before the rollback is allowed to continue, because an nft
+older than 1.0.6 (RHEL 9.0, among the versions this tool supports) refuses
+the `destroy` subcommand outright regardless of what the table holds. Once
+the table is confirmed gone, `nft -f` loads whichever file
+`nftables.service` actually reads on this host, probed rather than assumed:
+`/etc/nftables.conf` on Arch and Debian, `/etc/sysconfig/nftables.conf` on
+Fedora and RHEL, `/etc/nftables/rules/main.nft` on openSUSE. None of the
+three ever starts a unit; nftables is the only one of the three that can
+disable one, running `systemctl disable nftables` when the probed file is
+confirmed absent and the unit carries no `ConditionPathExists` guarding that
+same file, so a `Type=oneshot` unit left with nothing to load is not left to
+fail at every boot after.
 
 **Exit codes:** `0` = every file restored and every reload succeeded; `1` = the
 rollback did not fully succeed, which now covers two distinct cases the message
@@ -299,15 +315,17 @@ and a service refused to reload, in which case that service is still running
 the previous configuration and needs attention even though the disk is correct.
 A reload the host genuinely cannot perform is not counted as a failure: a
 kernel audit configuration locked with `-e 2` is reported as restored but not
-loaded until the next reboot, and exits `0`. The same holds for nftables on a
-host that never had `/etc/nftables.conf` in the first place, which is every
-Fedora and RHEL host (they ship `/etc/sysconfig/nftables.conf` instead): the
-checkpoint records the path absent, the restore deletes the ruleset the apply
-rendered there, and the reload is then skipped rather than asking `nft` to load
-a file that is no longer present. That path is deliberately left deletable.
-Protecting it would leave the rolled-back ruleset on disk with
-`nftables.service` already enabled by the same apply, so the posture the
-operator undid would come back at the next boot.
+loaded until the next reboot, and exits `0`. nftables has its own version of
+this, for a different reason than it used to. The probed boot file is
+checkpointed and restored like any other path now, so a rollback puts it back
+exactly as it stood before the apply; on a host where the very first apply
+created it, openSUSE typically, since `/etc/nftables/rules/main.nft` does not
+exist on a stock install, that restore correctly leaves the file absent, and
+the reload is then skipped rather than asking `nft` to load a file that is
+not there. The `nft destroy table inet linux_hardener` described above still
+runs first regardless, so the table the apply installed is gone from the
+running kernel whether or not the file-level reload that follows finds
+anything left to do.
 
 ---
 
