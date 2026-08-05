@@ -74,7 +74,13 @@ pub trait FirewallBackend: Send + Sync {
     /// from the administrator, the rollback deleted it with nothing to show it
     /// had ever been ours. Asking the selected backend keeps the declaration
     /// and the writing in one place, so the pair cannot drift again.
-    fn config_paths(&self) -> &'static [&'static str];
+    ///
+    /// Takes `ctx` and is fallible because one backend's answer is not a
+    /// constant: nftables persists to whatever file its systemd unit loads,
+    /// which differs by distribution and is read off the host. An `Err` means
+    /// the paths could not be determined, which must abort the apply rather
+    /// than checkpoint a guess.
+    async fn checkpoint_paths(&self, ctx: &Context) -> Result<Vec<String>>;
 
     /// Detects if this backend is available on the system.
     ///
@@ -1310,8 +1316,8 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 
         // Detect the backend BEFORE the checkpoint, so the checkpoint can
         // declare only what the selected backend writes (see
-        // `FirewallBackend::config_paths`). `detect_backend` reads the host and
-        // changes nothing, so nothing needs undoing when it fails, and the
+        // `FirewallBackend::checkpoint_paths`). `detect_backend` reads the host
+        // and changes nothing, so nothing needs undoing when it fails, and the
         // absence of a checkpoint id is then the truthful answer rather than a
         // row describing an apply that never began.
         let backend = match self.detect_backend(ctx).await {
@@ -1327,8 +1333,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             }
         };
 
-        // Checkpoint what this backend writes, and nothing else.
-        let firewall_paths: Vec<&Path> = backend.config_paths().iter().map(Path::new).collect();
+        // Probed before the checkpoint, deliberately. The probe is a pure read
+        // that changes nothing, and a checkpoint cannot declare a path it does
+        // not yet know. A path an apply may CREATE has to be declared before
+        // the apply runs, or the rollback has no row telling it to remove one.
+        let firewall_paths = backend.checkpoint_paths(ctx).await?;
+        let firewall_paths: Vec<&Path> = firewall_paths.iter().map(Path::new).collect();
         let checkpoint_id = crate::create_checkpoint_for_apply(
             ctx,
             "firewall-hardening-pre-apply",

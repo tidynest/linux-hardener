@@ -77,10 +77,6 @@ pub(super) const HARDENER_RULESET_DIR: &str = "/etc/linux-hardener/nftables";
 
 /// The rendered ruleset. Written whole on every apply, and the only nftables
 /// file whose entire content belongs to this plugin.
-///
-/// Not yet read outside this module's own tests: the write path that uses it
-/// is a later task on this branch.
-#[allow(dead_code)]
 pub(super) const HARDENER_RULESET_PATH: &str = "/etc/linux-hardener/nftables/50-linux-hardener.nft";
 
 /// The one line appended to whatever file the boot unit loads.
@@ -98,10 +94,6 @@ pub(super) const HARDENER_RULESET_PATH: &str = "/etc/linux-hardener/nftables/50-
 pub(super) const HARDENER_INCLUDE_LINE: &str = "include \"/etc/linux-hardener/nftables/*.nft\"";
 
 /// What `systemctl show` said about the unit that loads a ruleset at boot.
-///
-/// Not yet constructed outside this module's own tests: the apply and
-/// rollback paths that call [`boot_ruleset`] are later tasks on this branch.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct BootRuleset {
     /// The file the unit loads, or the reason we could not tell.
@@ -127,10 +119,6 @@ pub(super) struct BootRuleset {
 /// names, and systemd omits a property the unit does not declare even under
 /// `--all`, so with two properties and one missing there is no way to tell
 /// which value survived. Named lines are unambiguous.
-///
-/// Not yet called outside this module's own tests: the apply and rollback
-/// paths that call it are later tasks on this branch.
-#[allow(dead_code)]
 pub(super) async fn boot_ruleset(ctx: &Context) -> BootRuleset {
     let output = ctx
         .executor()
@@ -176,9 +164,7 @@ pub(super) async fn boot_ruleset(ctx: &Context) -> BootRuleset {
 /// declare that property. systemd omits an undeclared property entirely, so
 /// absence and emptiness are the same answer here and both mean "not stated".
 ///
-/// Only reachable through [`boot_ruleset`], which is itself not yet called
-/// outside this module's own tests.
-#[allow(dead_code)]
+/// Only reachable through [`boot_ruleset`].
 fn property(shown: &str, name: &str) -> String {
     shown
         .lines()
@@ -188,11 +174,6 @@ fn property(shown: &str, name: &str) -> String {
 }
 
 /// The pure half, so every distribution's real string is a cheap test.
-///
-/// Not yet called outside this module's own tests: [`boot_ruleset`], its only
-/// production caller, is itself not yet called from the apply or rollback
-/// paths.
-#[allow(dead_code)]
 pub(super) fn parse_boot_ruleset(exec_start: &str, condition_path_exists: &str) -> BootRuleset {
     let loads = parse_exec_start(exec_start);
     let condition_guards_it = match &loads {
@@ -217,9 +198,7 @@ pub(super) fn parse_boot_ruleset(exec_start: &str, condition_path_exists: &str) 
 /// host, which would leave that family permanently unpersisted while reporting
 /// nothing wrong.
 ///
-/// Only reachable through [`parse_boot_ruleset`], which is itself not yet
-/// called outside this module's own tests.
-#[allow(dead_code)]
+/// Only reachable through [`parse_boot_ruleset`].
 fn parse_exec_start(exec_start: &str) -> std::result::Result<String, String> {
     let trimmed = exec_start.trim();
     if trimmed.is_empty() {
@@ -663,10 +642,26 @@ impl FirewallBackend for NftablesBackend {
         "nftables"
     }
 
-    /// The rendered ruleset, which [`Self::apply_rules`] writes and this
-    /// backend alone ever creates.
-    fn config_paths(&self) -> &'static [&'static str] {
-        &[NFTABLES_CONFIG_PATH]
+    /// The file this host boots from, plus the fragment this plugin writes.
+    ///
+    /// The boot file is probed rather than assumed: Fedora and RHEL load
+    /// `/etc/sysconfig/nftables.conf` and openSUSE loads
+    /// `/etc/nftables/rules/main.nft`, so a constant would checkpoint a file
+    /// those hosts never read while leaving the one they do read undeclared.
+    ///
+    /// A probe that cannot answer is an `Err`, not a shorter list. The apply
+    /// then writes to no boot path at all (see `apply_rules`), and a checkpoint
+    /// declaring only our own fragment would describe an apply that is not
+    /// going to happen.
+    async fn checkpoint_paths(&self, ctx: &Context) -> Result<Vec<String>> {
+        let probed = boot_ruleset(ctx).await;
+        match probed.loads {
+            Ok(boot_path) => Ok(vec![boot_path, HARDENER_RULESET_PATH.to_string()]),
+            Err(why) => Err(HardeningError::Plugin(format!(
+                "Cannot determine which file nftables.service loads at boot, so there is \
+                 nothing safe to checkpoint: {why}"
+            ))),
+        }
     }
 
     fn systemd_unit(&self) -> &'static str {

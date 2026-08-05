@@ -2184,26 +2184,61 @@ fn a_source_that_cannot_be_matched_on_refuses_the_whole_ruleset() {
 /// the `nftables` package or from the administrator, with nothing to show it
 /// had ever been ours. Asking the selected backend is what stops the
 /// declaration and the writing drifting apart.
-#[test]
-fn a_backend_checkpoints_only_the_paths_it_writes() {
+#[tokio::test]
+async fn a_backend_checkpoints_only_the_paths_it_writes() {
     let ruleset = nftables::NFTABLES_CONFIG_PATH;
+
+    // checkpoint_paths now takes ctx and, for nftables, probes the host for
+    // the file nftables.service actually loads. The mock answers with the
+    // Arch/Debian form naming NFTABLES_CONFIG_PATH, so this fixture still
+    // exercises the same "declares its own path, not a sibling's" question
+    // the constant-list version asked; ufw and firewalld ignore ctx entirely.
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new().with_command(
+        "systemctl",
+        &[
+            "show",
+            "nftables.service",
+            "-p",
+            "ExecStart",
+            "-p",
+            "ConditionPathExists",
+        ],
+        CommandOutput {
+            stdout: format!(
+                "ExecStart={{ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f {ruleset} }}\n"
+            ),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+    )));
 
     assert!(
         nftables::NftablesBackend::new()
-            .config_paths()
-            .contains(&ruleset),
+            .checkpoint_paths(&ctx)
+            .await
+            .expect("a probe that succeeds must yield paths, not an error")
+            .iter()
+            .any(|path| path == ruleset),
         "the nftables backend renders its whole ruleset into {ruleset}, so a \
          pre-apply checkpoint has to capture it or the write is unrecoverable"
     );
     assert!(
-        !ufw::UfwBackend::new().config_paths().contains(&ruleset),
+        !ufw::UfwBackend::new()
+            .checkpoint_paths(&ctx)
+            .await
+            .expect("ufw's declaration is a constant and never fails")
+            .iter()
+            .any(|path| path == ruleset),
         "a ufw apply can never create {ruleset}, so declaring it records a row \
          recorded absent that a later rollback would act on as a deletion"
     );
     assert!(
         !firewalld::FirewalldBackend::new()
-            .config_paths()
-            .contains(&ruleset),
+            .checkpoint_paths(&ctx)
+            .await
+            .expect("firewalld's declaration is a constant and never fails")
+            .iter()
+            .any(|path| path == ruleset),
         "a firewalld apply can never create {ruleset}, so declaring it records \
          a row recorded absent that a later rollback would act on as a deletion"
     );

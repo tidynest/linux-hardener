@@ -1231,7 +1231,11 @@ fn nft_ok() -> CommandOutput {
 /// it, regardless of whether every rule the probe found was already present
 /// (see `render_ruleset`'s doc comment: the table is replaced outright, so
 /// loading the same scoped file again is idempotent and the load is not gated
-/// on anything having changed).
+/// on anything having changed). Also registers the `systemctl show` probe
+/// `checkpoint_paths` runs before a full `apply`, naming the Arch/Debian boot
+/// file so it agrees with the `-f /etc/nftables.conf` load below; a caller
+/// that only exercises `apply_rules` directly never issues it, and an unused
+/// registration here is harmless.
 fn nft_apply_base(chain_body: &str) -> MockExecutor {
     MockExecutor::new()
         .with_command(
@@ -1239,6 +1243,22 @@ fn nft_apply_base(chain_body: &str) -> MockExecutor {
             &["list", "chain", "inet", "linux_hardener", "input"],
             CommandOutput {
                 stdout: chain_body.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f /etc/nftables.conf }\n".to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
@@ -1647,6 +1667,25 @@ async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_presen
                 exit_code: 0,
             },
         )
+        // The pre-apply checkpoint probes for the boot file before it captures
+        // anything; naming it here matches the `-f /etc/nftables.conf` load
+        // registered below.
+        .with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f /etc/nftables.conf }\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
         // No `list chain` for the plugin's own input chain is registered: its
         // table does not exist yet on this host, exactly as before, and the
         // atomic load must create it as part of the same transaction that
@@ -2039,11 +2078,12 @@ async fn a_refused_enable_is_surfaced_with_systemd_own_words() {
 /// The apply hands the SELECTED backend's own paths to the pre-apply
 /// checkpoint, and the checkpoint captures them.
 ///
-/// `config_paths` has three unit assertions about what each backend declares,
-/// and until this nothing asserted that `apply` passes them to anything.
-/// Emptying the list at the call site left the whole suite green while the
-/// checkpoint captured nothing, which silently removes the only stated remedy
-/// for the whole-file overwrite of `/etc/nftables.conf` recorded as issue #98.
+/// `checkpoint_paths` has three unit assertions about what each backend
+/// declares, and until this nothing asserted that `apply` passes them to
+/// anything. Emptying the list at the call site left the whole suite green
+/// while the checkpoint captured nothing, which silently removes the only
+/// stated remedy for the whole-file overwrite of `/etc/nftables.conf`
+/// recorded as issue #98.
 #[tokio::test]
 async fn the_apply_checkpoints_the_path_its_backend_writes() {
     let executor = MockExecutor::new()
@@ -2073,6 +2113,25 @@ async fn the_apply_checkpoints_the_path_its_backend_writes() {
             &["is-enabled", "nftables"],
             CommandOutput {
                 stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        // The probe checkpoint_paths runs before create_checkpoint_for_apply,
+        // naming the Arch/Debian boot file so the assertions below still see
+        // /etc/nftables.conf declared.
+        .with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f /etc/nftables.conf }\n".to_string(),
                 stderr: String::new(),
                 exit_code: 0,
             },
@@ -3242,6 +3301,24 @@ fn nft_chain_refused_executor() -> MockExecutor {
                 exit_code: 0,
             },
         )
+        // The pre-apply checkpoint's probe, which must succeed here or the
+        // apply never reaches the rule failure this test is pinning.
+        .with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f /etc/nftables.conf }\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
 }
 
 #[tokio::test]
@@ -3394,5 +3471,62 @@ async fn scan_honours_an_exception_for_a_firewall_that_does_not_start_at_boot() 
         finding.finding_policy_exception.is_some(),
         "the boot-persistence finding takes its own key, so an exception for the \
          disabled state must not silence it and its own key must reach it"
+    );
+}
+
+/// The checkpoint has to capture the file this host boots from, which is not a
+/// constant: Fedora and RHEL load /etc/sysconfig/nftables.conf and never read
+/// /etc/nftables.conf at all. A checkpoint naming the wrong file restores the
+/// wrong file, and declares nothing for the one the apply actually appended to.
+///
+/// Reaches the backend directly, the way the `apply_rules` tests above do:
+/// `nftables_host()` and `backend_for_tests` do not exist in this file, and a
+/// production accessor is not worth adding purely to save this test a
+/// constructor call.
+#[tokio::test]
+async fn the_checkpoint_declares_the_file_this_host_boots_from() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/sbin/nft ; argv[]=/sbin/nft -f /etc/sysconfig/nftables.conf }\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_file("/etc/sysconfig/nftables.conf", "# Fedora ships this\n"),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let declared = NftablesBackend::new()
+        .checkpoint_paths(&ctx)
+        .await
+        .expect("the probe succeeded, so the paths are knowable");
+
+    assert!(
+        declared.iter().any(|p| p == "/etc/sysconfig/nftables.conf"),
+        "the probed boot file must be declared, got {declared:?}"
+    );
+    assert!(
+        declared
+            .iter()
+            .any(|p| p == "/etc/linux-hardener/nftables/50-linux-hardener.nft"),
+        "the file the apply creates must be declared so a rollback can remove it, got {declared:?}"
+    );
+    assert!(
+        !declared.iter().any(|p| p == "/etc/nftables.conf"),
+        "a path this host never loads must not be declared, got {declared:?}"
     );
 }
