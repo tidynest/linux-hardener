@@ -77,9 +77,17 @@ pub trait FirewallBackend: Send + Sync {
     ///
     /// Takes `ctx` and is fallible because one backend's answer is not a
     /// constant: nftables persists to whatever file its systemd unit loads,
-    /// which differs by distribution and is read off the host. An `Err` means
-    /// the paths could not be determined, which must abort the apply rather
-    /// than checkpoint a guess.
+    /// which differs by distribution and is read off the host. `Err` remains
+    /// available to a backend that genuinely cannot say what it is about to
+    /// write and so cannot proceed at all; nftables no longer reaches for it
+    /// when its boot-path probe is unreadable, because aborting there also
+    /// aborted the enable and the live load that follow, costing the host its
+    /// firewall entirely over a question that only persistence depends on. It
+    /// answers `Ok` instead, naming only the one path that is never in doubt:
+    /// its own fragment. The warning above still holds wherever `Err` is not
+    /// the chosen answer: a checkpoint row recorded absent is an instruction
+    /// to delete, so nothing may be omitted from this list that the apply
+    /// might go on to write.
     async fn checkpoint_paths(&self, ctx: &Context) -> Result<Vec<String>>;
 
     /// Detects if this backend is available on the system.

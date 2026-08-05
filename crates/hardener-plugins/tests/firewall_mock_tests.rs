@@ -3530,3 +3530,46 @@ async fn the_checkpoint_declares_the_file_this_host_boots_from() {
         "a path this host never loads must not be declared, got {declared:?}"
     );
 }
+
+/// `systemctl show` for a unit that does not exist prints an empty line and
+/// still exits 0, which is the real shape of an unreadable probe rather than
+/// a contrived error. The apply must go on so the host is filtered live, so
+/// `checkpoint_paths` has to answer `Ok`, and with exactly the one path that
+/// is never in doubt: this plugin's own fragment. Neither a boot path (there
+/// is none to name) nor an `Err` (which would abort the apply before the
+/// firewall is even enabled) may appear here.
+#[tokio::test]
+async fn an_unreadable_probe_checkpoints_only_the_fragment() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = Arc::new(MockExecutor::new().with_command(
+        "systemctl",
+        &[
+            "show",
+            "nftables.service",
+            "-p",
+            "ExecStart",
+            "-p",
+            "ConditionPathExists",
+        ],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+    ));
+    let ctx = Context::with_executor(executor);
+
+    let declared = NftablesBackend::new()
+        .checkpoint_paths(&ctx)
+        .await
+        .expect("an unreadable probe must not abort the apply, so this must be Ok");
+
+    assert_eq!(
+        declared,
+        vec!["/etc/linux-hardener/nftables/50-linux-hardener.nft".to_string()],
+        "with no boot path knowable, exactly the fragment must be declared and \
+         nothing else, got {declared:?}"
+    );
+}

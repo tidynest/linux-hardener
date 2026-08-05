@@ -649,18 +649,36 @@ impl FirewallBackend for NftablesBackend {
     /// `/etc/nftables/rules/main.nft`, so a constant would checkpoint a file
     /// those hosts never read while leaving the one they do read undeclared.
     ///
-    /// A probe that cannot answer is an `Err`, not a shorter list. The apply
-    /// then writes to no boot path at all (see `apply_rules`), and a checkpoint
-    /// declaring only our own fragment would describe an apply that is not
-    /// going to happen.
+    /// A probe that cannot answer still yields `Ok`, carrying only our own
+    /// fragment, [`HARDENER_RULESET_PATH`]. This call sits before the enable
+    /// and the live load in `apply` (`firewall/mod.rs`), so an `Err` here used
+    /// to abort both and leave the host with no firewall at all merely because
+    /// the boot path could not be named, which is a worse outcome than the
+    /// unreadable probe itself. The apply must go on so the host is filtered
+    /// now, even though persistence across a reboot is not achieved on that
+    /// host.
+    ///
+    /// An empty list was rejected too. A checkpoint is an assertion about the
+    /// world at the moment it is taken; if a later apply succeeds and writes
+    /// the fragment, rolling back to a checkpoint that named nothing would
+    /// leave that fragment in place instead of removing it. Declaring a path
+    /// this particular apply may not manage to write is ordinarily dangerous,
+    /// because a checkpoint row recorded absent is an instruction to delete,
+    /// and a file that arrives afterwards from a package or an administrator
+    /// would then be deleted on rollback. That danger does not apply to
+    /// [`HARDENER_RULESET_PATH`]: nothing but this plugin ever writes it.
     async fn checkpoint_paths(&self, ctx: &Context) -> Result<Vec<String>> {
         let probed = boot_ruleset(ctx).await;
         match probed.loads {
             Ok(boot_path) => Ok(vec![boot_path, HARDENER_RULESET_PATH.to_string()]),
-            Err(why) => Err(HardeningError::Plugin(format!(
-                "Cannot determine which file nftables.service loads at boot, so there is \
-                 nothing safe to checkpoint: {why}"
-            ))),
+            Err(why) => {
+                warn!(
+                    "Cannot determine which file nftables.service loads at boot, so only our \
+                     own fragment is checkpointed and boot persistence will not be achieved: \
+                     {why}"
+                );
+                Ok(vec![HARDENER_RULESET_PATH.to_string()])
+            }
         }
     }
 
