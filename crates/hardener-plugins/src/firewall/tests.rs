@@ -1498,6 +1498,16 @@ fn every_path_firewall_checkpoints_is_one_it_reloads_for() {
     }
 }
 
+/// A bare successful command, for a mock registration whose only relevant
+/// fact is that the command was allowed to run.
+fn nft_ok() -> CommandOutput {
+    CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
 /// The commands a fixture logged, as `("program", ["arg", ...])` pairs
 /// flattened into one string per command, so an assertion can ask whether a
 /// rollback reload issued something it must never issue.
@@ -1599,6 +1609,29 @@ async fn an_nftables_rollback_reloads_rather_than_installing_a_drop_policy() {
                     exit_code: 0,
                 },
             )
+            // The reload now probes which file nftables.service actually
+            // loads, rather than assuming NFTABLES_CONFIG_PATH, so a mock
+            // that never answers `systemctl show` would make that probe
+            // report "cannot tell" and skip the `nft -f` call this test
+            // exists to assert.
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f /etc/nftables.conf }\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command("nft", &["destroy", "table", "inet", "linux_hardener"], nft_ok())
             .with_command(
                 "nft",
                 &["-f", "/etc/nftables.conf"],
@@ -1652,7 +1685,31 @@ async fn an_nftables_rollback_does_not_fail_when_the_restored_file_is_absent() {
                     stderr: String::new(),
                     exit_code: 0,
                 },
-            ),
+            )
+            // The reload now probes for the boot path rather than assuming
+            // NFTABLES_CONFIG_PATH, and an unregistered `systemctl show`
+            // would make that probe report "cannot tell" instead of
+            // exercising the confirmed-absence guard this test is for, so the
+            // probe is answered exactly as it would be for the file this test
+            // is about.
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f /etc/nftables.conf }\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_command("nft", &["destroy", "table", "inet", "linux_hardener"], nft_ok()),
         // Deliberately no `with_path_exists` for /etc/nftables.conf and no
         // `nft -f /etc/nftables.conf` registration: MockExecutor's default
         // `path_exists` answer for an unregistered path is `false`, which is
@@ -2395,5 +2452,182 @@ async fn a_systemctl_that_fails_is_not_an_answer() {
     assert!(
         nftables::boot_ruleset(&ctx).await.loads.is_err(),
         "a failed systemctl must report that it could not tell"
+    );
+}
+
+/// A rollback that leaves the applied table live reports an undo it did not
+/// perform. The restored boot file never mentions our table, so loading it
+/// cannot remove it.
+#[tokio::test]
+async fn a_rollback_removes_the_table_the_apply_installed() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("nft", true)
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f /etc/nftables.conf }\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_path_exists("/etc/nftables.conf", true)
+            .with_command("nft", &["destroy", "table", "inet", "linux_hardener"], nft_ok())
+            .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok()),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    nftables::NftablesBackend::new()
+        .reload(&ctx)
+        .await
+        .expect("the reload must succeed");
+
+    let commands = logged_commands(&executor);
+    assert!(
+        commands
+            .iter()
+            .any(|c| c == "nft destroy table inet linux_hardener"),
+        "the applied table must be removed from the running kernel, got {commands:?}"
+    );
+}
+
+/// Issue #97: an apply enables the unit and creates the file; a rollback
+/// deletes the file and leaves the unit enabled, so Type=oneshot fails at the
+/// next boot and the host comes up unfiltered.
+#[tokio::test]
+async fn a_rollback_disables_a_unit_left_with_nothing_to_load() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("nft", true)
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f /etc/nftables.conf }\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_path_exists("/etc/nftables.conf", false)
+            .with_command("nft", &["destroy", "table", "inet", "linux_hardener"], nft_ok())
+            .with_command("systemctl", &["disable", "nftables"], nft_ok()),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    nftables::NftablesBackend::new()
+        .reload(&ctx)
+        .await
+        .expect("the reload must succeed");
+
+    let commands = logged_commands(&executor);
+    assert!(
+        commands.iter().any(|c| c == "systemctl disable nftables"),
+        "a unit whose file is gone must not be left to fail at boot, got {commands:?}"
+    );
+}
+
+/// The mistake that got the first #97 fix withdrawn. On Fedora and RHEL the
+/// unit loads /etc/sysconfig/nftables.conf, which a rollback of
+/// /etc/nftables.conf never touched, so the firewall works and disabling it
+/// would leave the host with none from the next reboot.
+#[tokio::test]
+async fn a_rollback_leaves_a_working_unit_alone() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("nft", true)
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/sbin/nft ; argv[]=/sbin/nft -f /etc/sysconfig/nftables.conf }\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_path_exists("/etc/sysconfig/nftables.conf", true)
+            .with_command("nft", &["destroy", "table", "inet", "linux_hardener"], nft_ok())
+            .with_command("nft", &["-f", "/etc/sysconfig/nftables.conf"], nft_ok()),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    nftables::NftablesBackend::new()
+        .reload(&ctx)
+        .await
+        .expect("the reload must succeed");
+
+    assert!(
+        !logged_commands(&executor)
+            .iter()
+            .any(|c| c.contains("disable")),
+        "a unit that loads a file which still exists must be left enabled"
+    );
+}
+
+/// openSUSE gates the unit on the file it loads, so systemd already treats the
+/// absence as "do not run" and there is no failing unit to prevent. Disabling
+/// it would leave it off for an administrator who later creates main.nft.
+#[tokio::test]
+async fn a_rollback_leaves_a_condition_guarded_unit_alone() {
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("nft", true)
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft flush ruleset; include \"/etc/nftables/rules/main.nft\" }\n\
+                             ConditionPathExists=/etc/nftables/rules/main.nft\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_path_exists("/etc/nftables/rules/main.nft", false)
+            .with_command("nft", &["destroy", "table", "inet", "linux_hardener"], nft_ok()),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    nftables::NftablesBackend::new()
+        .reload(&ctx)
+        .await
+        .expect("the reload must succeed");
+
+    assert!(
+        !logged_commands(&executor)
+            .iter()
+            .any(|c| c.contains("disable")),
+        "systemd already handles a missing file here, so this must not be disabled"
     );
 }

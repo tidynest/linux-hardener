@@ -512,6 +512,50 @@ impl NftablesBackend {
         }
         Ok(())
     }
+
+    /// Issue #97. An apply enables `nftables.service` and creates the file it
+    /// loads; a rollback removes that file and, without this, leaves the unit
+    /// enabled, so a `Type=oneshot` unit running `nft` against a missing file
+    /// exits 1, enters `failed`, and the host boots unfiltered. Only reached
+    /// once [`Self::reload`] has already confirmed the loaded file is absent.
+    ///
+    /// **Two conditions, not one.** The first attempt at this guard used only
+    /// "the file is absent, therefore the unit is broken", which is false
+    /// wherever the unit loads a different file: on Fedora and RHEL it names
+    /// `/etc/sysconfig/nftables.conf`, so that version disabled a working
+    /// firewall on exactly the family it existed for, and it was reviewed and
+    /// withdrawn. `condition_guards_it` is the second condition, and the one
+    /// that closes that gap: openSUSE declares `ConditionPathExists` on the
+    /// very file it loads, so systemd already treats that file's absence as
+    /// "do not run" rather than as a failure. There is no failing unit to
+    /// prevent there, and disabling it would leave it off for an
+    /// administrator who later creates the file themselves.
+    ///
+    /// Best effort by design: a rollback that restored every file is not a
+    /// failure because a `systemctl disable` did not take.
+    async fn disable_a_unit_with_nothing_to_load(
+        &self,
+        ctx: &Context,
+        condition_guards_it: bool,
+    ) -> Result<()> {
+        if condition_guards_it {
+            info!(
+                "nftables.service is gated on the file it loads, so systemd already treats its \
+                 absence as 'do not run'; leaving the unit enabled"
+            );
+            return Ok(());
+        }
+
+        info!("Disabling nftables.service, which is enabled with no ruleset left to load");
+        if let Err(e) = ctx
+            .executor()
+            .execute_command("systemctl", &["disable", self.systemd_unit()])
+            .await
+        {
+            warn!("Could not disable {}: {e}", self.systemd_unit());
+        }
+        Ok(())
+    }
 }
 
 /// Reads a rule's `source` as an address, with an optional prefix length that
@@ -828,48 +872,86 @@ impl FirewallBackend for NftablesBackend {
         Ok(())
     }
 
-    /// Feeds the restored [`NFTABLES_CONFIG_PATH`] back to `nft`, which is the
-    /// whole of what a rollback of an nftables configuration has to do.
+    /// Undoes what [`Self::apply_rules`] did: removes the table it installed,
+    /// then feeds the file this host actually boots from back to `nft`.
     ///
-    /// [`Self::enable`] is not a substitute: it only marks the systemd unit to
-    /// start at the next boot and never reads the restored file at all, so a
-    /// rollback that called it instead would leave the applied posture live -
-    /// a host whose firewall was inactive before the apply would come out of
-    /// the undo still filtering traffic.
+    /// **The table, first and unconditionally.** Restoring the pre-apply boot
+    /// file and loading it does not remove `inet linux_hardener`, because
+    /// that file never mentioned it: without this, a rollback reports success
+    /// while the host stays hardened until its next reboot. `nft destroy
+    /// table` does not fail on a table that is not there, which is what makes
+    /// issuing it unconditionally safe, and it runs even when the boot path
+    /// below cannot be determined, because removing the applied table is the
+    /// whole of what the rollback is for.
     ///
-    /// What the file does on load is the file's business. Every distribution's
-    /// shipped `nftables.conf` opens with `flush ruleset`, so loading it
-    /// replaces the live ruleset outright; one that does not will merge
-    /// instead, which is the behaviour that host's own boot gives it.
+    /// [`Self::enable`] is not a substitute for the reload that follows: it
+    /// only marks the systemd unit to start at the next boot and never reads
+    /// the restored file at all, so a rollback that called it instead would
+    /// leave the applied posture live - a host whose firewall was inactive
+    /// before the apply would come out of the undo still filtering traffic.
     ///
-    /// Guarded on the file's presence, through the executor so the answer is
-    /// the target's and not the controller's. Fedora and RHEL ship
-    /// `/etc/sysconfig/nftables.conf` instead of this path, so a host where
-    /// nftables wins backend detection can genuinely never have had
-    /// [`NFTABLES_CONFIG_PATH`] before its first apply; the checkpoint then
-    /// records it absent, and because that path is deliberately deletable the
-    /// restore removes the ruleset the apply rendered there rather than leaving
-    /// it for the next boot. Either way this guard finds nothing left to load.
-    /// `nft -f` on a file that is not there exits
-    /// 1, and this used to run it anyway, turning a rollback that had done
-    /// everything possible into a reported failure. Absence confirmed is the
-    /// only case this skips: anything else, including a probe that could not
-    /// tell, still attempts the load so a genuine refusal is still surfaced.
+    /// **The probed path, not [`NFTABLES_CONFIG_PATH`].** [`boot_ruleset`]
+    /// asks the target which file `nftables.service` actually loads, because
+    /// Fedora and RHEL load `/etc/sysconfig/nftables.conf` and openSUSE loads
+    /// `/etc/nftables/rules/main.nft`; reloading the constant would silently
+    /// reload nothing on those hosts while the file they boot from went
+    /// stale. What the loaded file does on load is the file's own business:
+    /// every distribution's shipped `nftables.conf` opens with
+    /// `flush ruleset`, so loading it replaces the live ruleset outright, and
+    /// one that does not will merge instead, which is the behaviour that
+    /// host's own boot gives it.
+    ///
+    /// Guarded on the probed file's presence, through the executor so the
+    /// answer is the target's and not the controller's. Absence confirmed is
+    /// the only case that skips the load: `nft -f` on a file that is not
+    /// there exits 1, and running it anyway would turn a rollback that had
+    /// done everything possible into a reported failure. Anything else,
+    /// including a probe that could not tell which file to load, still
+    /// attempts the load so a genuine refusal is surfaced.
+    ///
+    /// **The #97 guard.** Once the load is skipped for confirmed absence, see
+    /// [`Self::disable_a_unit_with_nothing_to_load`] for what happens to the
+    /// unit itself.
     async fn reload(&self, ctx: &Context) -> Result<()> {
-        if matches!(
-            ctx.executor()
-                .path_exists(Path::new(NFTABLES_CONFIG_PATH))
-                .await,
-            Ok(false)
-        ) {
-            info!(
-                "{NFTABLES_CONFIG_PATH} is absent on this host, so there is nothing for nft to \
-                 reload"
+        // Removed before anything is loaded: the restored boot file below
+        // never mentions this table, so nothing else in this function could
+        // remove it.
+        if let Err(e) = self
+            .execute_nft(ctx, &["destroy", "table", "inet", NFTABLES_TABLE])
+            .await
+        {
+            warn!("Could not remove the {NFTABLES_TABLE} table during rollback: {e}");
+        }
+
+        // Destructured rather than matched on `probed.loads` directly:
+        // `condition_guards_it` is still needed below, in the branch that
+        // skips the load, and a `let Ok(boot_path) = probed.loads else {..}`
+        // would move `loads` out of `probed` and leave nothing later able to
+        // borrow the struct whole.
+        let BootRuleset {
+            loads,
+            condition_guards_it,
+        } = boot_ruleset(ctx).await;
+        let Ok(boot_path) = loads else {
+            warn!(
+                "Cannot tell which file nftables.service loads, so nothing was reloaded: {}",
+                loads.unwrap_err()
             );
             return Ok(());
+        };
+
+        if matches!(
+            ctx.executor().path_exists(Path::new(&boot_path)).await,
+            Ok(false)
+        ) {
+            info!("{boot_path} is absent on this host, so there is nothing for nft to reload");
+            return self
+                .disable_a_unit_with_nothing_to_load(ctx, condition_guards_it)
+                .await;
         }
-        info!("Reloading the nftables ruleset from {NFTABLES_CONFIG_PATH}");
-        self.execute_nft(ctx, &["-f", NFTABLES_CONFIG_PATH]).await?;
+
+        info!("Reloading the nftables ruleset from {boot_path}");
+        self.execute_nft(ctx, &["-f", &boot_path]).await?;
         Ok(())
     }
 
