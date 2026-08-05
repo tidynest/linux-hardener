@@ -215,32 +215,25 @@ async fn rollback_refuses_to_delete_every_undeletable_path_recorded_as_absent() 
     );
 }
 
-#[tokio::test]
-async fn rollback_still_deletes_a_path_an_apply_can_create() {
+/// The capture-then-rollback shape every apply that creates a file produces:
+/// the checkpoint records `path` truthfully absent, and by rollback time the
+/// host has it. Shared by the paths that exercise it so they cannot drift
+/// apart; each caller keeps its own assertions, because what the removal
+/// means differs per path even though the mechanism does not.
+async fn rollback_over_a_path_the_apply_created(path: &str) -> (RollbackResult, MockExecutor) {
     use hardener_common::executor::FileMetadata;
 
-    // The counterpart to the test above: the refusal is keyed on list
-    // membership, so a path an apply CAN create must still be removed. The
-    // kernel plugin writes its own /etc/sysctl.d drop-in, so a checkpoint
-    // taken before that apply records the file as absent truthfully, and
-    // deleting it is what the operator asked for. Protecting it instead
-    // would leave the hardening in place after a rollback.
     let manager = test_manager().await;
-    let drop_in = "/etc/sysctl.d/99-hardener.conf";
-    assert!(
-        !UNDELETABLE_ROLLBACK_PATHS.contains(&drop_in),
-        "{drop_in} is created by the kernel plugin's apply, so it must stay deletable"
-    );
 
     let capturing = MockExecutor::new();
     let cp_id = manager
-        .create_checkpoint_metadata_only(&capturing, "pre-apply", &[Path::new(drop_in)])
+        .create_checkpoint_metadata_only(&capturing, "pre-apply", &[Path::new(path)])
         .await
         .expect("capture of a confirmed-absent path must succeed");
 
     let restoring = MockExecutor::new()
         .with_file_metadata(
-            drop_in,
+            path,
             "",
             FileMetadata {
                 exists: true,
@@ -252,12 +245,31 @@ async fn rollback_still_deletes_a_path_an_apply_can_create() {
                 gid: 0,
             },
         )
-        .with_command("rm", &["-f", drop_in], ok_output());
+        .with_command("rm", &["-f", path], ok_output());
 
     let result = manager
         .rollback(&restoring, &cp_id)
         .await
         .expect("rollback must run rather than abort");
+
+    (result, restoring)
+}
+
+#[tokio::test]
+async fn rollback_still_deletes_a_path_an_apply_can_create() {
+    // The counterpart to the test above: the refusal is keyed on list
+    // membership, so a path an apply CAN create must still be removed. The
+    // kernel plugin writes its own /etc/sysctl.d drop-in, so a checkpoint
+    // taken before that apply records the file as absent truthfully, and
+    // deleting it is what the operator asked for. Protecting it instead
+    // would leave the hardening in place after a rollback.
+    let drop_in = "/etc/sysctl.d/99-hardener.conf";
+    assert!(
+        !UNDELETABLE_ROLLBACK_PATHS.contains(&drop_in),
+        "{drop_in} is created by the kernel plugin's apply, so it must stay deletable"
+    );
+
+    let (result, restoring) = rollback_over_a_path_the_apply_created(drop_in).await;
 
     let restoring_log = restoring.log();
     assert!(
@@ -276,6 +288,53 @@ async fn rollback_still_deletes_a_path_an_apply_can_create() {
     assert!(
         result.rollback_success,
         "deleting a path the apply created is an ordinary success: {result:?}"
+    );
+}
+
+/// The same rule, for the file the firewall plugin's nftables backend renders
+/// its whole ruleset into and loads.
+///
+/// An apply creates `/etc/nftables.conf` on every host that never had one,
+/// which is every Fedora and RHEL host (they ship `/etc/sysconfig/nftables.conf`
+/// instead) and every host whose firewall was ufw or firewalld. That places it
+/// under the membership rule at [`UNDELETABLE_ROLLBACK_PATHS`] rather than
+/// under any exemption from it: protecting it would leave the rendered ruleset
+/// on disk with `nftables.service` already enabled by the same apply, so the
+/// posture the operator rolled back would return at the next boot. An earlier
+/// wording added that the plugin's own `reload_after_rollback` would load it
+/// straight back in; that route closed when the checkpoint was scoped to the
+/// selected backend's own paths, so the next boot is the reason that stands.
+///
+/// Same precedent as the kernel plugin's sysctl.d drop-in above and the ssh
+/// plugin's drop-in, which states the rule in its own checkpoint call.
+#[tokio::test]
+async fn rollback_deletes_the_nftables_ruleset_an_apply_created() {
+    let ruleset = "/etc/nftables.conf";
+    assert!(
+        !UNDELETABLE_ROLLBACK_PATHS.contains(&ruleset),
+        "{ruleset} is created by the firewall plugin's apply, so it must stay deletable"
+    );
+
+    let (result, restoring) = rollback_over_a_path_the_apply_created(ruleset).await;
+
+    let restoring_log = restoring.log();
+    assert!(
+        restoring_log
+            .commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == ruleset)),
+        "the rendered ruleset must be deleted, or it returns at the next boot; \
+         the commands issued were: {:?}",
+        restoring_log.commands_executed
+    );
+    assert_eq!(
+        result.rollback_files[0].restore_action,
+        FileRestoreAction::Removed,
+        "the ruleset an apply rendered must be Removed, not Skipped"
+    );
+    assert!(
+        result.rollback_success,
+        "undoing an nftables apply is an ordinary success, not a refusal: {result:?}"
     );
 }
 

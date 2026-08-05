@@ -136,6 +136,13 @@ impl FirewallBackend for FirewalldBackend {
         "firewalld"
     }
 
+    /// firewalld owns its whole configuration directory and this backend
+    /// changes it through `firewall-cmd` rather than by writing files itself,
+    /// so the directory is what a checkpoint has to capture.
+    fn config_paths(&self) -> &'static [&'static str] {
+        &["/etc/firewalld"]
+    }
+
     fn systemd_unit(&self) -> &'static str {
         "firewalld"
     }

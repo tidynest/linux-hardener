@@ -9,6 +9,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A remote `apply` on the nftables backend locked the operator out of the
+  host it was hardening.** `enable` created the input chain with `policy drop`
+  and no rules, and ran before `apply_rules` installed the baseline rule named
+  "Allow SSH to prevent lockout". Over SSH the drop policy severed the very
+  connection carrying the rest of the apply, so the anti-lockout rule was never
+  installed and the host was left filtering all inbound traffic with no SSH. On
+  a real remote host that is unrecoverable without console access. Reversing the
+  two calls would not have helped: `ensure_managed_chain` created the same
+  dropping chain at the top of `apply_rules` itself. The whole ruleset is now
+  rendered and loaded in **one `nft -f` transaction**, so the policy is never
+  live without the accepts beside it; nftables applies a file or none of it.
+  `policy drop` is kept rather than traded for `accept` plus the baseline's
+  final drop rule, so a host whose load fails outright stays closed rather than
+  open. The replacement is **scoped to a table this plugin owns**, `inet
+  linux_hardener`, with the bare `table` declaration then `delete table` then
+  the new definition, all in the same transaction. Two wider drafts were written
+  and rejected before it. A whole-ruleset `flush ruleset` came first and would
+  tear down the tables Docker, libvirt and `iptables-nft` create, on a host this
+  tool was only asked to harden. Scoping those same statements to `inet filter`
+  came second and was narrower without being correct: that is the conventional
+  default name rather than an owned one, most distributions ship a packaged
+  ruleset using it, and measured in a network namespace against an
+  administrator's chain holding two accepts, the old incremental path left both
+  standing while a rendered `delete table inet filter` removed both. **Stated
+  consequence of owning a separate table:** the plugin no longer merges into the
+  administrator's chain, so an accept of theirs no longer keeps a port open,
+  because a `drop` verdict in any chain ends a packet's journey and this chain's
+  `policy drop` governs whatever its own rules do not accept. A port that must
+  stay open is expressed as a directive to this tool.
+  **A second ceiling runs the other way and is stated rather than fixed:** the
+  ruleset is written to `/etc/nftables.conf` and that write replaces the whole
+  file, which on Arch and Debian is where the administrator's own `inet filter`
+  table is defined. Their table survives the apply in the running kernel and is
+  gone at the next boot. Scoping the `nft` load stopped the runtime destruction;
+  it did not stop this one, which is a question about which file the ruleset is
+  written to and is tracked as #98.
+  Per-rule reporting is unchanged, the diff being taken before the load,
+  so `applied_change_count()` and `is_skipped()` keep meaning what they meant.
+  `ensure_managed_chain` is deleted and `enable` now only enables the unit at
+  boot. Because an apply now creates `/etc/nftables.conf` on any host that
+  never had one, that path is **deliberately deletable on rollback** and was
+  removed from `UNDELETABLE_ROLLBACK_PATHS`: protecting it would leave the
+  rendered ruleset on disk with the unit enabled, so the posture the operator
+  rolled back would return at the next boot, because the unit the same apply
+  enabled loads that file. Same precedent as the ssh and kernel drop-ins.
+  **Back up `/etc/nftables.conf` before a first apply** on a host whose ruleset
+  you maintain by hand, for the reason recorded against #98 above.
+  The checkpoint itself is now scoped to the backend that was selected, through
+  a new `FirewallBackend::config_paths`, rather than listing all three
+  backends' paths on every host. The combined list recorded a row for
+  `/etc/nftables.conf` on ufw and firewalld hosts too, where no apply can
+  create it, and a row recorded absent is an instruction to delete: a rollback
+  would have removed an `/etc/nftables.conf` that arrived between the
+  checkpoint and the undo, from the `nftables` package or from the
+  administrator, with nothing to show it had ever been ours. A backend now
+  declares what it writes beside the writing, so the two cannot drift apart.
+  **Stated ceiling:** the ruleset is written to `/etc/nftables.conf`,
+  which persists it on hosts whose `nftables.service` reads that path, but
+  Fedora and RHEL ship `/etc/sysconfig/nftables.conf`, so boot persistence there
+  is still unresolved and #52 stays open. Closes #92.
+
 - **A firewall `source`, `protocol` or `port` directive could weaken the
   ruleset and the tool applied it as written.** `apply_rule_directives` clamped
   the `action` field alone; the other three were assigned onto the rule exactly
@@ -669,6 +730,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fired rather than only that one did.
 
 ### Fixed
+
+- **An IPv6 firewall `source` rendered an IPv4 match, and under one transaction
+  that cost the entire ruleset.** `build_nft_rule_args` emitted `ip saddr` for
+  every source whatever family it was in, so `ssh.source = "::1"` rendered
+  `ip saddr ::1`, which `nft` refuses with "Address family for hostname not
+  supported". Nothing upstream refused the value: the configuration layer admits
+  a `:` in a source, and the #64 breadth clamp reads `::1` as a narrowing of the
+  baseline `any` and permits it. Under the old per-rule path one bad value cost
+  one rule and the other baseline rules still applied; under the single
+  transaction the load is refused outright, so **no** baseline rule lands, the
+  default drop included. The family now comes from parsing the address with
+  `std::net`, so `ip` and `ip6` are chosen by what the value actually is rather
+  than guessed.
+  A source that parses as neither, which the clamp deliberately does not check
+  because it measures prefix width alone, now **refuses the whole ruleset before
+  anything is written**. That ordering is the second half of the fix: the write
+  precedes the load, so a ruleset that rendered and then failed at `nft` left
+  the host holding a file `nftables.service` cannot parse, at the path it loads
+  from at boot, on a unit the same apply had already enabled. Closes #94.
+
+- **The remote-apply lockout now has a test that a mock cannot fake.** A
+  `MockExecutor` answers from a table the test author wrote, so it cannot sever
+  its own transport and will report success for a ruleset that would have cut
+  the wire. `the_remote_apply_keeps_the_connection_it_arrived_on` applies the
+  firewall plugin over a real SSH connection to a container and then issues a
+  further command **over the same connection**, which is the assertion issue #92
+  is about: everything before it could be reported by a host that had already
+  dropped the caller. It also reads the loaded ruleset back to confirm the
+  anti-lockout rule is in force and that a table the plugin does not own
+  survived. A sibling test applies twice and requires the second to report
+  nothing applied and to leave exactly one SSH accept, which is the idempotency
+  claim measured against a real `nft` rather than against a fixture's idea of
+  one. Both are `#[ignore]`, need root for `scripts/containers/nftables-fixture.sh`,
+  and are gated on their own `NFTABLES_LIVE_APPLY_HOST` variable rather than the
+  suite's shared `SSH_TEST_HOST`, because unlike their neighbours they install a
+  default-drop firewall on whatever they are pointed at.
+
+- **The four tests guarding the rendered nftables ruleset could not fail.**
+  Each asserted with `contains` or `find` over the whole rendered blob, which
+  anchors a needle to nothing, and two mutations proved the cost while the whole
+  suite stayed green. Rendering every statement behind a `# ` marker ships the
+  input chain with `policy drop;` and no effective rules, which is the lockout
+  of #92 delivered in one transaction instead of two, and every needle still
+  matched inside the commented line in the same byte order. Slicing the argv
+  from index 4 rather than 5 prefixes every statement with the chain name, which
+  `nft` refuses outright, and a needle built from `args[5..]` is then a suffix
+  of the rendered line and invisible to `contains`. The assertions now compare
+  whole lines for equality, against the input chain's rules alone, so a
+  commented-out statement is not its statement and a prefixed one is not
+  either; the chain is additionally required to hold one line per baseline rule
+  and nothing else, which refuses an addition as well as a removal. Both
+  mutations are now killed by a named assertion. Closes #96.
 
 - **The SSH test-container boot script could not cold-boot a container, which
   is the only thing it exists to do.** Its registration wait read

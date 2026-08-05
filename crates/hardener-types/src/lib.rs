@@ -794,8 +794,19 @@ pub const UNDELETABLE_ROLLBACK_PATHS: &[&str] = &[
     "/etc/ssh/sshd_config",
     "/etc/sysctl.conf",
     "/etc/audit/auditd.conf",
-    "/etc/nftables.conf",
     "/etc/selinux/config",
+    // `/etc/nftables.conf` is deliberately NOT here, and was removed from this
+    // list when the nftables backend started rendering its whole ruleset into
+    // that file and loading it: an apply creates it on every host that never
+    // had one, which is exactly the membership rule's disqualifying condition.
+    // Protecting it would leave the rendered ruleset on disk with
+    // `nftables.service` enabled by the same apply, so the posture the operator
+    // rolled back would return at the next boot. An earlier wording added that
+    // the plugin's own `reload_after_rollback` would load it straight back in;
+    // that route closed when the checkpoint was scoped to the selected
+    // backend's own paths, so the next boot is the reason that stands. Same
+    // precedent as the ssh and kernel drop-ins, each of which states the rule
+    // at its own checkpoint call.
     // Directories the plugins write files into, or capture and never touch.
     // `write_file` cannot create a missing parent, so a plugin whose target
     // directory may be absent creates it first: the kernel and audit applies

@@ -118,6 +118,7 @@ containers' root password is not usable:
 
 ```bash
 sudo ./scripts/containers/boot-ssh-test-container.sh            # boot hardener-test with --network-veth, inject test key
+sudo ./scripts/containers/nftables-fixture.sh                   # optional: stop the incumbent and load one input-hook chain, so the nftables backend is the one selected
 # then, using the env exports the script prints:
 export SSH_TEST_HOST=<addr> SSH_TEST_USER=root SSH_TEST_PORT=22 SSH_TEST_KEY=~/.ssh/hardener_test_ed25519
 ssh-add "$SSH_TEST_KEY"

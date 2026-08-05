@@ -62,6 +62,20 @@ pub trait FirewallBackend: Send + Sync {
     /// activity hint when the backend's own probe needs privileges.
     fn systemd_unit(&self) -> &'static str;
 
+    /// The configuration paths this backend writes, and therefore exactly what
+    /// a pre-apply checkpoint has to capture.
+    ///
+    /// Declared per backend rather than as one list at the `apply` site,
+    /// because a checkpoint row recorded absent is an instruction to delete.
+    /// One combined list recorded rows on every host for files only one
+    /// backend could ever create, so a ufw host carried a row for
+    /// `/etc/nftables.conf` that its apply could never honour. If such a file
+    /// then arrived between the checkpoint and the undo, from a package or
+    /// from the administrator, the rollback deleted it with nothing to show it
+    /// had ever been ours. Asking the selected backend keeps the declaration
+    /// and the writing in one place, so the pair cannot drift again.
+    fn config_paths(&self) -> &'static [&'static str];
+
     /// Detects if this backend is available on the system.
     ///
     /// This typically checks if the backend's command-line tool exists and is executable.
@@ -814,7 +828,18 @@ fn not_at_boot_unchecked(backend: &dyn FirewallBackend) -> UncheckedCheck {
 /// The decision is intended, and nothing about it turns on which command the
 /// reload issues: `reload_after_rollback` never starts or enables a unit
 /// either, so this symlink surviving a rollback is not an asymmetry it grants
-/// on request, it is simply outside every action a rollback takes.
+/// on request.
+///
+/// **One case has escaped this since it was written, and the premise is what
+/// moved.** This paragraph used to close by calling the symlink "simply outside
+/// every action a rollback takes", which held while the rendered nftables
+/// ruleset survived a rollback. It no longer does: `/etc/nftables.conf` is a
+/// file an apply creates and a rollback deliberately deletes, so on a host
+/// where the apply created it, a rollback removes the only file
+/// `nftables.service` names and leaves this symlink pointing at nothing. That
+/// is issue #97, **open and unfixed**: a fix was written and withdrawn because
+/// it disabled the unit on hosts whose `ExecStart` names a different path.
+/// Everywhere else the decision above stands unchanged.
 async fn ensure_unit_wanted_at_boot(ctx: &Context, backend: &dyn FirewallBackend) -> Change {
     let unit = backend.systemd_unit();
     if matches!(
@@ -1189,20 +1214,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 
         let apply_plugin_id = PluginId::new("firewall-hardening");
 
-        // Create checkpoint for firewall config files
-        let firewall_paths: Vec<&Path> = vec![
-            Path::new(nftables::NFTABLES_CONFIG_PATH),
-            Path::new("/etc/firewalld"),
-            Path::new("/etc/ufw"),
-        ];
-        let checkpoint_id = crate::create_checkpoint_for_apply(
-            ctx,
-            "firewall-hardening-pre-apply",
-            &firewall_paths,
-        )
-        .await?;
-
-        // Detect backend.
+        // Detect the backend BEFORE the checkpoint, so the checkpoint can
+        // declare only what the selected backend writes (see
+        // `FirewallBackend::config_paths`). `detect_backend` reads the host and
+        // changes nothing, so nothing needs undoing when it fails, and the
+        // absence of a checkpoint id is then the truthful answer rather than a
+        // row describing an apply that never began.
         let backend = match self.detect_backend(ctx).await {
             Ok(b) => b,
             Err(e) => {
@@ -1210,11 +1227,20 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     apply_plugin_id,
                     apply_success: false,
                     apply_changes: vec![],
-                    apply_checkpoint_id: checkpoint_id,
+                    apply_checkpoint_id: None,
                     apply_error: Some(format!("No firewall backend: {}", e)),
                 });
             }
         };
+
+        // Checkpoint what this backend writes, and nothing else.
+        let firewall_paths: Vec<&Path> = backend.config_paths().iter().map(Path::new).collect();
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "firewall-hardening-pre-apply",
+            &firewall_paths,
+        )
+        .await?;
 
         // Enable firewall if not already enabled. The outcome is held here and
         // recorded below, once `apply_changes` exists, rather than moving the
@@ -1255,7 +1281,10 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 change_error: None,
             },
             (false, None) => Change {
-                change_description: format!("Enabled the {} firewall", backend.backend_name()),
+                change_description: format!(
+                    "Enabled the {} firewall to start at boot",
+                    backend.backend_name()
+                ),
                 // A service state change rather than a rule: ufw's enable runs
                 // `ufw --force enable` and firewalld's runs `systemctl start`
                 // plus `systemctl enable`, which is what this variant is for.
@@ -1312,11 +1341,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // two of the three backends and not the third. ufw's `--force enable`
         // and firewalld's `systemctl start` plus `systemctl enable` both leave
         // the unit wanted at boot, so asking again would only repeat them.
-        // nftables' `enable` creates the inet filter table and its three chains
-        // through `nft` and issues no `systemctl` call at all, so on that
-        // backend a fresh enable leaves the unit unenabled and the ruleset only
-        // in the kernel. That gap is #52, and closing it is a behaviour change
-        // needing container evidence rather than a comment.
+        // nftables' `enable` is a `systemctl enable` too now that the atomic
+        // load took the table and chain creation out of it, so all three
+        // backends leave the unit wanted at boot wherever the enable itself
+        // ran. What remains of #52 is narrower than this comment used to
+        // describe: the unit is enabled on every backend, but the ruleset is
+        // written to `/etc/nftables.conf`, which Fedora and RHEL do not read.
         if was_already_enabled {
             let boot_change = ensure_unit_wanted_at_boot(ctx, backend.as_ref()).await;
             apply_changes.push(boot_change);
@@ -1349,10 +1379,13 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // of the two: by here `apply_changes` holds the checkpoint, the enable
         // and every exception the operator declared, and a `?` threw all of it
         // away. Only two backends can reach it, and neither fails per rule:
-        // firewalld's `get_default_zone` and nftables' `ensure_managed_chain`
-        // both run before the loop, so this is a whole-backend failure and one
-        // recorded change is the right count. ufw cannot reach it at all, since
-        // its `apply_rules` records every per-rule failure and returns `Ok`.
+        // firewalld's `get_default_zone` fails before its per-rule loop runs,
+        // and nftables writes and loads its whole ruleset in a single `nft -f`
+        // transaction after the loop that only classifies rules as already
+        // present or not, so either way this is a whole-backend failure and
+        // one recorded change is the right count. ufw cannot reach it at all,
+        // since its `apply_rules` records every per-rule failure and returns
+        // `Ok`.
         let rules_error = match backend.apply_rules(ctx, &rules).await {
             Ok(mut backend_changes) => {
                 apply_changes.append(&mut backend_changes);

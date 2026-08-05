@@ -1387,7 +1387,8 @@ async fn an_nftables_rollback_reloads_rather_than_installing_a_drop_policy() {
 /// Fedora and RHEL ship `/etc/sysconfig/nftables.conf`, not
 /// `/etc/nftables.conf`. On a host where nftables wins backend detection and
 /// `/etc/nftables.conf` was never present, the checkpoint correctly records
-/// the path as absent and the restore is a no-op, but the reload used to run
+/// the path as absent and the restore DELETES the ruleset the apply rendered
+/// there, leaving nothing to reload, but the reload used to run
 /// `nft -f /etc/nftables.conf` regardless: `nft` exits 1 on a file that is
 /// not there, `execute_nft` turns that into an error, and a rollback that did
 /// everything possible on that host still exited 1 telling the operator a
@@ -1599,5 +1600,368 @@ fn a_value_that_is_not_a_range_is_handed_to_ufw_unchanged() {
     assert!(
         args.contains(&"22-".to_string()),
         "an unparseable range must reach ufw as written, got: {args:?}"
+    );
+}
+
+/// The input chain's rules, one whole line per element, with the chain header
+/// and the braces around it removed.
+///
+/// Every assertion about the rendered ruleset used to be a `contains` or a
+/// `find` over the whole blob, which anchors a needle to nothing, and two
+/// mutations proved the cost. Rendering each statement behind a `# ` marker
+/// ships `policy drop;` with no effective rules, which is issue #92's own
+/// outcome delivered in one transaction, and every needle still matched inside
+/// the commented line in the same byte order. Slicing the argv from index 4
+/// rather than 5 prefixes every statement with the chain name, which `nft`
+/// refuses outright, and a needle built from `args[5..]` is then a suffix of
+/// the rendered line and invisible to `contains`.
+///
+/// Comparing whole lines for equality kills both: a commented-out statement is
+/// not its statement, and a prefixed one is not its statement either.
+fn input_chain_rule_lines(rendered: &str) -> Vec<String> {
+    let after_header = rendered
+        .split("chain input {")
+        .nth(1)
+        .expect("an input chain must be rendered");
+
+    // `split(..).next()` was the first form of this and could not fail:
+    // `Split::next` returns `Some` even when the separator is absent, yielding
+    // the whole remainder, so a ruleset with no forward chain silently handed
+    // back the output chain's header and policy line as though they were rules
+    // of the input chain. `split_once` is the form whose `None` means what the
+    // message says.
+    after_header
+        .split_once("chain forward")
+        .expect("the input chain must end before the forward chain")
+        .0
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && *line != "}")
+        .skip_while(|line| line.contains("hook input"))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The ordering guarantee issue #92 is about, asserted inside the input chain
+/// alone.
+///
+/// Searching the whole rendered file was vacuous: the `forward` chain's own
+/// `policy drop` always follows the statements block, so any "the drop comes
+/// last" assertion held regardless of rule order. The needles come from
+/// `build_nft_rule_args` so the test cannot drift from what a rule renders as,
+/// and each is matched against a whole line for the reasons
+/// [`input_chain_rule_lines`] records.
+#[test]
+fn the_ssh_accept_precedes_the_drop_all_rule() {
+    let backend = nftables::NftablesBackend::new();
+    let rules = get_baseline_rules();
+    let rendered = nftables::render_ruleset(&rules).expect("the baseline renders");
+    let statements = input_chain_rule_lines(&rendered);
+
+    let position = |needle: &str| {
+        let rule = rules
+            .iter()
+            .find(|r| r.rule_description.contains(needle))
+            .unwrap_or_else(|| panic!("no baseline rule describing {needle:?}"));
+        let statement = backend.build_nft_rule_args(rule)[5..].join(" ");
+        statements
+            .iter()
+            .position(|line| *line == statement)
+            .unwrap_or_else(|| {
+                panic!(
+                    "no rule of the input chain is exactly {statement:?}, so the \
+                     rule describing {needle:?} is not in force: the chain's rules \
+                     were {statements:#?}"
+                )
+            })
+    };
+
+    assert!(
+        position("Allow SSH") < position("Drop all other"),
+        "the SSH accept must precede the drop-all rule, or a remote apply locks \
+         the operator out: the input chain's rules were {statements:#?}"
+    );
+    assert!(
+        position("established and related") < position("Drop all other"),
+        "the established/related accept must precede the drop-all rule, or an \
+         in-flight connection is severed: the input chain's rules were \
+         {statements:#?}"
+    );
+    // Named separately rather than left to the other two. `drop` is a terminal
+    // verdict, so any accept rendered after it is dead, and rotating the
+    // loopback rule to the end left both assertions above holding while
+    // loopback traffic was dropped.
+    assert!(
+        position("loopback") < position("Drop all other"),
+        "the loopback accept must precede the drop-all rule, or the host cannot \
+         talk to itself: the input chain's rules were {statements:#?}"
+    );
+}
+
+/// The load must replace the plugin's own table outright rather than merge
+/// into it, or a second apply stacks a duplicate of every baseline rule, and
+/// the replacement must reach no table the plugin did not create.
+///
+/// Both rejected drafts are pinned by name, because both are destructive and
+/// both looked reasonable when written. A whole-ruleset `flush ruleset` came
+/// first and would take Docker's and libvirt's tables down with it. Scoping
+/// the same statements to `inet filter` came second: that is the conventional
+/// default name and not an owned one, so the delete destroyed administrators'
+/// own rules on any host using it, measured in a network namespace against an
+/// admin chain that survived the old incremental path and did not survive
+/// this one.
+#[test]
+fn the_rendered_file_replaces_only_its_own_table() {
+    let rendered = nftables::render_ruleset(&get_baseline_rules()).expect("the baseline renders");
+    let table = nftables::NFTABLES_TABLE;
+
+    // Every conventional name, not only `filter`. One literal was one literal
+    // deep: renaming the constant to `nat` left this test green while the
+    // ruleset issued `delete table inet nat` on every apply.
+    for conventional in ["filter", "nat", "route", "mangle", "raw", "security"] {
+        assert_ne!(
+            table, conventional,
+            "the owned table must not take a conventional name: those are the \
+             names distributions and other subsystems give their own tables, so \
+             replacing one replaces whatever its owner put there"
+        );
+    }
+    assert!(
+        rendered.starts_with(&format!("table inet {table}\ndelete table inet {table}\n")),
+        "the file must create, then delete, then rebuild its own table, or a \
+         second apply either fails against an absent table or merges into a \
+         present one: rendered\n{rendered}"
+    );
+
+    // `destroy` is nftables' third destructive verb and was the hole here: a
+    // rendered `destroy table inet filter` was measured live against an
+    // administrator's table holding `tcp dport 443 accept`, the load reported
+    // success, and the table was gone afterwards, with this test green.
+    let destructive: Vec<&str> = rendered
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            matches!(
+                line.split_whitespace().next(),
+                Some("delete") | Some("flush") | Some("destroy")
+            )
+        })
+        .collect();
+    assert_eq!(
+        destructive,
+        vec![format!("delete table inet {table}")],
+        "the ruleset may destroy its own table and nothing else: a \
+         `flush ruleset` takes down Docker's and libvirt's tables, and any \
+         delete or destroy naming another table takes down whatever its owner \
+         put there. Rendered\n{rendered}"
+    );
+
+    // Verb-agnostic, so a destructive statement spelled a way the list above
+    // does not know still cannot name somebody else's table.
+    let foreign: Vec<&str> = rendered
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.contains("table") && !line.contains(&format!("table inet {table}")))
+        .collect();
+    assert!(
+        foreign.is_empty(),
+        "no statement may name a table other than {table}, whatever it does to \
+         it, got {foreign:#?} in\n{rendered}"
+    );
+}
+
+/// The input chain keeps its drop policy. Inside one transaction it is never
+/// live without the accepts, and dropping it would leave a host that fails a
+/// mid-apply error open rather than closed.
+///
+/// Each declaration is matched as a whole line: a chain header behind a `# `
+/// marker still contains every substring of itself, and a chain that declares
+/// no type or hook is not a filter chain at all.
+#[test]
+fn the_input_chain_keeps_its_drop_policy() {
+    let rendered = nftables::render_ruleset(&get_baseline_rules()).expect("the baseline renders");
+    let declares = |declaration: &str| rendered.lines().any(|line| line.trim() == declaration);
+
+    assert!(
+        declares("type filter hook input priority 0; policy drop;"),
+        "input must stay policy drop: rendered\n{rendered}"
+    );
+    assert!(
+        declares("type filter hook forward priority 0; policy drop;"),
+        "forward must stay policy drop, or the host silently routes traffic \
+         between its interfaces: rendered\n{rendered}"
+    );
+    assert!(
+        declares("type filter hook output priority 0; policy accept;"),
+        "output must stay policy accept, or the host cannot reply at all: \
+         rendered\n{rendered}"
+    );
+}
+
+/// The renderer and the incremental path must not disagree about what a rule
+/// means, so both take their statement from `build_nft_rule_args`.
+///
+/// Asserted in both directions. Every baseline rule must render as a whole
+/// line, which refuses a statement that has gained a prefix or a comment
+/// marker, and the chain must hold no line beyond them, which refuses one that
+/// nothing in the baseline asked for.
+#[test]
+fn every_baseline_rule_renders_the_statement_the_argv_builder_produces() {
+    let backend = nftables::NftablesBackend::new();
+    let rules = get_baseline_rules();
+    let rendered = nftables::render_ruleset(&rules).expect("the baseline renders");
+    let statements = input_chain_rule_lines(&rendered);
+
+    // Both sides of the comparison below come from `rules`, so an empty
+    // baseline satisfies every one of them: the loop body never runs and
+    // `0 == 0` holds. Refusing that first is what stops this test passing on a
+    // ruleset with no rules in it at all.
+    assert!(
+        !rules.is_empty(),
+        "the baseline must carry rules, or everything below is vacuous"
+    );
+
+    for rule in &rules {
+        let statement = backend.build_nft_rule_args(rule)[5..].join(" ");
+        assert!(
+            statements.contains(&statement),
+            "rule {:?} rendered as something other than the line {statement:?}: \
+             the input chain's rules were {statements:#?}",
+            rule.rule_description
+        );
+    }
+
+    // Order included, not only membership and count. A rotation of the rendered
+    // statements kept every membership assertion and the count holding while
+    // moving an accept behind the terminal `drop`.
+    let expected: Vec<String> = rules
+        .iter()
+        .map(|rule| backend.build_nft_rule_args(rule)[5..].join(" "))
+        .collect();
+    assert_eq!(
+        statements, expected,
+        "the input chain must hold one line per baseline rule, in the baseline's \
+         own order and with nothing else among them"
+    );
+}
+
+/// A rule whose only distinguishing feature is the source it matches on.
+///
+/// Deliberately not described as "loopback" or "established and related":
+/// `build_nft_rule_args` branches on the description before it ever reads the
+/// source, and a fixture that tripped one of those branches would render a
+/// statement with no `saddr` in it at all and assert nothing.
+fn rule_with_source(source: &str) -> Rule {
+    Rule {
+        rule_description: format!("Allow SSH from {source}"),
+        rule_protocol: "tcp".to_string(),
+        rule_port: "22".to_string(),
+        rule_source: source.to_string(),
+        rule_action: "accept".to_string(),
+    }
+}
+
+/// `ip` and `ip6` are different match expressions and nft infers neither, so
+/// the family has to come from the address.
+///
+/// An IPv6 source used to render `ip saddr ::1`, which nft refuses with
+/// "Address family for hostname not supported". Under the per-rule path that
+/// cost one rule; under one transaction it costs the whole load, so no baseline
+/// rule lands at all, drop-all included.
+#[test]
+fn a_source_renders_the_match_of_its_own_address_family() {
+    let backend = nftables::NftablesBackend::new();
+
+    for (source, family) in [
+        ("10.0.0.0/8", "ip"),
+        ("127.0.0.1", "ip"),
+        ("::1", "ip6"),
+        ("2001:db8::/32", "ip6"),
+        ("::ffff:10.0.0.1", "ip6"),
+    ] {
+        let args = backend.build_nft_rule_args(&rule_with_source(source));
+        let statement = args[5..].join(" ");
+
+        assert_eq!(
+            statement,
+            format!("{family} saddr {source} tcp dport 22 accept"),
+            "a {source} source must be matched with {family}, or nft refuses \
+             the statement and the whole transaction with it"
+        );
+    }
+}
+
+/// A source nft cannot match on is refused before anything is written.
+///
+/// The order is the point. `apply_rules` writes [`NFTABLES_CONFIG_PATH`] and
+/// then loads it, so a ruleset that renders and then fails at `nft` leaves the
+/// host holding a file `nftables.service` cannot parse, at the path it loads
+/// from at boot, on a unit the same apply already enabled. The refusal has to
+/// land while nothing has happened, which means at render time.
+#[test]
+fn a_source_that_cannot_be_matched_on_refuses_the_whole_ruleset() {
+    for source in [
+        "not-an-address",
+        "999.1.1.1",
+        "10.0.0.0/33",
+        "2001:db8::/129",
+        "10.0.0.0/eight",
+        "",
+    ] {
+        // Second of two, deliberately. Every fixture here was a one-rule slice
+        // at first, so a check that stopped after the first source passed all
+        // six: a ruleset whose first source is valid and whose second is not
+        // still reached `nft`, and `nft` refuses it after the file is written.
+        let rules = [rule_with_source("10.0.0.0/8"), rule_with_source(source)];
+        let refusal = nftables::render_ruleset(&rules);
+
+        assert!(
+            refusal.is_err(),
+            "a {source:?} source must refuse the ruleset rather than render a \
+             statement nft will reject after the file is already written, got \
+             {refusal:?}"
+        );
+    }
+
+    assert!(
+        nftables::render_ruleset(&[rule_with_source("10.0.0.0/8")]).is_ok(),
+        "the control: a source that nft can match on must still render, or the \
+         refusal above is measuring nothing"
+    );
+}
+
+/// Each backend checkpoints what it writes, and never a path another backend
+/// owns.
+///
+/// The apply site used to hold one combined list of all three backends' paths,
+/// so every firewall apply recorded a checkpoint row for `/etc/nftables.conf`,
+/// including on ufw and firewalld hosts where no apply can create it. A row
+/// recorded absent is an instruction to delete, so a rollback on such a host
+/// would have removed whatever had arrived at that path in the meantime, from
+/// the `nftables` package or from the administrator, with nothing to show it
+/// had ever been ours. Asking the selected backend is what stops the
+/// declaration and the writing drifting apart.
+#[test]
+fn a_backend_checkpoints_only_the_paths_it_writes() {
+    let ruleset = nftables::NFTABLES_CONFIG_PATH;
+
+    assert!(
+        nftables::NftablesBackend::new()
+            .config_paths()
+            .contains(&ruleset),
+        "the nftables backend renders its whole ruleset into {ruleset}, so a \
+         pre-apply checkpoint has to capture it or the write is unrecoverable"
+    );
+    assert!(
+        !ufw::UfwBackend::new().config_paths().contains(&ruleset),
+        "a ufw apply can never create {ruleset}, so declaring it records a row \
+         recorded absent that a later rollback would act on as a deletion"
+    );
+    assert!(
+        !firewalld::FirewalldBackend::new()
+            .config_paths()
+            .contains(&ruleset),
+        "a firewalld apply can never create {ruleset}, so declaring it records \
+         a row recorded absent that a later rollback would act on as a deletion"
     );
 }
