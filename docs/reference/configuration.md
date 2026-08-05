@@ -334,6 +334,12 @@ rather than guessed at.
 A refused directive is ignored and logged; the rule keeps its baseline value.
 An exception is still the route that records a deviation as a decision.
 
+**A port is applied as the number it is read as, not as it is written.** A
+value is parsed and re-rendered before it reaches any backend, so `022` becomes
+`22` and `+22` becomes `22`. This is not cosmetic: `nft` reads a leading zero as
+octal, so an unnormalised `022` installed a rule for port 18. Only `port` is
+treated this way; `source` and `protocol` reach the backend exactly as written.
+
 **A port range is written with a dash**, as in `"80-443"`. That is the one form
 the configuration layer accepts, and a range spelled any other way is refused
 before any plugin sees it. Backends differ on this and the difference is handled

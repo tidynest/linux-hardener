@@ -520,6 +520,44 @@ fn field_override_is_allowed(action: &str, field: &str, baseline: &str, requeste
     }
 }
 
+/// A directive's value as this tool READ it, rather than as it was spelled.
+///
+/// Only `port` is rewritten, and the reason is that two readers of the same
+/// string disagree about it. Every layer here parses a port with
+/// `str::parse::<u16>()`, which takes a leading zero as decimal and a leading
+/// `+` as a sign; `nft` takes a leading zero as OCTAL and refuses the `+`
+/// outright. Measured under nft 1.1.6: `tcp dport 022 accept` loads as
+/// `tcp dport 18 accept`.
+///
+/// So `ssh.port = "022"` passed `validate_firewall_value` as 22, passed the
+/// breadth clamp as one port against a baseline of one port, and installed an
+/// accept for a port nobody asked for while 22 fell through to `policy drop`.
+/// Over SSH that severs the connection and reports success. Re-rendering
+/// through the parsed number makes the two readings the same by construction
+/// instead of by both sides happening to agree about notation, and it does so
+/// for every backend at once rather than at one renderer: ufw already
+/// re-rendered a RANGE this way and passed a single port through untouched.
+///
+/// Total by design. A value that will not parse is returned unchanged rather
+/// than replaced with a guess, so this can only ever restate what the validator
+/// already accepted, never invent a value it refused.
+fn canonical_field_value(field: &str, requested: &str) -> String {
+    if field != "port" {
+        return requested.to_string();
+    }
+
+    match requested.split_once('-') {
+        Some((low, high)) => match (low.parse::<u16>(), high.parse::<u16>()) {
+            (Ok(low), Ok(high)) => format!("{low}-{high}"),
+            _ => requested.to_string(),
+        },
+        None => match requested.parse::<u16>() {
+            Ok(port) => port.to_string(),
+            Err(_) => requested.to_string(),
+        },
+    }
+}
+
 /// Applies directive overrides to a single firewall rule.
 ///
 /// Directives use `<rule_id>.<field>` keys:
@@ -565,7 +603,7 @@ fn apply_rule_directives(rule: &mut Rule, id: &str, config: &PluginConfig) {
             continue;
         };
         match field_override_is_allowed(&rule.rule_action, field, current, requested) {
-            true => *current = requested.clone(),
+            true => *current = canonical_field_value(field, requested),
             false => warn!(
                 "Ignoring firewall directive '{id}.{field} = {requested}': on a \
                  '{}' rule it would weaken the '{}' rule from '{current}'. Record \
