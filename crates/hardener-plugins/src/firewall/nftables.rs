@@ -69,10 +69,6 @@ pub(super) const NFTABLES_TABLE: &str = "linux_hardener";
 /// `nat.nft` and `router.nft` there, none of which their boot file loads (its
 /// only `include` is commented out), so a glob over that directory would switch
 /// three sample rulesets on for every host of that family.
-///
-/// Not yet read outside this module's own tests: the write path that uses it
-/// is a later task on this branch.
-#[allow(dead_code)]
 pub(super) const HARDENER_RULESET_DIR: &str = "/etc/linux-hardener/nftables";
 
 /// The rendered ruleset. Written whole on every apply, and the only nftables
@@ -87,10 +83,6 @@ pub(super) const HARDENER_RULESET_PATH: &str = "/etc/linux-hardener/nftables/50-
 /// removes [`HARDENER_RULESET_PATH`], so with a literal include the boot path
 /// would refuse to parse and the host would come up unfiltered. The glob is
 /// what makes the undo survivable in either order.
-///
-/// Not yet read outside this module's own tests: the write path that uses it
-/// is a later task on this branch.
-#[allow(dead_code)]
 pub(super) const HARDENER_INCLUDE_LINE: &str = "include \"/etc/linux-hardener/nftables/*.nft\"";
 
 /// What `systemctl show` said about the unit that loads a ruleset at boot.
@@ -238,6 +230,56 @@ fn parse_exec_start(exec_start: &str) -> std::result::Result<String, String> {
     ))
 }
 
+/// The directory holding `path`, or `/` when it names no parent.
+fn parent_of(path: &str) -> String {
+    Path::new(path)
+        .parent()
+        .and_then(Path::to_str)
+        .unwrap_or("/")
+        .to_string()
+}
+
+/// Puts [`HARDENER_INCLUDE_LINE`] in `boot_path` exactly once.
+///
+/// Reads first and appends only when the line is absent, so a repeated apply
+/// does not stack includes. An absent boot file is an ordinary outcome, not a
+/// failure: openSUSE ships a unit gated on a `main.nft` a stock host does not
+/// have, so creating it is what persistence means there.
+///
+/// A read that fails for any reason other than absence refuses, rather than
+/// treating the file as empty and replacing it with one line. That conflation
+/// is precisely the PAM defect this project has already fixed once.
+async fn ensure_include_line(ctx: &Context, boot_path: &str) -> Result<()> {
+    let path = Path::new(boot_path);
+    let existing = match ctx.executor().path_exists(path).await {
+        Ok(false) => String::new(),
+        _ => ctx.executor().read_file(path).await.map_err(|e| {
+            HardeningError::Plugin(format!(
+                "Refusing to append to {boot_path}, which could not be read: {e}. \
+                 Replacing a file whose content is unknown is how an administrator's \
+                 ruleset gets lost."
+            ))
+        })?,
+    };
+
+    if existing
+        .lines()
+        .any(|line| line.trim() == HARDENER_INCLUDE_LINE)
+    {
+        return Ok(());
+    }
+
+    let separator = match existing.is_empty() || existing.ends_with('\n') {
+        true => "",
+        false => "\n",
+    };
+    let appended = format!("{existing}{separator}{HARDENER_INCLUDE_LINE}\n");
+    ctx.executor()
+        .write_file(path, &appended)
+        .await
+        .map_err(|e| HardeningError::Plugin(format!("Failed to append to {boot_path}: {e}")))
+}
+
 /// Nftables firewall backend for modern Linux systems.
 ///
 /// Nftables uses a hierarchical structure:
@@ -275,6 +317,34 @@ impl NftablesBackend {
         }
 
         Ok(output.stdout)
+    }
+
+    /// Loads `ruleset` live without leaving a persistent file behind.
+    ///
+    /// For the branch where the boot path could not be determined: nothing
+    /// may be written anywhere, [`HARDENER_RULESET_PATH`] included, or an
+    /// unreachable fragment would go live the moment somebody repairs the
+    /// unit. The host still has to be filtered now, so the ruleset is parked
+    /// in [`NFTABLES_CHECK_PATH`], the same `/run` scratch file
+    /// [`Self::refuse_a_ruleset_nft_will_not_parse`] uses, loaded from there,
+    /// and removed, rather than writing a second copy of that dance.
+    async fn execute_nft_from_string(&self, ctx: &Context, ruleset: &str) -> Result<()> {
+        ctx.executor()
+            .write_file(Path::new(NFTABLES_CHECK_PATH), ruleset)
+            .await
+            .map_err(|e| {
+                HardeningError::Plugin(format!("Could not write {NFTABLES_CHECK_PATH}: {e}"))
+            })?;
+
+        let loaded = self.execute_nft(ctx, &["-f", NFTABLES_CHECK_PATH]).await;
+        if let Err(e) = ctx
+            .executor()
+            .execute_command("rm", &["-f", NFTABLES_CHECK_PATH])
+            .await
+        {
+            warn!("Could not remove {NFTABLES_CHECK_PATH} after loading the ruleset live: {e}");
+        }
+        loaded.map(|_| ())
     }
 
     /// Build nftables command arguments from a Rule.
@@ -854,19 +924,58 @@ impl FirewallBackend for NftablesBackend {
             });
         }
 
-        // One transaction for the whole ruleset: see `render_ruleset`'s doc
-        // comment for why. A failure here means nothing in `changes` above
-        // actually happened, so it is propagated with `?` rather than folded
-        // into a per-rule failed `Change` the way the old per-rule loop did;
-        // the caller in `mod.rs` already treats an `Err` from this function as
-        // a whole-backend failure.
+        // Probed before anything is written. A boot path that cannot be
+        // determined is not a reason to guess: the ruleset still loads, so the
+        // host is filtered now, and the operator is told persistence did not
+        // happen rather than left believing it did.
+        let probed = boot_ruleset(ctx).await;
+        let Ok(boot_path) = probed.loads else {
+            let why = probed.loads.unwrap_err();
+            warn!("nftables ruleset will not persist across a reboot: {why}");
+            self.execute_nft_from_string(ctx, &ruleset).await?;
+            changes.push(Change {
+                change_description: format!(
+                    "Firewall rules are live but will not persist across a reboot: {why}"
+                ),
+                change_type: ChangeType::Skipped,
+                change_success: true,
+                change_error: None,
+            });
+            return Ok(changes);
+        };
+
+        // Our own fragment, written whole. write_file cannot create a missing
+        // parent, and neither directory is guaranteed: /etc/linux-hardener
+        // exists only where a signing key was created, and openSUSE's
+        // /etc/nftables/rules does not exist at all on a stock host.
+        for directory in [HARDENER_RULESET_DIR, parent_of(&boot_path).as_str()] {
+            ctx.executor()
+                .execute_command("mkdir", &["-p", directory])
+                .await
+                .map_err(|e| {
+                    HardeningError::Plugin(format!("Failed to create {directory}: {e}"))
+                })?;
+        }
+
         ctx.executor()
-            .write_file(Path::new(NFTABLES_CONFIG_PATH), &ruleset)
+            .write_file(Path::new(HARDENER_RULESET_PATH), &ruleset)
             .await
             .map_err(|e| {
-                HardeningError::Plugin(format!("Failed to write {NFTABLES_CONFIG_PATH}: {e}"))
+                HardeningError::Plugin(format!("Failed to write {HARDENER_RULESET_PATH}: {e}"))
             })?;
-        self.execute_nft(ctx, &["-f", NFTABLES_CONFIG_PATH]).await?;
+
+        // One appended line, never a rewrite. The administrator's own table is
+        // defined in this file on Arch and Debian, and issue #98 is what
+        // replacing it wholesale cost them.
+        ensure_include_line(ctx, &boot_path).await?;
+
+        // Only our own fragment is loaded, not the boot file. Our file is
+        // self-contained (table, delete table, table { ... }), so the live
+        // effect matches the old whole-file write, while the administrator's
+        // live table is never re-loaded underneath them. Boot composes the two
+        // through the include.
+        self.execute_nft(ctx, &["-f", HARDENER_RULESET_PATH])
+            .await?;
 
         Ok(changes)
     }
