@@ -1548,8 +1548,19 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         })
     }
 
+    /// Whether a restored path means this plugin should reload.
+    ///
+    /// Synchronous with no `Context`, so it cannot run the `ExecStart` probe
+    /// and instead names every boot path the shipped units use. Deliberately
+    /// over-inclusive: a needless match costs one idempotent reload, while a
+    /// missing one means a rollback on that distribution reloads nothing at
+    /// all and reports success. `reload` itself probes, so it still does the
+    /// right thing on whichever host it lands.
     fn reloads_for_path(&self, path: &Path) -> bool {
         path == Path::new(nftables::NFTABLES_CONFIG_PATH)
+            || path == Path::new("/etc/sysconfig/nftables.conf")
+            || path.starts_with("/etc/nftables")
+            || path.starts_with(nftables::HARDENER_RULESET_DIR)
             || path.starts_with("/etc/firewalld")
             || path.starts_with("/etc/ufw")
     }

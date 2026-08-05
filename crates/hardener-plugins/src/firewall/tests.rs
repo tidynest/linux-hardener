@@ -1498,6 +1498,32 @@ fn every_path_firewall_checkpoints_is_one_it_reloads_for() {
     }
 }
 
+/// The dispatcher only calls a plugin's reload when one of these matches, and
+/// this method cannot probe: it is synchronous and has no Context. So it names
+/// every boot path the shipped units use. Missing one means a rollback on that
+/// distribution silently reloads nothing.
+#[test]
+fn the_rollback_dispatcher_reaches_every_nftables_boot_path() {
+    let plugin = FirewallHardeningPlugin::new();
+    for path in [
+        "/etc/nftables.conf",
+        "/etc/sysconfig/nftables.conf",
+        "/etc/nftables/rules/main.nft",
+        "/etc/linux-hardener/nftables/50-linux-hardener.nft",
+        "/etc/ufw",
+        "/etc/firewalld",
+    ] {
+        assert!(
+            plugin.reloads_for_path(Path::new(path)),
+            "{path} must trigger a firewall reload after a rollback"
+        );
+    }
+    assert!(
+        !plugin.reloads_for_path(Path::new("/etc/ssh/sshd_config")),
+        "an unrelated path must not"
+    );
+}
+
 /// A bare successful command, for a mock registration whose only relevant
 /// fact is that the command was allowed to run.
 fn nft_ok() -> CommandOutput {
