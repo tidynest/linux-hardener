@@ -1460,6 +1460,107 @@ async fn test_nftables_apply_adds_only_missing_rules() {
     );
 }
 
+// --- The atomic-load wiring for issue #92: `apply_rules` now writes the
+// whole ruleset and loads it in a single `nft -f`, replacing the per-rule
+// `nft add rule` loop the four tests above pinned. Those four now assert on
+// a code path that no longer exists and are reported rather than rewritten;
+// the two tests below prove the properties that replaced what they covered. ---
+
+/// The atomic-load guarantee for issue #92, proven at the wiring layer: no
+/// per-rule `nft add rule` may run alongside `apply_rules`' single `nft -f`
+/// load, or a remote apply is back to two writes an interruption can land
+/// between, which is the exact window the render-then-load design exists to
+/// close.
+#[tokio::test]
+async fn apply_rules_never_issues_a_per_rule_add() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    // A mix of present and absent rules, so a reintroduced per-rule path has
+    // both something to add and something to skip; deliberately no `add
+    // rule` command is registered, so any attempt logs before this mock
+    // refuses it.
+    let partial_chain = "table inet filter {\n\tchain input {\n\t\t\
+        type filter hook input priority 0; policy drop;\n\t\t\
+        iif \"lo\" accept\n\t\ttcp dport 22 accept\n\t}\n}\n";
+    let executor = MockExecutor::new()
+        .with_command(
+            "nft",
+            &["list", "chain", "inet", "filter", "input"],
+            CommandOutput {
+                stdout: partial_chain.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok());
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let backend = NftablesBackend::new();
+
+    backend
+        .apply_rules(&ctx, &backend.get_default_rules())
+        .await
+        .expect("the single `nft -f` load is registered and must succeed");
+
+    assert!(
+        !logged_nft_add_rule(&executor),
+        "no per-rule `nft add rule` may run alongside the single-transaction load, \
+         commands: {:?}",
+        executor.log().commands_executed
+    );
+}
+
+/// The diff-before-load classification, proven independently of whether any
+/// `nft add rule` runs: a rule already in the chain must be reported Skipped
+/// and a rule that is not must be reported FirewallRule, exactly as the old
+/// per-rule path classified them, or `ApplyResult::applied_change_count()`
+/// starts counting rules that changed nothing.
+#[tokio::test]
+async fn apply_rules_reports_skipped_only_for_rules_already_present() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    // loopback + ssh already present; established + drop are missing.
+    let partial_chain = "table inet filter {\n\tchain input {\n\t\t\
+        type filter hook input priority 0; policy drop;\n\t\t\
+        iif \"lo\" accept\n\t\ttcp dport 22 accept\n\t}\n}\n";
+    let executor = MockExecutor::new()
+        .with_command(
+            "nft",
+            &["list", "chain", "inet", "filter", "input"],
+            CommandOutput {
+                stdout: partial_chain.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok());
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let backend = NftablesBackend::new();
+
+    let changes = backend
+        .apply_rules(&ctx, &backend.get_default_rules())
+        .await
+        .expect("the single `nft -f` load is registered and must succeed");
+
+    assert_eq!(
+        changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::Skipped)
+            .count(),
+        2,
+        "loopback and ssh are present -> 2 skipped, got: {changes:?}"
+    );
+    assert_eq!(
+        changes
+            .iter()
+            .filter(|c| c.change_type == ChangeType::FirewallRule && c.change_success)
+            .count(),
+        2,
+        "established and drop are missing -> 2 added, got: {changes:?}"
+    );
+}
+
 #[tokio::test]
 async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_present() {
     // A foreign table carries a `hook input` chain (e.g. docker, or another

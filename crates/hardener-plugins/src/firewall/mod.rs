@@ -1349,10 +1349,13 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // of the two: by here `apply_changes` holds the checkpoint, the enable
         // and every exception the operator declared, and a `?` threw all of it
         // away. Only two backends can reach it, and neither fails per rule:
-        // firewalld's `get_default_zone` and nftables' `ensure_managed_chain`
-        // both run before the loop, so this is a whole-backend failure and one
-        // recorded change is the right count. ufw cannot reach it at all, since
-        // its `apply_rules` records every per-rule failure and returns `Ok`.
+        // firewalld's `get_default_zone` fails before its per-rule loop runs,
+        // and nftables writes and loads its whole ruleset in a single `nft -f`
+        // transaction after the loop that only classifies rules as already
+        // present or not, so either way this is a whole-backend failure and
+        // one recorded change is the right count. ufw cannot reach it at all,
+        // since its `apply_rules` records every per-rule failure and returns
+        // `Ok`.
         let rules_error = match backend.apply_rules(ctx, &rules).await {
             Ok(mut backend_changes) => {
                 apply_changes.append(&mut backend_changes);

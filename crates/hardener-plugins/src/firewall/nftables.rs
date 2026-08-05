@@ -110,32 +110,6 @@ impl NftablesBackend {
         args
     }
 
-    /// Idempotently ensures the managed `inet filter` table and its base
-    /// `input` chain exist before any rule is added.
-    ///
-    /// `nft add table` / `nft add chain` are no-ops when the object already
-    /// exists (unlike `create`, which errors), so this runs unconditionally at
-    /// the start of every apply. It fixes the ENOENT seen when a foreign
-    /// `hook input` chain (docker, or another address family) made the
-    /// scan-time `is_enabled` heuristic believe a filter was already active:
-    /// the plugin then skipped `enable()` and every `add rule` failed against
-    /// a chain that did not exist. Scoped to exactly the objects `apply_rules`
-    /// writes into, so it stays safe to call when the chain is already
-    /// populated.
-    async fn ensure_managed_chain(&self, ctx: &Context) -> Result<()> {
-        self.execute_nft(ctx, &["add", "table", "inet", "filter"])
-            .await?;
-        self.execute_nft(
-            ctx,
-            &[
-                "add", "chain", "inet", "filter", "input", "{", "type", "filter", "hook", "input",
-                "priority", "0", ";", "policy", "drop", ";", "}",
-            ],
-        )
-        .await?;
-        Ok(())
-    }
-
     /// Reads the current `input` chain and returns the canonical token list of
     /// each rule already present, used to skip rules that are already there.
     ///
@@ -295,42 +269,28 @@ impl FirewallBackend for NftablesBackend {
     async fn enable(&self, ctx: &Context) -> Result<()> {
         info!("Enabling nftables firewall");
 
-        // Create a basic inet filter table with input/output/forward chains
-        // This is the foundation for the firewall rules
+        // Only the boot-persistence symlink lives here now; the managed table
+        // and chains are no longer built in this step. This function used to
+        // create an `inet filter` table with an input chain carrying `policy
+        // drop` and not one rule in it, running before `apply_rules` had
+        // written a single accept. Over SSH that drop policy went live and
+        // severed the very connection the rest of the apply was arriving on,
+        // which was issue #92. `apply_rules` now writes the whole ruleset,
+        // baseline accepts included, and loads it as one `nft -f` transaction,
+        // so the table and chains come into being together with the rules
+        // that make `policy drop` survivable.
+        let output = ctx
+            .executor()
+            .execute_command("systemctl", &["enable", self.systemd_unit()])
+            .await
+            .map_err(|e| HardeningError::Plugin(format!("Failed to enable nftables: {e}")))?;
 
-        // Step 1: Create the table
-        self.execute_nft(ctx, &["add", "table", "inet", "filter"])
-            .await?;
-
-        // Step 2: Create input chain (with drop policy for security)
-        self.execute_nft(
-            ctx,
-            &[
-                "add", "chain", "inet", "filter", "input", "{", "type", "filter", "hook", "input",
-                "priority", "0", ";", "policy", "drop", ";", "}",
-            ],
-        )
-        .await?;
-
-        // Step 3: Create forward chain
-        self.execute_nft(
-            ctx,
-            &[
-                "add", "chain", "inet", "filter", "forward", "{", "type", "filter", "hook",
-                "forward", "priority", "0", ";", "policy", "drop", ";", "}",
-            ],
-        )
-        .await?;
-
-        // Step 4: Create output chain (allow all outbound by default)
-        self.execute_nft(
-            ctx,
-            &[
-                "add", "chain", "inet", "filter", "output", "{", "type", "filter", "hook",
-                "output", "priority", "0", ";", "policy", "accept", ";", "}",
-            ],
-        )
-        .await?;
+        if !output.success() {
+            return Err(HardeningError::Plugin(format!(
+                "Failed to enable nftables: {}",
+                output.stderr
+            )));
+        }
 
         info!("Nftables firewall enabled successfully");
         Ok(())
@@ -339,11 +299,11 @@ impl FirewallBackend for NftablesBackend {
     /// Feeds the restored [`NFTABLES_CONFIG_PATH`] back to `nft`, which is the
     /// whole of what a rollback of an nftables configuration has to do.
     ///
-    /// [`Self::enable`] is not a substitute and was actively harmful here: it
-    /// builds an `inet filter` table whose input chain carries a `drop` policy
-    /// and never reads the restored file at all, so the applied posture stayed
-    /// live and a host whose firewall was inactive before the apply came out
-    /// of the undo filtering traffic.
+    /// [`Self::enable`] is not a substitute: it only marks the systemd unit to
+    /// start at the next boot and never reads the restored file at all, so a
+    /// rollback that called it instead would leave the applied posture live -
+    /// a host whose firewall was inactive before the apply would come out of
+    /// the undo still filtering traffic.
     ///
     /// What the file does on load is the file's business. Every distribution's
     /// shipped `nftables.conf` opens with `flush ruleset`, so loading it
@@ -379,25 +339,32 @@ impl FirewallBackend for NftablesBackend {
     }
 
     async fn apply_rules(&self, ctx: &Context, rules: &[Rule]) -> Result<Vec<Change>> {
-        let mut changes = Vec::new();
-
-        // Ensure the managed table + input chain exist first, unconditionally
-        // and idempotently (see `ensure_managed_chain`).
-        self.ensure_managed_chain(ctx).await?;
-
-        // Read the chain once so only genuinely-absent rules are added:
-        // `nft add rule` always appends a fresh handle, so without this check
-        // every apply stacks another duplicate of every baseline rule.
+        // The diff runs BEFORE the write and load rather than per rule as the
+        // load happens: the whole ruleset lands in one `nft -f` transaction
+        // (see `render_ruleset`), so there is no longer a per-rule `nft add
+        // rule` call left to report Skipped or FirewallRule against as it
+        // runs. `ApplyResult::applied_change_count()` and `Change::is_skipped`
+        // still have to mean what they meant before this change, so the diff
+        // below classifies each rule exactly as the old per-rule path did:
+        // present -> Skipped, absent -> FirewallRule.
+        //
+        // `existing_input_rules` fails CLOSED: an unreadable chain, including
+        // one that does not exist yet on a host with no managed chain, reads
+        // as empty. Under this diff-first flow that means every baseline rule
+        // is reported FirewallRule rather than Skipped, and never the other
+        // way round, so a read failure over-counts what changed; it can never
+        // hide a rule that genuinely needed adding.
         let existing = self.existing_input_rules(ctx).await;
+        let mut changes = Vec::with_capacity(rules.len());
 
         for rule in rules {
             let nft_args = self.build_nft_rule_args(rule);
             // The rule statement is everything after `add rule inet filter input`.
             let wanted = canonical_rule_tokens(nft_args[5..].iter().map(String::as_str));
 
-            if existing.contains(&wanted) {
+            changes.push(if existing.contains(&wanted) {
                 info!("nftables rule already present: {}", rule.rule_description);
-                changes.push(Change {
+                Change {
                     change_description: format!(
                         "Firewall rule already present: {}",
                         rule.rule_description
@@ -405,38 +372,31 @@ impl FirewallBackend for NftablesBackend {
                     change_type: ChangeType::Skipped,
                     change_success: true,
                     change_error: None,
-                });
-                continue;
-            }
-
-            let args_refs: Vec<&str> = nft_args.iter().map(|s| s.as_str()).collect();
-            match self.execute_nft(ctx, &args_refs).await {
-                Ok(_) => {
-                    info!("Applied nftables rule: {}", rule.rule_description);
-                    changes.push(Change {
-                        change_description: format!(
-                            "Added firewall rule: {}",
-                            rule.rule_description
-                        ),
-                        change_type: ChangeType::FirewallRule,
-                        change_success: true,
-                        change_error: None,
-                    });
                 }
-                Err(e) => {
-                    warn!("Failed to apply rule '{}': {}", rule.rule_description, e);
-                    changes.push(Change {
-                        change_description: format!(
-                            "Failed to add firewall rule: {}",
-                            rule.rule_description
-                        ),
-                        change_type: ChangeType::FirewallRule,
-                        change_success: false,
-                        change_error: Some(e.to_string()),
-                    });
+            } else {
+                Change {
+                    change_description: format!("Added firewall rule: {}", rule.rule_description),
+                    change_type: ChangeType::FirewallRule,
+                    change_success: true,
+                    change_error: None,
                 }
-            }
+            });
         }
+
+        // One transaction for the whole ruleset: see `render_ruleset`'s doc
+        // comment for why. A failure here means nothing in `changes` above
+        // actually happened, so it is propagated with `?` rather than folded
+        // into a per-rule failed `Change` the way the old per-rule loop did;
+        // the caller in `mod.rs` already treats an `Err` from this function as
+        // a whole-backend failure.
+        let ruleset = render_ruleset(rules);
+        ctx.executor()
+            .write_file(Path::new(NFTABLES_CONFIG_PATH), &ruleset)
+            .await
+            .map_err(|e| {
+                HardeningError::Plugin(format!("Failed to write {NFTABLES_CONFIG_PATH}: {e}"))
+            })?;
+        self.execute_nft(ctx, &["-f", NFTABLES_CONFIG_PATH]).await?;
 
         Ok(changes)
     }
