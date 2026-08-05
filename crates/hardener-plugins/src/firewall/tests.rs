@@ -1211,6 +1211,130 @@ fn port_source_and_protocol_overrides_are_still_applied() {
     assert_eq!(rule.rule_protocol, "udp");
 }
 
+/// A port reaches the backend as the number this tool validated, not as the
+/// operator spelled it.
+///
+/// Every layer here reads a port with `str::parse::<u16>()`, which takes a
+/// leading zero as decimal. `nft` takes it as OCTAL. Measured under nft 1.1.6:
+/// `tcp dport 022 accept` loads as `tcp dport 18 accept`, and `0100` as `64`.
+/// So `ssh.port = "022"` validated as 22, was clamped as one port wide against
+/// a baseline of one port wide, rendered as the operator's own string, and
+/// installed an accept for port 18 while 22 fell through to `policy drop`. On a
+/// remote apply that severs SSH and reports success with four green changes,
+/// which is issue #92's outcome arriving by a different door.
+///
+/// Re-rendering through the parsed `u16` makes the tool's reading and nft's
+/// reading the same by construction, rather than by agreeing about notation.
+#[test]
+fn a_port_directive_is_applied_as_the_number_it_was_validated_as() {
+    // Each of these is what `str::parse::<u16>()` accepts and `nft` reads
+    // differently or refuses outright. `+22` is the second: Rust takes the
+    // leading sign, nft answers "syntax error, unexpected +".
+    //
+    // Asserted against the transformation rather than through a directive,
+    // because the breadth clamp sits between the two and would answer for it.
+    // The range cases are the reason: widening the ssh rule from one port to
+    // twenty-one is a weakening, so `080-0100` is refused before it can be
+    // rewritten, and a test that went through a directive would report the
+    // baseline value and look like a normalisation failure. The clamp reads
+    // the range with the same `u16` parse, so the two cannot disagree about
+    // which ports were named.
+    for (spelled, canonical) in [
+        ("022", "22"),
+        ("0100", "100"),
+        ("+22", "22"),
+        ("00022", "22"),
+        ("2222", "2222"),
+        ("080-0100", "80-100"),
+        ("80-443", "80-443"),
+    ] {
+        assert_eq!(
+            canonical_field_value("port", spelled),
+            canonical,
+            "a port spelled {spelled:?} must reach the backend as {canonical:?}, \
+             or the tool and nft disagree about which port was asked for"
+        );
+    }
+
+    // Total, and never a guess: a value that will not parse is restated, not
+    // replaced. Nothing that survives `validate_firewall_value` reaches this,
+    // so it pins the fail-safe rather than a reachable path.
+    assert_eq!(
+        canonical_field_value("port", "any"),
+        "any",
+        "a value this cannot read must pass through unchanged"
+    );
+
+    // The other two fields are carried untouched. A source rewritten here would
+    // silently change which addresses a rule matches.
+    //
+    // The fixture is deliberately a value the PORT branch would rewrite, which
+    // is what makes the field check observable at all. `010.0.0.1` was the
+    // first choice and proved nothing: it does not parse as a `u16`, so it
+    // falls through the port branch unchanged and the assertion held whether
+    // the field was checked or not. A mutation dropping the field check
+    // survived it.
+    for field in ["source", "protocol"] {
+        assert_eq!(
+            canonical_field_value(field, "022"),
+            "022",
+            "only `port` is renotated; {field} must reach the backend as \
+             written, whatever the port branch would have made of it"
+        );
+    }
+}
+
+/// The clamp and the renotation must read a port the same way, or one of them
+/// is measuring a value the other will not produce.
+#[test]
+fn the_breadth_clamp_reads_a_port_the_way_it_will_be_rendered() {
+    let mut config = PluginConfig::default();
+    // 1024-2048 is 1025 ports against the ssh rule's one, so this is refused
+    // for its width. Spelled with leading zeros it must be refused for exactly
+    // the same reason: if the clamp read `01024` as anything else, an override
+    // could be admitted on a width nobody asked for.
+    config
+        .directives
+        .insert("ssh.port".to_string(), "01024-02048".to_string());
+
+    let mut rule = get_baseline_rules()
+        .into_iter()
+        .find(|r| rule_id(r) == "ssh")
+        .expect("the baseline carries an ssh rule");
+    apply_rule_directives(&mut rule, "ssh", &config);
+
+    assert_eq!(
+        rule.rule_port, "22",
+        "a range that widens the rule must be refused however it is spelled"
+    );
+}
+
+/// The same value, followed all the way to the statement nft is handed.
+///
+/// The assertion above is about the rule; this one is about the file, because
+/// the defect was only ever visible at the point the two readings met.
+#[test]
+fn a_port_spelled_with_a_leading_zero_renders_as_the_decimal_port() {
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("ssh.port".to_string(), "022".to_string());
+
+    let mut rule = get_baseline_rules()
+        .into_iter()
+        .find(|r| rule_id(r) == "ssh")
+        .expect("the baseline carries an ssh rule");
+    apply_rule_directives(&mut rule, "ssh", &config);
+
+    let statement = nftables::NftablesBackend::new().build_nft_rule_args(&rule)[5..].join(" ");
+
+    assert_eq!(
+        statement, "tcp dport 22 accept",
+        "the rendered statement must name the port the operator asked for; \
+         `tcp dport 022 accept` is read by nft as port 18"
+    );
+}
+
 /// An action the configuration layer would have rejected never reaches a rule.
 /// It cannot arrive through a validated config, so this pins the fail-closed
 /// posture rather than a reachable path: an unrecognised action is not a

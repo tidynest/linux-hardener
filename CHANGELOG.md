@@ -731,6 +731,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `port` directive with a leading zero installed a rule for a different
+  port, and a remote apply reported success while locking the operator out.**
+  Every layer of this tool reads a port with `str::parse::<u16>()`, which takes
+  a leading zero as decimal. `nft` takes it as octal. Measured under nft 1.1.6:
+  `tcp dport 022 accept` loads as `tcp dport 18 accept`, and `0100` as `64`. So
+  `ssh.port = "022"` passed validation as 22, passed the #64 breadth clamp as
+  one port against a baseline of one port, rendered as the operator's own
+  string, and installed an accept for port 18 while 22 fell through to
+  `policy drop`. Over SSH that severs the connection carrying the apply and
+  reports `apply_success` with four green change rows, which is the lockout of
+  #92 arriving through a different door and without even hanging. A directive's
+  value is now applied as the number the tool validated rather than as it was
+  spelled, so the tool's reading and `nft`'s are the same by construction
+  instead of by both happening to agree about notation. Done once where a
+  directive is applied rather than at one renderer, so it reaches every backend:
+  ufw already re-rendered a port *range* this way and passed a single port
+  through untouched. Only `port` is renotated; a `source` or `protocol` reaches
+  the backend exactly as written. Closes #99, and closes the `"+22"` half of
+  #100, which Rust parses as 22 and `nft` refuses outright.
+
 - **An IPv6 firewall `source` rendered an IPv4 match, and under one transaction
   that cost the entire ruleset.** `build_nft_rule_args` emitted `ip saddr` for
   every source whatever family it was in, so `ssh.source = "::1"` rendered
