@@ -335,8 +335,11 @@ impl FirewallBackend for NftablesBackend {
     /// the target's and not the controller's. Fedora and RHEL ship
     /// `/etc/sysconfig/nftables.conf` instead of this path, so a host where
     /// nftables wins backend detection can genuinely never have had
-    /// [`NFTABLES_CONFIG_PATH`]; the checkpoint then records it absent and the
-    /// restore is a correct no-op. `nft -f` on a file that is not there exits
+    /// [`NFTABLES_CONFIG_PATH`] before its first apply; the checkpoint then
+    /// records it absent, and because that path is deliberately deletable the
+    /// restore removes the ruleset the apply rendered there rather than leaving
+    /// it for the next boot. Either way this guard finds nothing left to load.
+    /// `nft -f` on a file that is not there exits
     /// 1, and this used to run it anyway, turning a rollback that had done
     /// everything possible into a reported failure. Absence confirmed is the
     /// only case this skips: anything else, including a probe that could not

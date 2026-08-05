@@ -795,15 +795,16 @@ pub const UNDELETABLE_ROLLBACK_PATHS: &[&str] = &[
     "/etc/sysctl.conf",
     "/etc/audit/auditd.conf",
     "/etc/selinux/config",
-    // Written outright rather than edited in place, and undeletable for a
-    // different reason from the group above: the nftables backend renders its
-    // whole ruleset into this file and loads it, so an apply may create it on a
-    // host that never had one. A rollback still restores or removes it through
-    // its own checkpoint row, which firewall/mod.rs declares; what this list
-    // refuses is a rollback deleting it as an unrelated protected path, because
-    // a host left with no firewall configuration at all is worse than one left
-    // holding a stale ruleset it can be told to reload.
-    "/etc/nftables.conf",
+    // `/etc/nftables.conf` is deliberately NOT here, and was removed from this
+    // list when the nftables backend started rendering its whole ruleset into
+    // that file and loading it: an apply creates it on every host that never
+    // had one, which is exactly the membership rule's disqualifying condition.
+    // Protecting it would leave the rendered ruleset on disk with
+    // `nftables.service` enabled by the same apply, so the posture the operator
+    // rolled back would return at the next boot, and the firewall plugin's
+    // `reload_after_rollback` would load it back into the kernel from the file
+    // the rollback had refused to delete. Same precedent as the ssh and kernel
+    // drop-ins, each of which states the rule at its own checkpoint call.
     // Directories the plugins write files into, or capture and never touch.
     // `write_file` cannot create a missing parent, so a plugin whose target
     // directory may be absent creates it first: the kernel and audit applies

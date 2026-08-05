@@ -1312,11 +1312,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // two of the three backends and not the third. ufw's `--force enable`
         // and firewalld's `systemctl start` plus `systemctl enable` both leave
         // the unit wanted at boot, so asking again would only repeat them.
-        // nftables' `enable` creates the inet filter table and its three chains
-        // through `nft` and issues no `systemctl` call at all, so on that
-        // backend a fresh enable leaves the unit unenabled and the ruleset only
-        // in the kernel. That gap is #52, and closing it is a behaviour change
-        // needing container evidence rather than a comment.
+        // nftables' `enable` is a `systemctl enable` too now that the atomic
+        // load took the table and chain creation out of it, so all three
+        // backends leave the unit wanted at boot wherever the enable itself
+        // ran. What remains of #52 is narrower than this comment used to
+        // describe: the unit is enabled on every backend, but the ruleset is
+        // written to `/etc/nftables.conf`, which Fedora and RHEL do not read.
         if was_already_enabled {
             let boot_change = ensure_unit_wanted_at_boot(ctx, backend.as_ref()).await;
             apply_changes.push(boot_change);

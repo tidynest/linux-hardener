@@ -30,7 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   harden. Per-rule reporting is unchanged, the diff being taken before the load,
   so `applied_change_count()` and `is_skipped()` keep meaning what they meant.
   `ensure_managed_chain` is deleted and `enable` now only enables the unit at
-  boot. **Stated ceiling:** the ruleset is written to `/etc/nftables.conf`,
+  boot. Because an apply now creates `/etc/nftables.conf` on any host that
+  never had one, that path is **deliberately deletable on rollback** and was
+  removed from `UNDELETABLE_ROLLBACK_PATHS`: protecting it would leave the
+  rendered ruleset on disk with the unit enabled, so the posture the operator
+  rolled back would return at the next boot and the plugin's own reload would
+  load it straight back in. Same precedent as the ssh and kernel drop-ins.
+  **Stated ceiling:** the ruleset is written to `/etc/nftables.conf`,
   which persists it on hosts whose `nftables.service` reads that path, but
   Fedora and RHEL ship `/etc/sysconfig/nftables.conf`, so boot persistence there
   is still unresolved and #52 stays open. Closes #92.

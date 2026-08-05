@@ -1403,9 +1403,9 @@ async fn test_nftables_apply_adds_only_missing_rules() {
 
 // --- The atomic-load wiring for issue #92: `apply_rules` now writes the
 // whole ruleset and loads it in a single `nft -f`, replacing the per-rule
-// `nft add rule` loop the four tests above pinned. Those four now assert on
-// a code path that no longer exists and are reported rather than rewritten;
-// the two tests below prove the properties that replaced what they covered. ---
+// `nft add rule` loop the four tests above used to pin. Those four were
+// rewritten against the new path rather than left red; the two tests below
+// prove the properties the per-rule loop took with it when it went. ---
 
 /// The atomic-load guarantee for issue #92, proven at the wiring layer: no
 /// per-rule `nft add rule` may run alongside `apply_rules`' single `nft -f`

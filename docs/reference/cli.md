@@ -302,9 +302,12 @@ kernel audit configuration locked with `-e 2` is reported as restored but not
 loaded until the next reboot, and exits `0`. The same holds for nftables on a
 host that never had `/etc/nftables.conf` in the first place, which is every
 Fedora and RHEL host (they ship `/etc/sysconfig/nftables.conf` instead): the
-checkpoint records the path absent, the restore is a correct no-op, and the
-reload is skipped rather than asking `nft` to load a file that was never
-there.
+checkpoint records the path absent, the restore deletes the ruleset the apply
+rendered there, and the reload is then skipped rather than asking `nft` to load
+a file that is no longer present. That path is deliberately left deletable.
+Protecting it would leave the rolled-back ruleset on disk with
+`nftables.service` already enabled by the same apply, so the posture the
+operator undid would come back at the next boot.
 
 ---
 
