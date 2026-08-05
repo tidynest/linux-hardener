@@ -192,6 +192,13 @@ impl FirewallBackend for UfwBackend {
         "ufw"
     }
 
+    /// ufw owns its whole state directory and this backend edits it through
+    /// the `ufw` command rather than by writing files itself, so the directory
+    /// is what a checkpoint has to capture.
+    fn config_paths(&self) -> &'static [&'static str] {
+        &["/etc/ufw"]
+    }
+
     fn systemd_unit(&self) -> &'static str {
         "ufw"
     }

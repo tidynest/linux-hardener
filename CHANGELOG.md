@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rendered ruleset on disk with the unit enabled, so the posture the operator
   rolled back would return at the next boot and the plugin's own reload would
   load it straight back in. Same precedent as the ssh and kernel drop-ins.
+  The checkpoint itself is now scoped to the backend that was selected, through
+  a new `FirewallBackend::config_paths`, rather than listing all three
+  backends' paths on every host. The combined list recorded a row for
+  `/etc/nftables.conf` on ufw and firewalld hosts too, where no apply can
+  create it, and a row recorded absent is an instruction to delete: a rollback
+  would have removed an `/etc/nftables.conf` that arrived between the
+  checkpoint and the undo, from the `nftables` package or from the
+  administrator, with nothing to show it had ever been ours. A backend now
+  declares what it writes beside the writing, so the two cannot drift apart.
   **Stated ceiling:** the ruleset is written to `/etc/nftables.conf`,
   which persists it on hosts whose `nftables.service` reads that path, but
   Fedora and RHEL ship `/etc/sysconfig/nftables.conf`, so boot persistence there

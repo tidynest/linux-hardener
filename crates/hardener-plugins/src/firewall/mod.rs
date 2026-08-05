@@ -62,6 +62,20 @@ pub trait FirewallBackend: Send + Sync {
     /// activity hint when the backend's own probe needs privileges.
     fn systemd_unit(&self) -> &'static str;
 
+    /// The configuration paths this backend writes, and therefore exactly what
+    /// a pre-apply checkpoint has to capture.
+    ///
+    /// Declared per backend rather than as one list at the `apply` site,
+    /// because a checkpoint row recorded absent is an instruction to delete.
+    /// One combined list recorded rows on every host for files only one
+    /// backend could ever create, so a ufw host carried a row for
+    /// `/etc/nftables.conf` that its apply could never honour. If such a file
+    /// then arrived between the checkpoint and the undo, from a package or
+    /// from the administrator, the rollback deleted it with nothing to show it
+    /// had ever been ours. Asking the selected backend keeps the declaration
+    /// and the writing in one place, so the pair cannot drift again.
+    fn config_paths(&self) -> &'static [&'static str];
+
     /// Detects if this backend is available on the system.
     ///
     /// This typically checks if the backend's command-line tool exists and is executable.
@@ -1189,20 +1203,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 
         let apply_plugin_id = PluginId::new("firewall-hardening");
 
-        // Create checkpoint for firewall config files
-        let firewall_paths: Vec<&Path> = vec![
-            Path::new(nftables::NFTABLES_CONFIG_PATH),
-            Path::new("/etc/firewalld"),
-            Path::new("/etc/ufw"),
-        ];
-        let checkpoint_id = crate::create_checkpoint_for_apply(
-            ctx,
-            "firewall-hardening-pre-apply",
-            &firewall_paths,
-        )
-        .await?;
-
-        // Detect backend.
+        // Detect the backend BEFORE the checkpoint, so the checkpoint can
+        // declare only what the selected backend writes (see
+        // `FirewallBackend::config_paths`). `detect_backend` reads the host and
+        // changes nothing, so nothing needs undoing when it fails, and the
+        // absence of a checkpoint id is then the truthful answer rather than a
+        // row describing an apply that never began.
         let backend = match self.detect_backend(ctx).await {
             Ok(b) => b,
             Err(e) => {
@@ -1210,11 +1216,20 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     apply_plugin_id,
                     apply_success: false,
                     apply_changes: vec![],
-                    apply_checkpoint_id: checkpoint_id,
+                    apply_checkpoint_id: None,
                     apply_error: Some(format!("No firewall backend: {}", e)),
                 });
             }
         };
+
+        // Checkpoint what this backend writes, and nothing else.
+        let firewall_paths: Vec<&Path> = backend.config_paths().iter().map(Path::new).collect();
+        let checkpoint_id = crate::create_checkpoint_for_apply(
+            ctx,
+            "firewall-hardening-pre-apply",
+            &firewall_paths,
+        )
+        .await?;
 
         // Enable firewall if not already enabled. The outcome is held here and
         // recorded below, once `apply_changes` exists, rather than moving the

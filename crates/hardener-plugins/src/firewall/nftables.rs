@@ -244,6 +244,12 @@ impl FirewallBackend for NftablesBackend {
         "nftables"
     }
 
+    /// The rendered ruleset, which [`Self::apply_rules`] writes and this
+    /// backend alone ever creates.
+    fn config_paths(&self) -> &'static [&'static str] {
+        &[NFTABLES_CONFIG_PATH]
+    }
+
     fn systemd_unit(&self) -> &'static str {
         "nftables"
     }

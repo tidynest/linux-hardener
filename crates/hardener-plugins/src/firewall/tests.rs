@@ -1721,3 +1721,39 @@ fn every_baseline_rule_renders_the_statement_the_argv_builder_produces() {
         );
     }
 }
+
+/// Each backend checkpoints what it writes, and never a path another backend
+/// owns.
+///
+/// The apply site used to hold one combined list of all three backends' paths,
+/// so every firewall apply recorded a checkpoint row for `/etc/nftables.conf`,
+/// including on ufw and firewalld hosts where no apply can create it. A row
+/// recorded absent is an instruction to delete, so a rollback on such a host
+/// would have removed whatever had arrived at that path in the meantime, from
+/// the `nftables` package or from the administrator, with nothing to show it
+/// had ever been ours. Asking the selected backend is what stops the
+/// declaration and the writing drifting apart.
+#[test]
+fn a_backend_checkpoints_only_the_paths_it_writes() {
+    let ruleset = nftables::NFTABLES_CONFIG_PATH;
+
+    assert!(
+        nftables::NftablesBackend::new()
+            .config_paths()
+            .contains(&ruleset),
+        "the nftables backend renders its whole ruleset into {ruleset}, so a \
+         pre-apply checkpoint has to capture it or the write is unrecoverable"
+    );
+    assert!(
+        !ufw::UfwBackend::new().config_paths().contains(&ruleset),
+        "a ufw apply can never create {ruleset}, so declaring it records a row \
+         recorded absent that a later rollback would act on as a deletion"
+    );
+    assert!(
+        !firewalld::FirewalldBackend::new()
+            .config_paths()
+            .contains(&ruleset),
+        "a firewalld apply can never create {ruleset}, so declaring it records \
+         a row recorded absent that a later rollback would act on as a deletion"
+    );
+}

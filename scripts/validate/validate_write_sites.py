@@ -155,8 +155,9 @@ that overstates itself is worse than no check:
   - It does not prove a declaration is correct either. For a `declared` entry it
     confirms only that the named token appears inside a checkpoint declaration
     somewhere in the same plugin directory: the arguments of a
-    `create_checkpoint*_for_apply` call, or the initialiser of a `Vec<&Path>`
-    binding. It does not follow the token to a path, does not check that the
+    `create_checkpoint*_for_apply` call, the initialiser of a `Vec<&Path>`
+    binding, or the body of a `config_paths` returning the paths one backend
+    writes. It does not follow the token to a path, does not check that the
     declaration is the one that runs on the branch reaching the write, and does
     not know whether the checkpoint is captured before the write. A path
     appended to a list after its initialiser, as services/mod.rs does with
@@ -233,6 +234,19 @@ BACKUP_CP_FLAGS = ("-p", "--no-dereference")
 # the call it feeds, and the first because ssh passes its paths inline.
 CHECKPOINT_CALL = re.compile(r"create_checkpoint(?:_metadata_only)?_for_apply\s*\(")
 CHECKPOINT_PATH_LIST = re.compile(r":\s*Vec<&Path>\s*=")
+
+# A third shape, and the reason it exists is worth keeping. The firewall plugin
+# used to declare all three backends' paths in one literal list at its apply
+# site, so a ufw host recorded a checkpoint row for `/etc/nftables.conf`, a file
+# its apply could never create. A row recorded absent is an instruction to
+# delete, so a rollback on such a host would have removed whatever had arrived
+# at that path in the meantime. The declaration now lives on the backend that
+# does the writing, as `FirewallBackend::config_paths`, and `apply` hands that
+# return value straight to `create_checkpoint_for_apply`. Matching the body
+# keeps a per-backend declaration as visible to this check as a literal list.
+CHECKPOINT_PATHS_FN = re.compile(
+    r"fn config_paths\(&self\)\s*->\s*&'static \[&'static str\]\s*\{"
+)
 
 # `SystemExecutor` (crates/hardener-common/src/executor/mod.rs) has exactly one
 # file-creating method, `write_file`; the rest of its surface reads
@@ -342,14 +356,19 @@ REGISTRY = {
             "/etc is the distribution's own directory and is present on every "
             "host this runs on, so there is no parent for the plugin to ensure",
         ),
-        # Declared by firewall/mod.rs, which lists it first among the paths its
-        # apply checkpoints, so a host that never had the file records it absent
-        # and a rollback removes what this write created. That matters more here
-        # than for most entries: the file is what `nftables.service` loads at
-        # boot, so a rollback that left it behind would leave the applied
-        # ruleset coming back on every reboot, which is the applied posture
-        # surviving its own undo.
-        ("declared", ("nftables::NFTABLES_CONFIG_PATH",)),
+        # Declared by this backend's own `config_paths`, which the firewall
+        # apply hands straight to `create_checkpoint_for_apply` once it knows
+        # which backend it selected. A host that never had the file therefore
+        # records it absent and a rollback removes what this write created.
+        # That matters more here than for most entries: the file is what
+        # `nftables.service` loads at boot, so a rollback that left it behind
+        # would leave the applied ruleset coming back on every reboot, which is
+        # the applied posture surviving its own undo. The declaration sits on
+        # the backend rather than in one list at the apply site because that
+        # list also named this path on ufw and firewalld hosts, where no apply
+        # can create it and a rollback would have deleted whatever had arrived
+        # there instead.
+        ("declared", ("NFTABLES_CONFIG_PATH",)),
     ),
     ("audit/mod.rs", "write_file(Path::new(AUDIT_RULES_PATH)"): (
         ("ensured", "AUDIT_RULES_DIR"),
@@ -515,6 +534,9 @@ def checkpoint_declarations(text: str) -> str:
     ]
     regions += [
         span(text, match.end(), ";") for match in CHECKPOINT_PATH_LIST.finditer(text)
+    ]
+    regions += [
+        span(text, match.end(), "}") for match in CHECKPOINT_PATHS_FN.finditer(text)
     ]
     return "\n".join(regions)
 
