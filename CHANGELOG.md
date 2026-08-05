@@ -731,6 +731,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A ruleset `nft` would not parse was written to the boot path before `nft`
+  ever saw it.** The write precedes the load, so a file that rendered cleanly
+  and failed at load had already replaced the ruleset `nftables.service` reads
+  at boot, on a unit the same apply enabled. The render-time refusal that
+  guarded this read a `source` and nothing else, which is an enumeration of the
+  fields somebody thought of: a `port` reached the file as the operator's own
+  string until it was renotated, and the same shape returns with any field the
+  plugin later renders. The candidate ruleset is now parked in
+  `/run/linux-hardener-nftables-check.nft` and put to `nft --check` first, so
+  the parser that would refuse the file at load time is the one that judges it,
+  and a refusal costs a scratch file rather than the boot path. `/run` rather
+  than `/etc` deliberately: root-owned, so nobody unprivileged can swap the file
+  between the write and the check, and tmpfs, so anything an interrupted apply
+  leaves behind is gone at the next boot. It is outside every path the plugin
+  checkpoints, so a scratch file can never be mistaken for configuration to
+  restore or delete. Fails closed in every direction, and the scratch file is
+  removed whether the check passed or failed without its removal being allowed
+  to mask the verdict. The pure `source` check is kept, because it costs no host
+  access at all. Closes #100.
+
 - **A `port` directive with a leading zero installed a rule for a different
   port, and a remote apply reported success while locking the operator out.**
   Every layer of this tool reads a port with `str::parse::<u16>()`, which takes

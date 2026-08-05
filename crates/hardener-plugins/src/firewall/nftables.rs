@@ -12,12 +12,24 @@ use std::net::IpAddr;
 use std::path::Path;
 use tracing::{info, warn};
 
-/// The persistent ruleset `nftables.service` loads at boot on the
-/// distributions that read this path, which is not all of them: Fedora and RHEL
-/// ship `/etc/sysconfig/nftables.conf` instead, and that is issue #52. It is and the only nftables file this plugin checkpoints. Named once here
+/// The persistent ruleset `nftables.service` loads at boot on the distributions
+/// that read this path, which is not all of them: Fedora and RHEL ship
+/// `/etc/sysconfig/nftables.conf` instead, and that is issue #52.
+///
+/// It is also the only nftables file this plugin checkpoints. Named once here
 /// so the path the checkpoint captures, the path the rollback reloads for, and
 /// the path the reload actually feeds to `nft` cannot drift apart.
 pub(super) const NFTABLES_CONFIG_PATH: &str = "/etc/nftables.conf";
+
+/// Where a rendered ruleset is parked so `nft --check` can judge it before the
+/// boot path is touched.
+///
+/// `/run` rather than `/etc`, deliberately. It is root-owned and tmpfs, so an
+/// unprivileged user cannot swap the file between the write and the check, and
+/// anything left behind by an interrupted apply is gone at the next boot. It is
+/// also outside every path this plugin checkpoints, so a scratch file can never
+/// be mistaken for configuration to restore or delete.
+pub(super) const NFTABLES_CHECK_PATH: &str = "/run/linux-hardener-nftables-check.nft";
 
 /// The `inet` table this plugin owns, creates, replaces and is the only writer
 /// of. Named once here so the table the ruleset defines and the table the diff
@@ -181,6 +193,76 @@ impl NftablesBackend {
                 Vec::new()
             }
         }
+    }
+
+    /// Refuses a rendered ruleset `nft` will not parse, before
+    /// [`NFTABLES_CONFIG_PATH`] is touched.
+    ///
+    /// `render_ruleset` already refuses a `source` it cannot read, and that
+    /// check is worth keeping because it is pure and costs no host access. It
+    /// is also, on its own, an enumeration of the fields somebody thought of.
+    /// A `port` reached the file as the operator's own string until it was
+    /// renotated for #99, and the same shape can return with any field this
+    /// plugin later renders. Asking `nft` itself ends the class rather than the
+    /// instance: the parser that would refuse the file at load time is the one
+    /// that judges it here.
+    ///
+    /// The ordering is the entire point. `apply_rules` writes the ruleset and
+    /// then loads it, so a file that renders cleanly and fails at `nft` has
+    /// already replaced the ruleset `nftables.service` reads at boot, on a unit
+    /// the same apply enabled. Parking the candidate in [`NFTABLES_CHECK_PATH`]
+    /// and running `nft --check` against it moves that failure to a scratch
+    /// file and leaves the boot path exactly as it was.
+    ///
+    /// Fails CLOSED in every direction: a write that fails, an `nft` that
+    /// cannot be run, and a check that reports a problem all refuse the apply.
+    /// The scratch file is removed whether the check passed or failed, and its
+    /// removal is deliberately not allowed to mask the check's own verdict.
+    async fn refuse_a_ruleset_nft_will_not_parse(
+        &self,
+        ctx: &Context,
+        ruleset: &str,
+    ) -> Result<()> {
+        ctx.executor()
+            .write_file(Path::new(NFTABLES_CHECK_PATH), ruleset)
+            .await
+            .map_err(|e| {
+                HardeningError::Plugin(format!(
+                    "Could not write {NFTABLES_CHECK_PATH} to check the ruleset before \
+                     installing it: {e}. {NFTABLES_CONFIG_PATH} is untouched."
+                ))
+            })?;
+
+        let checked = ctx
+            .executor()
+            .execute_command("nft", &["--check", "--file", NFTABLES_CHECK_PATH])
+            .await;
+
+        // Runs before the verdict is read, so the scratch file goes whichever
+        // way the check went and a cleanup failure never becomes the answer.
+        if let Err(e) = ctx
+            .executor()
+            .execute_command("rm", &["-f", NFTABLES_CHECK_PATH])
+            .await
+        {
+            warn!("Could not remove {NFTABLES_CHECK_PATH} after checking the ruleset: {e}");
+        }
+
+        let output = checked.map_err(|e| {
+            HardeningError::Plugin(format!(
+                "Could not ask nft to check the ruleset before installing it: {e}. \
+                 {NFTABLES_CONFIG_PATH} is untouched."
+            ))
+        })?;
+
+        if !output.success() {
+            return Err(HardeningError::Plugin(format!(
+                "Refusing to install a ruleset nft will not parse: {}. \
+                 {NFTABLES_CONFIG_PATH} is untouched.",
+                output.stderr.trim()
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -532,6 +614,8 @@ impl FirewallBackend for NftablesBackend {
         // a ruleset rendered and then refused by `nft` would already be sitting
         // at the boot path.
         let ruleset = render_ruleset(rules)?;
+        self.refuse_a_ruleset_nft_will_not_parse(ctx, &ruleset)
+            .await?;
         let existing = self.existing_input_rules(ctx).await;
         let mut changes = Vec::with_capacity(rules.len());
 

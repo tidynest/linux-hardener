@@ -207,7 +207,7 @@ PLUGIN_SRC = Path("crates/hardener-plugins/src")
 # The number of file-creating call sites in the tree, pinned rather than
 # counted. Counted off the registry it would follow the registry down, and a
 # site added with no entry would be the exact thing this check cannot see.
-EXPECTED_SITE_COUNT = 11
+EXPECTED_SITE_COUNT = 12
 
 # `execute_command` is the escape hatch: it can materialise a path without ever
 # touching `write_file`. Only a literal argv[0] is recognised, and only these.
@@ -349,6 +349,29 @@ REGISTRY = {
         # Declared by ssh/mod.rs rather than by the file holding the write,
         # which is why the search is per plugin directory.
         ("declared", ("dropin::DROPIN_PATH",)),
+    ),
+    ("firewall/nftables.rs", "write_file(Path::new(NFTABLES_CHECK_PATH)"): (
+        (
+            "exempt",
+            "/run is created by the kernel before any unit starts and is "
+            "present on every host this runs on, so there is no parent for "
+            "the plugin to ensure",
+        ),
+        # Deliberately NOT checkpointed, and deliberately not in /etc. This is
+        # a scratch copy of the candidate ruleset, written only so that
+        # `nft --check` can judge it before the boot path is touched, and
+        # removed again in the same function whichever way the check went. It
+        # is on tmpfs, so anything an interrupted apply leaves behind is gone at
+        # the next boot, and it is root-owned, so nobody unprivileged can swap
+        # the file between the write and the check. No state of ours outlives a
+        # rollback here: the file the rollback restores is
+        # NFTABLES_CONFIG_PATH, and this path is never loaded, never read back,
+        # and never referenced by the unit.
+        (
+            "exempt",
+            "a scratch file removed by the same function that writes it, so no "
+            "state of ours outlives a rollback that never removes this file",
+        ),
     ),
     ("firewall/nftables.rs", "write_file(Path::new(NFTABLES_CONFIG_PATH)"): (
         (

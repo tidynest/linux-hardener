@@ -1244,6 +1244,20 @@ fn nft_apply_base(chain_body: &str) -> MockExecutor {
             },
         )
         .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
+        .with_command(
+            "nft",
+            &[
+                "--check",
+                "--file",
+                "/run/linux-hardener-nftables-check.nft",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "rm",
+            &["-f", "/run/linux-hardener-nftables-check.nft"],
+            nft_ok(),
+        )
 }
 
 /// An `nft list chain` body for the plugin's own input chain, with no rules.
@@ -1496,7 +1510,21 @@ async fn apply_rules_never_issues_a_per_rule_add() {
                 exit_code: 0,
             },
         )
-        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok());
+        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
+        .with_command(
+            "nft",
+            &[
+                "--check",
+                "--file",
+                "/run/linux-hardener-nftables-check.nft",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "rm",
+            &["-f", "/run/linux-hardener-nftables-check.nft"],
+            nft_ok(),
+        );
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let backend = NftablesBackend::new();
 
@@ -1537,7 +1565,21 @@ async fn apply_rules_reports_skipped_only_for_rules_already_present() {
                 exit_code: 0,
             },
         )
-        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok());
+        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
+        .with_command(
+            "nft",
+            &[
+                "--check",
+                "--file",
+                "/run/linux-hardener-nftables-check.nft",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "rm",
+            &["-f", "/run/linux-hardener-nftables-check.nft"],
+            nft_ok(),
+        );
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let backend = NftablesBackend::new();
 
@@ -1609,7 +1651,21 @@ async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_presen
         // table does not exist yet on this host, exactly as before, and the
         // atomic load must create it as part of the same transaction that
         // leaves the foreign table alone.
-        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok());
+        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
+        .with_command(
+            "nft",
+            &[
+                "--check",
+                "--file",
+                "/run/linux-hardener-nftables-check.nft",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "rm",
+            &["-f", "/run/linux-hardener-nftables-check.nft"],
+            nft_ok(),
+        );
     let mut ctx = Context::with_executor(Arc::new(executor.clone()));
     let plugin = FirewallHardeningPlugin::new();
 
@@ -1688,12 +1744,30 @@ async fn a_refused_load_leaves_the_rendered_file_on_disk() {
                 exit_code: 0,
             },
         )
+        // The check PASSES here and the load fails, which is deliberate: it is
+        // the residual case `nft --check` cannot cover, where the parse is fine
+        // and the kernel refuses the ruleset anyway. That is what keeps this
+        // test about the write/load ordering rather than about the check.
+        .with_command(
+            "nft",
+            &[
+                "--check",
+                "--file",
+                "/run/linux-hardener-nftables-check.nft",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "rm",
+            &["-f", "/run/linux-hardener-nftables-check.nft"],
+            nft_ok(),
+        )
         .with_command(
             "nft",
             &["-f", "/etc/nftables.conf"],
             CommandOutput {
                 stdout: String::new(),
-                stderr: "/etc/nftables.conf:4:19-19: Error: syntax error\n".to_string(),
+                stderr: "/etc/nftables.conf:4:19-19: Error: File exists\n".to_string(),
                 exit_code: 1,
             },
         );
@@ -1706,7 +1780,7 @@ async fn a_refused_load_leaves_the_rendered_file_on_disk() {
         .expect_err("a refused load must fail the whole backend");
 
     assert!(
-        failure.to_string().contains("syntax error"),
+        failure.to_string().contains("File exists"),
         "the operator must be told what nft said, got: {failure}"
     );
     assert!(
@@ -1716,6 +1790,97 @@ async fn a_refused_load_leaves_the_rendered_file_on_disk() {
         "the write precedes the load, so a refused load leaves the rendered \
          file at the boot path: that is the state, and it is pinned rather \
          than wished away"
+    );
+}
+
+/// A ruleset `nft` will not parse never reaches the boot path.
+///
+/// The render-time refusal reads a `source` and nothing else, which is an
+/// enumeration of the fields somebody thought of: a `port` reached the file as
+/// the operator's own string until #99 renotated it, and the same shape returns
+/// with any field this plugin later renders. Asking `nft --check` ends the
+/// class, because the parser that would refuse the file at load time is the one
+/// that judges it first.
+///
+/// The assertion is about the boot path, not about the error. Before this, a
+/// ruleset that rendered and failed at `nft` had already replaced
+/// `/etc/nftables.conf`, on a unit the same apply enabled.
+#[tokio::test]
+async fn a_ruleset_nft_refuses_never_reaches_the_boot_path() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = MockExecutor::new()
+        .with_command(
+            "nft",
+            &["list", "chain", "inet", "linux_hardener", "input"],
+            CommandOutput {
+                stdout: NFT_EMPTY_CHAIN.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "nft",
+            &[
+                "--check",
+                "--file",
+                "/run/linux-hardener-nftables-check.nft",
+            ],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "/run/linux-hardener-nftables-check.nft:4:19-19: Error: syntax \
+                         error, unexpected +\n"
+                    .to_string(),
+                exit_code: 1,
+            },
+        )
+        .with_command(
+            "rm",
+            &["-f", "/run/linux-hardener-nftables-check.nft"],
+            nft_ok(),
+        )
+        // Registered so it WOULD succeed if it were issued. The assertions are
+        // then what refuse the write and the load, rather than the mock
+        // refusing an unregistered command.
+        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok());
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let backend = NftablesBackend::new();
+
+    let refusal = backend
+        .apply_rules(&ctx, &backend.get_default_rules())
+        .await
+        .expect_err("a ruleset nft will not parse must fail the whole backend");
+
+    assert!(
+        refusal.to_string().contains("unexpected +"),
+        "nft's own words must reach the operator, got: {refusal}"
+    );
+    assert!(
+        !executor
+            .files()
+            .contains_key(Path::new("/etc/nftables.conf")),
+        "the boot path must be untouched when the check refused the ruleset"
+    );
+    assert!(
+        !executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| command == "nft"
+                && args.first().map(String::as_str) == Some("-f")),
+        "nft must not be asked to load a ruleset its own check refused, got: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(command, args)| command == "rm"
+                && args.contains(&"/run/linux-hardener-nftables-check.nft".to_string())),
+        "the scratch file must be removed whichever way the check went, got: {:?}",
+        executor.log().commands_executed
     );
 }
 
@@ -1835,7 +2000,21 @@ async fn the_apply_checkpoints_the_path_its_backend_writes() {
                 exit_code: 0,
             },
         )
-        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok());
+        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
+        .with_command(
+            "nft",
+            &[
+                "--check",
+                "--file",
+                "/run/linux-hardener-nftables-check.nft",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "rm",
+            &["-f", "/run/linux-hardener-nftables-check.nft"],
+            nft_ok(),
+        );
     let mut ctx =
         Context::with_executor_and_checkpoint(Arc::new(executor), test_checkpoint_manager().await);
 
