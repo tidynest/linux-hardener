@@ -731,6 +731,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The declared minimum Rust version was wrong, and the workspace could not be
+  built on it.** `rust-version` said `1.85` and the README badge repeated it,
+  both resting on the reasoning that edition 2024 stabilised in 1.85 rather than
+  on any measurement. The tree uses let-chains (`if cond && let Some(x) = opt`)
+  in 31 places across 8 crates, and those stabilised in **1.88**: 1.87 rejects
+  them with `error[E0658]: 'let' expressions in this position are unstable`.
+  Anyone taking the declared floor at its word got a compiler error rather than
+  cargo's own message naming the version. The floor is now `1.88`, measured in
+  both directions: 1.87 fails on the feature, and `cargo +1.88 check --workspace
+  --all-targets` exits 0 over the whole tree including the desktop and WASM
+  crates. A new `msrv` CI job builds on the declared version on every push and
+  pull request, reading it out of `Cargo.toml` rather than repeating it, which
+  is what stops the declaration drifting from the tree again: every other job
+  installs `@stable`, so this class of drift was invisible to all of them.
+  `docs/contributing/building.md` had predicted this exact failure in advance
+  and named the missing CI job as the fix.
+
 - **An apply could install a firewall that admitted nothing, or that severed the
   connection carrying it, and both were reached through documented routes.** The
   input chain is rendered with `policy drop` whatever it holds, so the surviving

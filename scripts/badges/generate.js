@@ -26,7 +26,7 @@ const logoURI = name => {
 const BADGES = [
   { file: 'version',  label: 'version',  message: '1.5.1',      color: TEAL },
   { file: 'license',  label: 'license',  message: 'Apache-2.0', color: TEAL },
-  { file: 'rust',     label: 'rust',     message: '1.85+',      color: TEAL,       logo: 'rust' },
+  { file: 'rust',     label: 'rust',     message: '1.88+',      color: TEAL,       logo: 'rust' },
   { file: 'aur',      label: 'AUR',      message: '1.5.1',      color: TEAL,       logo: 'archlinux' },
   { file: 'platform', label: 'platform', message: 'Linux',      color: TEAL,       logo: 'linux' },
   { file: 'tests',    label: 'tests',    message: '1400+',      color: TEAL_TESTS },
