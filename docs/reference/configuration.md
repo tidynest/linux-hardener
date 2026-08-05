@@ -340,6 +340,21 @@ before any plugin sees it. Backends differ on this and the difference is handled
 for you: nftables and firewalld take the dash as written, and ufw, which wants a
 colon and rejects the dash outright, is given `80:443`.
 
+**On the nftables backend the tool owns exactly one table, `inet
+linux_hardener`, and writes nothing else.** It creates that table, replaces it
+outright on every apply so a repeated apply cannot stack duplicate rules, and
+never touches `inet filter` or any other table on the host. `inet filter` is the
+conventional default name rather than an owned one, and most distributions ship
+a packaged ruleset using it, so deleting it would destroy whatever the
+administrator put there. Docker's, libvirt's and `iptables-nft`'s tables are
+left alone for the same reason.
+
+The consequence worth knowing before an apply: this tool's chain hooks `input`
+with `policy drop`, and a `drop` verdict in any chain ends a packet's journey,
+so an accept an administrator wrote in their own table no longer keeps a port
+open. A port that must stay open is expressed as a directive to this tool, which
+is what the directives above are for.
+
 ---
 
 ## Policy exceptions

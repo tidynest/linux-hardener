@@ -809,7 +809,7 @@ fn ufw_inactive_nftables_active_executor() -> MockExecutor {
             "nft",
             &["list", "ruleset"],
             CommandOutput {
-                stdout: "table inet filter {\n\tchain input {\n\t\ttype filter hook input \
+                stdout: "table inet linux_hardener {\n\tchain input {\n\t\ttype filter hook input \
                           priority 0; policy drop;\n\t}\n}\n"
                     .to_string(),
                 stderr: String::new(),
@@ -889,7 +889,7 @@ fn ufw_active_nftables_also_present_executor() -> MockExecutor {
             "nft",
             &["list", "ruleset"],
             CommandOutput {
-                stdout: "table inet filter {\n\tchain input {\n\t\ttype filter hook input \
+                stdout: "table inet linux_hardener {\n\tchain input {\n\t\ttype filter hook input \
                           priority 0; policy drop;\n\t}\n}\n"
                     .to_string(),
                 stderr: String::new(),
@@ -1026,7 +1026,7 @@ async fn test_nftables_is_enabled_true_with_input_hook_chain() {
         "nft",
         &["list", "ruleset"],
         CommandOutput {
-            stdout: "table inet filter {\n\tchain input {\n\t\ttype filter hook input \
+            stdout: "table inet linux_hardener {\n\tchain input {\n\t\ttype filter hook input \
                       priority 0; policy drop;\n\t}\n}\n"
                 .to_string(),
             stderr: String::new(),
@@ -1232,7 +1232,7 @@ fn nft_apply_base(chain_body: &str) -> MockExecutor {
     MockExecutor::new()
         .with_command(
             "nft",
-            &["list", "chain", "inet", "filter", "input"],
+            &["list", "chain", "inet", "linux_hardener", "input"],
             CommandOutput {
                 stdout: chain_body.to_string(),
                 stderr: String::new(),
@@ -1242,8 +1242,8 @@ fn nft_apply_base(chain_body: &str) -> MockExecutor {
         .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
 }
 
-/// An `nft list chain inet filter input` body with no rules.
-const NFT_EMPTY_CHAIN: &str = "table inet filter {\n\tchain input {\n\t\ttype filter hook input priority 0; policy drop;\n\t}\n}\n";
+/// An `nft list chain` body for the plugin's own input chain, with no rules.
+const NFT_EMPTY_CHAIN: &str = "table inet linux_hardener {\n\tchain input {\n\t\ttype filter hook input priority 0; policy drop;\n\t}\n}\n";
 
 /// True if the command log contains an `nft add rule ...` invocation.
 fn logged_nft_add_rule(executor: &MockExecutor) -> bool {
@@ -1334,7 +1334,7 @@ async fn test_nftables_apply_skips_all_rules_already_present() {
 
     // Canonical nft output: `iif "lo"` is quoted and established uses the
     // comma-joined state list; the presence check must tolerate both.
-    let full_chain = "table inet filter {\n\tchain input {\n\t\t\
+    let full_chain = "table inet linux_hardener {\n\tchain input {\n\t\t\
         type filter hook input priority 0; policy drop;\n\t\t\
         iif \"lo\" accept\n\t\tct state established,related accept\n\t\t\
         tcp dport 22 accept\n\t\tdrop\n\t}\n}\n";
@@ -1371,7 +1371,7 @@ async fn test_nftables_apply_adds_only_missing_rules() {
     use hardener_plugins::firewall::nftables::NftablesBackend;
 
     // loopback + ssh already present; established + drop are missing.
-    let partial_chain = "table inet filter {\n\tchain input {\n\t\t\
+    let partial_chain = "table inet linux_hardener {\n\tchain input {\n\t\t\
         type filter hook input priority 0; policy drop;\n\t\t\
         iif \"lo\" accept\n\t\ttcp dport 22 accept\n\t}\n}\n";
     let executor = nft_apply_base(partial_chain);
@@ -1421,13 +1421,13 @@ async fn apply_rules_never_issues_a_per_rule_add() {
     // both something to add and something to skip; deliberately no `add
     // rule` command is registered, so any attempt logs before this mock
     // refuses it.
-    let partial_chain = "table inet filter {\n\tchain input {\n\t\t\
+    let partial_chain = "table inet linux_hardener {\n\tchain input {\n\t\t\
         type filter hook input priority 0; policy drop;\n\t\t\
         iif \"lo\" accept\n\t\ttcp dport 22 accept\n\t}\n}\n";
     let executor = MockExecutor::new()
         .with_command(
             "nft",
-            &["list", "chain", "inet", "filter", "input"],
+            &["list", "chain", "inet", "linux_hardener", "input"],
             CommandOutput {
                 stdout: partial_chain.to_string(),
                 stderr: String::new(),
@@ -1462,13 +1462,13 @@ async fn apply_rules_reports_skipped_only_for_rules_already_present() {
     use hardener_plugins::firewall::nftables::NftablesBackend;
 
     // loopback + ssh already present; established + drop are missing.
-    let partial_chain = "table inet filter {\n\tchain input {\n\t\t\
+    let partial_chain = "table inet linux_hardener {\n\tchain input {\n\t\t\
         type filter hook input priority 0; policy drop;\n\t\t\
         iif \"lo\" accept\n\t\ttcp dport 22 accept\n\t}\n}\n";
     let executor = MockExecutor::new()
         .with_command(
             "nft",
-            &["list", "chain", "inet", "filter", "input"],
+            &["list", "chain", "inet", "linux_hardener", "input"],
             CommandOutput {
                 stdout: partial_chain.to_string(),
                 stderr: String::new(),
@@ -1505,7 +1505,7 @@ async fn apply_rules_reports_skipped_only_for_rules_already_present() {
 /// Was the regression test for the ENOENT bug `ensure_managed_chain` fixed:
 /// a foreign table already carrying a `hook input` chain made `is_enabled`
 /// believe a filter was active, so `enable()` was skipped while this
-/// plugin's own `inet filter` table still did not exist. That bug and its
+/// plugin's own table still did not exist. That bug and its
 /// fix are both gone now that the atomic load creates the table as part of
 /// the same transaction regardless of what other tables already exist, so
 /// this is repurposed as finding 1's regression test instead: the exact
@@ -1543,7 +1543,7 @@ async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_presen
                 exit_code: 0,
             },
         )
-        // No `list chain inet filter input` is registered: this plugin's own
+        // No `list chain` for the plugin's own input chain is registered: its
         // table does not exist yet on this host, exactly as before, and the
         // atomic load must create it as part of the same transaction that
         // leaves the foreign table alone.
@@ -2687,7 +2687,7 @@ fn nft_chain_refused_executor() -> MockExecutor {
             "nft",
             &["list", "ruleset"],
             CommandOutput {
-                stdout: "table inet filter {\n  chain input {\n    type filter hook input \
+                stdout: "table inet linux_hardener {\n  chain input {\n    type filter hook input \
                          priority 0; policy drop;\n  }\n}\n"
                     .to_string(),
                 stderr: String::new(),

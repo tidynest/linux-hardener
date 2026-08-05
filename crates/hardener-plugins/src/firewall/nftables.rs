@@ -17,6 +17,30 @@ use tracing::{info, warn};
 /// the path the reload actually feeds to `nft` cannot drift apart.
 pub(super) const NFTABLES_CONFIG_PATH: &str = "/etc/nftables.conf";
 
+/// The `inet` table this plugin owns, creates, replaces and is the only writer
+/// of. Named once here so the table the ruleset defines and the table the diff
+/// reads back cannot drift apart.
+///
+/// Deliberately **not** `inet filter`. That is the conventional default name,
+/// not a name that belongs to anybody, and this machine's own package-shipped
+/// `/etc/nftables.conf` uses it. Replacing a table outright is only honest
+/// against one we created, and nothing distinguishes an `inet filter` we made
+/// from an `inet filter` the administrator made: measured in a network
+/// namespace, an administrator's own rules survived the old incremental path
+/// and were destroyed by a `delete table inet filter` in the rendered one.
+/// Owning a distinctly named table is what makes the replacement safe, and it
+/// is why no `delete` in this file may ever name a table this plugin did not
+/// create.
+///
+/// **The consequence to state plainly:** this plugin no longer merges into the
+/// administrator's chain, so an accept of theirs no longer keeps a port open.
+/// Both tables hook `input`, and a `drop` verdict in either ends the packet's
+/// journey, so this table's `policy drop` governs whatever its own rules do
+/// not accept. A port an operator wants open has to be expressed as a
+/// directive to this tool. That is the same posture the plugin always
+/// intended; what changes is that reaching it no longer destroys anything.
+pub(super) const NFTABLES_TABLE: &str = "linux_hardener";
+
 /// Nftables firewall backend for modern Linux systems.
 ///
 /// Nftables uses a hierarchical structure:
@@ -59,13 +83,19 @@ impl NftablesBackend {
     /// Build nftables command arguments from a Rule.
     ///
     /// Converts backend-agnostic Rule into nft command syntax:
-    /// e.g., `nft add rule inet filter input tcp dport 22 accept`
+    /// e.g., `nft add rule inet linux_hardener input tcp dport 22 accept`
+    ///
+    /// No caller runs this argv any more: the whole ruleset is rendered and
+    /// loaded in one transaction, so the five leading elements survive only as
+    /// the address the statement would be added at. They are kept, and kept
+    /// correct, because both consumers slice from index 5 and a shortened
+    /// prefix would silently move what `args[5..]` means.
     pub(crate) fn build_nft_rule_args(&self, rule: &Rule) -> Vec<String> {
         let mut args = vec![
             "add".to_string(),
             "rule".to_string(),
             "inet".to_string(),
-            "filter".to_string(),
+            NFTABLES_TABLE.to_string(),
             "input".to_string(),
         ];
 
@@ -117,9 +147,14 @@ impl NftablesBackend {
     /// every baseline rule is treated as absent and (re-)added. A duplicate is
     /// harmless; a silently-missing baseline rule (e.g. the default drop) is a
     /// real security gap.
+    ///
+    /// Reads [`NFTABLES_TABLE`] rather than `inet filter` because that is the
+    /// table [`render_ruleset`] writes. Reading the other one would compare
+    /// this apply against a chain no apply of ours maintains, so every baseline
+    /// rule would report as newly added on a host that already had them all.
     async fn existing_input_rules(&self, ctx: &Context) -> Vec<Vec<String>> {
         match self
-            .execute_nft(ctx, &["list", "chain", "inet", "filter", "input"])
+            .execute_nft(ctx, &["list", "chain", "inet", NFTABLES_TABLE, "input"])
             .await
         {
             Ok(output) => parse_input_chain_rules(&output),
@@ -136,7 +171,7 @@ impl NftablesBackend {
 
 /// Canonicalises an nftables rule statement into comparable tokens.
 ///
-/// A rule we pass to `nft add rule inet filter input <statement>` must compare
+/// A rule this plugin renders into its own table's `input` chain must compare
 /// equal to the same rule as printed back by `nft list chain`, but nft
 /// rewrites its output: a bare interface name gains quotes (`iif lo` becomes
 /// `iif "lo"`) and, with handles enabled, a trailing `# handle N` comment is
@@ -152,7 +187,7 @@ fn canonical_rule_tokens<'a>(tokens: impl Iterator<Item = &'a str>) -> Vec<Strin
 }
 
 /// Extracts the canonical token list of every actual rule line in an
-/// `nft list chain inet filter input` body, skipping the structural lines
+/// `nft list chain inet <table> input` body, skipping the structural lines
 /// (table/chain headers, the base-chain `type ... hook ...` spec, braces and
 /// comments). The result feeds the presence check in [`apply_rules`].
 fn parse_input_chain_rules(chain_output: &str) -> Vec<Vec<String>> {
@@ -191,24 +226,33 @@ impl Default for NftablesBackend {
 /// final drop rule: within the transaction it costs nothing, and it means a
 /// host whose load fails outright stays closed rather than open.
 ///
-/// Replaces only THIS PLUGIN'S `inet filter` table, atomically, and
-/// deliberately leaves every other table on the host alone. A whole-ruleset
-/// `flush ruleset` was the first draft of this file and was rejected: Docker,
-/// libvirt, and iptables-nft all create their own nftables tables on a host
-/// that also runs this plugin (this backend's own `is_enabled` already
-/// documents that), and a `flush ruleset` would tear all of them down on
-/// every apply, taking container and VM networking with it. `table inet
-/// filter` first creates the table if it is absent, so the following `delete
-/// table inet filter` cannot fail on a host that never had one; the final
-/// `table inet filter { ... }` then rebuilds it with the baseline rules. All
-/// three statements land in the one `nft -f`, so the ordering guarantee below
-/// is unaffected: nothing this plugin does not own is ever touched, and this
-/// plugin's own table is still replaced outright rather than merged into,
-/// which is what stops a repeated apply from stacking duplicate rules.
+/// Replaces [`NFTABLES_TABLE`] and nothing else, atomically, leaving every
+/// other table on the host alone. Two drafts of this file were rejected before
+/// this one, in the same direction and for the same reason.
+///
+/// A whole-ruleset `flush ruleset` came first: Docker, libvirt, and
+/// iptables-nft all create their own nftables tables on a host that also runs
+/// this plugin (this backend's own `is_enabled` already documents that), and
+/// flushing would tear all of them down on every apply, taking container and
+/// VM networking with it. Scoping the same three statements to `inet filter`
+/// came second, and was narrower without being correct: `inet filter` is the
+/// conventional default name rather than an owned one, so
+/// `delete table inet filter` destroyed an administrator's own rules on any
+/// host using it, which was measured rather than argued. Only a distinctly
+/// named table can be replaced outright in good conscience, which is what
+/// [`NFTABLES_TABLE`] is for and what its doc comment records.
+///
+/// The bare `table inet <name>` first creates the table if it is absent, so
+/// the following `delete` cannot fail on a host that never had one; the final
+/// definition then rebuilds it with the baseline rules. All three statements
+/// land in the one `nft -f`, so the ordering guarantee below is unaffected:
+/// nothing this plugin does not own is ever touched, and the table it does own
+/// is replaced outright rather than merged into, which is what stops a
+/// repeated apply from stacking duplicate rules.
 ///
 /// Statements come from [`NftablesBackend::build_nft_rule_args`], sliced from
-/// index 5 exactly as `apply_rules` slices it, so the file and the incremental
-/// path cannot come to disagree about what a rule means.
+/// index 5 exactly as `apply_rules` slices it, so the file and the diff cannot
+/// come to disagree about what a rule means.
 pub(super) fn render_ruleset(rules: &[Rule]) -> String {
     let backend = NftablesBackend::new();
     let statements: Vec<String> = rules
@@ -220,9 +264,9 @@ pub(super) fn render_ruleset(rules: &[Rule]) -> String {
         .collect();
 
     format!(
-        "table inet filter\n\
-         delete table inet filter\n\
-         table inet filter {{\n\
+        "table inet {NFTABLES_TABLE}\n\
+         delete table inet {NFTABLES_TABLE}\n\
+         table inet {NFTABLES_TABLE} {{\n\
          \x20   chain input {{\n\
          \x20       type filter hook input priority 0; policy drop;\n\
          {}\n\
@@ -389,7 +433,7 @@ impl FirewallBackend for NftablesBackend {
 
         for rule in rules {
             let nft_args = self.build_nft_rule_args(rule);
-            // The rule statement is everything after `add rule inet filter input`.
+            // The rule statement is everything after `add rule <family> <table> <chain>`.
             let wanted = canonical_rule_tokens(nft_args[5..].iter().map(String::as_str));
 
             changes.push(if existing.contains(&wanted) {

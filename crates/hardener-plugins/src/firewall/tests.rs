@@ -1680,26 +1680,48 @@ fn the_ssh_accept_precedes_the_drop_all_rule() {
     );
 }
 
-/// The load must replace this plugin's own `inet filter` table outright
-/// rather than merge into it, or a second apply stacks a duplicate of every
-/// baseline rule. That replacement must stay scoped to the plugin's own
-/// table: a whole-ruleset flush was the first draft of this file and was
-/// rejected, because it would destroy every other nftables table on the
-/// host, Docker's and libvirt's included, alongside this plugin's own.
+/// The load must replace the plugin's own table outright rather than merge
+/// into it, or a second apply stacks a duplicate of every baseline rule, and
+/// the replacement must reach no table the plugin did not create.
+///
+/// Both rejected drafts are pinned by name, because both are destructive and
+/// both looked reasonable when written. A whole-ruleset `flush ruleset` came
+/// first and would take Docker's and libvirt's tables down with it. Scoping
+/// the same statements to `inet filter` came second: that is the conventional
+/// default name and not an owned one, so the delete destroyed administrators'
+/// own rules on any host using it, measured in a network namespace against an
+/// admin chain that survived the old incremental path and did not survive
+/// this one.
 #[test]
 fn the_rendered_file_replaces_only_its_own_table() {
     let rendered = nftables::render_ruleset(&get_baseline_rules());
+    let table = nftables::NFTABLES_TABLE;
 
+    assert_ne!(
+        table, "filter",
+        "the owned table must not be named `filter`: that is the conventional \
+         default every distribution's own ruleset uses, so replacing it \
+         replaces whatever the administrator put there"
+    );
     assert!(
-        rendered.starts_with("table inet filter\ndelete table inet filter\n"),
+        rendered.starts_with(&format!("table inet {table}\ndelete table inet {table}\n")),
         "the file must create, then delete, then rebuild its own table, or a \
          second apply either fails against an absent table or merges into a \
          present one: rendered\n{rendered}"
     );
-    assert!(
-        !rendered.contains("flush ruleset"),
-        "a whole-ruleset flush would destroy every other nftables table on \
-         the host, not only this plugin's own: rendered\n{rendered}"
+
+    let deleted: Vec<&str> = rendered
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("delete ") || line.starts_with("flush "))
+        .collect();
+    assert_eq!(
+        deleted,
+        vec![format!("delete table inet {table}")],
+        "the ruleset may destroy its own table and nothing else: a \
+         `flush ruleset` takes down Docker's and libvirt's tables, and any \
+         delete naming another table takes down whatever its owner put there. \
+         Rendered\n{rendered}"
     );
 }
 

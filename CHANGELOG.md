@@ -22,12 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   live without the accepts beside it; nftables applies a file or none of it.
   `policy drop` is kept rather than traded for `accept` plus the baseline's
   final drop rule, so a host whose load fails outright stays closed rather than
-  open. The replacement is **scoped to this plugin's own table**, with
-  `table inet filter` then `delete table inet filter` then the new definition,
-  all in the same transaction: a whole-ruleset flush was written first and
-  rejected, because Docker, libvirt and `iptables-nft` create their own nftables
-  tables and flushing would tear them down on a host this tool was only asked to
-  harden. Per-rule reporting is unchanged, the diff being taken before the load,
+  open. The replacement is **scoped to a table this plugin owns**, `inet
+  linux_hardener`, with the bare `table` declaration then `delete table` then
+  the new definition, all in the same transaction. Two wider drafts were written
+  and rejected before it. A whole-ruleset `flush ruleset` came first and would
+  tear down the tables Docker, libvirt and `iptables-nft` create, on a host this
+  tool was only asked to harden. Scoping those same statements to `inet filter`
+  came second and was narrower without being correct: that is the conventional
+  default name rather than an owned one, most distributions ship a packaged
+  ruleset using it, and measured in a network namespace against an
+  administrator's chain holding two accepts, the old incremental path left both
+  standing while a rendered `delete table inet filter` removed both. **Stated
+  consequence of owning a separate table:** the plugin no longer merges into the
+  administrator's chain, so an accept of theirs no longer keeps a port open,
+  because a `drop` verdict in any chain ends a packet's journey and this chain's
+  `policy drop` governs whatever its own rules do not accept. A port that must
+  stay open is expressed as a directive to this tool.
+  Per-rule reporting is unchanged, the diff being taken before the load,
   so `applied_change_count()` and `is_skipped()` keep meaning what they meant.
   `ensure_managed_chain` is deleted and `enable` now only enables the unit at
   boot. Because an apply now creates `/etc/nftables.conf` on any host that
