@@ -711,6 +711,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The four tests guarding the rendered nftables ruleset could not fail.**
+  Each asserted with `contains` or `find` over the whole rendered blob, which
+  anchors a needle to nothing, and two mutations proved the cost while the whole
+  suite stayed green. Rendering every statement behind a `# ` marker ships the
+  input chain with `policy drop;` and no effective rules, which is the lockout
+  of #92 delivered in one transaction instead of two, and every needle still
+  matched inside the commented line in the same byte order. Slicing the argv
+  from index 4 rather than 5 prefixes every statement with the chain name, which
+  `nft` refuses outright, and a needle built from `args[5..]` is then a suffix
+  of the rendered line and invisible to `contains`. The assertions now compare
+  whole lines for equality, against the input chain's rules alone, so a
+  commented-out statement is not its statement and a prefixed one is not
+  either; the chain is additionally required to hold one line per baseline rule
+  and nothing else, which refuses an addition as well as a removal. Both
+  mutations are now killed by a named assertion. Closes #96.
+
 - **The SSH test-container boot script could not cold-boot a container, which
   is the only thing it exists to do.** Its registration wait read
   `machinectl status` into a bare assignment through a pipeline. Until the

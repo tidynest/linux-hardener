@@ -1602,63 +1602,81 @@ fn a_value_that_is_not_a_range_is_handed_to_ufw_unchanged() {
     );
 }
 
-/// The ordering guarantee issue #92 is about, asserted inside the input chain
-/// alone.
+/// The input chain's rules, one whole line per element, with the chain header
+/// and the braces around it removed.
 ///
-/// Searching the whole rendered file was vacuous: the `forward` chain's own
-/// `policy drop` always follows the statements block, so any "the drop comes
-/// last" assertion held regardless of rule order. The needles come from
-/// `build_nft_rule_args` so the test cannot drift from what a rule renders as.
-#[test]
-fn the_ssh_accept_precedes_the_drop_all_rule() {
-    let backend = nftables::NftablesBackend::new();
-    let rules = get_baseline_rules();
-    let rendered = nftables::render_ruleset(&rules);
-
-    let statement = |needle: &str| {
-        let rule = rules
-            .iter()
-            .find(|r| r.rule_description.contains(needle))
-            .unwrap_or_else(|| panic!("no baseline rule describing {needle:?}"));
-        backend.build_nft_rule_args(rule)[5..].join(" ")
-    };
-
-    // The rule statements alone. Both the input chain's own `policy drop;` and
-    // the forward chain's contain the drop-all rule's entire statement, which
-    // is the bare string `drop`, so any search across the chain header matches
-    // a policy declaration instead of a rule. Two earlier versions of this test
-    // did exactly that, in both directions: one could never fail, one could
-    // never pass.
-    let statements = rendered
+/// Every assertion about the rendered ruleset used to be a `contains` or a
+/// `find` over the whole blob, which anchors a needle to nothing, and two
+/// mutations proved the cost. Rendering each statement behind a `# ` marker
+/// ships `policy drop;` with no effective rules, which is issue #92's own
+/// outcome delivered in one transaction, and every needle still matched inside
+/// the commented line in the same byte order. Slicing the argv from index 4
+/// rather than 5 prefixes every statement with the chain name, which `nft`
+/// refuses outright, and a needle built from `args[5..]` is then a suffix of
+/// the rendered line and invisible to `contains`.
+///
+/// Comparing whole lines for equality kills both: a commented-out statement is
+/// not its statement, and a prefixed one is not its statement either.
+fn input_chain_rule_lines(rendered: &str) -> Vec<String> {
+    rendered
         .split("chain input {")
         .nth(1)
         .expect("an input chain must be rendered")
         .split("chain forward")
         .next()
         .expect("the input chain must end before the forward chain")
-        .split_once("policy drop;")
-        .expect("the input chain must declare its policy before its rules")
-        .1;
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && *line != "}")
+        .skip_while(|line| line.contains("hook input"))
+        .map(str::to_string)
+        .collect()
+}
 
-    let ssh = statements
-        .find(&statement("Allow SSH"))
-        .expect("the SSH accept must be among the input chain's rules");
-    let established = statements
-        .find(&statement("established and related"))
-        .expect("the established/related accept must be among the input chain's rules");
-    let drop_all = statements
-        .find(&statement("Drop all other"))
-        .expect("the drop-all rule must be among the input chain's rules");
+/// The ordering guarantee issue #92 is about, asserted inside the input chain
+/// alone.
+///
+/// Searching the whole rendered file was vacuous: the `forward` chain's own
+/// `policy drop` always follows the statements block, so any "the drop comes
+/// last" assertion held regardless of rule order. The needles come from
+/// `build_nft_rule_args` so the test cannot drift from what a rule renders as,
+/// and each is matched against a whole line for the reasons
+/// [`input_chain_rule_lines`] records.
+#[test]
+fn the_ssh_accept_precedes_the_drop_all_rule() {
+    let backend = nftables::NftablesBackend::new();
+    let rules = get_baseline_rules();
+    let rendered = nftables::render_ruleset(&rules);
+    let statements = input_chain_rule_lines(&rendered);
+
+    let position = |needle: &str| {
+        let rule = rules
+            .iter()
+            .find(|r| r.rule_description.contains(needle))
+            .unwrap_or_else(|| panic!("no baseline rule describing {needle:?}"));
+        let statement = backend.build_nft_rule_args(rule)[5..].join(" ");
+        statements
+            .iter()
+            .position(|line| *line == statement)
+            .unwrap_or_else(|| {
+                panic!(
+                    "no rule of the input chain is exactly {statement:?}, so the \
+                     rule describing {needle:?} is not in force: the chain's rules \
+                     were {statements:#?}"
+                )
+            })
+    };
 
     assert!(
-        ssh < drop_all,
+        position("Allow SSH") < position("Drop all other"),
         "the SSH accept must precede the drop-all rule, or a remote apply locks \
-         the operator out: rule statements were\n{statements}"
+         the operator out: the input chain's rules were {statements:#?}"
     );
     assert!(
-        established < drop_all,
+        position("established and related") < position("Drop all other"),
         "the established/related accept must precede the drop-all rule, or an \
-         in-flight connection is severed: rule statements were\n{statements}"
+         in-flight connection is severed: the input chain's rules were \
+         {statements:#?}"
     );
 }
 
@@ -1688,16 +1706,21 @@ fn the_rendered_file_replaces_only_its_own_table() {
 /// The input chain keeps its drop policy. Inside one transaction it is never
 /// live without the accepts, and dropping it would leave a host that fails a
 /// mid-apply error open rather than closed.
+///
+/// Each declaration is matched as a whole line: a chain header behind a `# `
+/// marker still contains every substring of itself, and a chain that declares
+/// no type or hook is not a filter chain at all.
 #[test]
 fn the_input_chain_keeps_its_drop_policy() {
     let rendered = nftables::render_ruleset(&get_baseline_rules());
+    let declares = |declaration: &str| rendered.lines().any(|line| line.trim() == declaration);
 
     assert!(
-        rendered.contains("hook input priority 0; policy drop;"),
+        declares("type filter hook input priority 0; policy drop;"),
         "input must stay policy drop: rendered\n{rendered}"
     );
     assert!(
-        rendered.contains("hook output priority 0; policy accept;"),
+        declares("type filter hook output priority 0; policy accept;"),
         "output must stay policy accept, or the host cannot reply at all: \
          rendered\n{rendered}"
     );
@@ -1705,21 +1728,34 @@ fn the_input_chain_keeps_its_drop_policy() {
 
 /// The renderer and the incremental path must not disagree about what a rule
 /// means, so both take their statement from `build_nft_rule_args`.
+///
+/// Asserted in both directions. Every baseline rule must render as a whole
+/// line, which refuses a statement that has gained a prefix or a comment
+/// marker, and the chain must hold no line beyond them, which refuses one that
+/// nothing in the baseline asked for.
 #[test]
 fn every_baseline_rule_renders_the_statement_the_argv_builder_produces() {
     let backend = nftables::NftablesBackend::new();
-    let rendered = nftables::render_ruleset(&get_baseline_rules());
+    let rules = get_baseline_rules();
+    let rendered = nftables::render_ruleset(&rules);
+    let statements = input_chain_rule_lines(&rendered);
 
-    for rule in get_baseline_rules() {
-        let args = backend.build_nft_rule_args(&rule);
-        let statement = args[5..].join(" ");
+    for rule in &rules {
+        let statement = backend.build_nft_rule_args(rule)[5..].join(" ");
         assert!(
-            rendered.contains(&statement),
-            "rule {:?} rendered as something other than {statement:?}: \
-             rendered\n{rendered}",
+            statements.contains(&statement),
+            "rule {:?} rendered as something other than the line {statement:?}: \
+             the input chain's rules were {statements:#?}",
             rule.rule_description
         );
     }
+
+    assert_eq!(
+        statements.len(),
+        rules.len(),
+        "the input chain must hold one rule per baseline rule and nothing \
+         else: its rules were {statements:#?}"
+    );
 }
 
 /// Each backend checkpoints what it writes, and never a path another backend
