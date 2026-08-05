@@ -731,6 +731,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An apply could install a firewall that admitted nothing, or that severed the
+  connection carrying it, and both were reached through documented routes.** The
+  input chain is rendered with `policy drop` whatever it holds, so the surviving
+  rules are the whole of what a host still admits. Excepting every rule left a
+  chain dropping even loopback: not a stricter firewall, an unreachable host.
+  Excepting the rule named "Allow SSH to prevent lockout" **alone** was sharper,
+  because loopback and established connections were still accepted, so a check
+  asking only "did anything survive?" waved it through while a remote apply
+  severed itself: issue #92's outcome reached through configuration rather than
+  through ordering. An apply now refuses both before the backend is asked to
+  install anything, and says which shape it is. The second refusal applies to a
+  **remote** session only; an operator at a console who excepts the SSH rule has
+  said something coherent, and refusing it would override a decision this tool
+  asked them to record. The same precedent already exists in the ssh plugin,
+  where `PermitRootLogin no` is not set over the session it would sever.
+  **A third route was found while testing and is covered by the same guard:**
+  `ssh.action = "drop"` is a tightening, so the clamp permits it, and the rule
+  then survives under its own id while admitting nothing. Presence is not
+  admission, so the guard asks what a rule does rather than whether it is there.
+  Closes #101.
+
 - **A ruleset `nft` would not parse was written to the boot path before `nft`
   ever saw it.** The write precedes the load, so a file that rendered cleanly
   and failed at load had already replaced the ruleset `nftables.service` reads

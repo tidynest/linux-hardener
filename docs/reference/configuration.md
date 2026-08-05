@@ -346,6 +346,16 @@ before any plugin sees it. Backends differ on this and the difference is handled
 for you: nftables and firewalld take the dash as written, and ufw, which wants a
 colon and rejects the dash outright, is given `80:443`.
 
+**An apply refuses to install a firewall that admits nothing.** The input chain
+carries `policy drop`, so the rules are the whole of what the host still admits.
+Excepting every rule, or every accepting one, leaves a chain that drops even
+loopback, and that is refused with an explanation rather than applied. Excepting
+the SSH rule is refused too, but **only over a remote session**, because that is
+the connection the apply is arriving on; from a console the same ruleset is
+yours to ask for. A rule that survives while no longer accepting, which
+`ssh.action = "drop"` produces, counts as not admitting: presence is not
+admission.
+
 **On the nftables backend the tool owns exactly one table, `inet
 linux_hardener`.** It creates that table, replaces it outright on every apply so
 a repeated apply cannot stack duplicate rules, and its `nft` load touches no
