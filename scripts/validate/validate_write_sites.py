@@ -206,7 +206,7 @@ PLUGIN_SRC = Path("crates/hardener-plugins/src")
 # The number of file-creating call sites in the tree, pinned rather than
 # counted. Counted off the registry it would follow the registry down, and a
 # site added with no entry would be the exact thing this check cannot see.
-EXPECTED_SITE_COUNT = 10
+EXPECTED_SITE_COUNT = 11
 
 # `execute_command` is the escape hatch: it can materialise a path without ever
 # touching `write_file`. Only a literal argv[0] is recognised, and only these.
@@ -335,6 +335,21 @@ REGISTRY = {
         # Declared by ssh/mod.rs rather than by the file holding the write,
         # which is why the search is per plugin directory.
         ("declared", ("dropin::DROPIN_PATH",)),
+    ),
+    ("firewall/nftables.rs", "write_file(Path::new(NFTABLES_CONFIG_PATH)"): (
+        (
+            "exempt",
+            "/etc is the distribution's own directory and is present on every "
+            "host this runs on, so there is no parent for the plugin to ensure",
+        ),
+        # Declared by firewall/mod.rs, which lists it first among the paths its
+        # apply checkpoints, so a host that never had the file records it absent
+        # and a rollback removes what this write created. That matters more here
+        # than for most entries: the file is what `nftables.service` loads at
+        # boot, so a rollback that left it behind would leave the applied
+        # ruleset coming back on every reboot, which is the applied posture
+        # surviving its own undo.
+        ("declared", ("nftables::NFTABLES_CONFIG_PATH",)),
     ),
     ("audit/mod.rs", "write_file(Path::new(AUDIT_RULES_PATH)"): (
         ("ensured", "AUDIT_RULES_DIR"),

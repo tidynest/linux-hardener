@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A remote `apply` on the nftables backend locked the operator out of the
+  host it was hardening.** `enable` created the input chain with `policy drop`
+  and no rules, and ran before `apply_rules` installed the baseline rule named
+  "Allow SSH to prevent lockout". Over SSH the drop policy severed the very
+  connection carrying the rest of the apply, so the anti-lockout rule was never
+  installed and the host was left filtering all inbound traffic with no SSH. On
+  a real remote host that is unrecoverable without console access. Reversing the
+  two calls would not have helped: `ensure_managed_chain` created the same
+  dropping chain at the top of `apply_rules` itself. The whole ruleset is now
+  rendered and loaded in **one `nft -f` transaction**, so the policy is never
+  live without the accepts beside it; nftables applies a file or none of it.
+  `policy drop` is kept rather than traded for `accept` plus the baseline's
+  final drop rule, so a host whose load fails outright stays closed rather than
+  open. The replacement is **scoped to this plugin's own table**, with
+  `table inet filter` then `delete table inet filter` then the new definition,
+  all in the same transaction: a whole-ruleset flush was written first and
+  rejected, because Docker, libvirt and `iptables-nft` create their own nftables
+  tables and flushing would tear them down on a host this tool was only asked to
+  harden. Per-rule reporting is unchanged, the diff being taken before the load,
+  so `applied_change_count()` and `is_skipped()` keep meaning what they meant.
+  `ensure_managed_chain` is deleted and `enable` now only enables the unit at
+  boot. **Stated ceiling:** the ruleset is written to `/etc/nftables.conf`,
+  which persists it on hosts whose `nftables.service` reads that path, but
+  Fedora and RHEL ship `/etc/sysconfig/nftables.conf`, so boot persistence there
+  is still unresolved and #52 stays open. Closes #92.
+
 - **A firewall `source`, `protocol` or `port` directive could weaken the
   ruleset and the tool applied it as written.** `apply_rule_directives` clamped
   the `action` field alone; the other three were assigned onto the rule exactly
