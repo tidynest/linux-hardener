@@ -63,6 +63,202 @@ pub(super) const NFTABLES_CHECK_PATH: &str = "/run/linux-hardener-nftables-check
 /// not what the write does.
 pub(super) const NFTABLES_TABLE: &str = "linux_hardener";
 
+/// The directory this plugin owns for the nftables fragments it writes.
+///
+/// Deliberately not `/etc/nftables/`. Fedora and RHEL ship `main.nft`,
+/// `nat.nft` and `router.nft` there, none of which their boot file loads (its
+/// only `include` is commented out), so a glob over that directory would switch
+/// three sample rulesets on for every host of that family.
+///
+/// Not yet read outside this module's own tests: the write path that uses it
+/// is a later task on this branch.
+#[allow(dead_code)]
+pub(super) const HARDENER_RULESET_DIR: &str = "/etc/linux-hardener/nftables";
+
+/// The rendered ruleset. Written whole on every apply, and the only nftables
+/// file whose entire content belongs to this plugin.
+///
+/// Not yet read outside this module's own tests: the write path that uses it
+/// is a later task on this branch.
+#[allow(dead_code)]
+pub(super) const HARDENER_RULESET_PATH: &str = "/etc/linux-hardener/nftables/50-linux-hardener.nft";
+
+/// The one line appended to whatever file the boot unit loads.
+///
+/// A **glob**, and that is not cosmetic. Measured against nft 1.1.6 in a
+/// network namespace: a glob include matching no file loads at exit 0, while a
+/// literal include of a missing file is a parse error that exits 1. A rollback
+/// removes [`HARDENER_RULESET_PATH`], so with a literal include the boot path
+/// would refuse to parse and the host would come up unfiltered. The glob is
+/// what makes the undo survivable in either order.
+///
+/// Not yet read outside this module's own tests: the write path that uses it
+/// is a later task on this branch.
+#[allow(dead_code)]
+pub(super) const HARDENER_INCLUDE_LINE: &str = "include \"/etc/linux-hardener/nftables/*.nft\"";
+
+/// What `systemctl show` said about the unit that loads a ruleset at boot.
+///
+/// Not yet constructed outside this module's own tests: the apply and
+/// rollback paths that call [`boot_ruleset`] are later tasks on this branch.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct BootRuleset {
+    /// The file the unit loads, or the reason we could not tell.
+    ///
+    /// Three outcomes rather than two, and the `Err` carries its reason so an
+    /// operator reads what failed instead of a shrug. A single value standing
+    /// for several distinct outcomes is the defect family this plugin has
+    /// already closed four times.
+    pub(super) loads: std::result::Result<String, String>,
+    /// True when the unit declares `ConditionPathExists` on the same file it
+    /// loads, so systemd already treats that file's absence as "do not run".
+    pub(super) condition_guards_it: bool,
+}
+
+/// Reads the unit's own `ExecStart` and returns the ruleset file it names.
+///
+/// Asked of the target through the executor rather than inferred from a
+/// distribution table. `hardener_distro::Distribution::detect` reads
+/// `/etc/os-release` with `std::fs`, which is the controller's file, so a table
+/// keyed on it would be silently wrong for every `--ssh` host.
+///
+/// `-p` twice without `--value`, deliberately. `--value` prints values with no
+/// names, and systemd omits a property the unit does not declare even under
+/// `--all`, so with two properties and one missing there is no way to tell
+/// which value survived. Named lines are unambiguous.
+///
+/// Not yet called outside this module's own tests: the apply and rollback
+/// paths that call it are later tasks on this branch.
+#[allow(dead_code)]
+pub(super) async fn boot_ruleset(ctx: &Context) -> BootRuleset {
+    let output = ctx
+        .executor()
+        .execute_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+        )
+        .await;
+
+    let shown = match output {
+        Ok(output) if output.success() => output.stdout,
+        Ok(output) => {
+            return BootRuleset {
+                loads: Err(format!(
+                    "systemctl could not describe nftables.service: {}",
+                    output.stderr.trim()
+                )),
+                condition_guards_it: false,
+            };
+        }
+        Err(e) => {
+            return BootRuleset {
+                loads: Err(format!("systemctl could not be run: {e}")),
+                condition_guards_it: false,
+            };
+        }
+    };
+
+    parse_boot_ruleset(
+        &property(&shown, "ExecStart"),
+        &property(&shown, "ConditionPathExists"),
+    )
+}
+
+/// One `Name=value` line's value, or an empty string when the unit did not
+/// declare that property. systemd omits an undeclared property entirely, so
+/// absence and emptiness are the same answer here and both mean "not stated".
+///
+/// Only reachable through [`boot_ruleset`], which is itself not yet called
+/// outside this module's own tests.
+#[allow(dead_code)]
+fn property(shown: &str, name: &str) -> String {
+    shown
+        .lines()
+        .find_map(|line| line.strip_prefix(&format!("{name}=")))
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// The pure half, so every distribution's real string is a cheap test.
+///
+/// Not yet called outside this module's own tests: [`boot_ruleset`], its only
+/// production caller, is itself not yet called from the apply or rollback
+/// paths.
+#[allow(dead_code)]
+pub(super) fn parse_boot_ruleset(exec_start: &str, condition_path_exists: &str) -> BootRuleset {
+    let loads = parse_exec_start(exec_start);
+    let condition_guards_it = match &loads {
+        Ok(path) => condition_path_exists
+            .split_whitespace()
+            .any(|declared| declared == path),
+        Err(_) => false,
+    };
+    BootRuleset {
+        loads,
+        condition_guards_it,
+    }
+}
+
+/// The ruleset file an `ExecStart` property names, in either form the shipped
+/// units use.
+///
+/// Two forms because the images carry two, which was measured and not assumed:
+/// Arch, Debian, Fedora and RHEL pass `-f <path>`, while openSUSE runs an
+/// inline program, `nft 'flush ruleset; include "..."'`, with no `-f` anywhere.
+/// A parser reading only `-f` returns "cannot tell" for every openSUSE and SLES
+/// host, which would leave that family permanently unpersisted while reporting
+/// nothing wrong.
+///
+/// Only reachable through [`parse_boot_ruleset`], which is itself not yet
+/// called outside this module's own tests.
+#[allow(dead_code)]
+fn parse_exec_start(exec_start: &str) -> std::result::Result<String, String> {
+    let trimmed = exec_start.trim();
+    if trimmed.is_empty() {
+        return Err(
+            "systemctl reported no ExecStart for nftables.service, which is also what it \
+             reports for a unit that does not exist, and it exits 0 either way"
+                .to_string(),
+        );
+    }
+
+    let Some((_, after)) = trimmed.split_once("argv[]=") else {
+        return Err(format!(
+            "the ExecStart property carries no argv[]: {trimmed:?}"
+        ));
+    };
+    let argv = after.split(" ; ").next().unwrap_or(after);
+
+    let mut tokens = argv.split_whitespace();
+    while let Some(token) = tokens.next() {
+        if token == "-f" || token == "--file" {
+            return match tokens.next() {
+                Some(path) => Ok(path.to_string()),
+                None => Err(format!("{token} in the ExecStart names no file: {argv:?}")),
+            };
+        }
+    }
+
+    if let Some((_, after_include)) = argv.split_once("include \"")
+        && let Some((path, _)) = after_include.split_once('"')
+        && !path.is_empty()
+    {
+        return Ok(path.to_string());
+    }
+
+    Err(format!(
+        "the ExecStart argv names no ruleset file, by -f and by include: {argv:?}"
+    ))
+}
+
 /// Nftables firewall backend for modern Linux systems.
 ///
 /// Nftables uses a hierarchical structure:

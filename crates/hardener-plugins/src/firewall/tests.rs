@@ -2208,3 +2208,157 @@ fn a_backend_checkpoints_only_the_paths_it_writes() {
          a row recorded absent that a later rollback would act on as a deletion"
     );
 }
+
+/// The four `-f` distributions and the one that is not.
+///
+/// These strings are what `systemctl show <unit> -p ExecStart` prints on the
+/// five container images, copied rather than invented. Four of them agree,
+/// which is exactly why reading only `-f` looked safe enough to ship.
+#[test]
+fn the_probe_reads_both_exec_start_forms() {
+    let arch = "{ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f /etc/nftables.conf ; ignore_errors=no ; status=0 }";
+    let fedora =
+        "{ path=/sbin/nft ; argv[]=/sbin/nft -f /etc/sysconfig/nftables.conf ; ignore_errors=no }";
+    let opensuse = "{ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft flush ruleset; include \"/etc/nftables/rules/main.nft\" ; ignore_errors=no }";
+
+    assert_eq!(
+        nftables::parse_boot_ruleset(arch, "").loads.as_deref(),
+        Ok("/etc/nftables.conf"),
+        "the Arch and Debian form names its file with -f"
+    );
+    assert_eq!(
+        nftables::parse_boot_ruleset(fedora, "").loads.as_deref(),
+        Ok("/etc/sysconfig/nftables.conf"),
+        "Fedora and RHEL name a different file with the same -f form"
+    );
+    assert_eq!(
+        nftables::parse_boot_ruleset(opensuse, "").loads.as_deref(),
+        Ok("/etc/nftables/rules/main.nft"),
+        "openSUSE carries no -f at all and names its file inside an inline include"
+    );
+}
+
+/// A unit that does not exist prints an empty ExecStart and exits 0, so the
+/// exit code cannot be the signal. Every unreadable answer has to name itself.
+#[test]
+fn the_probe_never_invents_a_path() {
+    for (exec_start, why) in [
+        ("", "an absent unit prints nothing and exits 0"),
+        ("   ", "whitespace is the same nothing"),
+        (
+            "{ path=/usr/bin/nft ; ignore_errors=no }",
+            "an ExecStart with no argv",
+        ),
+        (
+            "{ path=/usr/bin/nft ; argv[]=/usr/bin/nft list ruleset ; ignore_errors=no }",
+            "an argv naming neither -f nor an include",
+        ),
+        (
+            "{ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f ; ignore_errors=no }",
+            "a -f with nothing after it",
+        ),
+    ] {
+        let probed = nftables::parse_boot_ruleset(exec_start, "");
+        assert!(
+            probed.loads.is_err(),
+            "{why} must not yield a path, got {:?}",
+            probed.loads
+        );
+        assert!(
+            !probed.loads.unwrap_err().is_empty(),
+            "{why} must say why it could not tell"
+        );
+    }
+}
+
+/// openSUSE gates the unit on the very file it loads, so systemd already
+/// treats that file's absence as "do not run" rather than as a failure. The
+/// rollback guard in Task 4 turns on this flag, and without it that guard
+/// repeats the mistake that got the first #97 fix withdrawn.
+#[test]
+fn a_condition_on_the_loaded_file_is_recognised() {
+    let opensuse = "{ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft flush ruleset; include \"/etc/nftables/rules/main.nft\" }";
+
+    assert!(
+        nftables::parse_boot_ruleset(opensuse, "/etc/nftables/rules/main.nft").condition_guards_it,
+        "a condition naming the loaded file guards it"
+    );
+    assert!(
+        !nftables::parse_boot_ruleset(opensuse, "/etc/nftables/rules/other.nft")
+            .condition_guards_it,
+        "a condition naming a different file guards nothing"
+    );
+    assert!(
+        !nftables::parse_boot_ruleset(opensuse, "").condition_guards_it,
+        "no condition guards nothing"
+    );
+}
+
+/// The probe asks the target, not the controller. A distribution table read
+/// from the controller's /etc/os-release would be wrong for every --ssh host.
+#[tokio::test]
+async fn the_probe_asks_the_target_through_the_executor() {
+    let executor = Arc::new(
+        MockExecutor::new().with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout:
+                    "ExecStart={ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f /etc/nftables.conf }\n"
+                        .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let probed = nftables::boot_ruleset(&ctx).await;
+
+    assert_eq!(probed.loads.as_deref(), Ok("/etc/nftables.conf"));
+}
+
+/// A systemctl that cannot be run is not a host with no boot file.
+#[tokio::test]
+async fn a_systemctl_that_fails_is_not_an_answer() {
+    // The stdout here is deliberately a well-formed ExecStart line, not empty.
+    // An empty stdout would still parse to an Err on its own (no ExecStart
+    // found), which would let this test pass even if the exit-code gate that
+    // is actually under test were deleted. Pairing a parseable stdout with a
+    // failing exit code is what makes the gate itself the thing being
+    // measured: the probe must distrust this stdout because the command that
+    // produced it failed, not because the text was unreadable.
+    let executor = Arc::new(
+        MockExecutor::new().with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout:
+                    "ExecStart={ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f /etc/nftables.conf }\n"
+                        .to_string(),
+                stderr: "Failed to connect to bus".to_string(),
+                exit_code: 1,
+            },
+        ),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    assert!(
+        nftables::boot_ruleset(&ctx).await.loads.is_err(),
+        "a failed systemctl must report that it could not tell"
+    );
+}
