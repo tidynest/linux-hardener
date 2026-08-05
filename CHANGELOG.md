@@ -750,6 +750,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the host holding a file `nftables.service` cannot parse, at the path it loads
   from at boot, on a unit the same apply had already enabled. Closes #94.
 
+- **The remote-apply lockout now has a test that a mock cannot fake.** A
+  `MockExecutor` answers from a table the test author wrote, so it cannot sever
+  its own transport and will report success for a ruleset that would have cut
+  the wire. `the_remote_apply_keeps_the_connection_it_arrived_on` applies the
+  firewall plugin over a real SSH connection to a container and then issues a
+  further command **over the same connection**, which is the assertion issue #92
+  is about: everything before it could be reported by a host that had already
+  dropped the caller. It also reads the loaded ruleset back to confirm the
+  anti-lockout rule is in force and that a table the plugin does not own
+  survived. A sibling test applies twice and requires the second to report
+  nothing applied and to leave exactly one SSH accept, which is the idempotency
+  claim measured against a real `nft` rather than against a fixture's idea of
+  one. Both are `#[ignore]`, need root for `scripts/containers/nftables-fixture.sh`,
+  and are gated on their own `NFTABLES_LIVE_APPLY_HOST` variable rather than the
+  suite's shared `SSH_TEST_HOST`, because unlike their neighbours they install a
+  default-drop firewall on whatever they are pointed at.
+
 - **The four tests guarding the rendered nftables ruleset could not fail.**
   Each asserted with `contains` or `find` over the whole rendered blob, which
   anchors a needle to nothing, and two mutations proved the cost while the whole
