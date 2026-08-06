@@ -7725,7 +7725,7 @@ run_full_suite() {
     echo "Plugins: ${DIFF_PLUGINS[*]}"
     # Which arithmetic applied, printed where the reader of a log meets it. A
     # 0 here is why 11 kernel rows below read as unaskable rather than missing.
-    echo "Booted (kernel oracle): $KERNEL_BOOTED"
+    echo "Booted (kernel and services oracles): $KERNEL_BOOTED"
     detect_shadow_min_days || return 1
     echo "Shadow minimum password age: $SHADOW_MIN_DAYS"
 
@@ -7758,6 +7758,7 @@ run_full_suite() {
     # they compare. Taken after apply it would agree with itself.
     preapply_vendor_survival_init || return 1
     preapply_firewall_init || return 1
+    preapply_services_init || return 1
     preapply_kernel_init || return 1
     # Last of the pre-apply captures, deliberately. It previews the host the
     # apply below is about to meet, so every seed written above has to be in
@@ -7788,9 +7789,11 @@ run_full_suite() {
     vendor_survival_oracle_init || return 1
     scan_oracle_init || return 1
     firewall_oracle_init || return 1
+    services_oracle_init || return 1
 
     run_preapply_control
     run_firewall_preapply_control
+    run_services_preapply_control
     run_kernel_preapply_control
     run_seeded_checks
     run_ssh_checks
@@ -7800,6 +7803,7 @@ run_full_suite() {
     run_idempotence_checks
     run_pwquality_enforcement_checks
     run_firewall_checks
+    run_services_checks
     run_kernel_checks
     run_seeded_kernel_check
     # Its control sits here beside its rows rather than up with the three
