@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release script for Linux System Hardener
+# Release script for Linux Hardener
 # Usage: ./scripts/release/release.sh [patch|minor|major] [--dry-run]
 #        ./scripts/release/release.sh --verify
 

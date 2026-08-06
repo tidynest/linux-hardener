@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# DESKTOP GUI TEST RUNNER: Linux System Hardener
+# DESKTOP GUI TEST RUNNER: Linux Hardener
 # =============================================================================
 # Starts Tauri desktop app, runs UX + functional tests, cleans up.
 # Runs as regular user (not root) on host Wayland session.
@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             cat << 'EOF'
-Desktop GUI Test Runner for Linux System Hardener
+Desktop GUI Test Runner for Linux Hardener
 
 Usage: ./scripts/test/run-desktop-tests.sh [OPTIONS]
 

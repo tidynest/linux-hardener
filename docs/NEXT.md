@@ -1,4 +1,4 @@
-# Next Development Session: Linux System Hardener
+# Next Development Session: Linux Hardener
 
 ---
 
@@ -18,7 +18,7 @@ the cross-distro suite gaining rollback-lifecycle sections plus a refusal to
 accept a run that is not the size it declares.
 
 **Open work is tracked as GitHub issues, not in this file.** Nineteen issues,
-[#36 to #54](https://github.com/tidynest/linux-system-hardener/issues), were
+[#36 to #54](https://github.com/tidynest/linux-hardener/issues), were
 filed on 2026-08-01 covering everything known and unfixed; #18 and #19 predate
 them and are also open. Where a heading below still describes an open item, it
 names its issue.
@@ -175,7 +175,7 @@ DE test tooling. `cargo test --workspace` = **660 passed / 0 failed / 38 ignored
 
 > Refreshed 2026-08-01. Items are open unless marked Done. Anything still open
 > here has a GitHub issue, named inline; the
-> [issue tracker](https://github.com/tidynest/linux-system-hardener/issues) is
+> [issue tracker](https://github.com/tidynest/linux-hardener/issues) is
 > the authoritative list and this section is the narrative around it.
 
 ### Done: GUI/UX redesign (shipped in v1.5.0)
@@ -438,7 +438,7 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
 
 ## Project Summary
 
-**Linux System Hardener** is a comprehensive Linux security automation tool written in Rust:
+**Linux Hardener** is a comprehensive Linux security automation tool written in Rust:
 
 - **11 Crates** (10 core + 1 Tauri app)
 - **8 Security Plugins**: Kernel, SSH, Firewall, PAM, Services, Audit, Permissions, MAC

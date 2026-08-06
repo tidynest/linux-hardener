@@ -1,4 +1,4 @@
-# Linux System Hardener - Data Flow Documentation
+# Linux Hardener - Data Flow Documentation
 
 **Last Updated**: 2026-08-06
 **Version:** 1.5.1
@@ -1274,7 +1274,7 @@ pub struct Daemon {
 │  SystemdGenerator::generate_service()                        │
 │  └─ Returns .service unit content:                           │
 │      [Unit]                                                  │
-│      Description=Linux System Hardener...                    │
+│      Description=Linux Hardener...                    │
 │      After=network.target                                    │
 │                                                              │
 │      [Service]                                               │

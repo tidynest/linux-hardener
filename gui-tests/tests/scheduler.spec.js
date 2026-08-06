@@ -1,5 +1,5 @@
 // =============================================================================
-// SCHEDULER TESTS (T-SCHED-01..06) - Linux System Hardener GUI Tests
+// SCHEDULER TESTS (T-SCHED-01..06) - Linux Hardener GUI Tests
 // =============================================================================
 // Scheduled-scan config, notification config, save, and test-notification.
 

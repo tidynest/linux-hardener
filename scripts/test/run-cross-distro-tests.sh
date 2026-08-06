@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# CROSS-DISTRO TEST RUNNER - Linux System Hardener
+# CROSS-DISTRO TEST RUNNER - Linux Hardener
 # =============================================================================
 # Runs full-test-suite.sh, or differential-suite.sh with --differential, across
 # all supported distributions using systemd-nspawn --pipe (non-interactive, no
@@ -102,7 +102,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             cat << EOF
-Cross-Distro Test Runner for Linux System Hardener
+Cross-Distro Test Runner for Linux Hardener
 
 Usage: sudo $0 [OPTIONS]
 

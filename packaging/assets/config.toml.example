@@ -1,4 +1,4 @@
-# Linux System Hardener - Configuration File
+# Linux Hardener - Configuration File
 #
 # Place this file at:
 #   System-wide:  /etc/linux-hardener/config.toml

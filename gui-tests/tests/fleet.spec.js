@@ -1,5 +1,5 @@
 // =============================================================================
-// FLEET SCAN TESTS (T-FLEET-01..07) - Linux System Hardener GUI Tests
+// FLEET SCAN TESTS (T-FLEET-01..07) - Linux Hardener GUI Tests
 // =============================================================================
 // Read-only multi-host scan: host selection, results table with compliance-score
 // column, expandable per-host rows, and the failed-host path.

@@ -32,7 +32,7 @@ We take security vulnerabilities seriously. If you discover a security issue, pl
 
 1. **Do not** open a public GitHub issue for security vulnerabilities.
 2. Use GitHub's private vulnerability reporting, which is enabled on this
-   repository: **[Report a vulnerability](https://github.com/tidynest/linux-system-hardener/security/advisories/new)**.
+   repository: **[Report a vulnerability](https://github.com/tidynest/linux-hardener/security/advisories/new)**.
    This is the preferred channel, because it opens a private advisory thread
    with the maintainer and becomes the published advisory once fixed.
 3. If you would rather not use GitHub, email your findings to:
@@ -62,7 +62,7 @@ We take security vulnerabilities seriously. If you discover a security issue, pl
 
 ### Privilege Model
 
-Linux System Hardener operates with a split privilege model:
+Linux Hardener operates with a split privilege model:
 
 - **Scanning**: Can run as regular user for most checks
 - **Applying Changes**: Requires root privileges
@@ -257,9 +257,9 @@ The complete set of accepted advisories (unmaintained GTK3 and `idna` transitive
 
 ## Contact
 
-For security concerns: [private vulnerability report](https://github.com/tidynest/linux-system-hardener/security/advisories/new)
+For security concerns: [private vulnerability report](https://github.com/tidynest/linux-hardener/security/advisories/new)
 (preferred), or **tidynest@proton.me**
 
-For general issues: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
+For general issues: [GitHub Issues](https://github.com/tidynest/linux-hardener/issues)
 
 **Last Updated**: 2026-08-01

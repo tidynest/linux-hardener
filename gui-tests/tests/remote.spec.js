@@ -1,5 +1,5 @@
 // =============================================================================
-// REMOTE SCANNING TESTS (T-REMOTE-01..07) - Linux System Hardener GUI Tests
+// REMOTE SCANNING TESTS (T-REMOTE-01..07) - Linux Hardener GUI Tests
 // =============================================================================
 // Host inventory list, connect/disconnect lifecycle, remote scan, add-host form,
 // and two-step delete.

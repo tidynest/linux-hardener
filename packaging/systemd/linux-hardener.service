@@ -1,6 +1,6 @@
 [Unit]
-Description=Linux System Hardener scheduled security scan
-Documentation=https://github.com/tidynest/linux-system-hardener
+Description=Linux Hardener scheduled security scan
+Documentation=https://github.com/tidynest/linux-hardener
 After=network.target
 
 [Service]

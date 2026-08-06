@@ -2,13 +2,13 @@
 
 ## Overview
 
-This document tracks the development progress and planned features for Linux System Hardener.
+This document tracks the development progress and planned features for Linux Hardener.
 
 **Legend**: ⬜ Pending | 🔄 In Progress | ✅ Complete
 
 > **Where open work actually lives.** Since 2026-08-01 every known open item has
 > a GitHub issue, and the
-> [issue tracker](https://github.com/tidynest/linux-system-hardener/issues) is
+> [issue tracker](https://github.com/tidynest/linux-hardener/issues) is
 > the authoritative list. This roadmap records the milestone shape and names the
 > issue for anything still open, rather than restating the plan beside it. For
 > what each release changed, and for merged work that is not yet released, read

@@ -29,7 +29,7 @@ pub fn SettingsPage() -> impl IntoView {
                 <dl class="settings-about">
                     <div class="settings-about-row">
                         <dt>"Application"</dt>
-                        <dd>"Linux System Hardener"</dd>
+                        <dd>"Linux Hardener"</dd>
                     </div>
                     <div class="settings-about-row">
                         <dt>"Description"</dt>

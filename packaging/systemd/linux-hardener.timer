@@ -1,6 +1,6 @@
 [Unit]
-Description=Linux System Hardener scheduled security scan (timer)
-Documentation=https://github.com/tidynest/linux-system-hardener
+Description=Linux Hardener scheduled security scan (timer)
+Documentation=https://github.com/tidynest/linux-hardener
 
 [Timer]
 OnCalendar=*-*-* 02:00:00

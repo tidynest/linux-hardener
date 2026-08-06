@@ -1,16 +1,16 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-    <img src="docs/assets/logo.svg" alt="Linux System Hardener" height="72">
+    <img src="docs/assets/logo.svg" alt="Linux Hardener" height="72">
   </picture>
 </p>
 
 <p align="center">
-  <a href="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml"><img src="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="https://github.com/tidynest/linux-hardener/actions/workflows/ci.yml"><img src="https://github.com/tidynest/linux-hardener/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
   <img src="docs/assets/badges/version.svg" alt="Released version">
   <img src="docs/assets/badges/license.svg" alt="License Apache-2.0">
   <img src="docs/assets/badges/rust.svg" alt="Rust 1.88+">
-  <a href="https://aur.archlinux.org/packages/linux-system-hardener"><img src="docs/assets/badges/aur.svg" alt="AUR package"></a>
+  <a href="https://aur.archlinux.org/packages/linux-hardener"><img src="docs/assets/badges/aur.svg" alt="AUR package"></a>
   <img src="docs/assets/badges/platform.svg" alt="Platform Linux">
   <img src="docs/assets/badges/tests.svg" alt="Test suite status">
 </p>
@@ -52,7 +52,7 @@ plugins, five distribution families.
 ### Arch Linux, from the AUR
 
 ```bash
-paru -S linux-system-hardener
+paru -S linux-hardener
 ```
 
 This installs both the `hardener` CLI and the `linux-hardener-desktop` GUI.
@@ -69,11 +69,11 @@ A `FROM scratch` image carrying only the static binary can audit the host
 without being able to change it:
 
 ```bash
-docker build -f packaging/docker/Dockerfile -t linux-system-hardener .
+docker build -f packaging/docker/Dockerfile -t linux-hardener .
 
 docker run --rm --pid=host \
   -v /etc:/etc:ro -v /var/log:/var/log:ro -v /usr/lib:/usr/lib:ro \
-  linux-system-hardener scan --format json
+  linux-hardener scan --format json
 ```
 
 `apply` is unsupported in a container by design: it would need `--privileged`
@@ -87,8 +87,8 @@ Rust 1.88 or newer, with the `wasm32-unknown-unknown` and
 `x86_64-unknown-linux-musl` targets plus a musl toolchain for the static binary.
 
 ```bash
-git clone https://github.com/tidynest/linux-system-hardener.git
-cd linux-system-hardener
+git clone https://github.com/tidynest/linux-hardener.git
+cd linux-hardener
 cargo build --release
 cargo test
 ```
@@ -416,7 +416,7 @@ evasion.
   output does name such a plugin.
 
 Open defects are tracked as
-[GitHub issues](https://github.com/tidynest/linux-system-hardener/issues),
+[GitHub issues](https://github.com/tidynest/linux-hardener/issues),
 including the ones not yet fixed, so the risk is yours to judge rather than
 mine to summarise.
 
@@ -451,7 +451,7 @@ apply through an oracle independent of the tool. Both are described in
 
 The browser-level end-to-end suite is stale against the redesigned interface and
 is being rewritten
-([#48](https://github.com/tidynest/linux-system-hardener/issues/48)).
+([#48](https://github.com/tidynest/linux-hardener/issues/48)).
 
 ---
 
@@ -466,7 +466,7 @@ Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
 - British English in prose and user-facing text.
 
 Issues labelled
-[good first issue](https://github.com/tidynest/linux-system-hardener/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+[good first issue](https://github.com/tidynest/linux-hardener/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 are self-contained and have the pattern to copy named in the body.
 
 Milestones, shipped and planned, are in [docs/ROADMAP.md](docs/ROADMAP.md).
@@ -487,6 +487,6 @@ Drawing on [Lynis](https://cisofy.com/lynis/),
 
 **Author**: Eric Jingryd
 **Contact**: tidynest@proton.me
-**Repository**: https://github.com/tidynest/linux-system-hardener
+**Repository**: https://github.com/tidynest/linux-hardener
 
 **Last Updated**: 2026-08-01

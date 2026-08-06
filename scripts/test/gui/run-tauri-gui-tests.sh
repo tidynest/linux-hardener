@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# TAURI DESKTOP GUI TEST ORCHESTRATOR: Linux System Hardener
+# TAURI DESKTOP GUI TEST ORCHESTRATOR: Linux Hardener
 # =============================================================================
 # Runs Tauri desktop tests inside Arch nspawn container (WebKitGTK ABI match).
 #
@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --help|-h)
             cat << 'EOF'
-Tauri Desktop GUI Test Orchestrator for Linux System Hardener
+Tauri Desktop GUI Test Orchestrator for Linux Hardener
 
 Usage: sudo ./scripts/test/gui/run-tauri-gui-tests.sh
 

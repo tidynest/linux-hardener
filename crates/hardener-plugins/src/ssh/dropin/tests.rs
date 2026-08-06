@@ -45,5 +45,5 @@ fn the_fragment_says_who_owns_it() {
         rendered.starts_with('#'),
         "a managed file must say so before its first directive: {rendered}"
     );
-    assert!(rendered.contains("linux-system-hardener"));
+    assert!(rendered.contains("linux-hardener"));
 }

@@ -2686,7 +2686,7 @@ async fn apply_prunes_a_fragment_nothing_needs_any_more() {
             .with_directory("/etc/ssh/sshd_config.d")
             .with_file(
                 "/etc/ssh/sshd_config.d/00-hardener.conf",
-                "# Managed by linux-system-hardener.\nX11Forwarding no\n",
+                "# Managed by linux-hardener.\nX11Forwarding no\n",
             )
             .with_command_program("rm", ok_output("")),
     );
@@ -2782,7 +2782,7 @@ async fn a_fragment_is_still_pruned_once_the_file_underneath_holds_the_target() 
             .with_directory("/etc/ssh/sshd_config.d")
             .with_file(
                 "/etc/ssh/sshd_config.d/00-hardener.conf",
-                "# Managed by linux-system-hardener.\nX11Forwarding no\n",
+                "# Managed by linux-hardener.\nX11Forwarding no\n",
             )
             .with_file(
                 "/etc/ssh/sshd_config.d/50-redhat.conf",

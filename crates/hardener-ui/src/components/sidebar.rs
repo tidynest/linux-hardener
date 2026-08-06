@@ -92,7 +92,7 @@ pub fn Sidebar() -> impl IntoView {
                 <span class="sidebar-wordmark">
                     <IconShieldMark class="sidebar-wordmark-icon"/>
                     <span class="sidebar-wordmark-text">
-                        <span>"Linux System"</span>
+                        <span>"Linux"</span>
                         <span>"Hardener"</span>
                     </span>
                 </span>

@@ -39,7 +39,7 @@ Do not run `rollback` on 1.4.0 or earlier against a remote target; upgrade
 first.
 
 Fixed in **1.5.0**. Full detail:
-[GHSA-x4xp-32mf-xwjh](https://github.com/tidynest/linux-system-hardener/security/advisories/GHSA-x4xp-32mf-xwjh).
+[GHSA-x4xp-32mf-xwjh](https://github.com/tidynest/linux-hardener/security/advisories/GHSA-x4xp-32mf-xwjh).
 
 ### What the upgrade does not fix
 

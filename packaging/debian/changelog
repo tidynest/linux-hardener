@@ -1,4 +1,4 @@
-linux-system-hardener (1.5.1-1) unstable; urgency=high
+linux-hardener (1.5.1-1) unstable; urgency=high
 
   * SECURITY: compliance reports could mark controls as passed for a plugin
     that produced no evidence, on the silence its own absence caused. From
@@ -29,7 +29,7 @@ linux-system-hardener (1.5.1-1) unstable; urgency=high
 
  -- Eric Jingryd <tidynest@proton.me>  Mon, 27 Jul 2026 19:50:00 +0000
 
-linux-system-hardener (1.5.0-1) unstable; urgency=high
+linux-hardener (1.5.0-1) unstable; urgency=high
 
   * SECURITY: rollback over SSH could delete /etc/passwd, /etc/group,
     /etc/shadow, /etc/gshadow and /etc/sudoers on a remote host whose stat
@@ -59,7 +59,7 @@ linux-system-hardener (1.5.0-1) unstable; urgency=high
 
  -- Eric Jingryd <tidynest@proton.me>  Mon, 27 Jul 2026 09:30:19 +0000
 
-linux-system-hardener (1.4.0-1) unstable; urgency=medium
+linux-hardener (1.4.0-1) unstable; urgency=medium
 
   * Honest apply counts: "N applied" tallies only real changes; no-op
     plugins read "no changes needed"; failures are surfaced.
@@ -81,7 +81,7 @@ linux-system-hardener (1.4.0-1) unstable; urgency=medium
 
  -- Eric Jingryd <tidynest@proton.me>  Sun, 19 Jul 2026 18:55:54 +0000
 
-linux-system-hardener (1.3.2-1) unstable; urgency=medium
+linux-hardener (1.3.2-1) unstable; urgency=medium
 
   * Fix: runtime sysctl writes failed on every local apply (procfs cannot
     host atomic temp-file renames; kernel-interface paths write directly).
@@ -94,7 +94,7 @@ linux-system-hardener (1.3.2-1) unstable; urgency=medium
 
  -- Eric Jingryd <tidynest@proton.me>  Sat, 18 Jul 2026 23:00:00 +0000
 
-linux-system-hardener (1.3.1-1) unstable; urgency=medium
+linux-hardener (1.3.1-1) unstable; urgency=medium
 
   * Fix: build identity stamped a foreign repository's commit into --version
     for tarball builds extracted inside an unrelated git checkout.
@@ -102,7 +102,7 @@ linux-system-hardener (1.3.1-1) unstable; urgency=medium
 
  -- Eric Jingryd <tidynest@proton.me>  Sat, 18 Jul 2026 21:00:00 +0000
 
-linux-system-hardener (1.3.0-1) unstable; urgency=medium
+linux-hardener (1.3.0-1) unstable; urgency=medium
 
   * RHEL 10 compliance profiles with report-time identifier translation.
   * New frameworks: SOC 2, NIST 800-171 r3, FedRAMP Moderate (10 total).
@@ -115,7 +115,7 @@ linux-system-hardener (1.3.0-1) unstable; urgency=medium
 
  -- Eric Jingryd <tidynest@proton.me>  Sat, 18 Jul 2026 20:00:00 +0000
 
-linux-system-hardener (1.2.2-1) unstable; urgency=medium
+linux-hardener (1.2.2-1) unstable; urgency=medium
 
   * Fix: checkpoint rollback could delete 0000-permission files (e.g. /etc/shadow).
   * Fix: permissions apply/rollback aborted when account-database paths were not allow-listed.
@@ -123,13 +123,13 @@ linux-system-hardener (1.2.2-1) unstable; urgency=medium
 
  -- Eric Jingryd <tidynest@proton.me>  Thu, 02 Jul 2026 06:30:00 +0000
 
-linux-system-hardener (1.2.1-1) unstable; urgency=low
+linux-hardener (1.2.1-1) unstable; urgency=low
 
   * Documentation and README version-badge consistency (patch on 1.2.0).
 
  -- Eric Jingryd <tidynest@proton.me>  Tue, 01 Jul 2026 18:00:00 +0000
 
-linux-system-hardener (1.2.0-1) unstable; urgency=medium
+linux-hardener (1.2.0-1) unstable; urgency=medium
 
   * CIS compliance coverage completion; PAM/permissions no-loosen hardening.
   * Polkit desktop-environment test tooling; polkit runtime dependency.
@@ -137,32 +137,32 @@ linux-system-hardener (1.2.0-1) unstable; urgency=medium
 
  -- Eric Jingryd <tidynest@proton.me>  Tue, 01 Jul 2026 12:00:00 +0000
 
-linux-system-hardener (1.1.0-1) unstable; urgency=medium
+linux-hardener (1.1.0-1) unstable; urgency=medium
 
   * Version alignment to 1.1.0.
 
  -- Eric Jingryd <tidynest@proton.me>  Tue, 01 Jul 2026 00:00:00 +0000
 
-linux-system-hardener (1.0.5-1) unstable; urgency=high
+linux-hardener (1.0.5-1) unstable; urgency=high
 
   * v1.0.5: Security - patch tauri (CVE-2026-42184), lettre (RUSTSEC-2026-0141),
     and rustls-webpki (RUSTSEC-2026-0104) advisories
 
  -- Eric Jingryd <tidynest@proton.me>  Sun, 24 May 2026 00:00:00 +0000
 
-linux-system-hardener (1.0.4-1) unstable; urgency=medium
+linux-hardener (1.0.4-1) unstable; urgency=medium
 
   * v1.0.4: Rust edition 2024; dependency refresh
 
  -- Eric Jingryd <tidynest@proton.me>  Wed, 15 Apr 2026 00:00:00 +0000
 
-linux-system-hardener (1.0.3-1) unstable; urgency=medium
+linux-hardener (1.0.3-1) unstable; urgency=medium
 
   * v1.0.3: Parallel test runners, GUI test selector fixes
 
  -- Eric Jingryd <tidynest@proton.me>  Fri, 28 Feb 2026 00:00:00 +0000
 
-linux-system-hardener (1.0.2-1) unstable; urgency=medium
+linux-hardener (1.0.2-1) unstable; urgency=medium
 
   * v1.0.2: CLI crash fixes, desktop UX (keyboard nav, ARIA, clipboard)
   * Added trunk build dependency for WASM frontend
@@ -171,13 +171,13 @@ linux-system-hardener (1.0.2-1) unstable; urgency=medium
 
  -- Eric Jingryd <tidynest@proton.me>  Fri, 28 Feb 2026 00:00:00 +0000
 
-linux-system-hardener (1.0.0-1) unstable; urgency=medium
+linux-hardener (1.0.0-1) unstable; urgency=medium
 
   * v1.0.0 release: 8 hardening plugins, CLI + GUI, multi-distro support
 
  -- Eric Jingryd <tidynest@proton.me>  Fri, 27 Feb 2026 00:00:00 +0000
 
-linux-system-hardener (0.3.3-1) unstable; urgency=medium
+linux-hardener (0.3.3-1) unstable; urgency=medium
 
   * Initial Debian package release.
 

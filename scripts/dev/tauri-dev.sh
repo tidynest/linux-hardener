@@ -89,9 +89,9 @@ if lsof -i :1420 &>/dev/null; then
 fi
 
 # Check for existing Tauri processes
-if pgrep -f "linux-system-hardener" &>/dev/null; then
+if pgrep -f "linux-hardener" &>/dev/null; then
     echo "» Existing app process found, killing..."
-    pkill -f "linux-system-hardener" 2>/dev/null || true
+    pkill -f "linux-hardener" 2>/dev/null || true
     sleep 1
 fi
 

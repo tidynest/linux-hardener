@@ -1,4 +1,4 @@
-# Linux System Hardener - Architecture Documentation
+# Linux Hardener - Architecture Documentation
 
 **Last Updated**: 2026-08-02
 **Version:** 1.5.1
@@ -7,7 +7,7 @@
 
 ## Overview
 
-Linux System Hardener is a modular security hardening tool for Linux systems, providing:
+Linux Hardener is a modular security hardening tool for Linux systems, providing:
 - Plugin-based scanning and hardening across multiple security domains
 - Checkpoint/rollback functionality for safe changes
 - Compliance framework mapping (CIS, NIST, STIG, HIPAA, PCI-DSS, GDPR, ISO 27001:2022, SOC 2, NIST SP 800-171, FedRAMP)

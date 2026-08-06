@@ -1,9 +1,9 @@
-Name:           linux-system-hardener
+Name:           linux-hardener
 Version:        1.5.1
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
-URL:            https://github.com/tidynest/linux-system-hardener
+URL:            https://github.com/tidynest/linux-hardener
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 
 BuildRequires:  cargo rust gcc openssl-devel libxcb-devel libxkbcommon-devel
@@ -15,8 +15,14 @@ Requires:       polkit
 Recommends:     polkit-gnome
 Supplements:    (polkit-kde-agent and plasma-workspace)
 
+# Carries an existing install across the rename from linux-system-hardener
+# (#51). Obsoletes drives the upgrade, Provides keeps the old name
+# satisfiable for anything that requires it.
+Obsoletes:      linux-system-hardener < 1.5.2
+Provides:       linux-system-hardener = %{version}-%{release}
+
 %description
-Linux System Hardener automates security through scanning, hardening, and
+Linux Hardener automates security through scanning, hardening, and
 safe rollback across 8 security domains (kernel, SSH, firewall, PAM, audit,
 MAC, permissions, services) with multi-distribution support.
 

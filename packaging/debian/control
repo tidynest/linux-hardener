@@ -1,4 +1,4 @@
-Source: linux-system-hardener
+Source: linux-hardener
 Section: admin
 Priority: optional
 Maintainer: Eric Jingryd <tidynest@proton.me>
@@ -6,15 +6,18 @@ Build-Depends: debhelper-compat (= 13), cargo, rustc, gcc, libssl-dev,
  pkg-config, libgtk-3-dev, libwebkit2gtk-4.1-dev, libxcb1-dev,
  libxkbcommon-dev, librsvg2-dev, trunk
 Standards-Version: 4.6.2
-Homepage: https://github.com/tidynest/linux-system-hardener
+Homepage: https://github.com/tidynest/linux-hardener
 
-Package: linux-system-hardener
+Package: linux-hardener
 Architecture: amd64
 Depends: ${misc:Depends}, ${shlibs:Depends}, libgtk-3-0t64,
  libwebkit2gtk-4.1-0, libxcb1, libxkbcommon0, systemd, polkitd
 Suggests: policykit-1-gnome, polkit-kde-agent-1
+Provides: linux-system-hardener
+Replaces: linux-system-hardener
+Breaks: linux-system-hardener
 Description: Linux security automation: scanning, hardening, and rollback
- Linux System Hardener automates security through comprehensive scanning,
+ Linux Hardener automates security through comprehensive scanning,
  automated hardening, and safe rollback across 8 security domains (kernel,
  SSH, firewall, PAM, audit, MAC, permissions, services) with full
  multi-distribution support and compliance reporting.

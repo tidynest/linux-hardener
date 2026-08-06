@@ -137,7 +137,7 @@ run_tests() {
 
     # --- T-TAURI-01: App launches ---
     local wid
-    wid=$(xdotool search --name "Linux System Hardener" 2>/dev/null | head -1)
+    wid=$(xdotool search --name "Linux Hardener" 2>/dev/null | head -1)
     if [[ -n "$wid" ]]; then
         pass "T-TAURI-01: App launches (window ID: $wid)"
     else
@@ -155,7 +155,7 @@ run_tests() {
     # --- T-TAURI-02: Window title ---
     local title
     title=$(xdotool getwindowname "$wid" 2>/dev/null)
-    if [[ "$title" == *"Linux System Hardener"* ]]; then
+    if [[ "$title" == *"Linux Hardener"* ]]; then
         pass "T-TAURI-02: Window title is '$title'"
     else
         fail "T-TAURI-02: Window title" "Got: '$title'"

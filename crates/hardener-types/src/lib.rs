@@ -1,4 +1,4 @@
-//! Shared type definitions for Linux System Hardener.
+//! Shared type definitions for Linux Hardener.
 //!
 //! This crate contains all types that need to be shared between the native
 //! backend (Tauri) and WASM frontend (Leptos). It has minimal dependencies

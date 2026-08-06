@@ -1,5 +1,5 @@
 // =============================================================================
-// DASHBOARD TESTS (T-DASH-01..09) - Linux System Hardener GUI Tests
+// DASHBOARD TESTS (T-DASH-01..09) - Linux Hardener GUI Tests
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');

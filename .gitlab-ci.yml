@@ -1,4 +1,4 @@
-# GitLab CI/CD Configuration for Linux System Hardener
+# GitLab CI/CD Configuration for Linux Hardener
 
 stages:
   - check
@@ -116,7 +116,7 @@ release:
     tag_name: $CI_COMMIT_TAG
     name: 'Release $CI_COMMIT_TAG'
     description: |
-      ## Linux System Hardener $CI_COMMIT_TAG
+      ## Linux Hardener $CI_COMMIT_TAG
 
       ### Installation
 

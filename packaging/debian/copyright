@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: linux-system-hardener
+Upstream-Name: linux-hardener
 Upstream-Contact: Eric Jingryd <tidynest@proton.me>
-Source: https://github.com/tidynest/linux-system-hardener
+Source: https://github.com/tidynest/linux-hardener
 
 Files: *
 Copyright: 2024-2026 Eric Jingryd

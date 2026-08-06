@@ -273,7 +273,7 @@ fn print_welcome() {
     );
     eprintln!(
         "{}",
-        "║       Linux System Hardener - Report Wizard               ║"
+        "║       Linux Hardener - Report Wizard               ║"
             .cyan()
             .bold()
     );

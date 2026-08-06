@@ -31,7 +31,7 @@ const DROPIN_DIR: &str = "/etc/ssh/sshd_config.d";
 const DROPIN_MODE: &str = "0600";
 
 const HEADER: &str = "\
-# Managed by linux-system-hardener. Edits here are overwritten on the next
+# Managed by linux-hardener. Edits here are overwritten on the next
 # apply, and this file is removed when it is no longer needed. sshd reads this
 # directory before the main configuration, which is why the directives below
 # live here rather than in sshd_config.

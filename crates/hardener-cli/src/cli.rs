@@ -13,7 +13,7 @@ pub(crate) use hardener_compliance::OutputFormat;
         env!("HARDENER_BUILD_IDENTITY"),
         ")"
     ),
-    about = "Linux System Hardener - Security automation tool",
+    about = "Linux Hardener - Security automation tool",
     long_about = "A comprehensive Linux security automation tool with \
     multi-distribution support.\n\n\
     Scans systems for security misconfigurations, applies \

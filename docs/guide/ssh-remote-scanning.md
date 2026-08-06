@@ -1,6 +1,6 @@
 # SSH Remote Scanning User Guide
 
-This guide explains how to use Linux System Hardener to scan and harden remote
+This guide explains how to use Linux Hardener to scan and harden remote
 Linux hosts via SSH without installing the tool on them.
 
 ## Overview
@@ -31,7 +31,7 @@ scan a remote.
 ## Prerequisites
 
 ### Local Machine
-- Linux System Hardener installed
+- Linux Hardener installed
 - SSH client available
 
 ### Remote Host

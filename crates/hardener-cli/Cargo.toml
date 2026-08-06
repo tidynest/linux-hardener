@@ -6,7 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Command-line interface for Linux System Hardener"
+description = "Command-line interface for Linux Hardener"
 build = "../../scripts/build_identity.rs"
 
 [[bin]]

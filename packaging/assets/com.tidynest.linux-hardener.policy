@@ -4,7 +4,7 @@
  "https://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
   <vendor>TidyNest</vendor>
-  <vendor_url>https://github.com/tidynest/linux-system-hardener</vendor_url>
+  <vendor_url>https://github.com/tidynest/linux-hardener</vendor_url>
 
   <action id="com.tidynest.linux-hardener.apply">
     <description>Apply system hardening recommendations</description>

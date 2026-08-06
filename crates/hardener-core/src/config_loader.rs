@@ -1,4 +1,4 @@
-//! Configuration loader for Linux System Hardener.
+//! Configuration loader for Linux Hardener.
 //!
 //! Loads configuration from multiple sources with the following precedence
 //! (later sources override earlier ones):

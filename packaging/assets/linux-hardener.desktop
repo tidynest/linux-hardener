@@ -1,7 +1,7 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=Linux System Hardener
+Name=Linux Hardener
 GenericName=Security Hardening Tool
 Comment=System security hardening, scanning, and compliance tool
 Exec=linux-hardener-desktop

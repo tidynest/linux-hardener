@@ -1,4 +1,4 @@
-//! Scheduled scanner daemon for Linux System Hardener
+//! Scheduled scanner daemon for Linux Hardener
 //!
 //! Provides cron-like scheduled security scans with:
 //! - Configurable scan intervals

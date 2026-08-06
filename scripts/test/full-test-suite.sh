@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# FULL TEST SUITE - Linux System Hardener
+# FULL TEST SUITE - Linux Hardener
 # =============================================================================
 # Tests EVERYTHING: all commands, all plugins, all formats, all functions
 # including apply and rollback operations.
@@ -2171,7 +2171,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             cat << EOF
-Full Test Suite for Linux System Hardener
+Full Test Suite for Linux Hardener
 
 Usage: sudo $0 [options]
 
