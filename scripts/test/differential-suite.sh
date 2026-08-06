@@ -2936,6 +2936,56 @@ run_services_preapply_control() {
     fi
 }
 
+run_services_checks() {
+    local key
+    for key in "${SERVICES_CHECKS[@]}"; do
+        if ! run_is_booted; then
+            record_unaskable "services $key: this run is not booted, so systemd is not PID 1 and systemctl cannot be asked"
+            continue
+        fi
+        case "$key" in
+            not-at-boot)
+                # What the plugin is FOR. It cannot tell a mask from a plain
+                # disable, because systemd counts neither as enabled, and that
+                # is what the row below is for. The two are separate checks so
+                # that a tool which stopped disabling fails this one alone.
+                if services_unit_is_enabled "$SERVICES_BOOT_AFTER"; then
+                    record_fail "services $key: systemd reads '$SERVICES_BOOT_AFTER' for $SERVICES_UNIT after apply, which this plugin counts as enabled, so the unit it reported disabling will still start at the next boot"
+                else
+                    record_pass "services $key: systemd reads '$SERVICES_BOOT_AFTER' for $SERVICES_UNIT after apply, having read '$SERVICES_BOOT_BEFORE' before apply, so it will not start at the next boot"
+                fi
+                ;;
+            mask-link)
+                # The only row that survives somebody re-enabling the unit, and
+                # the only one that separates `systemctl mask` from `systemctl
+                # disable`. Judged by the link's TARGET: a link pointing
+                # anywhere else is a unit, not a mask.
+                if [[ "$SERVICES_MASK_AFTER" == "link|/dev/null" ]]; then
+                    record_pass "services $key: $SERVICES_MASK_LINK is a link to /dev/null after apply, where it read '$SERVICES_MASK_BEFORE' before, so the unit is masked and not merely disabled"
+                else
+                    record_fail "services $key: $SERVICES_MASK_LINK reads '$SERVICES_MASK_AFTER' after apply, so the unit is not masked and can be started or re-enabled by hand"
+                fi
+                ;;
+            not-running)
+                # Unaskable rather than passed on a host where the unit was
+                # never running. bluetooth.service does not start in every
+                # container, and a row reporting a pass on all five
+                # distributions without the tool having stopped anything is the
+                # vacuity issue #47 exists to remove. expected_check_total
+                # subtracts this row on exactly this condition, so the two have
+                # to keep agreeing about what "was not running" means.
+                if [[ "$SERVICES_ACTIVE_BEFORE" != "active" ]]; then
+                    record_unaskable "services $key: $SERVICES_UNIT read '$SERVICES_ACTIVE_BEFORE' before apply, so it was not running and nothing here could show the tool stopped it"
+                elif [[ "$SERVICES_ACTIVE_AFTER" == "active" ]]; then
+                    record_fail "services $key: $SERVICES_UNIT was running before apply and reads '$SERVICES_ACTIVE_AFTER' after it, so the tool reported stopping a service that is still running"
+                else
+                    record_pass "services $key: $SERVICES_UNIT read 'active' before apply and reads '$SERVICES_ACTIVE_AFTER' after it, so the tool stopped what it reported stopping"
+                fi
+                ;;
+        esac
+    done
+}
+
 SSH_CHECKS_EXPECTED=7
 SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
@@ -7259,6 +7309,71 @@ bluetooth.service    enabled"
     run_services_preapply_control > /dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/0/1" \
         "an unbooted run declares the control unaskable rather than passing or failing it"
+    KERNEL_BOOTED=1
+
+    # The rows. The hardened host first, which is the only shape all three pass.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    SERVICES_BOOT_BEFORE="enabled"
+    SERVICES_BOOT_AFTER="masked"
+    SERVICES_MASK_BEFORE="absent|"
+    SERVICES_MASK_AFTER="link|/dev/null"
+    SERVICES_ACTIVE_BEFORE="active"
+    SERVICES_ACTIVE_AFTER="inactive"
+    run_services_checks > "$svc_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "3/0/0" \
+        "a unit that was enabled and running and is now masked and stopped passes all three rows"
+    check_status 0 "and the not-at-boot row carries the word systemd read BEFORE apply, not only the one it reads now" \
+        grep -q "having read 'enabled' before apply" "$svc_out"
+
+    # The shape mask-link exists for. systemd reports a disabled unit and a
+    # masked one the same way, so not-at-boot cannot tell them apart and passes
+    # here; only the link can fail.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    SERVICES_BOOT_AFTER="disabled"
+    SERVICES_MASK_AFTER="absent|"
+    run_services_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "2/1/0" \
+        "a unit disabled but not masked passes not-at-boot and fails mask-link, which is the only thing that tells the two apart"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    SERVICES_BOOT_AFTER="enabled"
+    SERVICES_MASK_AFTER="link|/dev/null"
+    run_services_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "2/1/0" \
+        "a unit systemd still starts at boot fails not-at-boot however the link reads"
+
+    # The link is judged by its TARGET and not by being a link. The vendor unit
+    # file is what /etc/systemd/system holds on a host where somebody dropped an
+    # override in, and it is not a mask.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    SERVICES_BOOT_AFTER="masked"
+    SERVICES_MASK_AFTER="link|/usr/lib/systemd/system/bluetooth.service"
+    run_services_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "2/1/0" \
+        "a link pointing anywhere but /dev/null is not a mask"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    SERVICES_MASK_AFTER="link|/dev/null"
+    SERVICES_ACTIVE_BEFORE="inactive"
+    SERVICES_ACTIVE_AFTER="inactive"
+    run_services_checks > "$svc_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "2/0/1" \
+        "a unit that was never running leaves not-running unaskable rather than passing it"
+    check_status 0 "and says so with the word it read before apply rather than with a verdict" \
+        grep -q "read 'inactive' before apply" "$svc_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    SERVICES_ACTIVE_BEFORE="active"
+    SERVICES_ACTIVE_AFTER="active"
+    run_services_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "2/1/0" \
+        "a unit still running after apply fails not-running"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    KERNEL_BOOTED=0
+    run_services_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/0/3" \
+        "an unbooted run declares all three rows unaskable rather than reading systemctl on a host that has no systemd to ask"
     KERNEL_BOOTED=1
 
     rm -f "$svc_out"
