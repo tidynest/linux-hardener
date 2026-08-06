@@ -11,6 +11,17 @@ taken.
 
 ## Outcome, verified against the tree 2026-08-01
 
+> **Naming update, 2026-08-07.** Open question 2 in the table below, the
+> `linux-hardener` vs `linux-system-hardener` split, is **resolved and closed**
+> (#51). The project unified on `linux-hardener`, written "Linux Hardener".
+> Chosen so that no installed unit id, action id or runtime path had to change,
+> which is the breaking change this plan warned about: the repository and the
+> package moved instead, carrying `replaces`/`Obsoletes` metadata. The binary
+> stays `hardener`. **The two reverse-DNS ids were left alone**, exactly as the
+> plan text below says they must be. The rule now lives in
+> `docs/reference/naming-conventions.md`.
+
+
 **Carried out.** Every Phase 1 destination exists, and `docs/README.md` indexes
 them. Phase 2 delivered all five new documents (`docs/README.md`,
 `guide/getting-started.md`, `guide/troubleshooting.md`,

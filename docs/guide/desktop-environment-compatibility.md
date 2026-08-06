@@ -1,6 +1,6 @@
 # Desktop Environment Compatibility
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-07
 
 Linux Hardener uses `pkexec` (polkit) for privilege escalation when
 applying hardening rules or rolling back checkpoints. This requires a running

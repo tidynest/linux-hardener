@@ -1,6 +1,6 @@
 # Installation Guide
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-07
 
 ## Requirements
 
@@ -26,6 +26,11 @@ The desktop application additionally requires:
 ---
 
 ## Install from Package (Recommended)
+
+> **The package was named `linux-system-hardener` until 1.5.1.** If you have that
+> one installed, upgrade normally: the new package carries `replaces=` so your
+> package manager swaps it, and nothing on your host moves. See
+> [upgrading](upgrading.md#151-and-earlier-the-package-and-the-project-are-renamed).
 
 ### Arch Linux / Manjaro / EndeavourOS
 

@@ -1,6 +1,6 @@
 # Upgrading
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-07
 
 Some releases fixed defects that a hardened host keeps carrying after the
 upgrade. Installing a newer version repairs the tool, not the system it already
@@ -21,6 +21,8 @@ The full per-release history is in [CHANGELOG.md](../../CHANGELOG.md).
 - [1.5.0 and earlier: openSUSE hosts may have a short file masking the vendor copy](#150-and-earlier-opensuse-hosts-may-have-a-short-file-masking-the-vendor-copy)
 - [1.5.0 and earlier: compliance reports could pass controls that were never assessed](#150-and-earlier-compliance-reports-could-pass-controls-that-were-never-assessed)
 - [1.5.0 and earlier: rollback did not restore systemd unit files](#150-and-earlier-rollback-did-not-restore-systemd-unit-files)
+- [1.5.1 and earlier: the package and the project are renamed](#151-and-earlier-the-package-and-the-project-are-renamed)
+- [1.5.1 and earlier: a remote checkpoint was filed under an account you never named](#151-and-earlier-a-remote-checkpoint-was-filed-under-an-account-you-never-named)
 
 ---
 
@@ -204,6 +206,78 @@ sudo systemctl enable --now <service>
 ```
 
 Fixed in **1.5.1**.
+
+---
+
+## 1.5.1 and earlier: the package and the project are renamed
+
+**Affects** everyone, and it needs no action from you.
+
+The project answered to two names. The repository and the package were
+`linux-system-hardener`; every path on your host, the systemd units, the polkit
+actions and the desktop entry were already `linux-hardener`. They are now one
+name, `linux-hardener`, written "Linux Hardener".
+
+**Nothing on your host moves.** That is why this direction was chosen over the
+other one. `/etc/linux-hardener`, `/var/lib/linux-hardener`,
+`/var/log/linux-hardener` and `~/.config/linux-hardener` are unchanged, and so
+are your checkpoints, your signing key, the units and the polkit actions. The
+command is still `hardener`.
+
+What you will see is your package manager replacing one package with another:
+
+| Distribution | What happens |
+|---|---|
+| Arch | `linux-hardener` carries `replaces=`, so a normal `-Syu` swaps it |
+| Debian/Ubuntu | the deb carries `Replaces`/`Breaks`, so `apt upgrade` swaps it |
+| Fedora/RHEL/openSUSE | the rpm carries `Obsoletes`, so `dnf upgrade` swaps it |
+
+That replacement is expected. If your package manager asks you to confirm
+removing `linux-system-hardener` while installing `linux-hardener`, that is the
+rename and not a mistake.
+
+If you installed from source or from a git clone, the repository moved to
+`https://github.com/tidynest/linux-hardener`. The old address redirects, so an
+existing clone keeps working, and `git remote set-url` is tidiness rather than
+repair.
+
+---
+
+## 1.5.1 and earlier: a remote checkpoint was filed under an account you never named
+
+**Affects** anyone who ran `--ssh <host>` **without** naming a user. Local use
+was never affected, and neither was a target that named its user outright.
+
+The checkpoint host key is `ssh://user@host:port`, and when the target named no
+user this tool substituted the literal `root`. That was not a claim about the
+remote account: ssh resolves a bare target through your `~/.ssh/config`, so the
+account it actually reached was frequently something else.
+
+Two things followed. `hardener --ssh web-01 apply` filed under
+`ssh://root@web-01:22`, so `hardener --ssh admin@web-01 rollback <id>` was
+refused as belonging to a different host even though it was the same machine and
+the same account. And `--ssh web-01` alongside `--ssh root@web-01` were two
+targets everywhere else and one key here.
+
+The user is now resolved, through `ssh -G`, which reads your configuration
+without opening a connection.
+
+### What this means for checkpoints you already have
+
+**Nothing of yours became invisible, and there is nothing to migrate.** Lookups
+accept the old key alongside the resolved one, so a checkpoint written by an
+earlier release is still listed by `checkpoint list` and still offered as a
+rollback point. New captures never write the old key.
+
+The two keys cannot be merged into one, and this is a limit rather than a
+postponement: `ssh://root@web-01:22` cannot say whether you wrote `root@web-01`
+or wrote `web-01` and had the `root` invented for you, so any rewrite would
+corrupt whichever of the two it guessed wrong. Accepting both is the only answer
+that loses nothing.
+
+**No signature is affected.** The signed digest covers the checkpoint id, name,
+timestamp, username and file states, and never the host key, so everything you
+have stays valid and verifiable. Only its filing moved.
 
 ---
 

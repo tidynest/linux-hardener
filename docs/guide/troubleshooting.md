@@ -1,6 +1,6 @@
 # Troubleshooting
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-03
 
 Symptom-organised fixes for the most common problems. Installation steps live
 in the [installation guide](installation.md); the per-desktop polkit agent

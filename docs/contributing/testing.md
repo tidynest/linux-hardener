@@ -13,7 +13,8 @@ cargo test --workspace
 ```
 
 Runs every test across all 11 workspace members (the ten crates under `crates/`
-plus `src-tauri`). Measured 2026-08-04: 1609 passed, 0 failed, 43 ignored. The
+plus `src-tauri`). Measured 2026-08-07: 1711 passed, 0 failed, 47 ignored, over
+60 result lines. The
 ignored ones are mostly the root-only and live-sshd tests described further down,
 with a few that want a particular firewall backend installed; they are not
 failures and an ordinary `cargo test` does not run them.
@@ -1282,4 +1283,4 @@ in `build-mode: none`, on every push and pull request to `main` and on a schedul
 (Mondays, 06:00 UTC). It has no local reproduction: results go to the
 repository's security tab.
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-05

@@ -438,10 +438,10 @@ hardened host still carries is in [upgrading](docs/guide/upgrading.md).
 ### Tests
 
 ```
-Rust workspace:  1599 passed, 0 failed, 43 ignored
+Rust workspace:  1711 passed, 0 failed, 47 ignored
 ```
 
-The 43 ignored tests need root, a live SSH host, or a specific firewall backend,
+The 47 ignored tests need root, a live SSH host, or a specific firewall backend,
 so they run only inside the test containers. Beyond the workspace suite there is
 a cross-distribution suite that applies and rolls back on five booted
 containers, and a differential suite that compares the host before and after an
@@ -489,4 +489,4 @@ Drawing on [Lynis](https://cisofy.com/lynis/),
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-hardener
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-07

@@ -507,9 +507,9 @@ Current limitations of SSH remote scanning:
 |---------------------------------|--------------------------------------------------------------|
 | No jump host support            | Cannot use bastion/jump hosts (yet)                          |
 | No password authentication      | Key or agent only; a password-only host fails at connect     |
-| ssh config `Port` ignored       | `--port` is always sent and outranks the config file          |
+| ssh config `Port` ignored       | `--port` is always sent and outranks the config file. The port only: a target naming no user has that user **resolved** from your config, through `ssh -G`, and that resolved account is what the checkpoint host key records |
 | Non-root sessions only half elevate | Only file writes go through `sudo`; other commands do not |
-| Local checkpoints               | Checkpoint data stored on local machine. `list` and `rollback` are scoped to the host `--ssh` selects; `show` and `delete` address any row by id and refuse the flag |
+| Local checkpoints               | Checkpoint data stored on local machine. `list` and `rollback` are scoped to the host `--ssh` selects, which for a target naming no user means the resolved key **and** the key an earlier release fabricated for it, so nothing already recorded drops out; `show` and `delete` address any row by id and refuse the flag |
 | Scheduling is local only        | `daemon` and `systemd` refuse `--ssh`: a remote is scheduled by installing the tool on it, or by scheduling `--ssh HOST scan` here |
 | Vendor-layer permissions        | On a layering host, scan reports permission findings apply cannot fix |
 
@@ -536,4 +536,4 @@ Planned for future releases:
 - Jump host / bastion support
 - Remote checkpoint storage option
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-07
