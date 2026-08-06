@@ -1,5 +1,5 @@
 // =============================================================================
-// FLEET APPLY TESTS (T-FAPPLY-01..09) - Linux System Hardener GUI Tests
+// FLEET APPLY TESTS (T-FAPPLY-01..09) - Linux Hardener GUI Tests
 // =============================================================================
 // Mutating fleet page. Execute is gated behind a mandatory dry-run for the EXACT
 // current selection plus a confirm modal; any selection change re-arms the gate.

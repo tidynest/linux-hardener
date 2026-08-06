@@ -1,4 +1,4 @@
-# Linux System Hardener - File Map
+# Linux Hardener - File Map
 
 **Last Updated**: 2026-08-06
 
@@ -761,7 +761,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | File | Purpose |
 |------|---------|
 | `packaging/PKGBUILD` | AUR (Arch Linux) package build script |
-| `packaging/linux-system-hardener.spec` | RPM (Fedora/RHEL/openSUSE) spec file |
+| `packaging/linux-hardener.spec` | RPM (Fedora/RHEL/openSUSE) spec file |
 | `packaging/debian/control` | Debian package metadata and dependencies |
 | `packaging/debian/rules` | Debian build instructions (debhelper) |
 | `packaging/debian/changelog` | Debian changelog |

@@ -1,6 +1,6 @@
 [package]
 name = "hardener-types"
-description = "Shared type definitions for Linux System Hardener (WASM-compatible)"
+description = "Shared type definitions for Linux Hardener (WASM-compatible)"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,6 +1,6 @@
-# Contributing to Linux System Hardener
+# Contributing to Linux Hardener
 
-Thank you for your interest in contributing to Linux System Hardener! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to Linux Hardener! This document provides guidelines and information for contributors.
 
 ## Code of Conduct
 
@@ -18,8 +18,8 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 ```bash
 # Clone the repository
-git clone https://github.com/tidynest/linux-system-hardener.git
-cd linux-system-hardener
+git clone https://github.com/tidynest/linux-hardener.git
+cd linux-hardener
 
 # Format code
 cargo fmt --all
@@ -63,12 +63,12 @@ installed that hook yourself. Run the four gate commands above, and run
 
 ### Finding Something to Work On
 
-Open work lives on the [issue tracker](https://github.com/tidynest/linux-system-hardener/issues),
+Open work lives on the [issue tracker](https://github.com/tidynest/linux-hardener/issues),
 and that is the right place to start rather than guessing at a gap:
 
-- [`good first issue`](https://github.com/tidynest/linux-system-hardener/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+- [`good first issue`](https://github.com/tidynest/linux-hardener/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
   marks self-contained work with the context already written down.
-- [`help wanted`](https://github.com/tidynest/linux-system-hardener/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
+- [`help wanted`](https://github.com/tidynest/linux-hardener/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
   marks issues where a contributor is actively welcome.
 - Issues carry a priority label (`P2`, `P3`) and a kind label (`bug`,
   `enhancement`, `testing`, `documentation`, `packaging`, `security`).
@@ -316,7 +316,7 @@ different name. The full suite is the only complete answer.
 ## Project Structure
 
 ```
-linux-system-hardener/
+linux-hardener/
 ├── crates/
 │   ├── hardener-types/       # WASM-compatible shared type definitions
 │   ├── hardener-core/        # Core plugin infrastructure
@@ -360,10 +360,10 @@ By contributing, you agree that your contributions will be licensed under the Ap
 ## Contact
 
 - **Email**: tidynest@proton.me
-- **Issues**: [GitHub Issues](https://github.com/tidynest/linux-system-hardener/issues)
+- **Issues**: [GitHub Issues](https://github.com/tidynest/linux-hardener/issues)
 - **Security**: do not open a public issue. [SECURITY.md](SECURITY.md) has the
   private reporting route.
 
-Thank you for contributing to Linux System Hardener!
+Thank you for contributing to Linux Hardener!
 
 **Last Updated**: 2026-08-01

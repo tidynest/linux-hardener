@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# POLKIT DE TEST MATRIX - Linux System Hardener
+# POLKIT DE TEST MATRIX - Linux Hardener
 # =============================================================================
 # Tests pkexec/polkit privilege escalation across desktop environments.
 #

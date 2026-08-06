@@ -6,7 +6,7 @@ edition.workspace    = true
 rust-version.workspace    = true
 license.workspace    = true
 repository.workspace = true
-description = "Scheduled scanning daemon for Linux System Hardener"
+description = "Scheduled scanning daemon for Linux Hardener"
 
 [dependencies]
 # Workspace crates

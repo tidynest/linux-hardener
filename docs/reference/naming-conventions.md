@@ -112,6 +112,32 @@ tracked prose and source; `scripts/validate/validate_naming.py` scans every
 tracked file (`.md`, `.rs`, `.toml`, `.py`, `.sh`, `.txt`, `.yml`, `.yaml`,
 `.json`) and reports any em-dash or en-dash as an error.
 
+### 6. One Name for the Project
+
+**The project is `linux-hardener`, written "Linux Hardener".** One slug and one
+display name, in the repository, the AUR/deb/rpm package, the runtime paths
+(`/etc/linux-hardener`, `/var/lib/linux-hardener`, `/var/log/linux-hardener`,
+`~/.config/linux-hardener`), the systemd units, the polkit actions, the desktop
+entry and every document.
+
+It was two names until #51: the product, repository and package were
+`linux-system-hardener` while everything an operator's host actually held was
+`linux-hardener`. Nobody chose that split, it accumulated, and this rule exists
+so it cannot accumulate again.
+
+Two deliberate exceptions, both narrower than the project name rather than a
+second name for it:
+
+- **`hardener` is the CLI binary**, installed to `/usr/bin/hardener`, and
+  `hardener-` is the crate prefix. Shortening the command an operator types is
+  a separate breaking change with its own deprecation window, and it is not
+  taken. The same shortening appears in file names this tool writes into other
+  packages' directories, `00-hardener.conf` and `99-hardener.conf`, where the
+  full name would only add length.
+- **Archived documents keep the name they were written with.** `docs/*/archive/`
+  and past `CHANGELOG.md` entries are accurate about their own moment, and
+  rewriting them would make them wrong.
+
 ---
 
 ## Validator Behaviour

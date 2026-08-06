@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# SHARED SCRIPT HELPERS: Linux System Hardener
+# SHARED SCRIPT HELPERS: Linux Hardener
 # =============================================================================
 # Sourced by the test runners (scripts/test/*.sh, scripts/test/gui/*.sh,
 # scripts/test/polkit/*.sh) and the container tooling (scripts/containers/*.sh).

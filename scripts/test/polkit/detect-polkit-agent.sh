@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# POLKIT AGENT DETECTION - Linux System Hardener
+# POLKIT AGENT DETECTION - Linux Hardener
 # =============================================================================
 # Detects desktop environment, running polkit agent, and pkexec readiness.
 #

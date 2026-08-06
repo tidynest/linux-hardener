@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# PARALLEL JOB-POOL HELPER: Linux System Hardener
+# PARALLEL JOB-POOL HELPER: Linux Hardener
 # =============================================================================
 # Shared bounded-concurrency job pool used by the cross-distro and Web UI GUI
 # test runners' --parallel mode. Depends on lib/common.sh's DIM/CYAN/NC colour

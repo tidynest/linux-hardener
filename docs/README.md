@@ -63,7 +63,7 @@ and stay at the repository root.
 |----------|----------|
 | [ROADMAP.md](ROADMAP.md) | Milestones, completed and planned |
 | [NEXT.md](NEXT.md) | Session handoff and current state |
-| [Issue tracker](https://github.com/tidynest/linux-system-hardener/issues) | Open work, one issue per item; the authoritative list |
+| [Issue tracker](https://github.com/tidynest/linux-hardener/issues) | Open work, one issue per item; the authoritative list |
 | [CHANGELOG.md](../CHANGELOG.md) | What each release changed, and what is merged but unreleased |
 | `plans/` | Active plans; `plans/archive/` holds completed or superseded ones |
 | `archive/` | Historical one-off docs |

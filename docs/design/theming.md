@@ -1,6 +1,6 @@
 # Theme Design Guide
 
-This document explains the theming system for Linux System Hardener's GUI and provides guidelines for creating new themes.
+This document explains the theming system for Linux Hardener's GUI and provides guidelines for creating new themes.
 
 ---
 

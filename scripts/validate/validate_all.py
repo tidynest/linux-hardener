@@ -56,7 +56,7 @@ def main():
     quick_mode = "--quick" in sys.argv
 
     print(f"{BOLD}{'#'*60}{NC}")
-    print(f"{BOLD}#  Linux System Hardener - Documentation Validator{' '*8}#{NC}")
+    print(f"{BOLD}#  Linux Hardener - Documentation Validator{' '*8}#{NC}")
     print(f"{BOLD}{'#'*60}{NC}")
 
     if fix_mode:

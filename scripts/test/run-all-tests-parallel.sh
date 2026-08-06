@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# MASTER PARALLEL TEST RUNNER: Linux System Hardener
+# MASTER PARALLEL TEST RUNNER: Linux Hardener
 # =============================================================================
 # Runs ALL tests in parallel: unit tests, CLI cross-distro, GUI web UI.
 # Optionally runs desktop tests sequentially after container tests.

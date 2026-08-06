@@ -1,4 +1,4 @@
-//! Configuration system for Linux System Hardener
+//! Configuration system for Linux Hardener
 //!
 //! This module provides the configuration structures that control plugin behaviour
 //! and policy exceptions. Configuration annotates findings; it never hides them.
@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 use tracing::warn;
 
-/// Root configuration structure for Linux System Hardener.
+/// Root configuration structure for Linux Hardener.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct HardenerConfig {

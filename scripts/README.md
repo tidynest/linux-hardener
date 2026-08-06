@@ -197,7 +197,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 **Example Output**:
 ```
 ############################################################
-#  Linux System Hardener - Documentation Validator         #
+#  Linux Hardener - Documentation Validator         #
 ############################################################
 
 ============================================================
@@ -1094,7 +1094,7 @@ sudo ./scripts/test/root-test-suite.sh --apply
 **Example Output**:
 ```
 ============================================================
-  Linux System Hardener - Root Test Suite
+  Linux Hardener - Root Test Suite
 ============================================================
 Environment: systemd-nspawn container
 Binary: /project/target/release/hardener v0.3.3

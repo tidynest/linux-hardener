@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# WEB UI GUI TEST ORCHESTRATOR: Linux System Hardener
+# WEB UI GUI TEST ORCHESTRATOR: Linux Hardener
 # =============================================================================
 # Runs Playwright GUI tests inside systemd-nspawn containers.
 # Serial by default; --parallel tests multiple distros simultaneously with
@@ -56,7 +56,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             cat << 'EOF'
-Web UI GUI Test Orchestrator for Linux System Hardener
+Web UI GUI Test Orchestrator for Linux Hardener
 
 Usage: sudo ./scripts/test/gui/run-gui-tests.sh [OPTIONS]
 

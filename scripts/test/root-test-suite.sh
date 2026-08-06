@@ -1,5 +1,5 @@
 #!/bin/bash
-# Comprehensive root test suite for Linux System Hardener
+# Comprehensive root test suite for Linux Hardener
 # Run this INSIDE the test container, not on your real system!
 #
 # Usage: sudo ./scripts/test/root-test-suite.sh [--apply]
@@ -340,7 +340,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             cat << EOF
-Root Test Suite for Linux System Hardener
+Root Test Suite for Linux Hardener
 
 Usage: sudo $0 [options]
 
@@ -371,7 +371,7 @@ EOF
 done
 
 # Run tests
-log "Linux System Hardener - Root Test Suite"
+log "Linux Hardener - Root Test Suite"
 log "Started: $(date)"
 log "Log: $LOG_FILE"
 log ""

@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# POLKIT DESKTOP TEST - Linux System Hardener
+# POLKIT DESKTOP TEST - Linux Hardener
 # =============================================================================
 # Per-desktop polkit validation behind one entry point.
 #

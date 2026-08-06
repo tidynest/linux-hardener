@@ -532,6 +532,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING (packaging): the project is one name, `linux-hardener`, written
+  "Linux Hardener".** It answered to two. The repository, the AUR/deb/rpm
+  package and the user-facing product were `linux-system-hardener`, while every
+  runtime path on a hardened host, the systemd units, the polkit actions and the
+  desktop entry were `linux-hardener`. Nobody chose that split; it accumulated,
+  and it cost a reader time at every boundary between the halves. Closes #51.
+  **Nothing on a hardened host moves.** The direction was chosen for exactly
+  that reason: unifying on the longer name would have moved
+  `/etc/linux-hardener`, `/var/lib/linux-hardener`, `/var/log/linux-hardener`
+  and `~/.config/linux-hardener`, taking `checkpoints.db` and `signing.key` with
+  them, and every one of those migrations is a chance to lose an operator's
+  signed state on a machine that was working. Unifying on the shorter name is a
+  repository rename and package metadata, and the benefit is identical either
+  way, so the whole asymmetry was in the risk.
+  Existing installs upgrade in place: the Arch package carries
+  `provides`/`conflicts`/`replaces`, the deb carries
+  `Provides`/`Replaces`/`Breaks`, and the rpm carries `Obsoletes`/`Provides`.
+  All three are needed together on Arch: `replaces` alone leaves a dependency on
+  the old name unsatisfiable, and `provides` alone never triggers the swap.
+  **The CLI binary stays `hardener`**, as does the `hardener-` crate prefix and
+  the `00-hardener.conf`/`99-hardener.conf` fragments this tool writes into
+  other packages' directories. Renaming the command an operator types is a
+  separate breaking change that wants its own deprecation window, and it is not
+  taken here. Archived documents and past changelog entries keep the name they
+  were written with, because they are accurate about their own moment.
+  `docs/reference/naming-conventions.md` gains the rule, with both exceptions
+  stated, so the split cannot re-accumulate.
 - **The five in-place column migrations are a table the test suite enumerates,
   rather than five calls only three of which anyone had tested.** `init_db`
   applied `checkpoints.host_key`, `scan_results.unchecked_json`,
@@ -4820,27 +4847,27 @@ Configuration file support with layered loading, compliance framework reporting 
 - **0.2.0** (2025-11-28): Compliance frameworks, PDF reports, configuration system
 - **0.1.0** (2025-11-25): Initial development release
 
-[Unreleased]: https://github.com/tidynest/linux-system-hardener/compare/v1.5.1...HEAD
-[1.5.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.5.0...v1.5.1
-[1.5.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.4.0...v1.5.0
-[1.4.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.3.2...v1.4.0
-[1.3.2]: https://github.com/tidynest/linux-system-hardener/compare/v1.3.1...v1.3.2
-[1.3.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.3.0...v1.3.1
-[1.3.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.2.2...v1.3.0
-[1.2.2]: https://github.com/tidynest/linux-system-hardener/compare/v1.2.1...v1.2.2
-[1.2.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.2.0...v1.2.1
-[1.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.5...v1.2.0
-[1.0.5]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.4...v1.0.5
-[1.0.4]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.3...v1.0.4
-[1.0.3]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.2...v1.0.3
-[1.0.2]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.1...v1.0.2
-[1.0.1]: https://github.com/tidynest/linux-system-hardener/compare/v1.0.0...v1.0.1
-[1.0.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.3...v1.0.0
-[0.3.3]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.2...v0.3.3
-[0.3.2]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/tidynest/linux-system-hardener/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/tidynest/linux-system-hardener/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/tidynest/linux-system-hardener/releases/tag/v0.1.0
+[Unreleased]: https://github.com/tidynest/linux-hardener/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/tidynest/linux-hardener/compare/v1.5.0...v1.5.1
+[1.5.0]: https://github.com/tidynest/linux-hardener/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/tidynest/linux-hardener/compare/v1.3.2...v1.4.0
+[1.3.2]: https://github.com/tidynest/linux-hardener/compare/v1.3.1...v1.3.2
+[1.3.1]: https://github.com/tidynest/linux-hardener/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/tidynest/linux-hardener/compare/v1.2.2...v1.3.0
+[1.2.2]: https://github.com/tidynest/linux-hardener/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/tidynest/linux-hardener/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/tidynest/linux-hardener/compare/v1.0.5...v1.2.0
+[1.0.5]: https://github.com/tidynest/linux-hardener/compare/v1.0.4...v1.0.5
+[1.0.4]: https://github.com/tidynest/linux-hardener/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/tidynest/linux-hardener/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/tidynest/linux-hardener/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/tidynest/linux-hardener/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/tidynest/linux-hardener/compare/v0.3.3...v1.0.0
+[0.3.3]: https://github.com/tidynest/linux-hardener/compare/v0.3.2...v0.3.3
+[0.3.2]: https://github.com/tidynest/linux-hardener/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/tidynest/linux-hardener/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/tidynest/linux-hardener/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/tidynest/linux-hardener/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/tidynest/linux-hardener/releases/tag/v0.1.0
 
 **Last Updated**: 2026-08-01

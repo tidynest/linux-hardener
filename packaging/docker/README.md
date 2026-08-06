@@ -7,7 +7,7 @@ Build from the **repository root** (the build context must be the repository
 root, where `.dockerignore` lives):
 
 ```bash
-docker build -f packaging/docker/Dockerfile -t linux-system-hardener .
+docker build -f packaging/docker/Dockerfile -t linux-hardener .
 ```
 
 Usage, mount flags, and the capability boundary (what degrades in-container,

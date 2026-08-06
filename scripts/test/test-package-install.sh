@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# PACKAGE INSTALL VALIDATION - Linux System Hardener
+# PACKAGE INSTALL VALIDATION - Linux Hardener
 # =============================================================================
 # Simulates a distribution package install by mirroring the PKGBUILD package()
 # function, then validates the file layout, permissions, and basic functionality.

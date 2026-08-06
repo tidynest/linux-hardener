@@ -31,11 +31,11 @@ The desktop application additionally requires:
 
 ```bash
 # From AUR (using your preferred AUR helper)
-yay -S linux-system-hardener
+yay -S linux-hardener
 
 # Or manually
-git clone https://aur.archlinux.org/linux-system-hardener.git
-cd linux-system-hardener
+git clone https://aur.archlinux.org/linux-hardener.git
+cd linux-hardener
 makepkg -si
 ```
 
@@ -43,30 +43,30 @@ makepkg -si
 
 ```bash
 # Install the RPM
-sudo dnf install linux-system-hardener-*.rpm
+sudo dnf install linux-hardener-*.rpm
 
 # Or build from source RPM
-rpmbuild -ba linux-system-hardener.spec
-sudo dnf install ~/rpmbuild/RPMS/x86_64/linux-system-hardener-*.rpm
+rpmbuild -ba linux-hardener.spec
+sudo dnf install ~/rpmbuild/RPMS/x86_64/linux-hardener-*.rpm
 ```
 
 ### Debian / Ubuntu / Linux Mint
 
 ```bash
 # Install the .deb
-sudo dpkg -i linux-system-hardener_*.deb
+sudo dpkg -i linux-hardener_*.deb
 sudo apt-get install -f   # resolve dependencies
 
 # Or build from source
 dpkg-buildpackage -us -uc
-sudo dpkg -i ../linux-system-hardener_*.deb
+sudo dpkg -i ../linux-hardener_*.deb
 ```
 
 ### openSUSE
 
 ```bash
 # Install the RPM
-sudo zypper install linux-system-hardener-*.rpm
+sudo zypper install linux-hardener-*.rpm
 ```
 
 ---
@@ -77,7 +77,7 @@ A portable musl-linked binary works on any Linux distribution without dependenci
 
 ```bash
 # Download the latest release
-curl -LO https://github.com/tidynest/linux-system-hardener/releases/latest/download/hardener-linux-x86_64-musl.tar.gz
+curl -LO https://github.com/tidynest/linux-hardener/releases/latest/download/hardener-linux-x86_64-musl.tar.gz
 
 # Extract
 tar xzf hardener-linux-x86_64-musl.tar.gz
@@ -108,7 +108,7 @@ From the repository root (the build context must be the repository root,
 where `.dockerignore` lives):
 
 ```bash
-docker build -f packaging/docker/Dockerfile -t linux-system-hardener .
+docker build -f packaging/docker/Dockerfile -t linux-hardener .
 ```
 
 `--build-arg BUILD_JOBS=<n>` caps rustc parallelism on thermally constrained
@@ -120,7 +120,7 @@ hosts; unset, the build uses all cores.
 # Read-only scan of the host's config surface
 docker run --rm --pid=host \
   -v /etc:/etc:ro -v /var/log:/var/log:ro -v /usr/lib:/usr/lib:ro \
-  linux-system-hardener scan --format json
+  linux-hardener scan --format json
 ```
 
 Compliance reports work the same way:
@@ -128,7 +128,7 @@ Compliance reports work the same way:
 ```bash
 docker run --rm --pid=host \
   -v /etc:/etc:ro -v /var/log:/var/log:ro -v /usr/lib:/usr/lib:ro \
-  linux-system-hardener report --framework cis
+  linux-hardener report --framework cis
 ```
 
 ### Why these flags
@@ -212,8 +212,8 @@ sudo zypper install cargo rust gcc libopenssl-devel libxcb-devel libxkbcommon-de
 ### Build
 
 ```bash
-git clone https://github.com/tidynest/linux-system-hardener.git
-cd linux-system-hardener
+git clone https://github.com/tidynest/linux-hardener.git
+cd linux-hardener
 
 # CLI only (static musl binary)
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
@@ -320,16 +320,16 @@ Use your distribution's standard upgrade mechanism:
 
 ```bash
 # Arch
-yay -Syu linux-system-hardener
+yay -Syu linux-hardener
 
 # Fedora/RHEL
-sudo dnf upgrade linux-system-hardener
+sudo dnf upgrade linux-hardener
 
 # Debian/Ubuntu
-sudo apt-get upgrade linux-system-hardener
+sudo apt-get upgrade linux-hardener
 
 # openSUSE
-sudo zypper update linux-system-hardener
+sudo zypper update linux-hardener
 ```
 
 ### From Binary
@@ -353,16 +353,16 @@ Upgrades preserve your configuration at `/etc/linux-hardener/config.toml`. New c
 
 ```bash
 # Arch
-sudo pacman -Rns linux-system-hardener
+sudo pacman -Rns linux-hardener
 
 # Fedora/RHEL
-sudo dnf remove linux-system-hardener
+sudo dnf remove linux-hardener
 
 # Debian/Ubuntu
-sudo apt-get remove --purge linux-system-hardener
+sudo apt-get remove --purge linux-hardener
 
 # openSUSE
-sudo zypper remove linux-system-hardener
+sudo zypper remove linux-hardener
 ```
 
 ### Manual Cleanup

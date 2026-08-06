@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# PACKAGE INSTALL TEST RUNNER - Linux System Hardener
+# PACKAGE INSTALL TEST RUNNER - Linux Hardener
 # =============================================================================
 # Simulates a distribution package install inside nspawn containers and
 # validates the file layout, permissions, and functional correctness.
@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             cat << EOF
-Package Install Test Runner for Linux System Hardener
+Package Install Test Runner for Linux Hardener
 
 Usage: sudo $0 [OPTIONS]
 

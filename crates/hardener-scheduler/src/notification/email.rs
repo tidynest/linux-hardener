@@ -51,7 +51,7 @@ fn format_subject(summary: &ScanSummary) -> String {
 /// Formats the email body; appends a regression block when present.
 fn format_body(summary: &ScanSummary) -> String {
     let mut body = String::with_capacity(1024);
-    body.push_str("Linux System Hardener - Security Scan Report\n");
+    body.push_str("Linux Hardener - Security Scan Report\n");
     body.push_str("============================================\n\n");
     body.push_str(&format!("Host: {}\n", summary.host));
     body.push_str(&format!("Session ID: {}\n", summary.session_id));

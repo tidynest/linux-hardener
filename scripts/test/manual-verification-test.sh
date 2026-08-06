@@ -1,5 +1,5 @@
 #!/bin/bash
-# Manual Verification Test for Linux System Hardener
+# Manual Verification Test for Linux Hardener
 # This script provides step-by-step verification with visible evidence
 #
 # Usage: sudo ./scripts/test/manual-verification-test.sh

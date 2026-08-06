@@ -20,7 +20,7 @@ authors = ["Eric Jingryd"]
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
-repository = "https://github.com/tidynest/linux-system-hardener"
+repository = "https://github.com/tidynest/linux-hardener"
 
 [workspace.dependencies]
 

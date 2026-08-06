@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Linux System Hardener",
+  "productName": "Linux Hardener",
   "version": "1.5.1",
   "identifier": "com.ericjingryd.linux-hardener",
   "build": {
@@ -12,7 +12,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Linux System Hardener",
+        "title": "Linux Hardener",
         "width": 1200,
         "height": 800,
         "resizable": true,

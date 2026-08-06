@@ -1,6 +1,6 @@
-# Releasing Linux System Hardener
+# Releasing Linux Hardener
 
-This document describes the versioning strategy and release process for Linux System Hardener.
+This document describes the versioning strategy and release process for Linux Hardener.
 
 ---
 
@@ -325,7 +325,7 @@ Version is defined in the workspace root and inherited by all crates:
 | `scripts/badges/generate.js` | `version` `message` | Badge declaration | Yes, step 3c |
 | `docs/assets/badges/version.svg` | rendered label | README version badge | Yes, step 3c |
 | `packaging/PKGBUILD` | `pkgver` (reset `pkgrel=1`) | Arch/AUR package version | No, manual |
-| `packaging/linux-system-hardener.spec` | `Version:` + `%changelog` | RPM package version | No, manual |
+| `packaging/linux-hardener.spec` | `Version:` + `%changelog` | RPM package version | No, manual |
 | `packaging/debian/changelog` | top stanza `(X.Y.Z-1)` | Debian package version | No, manual |
 | `scripts/badges/generate.js` | `aur` `message` | AUR badge declaration | No, manual, tracks `PKGBUILD` |
 | `docs/assets/badges/aur.svg` | rendered label | README AUR badge | No, manual, tracks `PKGBUILD` |
@@ -349,7 +349,7 @@ the updater rather than restating it, so a target added there is covered here.
 All crates use `version.workspace = true` to inherit the workspace version.
 `Cargo.lock` workspace entries are refreshed with `cargo update --workspace` after the bump.
 
-**AUR** (separate repo `ssh://aur@aur.archlinux.org/linux-system-hardener.git`): after the
+**AUR** (separate repo `ssh://aur@aur.archlinux.org/linux-hardener.git`): after the
 `vX.Y.Z` tag is pushed, bump `pkgver`, run `updpkgsums` to fill `sha256sums` from the tag
 tarball, regenerate `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`), then commit and push.
 

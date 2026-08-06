@@ -57,7 +57,7 @@ impl SystemdGenerator {
             binary_path,
             config_path: None,
             calendar: calendar.into(),
-            description: "Linux System Hardener scheduled security scan".to_string(),
+            description: "Linux Hardener scheduled security scan".to_string(),
             user_mode: false,
         }
     }
@@ -110,7 +110,7 @@ impl SystemdGenerator {
         format!(
             "[Unit]\n\
              Description={description}\n\
-             Documentation=https://github.com/tidynest/linux-system-hardener\n\
+             Documentation=https://github.com/tidynest/linux-hardener\n\
              After=network.target\n\
              \n\
              [Service]\n\
@@ -134,7 +134,7 @@ impl SystemdGenerator {
         format!(
             r#"[Unit]
 Description={description} (timer)
-Documentation=https://github.com/tidynest/linux-system-hardener
+Documentation=https://github.com/tidynest/linux-hardener
 
 [Timer]
 OnCalendar={calendar}
