@@ -242,4 +242,4 @@ rustup target list --installed               # List currently installed targets
 cargo update --workspace                     # Update all dependencies in Cargo.lock
 ```
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-05

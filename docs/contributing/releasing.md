@@ -353,6 +353,22 @@ All crates use `version.workspace = true` to inherit the workspace version.
 `vX.Y.Z` tag is pushed, bump `pkgver`, run `updpkgsums` to fill `sha256sums` from the tag
 tarball, regenerate `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`), then commit and push.
 
+> **One-time, for the release that follows the 1.5.1 rename (#51).** The AUR
+> package is named `linux-hardener` and the old `linux-system-hardener` package
+> **does not redirect**, unlike the git remotes. Publishing means a *new* AUR
+> submission rather than a push to the existing one, and `packaging/PKGBUILD`
+> already carries the `provides`/`conflicts`/`replaces` metadata that swaps an
+> existing install. All three are needed together: `replaces` alone leaves a
+> dependency on the old name unsatisfiable, and `provides` alone never triggers
+> the swap.
+>
+> **Leave `linux-system-hardener` published until the new package has landed and
+> the release is out**, so an operator upgrading is carried across rather than
+> stranded on an orphaned package. Only then request deletion or merge of the
+> old one.
+>
+> Delete this note once that release has shipped.
+
 ---
 
 ## Hotfix Process
@@ -429,4 +445,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-07

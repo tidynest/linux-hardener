@@ -158,7 +158,7 @@ The project follows these security practices:
 - Error handling avoids information disclosure
 - Sensitive data is not logged
 - All IPC inputs are validated (length limits, control character rejection, allowlist-based plugin IDs) with 47 dedicated tests
-- Signing keys are encrypted at rest using AES-256-GCM with HKDF-SHA256 derived from the machine identity
+- Signing keys are encrypted at rest using AES-256-GCM with HKDF-SHA256 derived from the machine identity and a frozen salt. The salt is a key-derivation input rather than a label, so changing it makes every existing signing key undecryptable and every signature already written unverifiable; it is named `KEY_DERIVATION_SALT` and pinned by a known-answer test whose expected bytes are computed independently from RFC 5869 rather than recorded from this implementation
 - System binaries are resolved via a trusted path allowlist, not the ambient `PATH` environment variable
 - Privileged IPC operations are rate-limited (5-second cooldown) with mutual exclusion to prevent concurrent privilege escalation attempts
 - Error messages are sanitised before reaching the frontend to avoid leaking internal filesystem paths (CWE-209)
@@ -262,4 +262,4 @@ For security concerns: [private vulnerability report](https://github.com/tidynes
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-hardener/issues)
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-07
