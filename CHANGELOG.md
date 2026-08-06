@@ -399,6 +399,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The services plugin has differential coverage.** Nothing but the tool's own
+  report previously said a unit it claimed to have disabled would fail to start
+  at the next boot. `differential-suite.sh` now asks systemd and the filesystem,
+  either side of the apply, about `bluetooth`: whether `systemctl is-enabled`
+  still returns a state the plugin counts as enabled, whether
+  `/etc/systemd/system/bluetooth.service` is a link to `/dev/null`, and whether
+  a unit that was running was stopped. The first two are separate rows on
+  purpose, because systemd reports a disabled unit and a masked one identically,
+  so one row would pass against a tool that had stopped masking. The third
+  declares itself unaskable where the unit was never running rather than
+  reporting a pass nothing earned. The enabled-state list is copied from the
+  plugin's own `ENABLED_STATES` rather than from the firewall oracle beside it,
+  which shares the word `enabled-runtime` and means the opposite by it. Requires
+  a booted container (`run-cross-distro-tests.sh --differential --booted`),
+  because `systemctl mask` and `is-enabled` need systemd as PID 1; under
+  `--pipe` the plugin leaves the compared set and its rows are declared
+  unaskable. Audit and MAC remain uncovered, for the reasons recorded in
+  `scripts/README.md`. Refs #47.
+
 - **A fleet host's compliance count can be drilled into.** The Hosts panel
   showed a score and per-framework pass/fail/manual counts with no way to find
   out what they were counts of. `FleetFrameworkPosture` now carries one

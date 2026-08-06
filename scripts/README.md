@@ -1289,14 +1289,37 @@ every managed permission mode, `sshd -T` in full, the `sshd_config.d` fragments
 as names and contents, and what `login.defs` means to a fresh account. An apply
 that undoes the previous one is a fleet host drifting back to an unhardened state
 on a timer while every scan reports success, and a single-apply run cannot see
-that. A complete run comes to 70 checks per distribution unbooted and 83 booted,
-and a run recording fewer than the tables ask for is refused rather than reported
-as a pass.
+that. A complete run comes to 70 checks per distribution unbooted and 89 booted,
+88 of them where the container never had `bluetooth.service` running, and a run
+recording fewer than the tables ask for is refused rather than reported as a
+pass.
+
+**The services rows need `--booted`.** `systemctl mask` and `systemctl
+is-enabled` want systemd as PID 1, which `nspawn --pipe` does not provide, so
+under `--pipe` the plugin is left out of the compared set entirely and its rows
+are declared unaskable rather than answered. Booted, three questions are asked
+of `bluetooth`: whether systemd will still start it at the next boot, whether
+`/etc/systemd/system/bluetooth.service` is a link to `/dev/null` rather than
+merely absent from the wants directory, and whether a unit that was running was
+stopped. The last declares itself unaskable where the unit was never running,
+because a row that reports a pass on all five distributions without the tool
+having stopped anything proves nothing.
+
+`bluetooth` is the subject because `containers/create-container.sh` installs
+`bluez` on all five images and enables the unit, deliberately: the plugin raises
+a finding only for a unit that is enabled or active, and every image shipped
+with none of the five units it assesses.
+
+**Two plugins still have no differential coverage**, both for reasons that have
+not changed (issue #47). `auditd` cannot load rules inside an nspawn container,
+so the audit apply fails there by design and an oracle over it would be reading
+a failure rather than a result. The MAC plugin is unbuildable on the current
+development machine. Neither is blocked on the suite.
 
 It needs a container that has never been hardened, because that pre-apply
 control requires findings to exist, and it needs `jq` (the suite refuses
 loudly if it is missing). `differential-suite.sh --self-test` runs the pure
-text extractors and every refusal path with no root and no container, 410
+text extractors and every refusal path with no root and no container, 516
 assertions in all.
 
 **How It Works**:
