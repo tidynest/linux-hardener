@@ -977,6 +977,7 @@ pub struct Finding {
     pub finding_remediation_steps: Vec<String>,
     pub finding_compliance: Vec<ComplianceMapping>,
     pub finding_policy_exception: Option<FindingPolicyException>,
+    pub finding_exception_key: Option<String>,
 }
 
 pub struct ApplyResult {

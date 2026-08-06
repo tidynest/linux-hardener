@@ -797,6 +797,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Two processes opening the checkpoint database at once could both attempt the
+  same migration, and the loser refused to open it at all.**
+  `add_column_if_missing` read whether a column was present and then added it,
+  with nothing holding a lock between the two statements. On the first run after
+  an upgrade that added a column, two openers could both read it as absent and
+  both attempt the `ALTER TABLE`; the second one to reach it failed with
+  `duplicate column name`, which `init_db` returned as an error, so that process
+  would not open the database. All three non-test `init_db` callers share
+  `/var/lib/linux-hardener/checkpoints.db`, so a `hardener state` invocation and
+  the desktop opening its history at the same moment was enough. The whole
+  migration set now runs inside one **`BEGIN IMMEDIATE`** transaction, which
+  takes the write lock at that statement rather than at the first write, so the
+  check and the act cannot be separated; a plain `BEGIN` is deferred in SQLite
+  and would have left the gap exactly as it was. `add_column_if_missing` takes a
+  connection rather than a pool, because a pool is free to run the two statements
+  on different connections and the lock would then guard neither. Catching
+  `duplicate column name` was the alternative and was rejected: it means matching
+  an error string SQLite has never promised, and it would also swallow a genuine
+  `column`/`ddl` disagreement that `test_init_db_idempotent` catches today.
+  Running the set in one transaction also means an upgrade no longer leaves a
+  database carrying some of its columns and not the rest, and that promise has
+  its own test rather than resting on the code looking right: the rollback branch
+  had **no subject** among the real migrations, since all five succeed, so
+  `apply_migrations` takes the set as a parameter and the test passes one whose
+  second entry SQLite refuses. Both tests were watched failing first, the race
+  with `duplicate column name: exception_key` and the rollback against an
+  unconditional `COMMIT`. Closes #113.
+
 - **The declared minimum Rust version was wrong, and the workspace could not be
   built on it.** `rust-version` said `1.85` and the README badge repeated it,
   both resting on the reasoning that edition 2024 stabilised in 1.85 rather than

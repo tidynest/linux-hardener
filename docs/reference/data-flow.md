@@ -147,6 +147,7 @@ struct Finding {
     finding_remediation_steps: Vec<String>,
     finding_compliance: Vec<ComplianceMapping>,
     finding_policy_exception: Option<FindingPolicyException>,  // Policy annotation
+    finding_exception_key: Option<String>,       // The `exceptions` key that accepts it
 }
 
 struct UncheckedCheck {

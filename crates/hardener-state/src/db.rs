@@ -3,7 +3,9 @@
 //! Uses SQLite to store checkpoint metadata and file states.
 
 use hardener_common::error::{HardeningError, Result};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{
+    SqliteConnectOptions, SqliteConnection, SqliteJournalMode, SqlitePool, SqlitePoolOptions,
+};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -93,8 +95,12 @@ const SCHEMA: &str = r#"
 /// bound, because SQLite does not accept a bound identifier in DDL. The sole
 /// caller passes them from [`MIGRATIONS`], whose entries are string literals,
 /// and this function is private to the module, so no operator input reaches it.
+///
+/// The check and the act are only safe together, so this takes a connection
+/// rather than a pool: [`apply_migrations`] holds the write lock around it, and
+/// a pool would be free to run the two statements on different connections.
 async fn add_column_if_missing(
-    pool: &SqlitePool,
+    conn: &mut SqliteConnection,
     table: &str,
     column: &str,
     ddl: &str,
@@ -102,18 +108,70 @@ async fn add_column_if_missing(
     let present: i64 = sqlx::query_scalar(&format!(
         "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'"
     ))
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await
     .map_err(|e| HardeningError::Database(e.to_string()))?;
 
     if present == 0 {
         sqlx::query(&format!("ALTER TABLE {table} ADD COLUMN {ddl}"))
-            .execute(pool)
+            .execute(&mut *conn)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
     }
 
     Ok(())
+}
+
+/// Applies every entry in [`MIGRATIONS`] under one write lock.
+///
+/// `BEGIN IMMEDIATE` takes that lock before the first `pragma_table_info` read
+/// rather than at the first write, which is what closes the gap between
+/// deciding a column is absent and adding it. Without it, two processes opening
+/// the same database on the first run after an upgrade could both read the
+/// column as absent and both attempt the `ALTER TABLE`, and the loser refused to
+/// open the database at all with `duplicate column name`. A plain `BEGIN` is
+/// deferred in SQLite and would leave exactly that gap open.
+///
+/// The whole set runs inside one transaction, so a database is never left
+/// carrying some of an upgrade's columns and not the rest.
+///
+/// The set is a parameter rather than [`MIGRATIONS`] read directly, so that the
+/// rollback can be tested: it needs a migration that fails, and every real one
+/// succeeds.
+async fn apply_migrations(pool: &SqlitePool, migrations: &[Migration]) -> Result<()> {
+    let mut conn = pool
+        .acquire()
+        .await
+        .map_err(|e| HardeningError::Database(e.to_string()))?;
+
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| HardeningError::Database(e.to_string()))?;
+
+    let mut applied = Ok(());
+    for migration in migrations {
+        applied =
+            add_column_if_missing(&mut conn, migration.table, migration.column, migration.ddl)
+                .await;
+        if applied.is_err() {
+            break;
+        }
+    }
+
+    // The closing statement runs whichever way the loop went, so a failed
+    // migration releases the lock rather than holding it until the pool drops.
+    let closing = if applied.is_ok() {
+        "COMMIT"
+    } else {
+        "ROLLBACK"
+    };
+    sqlx::query(closing)
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| HardeningError::Database(e.to_string()))?;
+
+    applied
 }
 
 /// One column added to a table that predates it.
@@ -238,9 +296,7 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
 
     // Bring a database written by an earlier release up to the schema above.
     // Each entry says what an old row reads back as; see [`MIGRATIONS`].
-    for migration in MIGRATIONS {
-        add_column_if_missing(&pool, migration.table, migration.column, migration.ddl).await?;
-    }
+    apply_migrations(&pool, MIGRATIONS).await?;
 
     // Foreign key enforcement
     sqlx::query("PRAGMA foreign_keys = ON")
