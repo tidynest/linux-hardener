@@ -82,6 +82,43 @@ const SCHEMA: &str = r#"
     CREATE INDEX IF NOT EXISTS idx_scan_findings_result ON scan_findings(result_id);
     "#;
 
+/// Adds `column` to `table` when it is not already there.
+///
+/// Every column reaching this is nullable or carries a default, so a row
+/// written before it existed reads back as the absent value rather than making
+/// the database unreadable.
+///
+/// `table`, `column` and `ddl` are formatted into the statement rather than
+/// bound, because SQLite does not accept a bound identifier in DDL. Every call
+/// site passes a string literal and this function is private to the module, so
+/// no operator input reaches it.
+///
+/// A `column` that disagrees with the name inside `ddl` is caught by
+/// `test_init_db_idempotent`: the guard would keep reading the column as
+/// absent and the second `ALTER TABLE` would fail as a duplicate.
+async fn add_column_if_missing(
+    pool: &SqlitePool,
+    table: &str,
+    column: &str,
+    ddl: &str,
+) -> Result<()> {
+    let present: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'"
+    ))
+    .fetch_one(pool)
+    .await
+    .map_err(|e| HardeningError::Database(e.to_string()))?;
+
+    if present == 0 {
+        sqlx::query(&format!("ALTER TABLE {table} ADD COLUMN {ddl}"))
+            .execute(pool)
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
+    }
+
+    Ok(())
+}
+
 /// Initialises the database connection pool.
 ///
 /// Creates the database file if it doesn't exist and applies the schema.
@@ -124,72 +161,42 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         .await
         .map_err(|e| HardeningError::Database(e.to_string()))?;
 
-    // Migrate pre-host_key databases in place (idempotent).
-    let has_host_key: bool = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM pragma_table_info('checkpoints') WHERE name = 'host_key'",
+    // A checkpoint database written before host keys existed belongs to the
+    // machine it sits on, which is what the default records.
+    add_column_if_missing(
+        &pool,
+        "checkpoints",
+        "host_key",
+        "host_key TEXT NOT NULL DEFAULT 'local'",
     )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| HardeningError::Database(e.to_string()))?
-        > 0;
-    if !has_host_key {
-        sqlx::query("ALTER TABLE checkpoints ADD COLUMN host_key TEXT NOT NULL DEFAULT 'local'")
-            .execute(&pool)
-            .await
-            .map_err(|e| HardeningError::Database(e.to_string()))?;
-    }
+    .await?;
 
-    // Migrate pre-unchecked_json scan_results tables in place (idempotent).
-    let has_unchecked: bool = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM pragma_table_info('scan_results') WHERE name = 'unchecked_json'",
+    // A scan result written before this column existed recorded no unchecked
+    // checks, and NULL reads back as exactly that.
+    add_column_if_missing(
+        &pool,
+        "scan_results",
+        "unchecked_json",
+        "unchecked_json TEXT",
     )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| HardeningError::Database(e.to_string()))?
-        > 0;
-    if !has_unchecked {
-        sqlx::query("ALTER TABLE scan_results ADD COLUMN unchecked_json TEXT")
-            .execute(&pool)
-            .await
-            .map_err(|e| HardeningError::Database(e.to_string()))?;
-    }
+    .await?;
 
-    // Migrate pre-link_target file_states tables in place (idempotent). A
-    // checkpoint taken before this column existed leaves it NULL, which reads
-    // back as "not a symlink" and restores exactly as it did before, so an
-    // existing checkpoint keeps working rather than becoming unreadable.
-    let has_link_target: bool = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM pragma_table_info('file_states') WHERE name = 'link_target'",
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| HardeningError::Database(e.to_string()))?
-        > 0;
-    if !has_link_target {
-        sqlx::query("ALTER TABLE file_states ADD COLUMN link_target TEXT")
-            .execute(&pool)
-            .await
-            .map_err(|e| HardeningError::Database(e.to_string()))?;
-    }
+    // A checkpoint taken before this column existed leaves it NULL, which
+    // reads back as "not a symlink" and restores exactly as it did before, so
+    // an existing checkpoint keeps working rather than becoming unreadable.
+    add_column_if_missing(&pool, "file_states", "link_target", "link_target TEXT").await?;
 
-    // Migrate pre-content_absence file_states tables in place (idempotent). A
-    // checkpoint taken before this column existed leaves it NULL, which reads
-    // back as "not recorded" rather than as either answer, because such a row
-    // genuinely cannot say whether its missing content was deliberate or the
-    // result of a read it could not make.
-    let has_content_absence: bool = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM pragma_table_info('file_states') WHERE name = 'content_absence'",
+    // A checkpoint taken before this column existed leaves it NULL, which
+    // reads back as "not recorded" rather than as either answer, because such
+    // a row genuinely cannot say whether its missing content was deliberate or
+    // the result of a read it could not make.
+    add_column_if_missing(
+        &pool,
+        "file_states",
+        "content_absence",
+        "content_absence TEXT",
     )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| HardeningError::Database(e.to_string()))?
-        > 0;
-    if !has_content_absence {
-        sqlx::query("ALTER TABLE file_states ADD COLUMN content_absence TEXT")
-            .execute(&pool)
-            .await
-            .map_err(|e| HardeningError::Database(e.to_string()))?;
-    }
+    .await?;
 
     // Foreign key enforcement
     sqlx::query("PRAGMA foreign_keys = ON")
