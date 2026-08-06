@@ -15,7 +15,7 @@ pub use checkpoint::{
 };
 pub use db::init_db;
 pub use hash_chain::HashChain;
-pub use manager::{CheckpointManager, OrphanedFileStates};
+pub use manager::{CheckpointManager, DEFAULT_ROLLBACK_PREFIXES, OrphanedFileStates};
 pub use scan_history::{ScanSession, ScanSessionId, ScanStatus};
 pub use scan_manager::ScanHistoryManager;
 pub use signing::CheckpointSigner;

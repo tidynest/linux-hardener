@@ -9,7 +9,8 @@ use hardener_core::{
     UncheckedBlocker, plugin::HardeningPlugin,
 };
 use hardener_plugins::FirewallHardeningPlugin;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 mod common;
 use common::test_checkpoint_manager;
@@ -1227,11 +1228,16 @@ fn nft_ok() -> CommandOutput {
 }
 
 /// Registers the `list chain` presence probe returning `chain_body`, plus the
-/// single `nft -f /etc/nftables.conf` load `apply_rules` always issues after
-/// it, regardless of whether every rule the probe found was already present
-/// (see `render_ruleset`'s doc comment: the table is replaced outright, so
-/// loading the same scoped file again is idempotent and the load is not gated
-/// on anything having changed).
+/// single `nft -f` load of the plugin's own fragment that `apply_rules`
+/// always issues after it, regardless of whether every rule the probe found
+/// was already present (see `render_ruleset`'s doc comment: the table is
+/// replaced outright, so loading the same scoped file again is idempotent and
+/// the load is not gated on anything having changed). Also registers the
+/// `systemctl show` probe both `checkpoint_paths` and `apply_rules` itself run
+/// (naming the Arch/Debian boot file, `/etc/nftables.conf`), and a
+/// program-level `mkdir` response covering both directories `apply_rules`
+/// creates, since their exact arguments vary with the boot path a fixture
+/// names.
 fn nft_apply_base(chain_body: &str) -> MockExecutor {
     MockExecutor::new()
         .with_command(
@@ -1243,7 +1249,28 @@ fn nft_apply_base(chain_body: &str) -> MockExecutor {
                 exit_code: 0,
             },
         )
-        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
+        .with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f /etc/nftables.conf }\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command_program("mkdir", nft_ok())
+        .with_command(
+            "nft",
+            &["-f", "/etc/linux-hardener/nftables/50-linux-hardener.nft"],
+            nft_ok(),
+        )
         .with_command(
             "nft",
             &[
@@ -1272,15 +1299,20 @@ fn logged_nft_add_rule(executor: &MockExecutor) -> bool {
     })
 }
 
-/// The rendered ruleset `apply_rules` wrote to `/etc/nftables.conf`, or a
-/// panic naming what is missing: every test using this expects the write to
-/// have happened.
+/// The rendered ruleset `apply_rules` wrote to its own fragment,
+/// `/etc/linux-hardener/nftables/50-linux-hardener.nft`, or a panic naming
+/// what is missing: every test using this expects the write to have
+/// happened. Not `/etc/nftables.conf` any more: that file, the boot path on
+/// Arch and Debian, now gains only the include line, and the administrator's
+/// own content in it must survive untouched (issue #98).
 fn written_ruleset(executor: &MockExecutor) -> String {
     executor
         .files()
-        .get(Path::new("/etc/nftables.conf"))
+        .get(Path::new(
+            "/etc/linux-hardener/nftables/50-linux-hardener.nft",
+        ))
         .cloned()
-        .expect("apply_rules must write the rendered ruleset to /etc/nftables.conf")
+        .expect("apply_rules must write the rendered ruleset to its own fragment")
 }
 
 /// A source `nft` cannot match on stops the apply at the host's edge: nothing
@@ -1500,31 +1532,7 @@ async fn apply_rules_never_issues_a_per_rule_add() {
     let partial_chain = "table inet linux_hardener {\n\tchain input {\n\t\t\
         type filter hook input priority 0; policy drop;\n\t\t\
         iif \"lo\" accept\n\t\ttcp dport 22 accept\n\t}\n}\n";
-    let executor = MockExecutor::new()
-        .with_command(
-            "nft",
-            &["list", "chain", "inet", "linux_hardener", "input"],
-            CommandOutput {
-                stdout: partial_chain.to_string(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        )
-        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
-        .with_command(
-            "nft",
-            &[
-                "--check",
-                "--file",
-                "/run/linux-hardener-nftables-check.nft",
-            ],
-            nft_ok(),
-        )
-        .with_command(
-            "rm",
-            &["-f", "/run/linux-hardener-nftables-check.nft"],
-            nft_ok(),
-        );
+    let executor = nft_apply_base(partial_chain);
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let backend = NftablesBackend::new();
 
@@ -1555,31 +1563,7 @@ async fn apply_rules_reports_skipped_only_for_rules_already_present() {
     let partial_chain = "table inet linux_hardener {\n\tchain input {\n\t\t\
         type filter hook input priority 0; policy drop;\n\t\t\
         iif \"lo\" accept\n\t\ttcp dport 22 accept\n\t}\n}\n";
-    let executor = MockExecutor::new()
-        .with_command(
-            "nft",
-            &["list", "chain", "inet", "linux_hardener", "input"],
-            CommandOutput {
-                stdout: partial_chain.to_string(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        )
-        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
-        .with_command(
-            "nft",
-            &[
-                "--check",
-                "--file",
-                "/run/linux-hardener-nftables-check.nft",
-            ],
-            nft_ok(),
-        )
-        .with_command(
-            "rm",
-            &["-f", "/run/linux-hardener-nftables-check.nft"],
-            nft_ok(),
-        );
+    let executor = nft_apply_base(partial_chain);
     let ctx = Context::with_executor(Arc::new(executor.clone()));
     let backend = NftablesBackend::new();
 
@@ -1647,11 +1631,36 @@ async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_presen
                 exit_code: 0,
             },
         )
+        // The pre-apply checkpoint probes for the boot file before it captures
+        // anything, and `apply_rules` probes it again for the same reason;
+        // naming it here matches the `-f` load of the plugin's own fragment
+        // and the generic `mkdir` response registered below.
+        .with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f /etc/nftables.conf }\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command_program("mkdir", nft_ok())
         // No `list chain` for the plugin's own input chain is registered: its
         // table does not exist yet on this host, exactly as before, and the
         // atomic load must create it as part of the same transaction that
         // leaves the foreign table alone.
-        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
+        .with_command(
+            "nft",
+            &["-f", "/etc/linux-hardener/nftables/50-linux-hardener.nft"],
+            nft_ok(),
+        )
         .with_command(
             "nft",
             &[
@@ -1719,10 +1728,12 @@ async fn test_nftables_plugin_apply_ensures_chain_when_foreign_hook_input_presen
 /// The load is refused and the file it was rendered into is already on disk.
 ///
 /// The write precedes the load, so this is the one failure mode of the single
-/// transaction that leaves durable state behind: `/etc/nftables.conf` holds a
-/// ruleset the kernel has just rejected, at the path `nftables.service` reads
-/// at boot. Nothing in the suite reached either error branch of write-then-load
-/// before this, which issue #96 lists among its remaining gaps.
+/// transaction that leaves durable state behind: the plugin's own fragment,
+/// `/etc/linux-hardener/nftables/50-linux-hardener.nft`, holds a ruleset the
+/// kernel has just rejected, and the boot file already carries the include
+/// line reaching it. Nothing in the suite reached either error branch of
+/// write-then-load before this, which issue #96 lists among its remaining
+/// gaps.
 ///
 /// The assertion is deliberately that the file IS there. That is the honest
 /// description of the state, and pinning it is what stops a future reader
@@ -1744,6 +1755,23 @@ async fn a_refused_load_leaves_the_rendered_file_on_disk() {
                 exit_code: 0,
             },
         )
+        .with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f /etc/nftables.conf }\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command_program("mkdir", nft_ok())
         // The check PASSES here and the load fails, which is deliberate: it is
         // the residual case `nft --check` cannot cover, where the parse is fine
         // and the kernel refuses the ruleset anyway. That is what keeps this
@@ -1764,10 +1792,12 @@ async fn a_refused_load_leaves_the_rendered_file_on_disk() {
         )
         .with_command(
             "nft",
-            &["-f", "/etc/nftables.conf"],
+            &["-f", "/etc/linux-hardener/nftables/50-linux-hardener.nft"],
             CommandOutput {
                 stdout: String::new(),
-                stderr: "/etc/nftables.conf:4:19-19: Error: File exists\n".to_string(),
+                stderr: "/etc/linux-hardener/nftables/50-linux-hardener.nft:4:19-19: Error: \
+                         File exists\n"
+                    .to_string(),
                 exit_code: 1,
             },
         );
@@ -1784,12 +1814,318 @@ async fn a_refused_load_leaves_the_rendered_file_on_disk() {
         "the operator must be told what nft said, got: {failure}"
     );
     assert!(
-        executor
-            .files()
-            .contains_key(Path::new("/etc/nftables.conf")),
+        executor.files().contains_key(Path::new(
+            "/etc/linux-hardener/nftables/50-linux-hardener.nft"
+        )),
         "the write precedes the load, so a refused load leaves the rendered \
-         file at the boot path: that is the state, and it is pinned rather \
-         than wished away"
+         file behind: that is the state, and it is pinned rather than wished \
+         away"
+    );
+}
+
+// --- Issue #98: apply writes beside the administrator's ruleset rather than
+// over it. `nftables_host()`, `written_files()` and `logged_commands()` are
+// this file's own helpers, not brief-imagined production accessors: neither
+// `nftables_host()` nor `written_files()` existed before this section, so
+// they are built here in the shape `nft_apply_base()` and `written_ruleset()`
+// already established above. ---
+
+/// A base mock for `apply_rules`' commands whose path never varies with the
+/// boot file a test names: the pre-write `nft --check`/`rm` scratch dance,
+/// an empty existing chain, the load of the plugin's own fragment, and the
+/// live-only load `execute_nft_from_string` issues when persistence is not
+/// achieved. A program-level `mkdir` response covers both directories
+/// `apply_rules` creates, since their exact arguments vary with the boot path.
+/// Each test still registers its own `systemctl show` answer, because that is
+/// exactly the boot file this section is about.
+fn nftables_host() -> MockExecutor {
+    MockExecutor::new()
+        .with_command(
+            "nft",
+            &["list", "chain", "inet", "linux_hardener", "input"],
+            CommandOutput {
+                stdout: NFT_EMPTY_CHAIN.to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "nft",
+            &[
+                "--check",
+                "--file",
+                "/run/linux-hardener-nftables-check.nft",
+            ],
+            nft_ok(),
+        )
+        .with_command(
+            "rm",
+            &["-f", "/run/linux-hardener-nftables-check.nft"],
+            nft_ok(),
+        )
+        .with_command_program("mkdir", nft_ok())
+        .with_command(
+            "nft",
+            &["-f", "/etc/linux-hardener/nftables/50-linux-hardener.nft"],
+            nft_ok(),
+        )
+        .with_command(
+            "nft",
+            &["-f", "/run/linux-hardener-nftables-check.nft"],
+            nft_ok(),
+        )
+}
+
+/// Every file the mock currently holds, minus the `/run` scratch path.
+///
+/// Real `nft -f` plus `rm` never leaves that tmpfs entry behind, but the
+/// mock's virtual filesystem does not model `rm` actually removing anything
+/// it holds; `refuse_a_ruleset_nft_will_not_parse` writes it on every apply,
+/// whichever way the write-vs-no-persistence branch below goes. Filtering it
+/// out here is what keeps this a fair stand-in for "what a real host would
+/// still have on disk" rather than an artefact of the mock's own limits.
+fn written_files(executor: &MockExecutor) -> HashMap<PathBuf, String> {
+    let mut files = executor.files();
+    files.remove(Path::new("/run/linux-hardener-nftables-check.nft"));
+    files
+}
+
+/// Each executed command as one string, the program followed by its joined
+/// arguments, so a test can match a command line the way an operator would
+/// read it in a shell history rather than a `(String, Vec<String>)` tuple.
+fn logged_commands(executor: &MockExecutor) -> Vec<String> {
+    executor
+        .log()
+        .commands_executed
+        .into_iter()
+        .map(|(program, args)| format!("{program} {}", args.join(" ")))
+        .collect()
+}
+
+/// Issue #98. /etc/nftables.conf is a file distributions ship with content: on
+/// Arch it is where the administrator's own `inet filter` table is defined. A
+/// whole-file write deletes that definition, so their table is live in the
+/// kernel and gone at the next boot, and nothing warns at apply time.
+#[tokio::test]
+async fn an_apply_never_replaces_the_administrators_ruleset() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let administrators = "#!/usr/bin/nft -f\n\
+                          destroy table inet filter\n\
+                          table inet filter {\n  chain input {\n    tcp dport 443 accept\n  }\n}\n";
+    let executor = Arc::new(
+        nftables_host()
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f \
+                             /etc/nftables.conf }\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_file("/etc/nftables.conf", administrators),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    NftablesBackend::new()
+        .apply_rules(&ctx, &hardener_plugins::firewall::get_baseline_rules())
+        .await
+        .expect("the apply must succeed on a host with a packaged ruleset");
+
+    let written = written_files(&executor);
+    let boot = written
+        .get(Path::new("/etc/nftables.conf"))
+        .expect("the boot file gains the include line, so it is written");
+
+    assert!(
+        boot.contains("table inet filter"),
+        "the administrator's table must survive the apply, got:\n{boot}"
+    );
+    assert!(
+        boot.contains("tcp dport 443 accept"),
+        "their rules must survive too, got:\n{boot}"
+    );
+    assert!(
+        boot.contains("include \"/etc/linux-hardener/nftables/*.nft\""),
+        "the boot file must reach our fragment, got:\n{boot}"
+    );
+    assert!(
+        !boot.contains("table inet linux_hardener"),
+        "our table belongs in our own file, not in theirs, got:\n{boot}"
+    );
+
+    let ours = written
+        .get(Path::new(
+            "/etc/linux-hardener/nftables/50-linux-hardener.nft",
+        ))
+        .expect("the rendered ruleset must be written to our own file");
+    assert!(
+        ours.contains("table inet linux_hardener"),
+        "our file holds our table, got:\n{ours}"
+    );
+}
+
+/// A second apply must not stack include lines. The file is read first and the
+/// line added only when absent.
+#[tokio::test]
+async fn appending_the_include_line_is_idempotent() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let already = "#!/usr/bin/nft -f\n\
+                   table inet filter {}\n\
+                   include \"/etc/linux-hardener/nftables/*.nft\"\n";
+    let executor = Arc::new(
+        nftables_host()
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f \
+                             /etc/nftables.conf }\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_file("/etc/nftables.conf", already),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    NftablesBackend::new()
+        .apply_rules(&ctx, &hardener_plugins::firewall::get_baseline_rules())
+        .await
+        .expect("a second apply must succeed");
+
+    let written = written_files(&executor);
+    if let Some(boot) = written.get(Path::new("/etc/nftables.conf")) {
+        assert_eq!(
+            boot.matches("include \"/etc/linux-hardener/nftables/*.nft\"")
+                .count(),
+            1,
+            "a repeat apply must not stack include lines, got:\n{boot}"
+        );
+    }
+}
+
+/// openSUSE's boot file does not exist on a stock host: /etc/nftables holds
+/// only osf/, and the unit is ConditionPathExists-gated on a rules/main.nft
+/// nobody has created. write_file cannot create a missing parent, so the
+/// directory has to be made first.
+#[tokio::test]
+async fn a_boot_file_that_does_not_exist_is_created_with_its_parent() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = Arc::new(
+        nftables_host()
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft flush \
+                             ruleset; include \"/etc/nftables/rules/main.nft\" }\n\
+                             ConditionPathExists=/etc/nftables/rules/main.nft\n"
+                        .to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_path_exists("/etc/nftables/rules/main.nft", false),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    NftablesBackend::new()
+        .apply_rules(&ctx, &hardener_plugins::firewall::get_baseline_rules())
+        .await
+        .expect("an absent boot file is created, not an error");
+
+    let commands = logged_commands(&executor);
+    assert!(
+        commands
+            .iter()
+            .any(|c| c.contains("mkdir") && c.contains("/etc/nftables/rules")),
+        "the boot file's parent must be created before it is written, got {commands:?}"
+    );
+    let written = written_files(&executor);
+    let boot = written
+        .get(Path::new("/etc/nftables/rules/main.nft"))
+        .expect("the boot file must be created");
+    assert!(boot.contains("include \"/etc/linux-hardener/nftables/*.nft\""));
+}
+
+/// A probe that cannot answer never guesses a path. The host is filtered now,
+/// and nothing is written anywhere, our own fragment included: a fragment with
+/// no include to reach it goes live the moment somebody repairs the unit.
+#[tokio::test]
+async fn an_unreadable_probe_hardens_live_and_persists_nothing() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = Arc::new(nftables_host().with_command(
+        "systemctl",
+        &[
+            "show",
+            "nftables.service",
+            "-p",
+            "ExecStart",
+            "-p",
+            "ConditionPathExists",
+        ],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+    ));
+    let ctx = Context::with_executor(executor.clone());
+
+    let changes = NftablesBackend::new()
+        .apply_rules(&ctx, &hardener_plugins::firewall::get_baseline_rules())
+        .await
+        .expect("the host is still hardened, so this is not an error");
+
+    assert!(
+        written_files(&executor).is_empty(),
+        "nothing may be written when the boot file is unknown, got {:?}",
+        written_files(&executor).keys().collect::<Vec<_>>()
+    );
+    assert!(
+        changes
+            .iter()
+            .any(|c| c.change_description.contains("not persist")),
+        "the operator must be told persistence did not happen, got {changes:?}"
+    );
+    assert!(
+        logged_commands(&executor)
+            .iter()
+            .any(|c| c.starts_with("nft -f ")),
+        "the ruleset is still loaded, so the host is filtered now"
     );
 }
 
@@ -2039,11 +2375,12 @@ async fn a_refused_enable_is_surfaced_with_systemd_own_words() {
 /// The apply hands the SELECTED backend's own paths to the pre-apply
 /// checkpoint, and the checkpoint captures them.
 ///
-/// `config_paths` has three unit assertions about what each backend declares,
-/// and until this nothing asserted that `apply` passes them to anything.
-/// Emptying the list at the call site left the whole suite green while the
-/// checkpoint captured nothing, which silently removes the only stated remedy
-/// for the whole-file overwrite of `/etc/nftables.conf` recorded as issue #98.
+/// `checkpoint_paths` has three unit assertions about what each backend
+/// declares, and until this nothing asserted that `apply` passes them to
+/// anything. Emptying the list at the call site left the whole suite green
+/// while the checkpoint captured nothing, which silently removes the only
+/// stated remedy for the whole-file overwrite of `/etc/nftables.conf`
+/// recorded as issue #98.
 #[tokio::test]
 async fn the_apply_checkpoints_the_path_its_backend_writes() {
     let executor = MockExecutor::new()
@@ -2077,7 +2414,32 @@ async fn the_apply_checkpoints_the_path_its_backend_writes() {
                 exit_code: 0,
             },
         )
-        .with_command("nft", &["-f", "/etc/nftables.conf"], nft_ok())
+        // The probe checkpoint_paths runs before create_checkpoint_for_apply,
+        // and apply_rules runs the same probe again before it writes; naming
+        // it here matches both, so the assertions below still see
+        // /etc/nftables.conf declared.
+        .with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f /etc/nftables.conf }\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command_program("mkdir", nft_ok())
+        .with_command(
+            "nft",
+            &["-f", "/etc/linux-hardener/nftables/50-linux-hardener.nft"],
+            nft_ok(),
+        )
         .with_command(
             "nft",
             &[
@@ -2115,9 +2477,9 @@ async fn the_apply_checkpoints_the_path_its_backend_writes() {
 
     assert!(
         paths.iter().any(|path| path == "/etc/nftables.conf"),
-        "the nftables backend rewrites this file whole, so a rollback is the \
-         only way back to what the administrator had; the checkpoint must \
-         carry it, got {paths:?}"
+        "the apply appends its include line to this file, so it must be \
+         checkpointed too; a rollback restores it to exactly what the \
+         administrator had, got {paths:?}"
     );
     assert!(
         !paths
@@ -3242,6 +3604,24 @@ fn nft_chain_refused_executor() -> MockExecutor {
                 exit_code: 0,
             },
         )
+        // The pre-apply checkpoint's probe, which must succeed here or the
+        // apply never reaches the rule failure this test is pinning.
+        .with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: "ExecStart={ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft -f /etc/nftables.conf }\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
 }
 
 #[tokio::test]
@@ -3394,5 +3774,105 @@ async fn scan_honours_an_exception_for_a_firewall_that_does_not_start_at_boot() 
         finding.finding_policy_exception.is_some(),
         "the boot-persistence finding takes its own key, so an exception for the \
          disabled state must not silence it and its own key must reach it"
+    );
+}
+
+/// The checkpoint has to capture the file this host boots from, which is not a
+/// constant: Fedora and RHEL load /etc/sysconfig/nftables.conf and never read
+/// /etc/nftables.conf at all. A checkpoint naming the wrong file restores the
+/// wrong file, and declares nothing for the one the apply actually appended to.
+///
+/// Reaches the backend directly, the way the `apply_rules` tests above do:
+/// `nftables_host()` and `backend_for_tests` do not exist in this file, and a
+/// production accessor is not worth adding purely to save this test a
+/// constructor call.
+#[tokio::test]
+async fn the_checkpoint_declares_the_file_this_host_boots_from() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command(
+                "systemctl",
+                &[
+                    "show",
+                    "nftables.service",
+                    "-p",
+                    "ExecStart",
+                    "-p",
+                    "ConditionPathExists",
+                ],
+                CommandOutput {
+                    stdout: "ExecStart={ path=/sbin/nft ; argv[]=/sbin/nft -f /etc/sysconfig/nftables.conf }\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_file("/etc/sysconfig/nftables.conf", "# Fedora ships this\n"),
+    );
+    let ctx = Context::with_executor(executor.clone());
+
+    let declared = NftablesBackend::new()
+        .checkpoint_paths(&ctx)
+        .await
+        .expect("the probe succeeded, so the paths are knowable");
+
+    assert!(
+        declared.iter().any(|p| p == "/etc/sysconfig/nftables.conf"),
+        "the probed boot file must be declared, got {declared:?}"
+    );
+    assert!(
+        declared
+            .iter()
+            .any(|p| p == "/etc/linux-hardener/nftables/50-linux-hardener.nft"),
+        "the file the apply creates must be declared so a rollback can remove it, got {declared:?}"
+    );
+    assert!(
+        !declared.iter().any(|p| p == "/etc/nftables.conf"),
+        "a path this host never loads must not be declared, got {declared:?}"
+    );
+}
+
+/// `systemctl show` for a unit that does not exist prints an empty line and
+/// still exits 0, which is the real shape of an unreadable probe rather than
+/// a contrived error. The apply must go on so the host is filtered live, so
+/// `checkpoint_paths` has to answer `Ok`, and with exactly the one path that
+/// is never in doubt: this plugin's own fragment. Neither a boot path (there
+/// is none to name) nor an `Err` (which would abort the apply before the
+/// firewall is even enabled) may appear here.
+#[tokio::test]
+async fn an_unreadable_probe_checkpoints_only_the_fragment() {
+    use hardener_plugins::firewall::FirewallBackend;
+    use hardener_plugins::firewall::nftables::NftablesBackend;
+
+    let executor = Arc::new(MockExecutor::new().with_command(
+        "systemctl",
+        &[
+            "show",
+            "nftables.service",
+            "-p",
+            "ExecStart",
+            "-p",
+            "ConditionPathExists",
+        ],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+    ));
+    let ctx = Context::with_executor(executor);
+
+    let declared = NftablesBackend::new()
+        .checkpoint_paths(&ctx)
+        .await
+        .expect("an unreadable probe must not abort the apply, so this must be Ok");
+
+    assert_eq!(
+        declared,
+        vec!["/etc/linux-hardener/nftables/50-linux-hardener.nft".to_string()],
+        "with no boot path knowable, exactly the fragment must be declared and \
+         nothing else, got {declared:?}"
     );
 }

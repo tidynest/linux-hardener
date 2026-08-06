@@ -14,7 +14,7 @@ Exit codes:
        every `cp` passes both backup flags
     1: A site is unclassified on either question, an entry is stale or
        malformed, a cited ensure or checkpoint declaration is gone, a `cp` is
-       missing a backup flag, or the pinned count moved
+       missing a backup flag, or either pinned count moved
 
 One defect was fixed three times. `460f037` (kernel), `202bb6a` (pam) and
 `6ce1799` (audit) each say the same thing: a file is written into a directory
@@ -156,12 +156,13 @@ that overstates itself is worse than no check:
     confirms only that the named token appears inside a checkpoint declaration
     somewhere in the same plugin directory: the arguments of a
     `create_checkpoint*_for_apply` call, the initialiser of a `Vec<&Path>`
-    binding, or the body of a `config_paths` returning the paths one backend
-    writes. It does not follow the token to a path, does not check that the
-    declaration is the one that runs on the branch reaching the write, and does
-    not know whether the checkpoint is captured before the write. A path
-    appended to a list after its initialiser, as services/mod.rs does with
-    `service_paths.extend(...)`, is not read at all.
+    binding, or the body of a `checkpoint_paths` returning the paths one
+    backend writes. It does not follow the token to a path, does not check
+    that the declaration is the one that runs on the branch reaching the
+    write, and does not know whether the checkpoint is captured before the
+    write. A path appended to a list after its initialiser, as
+    services/mod.rs does with `service_paths.extend(...)`, is not read at
+    all.
   - The directory search is per plugin directory rather than per file because
     ssh/dropin.rs writes a path that ssh/mod.rs declares. That is deliberate,
     and it is also the loosest part of the check: two plugins are never
@@ -189,6 +190,43 @@ arriving unanswered on the new question fails on the count exactly as it does on
 the old one. A pinned count of `declared` sites would add nothing to that and
 would have to be edited every time a site legitimately changed bucket, which is
 how a pin turns into a number people update without reading.
+
+TWO COUNTS ARE PINNED, NOT ONE, AND THEY CATCH DIFFERENT FAILURES
+
+EXPECTED_SITE_COUNT holds the number of DISTINCT (file, key) patterns,
+`len(seen)` in `main`, which the unregistered/stale/malformed checks above it
+already keep equal to `len(REGISTRY)`. What it catches is a genuinely new
+pattern arriving classified: a call site can only reach an unfamiliar key by
+being `unregistered`, or by arriving alongside a new entry that answers for
+it, and in the second case nothing else in this file would ever ask a human
+to notice the total grew. This pin is what does.
+
+EXPECTED_RAW_SITE_COUNT holds `len(sites)`, the count of `.write_file(` and
+recognised `.execute_command(` matches before any of them are folded into a
+pattern. It exists because the fold can hide a genuinely new site behind an
+old key rather than behind a new one. A write site whose first argument
+happens to read the same as an already-registered site's, `write_file(path`
+answering for a second, unrelated path because the new call also binds its
+argument to a local named `path`, is not `unregistered`: its key is already
+in REGISTRY, so it is classified, silently, by an entry written to justify a
+different write. `len(seen)` cannot see this, because a repeated key does not
+grow the set of distinct patterns; only the raw count does. This was proven
+directly: a `write_file(path, ...)` call appended to `firewall/nftables.rs`
+under that reused key passed every check here with EXPECTED_SITE_COUNT alone
+and was refused only once EXPECTED_RAW_SITE_COUNT stood beside it.
+
+The two numbers coincide only while every key in the tree answers for exactly
+one call site, which held until the nftables boot-persistence work gave
+`write_file(Path::new(NFTABLES_CHECK_PATH)` a second call site on purpose:
+`execute_nft_from_string` and `refuse_a_ruleset_nft_will_not_parse` both park
+a candidate ruleset at that same scratch path for the same documented reason,
+so one registry entry now answers for two real writes and `len(sites)` sits
+one above `len(seen)`. That gap is itself information, the number of call
+sites currently sharing a key for a stated reason, and the two constants are
+edited together for a genuinely new pattern and independently whenever a
+sharing like that one is added or removed. Keeping both, rather than folding
+one into the other, is two integers; refusing the one write this file cannot
+see any other way is what the second buys.
 """
 
 import re
@@ -204,10 +242,27 @@ NC = "\033[0m"  # No colour
 
 PLUGIN_SRC = Path("crates/hardener-plugins/src")
 
-# The number of file-creating call sites in the tree, pinned rather than
-# counted. Counted off the registry it would follow the registry down, and a
-# site added with no entry would be the exact thing this check cannot see.
-EXPECTED_SITE_COUNT = 12
+# The number of distinct (file, key) call-site patterns in the tree, pinned
+# rather than counted. Counted off the registry it would follow the registry
+# down, and a site added with no entry would be the exact thing this check
+# cannot see. Not the same as the raw number of matched calls: two call sites
+# sharing one pattern, as the two writes to NFTABLES_CHECK_PATH now do, are
+# one pattern and answer to one registry entry.
+EXPECTED_SITE_COUNT = 13
+
+# The raw number of `.write_file(`/`.execute_command(` matches, before any of
+# them are folded into a (file, key) pattern. Pinned separately from
+# EXPECTED_SITE_COUNT because the fold is exactly what a new site can hide
+# behind: one whose first argument's text happens to match an already
+# registered key raises `len(sites)` without raising `len(seen)` or
+# registering as `unregistered`, since its key is already in REGISTRY. Proven
+# directly against this file: a `write_file(path, ...)` appended under the
+# reused key `write_file(path` passed with this pin absent and failed once it
+# was restored. Edited together with EXPECTED_SITE_COUNT when a genuinely new
+# pattern arrives; edited alone when an existing pattern gains or loses a
+# call site that deliberately shares its key, as NFTABLES_CHECK_PATH's two
+# sites do.
+EXPECTED_RAW_SITE_COUNT = 14
 
 # `execute_command` is the escape hatch: it can materialise a path without ever
 # touching `write_file`. Only a literal argv[0] is recognised, and only these.
@@ -241,11 +296,21 @@ CHECKPOINT_PATH_LIST = re.compile(r":\s*Vec<&Path>\s*=")
 # its apply could never create. A row recorded absent is an instruction to
 # delete, so a rollback on such a host would have removed whatever had arrived
 # at that path in the meantime. The declaration now lives on the backend that
-# does the writing, as `FirewallBackend::config_paths`, and `apply` hands that
-# return value straight to `create_checkpoint_for_apply`. Matching the body
-# keeps a per-backend declaration as visible to this check as a literal list.
+# does the writing, as `FirewallBackend::checkpoint_paths`, and `apply` hands
+# that return value straight to `create_checkpoint_for_apply`. Matching the
+# body keeps a per-backend declaration as visible to this check as a literal
+# list.
+#
+# The signature changed once more since: it was `fn config_paths(&self) ->
+# &'static [&'static str]`, a synchronous method returning literal paths,
+# until the nftables backend needed to probe the boot unit through the
+# executor to know which file it was declaring. All three backends carry the
+# new shape, `async fn checkpoint_paths(&self, ctx: &Context) ->
+# Result<Vec<String>>`, whether or not a given backend's own body reads `ctx`,
+# and the parameter is named `ctx` on the one implementation that does and
+# `_ctx` on the two that do not, so both are matched.
 CHECKPOINT_PATHS_FN = re.compile(
-    r"fn config_paths\(&self\)\s*->\s*&'static \[&'static str\]\s*\{"
+    r"fn checkpoint_paths\(&self,\s*_?ctx:\s*&Context\)\s*->\s*Result<Vec<String>>\s*\{"
 )
 
 # `SystemExecutor` (crates/hardener-common/src/executor/mod.rs) has exactly one
@@ -364,34 +429,66 @@ REGISTRY = {
         # is on tmpfs, so anything an interrupted apply leaves behind is gone at
         # the next boot, and it is root-owned, so nobody unprivileged can swap
         # the file between the write and the check. No state of ours outlives a
-        # rollback here: the file the rollback restores is
-        # NFTABLES_CONFIG_PATH, and this path is never loaded, never read back,
-        # and never referenced by the unit.
+        # rollback here: the file the rollback restores is the probed boot
+        # path, and this scratch path is never loaded, never read back, and
+        # never referenced by the unit.
         (
             "exempt",
             "a scratch file removed by the same function that writes it, so no "
             "state of ours outlives a rollback that never removes this file",
         ),
     ),
-    ("firewall/nftables.rs", "write_file(Path::new(NFTABLES_CONFIG_PATH)"): (
+    ("firewall/nftables.rs", "write_file(path"): (
+        # The write inside `ensure_include_line`, appending the include line
+        # to whatever file `boot_ruleset` named. Its parent is almost always
+        # there already, being the distribution's own /etc or /etc/sysconfig;
+        # the one host where it is not, openSUSE's /etc/nftables/rules, is
+        # created immediately above this call, in `apply_rules`'s own
+        # `mkdir -p` loop over `[HARDENER_RULESET_DIR,
+        # parent_of(&boot_path)]`. That loop runs through `execute_command`
+        # rather than `crate::ensure_directory` because one call site has to
+        # cover both directories it is responsible for.
         (
             "exempt",
-            "/etc is the distribution's own directory and is present on every "
-            "host this runs on, so there is no parent for the plugin to ensure",
+            "the parent is created immediately above this call by "
+            "apply_rules's own `mkdir -p` loop over "
+            "[HARDENER_RULESET_DIR, parent_of(&boot_path)], run through "
+            "execute_command rather than crate::ensure_directory because "
+            "one loop covers both directories the apply has to create",
         ),
-        # Declared by this backend's own `config_paths`, which the firewall
-        # apply hands straight to `create_checkpoint_for_apply` once it knows
-        # which backend it selected. A host that never had the file therefore
-        # records it absent and a rollback removes what this write created.
-        # That matters more here than for most entries: the file is what
-        # `nftables.service` loads at boot, so a rollback that left it behind
-        # would leave the applied ruleset coming back on every reboot, which is
-        # the applied posture surviving its own undo. The declaration sits on
-        # the backend rather than in one list at the apply site because that
-        # list also named this path on ufw and firewalld hosts, where no apply
-        # can create it and a rollback would have deleted whatever had arrived
-        # there instead.
-        ("declared", ("NFTABLES_CONFIG_PATH",)),
+        # `boot_path` is the same binding name `checkpoint_paths` returns in
+        # its own `Ok` arm, each read by its own call to `boot_ruleset`: once
+        # when the checkpoint is captured (firewall/mod.rs, through
+        # `checkpoint_paths`) and once here, inside `apply_rules`, before this
+        # write. The two calls are independent probes of the same target, not
+        # one shared value, so a capture taken before this write records
+        # whatever stood at that path beforehand and a rollback restores it,
+        # which removes the appended include line along with anything else
+        # this write touched. A host whose boot path could not be probed
+        # never reaches this call at all: `apply_rules` returns before
+        # writing anything once `boot_ruleset` answers `Err`.
+        ("declared", ("boot_path",)),
+    ),
+    ("firewall/nftables.rs", "write_file(Path::new(HARDENER_RULESET_PATH)"): (
+        # The write in `apply_rules` that lands the whole rendered ruleset in
+        # this plugin's own fragment. Same loop, same reasoning as the site
+        # above: HARDENER_RULESET_DIR is the other directory `mkdir -p`
+        # covers in that one call site.
+        (
+            "exempt",
+            "HARDENER_RULESET_DIR is created immediately above this call by "
+            "the same mkdir -p loop that also covers the boot path's parent, "
+            "run through execute_command rather than crate::ensure_directory "
+            "because one loop covers both directories",
+        ),
+        # Declared by this backend's own `checkpoint_paths`, which the
+        # firewall apply hands straight to `create_checkpoint_for_apply` once
+        # it knows which backend it selected. Nothing but this plugin ever
+        # writes HARDENER_RULESET_PATH, so a checkpoint recording it absent on
+        # a first apply and a rollback removing it afterwards is always the
+        # right answer, unlike the probed boot path beside it, which a
+        # distribution's own package can also own.
+        ("declared", ("HARDENER_RULESET_PATH",)),
     ),
     ("audit/mod.rs", "write_file(Path::new(AUDIT_RULES_PATH)"): (
         ("ensured", "AUDIT_RULES_DIR"),
@@ -784,9 +881,29 @@ def main():
             print("    pass both flags, in the order -p --no-dereference,")
             print("    before the source and destination\n")
 
-    if len(sites) != EXPECTED_SITE_COUNT:
+    # `sites`, not `seen`: a new call site that reuses an already-registered
+    # key raises this count without raising the distinct-pattern one below,
+    # since its (file, key) pair is already in REGISTRY and it is therefore
+    # neither `unregistered` nor able to move `len(seen)`. This is the only
+    # check in the file that would refuse such a site.
+    if len(sites) != EXPECTED_RAW_SITE_COUNT:
         problems = True
-        print(f"{RED}Site count is {len(sites)}, expected {EXPECTED_SITE_COUNT}{NC}")
+        print(f"{RED}Raw site count is {len(sites)}, expected {EXPECTED_RAW_SITE_COUNT}{NC}")
+        print("  This count is every matched call before folding into (file,")
+        print("  key) patterns, pinned separately from the distinct-pattern")
+        print("  count below because a new site landing under an already")
+        print("  registered key would move this total and not that one.")
+        print("  Change EXPECTED_RAW_SITE_COUNT once the new or removed site")
+        print("  is accounted for, and say in the commit whether it is a")
+        print("  genuinely new pattern or a deliberately shared key.\n")
+
+    # `seen`, not `sites`: two real call sites sharing one (file, key)
+    # pattern, as the two writes to NFTABLES_CHECK_PATH now do, are one
+    # pattern and register once, so the pin counts distinct patterns rather
+    # than raw matches.
+    if len(seen) != EXPECTED_SITE_COUNT:
+        problems = True
+        print(f"{RED}Site count is {len(seen)}, expected {EXPECTED_SITE_COUNT}{NC}")
         print("  The count is pinned rather than counted off the registry, so")
         print("  that a site added with no entry cannot pass by moving the")
         print("  total with it. Change EXPECTED_SITE_COUNT beside the registry")

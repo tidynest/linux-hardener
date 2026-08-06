@@ -614,3 +614,353 @@ async fn a_second_remote_apply_reports_every_rule_already_present() {
         ruleset.stdout
     );
 }
+
+// =============================================================================
+// FIREWALL PLUGIN OVER SSH - the live regression test for #98
+// =============================================================================
+
+/// Issue #98, asked of the machine rather than of our own model.
+///
+/// #98 was `apply_rules` rendering the whole nftables ruleset and writing it
+/// over `/etc/nftables.conf`. On Arch and Debian that file is where the
+/// administrator's own `inet filter` table is defined, so the write deleted
+/// their table from the file: it stayed live in the running kernel and
+/// vanished, silently, at the next boot. The fix writes this plugin's
+/// ruleset to its own fragment instead and appends one `include` line to
+/// whatever file `nftables.service` actually loads.
+///
+/// **A `MockExecutor` cannot referee this.** Every chain body in the fixture
+/// suite is a string this project wrote, so a mock test checks that model
+/// against itself. The only honest referee is real `nft`, and the assertion
+/// this test carries is not "did we write the right bytes" but "does the
+/// host end up in the state we claimed": step 4 below flushes the live
+/// ruleset and re-feeds it the boot file, which is the reboot, without
+/// rebooting.
+///
+/// Steps 4 to 6, the simulated reboot and the rollback, run over one
+/// independent connection the apply never touched, because what they prove
+/// is that the persisted file survives past the process that wrote it, not
+/// that the process's own connection survived it. That is not what the two
+/// live tests above establish: they deliberately reuse the SAME connection
+/// throughout, to prove the opposite thing, that the connection itself
+/// survives its own hardening. Step 3, which reads the boot file straight
+/// back over `apply_executor`, needs neither guarantee: it is checking what
+/// the apply wrote, not whether the wire it wrote over still stands, so it
+/// reads over the apply's own connection rather than a fresh one.
+///
+/// # Running it
+///
+/// Same fixture and the same gate as the two tests above, deliberately: this
+/// one seeds and then flushes the boot ruleset, so sharing `SSH_TEST_HOST`
+/// with the scan/validate tests in this file would mean anyone running the
+/// full suite against a host they care about gets its `/etc/nftables.conf`
+/// overwritten.
+///
+/// ```bash
+/// sudo ./scripts/containers/nftables-fixture.sh hardener-test-debian
+/// NFTABLES_LIVE_APPLY_HOST=10.242.117.2 \
+/// SSH_TEST_USER=root SSH_TEST_KEY=~/.ssh/hardener_test_ed25519 \
+///     cargo test -p hardener-plugins --test ssh_integration_tests -- --ignored \
+///     a_live_apply_leaves_the_administrators_ruleset_loadable
+/// ```
+#[tokio::test]
+#[ignore = "needs a booted container; see scripts/containers/nftables-fixture.sh"]
+async fn a_live_apply_leaves_the_administrators_ruleset_loadable() {
+    let host = env::var("NFTABLES_LIVE_APPLY_HOST")
+        .expect("NFTABLES_LIVE_APPLY_HOST must name the fixture container");
+
+    fn ssh_config(host: &str) -> SshConfig {
+        SshConfig {
+            host: host.to_string(),
+            port: env::var("SSH_TEST_PORT")
+                .ok()
+                .and_then(|port| port.parse().ok())
+                .unwrap_or(22),
+            user: env::var("SSH_TEST_USER").ok(),
+            identity_file: env::var("SSH_TEST_KEY").ok(),
+            connect_timeout: Duration::from_secs(15),
+            ..Default::default()
+        }
+    }
+
+    const INCLUDE_LINE: &str = "include \"/etc/linux-hardener/nftables/*.nft\"";
+
+    // Independent oracle, deliberately not the code under test. `boot_ruleset`
+    // and `parse_boot_ruleset` in
+    // crates/hardener-plugins/src/firewall/nftables.rs are what this test
+    // exists to check, so asking them for the boot path would make the test
+    // agree with itself: a bug in that parser would produce the same wrong
+    // path here as it does in the plugin, and the test would pass regardless.
+    // That is the same "one mistake shared by reader and writer" failure this
+    // codebase already shipped once, in the login.defs handling. This
+    // function reads the same `systemctl show` text with its own small,
+    // separately written extraction, so a parser bug has to fool two
+    // different pieces of code, not one. Do not "helpfully" replace this with
+    // a call into the plugin's parser: that would remove the one thing that
+    // makes this a differential test.
+    fn boot_path_from_exec_start(exec_start: &str) -> String {
+        let Some((_, argv)) = exec_start.split_once("argv[]=") else {
+            panic!(
+                "systemctl show nftables.service -p ExecStart carried no argv[] to read a \
+                 boot path from: {exec_start:?}"
+            );
+        };
+
+        let words: Vec<&str> = argv.split_whitespace().collect();
+        let flag_form = words
+            .windows(2)
+            .find(|pair| pair[0] == "-f")
+            .map(|pair| pair[1].to_string());
+        if let Some(path) = flag_form {
+            return path;
+        }
+
+        let include_form = argv
+            .split_once("include \"")
+            .and_then(|(_, after)| after.split_once('"'))
+            .map(|(path, _)| path.to_string())
+            .filter(|path| !path.is_empty());
+        if let Some(path) = include_form {
+            return path;
+        }
+
+        panic!(
+            "the ExecStart argv named no boot ruleset path, by -f and by include \"...\": \
+             argv={argv:?}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Step 0. Discover the boot path from the container itself rather than
+    // assuming one: Arch and Debian load /etc/nftables.conf, Fedora and RHEL
+    // load /etc/sysconfig/nftables.conf, and openSUSE runs an inline program
+    // naming /etc/nftables/rules/main.nft with no -f at all.
+    // ------------------------------------------------------------------
+    let seed_executor = Arc::new(
+        SshExecutor::connect(ssh_config(&host))
+            .await
+            .expect("SSH connect to seed the boot file failed"),
+    );
+    let exec_start_shown = seed_executor
+        .execute_command(
+            "systemctl",
+            &["show", "nftables.service", "-p", "ExecStart"],
+        )
+        .await
+        .expect("systemctl show nftables.service failed to run");
+    assert!(
+        exec_start_shown.success(),
+        "systemctl show nftables.service must succeed: {}",
+        exec_start_shown.stderr
+    );
+    let boot_path = boot_path_from_exec_start(&exec_start_shown.stdout);
+    println!("discovered boot path: {boot_path}");
+
+    // ------------------------------------------------------------------
+    // Step 1. Seed the boot file with an administrator's own ruleset - the
+    // shape Debian's own nftables package ships - and keep the exact bytes
+    // for the byte-identical comparison in step 6. On a host where the boot
+    // file's directory does not exist yet (a stock openSUSE image: the unit
+    // is ConditionPathExists-gated on the file and has never run), create it
+    // first, or the seed write itself has nowhere to land.
+    // ------------------------------------------------------------------
+    let boot_path_dir = std::path::Path::new(&boot_path)
+        .parent()
+        .map(|parent| parent.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "/".to_string());
+    let mkdir_result = seed_executor
+        .execute_command("mkdir", &["-p", boot_path_dir.as_str()])
+        .await
+        .expect("creating the boot file's parent directory failed");
+    assert!(
+        mkdir_result.success(),
+        "mkdir -p {boot_path_dir} must succeed so the seed write has somewhere to land: {}",
+        mkdir_result.stderr
+    );
+    let admins_ruleset = "#!/usr/sbin/nft -f\n\nflush ruleset\n\ntable inet filter {\n    chain input {\n        type filter hook input priority filter; policy accept;\n        ct state established,related accept\n        iif lo accept\n    }\n    chain forward {\n        type filter hook forward priority filter; policy accept;\n    }\n    chain output {\n        type filter hook output priority filter; policy accept;\n    }\n}\n";
+    seed_executor
+        .write_file(std::path::Path::new(&boot_path), admins_ruleset)
+        .await
+        .expect("seeding the administrator's boot ruleset failed");
+    let seeded_bytes = seed_executor
+        .read_file(std::path::Path::new(&boot_path))
+        .await
+        .expect("reading back the seeded boot file failed");
+    assert_eq!(
+        seeded_bytes, admins_ruleset,
+        "the seed write must round-trip exactly, or the comparison in step 6 proves nothing"
+    );
+
+    // ------------------------------------------------------------------
+    // Step 2. Run the apply over its own, dedicated connection.
+    // ------------------------------------------------------------------
+    let apply_executor = Arc::new(
+        SshExecutor::connect(ssh_config(&host))
+            .await
+            .expect("SSH connect for the apply failed"),
+    );
+    let checkpoint_manager = test_checkpoint_manager().await;
+    let mut apply_ctx =
+        Context::with_executor_and_checkpoint(apply_executor.clone(), checkpoint_manager);
+
+    let apply_result = hardener_plugins::FirewallHardeningPlugin::new()
+        .apply(&mut apply_ctx, &PluginConfig::default())
+        .await
+        .expect("the live apply must return");
+    assert!(
+        apply_result.apply_success,
+        "the apply must report success, failed changes: {:?}",
+        apply_result
+            .apply_changes
+            .iter()
+            .filter(|change| !change.change_success)
+            .collect::<Vec<_>>()
+    );
+    let checkpoint_id = apply_result
+        .apply_checkpoint_id
+        .expect("an apply with a CheckpointManager in its context must record a checkpoint");
+
+    // ------------------------------------------------------------------
+    // Step 3. Still over the apply's own connection: the boot file must
+    // still define the administrator's table, and the include line this
+    // apply appends must appear exactly once, not stacked by a rerun and
+    // not missing outright.
+    // ------------------------------------------------------------------
+    let after_apply = apply_executor
+        .read_file(std::path::Path::new(&boot_path))
+        .await
+        .expect("reading the boot file after the apply failed");
+    assert!(
+        after_apply.contains("table inet filter"),
+        "the administrator's table must still be defined in the boot file after the apply, \
+         or issue #98 has come back: boot file\n{after_apply}"
+    );
+    assert_eq!(
+        after_apply
+            .lines()
+            .filter(|line| line.trim() == INCLUDE_LINE)
+            .count(),
+        1,
+        "the boot file must carry the include line exactly once: boot file\n{after_apply}"
+    );
+
+    // ------------------------------------------------------------------
+    // Step 4. The reboot, without rebooting. A fresh connection the apply
+    // never touched flushes the live ruleset and re-feeds it the boot file,
+    // which is exactly what nftables.service does at boot.
+    // ------------------------------------------------------------------
+    let verify_executor = Arc::new(
+        SshExecutor::connect(ssh_config(&host))
+            .await
+            .expect("SSH connect for the independent verification failed"),
+    );
+    let flushed = verify_executor
+        .execute_command("nft", &["flush", "ruleset"])
+        .await
+        .expect("flushing the live ruleset failed");
+    assert!(
+        flushed.success(),
+        "nft flush ruleset must succeed: {}",
+        flushed.stderr
+    );
+    let loaded = verify_executor
+        .execute_command("nft", &["-f", boot_path.as_str()])
+        .await
+        .expect("re-feeding the boot file to nft failed");
+    assert!(
+        loaded.success(),
+        "nft -f {boot_path} must succeed on the file the apply left behind: {}",
+        loaded.stderr
+    );
+    let ruleset_after_reload = verify_executor
+        .execute_command("nft", &["list", "ruleset"])
+        .await
+        .expect("listing the ruleset after the simulated reboot failed");
+
+    // ------------------------------------------------------------------
+    // Step 5. Both tables must have survived the simulated reboot: the
+    // administrator's, and this plugin's own.
+    // ------------------------------------------------------------------
+    assert!(
+        ruleset_after_reload.stdout.contains("table inet filter"),
+        "the administrator's table must survive a reboot, or issue #98 has come back: \
+         ruleset\n{}",
+        ruleset_after_reload.stdout
+    );
+    assert!(
+        ruleset_after_reload
+            .stdout
+            .contains("table inet linux_hardener"),
+        "this plugin's own table must load at boot: ruleset\n{}",
+        ruleset_after_reload.stdout
+    );
+
+    // ------------------------------------------------------------------
+    // Step 6. Roll back, over the same independent connection, driving the
+    // rollback exactly the way `hardener rollback` does: restore the
+    // checkpointed files, then hand the restored paths to
+    // `reload_plugins_after_rollback` so the firewall plugin re-reads them
+    // (see `reload_restored_paths` in
+    // `crates/hardener-cli/src/commands/checkpoint.rs`, which this mirrors
+    // because that function is `pub(crate)` to the CLI crate and
+    // unreachable from here). Then check both the live ruleset and the
+    // boot file on disk.
+    // ------------------------------------------------------------------
+    let rollback_ctx = Context::with_executor(verify_executor.clone());
+    let manager = apply_ctx
+        .checkpoint_manager()
+        .expect("the apply context must still carry its CheckpointManager")
+        .clone();
+    let rollback_id = hardener_state::CheckpointId::new(checkpoint_id);
+    let mut rollback_result = manager
+        .rollback(verify_executor.as_ref(), &rollback_id)
+        .await
+        .expect("rollback must succeed");
+    assert!(
+        rollback_result.rollback_success,
+        "rollback must restore every file it captured: {:?}",
+        rollback_result
+            .rollback_files
+            .iter()
+            .filter(|file| !file.restore_success)
+            .collect::<Vec<_>>()
+    );
+
+    let restored_paths: Vec<std::path::PathBuf> = rollback_result
+        .rollback_files
+        .iter()
+        .filter(|file| file.restore_success)
+        .map(|file| std::path::PathBuf::from(&file.restore_path))
+        .collect();
+    let registry = hardener_plugins::create_plugin_registry();
+    rollback_result.rollback_reloads =
+        hardener_plugins::reload_plugins_after_rollback(&rollback_ctx, &registry, &restored_paths)
+            .await;
+    assert!(
+        rollback_result.reloads_ok(),
+        "every reload a rollback attempts must succeed: {:?}",
+        rollback_result.rollback_reloads
+    );
+
+    let ruleset_after_rollback = verify_executor
+        .execute_command("nft", &["list", "ruleset"])
+        .await
+        .expect("listing the ruleset after rollback failed");
+    assert!(
+        !ruleset_after_rollback
+            .stdout
+            .contains("table inet linux_hardener"),
+        "the applied table must be gone from the live ruleset after rollback: ruleset\n{}",
+        ruleset_after_rollback.stdout
+    );
+
+    let boot_file_after_rollback = verify_executor
+        .read_file(std::path::Path::new(&boot_path))
+        .await
+        .expect("reading the boot file after rollback failed");
+    assert_eq!(
+        boot_file_after_rollback, seeded_bytes,
+        "the boot file must be byte-identical to what step 1 seeded, include line and all: \
+         boot file\n{boot_file_after_rollback}"
+    );
+}
