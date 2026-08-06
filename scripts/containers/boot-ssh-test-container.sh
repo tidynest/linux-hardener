@@ -105,12 +105,21 @@ PermitRootLogin prohibit-password
 CONF
 sshd -t
 systemctl restart sshd
+# Both spellings are accepted because `sshd -T` does NOT echo back what was
+# written: it prints the legacy synonym. Setting `prohibit-password` and then
+# asking for the effective value returns `without-password`, measured on the
+# openSUSE Leap 16 image on 2026-08-06. Checking only for the string this
+# script writes would reject a configuration that took perfectly, on every
+# image, which is a guard that fails closed for the wrong reason.
 value="$(sshd -T | grep -i '^permitrootlogin' || true)"
-[[ "$value" == *prohibit-password* ]] || {
-    echo "PermitRootLogin did not take (sshd -T says: ${value:-nothing})" >&2
-    echo "check 00-hardener.conf and the sshd_config.d Include order" >&2
-    exit 1
-}
+case "$value" in
+    *prohibit-password* | *without-password*) ;;
+    *)
+        echo "PermitRootLogin did not take (sshd -T says: ${value:-nothing})" >&2
+        echo "check 00-hardener.conf and the sshd_config.d Include order" >&2
+        exit 1
+        ;;
+esac
 INNER
 
 echo "waiting for sshd on $CONTAINER_IP..."
