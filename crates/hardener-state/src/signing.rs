@@ -12,6 +12,26 @@ use zeroize::Zeroize;
 /// File header magic bytes identifying an encrypted key file (v1).
 const ENCRYPTED_KEY_MAGIC: &[u8; 4] = b"LSH1";
 
+/// HKDF salt for the key that encrypts the signing key at rest. **Frozen.**
+///
+/// This is a key-derivation input, not a label. The AES-256-GCM key protecting
+/// `signing.key` is derived from the host's machine identity and this value, so
+/// changing it returns a different key: the existing signing key stops
+/// decrypting, nothing can be signed, and every signature already written
+/// becomes unverifiable. It is data loss on a host that has run `apply`, and it
+/// compiles and passes any test that does not read a key an earlier binary
+/// wrote.
+///
+/// It reads like a path and a project-wide rename would take it (#51), which is
+/// why it is named here rather than left inline, and why
+/// `the_key_derivation_has_a_known_answer` pins the derived bytes rather than
+/// this string: the expansion's `signing-key-encryption` info is frozen for the
+/// same reason and has no name of its own.
+///
+/// The `-v1` suffix is where a versioned derivation would start, trying v2 and
+/// falling back to v1 with a re-encrypt on success. Nothing reads a v2 today.
+const KEY_DERIVATION_SALT: &[u8] = b"linux-hardener-signing-key-v1";
+
 /// Manages Ed25519 signing keys for checkpoint signatures.
 ///
 /// Supports both signing and verification-only modes.
@@ -275,16 +295,24 @@ impl CheckpointSigner {
 
     /// Derives an AES-256 key from the machine identity using HKDF-SHA256.
     fn derive_encryption_key() -> Result<[u8; 32]> {
-        use ring::hkdf;
-
         let machine_id = fs::read_to_string("/etc/machine-id")
             .or_else(|_| fs::read_to_string("/var/lib/dbus/machine-id"))
             .map_err(|e| {
                 HardeningError::Config(format!("Cannot read machine-id for key encryption: {e}"))
             })?;
 
-        let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"linux-hardener-signing-key-v1");
-        let prk = salt.extract(machine_id.trim().as_bytes());
+        Self::derive_encryption_key_from(machine_id.trim())
+    }
+
+    /// [`derive_encryption_key`](Self::derive_encryption_key) with the machine
+    /// identity supplied rather than read, so the derivation has a known answer
+    /// a test can pin. Reading `/etc/machine-id` is the only thing it leaves
+    /// behind, and a host's own identity is not something a test can choose.
+    fn derive_encryption_key_from(machine_id: &str) -> Result<[u8; 32]> {
+        use ring::hkdf;
+
+        let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, KEY_DERIVATION_SALT);
+        let prk = salt.extract(machine_id.as_bytes());
 
         let okm = prk
             .expand(&[b"signing-key-encryption"], &ring::aead::AES_256_GCM)

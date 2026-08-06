@@ -126,3 +126,43 @@ fn a_private_key_that_cannot_be_read_falls_back_to_the_public_one() {
         "while still being unable to sign, which is the separation this mode is for"
     );
 }
+
+/// The key that encrypts `signing.key` at rest has a known answer, and this is
+/// what says so.
+///
+/// `KEY_DERIVATION_SALT` reads like a path (`linux-hardener-signing-key-v1`)
+/// and is an HKDF input, so a project-wide rename takes it, compiles, and
+/// passes everything else here: the encrypt/decrypt round trips all derive the
+/// same wrong key and agree with each other. What they cannot do is read a key
+/// an earlier binary wrote, which is every operator's key on every host that
+/// has run `apply`.
+///
+/// The expected bytes are computed independently, from RFC 5869 in Python
+/// (`extract = HMAC(salt, ikm)`, `expand = HMAC(prk, info || 0x01)`), rather
+/// than recorded from this implementation, so this is a cross-implementation
+/// answer rather than a snapshot of whatever the code happens to produce. The
+/// salt, the `signing-key-encryption` info string and the algorithm choice are
+/// all inputs to it, and moving any one of them fails here.
+#[test]
+fn the_key_derivation_has_a_known_answer() {
+    // A fixed stand-in for /etc/machine-id, which is 32 hex characters.
+    let machine_id = "0123456789abcdef0123456789abcdef";
+
+    let derived = CheckpointSigner::derive_encryption_key_from(machine_id)
+        .expect("the derivation succeeds for a well-formed machine identity");
+
+    assert_eq!(
+        derived,
+        [
+            0xce, 0x7c, 0xd9, 0x11, 0xf5, 0xe8, 0xb8, 0x52, 0x7c, 0x0a, 0x69, 0x87, 0xb6, 0x23,
+            0x4e, 0x9f, 0x0d, 0x1b, 0xdc, 0xc5, 0x1c, 0x61, 0x93, 0xe4, 0xe7, 0x1a, 0xe4, 0xed,
+            0x28, 0x21, 0xbc, 0x4c,
+        ],
+        "the at-rest key derivation moved. If that was a rename sweep over \
+         KEY_DERIVATION_SALT, revert it: every signing key already on a host \
+         decrypts with the old value and with nothing else, so changing it \
+         loses the key and every signature made with it. If it was deliberate, \
+         it needs a versioned derivation that falls back to v1 and \
+         re-encrypts, not a new constant."
+    );
+}

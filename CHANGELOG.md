@@ -812,6 +812,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The HKDF salt that protects every signing key reads like a path, and a
+  rename would have taken it.** `signing.rs` derived the AES-256-GCM key that
+  encrypts `/etc/linux-hardener/signing.key` at rest from the host's machine
+  identity and the inline literal `b"linux-hardener-signing-key-v1"`. That is a
+  key-derivation input rather than a label: change it and the derivation returns
+  a different key, so the signing key already on the host stops decrypting,
+  nothing can be signed, and every signature already written becomes
+  unverifiable. #51 proposes exactly the sweep that would take it, and the
+  change would have compiled and passed the whole suite, because every
+  encrypt/decrypt round trip in the tests derives the same wrong key and agrees
+  with itself. What none of them do is read a key an earlier binary wrote, which
+  is every operator's key on every host that has run `apply`. The literal is now
+  the named `KEY_DERIVATION_SALT`, carrying what it costs to move it, and
+  `derive_encryption_key` is split so the machine identity is supplied rather
+  than read: `the_key_derivation_has_a_known_answer` pins the derived bytes for
+  a fixed identity, which covers the salt, the `signing-key-encryption` info
+  string and the algorithm choice together. The expected bytes are computed
+  independently from RFC 5869 rather than recorded from this implementation, so
+  it is a cross-implementation answer and not a snapshot of whatever the code
+  produces. Proved by applying the #51 rename to the constant and watching the
+  test fail with the message that says to revert it. Refs #51.
 - **A remote checkpoint was filed under an account the session never reached.**
   `checkpoint_host_key` formatted `ssh://{user}@{host}:{port}` and substituted
   the literal `root` when the target named no user. That was not a claim about
