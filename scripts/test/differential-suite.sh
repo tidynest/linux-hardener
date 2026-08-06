@@ -7249,6 +7249,37 @@ bluetooth.service    enabled"
         "and a unit of the same name that is not the service does not count as one"
     unset -f systemctl
 
+    # The runtime word, and the same exit-status rule the boot word follows:
+    # `is-active` prints `inactive` while exiting 3, so a reading taken from the
+    # status throws away the only answer there was.
+    local svc_active_word="" svc_active_rc=0
+    systemctl() {
+        printf '%s\n' "$svc_active_word"
+        return "$svc_active_rc"
+    }
+    svc_active_word="  inactive  "
+    svc_active_rc=3
+    check_eq "$(systemd_unit_active_word bluetooth)" "inactive" \
+        "a non-zero is-active still yields the word it printed, with the padding trimmed"
+    svc_active_word=""
+    svc_active_rc=4
+    check_eq "$(systemd_unit_active_word bluetooth)" "" \
+        "and a systemctl answering nothing leaves the word empty rather than inventing one"
+    unset -f systemctl
+
+    # The generation guards. A capture taken on the wrong side of an apply is
+    # the defect these exist for: the pre-apply reading is half of what the rows
+    # compare, so one taken afterwards would agree with itself, and a post-apply
+    # reading taken before any apply describes the container the run started on.
+    local svc_saved_generation=$APPLY_GENERATION
+    APPLY_GENERATION=1
+    check_status 1 "the pre-apply services capture refuses to run after an apply" \
+        preapply_services_init
+    APPLY_GENERATION=0
+    check_status 1 "and the post-apply capture refuses to run before one" \
+        services_oracle_init
+    APPLY_GENERATION=$svc_saved_generation
+
     # The control, driven on each host it can meet. Redirected to a file rather
     # than captured with $(...), for the reason the firewall block gives above:
     # a command substitution is a subshell, so every counter the function
