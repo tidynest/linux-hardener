@@ -48,10 +48,6 @@ resolve_binary() {
 }
 resolve_binary
 
-# The plugins whose settings this suite compares. Applying only these keeps the
-# run to what is actually asserted.
-DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardening kernel-hardening)
-
 # Whether this run is inside a BOOTED container with its own network namespace,
 # which is the only configuration where /proc/sys/net is writable and the kernel
 # oracle can ask anything at all.
@@ -87,6 +83,42 @@ fi
 # load time and a function exists only once its definition line has executed.
 run_is_booted() {
     [[ "$KERNEL_BOOTED" == "1" ]]
+}
+
+# The plugins whose settings this suite compares. Applying only these keeps the
+# run to what is actually asserted.
+#
+# Defined below the booted flag rather than at the top of the file, because its
+# sixth member depends on it.
+DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardening kernel-hardening)
+
+# The services plugin joins the compared set only in a booted run, and this is
+# the only place that decision is made.
+#
+# Joining unconditionally is the smaller change and is deliberately not taken.
+# Under `--pipe` the services scan errors and the apply does nothing, so the two
+# generic per-plugin rows, introduced-findings and preview-agreement, would
+# compare an empty reading against an empty reading and pass. A row that reads
+# as coverage while proving nothing is what issue #47 exists to remove. Under
+# `--pipe` the services checks are declared unaskable instead, which is this
+# file's way of being absent out loud.
+if run_is_booted; then
+    DIFF_PLUGINS+=(services-hardening)
+fi
+
+# How many plugins this run compares.
+#
+# Read by require_check_tables and by expected_check_total, so the guard and the
+# arithmetic cannot come to disagree about the size of a run. Derived from the
+# mode and NOT from ${#DIFF_PLUGINS[@]}: reading the array would make the guard
+# ask the table whether the table is right, which is the rule
+# expected_check_total already states for every other pinned length.
+diff_plugin_count() {
+    if run_is_booted; then
+        printf '%s' "$(( DIFF_PLUGINS_EXPECTED + 1 ))"
+    else
+        printf '%s' "$DIFF_PLUGINS_EXPECTED"
+    fi
 }
 
 # Whether this host's shadow implements a minimum password age at all.
@@ -2835,15 +2867,37 @@ services_unit_installed() {
     fi
 }
 
+# The three questions this oracle asks, in the order they are reported.
+SERVICES_CHECKS=(
+    "not-at-boot"
+    "mask-link"
+    "not-running"
+)
+
+# The readings, one set either side of the apply. Initialised here so a run that
+# never reaches the capture has empty strings rather than unset names: this file
+# runs under `set -u`, and the arithmetic below reads one of them.
+SERVICES_INSTALLED_BEFORE=""
+SERVICES_BOOT_BEFORE=""
+SERVICES_ACTIVE_BEFORE=""
+SERVICES_MASK_BEFORE=""
+SERVICES_BOOT_AFTER=""
+SERVICES_ACTIVE_AFTER=""
+SERVICES_MASK_AFTER=""
+
 SSH_CHECKS_EXPECTED=7
 SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
 IDEMPOTENCE_CHECKS_EXPECTED=4
+# The plugins compared in EVERY run. Services is the sixth and joins only a
+# booted one, which is why this stays a literal and the count below is a
+# function.
 DIFF_PLUGINS_EXPECTED=5
 PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 PERMISSION_CHECKS_EXPECTED=9
 FIREWALL_CHECKS_EXPECTED=3
+SERVICES_CHECKS_EXPECTED=3
 KERNEL_CHECKS_EXPECTED=11
 # Pinned for the same reason as every table above, and one more that is specific
 # to this pair: the failure mode here is a red row being "fixed" by moving it
@@ -2870,10 +2924,11 @@ require_check_tables() {
         "LOGIN_DEFS_CHECKS ${#LOGIN_DEFS_CHECKS[@]} $LOGIN_DEFS_CHECKS_EXPECTED" \
         "VENDOR_SURVIVAL_CHECKS ${#VENDOR_SURVIVAL_CHECKS[@]} $VENDOR_SURVIVAL_CHECKS_EXPECTED" \
         "IDEMPOTENCE_CHECKS ${#IDEMPOTENCE_CHECKS[@]} $IDEMPOTENCE_CHECKS_EXPECTED" \
-        "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $DIFF_PLUGINS_EXPECTED" \
+        "DIFF_PLUGINS ${#DIFF_PLUGINS[@]} $(diff_plugin_count)" \
         "PWQUALITY_ENFORCEMENT_CHECKS ${#PWQUALITY_ENFORCEMENT_CHECKS[@]} $PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED" \
         "PERMISSION_CHECKS ${#PERMISSION_CHECKS[@]} $PERMISSION_CHECKS_EXPECTED" \
         "FIREWALL_CHECKS ${#FIREWALL_CHECKS[@]} $FIREWALL_CHECKS_EXPECTED" \
+        "SERVICES_CHECKS ${#SERVICES_CHECKS[@]} $SERVICES_CHECKS_EXPECTED" \
         "KERNEL_CHECKS ${#KERNEL_CHECKS[@]} $KERNEL_CHECKS_EXPECTED" \
         "KERNEL_UNASKABLE ${#KERNEL_UNASKABLE[@]} $KERNEL_UNASKABLE_EXPECTED" \
         "SEEDED_KERNEL_CHECKS ${#SEEDED_KERNEL_CHECKS[@]} $SEEDED_KERNEL_CHECKS_EXPECTED" \
@@ -2952,29 +3007,50 @@ expected_check_total() {
     if [[ "$SHADOW_MIN_DAYS" != "1" ]]; then
         min_days_rows=2
     fi
-    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+    # How many plugins this run compares, and therefore how many pre-apply
+    # controls, preview-agreement rows and introduced-finding rows it makes. Six
+    # in a booted run and five otherwise, because the services plugin is only in
+    # the compared set where systemctl can be asked anything.
+    local plugins
+    plugins="$(diff_plugin_count)"
+    # The services `not-running` row is unaskable on a host where the unit was
+    # never running, and that is a fact about the HOST rather than about the
+    # invocation, so it is read back from the pre-apply capture rather than
+    # declared by the runner. SHADOW_MIN_DAYS above is the same shape, probed
+    # before the run and subtracted the same way.
+    local services_rows=0
+    if run_is_booted; then
+        services_rows=$SERVICES_CHECKS_EXPECTED
+        if [[ "$SERVICES_ACTIVE_BEFORE" != "active" ]]; then
+            services_rows=$(( services_rows - 1 ))
+        fi
+    fi
+    if ! run_is_booted; then
         # The 11 kernel rows are declared unaskable in this mode, so they are
         # not checks the tables ask for either. The pre-apply control goes the
-        # same way, which is why DIFF_PLUGINS_EXPECTED is discounted too, and so
-        # does the seeded kernel row, whose seed could not be written.
+        # same way, which is why the plugin count is discounted too, and so
+        # does the seeded kernel row, whose seed could not be written. The
+        # services plugin needs no term here at all: it is not among `plugins`
+        # in this mode and `services_rows` is 0.
         printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
             + PERMISSION_CHECKS_EXPECTED) \
             + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
-            + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED - 1 \
+            + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + plugins - 1 \
             + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
-            + DIFF_PLUGINS_EXPECTED + 1 \
-            + DIFF_PLUGINS_EXPECTED + 1 \
+            + plugins + 1 \
+            + plugins + 1 \
             + 2 - min_days_rows ))"
         return
     fi
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
         + PERMISSION_CHECKS_EXPECTED) \
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
-        + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + DIFF_PLUGINS_EXPECTED \
+        + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + plugins \
         + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
         + KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED \
-        + DIFF_PLUGINS_EXPECTED + 1 \
-        + DIFF_PLUGINS_EXPECTED + 1 \
+        + services_rows \
+        + plugins + 1 \
+        + plugins + 1 \
         + 2 - min_days_rows ))"
 }
 
@@ -5541,8 +5617,21 @@ Number of days of warning before password expires	: 7"
     pinned_total="$(KERNEL_BOOTED=0 expected_check_total)"
     check_eq "$pinned_total" "70" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, one introduced-finding row per plugin and its own control, plus one pre-apply control per seeded directive, plus the rollback-reload check's own two"
-    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "83" \
-        "a booted run is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control on top of that, which is the only arithmetic difference the mode makes"
+    # The services rows, and the one of them whose askability is a property of
+    # the HOST rather than of the invocation. Six more in a booted run: three
+    # rows, the plugin's own pre-apply control, and one row in each of the two
+    # generic per-plugin blocks, which follow the plugin count.
+    local svc_saved_active="$SERVICES_ACTIVE_BEFORE"
+    SERVICES_ACTIVE_BEFORE="active"
+    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "89" \
+        "a booted run is sized for eleven kernel rows, the seeded kernel row, the kernel plugin's own control, and the six a services plugin with a running unit brings with it"
+    SERVICES_ACTIVE_BEFORE="inactive"
+    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "88" \
+        "and one fewer where it was never running, because that row is declared unaskable rather than passed"
+    check_eq "$(KERNEL_BOOTED=0 expected_check_total)" "$pinned_total" \
+        "an unbooted run is unmoved by services entirely, because the plugin is not in the compared set there"
+    SERVICES_ACTIVE_BEFORE="$svc_saved_active"
+
     check_status 0 "require_check_tables accepts the tables as they stand" \
         require_check_tables
 
@@ -5557,6 +5646,14 @@ Number of days of warning before password expires	: 7"
     check_status 1 "require_check_tables refuses a seeded table edited down" \
         require_check_tables
     SEEDED_SSH_CHECKS=("${saved_seeded[@]}")
+    # The newest table of all, and the guard row for it is one line in a list of
+    # fourteen. Without this, deleting that line costs nothing and the services
+    # rows could then be edited down in silence.
+    local saved_services=("${SERVICES_CHECKS[@]}")
+    SERVICES_CHECKS=("not-at-boot")
+    check_status 1 "require_check_tables refuses the services table edited down" \
+        require_check_tables
+    SERVICES_CHECKS=("${saved_services[@]}")
     SSH_CHECKS=("PermitRootLogin|no")
     # And the size the run is measured against does not follow the table down.
     # Counted off ${#SSH_CHECKS[@]} it would, and print_summary would then accept
