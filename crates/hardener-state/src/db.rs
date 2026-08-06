@@ -134,7 +134,11 @@ async fn add_column_if_missing(
 ///
 /// The whole set runs inside one transaction, so a database is never left
 /// carrying some of an upgrade's columns and not the rest.
-async fn apply_migrations(pool: &SqlitePool) -> Result<()> {
+///
+/// The set is a parameter rather than [`MIGRATIONS`] read directly, so that the
+/// rollback can be tested: it needs a migration that fails, and every real one
+/// succeeds.
+async fn apply_migrations(pool: &SqlitePool, migrations: &[Migration]) -> Result<()> {
     let mut conn = pool
         .acquire()
         .await
@@ -146,7 +150,7 @@ async fn apply_migrations(pool: &SqlitePool) -> Result<()> {
         .map_err(|e| HardeningError::Database(e.to_string()))?;
 
     let mut applied = Ok(());
-    for migration in MIGRATIONS {
+    for migration in migrations {
         applied =
             add_column_if_missing(&mut conn, migration.table, migration.column, migration.ddl)
                 .await;
@@ -292,7 +296,7 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
 
     // Bring a database written by an earlier release up to the schema above.
     // Each entry says what an old row reads back as; see [`MIGRATIONS`].
-    apply_migrations(&pool).await?;
+    apply_migrations(&pool, MIGRATIONS).await?;
 
     // Foreign key enforcement
     sqlx::query("PRAGMA foreign_keys = ON")

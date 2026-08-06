@@ -168,6 +168,52 @@ async fn init_db_migrates_scan_findings_without_exception_key() {
     );
 }
 
+/// A migration that fails takes the ones before it back out with it.
+///
+/// Every real migration succeeds, so the rollback branch has no subject among
+/// them and the set is passed in. The second entry is refused by SQLite itself:
+/// `ADD COLUMN` cannot introduce a `NOT NULL` column with no default, because
+/// every existing row would violate it on the spot.
+#[tokio::test]
+async fn a_failed_migration_leaves_no_column_behind() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = bare_pool(&dir.path().join("partial.db")).await;
+    sqlx::query("CREATE TABLE t (id INTEGER PRIMARY KEY, existing TEXT)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO t VALUES (1, 'row')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let broken = &[
+        Migration {
+            table: "t",
+            column: "first",
+            ddl: "first TEXT",
+            absent: None,
+        },
+        Migration {
+            table: "t",
+            column: "second",
+            ddl: "second TEXT NOT NULL",
+            absent: None,
+        },
+    ];
+
+    apply_migrations(&pool, broken)
+        .await
+        .expect_err("a column SQLite refuses to add must fail the set");
+
+    assert_eq!(
+        column_count(&pool, "t", "first").await,
+        0,
+        "a migration that succeeded before the failure must come back out with it, \
+         or an upgrade leaves a database carrying some of its columns and not the rest"
+    );
+}
+
 /// Two processes opening one database at once cannot both attempt the same
 /// migration.
 ///
