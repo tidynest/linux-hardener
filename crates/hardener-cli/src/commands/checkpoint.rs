@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
-use hardener_core::{Context, SystemExecutor, executor::host_key_for};
+use hardener_core::{Context, SystemExecutor, executor::host_keys_for};
 use hardener_state::{ActionResult, ActionType, CheckpointId};
 use hardener_types::RollbackResult;
 
@@ -22,7 +22,9 @@ pub async fn list(
     all: bool,
 ) -> Result<()> {
     let manager = get_checkpoint_manager().await?;
-    let current_host = host_key_for(executor.as_ref());
+    // Every key this target has ever been filed under, so checkpoints taken
+    // before the remote user was resolved stay visible. See `host_keys_for`.
+    let host_keys = host_keys_for(executor.as_ref());
 
     // `list_checkpoints` returns newest-first (ORDER BY timestamp DESC); the
     // host filter preserves that order, so the renderer's cap keeps the newest.
@@ -30,7 +32,7 @@ pub async fn list(
         .list_checkpoints()
         .await?
         .into_iter()
-        .filter(|c| c.host_key == current_host)
+        .filter(|c| host_keys.contains(&c.host_key))
         .collect();
 
     output::checkpoint_list(&format, &checkpoints, limit, all);

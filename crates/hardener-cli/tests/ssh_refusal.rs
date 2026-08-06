@@ -42,6 +42,53 @@ fn scratch_home_named(label: &str) -> std::path::PathBuf {
     dir
 }
 
+/// One endpoint listed under two names, which is the only selection a test can
+/// build that collides without depending on the machine it runs on.
+///
+/// Port 1 for the same reason the ad-hoc targets use it: nothing listens there,
+/// so a run that gets past the refusal fails at connect rather than waiting out
+/// a timeout. The port is written here rather than passed as `--port` because
+/// the global flag reaches ad-hoc targets only; an inventory host carries its
+/// own.
+const DUPLICATE_INVENTORY: &str = "\
+[[hosts]]
+name = \"primary\"
+hostname = \"127.0.0.1\"
+user = \"admin\"
+port = 1
+
+[[hosts]]
+name = \"duplicate\"
+hostname = \"127.0.0.1\"
+user = \"admin\"
+port = 1
+";
+
+/// The single checkpoint host key both entries above would write under.
+const DUPLICATE_KEY: &str = "ssh://admin@127.0.0.1:1";
+
+/// A scratch home whose inventory holds [`DUPLICATE_INVENTORY`].
+///
+/// `--ssh` alone can no longer build a colliding pair. Two identical targets are
+/// de-duplicated by canonical `user@host:port` before the check ever runs, and a
+/// target that names no user is now resolved through `ssh -G` rather than
+/// assumed to be root, so it no longer merges with an explicit `root@`. Nor can
+/// a test pin that resolution: `ssh -G` reads `~` through `getpwuid` and ignores
+/// `HOME`, measured rather than assumed.
+///
+/// `resolve_hosts` takes `--host` names as the operator gave them and says so at
+/// its own definition, so two entries for one endpoint stay two selections with
+/// one checkpoint host key, needing no ssh configuration at all. `run_in`
+/// already pins `XDG_CONFIG_HOME`, which is where the inventory is read from.
+fn scratch_home_with_duplicate_inventory(label: &str) -> std::path::PathBuf {
+    let home = scratch_home_named(label);
+    let dir = home.join("config").join("linux-hardener");
+    std::fs::create_dir_all(&dir).expect("a scratch inventory directory");
+    std::fs::write(dir.join("hosts.toml"), DUPLICATE_INVENTORY)
+        .expect("seed the inventory the run reads");
+    home
+}
+
 fn run(args: &[&str]) -> Output {
     run_in(scratch_home(), args)
 }
@@ -275,11 +322,10 @@ fn a_port_named_in_the_target_outranks_the_global_flag() {
 /// A fleet run that would file two hosts' checkpoints under one key is refused
 /// before it connects.
 ///
-/// `SshExecutor::description` substitutes a literal `root` for a target that
-/// named no user, and that string is the checkpoint host key, so `--ssh h` and
-/// `--ssh root@h` are two targets with one key. Both capture a pre-apply
-/// checkpoint under `(host_key, name)`, and the newest per key wins, so the
-/// surviving pre-apply state can be content the other target already hardened.
+/// Two inventory entries for one endpoint are two selections with one checkpoint
+/// host key. Both capture a pre-apply checkpoint under `(host_key, name)`, and
+/// the newest per key wins, so the surviving pre-apply state can be content the
+/// other selection already hardened.
 ///
 /// Driven through the binary because the refusal has to sit on the path `main`
 /// wires up: the pure check is unit-tested next to the parser, and a unit test
@@ -287,7 +333,7 @@ fn a_port_named_in_the_target_outranks_the_global_flag() {
 #[test]
 fn a_fleet_run_that_would_collide_two_checkpoints_is_refused_before_connecting() {
     let out = run_in(
-        scratch_home_named("collision"),
+        scratch_home_with_duplicate_inventory("collision"),
         &[
             "batch",
             "apply",
@@ -299,12 +345,10 @@ fn a_fleet_run_that_would_collide_two_checkpoints_is_refused_before_connecting()
             "--quiet",
             "--plugin",
             "kernel-hardening",
-            "--ssh",
-            "127.0.0.1",
-            "--ssh",
-            "root@127.0.0.1",
-            "--port",
-            "1",
+            "--host",
+            "primary",
+            "--host",
+            "duplicate",
             "--ssh-timeout",
             "2",
         ],
@@ -319,9 +363,14 @@ fn a_fleet_run_that_would_collide_two_checkpoints_is_refused_before_connecting()
          which `batch` signals as 2; got stderr: {stderr}"
     );
     assert!(
-        stderr.contains("ssh://root@127.0.0.1:1"),
-        "the refusal names the single key both targets would have written under, \
-         because that is the thing the operator has to change; got: {stderr}"
+        stderr.contains(DUPLICATE_KEY),
+        "the refusal names the single key both selections would have written \
+         under, because that is the thing the operator has to change; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("'primary'") && stderr.contains("'duplicate'"),
+        "and it names both entries, which share a target and are told apart by \
+         name alone; got: {stderr}"
     );
     // The connection is what proves the refusal came first: a run that reached
     // the host would render a per-host outcome, failed or otherwise.
@@ -378,17 +427,15 @@ fn a_fleet_run_naming_two_real_accounts_is_not_refused() {
 #[test]
 fn a_fleet_rollback_that_would_collide_two_checkpoints_is_refused_before_connecting() {
     let out = run_in(
-        scratch_home_named("collision-rollback"),
+        scratch_home_with_duplicate_inventory("collision-rollback"),
         &[
             "batch",
             "rollback",
             "--execute",
-            "--ssh",
-            "127.0.0.1",
-            "--ssh",
-            "root@127.0.0.1",
-            "--port",
-            "1",
+            "--host",
+            "primary",
+            "--host",
+            "duplicate",
             "--ssh-timeout",
             "2",
         ],
@@ -402,7 +449,7 @@ fn a_fleet_rollback_that_would_collide_two_checkpoints_is_refused_before_connect
         "the refusal is the same usage error on either verb; got stderr: {stderr}"
     );
     assert!(
-        stderr.contains("ssh://root@127.0.0.1:1"),
+        stderr.contains(DUPLICATE_KEY),
         "and names the same single key; got: {stderr}"
     );
     assert!(
@@ -419,18 +466,16 @@ fn a_fleet_rollback_that_would_collide_two_checkpoints_is_refused_before_connect
 #[test]
 fn a_dry_run_of_a_colliding_pair_is_not_refused() {
     let out = run_in(
-        scratch_home_named("collision-dry-run"),
+        scratch_home_with_duplicate_inventory("collision-dry-run"),
         &[
             "batch",
             "apply",
             "--plugin",
             "kernel-hardening",
-            "--ssh",
-            "127.0.0.1",
-            "--ssh",
-            "root@127.0.0.1",
-            "--port",
-            "1",
+            "--host",
+            "primary",
+            "--host",
+            "duplicate",
             "--ssh-timeout",
             "2",
         ],

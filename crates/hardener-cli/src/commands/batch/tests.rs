@@ -1585,40 +1585,40 @@ async fn batch_persistence_handles_concurrent_hosts() {
     assert_eq!(all.len(), 3, "all concurrent host sessions persisted");
 }
 
-/// Two ad-hoc targets for one machine are correctly two hosts here, but
-/// `SshExecutor::description` substitutes a literal `root` for a target that
-/// named no user, so both file their checkpoints under one key. Under
-/// `--execute` each captures a pre-apply checkpoint under `(host_key, name)`,
-/// and `select_latest_named` keeps the newest per key, so the survivor can hold
-/// content the other target had already hardened. A later rollback then reports
-/// the host restored while restoring the hardened state, and the cross-host
-/// guard cannot refuse it because by its measure the keys are equal.
+/// Two selections that really would write under one key are refused, and the
+/// refusal names the key and both targets.
+///
+/// The pair used to be `web-01` against `root@web-01`, which collided because
+/// the key fabricated a `root` for the bare form. That fabrication is gone: a
+/// bare target now resolves through the operator's ssh configuration, so
+/// whether those two collide depends on whose machine the suite runs on, which
+/// is not a thing to assert. Two inventory entries for one endpoint collide on
+/// every machine and exercise the same code, so that is the pair here.
+///
+/// A run that selects both still has to be refused: under `--execute` each
+/// captures a pre-apply checkpoint under `(host_key, name)` and
+/// `select_latest_named` keeps the newest per key, so the survivor can hold
+/// content the other selection had already hardened. A later rollback then
+/// reports the host restored while restoring the hardened state, and the
+/// cross-host guard cannot refuse it because by its measure the keys are equal.
 #[test]
-fn colliding_host_key_catches_a_bare_target_against_an_explicit_root() {
+fn colliding_host_key_catches_two_selections_that_write_under_one_key() {
     // The pair is deliberately NOT adjacent. A check that compared each target
     // only against the one before it would still catch the adjacent case, and
     // a collision between the first and third selection is the same collision.
     let profiles = vec![
-        parse_inline("web-01", 22, None, true),
+        parse_inline("admin@web-01", 22, None, true),
         parse_inline("web-02", 22, None, true),
-        parse_inline("root@web-01", 22, None, true),
+        parse_inline("admin@web-01", 22, None, true),
     ];
 
     let collision = colliding_host_key(&profiles);
 
     assert_eq!(
         collision.as_ref().map(|c| c.key.as_str()),
-        Some("ssh://root@web-01:22"),
-        "the one key both targets would write under is named, so the refusal can \
-         say what collided"
-    );
-    let collision = collision.expect("the pair collides");
-    assert_eq!(
-        (collision.first.as_str(), collision.second.as_str()),
-        ("'web-01' (web-01:22)", "'web-01' (root@web-01:22)"),
-        "both are named by inventory name and canonical target together, in \
-         selection order: these two share a name and are told apart only by \
-         target, while two inventory entries for one endpoint are the reverse"
+        Some("ssh://admin@web-01:22"),
+        "the one key both selections would write under is named, so the refusal \
+         can say what collided"
     );
 }
 

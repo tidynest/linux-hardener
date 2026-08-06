@@ -812,6 +812,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A remote checkpoint was filed under an account the session never reached.**
+  `checkpoint_host_key` formatted `ssh://{user}@{host}:{port}` and substituted
+  the literal `root` when the target named no user. That was not a claim about
+  the remote account but a fabrication: ssh resolves a bare target through the
+  operator's `~/.ssh/config`, so the account it lands on is frequently something
+  else. Two consequences followed. `hardener --ssh web-01 apply` filed under
+  `ssh://root@web-01:22`, so `hardener --ssh admin@web-01 rollback <id>` was
+  refused as belonging to a different host though it was the same machine and
+  the same account; and `--ssh web-01` and `--ssh root@web-01` were two targets
+  everywhere else and one key here, which a fleet run had to refuse outright.
+  The user is now **resolved** rather than assumed, through `ssh -G`, which
+  applies the configuration without opening a connection: the key stays
+  derivable before any connection exists, which the fleet collision check needs.
+  The resolver is injected behind `checkpoint_host_key_with` so the format and
+  the fallback are tested without depending on whose machine the suite runs on;
+  a resolver that cannot answer leaves the old `root` in place rather than
+  inventing a different one.
+  **Nothing already recorded became invisible.** Lookups accept
+  `legacy_checkpoint_host_key` alongside the resolved one, through
+  `SystemExecutor::legacy_description` (`None` for every local executor and for
+  every remote target that named its user, since only a bare target moved) and
+  `host_keys_for`, which both `checkpoint list` and `batch rollback` selection
+  pass. Captures never write the legacy key. Losing sight of a rollback point is
+  a worse failure than the filing bug that moved it, and the test proving the
+  legacy key is what finds an old checkpoint also asserts the same lookup fails
+  without it, so it cannot pass vacuously.
+  **A migration is impossible, not merely deferred.** `ssh://root@h:22` cannot
+  say whether the operator wrote `root@h` or wrote `h` and had the `root`
+  invented for them, so any rewrite corrupts whichever of the two it guesses
+  wrong. No signature is affected either way: `generate_digest` hashes the id,
+  name, timestamp, username and file states, and never the host key, so existing
+  checkpoints stay valid and verifiable and only their filing moved.
+  The fleet refusal survives but is **narrower**, because the defect that made it
+  broad is gone: with the user resolved, the key and the canonical target are
+  isomorphic for a target that names its user, so two distinct selections can
+  only collide through resolution or by genuinely naming one account on one
+  machine twice. Its two end-to-end tests are rebuilt on the second of those,
+  two inventory entries for one endpoint, which needs no ssh configuration at
+  all; the earlier pairing of a bare target against an explicit `root@` one
+  cannot collide any more, and pinning the resolver's configuration from a test
+  is not possible, since `ssh -G` reads `~` through `getpwuid` and ignores
+  `HOME`. Both `--execute` call sites were confirmed covered by cutting a mutant
+  at each and watching exactly one test die. Closes #72.
 - **Two processes opening the checkpoint database at once could both attempt the
   same migration, and the loser refused to open it at all.**
   `add_column_if_missing` read whether a column was present and then added it,
