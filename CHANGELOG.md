@@ -517,6 +517,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The five in-place column migrations are a table the test suite enumerates,
+  rather than five calls only three of which anyone had tested.** `init_db`
+  applied `checkpoints.host_key`, `scan_results.unchecked_json`,
+  `file_states.link_target`, `file_states.content_absence` and
+  `scan_findings.exception_key` as separate `add_column_if_missing` calls, and
+  three of the five had no test at all: a database written before those columns
+  existed had never been proven to open and read correctly, and a regression in
+  any of the three blocks would have passed the whole suite. Each block looked
+  obviously right, which is exactly why nobody wrote a case for it, and
+  obviously right is not a property a suite can report on. The blocks are now
+  entries in a `MIGRATIONS` constant carrying the table, the column, the DDL and
+  **the value a row written before the column existed reads back as**, `local`
+  for `host_key` and NULL for the other four. `init_db` iterates it, and
+  `every_migration_restores_its_column` walks the same constant: for each entry
+  it builds a current database, inserts a row, drops the column to produce the
+  state an upgrade actually migrates from, reopens, and asserts both that the
+  column returns and that the old row reads back as that entry promises. A sixth
+  migration is covered the moment it joins the table, with nobody having written
+  a case for it, which is the only kind of case that ships. The check asserts the
+  table is non-empty before it starts, because zero subjects examined reads
+  exactly like zero problems found. Verified by mutation: inverting the guard,
+  giving `unchecked_json` a default, changing `host_key`'s default and emptying
+  the table each fail it. Closes #110. One blind spot is stated rather than
+  hidden: deleting an entry deletes the subject with it, so the check cannot see
+  a migration removed on purpose.
+
 - **Ten of the eleven kernel rows in the differential suite now arrive loosened,
   so they can no longer pass on a host that was already compliant.** The suite
   seeded one parameter below the tool's target before the first apply,
