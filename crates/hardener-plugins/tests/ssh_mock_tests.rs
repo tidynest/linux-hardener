@@ -3287,6 +3287,8 @@ async fn assert_key_silences(finding_id: &str, key: &str) {
 /// An sshd directive is spelled in camel case and its finding id is lowercased,
 /// so `PermitRootLogin` and `ssh-permitrootlogin` differ by a transform that
 /// cannot be inverted: nothing in the id says where the capitals were.
+// assertions-in-helper: both sites assert the same two things, so the pair
+// lives in assert_key_silences rather than being written out twice.
 #[tokio::test]
 async fn an_ssh_directive_finding_names_the_exception_key_that_silences_it() {
     assert_key_silences("ssh-permitrootlogin", "PermitRootLogin").await;
@@ -3295,6 +3297,8 @@ async fn an_ssh_directive_finding_names_the_exception_key_that_silences_it() {
 /// The crypto directives are a second, separately built finding site in this
 /// plugin, and they take their key from a different table, so covering the
 /// directive site above says nothing about them.
+// assertions-in-helper: both sites assert the same two things, so the pair
+// lives in assert_key_silences rather than being written out twice.
 #[tokio::test]
 async fn an_ssh_crypto_finding_names_the_exception_key_that_silences_it() {
     assert_key_silences("ssh-ciphers", "Ciphers").await;

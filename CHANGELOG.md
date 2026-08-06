@@ -399,6 +399,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`scan` now names the policy exception each finding accepts**, printing the
+  complete `config.toml` path beneath the finding itself. The key an exception
+  is written under was previously discoverable only by reading the source: a
+  finding's id is derived from that key by a transform that loses information,
+  so `service_bluetooth` names either `bluetooth` or a key that never existed,
+  and no consumer could work backwards to it. Findings carry the key directly
+  now (`Finding::finding_exception_key`), across all eight plugins. Nothing is
+  offered for a finding already resting on an exception, nor for the few
+  findings an exception cannot be about: a PAM directive whose module is
+  absent is already set correctly and simply reaches nothing, so there is no
+  value for an exception to document (#66).
+
 - **The services plugin has differential coverage.** Nothing but the tool's own
   report previously said a unit it claimed to have disabled would fail to start
   at the next boot. `differential-suite.sh` now asks systemd and the filesystem,
