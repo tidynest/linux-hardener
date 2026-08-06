@@ -87,9 +87,11 @@ async fn add_column_if_missing_adds_a_column_that_is_absent() {
         .await
         .unwrap();
 
-    add_column_if_missing(&pool, "t", "added", "added TEXT")
+    let mut conn = pool.acquire().await.unwrap();
+    add_column_if_missing(&mut conn, "t", "added", "added TEXT")
         .await
         .expect("adding an absent column");
+    drop(conn);
 
     let present: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM pragma_table_info('t') WHERE name = 'added'")
@@ -112,9 +114,11 @@ async fn add_column_if_missing_leaves_an_existing_column_alone() {
         .await
         .unwrap();
 
-    add_column_if_missing(&pool, "t", "added", "added TEXT")
+    let mut conn = pool.acquire().await.unwrap();
+    add_column_if_missing(&mut conn, "t", "added", "added TEXT")
         .await
         .expect("a second call must not error");
+    drop(conn);
 
     let value: String = sqlx::query_scalar("SELECT added FROM t WHERE id = 1")
         .fetch_one(&pool)
@@ -162,6 +166,78 @@ async fn init_db_migrates_scan_findings_without_exception_key() {
         key, None,
         "a row written before the column existed reads back as no key"
     );
+}
+
+/// Two processes opening one database at once cannot both attempt the same
+/// migration.
+///
+/// The interleaving is forced rather than hoped for. A second connection takes
+/// the write lock and holds it, which in WAL mode leaves reads free, so a check
+/// that is not itself inside that lock reads the column as absent, waits for the
+/// lock to add it, and finds somebody else already did. The sleep only buys the
+/// racing opener time to reach that read, which is to say it only ever helps the
+/// test fail on code that has the gap. Code that takes the lock before reading
+/// is blocked for the whole wait and cannot observe the stale answer at all, so
+/// nothing about it passing depends on timing.
+#[tokio::test]
+async fn two_openers_cannot_both_attempt_one_migration() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("legacy.db");
+    let migration = MIGRATIONS.last().expect("a migration to race over");
+
+    init_db(Some(&db))
+        .await
+        .expect("a current database")
+        .close()
+        .await;
+
+    {
+        let pool = bare_pool(&db).await;
+        sqlx::query(&format!(
+            "ALTER TABLE {} DROP COLUMN {}",
+            migration.table, migration.column
+        ))
+        .execute(&pool)
+        .await
+        .expect("age the database past the column");
+        pool.close().await;
+    }
+
+    // The other process, holding the write lock across its own check and act.
+    let holder_pool = bare_pool(&db).await;
+    let mut holder = holder_pool.acquire().await.expect("a held connection");
+    sqlx::query("BEGIN IMMEDIATE")
+        .execute(&mut *holder)
+        .await
+        .expect("take the write lock");
+
+    let racing = {
+        let db = db.clone();
+        tokio::spawn(async move { init_db(Some(&db)).await.map(|_| ()) })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    sqlx::query(&format!(
+        "ALTER TABLE {} ADD COLUMN {}",
+        migration.table, migration.ddl
+    ))
+    .execute(&mut *holder)
+    .await
+    .expect("the other process adds the column");
+    sqlx::query("COMMIT")
+        .execute(&mut *holder)
+        .await
+        .expect("the other process commits");
+    drop(holder);
+    holder_pool.close().await;
+
+    racing
+        .await
+        .expect("the racing task ran to completion")
+        .expect(
+            "an opener that lost the race must still open the database rather than \
+             refusing it with a duplicate column",
+        );
 }
 
 /// How many columns of `table` are named `column`.
