@@ -747,6 +747,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs `@stable`, so this class of drift was invisible to all of them.
   `docs/contributing/building.md` had predicted this exact failure in advance
   and named the missing CI job as the fix.
+- **The nftables live-proving fixture could pass against the wrong container,
+  which is worse than failing outright.** `nftables-fixture.sh` and
+  `boot-ssh-test-container.sh` share the one hard-coded veth address (host
+  `10.242.117.1/30`, container `10.242.117.2`) because only one container is
+  meant to be up at a time, but the old code only stopped a machine of the
+  SAME name before booting a new one. Booting `hardener-test-opensuse` while
+  `hardener-test-debian` was still running left both alive, each claiming that
+  address, and traffic to the container end kept reaching Debian. A live test
+  then ran, PASSED, and reported the Debian boot path while the fixture
+  claimed an openSUSE run; nothing in the test or either script noticed.
+  `nftables-fixture.sh` now enumerates every running machine with `machinectl
+  list` and stops all of them before booting, this one included, waiting for
+  each stop to land rather than assuming it is instant. **Three more defects
+  surfaced proving this against real Debian and openSUSE containers.** The
+  fixture's own "Fixture ready" banner used to follow from nothing stronger
+  than `boot-ssh-test-container.sh`'s exit code, a liveness signal rather than
+  a readiness one the fixture verified for itself; it now authenticates
+  independently as the invoking user with the same key the live tests use,
+  and fails loudly, naming the key and the `authorized_keys` path to check, if
+  that does not succeed. The openSUSE image carries
+  `/etc/ssh/sshd_config.d/00-hardener.conf` setting `PermitRootLogin no` from
+  an earlier hardening run of this very tool, and sshd keeps the first value
+  it finds for a directive while the Include glob expands alphabetically, so
+  nothing sorted after that file had any effect; `boot-ssh-test-container.sh`
+  now drops in `00-0-hardener-test.conf`, sorting first rather than editing or
+  removing the hardener's own file, validates it with `sshd -t` before
+  restarting sshd so a bad config cannot strand the container, and confirms
+  with `sshd -T` that the directive actually took. And because SSH has no
+  opinion about which host answered, only that some host did, the fixture now
+  reads `/etc/os-release` back over the connection it just authenticated and
+  refuses to continue if the machine name and what the container reports
+  disagree, which is exactly what would have caught the wrong-host defect
+  immediately rather than after a full test run had already passed.
 
 - **An apply could install a firewall that admitted nothing, or that severed the
   connection carrying it, and both were reached through documented routes.** The

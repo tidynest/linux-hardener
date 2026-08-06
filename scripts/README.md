@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-06
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -8,7 +8,7 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 
 | Subdirectory | Contents |
 |--------------|----------|
-| `containers/` | systemd-nspawn container lifecycle: `create-container.sh` (all five distros), `boot-ssh-test-container.sh` (booted SSH fixture), `nftables-fixture.sh` (makes nftables the selected backend in a container) |
+| `containers/` | systemd-nspawn container lifecycle: `create-container.sh` (all five distros), `boot-ssh-test-container.sh` (booted SSH fixture; unlocks root key login left disabled by an earlier hardening run, then confirms a real login before reporting ready), `nftables-fixture.sh` (makes nftables the selected backend in a container; stops every other running machine first and confirms the container's own `/etc/os-release` before touching it, since the fixed veth address it uses only ever admits one machine safely) |
 | `test/` | Host-side test suites and orchestrators: cross-distro, package-install, root/full suites, desktop tests, rollback verification, parallel runner |
 | `test/gui/` | GUI test runners and inner scripts (Web UI and Tauri desktop), plus the host desktop UX/functional suites |
 | `test/polkit/` | Polkit authentication matrix tests and agent detection helper |
