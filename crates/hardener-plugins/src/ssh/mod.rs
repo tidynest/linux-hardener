@@ -1356,6 +1356,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     ),
                     finding_compliance: get_ssh_compliance_mappings(directive.ssh_directive_name),
                     finding_policy_exception: policy_exception,
+                    finding_exception_key: Some(directive.ssh_directive_name.to_string()),
                 });
             }
         }
@@ -1425,6 +1426,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                     ),
                     finding_compliance: get_ssh_compliance_mappings(crypto.crypto_directive_name),
                     finding_policy_exception: policy_exception,
+                    finding_exception_key: Some(crypto.crypto_directive_name.to_string()),
                 });
             }
         }

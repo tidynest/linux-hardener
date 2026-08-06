@@ -3224,3 +3224,82 @@ fn ssh_reloads_for_its_own_paths_and_no_others() {
 // and `dropin::DROPIN_PATH` are visible by name. This file compiles as a
 // separate crate and can only see literals, which stayed green through a
 // change to either constant's value - the drift the test exists to catch.
+
+/// Asserts that the finding named by `finding_id` advertises `key`, and that
+/// an exception written under that key silences it on a rescan of the same
+/// host.
+///
+/// This plugin reaches exceptions through `matching_exception`, which requires
+/// the documented value to equal the live one, so the exception is built out
+/// of the finding itself. That makes this prove the second half too: the value
+/// a consumer would copy from a finding is the value the wrapper accepts.
+async fn assert_key_silences(finding_id: &str, key: &str) {
+    let scan = async |config: &PluginConfig| {
+        SshHardeningPlugin::new()
+            .scan(
+                &Context::with_executor(Arc::new(insecure_ssh_executor())),
+                config,
+            )
+            .await
+            .expect("ssh scan should not error")
+    };
+
+    let result = scan(&PluginConfig::default()).await;
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == finding_id)
+        .unwrap_or_else(|| panic!("the insecure fixture must report {finding_id}"));
+
+    assert_eq!(
+        finding.finding_exception_key.as_deref(),
+        Some(key),
+        "{finding_id} must name the sshd directive, not its own id",
+    );
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        key.to_string(),
+        PolicyException {
+            value: finding.finding_current_value.clone(),
+            allowed: true,
+            reason: "legacy jump host".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let excepted = scan(&config).await;
+    let annotated = excepted
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == finding_id)
+        .unwrap_or_else(|| panic!("an excepted {finding_id} is still reported, annotated"));
+
+    assert!(
+        annotated.finding_policy_exception.is_some(),
+        "an exception written under {key} must annotate {finding_id}",
+    );
+}
+
+/// An sshd directive is spelled in camel case and its finding id is lowercased,
+/// so `PermitRootLogin` and `ssh-permitrootlogin` differ by a transform that
+/// cannot be inverted: nothing in the id says where the capitals were.
+// assertions-in-helper: both sites assert the same two things, so the pair
+// lives in assert_key_silences rather than being written out twice.
+#[tokio::test]
+async fn an_ssh_directive_finding_names_the_exception_key_that_silences_it() {
+    assert_key_silences("ssh-permitrootlogin", "PermitRootLogin").await;
+}
+
+/// The crypto directives are a second, separately built finding site in this
+/// plugin, and they take their key from a different table, so covering the
+/// directive site above says nothing about them.
+// assertions-in-helper: both sites assert the same two things, so the pair
+// lives in assert_key_silences rather than being written out twice.
+#[tokio::test]
+async fn an_ssh_crypto_finding_names_the_exception_key_that_silences_it() {
+    assert_key_silences("ssh-ciphers", "Ciphers").await;
+}

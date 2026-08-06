@@ -41,6 +41,11 @@ FIELD = re.compile(r"^\s*finding_policy_exception:\s*(.+?),?\s*$")
 # rustfmt is entitled to insert one.
 COMMENT = re.compile(r"^\s*//")
 
+# The key an operator writes the exception under, which sits at the same
+# literal. `finding_id` cannot stand in for it: every plugin derives the id
+# from the key by a transform that loses information.
+KEY_FIELD = re.compile(r"^\s*finding_exception_key:\s*(.+?),?\s*$")
+
 
 def find_project_root() -> Path:
     """Find the project root by looking for Cargo.toml."""
@@ -61,6 +66,21 @@ def reason_precedes(lines: list[str], index: int) -> bool:
     return cursor >= 0 and bool(COMMENT.match(lines[cursor]))
 
 
+def key_beside(lines: list[str], index: int) -> str | None:
+    """The `finding_exception_key` value at the same literal as `index`.
+
+    Both fields belong to one `Finding`, so the search stops at the literal's
+    closing brace rather than running on into the next one and reading its key.
+    """
+    for cursor in range(index + 1, min(index + 8, len(lines))):
+        match = KEY_FIELD.match(lines[cursor])
+        if match:
+            return match.group(1)
+        if lines[cursor].strip().startswith("}"):
+            break
+    return None
+
+
 def check_sites(root: Path) -> tuple[list[str], int, int]:
     """Return the unexplained sites, the exempted count, and the total seen."""
     failures: list[str] = []
@@ -74,7 +94,36 @@ def check_sites(root: Path) -> tuple[list[str], int, int]:
             if not match:
                 continue
             total += 1
-            if match.group(1) != "None":
+
+            # The two fields answer the same question and must agree. A key
+            # beside a hardcoded None advertises a setting that changes
+            # nothing; no key beside a live lookup hides a usable one. Neither
+            # is visible to a test: one asserting the field is None passes just
+            # as happily on an oversight as on a choice, which is why this
+            # check is here rather than in the suite.
+            key = key_beside(lines, index)
+            consults_config = match.group(1) != "None"
+            if key is None:
+                failures.append(
+                    f"{source.relative_to(root)}:{index + 1}: "
+                    f"this Finding carries no finding_exception_key at all, so "
+                    f"nothing can tell an operator which key an exception takes"
+                )
+            elif consults_config and key == "None":
+                failures.append(
+                    f"{source.relative_to(root)}:{index + 1}: "
+                    f"the exception is looked up here but finding_exception_key "
+                    f"is None, so a usable setting is hidden from the operator"
+                )
+            elif not consults_config and key != "None":
+                failures.append(
+                    f"{source.relative_to(root)}:{index + 1}: "
+                    f"finding_exception_key names {key} while the exception is "
+                    f"hardcoded None, so an operator is offered a setting that "
+                    f"changes nothing"
+                )
+
+            if consults_config:
                 continue
             if reason_precedes(lines, index):
                 exempted += 1

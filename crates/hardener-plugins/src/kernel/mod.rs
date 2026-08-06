@@ -1024,6 +1024,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                             finding_title: format!("Insecure value for {}", param_name),
                             finding_compliance: get_compliance_mappings(param_name),
                             finding_policy_exception: policy_exception,
+                            finding_exception_key: Some(param_name.to_string()),
                         });
                     }
                 }

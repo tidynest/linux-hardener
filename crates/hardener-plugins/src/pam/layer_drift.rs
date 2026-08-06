@@ -168,6 +168,7 @@ pub(super) fn masked_keys_finding(
         // the tool does not manage, so there is no setting for a configured
         // exception to be about.
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 

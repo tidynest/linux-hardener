@@ -553,6 +553,24 @@ pub struct Finding {
     pub finding_compliance: Vec<ComplianceMapping>,
     /// Policy exception if this finding is covered by config.
     pub finding_policy_exception: Option<FindingPolicyException>,
+    /// The `exceptions` key an operator writes to accept this finding as a
+    /// documented deviation, where one would mean anything.
+    ///
+    /// [`Finding::finding_id`] cannot serve here: every plugin builds it from
+    /// this key with a lossy transform, so `service_some_service` names either
+    /// `some-service` or `some_service` and nothing can say which. Deriving
+    /// the key back out of an id is therefore impossible, and it has to be
+    /// carried.
+    ///
+    /// `None` where an exception would change nothing, which happens for two
+    /// distinct reasons and both are correct. The plugin may consult no
+    /// exception for this finding at all, as with the PAM layer-drift
+    /// findings, which name a set of masked keys rather than one directive. Or
+    /// the finding may not be about a value: PAM reports a directive that is
+    /// already set correctly and simply unreadable by anything on the host,
+    /// and an exception documents a value an operator accepts, so there is
+    /// nothing for one to say.
+    pub finding_exception_key: Option<String>,
 }
 
 /// Label shown in place of a severity when the configuration documents a

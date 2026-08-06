@@ -1768,11 +1768,17 @@ fn boot_summary(result: &hardener_core::plugin::ScanResult) -> Vec<String> {
 }
 
 async fn scan_host(executor: MockExecutor) -> hardener_core::plugin::ScanResult {
+    scan_host_with(executor, &PluginConfig::default()).await
+}
+
+/// [`scan_host`] against a configuration, for the tests that have to rescan
+/// the same host once an exception has been written.
+async fn scan_host_with(
+    executor: MockExecutor,
+    config: &PluginConfig,
+) -> hardener_core::plugin::ScanResult {
     KernelHardeningPlugin::new()
-        .scan(
-            &Context::with_executor(Arc::new(executor)),
-            &PluginConfig::default(),
-        )
+        .scan(&Context::with_executor(Arc::new(executor)), config)
         .await
         .expect("kernel scan should not error")
 }
@@ -2411,5 +2417,105 @@ async fn an_unanswerable_mount_probe_blocks_nothing() {
             .any(|i| i.validation_issue_message.contains("read-only")),
         "an unanswerable probe must not report a read-only mount: {:?}",
         result.validation_report_issues
+    );
+}
+
+/// Builds the exception a finding says would accept it, documenting the value
+/// the host actually has. This plugin reaches exceptions through
+/// `matching_exception`, which additionally requires the documented value to
+/// equal the live one, so taking it from the finding is also what proves the
+/// value a consumer would copy is the value the wrapper accepts.
+fn exception_for(finding: &hardener_core::plugin::Finding) -> (String, PolicyException) {
+    (
+        finding
+            .finding_exception_key
+            .clone()
+            .expect("the finding names the key that silences it"),
+        PolicyException {
+            value: finding.finding_current_value.clone(),
+            allowed: true,
+            reason: "measured deviation".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    )
+}
+
+/// A kernel finding renders `kernel_net_ipv4_tcp_syncookies` from a key of
+/// `net.ipv4.tcp_syncookies`, collapsing every dot onto an underscore, so the
+/// key cannot be read back out of the id. The second half is the load-bearing
+/// half: the key advertised must be the key that silences the finding.
+#[tokio::test]
+async fn a_kernel_finding_names_the_exception_key_that_silences_it() {
+    let result = scan_host(insecure_kernel_executor()).await;
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "kernel_net_ipv4_tcp_syncookies")
+        .expect("the insecure fixture leaves tcp_syncookies off");
+
+    assert_eq!(
+        finding.finding_exception_key.as_deref(),
+        Some("net.ipv4.tcp_syncookies"),
+        "the finding must name the sysctl key, not its own id",
+    );
+
+    let (key, exception) = exception_for(finding);
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(key, exception);
+
+    let excepted = scan_host_with(insecure_kernel_executor(), &config).await;
+    let annotated = excepted
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "kernel_net_ipv4_tcp_syncookies")
+        .expect("an excepted finding is still reported, annotated");
+
+    assert!(
+        annotated.finding_policy_exception.is_some(),
+        "an exception written under the advertised key must annotate the finding",
+    );
+}
+
+/// The boot-override finding is the sharper case: it renders
+/// `kernel_boot_override_net_ipv4_conf_all_log_martians` from
+/// `net.ipv4.conf.all.log_martians`, so four dots are lost rather than one.
+#[tokio::test]
+async fn a_boot_override_finding_names_the_exception_key_that_silences_it() {
+    let result = scan_host(ufw_enabled(
+        fully_secure_kernel_executor(),
+        UFW_SHIPPED_SYSCTL,
+    ))
+    .await;
+    let finding = boot_findings(&result)
+        .into_iter()
+        .find(|f| f.finding_id.ends_with("net_ipv4_conf_all_log_martians"))
+        .expect("the ufw fixture undoes the all-interfaces log_martians at boot");
+
+    assert_eq!(
+        finding.finding_exception_key.as_deref(),
+        Some("net.ipv4.conf.all.log_martians"),
+        "the finding must name the sysctl key, not its own id",
+    );
+
+    let (key, exception) = exception_for(finding);
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(key, exception);
+
+    let excepted = scan_host_with(
+        ufw_enabled(fully_secure_kernel_executor(), UFW_SHIPPED_SYSCTL),
+        &config,
+    )
+    .await;
+    let annotated = boot_findings(&excepted)
+        .into_iter()
+        .find(|f| f.finding_id.ends_with("net_ipv4_conf_all_log_martians"))
+        .expect("an excepted finding is still reported, annotated");
+
+    assert!(
+        annotated.finding_policy_exception.is_some(),
+        "an exception written under the advertised key must annotate the finding",
     );
 }

@@ -255,6 +255,7 @@ mod fleet_tests {
             finding_title: String::new(),
             finding_compliance: Vec::new(),
             finding_policy_exception: None,
+            finding_exception_key: None,
         }
     }
 
@@ -614,6 +615,7 @@ mod policy_exception_tests {
             finding_title: "Test".to_string(),
             finding_compliance: Vec::new(),
             finding_policy_exception: excepted.then(FindingPolicyException::default),
+            finding_exception_key: None,
         }
     }
 

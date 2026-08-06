@@ -437,6 +437,7 @@ fn overridden_finding(
         finding_policy_exception: config
             .matching_exception(name, value)
             .map(|e| e.to_finding_exception()),
+        finding_exception_key: Some(name.to_string()),
     }
 }
 

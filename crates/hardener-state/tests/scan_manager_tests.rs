@@ -27,6 +27,7 @@ fn sample_results() -> Vec<ScanResult> {
             finding_remediation_steps: vec!["Step 1".to_string()],
             finding_compliance: vec![],
             finding_policy_exception: None,
+            finding_exception_key: None,
         }],
         scan_duration_us: 1000,
         scan_error: None,

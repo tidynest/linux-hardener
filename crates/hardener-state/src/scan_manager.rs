@@ -307,6 +307,7 @@ impl ScanHistoryManager {
                 finding_remediation_steps: remediation_steps,
                 finding_compliance: compliance,
                 finding_policy_exception: policy_exception,
+                finding_exception_key: None,
             });
         }
 

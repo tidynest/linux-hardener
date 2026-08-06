@@ -35,6 +35,7 @@ fn cis_finding(control_id: &str) -> Finding {
         finding_title: "Test Finding".to_string(),
         finding_compliance: vec![mapping(ComplianceFramework::CIS, control_id)],
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 

@@ -1646,3 +1646,69 @@ async fn a_directive_override_applies_to_the_vendor_layer_too() {
         .expect("0440 violates an override of 0400");
     assert_eq!(finding.finding_recommended_value, "0400");
 }
+
+/// Every finding this plugin reports must name the key that silences it, and
+/// a permission finding renders `perm--etc-ssh-sshd_config` from a key of
+/// `/etc/ssh/sshd_config`, collapsing `/` and `-` onto `-`.
+///
+/// The loop is the point: asserting one finding would leave every other
+/// directive in this plugin free to advertise a key that does nothing. The
+/// emptiness check is the control, because a fixture reporting nothing would
+/// satisfy a loop that never runs.
+#[tokio::test]
+async fn every_permissions_finding_names_the_exception_key_that_silences_it() {
+    let scan = async |config: &PluginConfig| {
+        PermissionsHardeningPlugin::new()
+            .scan(
+                &Context::with_executor(Arc::new(insecure_permissions_executor())),
+                config,
+            )
+            .await
+            .expect("permissions scan should not error")
+    };
+
+    let result = scan(&PluginConfig::default()).await;
+    assert!(
+        !result.scan_findings.is_empty(),
+        "the fixture must report something, or the loop below measures nothing",
+    );
+
+    let mut config = PluginConfig::default();
+    let mut sampled = Vec::new();
+    for finding in &result.scan_findings {
+        let key = finding
+            .finding_exception_key
+            .clone()
+            .unwrap_or_else(|| panic!("{} advertises no exception key", finding.finding_id));
+        assert_ne!(
+            key, finding.finding_id,
+            "the key is not the id; an id is derived from the key and loses information",
+        );
+        sampled.push(key.clone());
+        config.exceptions.insert(
+            key,
+            PolicyException {
+                value: finding.finding_current_value.clone(),
+                allowed: true,
+                reason: "measured deviation".to_string(),
+                approved_by: None,
+                approved_date: None,
+                ticket: None,
+                expires: None,
+            },
+        );
+    }
+
+    assert!(
+        sampled.iter().any(|key| key.starts_with('/')),
+        "every permissions key is the absolute path of the file it guards",
+    );
+
+    for finding in &scan(&config).await.scan_findings {
+        assert!(
+            finding.finding_policy_exception.is_some(),
+            "{} was not annotated by an exception written under the key it named",
+            finding.finding_id,
+        );
+    }
+}

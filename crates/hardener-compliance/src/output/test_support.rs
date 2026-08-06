@@ -32,5 +32,6 @@ pub(crate) fn finding(title: &str, excepted: bool) -> Finding {
         finding_title: title.to_string(),
         finding_compliance: vec![],
         finding_policy_exception: excepted.then(FindingPolicyException::default),
+        finding_exception_key: None,
     }
 }

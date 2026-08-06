@@ -442,6 +442,36 @@ An exception is **valid** only while `allowed = true` and the `expires` date
 (if set) has not passed. Expired exceptions are ignored, which means
 exceptions age out rather than being forgotten forever.
 
+### Finding the key
+
+An exception is keyed per check, and `scan` prints the key each finding takes
+beneath the finding itself:
+
+```
+  * [HIGH] Bluetooth service is enabled
+    Bluetooth increases the attack surface on a server
+    accept as a documented deviation: [services.exceptions."bluetooth"]
+```
+
+The key is always quoted. `net.ipv4.ip_forward` and `/etc/ssh/sshd_config` are
+not bare TOML keys, and a document built from an unquoted one parses as nested
+tables rather than failing, so nothing would report the mistake. Quoting a key
+that does not need it is still valid TOML.
+
+**A finding's `finding_id` is not its exception key.** The id is derived from
+the key, and every plugin's derivation loses information: `bluetooth` becomes
+`service_bluetooth`, `net.ipv4.ip_forward` becomes `kernel_net_ipv4_ip_forward`,
+`PermitRootLogin` becomes `ssh-permitrootlogin`, and `selinux-enforcing` becomes
+`selinux-not-enforcing`, which shares no derivation at all. An id cannot be
+turned back into a key, so use the line `scan` prints rather than the id from a
+JSON report.
+
+No line is printed for a finding that already rests on an exception, nor for
+the few findings an exception cannot be about. A PAM directive whose module is
+absent from the stack is reported as unenforced, but its value is already
+correct and simply reaches nothing, so there is no deviating value for an
+exception to document.
+
 ### Where `value` is checked
 
 On every path, `scan`, `report`, `apply` and `apply --dry-run`, for `[ssh]`,

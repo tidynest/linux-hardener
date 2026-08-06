@@ -590,6 +590,14 @@ fn the_unenforceable_finding_says_the_value_reaches_no_account() {
 
     assert_eq!(finding.finding_id, "pam-PASS_MIN_DAYS");
     assert_eq!(finding.finding_current_value, "not enforced");
+    // The value is already correct and simply reaches no account, so this
+    // finding is not about a value an operator could accept. Advertising an
+    // exception key would offer a setting that changes nothing.
+    assert!(
+        finding.finding_exception_key.is_none(),
+        "an unenforceable directive must advertise no exception key, got: {:?}",
+        finding.finding_exception_key,
+    );
     assert!(
         finding.finding_description.contains("shadow"),
         "the description must name what cannot enforce it, got: {}",

@@ -246,6 +246,7 @@ fn finding(title: &str) -> Finding {
         finding_title: title.to_string(),
         finding_compliance: vec![],
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 
@@ -419,4 +420,94 @@ fn clean_plugin_line_is_unchanged() {
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains("SSH Hardening"));
     assert!(lines[0].contains("No issues found"));
+}
+
+/// An exception is keyed per check, and nothing in the interface named that
+/// key: a finding's id is derived from it by a transform that loses
+/// information, so reading the source was the only way to learn it. The scan
+/// is where an operator is looking at the finding they want to keep.
+#[test]
+fn a_keyed_finding_names_the_exception_that_would_accept_it() {
+    let mut keyed = finding("Bluetooth service is enabled");
+    keyed.finding_exception_key = Some("bluetooth".to_string());
+    let lines = scan_plugin_lines(
+        &metadata("Audit Rules Hardening"),
+        &scan_result(true, vec![keyed], vec![]),
+    );
+    let rendered = lines.join("\n");
+
+    assert!(
+        rendered.contains(r#"[audit.exceptions."bluetooth"]"#),
+        "the scan must name the complete config.toml path an exception needs: {rendered:?}",
+    );
+}
+
+/// A key with a dot in it is not a bare TOML key. An operator pasting an
+/// unquoted net.ipv4.ip_forward would create three nested tables rather than
+/// one exception, and the file would parse, so nothing would tell them.
+#[test]
+fn a_dotted_exception_key_is_quoted() {
+    let mut keyed = finding("IP forwarding is enabled");
+    keyed.finding_exception_key = Some("net.ipv4.ip_forward".to_string());
+    let lines = scan_plugin_lines(
+        &metadata("Audit Rules Hardening"),
+        &scan_result(true, vec![keyed], vec![]),
+    );
+
+    assert!(
+        lines.join("\n").contains(r#""net.ipv4.ip_forward""#),
+        "a dotted key must be quoted, or it names three tables instead of one key",
+    );
+}
+
+/// The operator who already wrote one does not need telling how.
+#[test]
+fn an_already_excepted_finding_is_not_told_how_to_except_it() {
+    let mut excepted = finding("Bluetooth service is enabled");
+    excepted.finding_exception_key = Some("bluetooth".to_string());
+    excepted.finding_policy_exception = Some(hardener_types::FindingPolicyException::default());
+    let lines = scan_plugin_lines(
+        &metadata("Audit Rules Hardening"),
+        &scan_result(true, vec![excepted], vec![]),
+    );
+
+    assert!(
+        !lines.join("\n").contains("exceptions."),
+        "a finding already resting on an exception must not be offered another",
+    );
+}
+
+/// Some findings are not about a value an operator could accept, and offering
+/// them an exception would offer a setting that changes nothing.
+#[test]
+fn a_keyless_finding_is_offered_no_exception() {
+    let lines = scan_plugin_lines(
+        &metadata("Audit Rules Hardening"),
+        &scan_result(
+            true,
+            vec![finding("PAM directive is unenforceable")],
+            vec![],
+        ),
+    );
+
+    assert!(
+        !lines.join("\n").contains("exceptions."),
+        "a finding with no exception key must not be offered one",
+    );
+}
+
+/// An unrecognised plugin has no section to name, and guessing one would send
+/// an operator to a table nothing reads.
+#[test]
+fn an_unknown_plugin_offers_no_exception_path() {
+    let mut keyed = finding("Something");
+    keyed.finding_exception_key = Some("some-key".to_string());
+    let mut meta = metadata("Third Party Plugin");
+    meta.plugin_id = PluginId::new("third-party");
+    let lines = scan_plugin_lines(&meta, &scan_result(true, vec![keyed], vec![]));
+
+    assert!(
+        !lines.join("\n").contains("exceptions."),
+        "an unmapped plugin must say nothing rather than guess a section",
+    );
 }

@@ -761,6 +761,7 @@ fn finding(sev: Severity) -> Finding {
         finding_title: "t".into(),
         finding_compliance: vec![],
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 

@@ -92,6 +92,7 @@ fn a_finding() -> Finding {
         finding_title: "t".to_string(),
         finding_compliance: vec![],
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 
@@ -747,6 +748,7 @@ fn finding(id: &str, sev: Severity) -> Finding {
         finding_title: "t".to_string(),
         finding_compliance: vec![],
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 
