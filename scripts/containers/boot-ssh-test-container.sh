@@ -81,6 +81,47 @@ ip link set "$IFACE" up
 systemd-run --machine="$MACHINE" --wait --pipe --quiet /usr/bin/sh -c \
     "ip addr replace $CONTAINER_IP/30 dev host0 && ip link set host0 up"
 
+# Some images arrive already hardened by this tool from an earlier run, and
+# the SSH plugin's own hardening sets `PermitRootLogin no`, which the key we
+# just installed above cannot get past. sshd keeps the first value it finds
+# for a directive, the Include glob that pulls in
+# /etc/ssh/sshd_config.d/*.conf expands alphabetically, and this project's
+# own drop-in is named 00-hardener.conf, so nothing sorted after it has any
+# effect: a 99-prefixed override is dead text. Root key login is exactly
+# what this script exists to provide, so win the ordering instead of
+# touching that file: 00-0- sorts before 00-h. Left unfixed, the wait loop
+# below burns its whole window failing "Permission denied" on every
+# attempt, which looks identical to a container that never came up at all,
+# and the diagnostics dumped on that path show a perfectly healthy sshd,
+# because the refusal is policy, not fault. Applied unconditionally: on an
+# image nothing has hardened yet, `prohibit-password` is what upstream
+# OpenSSH already defaults to, so nothing here changes behaviour.
+echo "unlocking root key login, in case an earlier hardening run disabled it..."
+systemd-run --machine="$MACHINE" --wait --pipe --quiet /usr/bin/bash -s <<'INNER'
+set -euo pipefail
+install -d -m 755 /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/00-0-hardener-test.conf <<'CONF'
+PermitRootLogin prohibit-password
+CONF
+sshd -t
+systemctl restart sshd
+# Both spellings are accepted because `sshd -T` does NOT echo back what was
+# written: it prints the legacy synonym. Setting `prohibit-password` and then
+# asking for the effective value returns `without-password`, measured on the
+# openSUSE Leap 16 image on 2026-08-06. Checking only for the string this
+# script writes would reject a configuration that took perfectly, on every
+# image, which is a guard that fails closed for the wrong reason.
+value="$(sshd -T | grep -i '^permitrootlogin' || true)"
+case "$value" in
+    *prohibit-password* | *without-password*) ;;
+    *)
+        echo "PermitRootLogin did not take (sshd -T says: ${value:-nothing})" >&2
+        echo "check 00-hardener.conf and the sshd_config.d Include order" >&2
+        exit 1
+        ;;
+esac
+INNER
+
 echo "waiting for sshd on $CONTAINER_IP..."
 READY=""
 for _ in $(seq 1 15); do
