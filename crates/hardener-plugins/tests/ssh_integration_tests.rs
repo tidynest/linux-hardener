@@ -683,36 +683,107 @@ async fn a_live_apply_leaves_the_administrators_ruleset_loadable() {
         }
     }
 
-    // The file `nftables.service` loads at boot on the Debian fixture image.
-    // Named here rather than asked of the plugin: `boot_ruleset` and
-    // `NFTABLES_CONFIG_PATH` in `crates/hardener-plugins/src/firewall/nftables.rs`
-    // are both `pub(super)`, unreachable from this crate's own test binary, and
-    // that module's doc comments name Arch and Debian as the two families that
-    // read this exact path, which is also what the two live tests above assume
-    // by loading `/etc/nftables.conf` after they check the fixture's own table
-    // in `nft list ruleset`. Could not be independently confirmed from inside
-    // this test crate; if the fixture image ever ships a unit that loads a
-    // different path, this constant is the one thing here to check first.
-    const BOOT_PATH: &str = "/etc/nftables.conf";
     const INCLUDE_LINE: &str = "include \"/etc/linux-hardener/nftables/*.nft\"";
 
+    // Independent oracle, deliberately not the code under test. `boot_ruleset`
+    // and `parse_boot_ruleset` in
+    // crates/hardener-plugins/src/firewall/nftables.rs are what this test
+    // exists to check, so asking them for the boot path would make the test
+    // agree with itself: a bug in that parser would produce the same wrong
+    // path here as it does in the plugin, and the test would pass regardless.
+    // That is the same "one mistake shared by reader and writer" failure this
+    // codebase already shipped once, in the login.defs handling. This
+    // function reads the same `systemctl show` text with its own small,
+    // separately written extraction, so a parser bug has to fool two
+    // different pieces of code, not one. Do not "helpfully" replace this with
+    // a call into the plugin's parser: that would remove the one thing that
+    // makes this a differential test.
+    fn boot_path_from_exec_start(exec_start: &str) -> String {
+        let Some((_, argv)) = exec_start.split_once("argv[]=") else {
+            panic!(
+                "systemctl show nftables.service -p ExecStart carried no argv[] to read a \
+                 boot path from: {exec_start:?}"
+            );
+        };
+
+        let words: Vec<&str> = argv.split_whitespace().collect();
+        let flag_form = words
+            .windows(2)
+            .find(|pair| pair[0] == "-f")
+            .map(|pair| pair[1].to_string());
+        if let Some(path) = flag_form {
+            return path;
+        }
+
+        let include_form = argv
+            .split_once("include \"")
+            .and_then(|(_, after)| after.split_once('"'))
+            .map(|(path, _)| path.to_string())
+            .filter(|path| !path.is_empty());
+        if let Some(path) = include_form {
+            return path;
+        }
+
+        panic!(
+            "the ExecStart argv named no boot ruleset path, by -f and by include \"...\": \
+             argv={argv:?}"
+        );
+    }
+
     // ------------------------------------------------------------------
-    // Step 1. Seed the boot file with an administrator's own ruleset - the
-    // shape Debian's own nftables package ships - and keep the exact bytes
-    // for the byte-identical comparison in step 6.
+    // Step 0. Discover the boot path from the container itself rather than
+    // assuming one: Arch and Debian load /etc/nftables.conf, Fedora and RHEL
+    // load /etc/sysconfig/nftables.conf, and openSUSE runs an inline program
+    // naming /etc/nftables/rules/main.nft with no -f at all.
     // ------------------------------------------------------------------
     let seed_executor = Arc::new(
         SshExecutor::connect(ssh_config(&host))
             .await
             .expect("SSH connect to seed the boot file failed"),
     );
+    let exec_start_shown = seed_executor
+        .execute_command(
+            "systemctl",
+            &["show", "nftables.service", "-p", "ExecStart"],
+        )
+        .await
+        .expect("systemctl show nftables.service failed to run");
+    assert!(
+        exec_start_shown.success(),
+        "systemctl show nftables.service must succeed: {}",
+        exec_start_shown.stderr
+    );
+    let boot_path = boot_path_from_exec_start(&exec_start_shown.stdout);
+    println!("discovered boot path: {boot_path}");
+
+    // ------------------------------------------------------------------
+    // Step 1. Seed the boot file with an administrator's own ruleset - the
+    // shape Debian's own nftables package ships - and keep the exact bytes
+    // for the byte-identical comparison in step 6. On a host where the boot
+    // file's directory does not exist yet (a stock openSUSE image: the unit
+    // is ConditionPathExists-gated on the file and has never run), create it
+    // first, or the seed write itself has nowhere to land.
+    // ------------------------------------------------------------------
+    let boot_path_dir = std::path::Path::new(&boot_path)
+        .parent()
+        .map(|parent| parent.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "/".to_string());
+    let mkdir_result = seed_executor
+        .execute_command("mkdir", &["-p", boot_path_dir.as_str()])
+        .await
+        .expect("creating the boot file's parent directory failed");
+    assert!(
+        mkdir_result.success(),
+        "mkdir -p {boot_path_dir} must succeed so the seed write has somewhere to land: {}",
+        mkdir_result.stderr
+    );
     let admins_ruleset = "#!/usr/sbin/nft -f\n\nflush ruleset\n\ntable inet filter {\n    chain input {\n        type filter hook input priority filter; policy accept;\n        ct state established,related accept\n        iif lo accept\n    }\n    chain forward {\n        type filter hook forward priority filter; policy accept;\n    }\n    chain output {\n        type filter hook output priority filter; policy accept;\n    }\n}\n";
     seed_executor
-        .write_file(std::path::Path::new(BOOT_PATH), admins_ruleset)
+        .write_file(std::path::Path::new(&boot_path), admins_ruleset)
         .await
         .expect("seeding the administrator's boot ruleset failed");
     let seeded_bytes = seed_executor
-        .read_file(std::path::Path::new(BOOT_PATH))
+        .read_file(std::path::Path::new(&boot_path))
         .await
         .expect("reading back the seeded boot file failed");
     assert_eq!(
@@ -756,7 +827,7 @@ async fn a_live_apply_leaves_the_administrators_ruleset_loadable() {
     // not missing outright.
     // ------------------------------------------------------------------
     let after_apply = apply_executor
-        .read_file(std::path::Path::new(BOOT_PATH))
+        .read_file(std::path::Path::new(&boot_path))
         .await
         .expect("reading the boot file after the apply failed");
     assert!(
@@ -793,12 +864,12 @@ async fn a_live_apply_leaves_the_administrators_ruleset_loadable() {
         flushed.stderr
     );
     let loaded = verify_executor
-        .execute_command("nft", &["-f", BOOT_PATH])
+        .execute_command("nft", &["-f", boot_path.as_str()])
         .await
         .expect("re-feeding the boot file to nft failed");
     assert!(
         loaded.success(),
-        "nft -f {BOOT_PATH} must succeed on the file the apply left behind: {}",
+        "nft -f {boot_path} must succeed on the file the apply left behind: {}",
         loaded.stderr
     );
     let ruleset_after_reload = verify_executor
@@ -884,7 +955,7 @@ async fn a_live_apply_leaves_the_administrators_ruleset_loadable() {
     );
 
     let boot_file_after_rollback = verify_executor
-        .read_file(std::path::Path::new(BOOT_PATH))
+        .read_file(std::path::Path::new(&boot_path))
         .await
         .expect("reading the boot file after rollback failed");
     assert_eq!(
