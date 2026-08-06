@@ -90,13 +90,9 @@ const SCHEMA: &str = r#"
 /// the database unreadable.
 ///
 /// `table`, `column` and `ddl` are formatted into the statement rather than
-/// bound, because SQLite does not accept a bound identifier in DDL. Every call
-/// site passes a string literal and this function is private to the module, so
-/// no operator input reaches it.
-///
-/// A `column` that disagrees with the name inside `ddl` is caught by
-/// `test_init_db_idempotent`: the guard would keep reading the column as
-/// absent and the second `ALTER TABLE` would fail as a duplicate.
+/// bound, because SQLite does not accept a bound identifier in DDL. The sole
+/// caller passes them from [`MIGRATIONS`], whose entries are string literals,
+/// and this function is private to the module, so no operator input reaches it.
 async fn add_column_if_missing(
     pool: &SqlitePool,
     table: &str,
@@ -119,6 +115,84 @@ async fn add_column_if_missing(
 
     Ok(())
 }
+
+/// One column added to a table that predates it.
+///
+/// A table rather than a run of calls, so a test can enumerate the migrations
+/// instead of naming them. Adding a sixth entry here puts it under
+/// `every_migration_restores_its_column` immediately, with nobody having
+/// written a case for it, which is the only kind of case that gets missed.
+struct Migration {
+    /// Table the column belongs to.
+    table: &'static str,
+    /// Column name, spelled as `pragma_table_info` reports it.
+    column: &'static str,
+    /// The fragment following `ALTER TABLE <table> ADD COLUMN`.
+    ///
+    /// It repeats `column` because SQLite needs the name inside the DDL too. A
+    /// disagreement between the two is caught by `test_init_db_idempotent`: the
+    /// guard would keep reading the column as absent and the second
+    /// `ALTER TABLE` would fail as a duplicate.
+    ddl: &'static str,
+    /// What a row written before the column existed reads back as, where `None`
+    /// is SQL NULL.
+    ///
+    /// The migration itself has no use for this. It records the promise each
+    /// comment below makes in a form the enumerating test can check, so that a
+    /// migration which silently changes what an old row means fails rather than
+    /// passing on the column merely existing.
+    #[cfg_attr(not(test), allow(dead_code))]
+    absent: Option<&'static str>,
+}
+
+/// Every in-place column migration, applied in order by [`init_db`].
+const MIGRATIONS: &[Migration] = &[
+    // A checkpoint database written before host keys existed belongs to the
+    // machine it sits on, which is what the default records.
+    Migration {
+        table: "checkpoints",
+        column: "host_key",
+        ddl: "host_key TEXT NOT NULL DEFAULT 'local'",
+        absent: Some("local"),
+    },
+    // A scan result written before this column existed recorded no unchecked
+    // checks, and NULL reads back as exactly that.
+    Migration {
+        table: "scan_results",
+        column: "unchecked_json",
+        ddl: "unchecked_json TEXT",
+        absent: None,
+    },
+    // A checkpoint taken before this column existed leaves it NULL, which
+    // reads back as "not a symlink" and restores exactly as it did before, so
+    // an existing checkpoint keeps working rather than becoming unreadable.
+    Migration {
+        table: "file_states",
+        column: "link_target",
+        ddl: "link_target TEXT",
+        absent: None,
+    },
+    // A checkpoint taken before this column existed leaves it NULL, which
+    // reads back as "not recorded" rather than as either answer, because such
+    // a row genuinely cannot say whether its missing content was deliberate or
+    // the result of a read it could not make.
+    Migration {
+        table: "file_states",
+        column: "content_absence",
+        ddl: "content_absence TEXT",
+        absent: None,
+    },
+    // A finding stored before this column existed carries no key, and NULL
+    // reads back as exactly that. It is indistinguishable from a finding an
+    // exception could not be about, and needs to be: both mean there is no
+    // offer to make, and a rescan replaces the row.
+    Migration {
+        table: "scan_findings",
+        column: "exception_key",
+        ddl: "exception_key TEXT",
+        absent: None,
+    },
+];
 
 /// Initialises the database connection pool.
 ///
@@ -162,54 +236,11 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         .await
         .map_err(|e| HardeningError::Database(e.to_string()))?;
 
-    // A checkpoint database written before host keys existed belongs to the
-    // machine it sits on, which is what the default records.
-    add_column_if_missing(
-        &pool,
-        "checkpoints",
-        "host_key",
-        "host_key TEXT NOT NULL DEFAULT 'local'",
-    )
-    .await?;
-
-    // A scan result written before this column existed recorded no unchecked
-    // checks, and NULL reads back as exactly that.
-    add_column_if_missing(
-        &pool,
-        "scan_results",
-        "unchecked_json",
-        "unchecked_json TEXT",
-    )
-    .await?;
-
-    // A checkpoint taken before this column existed leaves it NULL, which
-    // reads back as "not a symlink" and restores exactly as it did before, so
-    // an existing checkpoint keeps working rather than becoming unreadable.
-    add_column_if_missing(&pool, "file_states", "link_target", "link_target TEXT").await?;
-
-    // A checkpoint taken before this column existed leaves it NULL, which
-    // reads back as "not recorded" rather than as either answer, because such
-    // a row genuinely cannot say whether its missing content was deliberate or
-    // the result of a read it could not make.
-    add_column_if_missing(
-        &pool,
-        "file_states",
-        "content_absence",
-        "content_absence TEXT",
-    )
-    .await?;
-
-    // A finding stored before this column existed carries no key, and NULL
-    // reads back as exactly that. It is indistinguishable from a finding an
-    // exception could not be about, and needs to be: both mean there is no
-    // offer to make, and a rescan replaces the row.
-    add_column_if_missing(
-        &pool,
-        "scan_findings",
-        "exception_key",
-        "exception_key TEXT",
-    )
-    .await?;
+    // Bring a database written by an earlier release up to the schema above.
+    // Each entry says what an old row reads back as; see [`MIGRATIONS`].
+    for migration in MIGRATIONS {
+        add_column_if_missing(&pool, migration.table, migration.column, migration.ddl).await?;
+    }
 
     // Foreign key enforcement
     sqlx::query("PRAGMA foreign_keys = ON")
