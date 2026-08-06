@@ -1019,3 +1019,57 @@ async fn services_apply_checkpoints_the_mask_link_of_an_installed_unit() {
         "an uninstalled unit must not have its override slot declared. Captured: {captured:?}"
     );
 }
+
+/// The identifier a finding carries is not the identifier an exception needs:
+/// this plugin renders `service_bluetooth` from a key of `bluetooth`, and the
+/// transform collapses `-` and `_` onto `_`, so it cannot be inverted. The
+/// finding therefore has to carry the key, and the second half of this test is
+/// the part that matters: the key it advertises must be the one that actually
+/// silences it.
+#[tokio::test]
+async fn a_service_finding_names_the_exception_key_that_silences_it() {
+    let ctx = Context::with_executor(Arc::new(insecure_services_executor()));
+    let plugin = ServicesHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "service_bluetooth")
+        .expect("the fixture leaves bluetooth enabled");
+
+    assert_eq!(
+        finding.finding_exception_key.as_deref(),
+        Some("bluetooth"),
+        "the finding must name the key an exception is written under, not its own id",
+    );
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        finding
+            .finding_exception_key
+            .clone()
+            .expect("the key is present"),
+        PolicyException {
+            value: finding.finding_current_value.clone(),
+            allowed: true,
+            reason: "desktop workstation needs Bluetooth".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let excepted = plugin.scan(&ctx, &config).await.unwrap();
+    let annotated = excepted
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "service_bluetooth")
+        .expect("an excepted finding is still reported, annotated");
+
+    assert!(
+        annotated.finding_policy_exception.is_some(),
+        "an exception written under the advertised key must annotate the finding",
+    );
+}
