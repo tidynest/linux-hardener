@@ -9,7 +9,7 @@
   <a href="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml"><img src="https://github.com/tidynest/linux-system-hardener/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
   <img src="docs/assets/badges/version.svg" alt="Released version">
   <img src="docs/assets/badges/license.svg" alt="License Apache-2.0">
-  <img src="docs/assets/badges/rust.svg" alt="Rust 1.85+">
+  <img src="docs/assets/badges/rust.svg" alt="Rust 1.88+">
   <a href="https://aur.archlinux.org/packages/linux-system-hardener"><img src="docs/assets/badges/aur.svg" alt="AUR package"></a>
   <img src="docs/assets/badges/platform.svg" alt="Platform Linux">
   <img src="docs/assets/badges/tests.svg" alt="Test suite status">
@@ -83,7 +83,7 @@ Details in [`packaging/docker/README.md`](packaging/docker/README.md).
 
 ### From source
 
-Rust 1.85 or newer, with the `wasm32-unknown-unknown` and
+Rust 1.88 or newer, with the `wasm32-unknown-unknown` and
 `x86_64-unknown-linux-musl` targets plus a musl toolchain for the static binary.
 
 ```bash

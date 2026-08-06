@@ -143,6 +143,55 @@ jobs:
       - name: Check WASM compilation
         run: cargo check -p hardener-ui --target wasm32-unknown-unknown
 
+  # Builds on the version `rust-version` declares, which no other job does: every
+  # one of them installs @stable, so a tree that quietly starts requiring a newer
+  # release compiles everywhere in CI and fails only for the person on the floor.
+  # That is not hypothetical. The declaration read 1.85 from 2026-02 until
+  # 2026-08-05 while the tree needed 1.88 for let-chains, and nothing reported it.
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Read rather than repeated, so raising the floor stays a one-line change
+      # in Cargo.toml and this job cannot drift away from what is declared.
+      - name: Read the declared minimum
+        id: msrv
+        run: |
+          version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)
+          # Constrained before it is used, because on a pull request from a fork
+          # Cargo.toml is the contributor's file and this value reaches
+          # `rustup toolchain install`. A version is digits and dots, nothing else.
+          echo "$version" | grep -qE '^[0-9]+(\.[0-9]+){1,2}$' || {
+            echo "rust-version in Cargo.toml is not a version: '$version'" >&2
+            exit 1
+          }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "declared minimum: $version"
+
+      - name: Install the declared toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-msrv-${{ steps.msrv.outputs.version }}-cargo-
+
+      # Same exclusions as the `check` job: the GUI crates need GTK system
+      # libraries this runner does not carry, so their absence here is about the
+      # runner rather than about the toolchain.
+      - name: Check on the declared minimum
+        run: cargo check --workspace --all-targets $WORKSPACE_EXCLUDE
+
   # Build the CLI binary for multiple platforms
   build:
     name: Build (${{ matrix.os }})

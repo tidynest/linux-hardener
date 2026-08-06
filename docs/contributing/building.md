@@ -2,21 +2,40 @@
 
 Commands for compiling the CLI, desktop GUI, and WASM frontend.
 
-The workspace is on Rust **edition 2024** (`Cargo.toml`, `workspace.package`), so
-it needs a toolchain of **1.85 or newer**: that edition stabilised in 1.85, which
-is where the figure comes from rather than from a measurement. It is declared as
-`rust-version = "1.85"` beside the edition and inherited by every member, so
-cargo refuses an older toolchain with a message naming the version rather than
-letting it fail later as a compiler error. The README's rust badge says the same
+The workspace is on Rust **edition 2024** (`Cargo.toml`, `workspace.package`) and
+needs a toolchain of **1.88 or newer**, declared as `rust-version = "1.88"`
+beside the edition and inherited by every member, so cargo refuses an older
+toolchain with a message naming the version rather than letting it fail later as
+a compiler error. The README's rust badge says the same
 (`scripts/badges/generate.js`) and `validate_badges.py` holds it to the declared
 value.
 
-There is still no `rust-toolchain.toml` pinning a version, and CI installs
-`dtolnay/rust-toolchain@stable`, so the tree is expected to build on current
-stable. **Nothing builds it on 1.85**, so the declaration states the intended
-floor rather than a verified one: code that quietly starts requiring a newer
-release would compile here, compile in CI, and fail only for someone on 1.85. A
-CI job building on the declared version is what would close that.
+**The figure is measured rather than inferred**, which it was not before
+2026-08-05. It used to read 1.85, on the reasoning that edition 2024 stabilised
+there, and this page said in as many words that nothing built the tree on 1.85
+and that "code that quietly starts requiring a newer release would compile here,
+compile in CI, and fail only for someone on 1.85". That is what had happened. The
+workspace uses let-chains (`if cond && let Some(x) = opt`) in 31 places across 8
+crates, and let-chains stabilised in **1.88**: 1.87 rejects them with
+`error[E0658]: 'let' expressions in this position are unstable`, and 1.88 accepts
+them. `cargo +1.88 check --workspace --all-targets` then exits 0 over the whole
+tree, desktop and WASM crates included, so 1.88 is the floor exactly and not just
+a lower bound.
+
+The `msrv` job in `.github/workflows/ci.yml` builds on the declared version on
+every push and pull request, which is what stops the declaration drifting away
+from the tree again. It reads the version out of `Cargo.toml` rather than
+repeating it, so there is one number to change. There is still no
+`rust-toolchain.toml` pinning a version for local work, and the other CI jobs
+install `dtolnay/rust-toolchain@stable`, so the tree is expected to build on
+current stable as well as on the floor.
+
+Raising the floor deliberately is a three-line change: `rust-version` in
+`Cargo.toml`, `message` for the `rust` badge in `scripts/badges/generate.js`,
+then `cd scripts/badges && node generate.js` to re-render the SVG. The README's
+`alt` text repeats the number for screen readers and has to match. Run
+`python3 scripts/validate/validate_badges.py` afterwards: it cross-checks the
+badge against `Cargo.toml` and fails if they disagree.
 
 Binary paths below assume the default cargo target directory (`./target`). With
 `CARGO_TARGET_DIR` or a `[build] target-dir` in `~/.cargo/config.toml`, output
