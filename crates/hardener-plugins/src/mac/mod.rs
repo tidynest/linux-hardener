@@ -706,7 +706,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_policy_exception: config
                                     .has_valid_exception("selinux-enforcing")
                                     .map(|e| e.to_finding_exception()),
-                                finding_exception_key: None,
+                                finding_exception_key: Some("selinux-enforcing".to_string()),
                             });
                         }
                     }
@@ -738,7 +738,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_policy_exception: config
                                     .has_valid_exception("apparmor-enforce")
                                     .map(|e| e.to_finding_exception()),
-                                finding_exception_key: None,
+                                finding_exception_key: Some("apparmor-enforce".to_string()),
                             });
                         }
 
@@ -765,7 +765,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_policy_exception: config
                                     .has_valid_exception("apparmor-enforce")
                                     .map(|e| e.to_finding_exception()),
-                                finding_exception_key: None,
+                                finding_exception_key: Some("apparmor-enforce".to_string()),
                             });
                         }
                     }
@@ -839,7 +839,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                     finding_policy_exception: config
                         .has_valid_exception(MAC_PRESENT_EXCEPTION)
                         .map(|exception| exception.to_finding_exception()),
-                    finding_exception_key: None,
+                    finding_exception_key: Some(MAC_PRESENT_EXCEPTION.to_string()),
                 });
             }
         }

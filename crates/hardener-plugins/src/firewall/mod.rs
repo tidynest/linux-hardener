@@ -878,7 +878,7 @@ fn not_at_boot_finding(
         finding_policy_exception: config
             .has_valid_exception(FIREWALL_AT_BOOT_EXCEPTION)
             .map(|exception| exception.to_finding_exception()),
-        finding_exception_key: None,
+        finding_exception_key: Some(FIREWALL_AT_BOOT_EXCEPTION.to_string()),
     }
 }
 
@@ -1285,7 +1285,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 finding_policy_exception: config
                     .has_valid_exception(FIREWALL_ENABLED_EXCEPTION)
                     .map(|exception| exception.to_finding_exception()),
-                finding_exception_key: None,
+                finding_exception_key: Some(FIREWALL_ENABLED_EXCEPTION.to_string()),
             });
         }
 

@@ -489,7 +489,7 @@ async fn check_vendor_layer_permissions(
         finding_title: format!("Insecure permissions on {vendor_path}"),
         finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
         finding_policy_exception: policy_exception,
-        finding_exception_key: None,
+        finding_exception_key: Some(directive.permission_path.to_string()),
     }))
 }
 
@@ -591,7 +591,7 @@ async fn check_path_permissions(
         finding_title: format!("Insecure permissions on {}", directive.permission_path),
         finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
         finding_policy_exception: policy_exception,
-        finding_exception_key: None,
+        finding_exception_key: Some(directive.permission_path.to_string()),
     }))
 }
 
