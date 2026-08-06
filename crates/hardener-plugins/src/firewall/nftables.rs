@@ -12,13 +12,17 @@ use std::net::IpAddr;
 use std::path::Path;
 use tracing::{info, warn};
 
-/// The persistent ruleset `nftables.service` loads at boot on the distributions
-/// that read this path, which is not all of them: Fedora and RHEL ship
-/// `/etc/sysconfig/nftables.conf` instead, and that is issue #52.
-///
-/// It is also the only nftables file this plugin checkpoints. Named once here
-/// so the path the checkpoint captures, the path the rollback reloads for, and
-/// the path the reload actually feeds to `nft` cannot drift apart.
+/// The persistent ruleset `nftables.service` loads at boot on Arch and
+/// Debian, and only there: Fedora and RHEL load
+/// `/etc/sysconfig/nftables.conf`, and openSUSE loads
+/// `/etc/nftables/rules/main.nft`. [`boot_ruleset`] probes the unit itself to
+/// tell the three apart, so this constant is no longer the path a checkpoint
+/// captures, a rollback restores, or a reload feeds to `nft` in general; it is
+/// one distribution's boot path, kept as a named literal because two things
+/// still read it as exactly that: the over-inclusive, `Context`-free match in
+/// `reloads_for_path` (firewall/mod.rs), which cannot run the probe and so
+/// names every shipped unit's file instead, and this file's own Arch/Debian
+/// test fixtures.
 pub(super) const NFTABLES_CONFIG_PATH: &str = "/etc/nftables.conf";
 
 /// Where a rendered ruleset is parked so `nft --check` can judge it before the
@@ -54,14 +58,234 @@ pub(super) const NFTABLES_CHECK_PATH: &str = "/run/linux-hardener-nftables-check
 /// directive to this tool. That is the same posture the plugin always
 /// intended; what changes is that the `nft` load reaching it destroys nothing.
 ///
-/// **The load. Not the whole apply.** The rendered ruleset is written to
-/// [`NFTABLES_CONFIG_PATH`], and that write replaces the file entire. On a
-/// distribution shipping a packaged ruleset there, Arch and Debian included,
-/// that file is where the administrator's own `inet filter` table is defined,
-/// so their table survives the apply in the running kernel and is gone at the
-/// next boot. Issue #98. Owning a separate table fixed what `nft` destroys and
-/// not what the write does.
+/// **The load. Not the whole apply.** This plugin now owns the file its
+/// ruleset lives in as well as the table: the rendered ruleset is written to
+/// [`HARDENER_RULESET_PATH`], a fragment nothing else writes, and the apply
+/// appends a single glob include line, [`HARDENER_INCLUDE_LINE`], to whatever
+/// file the boot unit loads instead of overwriting it. On a distribution
+/// shipping a packaged ruleset in that file, Arch and Debian included, the
+/// administrator's own `inet filter` table is untouched by the apply, so
+/// there is no longer a file write for it to survive in the running kernel
+/// and then lose at the next boot. That whole-file overwrite is what issue
+/// #98 closed.
 pub(super) const NFTABLES_TABLE: &str = "linux_hardener";
+
+/// The directory this plugin owns for the nftables fragments it writes.
+///
+/// Deliberately not `/etc/nftables/`. Fedora and RHEL ship `main.nft`,
+/// `nat.nft` and `router.nft` there, none of which their boot file loads (its
+/// only `include` is commented out), so a glob over that directory would switch
+/// three sample rulesets on for every host of that family.
+pub(super) const HARDENER_RULESET_DIR: &str = "/etc/linux-hardener/nftables";
+
+/// The rendered ruleset. Written whole on every apply, and the only nftables
+/// file whose entire content belongs to this plugin.
+pub(super) const HARDENER_RULESET_PATH: &str = "/etc/linux-hardener/nftables/50-linux-hardener.nft";
+
+/// The one line appended to whatever file the boot unit loads.
+///
+/// A **glob**, and that is not cosmetic. Measured against nft 1.1.6 in a
+/// network namespace: a glob include matching no file loads at exit 0, while a
+/// literal include of a missing file is a parse error that exits 1. A rollback
+/// removes [`HARDENER_RULESET_PATH`], so with a literal include the boot path
+/// would refuse to parse and the host would come up unfiltered. The glob is
+/// what makes the undo survivable in either order.
+pub(super) const HARDENER_INCLUDE_LINE: &str = "include \"/etc/linux-hardener/nftables/*.nft\"";
+
+/// What `systemctl show` said about the unit that loads a ruleset at boot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct BootRuleset {
+    /// The file the unit loads, or the reason we could not tell.
+    ///
+    /// Three outcomes rather than two, and the `Err` carries its reason so an
+    /// operator reads what failed instead of a shrug. A single value standing
+    /// for several distinct outcomes is the defect family this plugin has
+    /// already closed four times.
+    pub(super) loads: std::result::Result<String, String>,
+    /// True when the unit declares `ConditionPathExists` on the same file it
+    /// loads, so systemd already treats that file's absence as "do not run".
+    pub(super) condition_guards_it: bool,
+}
+
+/// Reads the unit's own `ExecStart` and returns the ruleset file it names.
+///
+/// Asked of the target through the executor rather than inferred from a
+/// distribution table. `hardener_distro::Distribution::detect` reads
+/// `/etc/os-release` with `std::fs`, which is the controller's file, so a table
+/// keyed on it would be silently wrong for every `--ssh` host.
+///
+/// `-p` twice without `--value`, deliberately. `--value` prints values with no
+/// names, and systemd omits a property the unit does not declare even under
+/// `--all`, so with two properties and one missing there is no way to tell
+/// which value survived. Named lines are unambiguous.
+pub(super) async fn boot_ruleset(ctx: &Context) -> BootRuleset {
+    let output = ctx
+        .executor()
+        .execute_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+        )
+        .await;
+
+    let shown = match output {
+        Ok(output) if output.success() => output.stdout,
+        Ok(output) => {
+            return BootRuleset {
+                loads: Err(format!(
+                    "systemctl could not describe nftables.service: {}",
+                    output.stderr.trim()
+                )),
+                condition_guards_it: false,
+            };
+        }
+        Err(e) => {
+            return BootRuleset {
+                loads: Err(format!("systemctl could not be run: {e}")),
+                condition_guards_it: false,
+            };
+        }
+    };
+
+    parse_boot_ruleset(
+        &property(&shown, "ExecStart"),
+        &property(&shown, "ConditionPathExists"),
+    )
+}
+
+/// One `Name=value` line's value, or an empty string when the unit did not
+/// declare that property. systemd omits an undeclared property entirely, so
+/// absence and emptiness are the same answer here and both mean "not stated".
+///
+/// Only reachable through [`boot_ruleset`].
+fn property(shown: &str, name: &str) -> String {
+    shown
+        .lines()
+        .find_map(|line| line.strip_prefix(&format!("{name}=")))
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// The pure half, so every distribution's real string is a cheap test.
+pub(super) fn parse_boot_ruleset(exec_start: &str, condition_path_exists: &str) -> BootRuleset {
+    let loads = parse_exec_start(exec_start);
+    let condition_guards_it = match &loads {
+        Ok(path) => condition_path_exists
+            .split_whitespace()
+            .any(|declared| declared == path),
+        Err(_) => false,
+    };
+    BootRuleset {
+        loads,
+        condition_guards_it,
+    }
+}
+
+/// The ruleset file an `ExecStart` property names, in either form the shipped
+/// units use.
+///
+/// Two forms because the images carry two, which was measured and not assumed:
+/// Arch, Debian, Fedora and RHEL pass `-f <path>`, while openSUSE runs an
+/// inline program, `nft 'flush ruleset; include "..."'`, with no `-f` anywhere.
+/// A parser reading only `-f` returns "cannot tell" for every openSUSE and SLES
+/// host, which would leave that family permanently unpersisted while reporting
+/// nothing wrong.
+///
+/// Only reachable through [`parse_boot_ruleset`].
+fn parse_exec_start(exec_start: &str) -> std::result::Result<String, String> {
+    let trimmed = exec_start.trim();
+    if trimmed.is_empty() {
+        return Err(
+            "systemctl reported no ExecStart for nftables.service, which is also what it \
+             reports for a unit that does not exist, and it exits 0 either way"
+                .to_string(),
+        );
+    }
+
+    let Some((_, after)) = trimmed.split_once("argv[]=") else {
+        return Err(format!(
+            "the ExecStart property carries no argv[]: {trimmed:?}"
+        ));
+    };
+    let argv = after.split(" ; ").next().unwrap_or(after);
+
+    let mut tokens = argv.split_whitespace();
+    while let Some(token) = tokens.next() {
+        if token == "-f" || token == "--file" {
+            return match tokens.next() {
+                Some(path) => Ok(path.to_string()),
+                None => Err(format!("{token} in the ExecStart names no file: {argv:?}")),
+            };
+        }
+    }
+
+    if let Some((_, after_include)) = argv.split_once("include \"")
+        && let Some((path, _)) = after_include.split_once('"')
+        && !path.is_empty()
+    {
+        return Ok(path.to_string());
+    }
+
+    Err(format!(
+        "the ExecStart argv names no ruleset file, by -f and by include: {argv:?}"
+    ))
+}
+
+/// The directory holding `path`, or `/` when it names no parent.
+fn parent_of(path: &str) -> String {
+    Path::new(path)
+        .parent()
+        .and_then(Path::to_str)
+        .unwrap_or("/")
+        .to_string()
+}
+
+/// Puts [`HARDENER_INCLUDE_LINE`] in `boot_path` exactly once.
+///
+/// Reads first and appends only when the line is absent, so a repeated apply
+/// does not stack includes. An absent boot file is an ordinary outcome, not a
+/// failure: openSUSE ships a unit gated on a `main.nft` a stock host does not
+/// have, so creating it is what persistence means there.
+///
+/// A read that fails for any reason other than absence refuses, rather than
+/// treating the file as empty and replacing it with one line. That conflation
+/// is precisely the PAM defect this project has already fixed once.
+async fn ensure_include_line(ctx: &Context, boot_path: &str) -> Result<()> {
+    let path = Path::new(boot_path);
+    let existing = match ctx.executor().path_exists(path).await {
+        Ok(false) => String::new(),
+        _ => ctx.executor().read_file(path).await.map_err(|e| {
+            HardeningError::Plugin(format!(
+                "Refusing to append to {boot_path}, which could not be read: {e}. \
+                 Replacing a file whose content is unknown is how an administrator's \
+                 ruleset gets lost."
+            ))
+        })?,
+    };
+
+    if existing
+        .lines()
+        .any(|line| line.trim() == HARDENER_INCLUDE_LINE)
+    {
+        return Ok(());
+    }
+
+    let separator = match existing.is_empty() || existing.ends_with('\n') {
+        true => "",
+        false => "\n",
+    };
+    let appended = format!("{existing}{separator}{HARDENER_INCLUDE_LINE}\n");
+    ctx.executor()
+        .write_file(path, &appended)
+        .await
+        .map_err(|e| HardeningError::Plugin(format!("Failed to append to {boot_path}: {e}")))
+}
 
 /// Nftables firewall backend for modern Linux systems.
 ///
@@ -100,6 +324,34 @@ impl NftablesBackend {
         }
 
         Ok(output.stdout)
+    }
+
+    /// Loads `ruleset` live without leaving a persistent file behind.
+    ///
+    /// For the branch where the boot path could not be determined: nothing
+    /// may be written anywhere, [`HARDENER_RULESET_PATH`] included, or an
+    /// unreachable fragment would go live the moment somebody repairs the
+    /// unit. The host still has to be filtered now, so the ruleset is parked
+    /// in [`NFTABLES_CHECK_PATH`], the same `/run` scratch file
+    /// [`Self::refuse_a_ruleset_nft_will_not_parse`] uses, loaded from there,
+    /// and removed, rather than writing a second copy of that dance.
+    async fn execute_nft_from_string(&self, ctx: &Context, ruleset: &str) -> Result<()> {
+        ctx.executor()
+            .write_file(Path::new(NFTABLES_CHECK_PATH), ruleset)
+            .await
+            .map_err(|e| {
+                HardeningError::Plugin(format!("Could not write {NFTABLES_CHECK_PATH}: {e}"))
+            })?;
+
+        let loaded = self.execute_nft(ctx, &["-f", NFTABLES_CHECK_PATH]).await;
+        if let Err(e) = ctx
+            .executor()
+            .execute_command("rm", &["-f", NFTABLES_CHECK_PATH])
+            .await
+        {
+            warn!("Could not remove {NFTABLES_CHECK_PATH} after loading the ruleset live: {e}");
+        }
+        loaded.map(|_| ())
     }
 
     /// Build nftables command arguments from a Rule.
@@ -195,8 +447,8 @@ impl NftablesBackend {
         }
     }
 
-    /// Refuses a rendered ruleset `nft` will not parse, before
-    /// [`NFTABLES_CONFIG_PATH`] is touched.
+    /// Refuses a rendered ruleset `nft` will not parse, before the boot path
+    /// is touched.
     ///
     /// `render_ruleset` already refuses a `source` it cannot read, and that
     /// check is worth keeping because it is pure and costs no host access. It
@@ -229,7 +481,7 @@ impl NftablesBackend {
             .map_err(|e| {
                 HardeningError::Plugin(format!(
                     "Could not write {NFTABLES_CHECK_PATH} to check the ruleset before \
-                     installing it: {e}. {NFTABLES_CONFIG_PATH} is untouched."
+                     installing it: {e}. The boot path is untouched."
                 ))
             })?;
 
@@ -251,18 +503,94 @@ impl NftablesBackend {
         let output = checked.map_err(|e| {
             HardeningError::Plugin(format!(
                 "Could not ask nft to check the ruleset before installing it: {e}. \
-                 {NFTABLES_CONFIG_PATH} is untouched."
+                 The boot path is untouched."
             ))
         })?;
 
         if !output.success() {
             return Err(HardeningError::Plugin(format!(
                 "Refusing to install a ruleset nft will not parse: {}. \
-                 {NFTABLES_CONFIG_PATH} is untouched.",
+                 The boot path is untouched.",
                 output.stderr.trim()
             )));
         }
         Ok(())
+    }
+
+    /// Issue #97. An apply enables `nftables.service` and creates the file it
+    /// loads; a rollback removes that file and, without this, leaves the unit
+    /// enabled, so a `Type=oneshot` unit running `nft` against a missing file
+    /// exits 1, enters `failed`, and the host boots unfiltered. Only reached
+    /// once [`Self::reload`] has already confirmed the loaded file is absent.
+    ///
+    /// **Two conditions, not one.** The first attempt at this guard used only
+    /// "the file is absent, therefore the unit is broken", which is false
+    /// wherever the unit loads a different file: on Fedora and RHEL it names
+    /// `/etc/sysconfig/nftables.conf`, so that version disabled a working
+    /// firewall on exactly the family it existed for, and it was reviewed and
+    /// withdrawn. `condition_guards_it` is the second condition, and the one
+    /// that closes that gap: openSUSE declares `ConditionPathExists` on the
+    /// very file it loads, so systemd already treats that file's absence as
+    /// "do not run" rather than as a failure. There is no failing unit to
+    /// prevent there, and disabling it would leave it off for an
+    /// administrator who later creates the file themselves.
+    ///
+    /// Best effort by design: a rollback that restored every file is not a
+    /// failure because a `systemctl disable` did not take.
+    async fn disable_a_unit_with_nothing_to_load(
+        &self,
+        ctx: &Context,
+        condition_guards_it: bool,
+    ) -> Result<()> {
+        if condition_guards_it {
+            info!(
+                "nftables.service is gated on the file it loads, so systemd already treats its \
+                 absence as 'do not run'; leaving the unit enabled"
+            );
+            return Ok(());
+        }
+
+        info!("Disabling nftables.service, which is enabled with no ruleset left to load");
+        if let Err(e) = ctx
+            .executor()
+            .execute_command("systemctl", &["disable", self.systemd_unit()])
+            .await
+        {
+            warn!("Could not disable {}: {e}", self.systemd_unit());
+        }
+        Ok(())
+    }
+
+    /// Tells a `destroy` that failed because the table was never there from
+    /// one that failed with the table still live. Called from [`Self::reload`]
+    /// once a `destroy` has already failed and been warned about.
+    ///
+    /// A failed `destroy` is ambiguous by itself: an nft older than 1.0.6
+    /// refuses the subcommand outright, whether the table exists or not, and
+    /// an nft new enough to run it can still fail for some other reason with
+    /// the table genuinely still there. `nft list table` tells the two apart:
+    /// it fails when the table is absent, which is the harmless reading the
+    /// caller's warning already covers, and it succeeds when the table is
+    /// still live, which this refuses to let the rollback report past. A
+    /// rollback that says it succeeded while `table inet linux_hardener`
+    /// still carries `policy drop` is the exact defect this exists to close.
+    async fn fail_if_table_survived_a_failed_destroy(
+        &self,
+        ctx: &Context,
+        destroy_error: HardeningError,
+    ) -> Result<()> {
+        let still_present = self
+            .execute_nft(ctx, &["list", "table", "inet", NFTABLES_TABLE])
+            .await
+            .is_ok();
+        if !still_present {
+            return Ok(());
+        }
+
+        Err(HardeningError::Plugin(format!(
+            "the {NFTABLES_TABLE} table is still present after the failed destroy \
+             above, so this rollback cannot report success: {destroy_error}"
+        )))
     }
 }
 
@@ -467,10 +795,44 @@ impl FirewallBackend for NftablesBackend {
         "nftables"
     }
 
-    /// The rendered ruleset, which [`Self::apply_rules`] writes and this
-    /// backend alone ever creates.
-    fn config_paths(&self) -> &'static [&'static str] {
-        &[NFTABLES_CONFIG_PATH]
+    /// The file this host boots from, plus the fragment this plugin writes.
+    ///
+    /// The boot file is probed rather than assumed: Fedora and RHEL load
+    /// `/etc/sysconfig/nftables.conf` and openSUSE loads
+    /// `/etc/nftables/rules/main.nft`, so a constant would checkpoint a file
+    /// those hosts never read while leaving the one they do read undeclared.
+    ///
+    /// A probe that cannot answer still yields `Ok`, carrying only our own
+    /// fragment, [`HARDENER_RULESET_PATH`]. This call sits before the enable
+    /// and the live load in `apply` (`firewall/mod.rs`), so an `Err` here used
+    /// to abort both and leave the host with no firewall at all merely because
+    /// the boot path could not be named, which is a worse outcome than the
+    /// unreadable probe itself. The apply must go on so the host is filtered
+    /// now, even though persistence across a reboot is not achieved on that
+    /// host.
+    ///
+    /// An empty list was rejected too. A checkpoint is an assertion about the
+    /// world at the moment it is taken; if a later apply succeeds and writes
+    /// the fragment, rolling back to a checkpoint that named nothing would
+    /// leave that fragment in place instead of removing it. Declaring a path
+    /// this particular apply may not manage to write is ordinarily dangerous,
+    /// because a checkpoint row recorded absent is an instruction to delete,
+    /// and a file that arrives afterwards from a package or an administrator
+    /// would then be deleted on rollback. That danger does not apply to
+    /// [`HARDENER_RULESET_PATH`]: nothing but this plugin ever writes it.
+    async fn checkpoint_paths(&self, ctx: &Context) -> Result<Vec<String>> {
+        let probed = boot_ruleset(ctx).await;
+        match probed.loads {
+            Ok(boot_path) => Ok(vec![boot_path, HARDENER_RULESET_PATH.to_string()]),
+            Err(why) => {
+                warn!(
+                    "Cannot determine which file nftables.service loads at boot, so only our \
+                     own fragment is checkpointed and boot persistence will not be achieved: \
+                     {why}"
+                );
+                Ok(vec![HARDENER_RULESET_PATH.to_string()])
+            }
+        }
     }
 
     fn systemd_unit(&self) -> &'static str {
@@ -527,8 +889,8 @@ impl FirewallBackend for NftablesBackend {
         // on. All that is missing without this call is persistence across a
         // reboot, which `systemctl enable` alone provides. Starting the unit
         // here as well would be redundant at best, and if it ran before
-        // `apply_rules` had ever written `NFTABLES_CONFIG_PATH`, it would ask
-        // the unit to load a file that does not exist yet.
+        // `apply_rules` had ever written the boot path, it would ask the
+        // unit to load a file that does not exist yet.
         let output = ctx
             .executor()
             .execute_command("systemctl", &["enable", self.systemd_unit()])
@@ -546,48 +908,93 @@ impl FirewallBackend for NftablesBackend {
         Ok(())
     }
 
-    /// Feeds the restored [`NFTABLES_CONFIG_PATH`] back to `nft`, which is the
-    /// whole of what a rollback of an nftables configuration has to do.
+    /// Undoes what [`Self::apply_rules`] did: removes the table it installed,
+    /// then feeds the file this host actually boots from back to `nft`.
     ///
-    /// [`Self::enable`] is not a substitute: it only marks the systemd unit to
-    /// start at the next boot and never reads the restored file at all, so a
-    /// rollback that called it instead would leave the applied posture live -
-    /// a host whose firewall was inactive before the apply would come out of
-    /// the undo still filtering traffic.
+    /// **The table, first and unconditionally.** Restoring the pre-apply boot
+    /// file and loading it does not remove `inet linux_hardener`, because
+    /// that file never mentioned it: without this, a rollback reports success
+    /// while the host stays hardened until its next reboot. `nft destroy
+    /// table` does not fail on a table that is not there, but only on an nft
+    /// new enough to know the subcommand at all: `destroy` landed in nftables
+    /// 1.0.6 (January 2023), and README.md commits this project to RHEL 9 and
+    /// later, whose 9.0 ships 1.0.1, where `destroy` is a parse error and
+    /// exits 1 whatever the table holds. A failed destroy is therefore not by
+    /// itself proof the table survived; [`Self::reload`] asks `nft list
+    /// table` to tell the two cases apart before it decides whether the
+    /// failure was harmless. It runs even when the boot path below cannot be
+    /// determined, because removing the applied table is the whole of what
+    /// the rollback is for.
     ///
-    /// What the file does on load is the file's business. Every distribution's
-    /// shipped `nftables.conf` opens with `flush ruleset`, so loading it
-    /// replaces the live ruleset outright; one that does not will merge
-    /// instead, which is the behaviour that host's own boot gives it.
+    /// [`Self::enable`] is not a substitute for the reload that follows: it
+    /// only marks the systemd unit to start at the next boot and never reads
+    /// the restored file at all, so a rollback that called it instead would
+    /// leave the applied posture live - a host whose firewall was inactive
+    /// before the apply would come out of the undo still filtering traffic.
     ///
-    /// Guarded on the file's presence, through the executor so the answer is
-    /// the target's and not the controller's. Fedora and RHEL ship
-    /// `/etc/sysconfig/nftables.conf` instead of this path, so a host where
-    /// nftables wins backend detection can genuinely never have had
-    /// [`NFTABLES_CONFIG_PATH`] before its first apply; the checkpoint then
-    /// records it absent, and because that path is deliberately deletable the
-    /// restore removes the ruleset the apply rendered there rather than leaving
-    /// it for the next boot. Either way this guard finds nothing left to load.
-    /// `nft -f` on a file that is not there exits
-    /// 1, and this used to run it anyway, turning a rollback that had done
-    /// everything possible into a reported failure. Absence confirmed is the
-    /// only case this skips: anything else, including a probe that could not
-    /// tell, still attempts the load so a genuine refusal is still surfaced.
+    /// **The probed path, not [`NFTABLES_CONFIG_PATH`].** [`boot_ruleset`]
+    /// asks the target which file `nftables.service` actually loads, because
+    /// Fedora and RHEL load `/etc/sysconfig/nftables.conf` and openSUSE loads
+    /// `/etc/nftables/rules/main.nft`; reloading the constant would silently
+    /// reload nothing on those hosts while the file they boot from went
+    /// stale. What the loaded file does on load is the file's own business:
+    /// every distribution's shipped `nftables.conf` opens with
+    /// `flush ruleset`, so loading it replaces the live ruleset outright, and
+    /// one that does not will merge instead, which is the behaviour that
+    /// host's own boot gives it.
+    ///
+    /// Guarded on the probed file's presence, through the executor so the
+    /// answer is the target's and not the controller's. Absence confirmed is
+    /// the only case that skips the load: `nft -f` on a file that is not
+    /// there exits 1, and running it anyway would turn a rollback that had
+    /// done everything possible into a reported failure. Anything else,
+    /// including a probe that could not tell which file to load, still
+    /// attempts the load so a genuine refusal is surfaced.
+    ///
+    /// **The #97 guard.** Once the load is skipped for confirmed absence, see
+    /// [`Self::disable_a_unit_with_nothing_to_load`] for what happens to the
+    /// unit itself.
     async fn reload(&self, ctx: &Context) -> Result<()> {
-        if matches!(
-            ctx.executor()
-                .path_exists(Path::new(NFTABLES_CONFIG_PATH))
-                .await,
-            Ok(false)
-        ) {
-            info!(
-                "{NFTABLES_CONFIG_PATH} is absent on this host, so there is nothing for nft to \
-                 reload"
+        // Removed before anything is loaded: the restored boot file below
+        // never mentions this table, so nothing else in this function could
+        // remove it.
+        if let Err(e) = self
+            .execute_nft(ctx, &["destroy", "table", "inet", NFTABLES_TABLE])
+            .await
+        {
+            warn!("Could not remove the {NFTABLES_TABLE} table during rollback: {e}");
+            self.fail_if_table_survived_a_failed_destroy(ctx, e).await?;
+        }
+
+        // Destructured rather than matched on `probed.loads` directly:
+        // `condition_guards_it` is still needed below, in the branch that
+        // skips the load, and a `let Ok(boot_path) = probed.loads else {..}`
+        // would move `loads` out of `probed` and leave nothing later able to
+        // borrow the struct whole.
+        let BootRuleset {
+            loads,
+            condition_guards_it,
+        } = boot_ruleset(ctx).await;
+        let Ok(boot_path) = loads else {
+            warn!(
+                "Cannot tell which file nftables.service loads, so nothing was reloaded: {}",
+                loads.unwrap_err()
             );
             return Ok(());
+        };
+
+        if matches!(
+            ctx.executor().path_exists(Path::new(&boot_path)).await,
+            Ok(false)
+        ) {
+            info!("{boot_path} is absent on this host, so there is nothing for nft to reload");
+            return self
+                .disable_a_unit_with_nothing_to_load(ctx, condition_guards_it)
+                .await;
         }
-        info!("Reloading the nftables ruleset from {NFTABLES_CONFIG_PATH}");
-        self.execute_nft(ctx, &["-f", NFTABLES_CONFIG_PATH]).await?;
+
+        info!("Reloading the nftables ruleset from {boot_path}");
+        self.execute_nft(ctx, &["-f", &boot_path]).await?;
         Ok(())
     }
 
@@ -645,19 +1052,58 @@ impl FirewallBackend for NftablesBackend {
             });
         }
 
-        // One transaction for the whole ruleset: see `render_ruleset`'s doc
-        // comment for why. A failure here means nothing in `changes` above
-        // actually happened, so it is propagated with `?` rather than folded
-        // into a per-rule failed `Change` the way the old per-rule loop did;
-        // the caller in `mod.rs` already treats an `Err` from this function as
-        // a whole-backend failure.
+        // Probed before anything is written. A boot path that cannot be
+        // determined is not a reason to guess: the ruleset still loads, so the
+        // host is filtered now, and the operator is told persistence did not
+        // happen rather than left believing it did.
+        let probed = boot_ruleset(ctx).await;
+        let Ok(boot_path) = probed.loads else {
+            let why = probed.loads.unwrap_err();
+            warn!("nftables ruleset will not persist across a reboot: {why}");
+            self.execute_nft_from_string(ctx, &ruleset).await?;
+            changes.push(Change {
+                change_description: format!(
+                    "Firewall rules are live but will not persist across a reboot: {why}"
+                ),
+                change_type: ChangeType::Skipped,
+                change_success: true,
+                change_error: None,
+            });
+            return Ok(changes);
+        };
+
+        // Our own fragment, written whole. write_file cannot create a missing
+        // parent, and neither directory is guaranteed: /etc/linux-hardener
+        // exists only where a signing key was created, and openSUSE's
+        // /etc/nftables/rules does not exist at all on a stock host.
+        for directory in [HARDENER_RULESET_DIR, parent_of(&boot_path).as_str()] {
+            ctx.executor()
+                .execute_command("mkdir", &["-p", directory])
+                .await
+                .map_err(|e| {
+                    HardeningError::Plugin(format!("Failed to create {directory}: {e}"))
+                })?;
+        }
+
         ctx.executor()
-            .write_file(Path::new(NFTABLES_CONFIG_PATH), &ruleset)
+            .write_file(Path::new(HARDENER_RULESET_PATH), &ruleset)
             .await
             .map_err(|e| {
-                HardeningError::Plugin(format!("Failed to write {NFTABLES_CONFIG_PATH}: {e}"))
+                HardeningError::Plugin(format!("Failed to write {HARDENER_RULESET_PATH}: {e}"))
             })?;
-        self.execute_nft(ctx, &["-f", NFTABLES_CONFIG_PATH]).await?;
+
+        // One appended line, never a rewrite. The administrator's own table is
+        // defined in this file on Arch and Debian, and issue #98 is what
+        // replacing it wholesale cost them.
+        ensure_include_line(ctx, &boot_path).await?;
+
+        // Only our own fragment is loaded, not the boot file. Our file is
+        // self-contained (table, delete table, table { ... }), so the live
+        // effect matches the old whole-file write, while the administrator's
+        // live table is never re-loaded underneath them. Boot composes the two
+        // through the include.
+        self.execute_nft(ctx, &["-f", HARDENER_RULESET_PATH])
+            .await?;
 
         Ok(changes)
     }

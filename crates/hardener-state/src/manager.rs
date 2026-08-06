@@ -42,7 +42,14 @@ const DIRECTORY_TYPE_BITS: u32 = 0o040000;
 /// Paths match via `starts_with`, so `/etc/ssh` covers both
 /// `/etc/ssh` itself and any file beneath it (e.g. `/etc/ssh/sshd_config`).
 /// Trailing slashes are intentionally omitted for this reason.
-const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
+///
+/// `pub` rather than crate-private: this list is the security boundary a
+/// rollback is judged against, so a plugin declaring a checkpoint path in
+/// another crate needs to assert its own paths are covered by it directly,
+/// not by a second, hand-copied list that could silently drift from this
+/// one. Two copies of the same allowlist is the defect family this project
+/// has already fixed four times.
+pub const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
     "/etc/ssh",
     "/etc/sysctl",
     "/etc/security",
@@ -52,6 +59,28 @@ const DEFAULT_ROLLBACK_PREFIXES: &[&str] = &[
     "/etc/selinux",
     "/etc/login.defs",
     "/etc/nftables",
+    // The three files nftables.service can load at boot are covered by two
+    // prefixes above and below, not three: `/etc/nftables` on its own already
+    // string-prefixes both `/etc/nftables.conf` (Arch, Debian) and
+    // `/etc/nftables/rules/main.nft` (openSUSE). It does not reach Fedora and
+    // RHEL's boot path, which is why that one gets its own entry rather than
+    // being assumed covered. A live Debian container caught the first gap
+    // this branch left: the fragment below, checkpointed under
+    // `/etc/linux-hardener/nftables`, was not covered by anything, and a
+    // rollback refused to restore it. Nothing short of a real host surfaced
+    // that, because the mock suite never exercises this allowlist at all.
+    //
+    // The narrower `/etc/linux-hardener/nftables` is used rather than the
+    // broader `/etc/linux-hardener`, because the signing key,
+    // `/etc/linux-hardener/signing.key`, also lives under that broader path,
+    // and nothing should ever be able to restore over it.
+    "/etc/linux-hardener/nftables",
+    // Fedora and RHEL's boot path for nftables.service, which `/etc/nftables`
+    // above does not reach (see the comment there). The narrower file path is
+    // used rather than the broader `/etc/sysconfig`, which on those
+    // distributions also holds network scripts and much else this tool never
+    // writes.
+    "/etc/sysconfig/nftables.conf",
     "/etc/firewalld",
     "/etc/ufw",
     "/etc/sudoers",

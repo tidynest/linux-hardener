@@ -747,6 +747,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs `@stable`, so this class of drift was invisible to all of them.
   `docs/contributing/building.md` had predicted this exact failure in advance
   and named the missing CI job as the fix.
+- **A firewall apply wrote the whole rendered ruleset over `/etc/nftables.conf`,
+  and on Arch and Debian that file already held the administrator's own
+  ruleset.** `apply_rules` rendered the entire ruleset and wrote it over that
+  file outright, so the write deleted the administrator's `inet filter` table
+  from disk. It survived the apply in the running kernel, because the live
+  load only replaces what the loaded file names, and it was gone at the next
+  boot, because the file that had defined it no longer did. Nothing at apply
+  time warned that this would happen. Issue #98.
+
+  The boot path itself was a constant, asserted as `/etc/nftables.conf` rather
+  than asked for, and the constant was wrong for most of the distributions
+  this tool supports. It is now probed from the unit's own `ExecStart`,
+  through `systemctl show nftables.service -p ExecStart -p
+  ConditionPathExists`, and through the executor so the answer describes the
+  target host rather than the controller running the tool. Arch and Debian do
+  load `/etc/nftables.conf`. Fedora and RHEL load
+  `/etc/sysconfig/nftables.conf`. openSUSE's unit carries no `-f` argument at
+  all: it runs an inline program, `nft 'flush ruleset; include
+  "/etc/nftables/rules/main.nft"'`, and the file has to be read out of the
+  `include` rather than off a flag. The old constant was right for two of the
+  five families this tool supports and wrong for the other three. Issue #52.
+
+  The plugin now writes its rendered ruleset to a fragment it owns outright,
+  `/etc/linux-hardener/nftables/50-linux-hardener.nft`, and persists it by
+  appending exactly one line to whatever file the probe names as the boot
+  path: `include "/etc/linux-hardener/nftables/*.nft"`. Nothing already in
+  that file is rewritten or otherwise touched.
+
+  That include is a **glob**, deliberately, rather than a literal path to the
+  one fragment this plugin writes. Measured against nft 1.1.6 in a network
+  namespace: a glob include matching no file loads at exit 0, while a literal
+  include naming a file that is absent is a parse error that exits 1. A
+  rollback removes the fragment, so a literal include would turn every
+  rollback into an unbootable firewall: the boot unit would fail to parse the
+  very file it was told to load, and the host would come up filtering
+  nothing.
+
+  openSUSE gains a boot path it did not have before this fix.
+  `/etc/nftables/rules/main.nft` does not exist on a stock host, and the unit
+  carries `ConditionPathExists` on that same file, so the unit has never run
+  there. Once an apply creates the file in order to append the include line,
+  a previously inert unit starts running at boot, and its `ExecStart` opens
+  with `flush ruleset`, ahead of `network-pre.target` and everything Docker
+  and libvirt create afterwards, so it removes nothing of theirs.
+
+  A rollback now issues `nft destroy table inet linux_hardener`
+  unconditionally, before it touches any file. It previously only restored
+  the pre-apply boot file and reloaded it, and because that file never
+  mentioned this plugin's table, the applied table survived untouched in the
+  running kernel: the rollback reported success while the host stayed exactly
+  as hardened as the apply had left it, until its next reboot.
+
+  A rollback now also disables `nftables.service`, but only when the probed
+  `ExecStart` names a path that no longer exists **and** no
+  `ConditionPathExists` on the unit guards that same path. Issue #97. An
+  earlier attempt at this guard used the first condition alone and was
+  reviewed and withdrawn before it landed, because it disabled a working
+  firewall on Fedora and RHEL, whose unit loads a file the guard never asked
+  about. The second condition exists for openSUSE specifically: its unit
+  already gates itself on the very file it loads, so systemd already treats
+  that file's absence as "do not run", and disabling the unit on top of that
+  would leave it off for an administrator who later creates the file by hand.
+
+  **Two ceilings, stated rather than left for an operator to discover.** An
+  empty `/etc/linux-hardener/nftables/` directory survives a rollback: the
+  restore removes files with `rm -f`, which does not remove directories, so
+  the now-empty directory this plugin's first apply created is left behind.
+  The same is true of the boot file's own parent directory wherever the apply
+  had to create one, openSUSE's `/etc/nftables/rules` on a stock host: `mkdir
+  -p` brings it into being ahead of the write and nothing removes it either.
+  And a host whose unit cannot be read persists nothing at all: the ruleset
+  still loads live, so the host is filtered now, a reported change states
+  that persistence was not achieved and names why, and nothing is written to
+  any boot path, the fragment included.
+
+  The live integration test proving the fragment, the glob, the destroy and
+  the disable guard together has now been run against a real Debian
+  container over real SSH, rather than staying `#[ignore]`d and unverified.
+  It failed on its first run: rollback refused to restore the fragment,
+  reporting `Rollback path outside allowed directories:
+  /etc/linux-hardener/nftables/50-linux-hardener.nft`.
+  `DEFAULT_ROLLBACK_PREFIXES` in `hardener-state` is the allowlist a rollback
+  validates every captured path against, by string prefix, and no entry
+  covered the fragment's directory. The same gap existed, undetected, for
+  Fedora and RHEL's boot path, `/etc/sysconfig/nftables.conf`: the existing
+  `/etc/nftables` entry string-prefixes the Arch/Debian and openSUSE boot
+  paths but not that one. A Debian container cannot surface that second gap,
+  and no mock surfaces either one, because `MockExecutor`'s checkpoint and
+  rollback never run `CheckpointManager`'s prefix check at all. Two entries
+  close both: `/etc/linux-hardener/nftables`, deliberately narrower than
+  `/etc/linux-hardener`, whose `signing.key` must never be restorable over,
+  and `/etc/sysconfig/nftables.conf`, deliberately narrower than
+  `/etc/sysconfig`, which on Fedora and RHEL also holds network scripts and
+  much else this tool never writes. `DEFAULT_ROLLBACK_PREFIXES` is now `pub`
+  so a plugin in another crate can assert against it directly, and a new test
+  checks every path the nftables backend can declare from `checkpoint_paths`,
+  probed with each shipped distribution's real `ExecStart` line, against that
+  same list rather than a second, hand-copied one that could drift from it.
+  With both entries added, the live test now passes. It needs root and a
+  booted container, and stays `#[ignore]`d, gated on its own
+  `NFTABLES_LIVE_APPLY_HOST`. Closes #52, #98 and #97.
 - **The nftables live-proving fixture could pass against the wrong container,
   which is worse than failing outright.** `nftables-fixture.sh` and
   `boot-ssh-test-container.sh` share the one hard-coded veth address (host

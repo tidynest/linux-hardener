@@ -74,7 +74,21 @@ pub trait FirewallBackend: Send + Sync {
     /// from the administrator, the rollback deleted it with nothing to show it
     /// had ever been ours. Asking the selected backend keeps the declaration
     /// and the writing in one place, so the pair cannot drift again.
-    fn config_paths(&self) -> &'static [&'static str];
+    ///
+    /// Takes `ctx` and is fallible because one backend's answer is not a
+    /// constant: nftables persists to whatever file its systemd unit loads,
+    /// which differs by distribution and is read off the host. `Err` remains
+    /// available to a backend that genuinely cannot say what it is about to
+    /// write and so cannot proceed at all; nftables no longer reaches for it
+    /// when its boot-path probe is unreadable, because aborting there also
+    /// aborted the enable and the live load that follow, costing the host its
+    /// firewall entirely over a question that only persistence depends on. It
+    /// answers `Ok` instead, naming only the one path that is never in doubt:
+    /// its own fragment. The warning above still holds wherever `Err` is not
+    /// the chosen answer: a checkpoint row recorded absent is an instruction
+    /// to delete, so nothing may be omitted from this list that the apply
+    /// might go on to write.
+    async fn checkpoint_paths(&self, ctx: &Context) -> Result<Vec<String>>;
 
     /// Detects if this backend is available on the system.
     ///
@@ -1310,8 +1324,8 @@ impl HardeningPlugin for FirewallHardeningPlugin {
 
         // Detect the backend BEFORE the checkpoint, so the checkpoint can
         // declare only what the selected backend writes (see
-        // `FirewallBackend::config_paths`). `detect_backend` reads the host and
-        // changes nothing, so nothing needs undoing when it fails, and the
+        // `FirewallBackend::checkpoint_paths`). `detect_backend` reads the host
+        // and changes nothing, so nothing needs undoing when it fails, and the
         // absence of a checkpoint id is then the truthful answer rather than a
         // row describing an apply that never began.
         let backend = match self.detect_backend(ctx).await {
@@ -1327,8 +1341,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             }
         };
 
-        // Checkpoint what this backend writes, and nothing else.
-        let firewall_paths: Vec<&Path> = backend.config_paths().iter().map(Path::new).collect();
+        // Probed before the checkpoint, deliberately. The probe is a pure read
+        // that changes nothing, and a checkpoint cannot declare a path it does
+        // not yet know. A path an apply may CREATE has to be declared before
+        // the apply runs, or the rollback has no row telling it to remove one.
+        let firewall_paths = backend.checkpoint_paths(ctx).await?;
+        let firewall_paths: Vec<&Path> = firewall_paths.iter().map(Path::new).collect();
         let checkpoint_id = crate::create_checkpoint_for_apply(
             ctx,
             "firewall-hardening-pre-apply",
@@ -1438,9 +1456,11 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // nftables' `enable` is a `systemctl enable` too now that the atomic
         // load took the table and chain creation out of it, so all three
         // backends leave the unit wanted at boot wherever the enable itself
-        // ran. What remains of #52 is narrower than this comment used to
-        // describe: the unit is enabled on every backend, but the ruleset is
-        // written to `/etc/nftables.conf`, which Fedora and RHEL do not read.
+        // ran. The ruleset itself now persists on every backend as well:
+        // `apply_rules` probes which file `nftables.service` actually loads
+        // rather than assuming `/etc/nftables.conf`, so Fedora and RHEL
+        // persist through `/etc/sysconfig/nftables.conf` and openSUSE through
+        // `/etc/nftables/rules/main.nft`, which closes #52.
         if was_already_enabled {
             let boot_change = ensure_unit_wanted_at_boot(ctx, backend.as_ref()).await;
             apply_changes.push(boot_change);
@@ -1530,8 +1550,19 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         })
     }
 
+    /// Whether a restored path means this plugin should reload.
+    ///
+    /// Synchronous with no `Context`, so it cannot run the `ExecStart` probe
+    /// and instead names every boot path the shipped units use. Deliberately
+    /// over-inclusive: a needless match costs one idempotent reload, while a
+    /// missing one means a rollback on that distribution reloads nothing at
+    /// all and reports success. `reload` itself probes, so it still does the
+    /// right thing on whichever host it lands.
     fn reloads_for_path(&self, path: &Path) -> bool {
         path == Path::new(nftables::NFTABLES_CONFIG_PATH)
+            || path == Path::new("/etc/sysconfig/nftables.conf")
+            || path.starts_with("/etc/nftables")
+            || path.starts_with(nftables::HARDENER_RULESET_DIR)
             || path.starts_with("/etc/firewalld")
             || path.starts_with("/etc/ufw")
     }

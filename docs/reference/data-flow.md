@@ -1,6 +1,6 @@
 # Linux System Hardener - Data Flow Documentation
 
-**Last Updated**: 2026-08-02
+**Last Updated**: 2026-08-06
 **Version:** 1.5.1
 
 This document describes the data flow for all major operations in the system.
@@ -210,9 +210,10 @@ could not be read is reported as an `UncheckedCheck` rather than as an absence.
 │  │            "/etc/ssh/sshd_config.d/00-hardener.conf"]     │
 │  │   • Kernel: ["/etc/sysctl.conf", "/etc/sysctl.d",         │
 │  │               "/etc/sysctl.d/99-hardener.conf"]           │
-│  │   • Firewall: the SELECTED backend's own config_paths(),  │
-│  │     never all three: a row recorded absent is an          │
-│  │     instruction to delete                                 │
+│  │   • Firewall: the selected backend's own                  │
+│  │     checkpoint_paths(), which probes the boot path, never │
+│  │     all three: a row recorded absent is an instruction to │
+│  │     delete                                                │
 │  ├─ CheckpointManager::create_checkpoint()                   │
 │  │   ├─ Generate checkpoint ID                               │
 │  │   ├─ For each file:                                       │
@@ -1511,4 +1512,4 @@ compares the two behaviours, not two separate screens.
 
 ---
 
-**Last Updated**: 2026-08-02
+**Last Updated**: 2026-08-06

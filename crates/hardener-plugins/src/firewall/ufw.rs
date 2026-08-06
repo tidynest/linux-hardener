@@ -194,9 +194,9 @@ impl FirewallBackend for UfwBackend {
 
     /// ufw owns its whole state directory and this backend edits it through
     /// the `ufw` command rather than by writing files itself, so the directory
-    /// is what a checkpoint has to capture.
-    fn config_paths(&self) -> &'static [&'static str] {
-        &["/etc/ufw"]
+    /// is what a checkpoint has to capture. Constant, so `ctx` is unused.
+    async fn checkpoint_paths(&self, _ctx: &Context) -> Result<Vec<String>> {
+        Ok(vec!["/etc/ufw".to_string()])
     }
 
     fn systemd_unit(&self) -> &'static str {

@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-08-04
+**Last Updated**: 2026-08-06
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -364,15 +364,36 @@ other table on the host: not `inet filter`, not Docker's, libvirt's or
 owned one, and most distributions ship a packaged ruleset using it, so deleting
 it would destroy whatever the administrator put there.
 
-**A separate ceiling, and it works the other way.** The rendered ruleset is
-written to `/etc/nftables.conf`, and that write **replaces the whole file**. On
-a distribution that ships a packaged ruleset there, Arch and Debian included,
-that file is where the administrator's own `inet filter` table is defined. Their
-table therefore survives the apply in the running kernel and is gone at the next
-boot, because the file that defined it no longer does. Rolling back restores the
-file; a successful apply that is never rolled back does not. Back up
-`/etc/nftables.conf` before a first apply on a host whose ruleset you maintain
-by hand. Tracked as issue #98.
+**A separate ceiling once ran the other way; it is now closed.** The rendered
+ruleset used to be written to `/etc/nftables.conf`, replacing the whole file.
+On a distribution that ships a packaged ruleset there, Arch and Debian
+included, that file is where the administrator's own `inet filter` table is
+defined, so the write deleted their table from disk: it survived the apply in
+the running kernel and was gone at the next boot, because the file that had
+defined it no longer did. That was issue #98.
+
+The plugin no longer writes over that file, or over whichever file
+`nftables.service` actually loads on a given host: the boot path is probed
+from the unit's own `ExecStart` rather than assumed, because Arch and Debian
+load `/etc/nftables.conf`, Fedora and RHEL load
+`/etc/sysconfig/nftables.conf`, and openSUSE loads
+`/etc/nftables/rules/main.nft` through an inline `include` with no `-f`
+argument to read it off, which is issue #52. The rendered ruleset is written
+whole to a fragment this plugin owns outright,
+`/etc/linux-hardener/nftables/50-linux-hardener.nft`, and persistence is
+achieved by appending one line to the boot file instead of overwriting it:
+`include "/etc/linux-hardener/nftables/*.nft"`. That include is a glob rather
+than a literal path, because a rollback removes the fragment, and a literal
+include naming an absent file is a parse error that would leave the host
+unable to load a filtered ruleset at boot at all. A host whose boot path
+cannot be determined has nothing written to it anywhere: the ruleset still
+loads live, so the host is filtered now, and the operator is told
+persistence was not achieved rather than left believing it was. An empty
+`/etc/linux-hardener/nftables/` directory can still be left behind by a
+rollback, because removing a file does not remove the directory that held
+it, and the same is true of the boot file's own parent directory wherever
+the apply had to create one, openSUSE's `/etc/nftables/rules` on a stock
+host.
 
 The consequence worth knowing before an apply: this tool's chain hooks `input`
 with `policy drop`, and a `drop` verdict in any chain ends a packet's journey,
