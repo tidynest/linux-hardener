@@ -415,8 +415,27 @@ class DocumentationUpdater:
         cli_content = cli_file.read_text()
         readme_content = readme.read_text()
 
-        # Count command variants in enum
-        cmd_matches = re.findall(r'///\s*[^\n]+\n\s+(\w+)\s*(?:\{|\,)', cli_content)
+        # Top-level commands only, taken from the body of `enum Command`.
+        #
+        # This used to scan the whole file, so it matched every doc-commented
+        # variant of every enum in it: the `*Action` subcommand enums, and the
+        # `GlobalFormat`/`SeverityFilter`/`ScanMode` value enums too. That
+        # reported 17 "missing" commands including `json` and `text`, which are
+        # output formats rather than commands at all, on every single run.
+        #
+        # README documents the top-level commands; the subcommands are
+        # `docs/reference/cli.md`'s job and `validate_cli_docs.py` already
+        # checks that file against the same source. A permanent notice is one
+        # nobody reads, and it buries the real ones beside it.
+        command_enum = re.search(
+            r'\benum\s+Command\s*\{(.*?)\n\}', cli_content, re.DOTALL
+        )
+        if not command_enum:
+            self.log_manual("cli", "Could not find `enum Command` in cli.rs to check")
+            return
+        cmd_matches = re.findall(
+            r'///\s*[^\n]+\n\s+(\w+)\s*(?:\{|\,)', command_enum.group(1)
+        )
         source_cmds = {m.lower() for m in cmd_matches if m[0].isupper()}
 
         # Count hardener commands in README
