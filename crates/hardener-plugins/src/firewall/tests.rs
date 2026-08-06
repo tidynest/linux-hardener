@@ -15,6 +15,7 @@
 
 use super::*;
 use hardener_core::{CommandOutput, MockExecutor};
+use hardener_state::manager::DEFAULT_ROLLBACK_PREFIXES;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -2328,6 +2329,72 @@ async fn a_backend_checkpoints_only_the_paths_it_writes() {
         "a firewalld apply can never create {ruleset}, so declaring it records \
          a row recorded absent that a later rollback would act on as a deletion"
     );
+}
+
+/// Ties `checkpoint_paths` to `DEFAULT_ROLLBACK_PREFIXES` directly, rather
+/// than to a second, hand-copied list of the same paths that could silently
+/// drift from it.
+///
+/// A live Debian container caught the gap this guards: nftables writes and
+/// checkpoints its fragment under `/etc/linux-hardener/nftables`, a path no
+/// prefix covered, so the rollback that had just captured it refused to
+/// restore it. No mock ever exercises this, because MockExecutor's rollback
+/// never runs `CheckpointManager`'s prefix check at all, so this asserts
+/// against the exact same list that check reads from, for every boot path
+/// `checkpoint_paths` can actually return: the three the shipped units load,
+/// probed here with the real `ExecStart` strings the other test in this file
+/// copied from the container images, plus the fragment itself.
+#[tokio::test]
+async fn every_path_checkpoint_paths_can_declare_is_within_the_rollback_allowlist() {
+    let exec_starts = [
+        (
+            "Arch/Debian",
+            "{ path=/usr/bin/nft ; argv[]=/usr/bin/nft -f /etc/nftables.conf ; ignore_errors=no ; status=0 }",
+        ),
+        (
+            "Fedora/RHEL",
+            "{ path=/sbin/nft ; argv[]=/sbin/nft -f /etc/sysconfig/nftables.conf ; ignore_errors=no }",
+        ),
+        (
+            "openSUSE",
+            "{ path=/usr/sbin/nft ; argv[]=/usr/sbin/nft flush ruleset; include \"/etc/nftables/rules/main.nft\" ; ignore_errors=no }",
+        ),
+    ];
+
+    for (distro, exec_start) in exec_starts {
+        let ctx = Context::with_executor(Arc::new(MockExecutor::new().with_command(
+            "systemctl",
+            &[
+                "show",
+                "nftables.service",
+                "-p",
+                "ExecStart",
+                "-p",
+                "ConditionPathExists",
+            ],
+            CommandOutput {
+                stdout: format!("ExecStart={exec_start}\n"),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )));
+
+        let paths = nftables::NftablesBackend::new()
+            .checkpoint_paths(&ctx)
+            .await
+            .expect("a probe fed a real ExecStart line must succeed");
+
+        for path in &paths {
+            assert!(
+                DEFAULT_ROLLBACK_PREFIXES
+                    .iter()
+                    .any(|prefix| path.starts_with(prefix)),
+                "{distro}: {path} is outside every DEFAULT_ROLLBACK_PREFIXES entry, \
+                 so a rollback that had captured it would refuse to restore it, \
+                 exactly as it did against a live Debian container"
+            );
+        }
+    }
 }
 
 /// The four `-f` distributions and the one that is not.

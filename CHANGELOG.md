@@ -807,9 +807,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any boot path, the fragment included.
 
   The live integration test proving the fragment, the glob, the destroy and
-  the disable guard together has been written but not yet run by anyone. It
-  needs root and a booted container, and stays `#[ignore]`d, gated on its own
-  `NFTABLES_LIVE_APPLY_HOST`, until it is. Closes #52, #98 and #97.
+  the disable guard together has now been run against a real Debian
+  container over real SSH, rather than staying `#[ignore]`d and unverified.
+  It failed on its first run: rollback refused to restore the fragment,
+  reporting `Rollback path outside allowed directories:
+  /etc/linux-hardener/nftables/50-linux-hardener.nft`.
+  `DEFAULT_ROLLBACK_PREFIXES` in `hardener-state` is the allowlist a rollback
+  validates every captured path against, by string prefix, and no entry
+  covered the fragment's directory. The same gap existed, undetected, for
+  Fedora and RHEL's boot path, `/etc/sysconfig/nftables.conf`: the existing
+  `/etc/nftables` entry string-prefixes the Arch/Debian and openSUSE boot
+  paths but not that one. A Debian container cannot surface that second gap,
+  and no mock surfaces either one, because `MockExecutor`'s checkpoint and
+  rollback never run `CheckpointManager`'s prefix check at all. Two entries
+  close both: `/etc/linux-hardener/nftables`, deliberately narrower than
+  `/etc/linux-hardener`, whose `signing.key` must never be restorable over,
+  and `/etc/sysconfig/nftables.conf`, deliberately narrower than
+  `/etc/sysconfig`, which on Fedora and RHEL also holds network scripts and
+  much else this tool never writes. `DEFAULT_ROLLBACK_PREFIXES` is now `pub`
+  so a plugin in another crate can assert against it directly, and a new test
+  checks every path the nftables backend can declare from `checkpoint_paths`,
+  probed with each shipped distribution's real `ExecStart` line, against that
+  same list rather than a second, hand-copied one that could drift from it.
+  With both entries added, the live test now passes. It needs root and a
+  booted container, and stays `#[ignore]`d, gated on its own
+  `NFTABLES_LIVE_APPLY_HOST`. Closes #52, #98 and #97.
 
 - **An apply could install a firewall that admitted nothing, or that severed the
   connection carrying it, and both were reached through documented routes.** The
