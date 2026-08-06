@@ -2799,6 +2799,15 @@ async fn scan_reports_vendor_keys_the_admin_file_masks() {
             )
         });
 
+    // This finding names a set of masked keys rather than one directive, so
+    // there is no single setting an exception could be about. Offering an
+    // operator a key here would offer them a setting that changes nothing.
+    assert!(
+        drift.finding_exception_key.is_none(),
+        "a finding covering several keys at once must advertise no exception key, got: {:?}",
+        drift.finding_exception_key,
+    );
+
     for key in ["ENCRYPT_METHOD", "UMASK", "PASS_MIN_DAYS", "PASS_WARN_AGE"] {
         assert!(
             drift.finding_current_value.contains(key),
@@ -3824,5 +3833,100 @@ async fn a_host_with_no_cracklib_dictionary_is_warned_before_it_locks_itself_out
         .await
         .is_none(),
         "a module nothing loads reads no dictionary and refuses nothing"
+    );
+}
+
+/// A PAM finding carries the directive an exception is keyed on. The id adds
+/// a `pam-` prefix, and stripping a prefix back off is exactly the guesswork
+/// this field exists to remove: no consumer should have to know which plugin
+/// decorates its ids and how.
+#[tokio::test]
+async fn a_pam_finding_names_the_exception_key_that_silences_it() {
+    let scan = async |config: &PluginConfig| {
+        PamHardeningPlugin::new()
+            .scan(
+                &Context::with_executor(Arc::new(insecure_pam_executor())),
+                config,
+            )
+            .await
+            .expect("pam scan should not error")
+    };
+
+    let result = scan(&PluginConfig::default()).await;
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-minlen")
+        .expect("the insecure fixture sets minlen too low");
+
+    assert_eq!(
+        finding.finding_exception_key.as_deref(),
+        Some("minlen"),
+        "the finding must name the PAM directive, not its own id",
+    );
+
+    // This plugin reaches exceptions through matching_exception, so the
+    // documented value has to equal the live one. Taking it from the finding
+    // proves the value a consumer would copy is the value that is accepted.
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: finding.finding_current_value.clone(),
+            allowed: true,
+            reason: "site password policy".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let excepted = scan(&config).await;
+    let annotated = excepted
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-minlen")
+        .expect("an excepted finding is still reported, annotated");
+
+    assert!(
+        annotated.finding_policy_exception.is_some(),
+        "an exception written under the advertised key must annotate the finding",
+    );
+}
+
+/// The same finding id, from a host where the directive is not about a value
+/// at all: the module that would read it is absent, so the setting is already
+/// whatever it should be and simply reaches nothing. An exception documents a
+/// value an operator accepts, so there is nothing here for one to say, and
+/// offering a key would offer a setting that changes nothing.
+#[tokio::test]
+async fn a_pam_finding_that_is_not_about_a_value_offers_no_exception_key() {
+    let executor =
+        stack_without_pwquality().with_read_permission_denied("/etc/security/pwquality.conf");
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+
+    let minlen = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-minlen")
+        .expect("an absent module is still reported");
+
+    // The positive control: this must be the module-absent finding and not the
+    // ordinary one, or the assertion below is about the wrong site entirely.
+    assert!(
+        minlen.finding_description.contains("pam_pwquality.so"),
+        "this test is about the module-absent finding, got: {}",
+        minlen.finding_description,
+    );
+    assert!(
+        minlen.finding_exception_key.is_none(),
+        "a finding that is not about a value must advertise no exception key, got: {:?}",
+        minlen.finding_exception_key,
     );
 }

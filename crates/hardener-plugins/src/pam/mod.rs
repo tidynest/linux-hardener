@@ -700,7 +700,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     ),
                     finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
                     finding_policy_exception: policy_exception,
-                    finding_exception_key: None,
+                    finding_exception_key: Some(directive.pam_directive_name.to_string()),
                 });
             }
         }
