@@ -71,6 +71,24 @@ if [[ "${HARDENER_DIFF_BOOTED:-}" == "1" ]]; then
     KERNEL_BOOTED=1
 fi
 
+# Whether this run is booted, asked as a question rather than by comparing the
+# variable above at each site.
+#
+# The variable is named for the kernel oracle because that oracle was the first
+# to need it, and it now answers for the services oracle too: `systemctl mask`
+# and `systemctl is-enabled` need systemd as PID 1, which `nspawn --pipe` does
+# not provide. That is this repository's own measurement, recorded at
+# full-test-suite.sh:993, and it is inherited here rather than re-measured.
+#
+# Renaming the variable's own uses would bury a slice's new code in a review
+# diff, so the name stays and new code asks this instead.
+#
+# Defined here, above every use, because the conditional that reads it runs at
+# load time and a function exists only once its definition line has executed.
+run_is_booted() {
+    [[ "$KERNEL_BOOTED" == "1" ]]
+}
+
 # Whether this host's shadow implements a minimum password age at all.
 #
 # The second mode signal, and it works like the one above: declared before any
@@ -2284,12 +2302,16 @@ firewall_not_at_boot() {
 # What systemd says about ONE named unit being started at boot: the printed word
 # alone, empty when nothing was printed.
 #
+# Not firewall-specific, and named so: the services oracle asks the same
+# question of its own unit through this function rather than growing a second
+# copy of the exit-status rule below.
+#
 # The exit status is deliberately discarded and only the printed word kept.
 # `systemctl is-enabled` prints `disabled` on stdout while exiting 1, and prints
 # `enabled-runtime` while exiting 0, so a reading taken from the status would be
 # wrong in both directions. Going by the status is the defect 7fd250e repaired in
 # the plugin, and an oracle that reproduced it would agree with the bug.
-firewall_unit_boot_word() {
+systemd_unit_boot_word() {
     local word=""
     word="$(systemctl is-enabled "$1" 2>/dev/null)" || true
     # Every whitespace character, not only the ends. An answer arriving over
@@ -2318,7 +2340,7 @@ firewall_boot_reading() {
         printf 'none|'
         return 0
     fi
-    printf '%s|%s' "$unit" "$(firewall_unit_boot_word "$unit")"
+    printf '%s|%s' "$unit" "$(systemd_unit_boot_word "$unit")"
 }
 
 # Every unit the apply might end up managing, written out here rather than
@@ -2352,7 +2374,7 @@ FIREWALL_UNIT_CANDIDATES=(firewalld ufw)
 firewall_boot_readings_before() {
     local unit out=""
     for unit in "${FIREWALL_UNIT_CANDIDATES[@]}"; do
-        out+="${out:+ }$unit|$(firewall_unit_boot_word "$unit")"
+        out+="${out:+ }$unit|$(systemd_unit_boot_word "$unit")"
     done
     printf '%s' "$out"
 }
@@ -6442,6 +6464,20 @@ password required pam_unix.so"
     PERMISSION_MODES=""
     PERMISSION_MODES_GENERATION=""
     rm -rf "$vendor_fixture"
+
+    # --- the booted predicate ---
+    #
+    # Both arms, and a third for a value that is not the literal 1: the flag is
+    # a signal from the runner, and anything else arriving in it must leave the
+    # oracles off rather than half on.
+    local booted_saved="$KERNEL_BOOTED"
+    KERNEL_BOOTED=1
+    check_status 0 "a booted run answers the predicate affirmatively" run_is_booted
+    KERNEL_BOOTED=0
+    check_status 1 "an unbooted run answers it negatively" run_is_booted
+    KERNEL_BOOTED=2
+    check_status 1 "and a value that is not the literal 1 is not booted either" run_is_booted
+    KERNEL_BOOTED="$booted_saved"
 
     # --- firewall oracle ---
     #
