@@ -2885,6 +2885,57 @@ SERVICES_BOOT_AFTER=""
 SERVICES_ACTIVE_AFTER=""
 SERVICES_MASK_AFTER=""
 
+# The readings taken while the container is still unhardened.
+#
+# Guarded on the generation for the reason preapply_firewall_init gives: these
+# are half of what the checks below compare, so one taken after an apply would
+# agree with itself. An unbooted run takes no readings at all and leaves the
+# empty strings above standing, which is what the rows read when they declare
+# themselves unaskable.
+preapply_services_init() {
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the pre-apply services capture was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        echo "  It is half of what these checks compare, so it has to be taken" >&2
+        echo "  while the container is still unhardened." >&2
+        return 1
+    fi
+    run_is_booted || return 0
+    SERVICES_INSTALLED_BEFORE="$(services_unit_installed)"
+    SERVICES_BOOT_BEFORE="$(systemd_unit_boot_word "$SERVICES_UNIT")"
+    SERVICES_ACTIVE_BEFORE="$(systemd_unit_active_word "$SERVICES_UNIT")"
+    SERVICES_MASK_BEFORE="$(services_mask_link_reading)"
+}
+
+services_oracle_init() {
+    if (( APPLY_GENERATION == 0 )); then
+        echo "FATAL: the post-apply services capture was asked for before any apply." >&2
+        return 1
+    fi
+    run_is_booted || return 0
+    SERVICES_BOOT_AFTER="$(systemd_unit_boot_word "$SERVICES_UNIT")"
+    SERVICES_ACTIVE_AFTER="$(systemd_unit_active_word "$SERVICES_UNIT")"
+    SERVICES_MASK_AFTER="$(services_mask_link_reading)"
+}
+
+# One check, refusing three ways, and each refusal names a host on which every
+# row below would report a pass the tool had not earned.
+run_services_preapply_control() {
+    if ! run_is_booted; then
+        record_unaskable "services-hardening pre-apply control: this run is not booted, so systemd is not PID 1 and systemctl cannot be asked"
+        return 0
+    fi
+    if [[ "$SERVICES_INSTALLED_BEFORE" != "yes" ]]; then
+        record_fail "services-hardening: ${SERVICES_UNIT}.service is not installed, so this plugin manages nothing here; create-container.sh installs bluez on all five images, so that is a broken image and not a host these checks do not apply to"
+    elif ! services_unit_is_enabled "$SERVICES_BOOT_BEFORE"; then
+        record_fail "services-hardening: systemd read '$SERVICES_BOOT_BEFORE' for $SERVICES_UNIT before apply, which this plugin does not count as enabled, so it raises no finding and every check below would pass without the tool having acted"
+    elif [[ "$SERVICES_MASK_BEFORE" != "absent|" ]]; then
+        record_fail "services-hardening: $SERVICES_MASK_LINK already reads '$SERVICES_MASK_BEFORE' before apply, so the mask check below cannot show that the apply created it; recreate the container first"
+    else
+        record_pass "services-hardening: $SERVICES_UNIT was installed, read '$SERVICES_BOOT_BEFORE' at boot and had no mask link before apply, so the checks below are asking a real question"
+    fi
+}
+
 SSH_CHECKS_EXPECTED=7
 SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
@@ -7147,6 +7198,79 @@ bluetooth.service    enabled"
     check_eq "$(services_unit_installed)" "no" \
         "and a unit of the same name that is not the service does not count as one"
     unset -f systemctl
+
+    # The control, driven on each host it can meet. Redirected to a file rather
+    # than captured with $(...), for the reason the firewall block gives above:
+    # a command substitution is a subshell, so every counter the function
+    # increments would be discarded and the assertions would read 0/0 whatever
+    # happened.
+    local svc_out
+    svc_out="$(mktemp)"
+    local svc_saved_total=$CHECKS_TOTAL svc_saved_passed=$CHECKS_PASSED
+    local svc_saved_failed=$CHECKS_FAILED svc_saved_unaskable=$CHECKS_UNASKABLE
+    local svc_saved_booted="$KERNEL_BOOTED"
+    local svc_saved_installed="$SERVICES_INSTALLED_BEFORE"
+    local svc_saved_boot_before="$SERVICES_BOOT_BEFORE" svc_saved_boot_after="$SERVICES_BOOT_AFTER"
+    local svc_saved_mask_before="$SERVICES_MASK_BEFORE" svc_saved_mask_after="$SERVICES_MASK_AFTER"
+    local svc_saved_active_after="$SERVICES_ACTIVE_AFTER"
+    KERNEL_BOOTED=1
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    SERVICES_INSTALLED_BEFORE="yes"
+    SERVICES_BOOT_BEFORE="enabled"
+    SERVICES_MASK_BEFORE="absent|"
+    run_services_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
+        "an installed, enabled, unmasked unit is the host these rows need"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    SERVICES_INSTALLED_BEFORE="no"
+    run_services_preapply_control > "$svc_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a missing unit fails the control, because create-container.sh installs bluez on all five images"
+    check_status 0 "and the message calls the image broken rather than calling the check inapplicable" \
+        grep -q "broken image" "$svc_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    SERVICES_INSTALLED_BEFORE="yes"
+    SERVICES_BOOT_BEFORE="disabled"
+    run_services_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a unit that was already disabled fails the control, because the plugin raises no finding and every row below would then pass without it acting"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    SERVICES_BOOT_BEFORE="enabled"
+    SERVICES_MASK_BEFORE="link|/dev/null"
+    run_services_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "a mask link left behind by an earlier run voids the reading and fails the control"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    SERVICES_MASK_BEFORE="notlink|"
+    run_services_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
+        "and so does an administrator's own unit file at that path, which is not the same host as an empty one"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    KERNEL_BOOTED=0
+    SERVICES_INSTALLED_BEFORE="yes"
+    SERVICES_BOOT_BEFORE="enabled"
+    SERVICES_MASK_BEFORE="absent|"
+    run_services_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/0/1" \
+        "an unbooted run declares the control unaskable rather than passing or failing it"
+    KERNEL_BOOTED=1
+
+    rm -f "$svc_out"
+    CHECKS_TOTAL=$svc_saved_total CHECKS_PASSED=$svc_saved_passed
+    CHECKS_FAILED=$svc_saved_failed CHECKS_UNASKABLE=$svc_saved_unaskable
+    KERNEL_BOOTED="$svc_saved_booted"
+    SERVICES_INSTALLED_BEFORE="$svc_saved_installed"
+    SERVICES_BOOT_BEFORE="$svc_saved_boot_before"
+    SERVICES_BOOT_AFTER="$svc_saved_boot_after"
+    SERVICES_MASK_BEFORE="$svc_saved_mask_before"
+    SERVICES_MASK_AFTER="$svc_saved_mask_after"
+    SERVICES_ACTIVE_AFTER="$svc_saved_active_after"
 
     # The preview an operator approves, held against the apply that followed.
     # Both sides are injected here exactly as the firewall boot readings are: a
