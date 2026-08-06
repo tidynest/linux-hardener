@@ -27,7 +27,7 @@ fn sample_results() -> Vec<ScanResult> {
             finding_remediation_steps: vec!["Step 1".to_string()],
             finding_compliance: vec![],
             finding_policy_exception: None,
-            finding_exception_key: None,
+            finding_exception_key: Some("test-exception-key".to_string()),
         }],
         scan_duration_us: 1000,
         scan_error: None,
@@ -280,5 +280,56 @@ async fn unchecked_checks_survive_store_and_restore() {
     assert_eq!(
         restored[0].scan_unchecked[0].unchecked_check_id,
         "pam-minlen"
+    );
+}
+
+/// The key an operator writes an exception under is the one thing a stored
+/// finding could not carry: the rebuild hardcoded it as `None` regardless of
+/// what the plugin found.
+#[tokio::test]
+async fn exception_key_survives_store_and_reload() {
+    let (manager, _dir) = create_test_manager().await;
+    let session_id = manager.start_session().await.unwrap();
+
+    let mut results = sample_results();
+    results[0].scan_findings[0].finding_exception_key = Some("net.ipv4.ip_forward".to_string());
+
+    manager.store_results(&session_id, &results).await.unwrap();
+    manager
+        .complete_session(&session_id, ScanStatus::Completed, 1, 1)
+        .await
+        .unwrap();
+
+    let (_, restored) = manager.get_latest_scan().await.unwrap().unwrap();
+    assert_eq!(
+        restored[0].scan_findings[0]
+            .finding_exception_key
+            .as_deref(),
+        Some("net.ipv4.ip_forward"),
+        "a dotted key is not a bare TOML key and must survive verbatim"
+    );
+}
+
+/// A finding an exception could not be about stores no key, and must read back
+/// as no key rather than as an empty one, which would advertise a setting an
+/// operator could write and that would change nothing.
+#[tokio::test]
+async fn a_finding_without_an_exception_key_reloads_without_one() {
+    let (manager, _dir) = create_test_manager().await;
+    let session_id = manager.start_session().await.unwrap();
+
+    let mut results = sample_results();
+    results[0].scan_findings[0].finding_exception_key = None;
+
+    manager.store_results(&session_id, &results).await.unwrap();
+    manager
+        .complete_session(&session_id, ScanStatus::Completed, 1, 1)
+        .await
+        .unwrap();
+
+    let (_, restored) = manager.get_latest_scan().await.unwrap().unwrap();
+    assert_eq!(
+        restored[0].scan_findings[0].finding_exception_key, None,
+        "no key must read back as None, never as Some(\"\")"
     );
 }

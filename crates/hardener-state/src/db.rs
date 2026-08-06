@@ -74,6 +74,7 @@ const SCHEMA: &str = r#"
         remediation_steps TEXT NOT NULL,
         compliance_mappings TEXT NOT NULL,
         policy_exception TEXT,
+        exception_key TEXT,
         FOREIGN KEY(result_id) REFERENCES scan_results(id) ON DELETE CASCADE
     );
 
@@ -195,6 +196,18 @@ pub async fn init_db(db_path: Option<&Path>) -> Result<SqlitePool> {
         "file_states",
         "content_absence",
         "content_absence TEXT",
+    )
+    .await?;
+
+    // A finding stored before this column existed carries no key, and NULL
+    // reads back as exactly that. It is indistinguishable from a finding an
+    // exception could not be about, and needs to be: both mean there is no
+    // offer to make, and a rescan replaces the row.
+    add_column_if_missing(
+        &pool,
+        "scan_findings",
+        "exception_key",
+        "exception_key TEXT",
     )
     .await?;
 

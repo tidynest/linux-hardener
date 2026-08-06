@@ -117,3 +117,44 @@ async fn add_column_if_missing_leaves_an_existing_column_alone() {
         .unwrap();
     assert_eq!(value, "kept", "an existing column must keep its data");
 }
+
+#[tokio::test]
+async fn init_db_migrates_scan_findings_without_exception_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("legacy.db");
+    let pool = bare_pool(&db).await;
+    sqlx::query(
+        "CREATE TABLE scan_findings (id INTEGER PRIMARY KEY AUTOINCREMENT, \
+         result_id INTEGER NOT NULL, finding_id TEXT NOT NULL, category TEXT NOT NULL, \
+         severity TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL, \
+         explanation TEXT NOT NULL, impact TEXT NOT NULL, current_value TEXT NOT NULL, \
+         recommended_value TEXT NOT NULL, remediation_steps TEXT NOT NULL, \
+         compliance_mappings TEXT NOT NULL, policy_exception TEXT)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO scan_findings (result_id, finding_id, category, severity, title, \
+         description, explanation, impact, current_value, recommended_value, \
+         remediation_steps, compliance_mappings) \
+         VALUES (1,'F','kernel','high','t','d','e','i','c','r','[]','[]')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+
+    let pool = init_db(Some(&db))
+        .await
+        .expect("an old database must still open");
+    let key: Option<String> =
+        sqlx::query_scalar("SELECT exception_key FROM scan_findings WHERE finding_id = 'F'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        key, None,
+        "a row written before the column existed reads back as no key"
+    );
+}
