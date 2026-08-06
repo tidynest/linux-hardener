@@ -399,6 +399,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The desktop's scan history keeps the exception key a finding names.** The
+  key every plugin populates died at one line: `scan_manager` rebuilt a stored
+  finding with `finding_exception_key: None` regardless of what had been found.
+  The desktop has no live findings path, so that was every finding an operator
+  sees there. `scan_findings` now carries a nullable `exception_key`, migrated
+  in place so a database that already exists keeps working, and a finding
+  stored before the column reads back as no key. Nothing renders it yet; the
+  action on a finding row is the next slice (#66).
+
 - **`scan` now names the policy exception each finding accepts**, printing the
   complete `config.toml` path beneath the finding itself. The key an exception
   is written under was previously discoverable only by reading the source: a
