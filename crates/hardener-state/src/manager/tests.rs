@@ -831,7 +831,7 @@ fn select_latest_named_picks_newest_per_name_for_host() {
         "ssh-hardening-pre-apply".to_string(),
         "kernel-hardening-pre-apply".to_string(),
     ];
-    let got = select_latest_named(&all, "ssh://root@h", &names);
+    let got = select_latest_named(&all, &["ssh://root@h".to_string()], &names);
     assert_eq!(got.len(), 2, "one checkpoint per matched name");
     assert_eq!(
         got[0].checkpoint_id.as_str(),
@@ -848,8 +848,52 @@ fn select_latest_named_omits_unmatched_names_and_other_hosts() {
         "audit-hardening-pre-apply".to_string(),
         "ssh-hardening-pre-apply".to_string(),
     ];
-    let got = select_latest_named(&all, "ssh://root@nope", &names);
+    let got = select_latest_named(&all, &["ssh://root@nope".to_string()], &names);
     assert!(got.is_empty(), "no checkpoints for that host");
+}
+
+/// A checkpoint filed under a key an earlier release used is still selected.
+///
+/// This is what stops the host-key fix from making an operator's existing
+/// remote rollback points invisible. The legacy key is accepted for lookup and
+/// never written, and the newest across both keys wins, because the two name
+/// the same machine and the same account.
+#[test]
+fn select_latest_named_accepts_a_key_an_earlier_release_used() {
+    let all = vec![
+        cp("old", "ssh-hardening-pre-apply", 100, "ssh://root@h:22"),
+        cp("new", "ssh-hardening-pre-apply", 200, "ssh://deploy@h:22"),
+        cp("older", "kernel-hardening-pre-apply", 50, "ssh://root@h:22"),
+    ];
+    let names = vec![
+        "ssh-hardening-pre-apply".to_string(),
+        "kernel-hardening-pre-apply".to_string(),
+    ];
+    let keys = [
+        "ssh://deploy@h:22".to_string(),
+        "ssh://root@h:22".to_string(),
+    ];
+
+    let got = select_latest_named(&all, &keys[..], &names);
+
+    assert_eq!(got.len(), 2, "both names resolve across the two keys");
+    assert_eq!(
+        got[0].checkpoint_id.as_str(),
+        "new",
+        "newest wins regardless of which key it was filed under"
+    );
+    assert_eq!(
+        got[1].checkpoint_id.as_str(),
+        "older",
+        "a name only the legacy key holds is still found, which is the point"
+    );
+
+    assert!(
+        select_latest_named(&all, &keys[..1], &names)
+            .iter()
+            .all(|c| c.checkpoint_id.as_str() != "older"),
+        "and without the legacy key it is not found, so the test is not vacuous"
+    );
 }
 
 #[tokio::test]
@@ -868,7 +912,10 @@ async fn latest_named_for_host_reads_db() {
         .await
         .expect("create");
     let got = manager
-        .latest_named_for_host("ssh://root@h", &["ssh-hardening-pre-apply".to_string()])
+        .latest_named_for_host(
+            &["ssh://root@h".to_string()],
+            &["ssh-hardening-pre-apply".to_string()],
+        )
         .await
         .expect("select");
     assert_eq!(got.len(), 1);

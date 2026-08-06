@@ -160,21 +160,90 @@ impl SshExecutor {
 /// than reassemble the format, or the predicted key and the recorded one could
 /// drift apart without any test noticing.
 ///
-/// The `root` substituted for a target that named no user is a known defect and
-/// not a claim about the remote account: ssh resolves a bare target through the
-/// operator's `~/.ssh/config`, so the account it lands on is frequently not
-/// root. It makes `--ssh h` and `--ssh root@h` one key while they are two
-/// targets everywhere else, which is why a run that selects both is refused.
-/// Correcting it means resolving the effective user at connect time, which
-/// orphans every checkpoint already filed under the old key.
+/// A target that names no user is resolved rather than assumed. Earlier
+/// releases substituted the literal `root`, which was not a claim about the
+/// remote account but a fabrication: ssh resolves a bare target through the
+/// operator's `~/.ssh/config`, so the account it lands on is frequently
+/// something else. It made `--ssh h` and `--ssh root@h` one key while they were
+/// two targets everywhere else.
+///
+/// Checkpoints filed under the fabricated key are still found, because lookups
+/// accept [`legacy_checkpoint_host_key`] alongside this one. They cannot be
+/// migrated: `ssh://root@h:22` cannot say whether the operator wrote `root@h`
+/// or wrote `h` and had the `root` invented for them, so a rewrite would
+/// corrupt whichever of the two it guessed wrong.
 pub fn checkpoint_host_key(user: Option<&str>, host: &str, port: u16) -> String {
-    format!("ssh://{}@{}:{}", user.unwrap_or("root"), host, port)
+    checkpoint_host_key_with(resolve_ssh_user, user, host, port)
+}
+
+/// The user earlier releases assumed when a target named none.
+const ASSUMED_USER: &str = "root";
+
+/// The key a release before the user was resolved filed this target under.
+///
+/// Lookups accept it beside the resolved key, so an operator's existing remote
+/// checkpoints stay visible and stay offered as rollback points. Captures never
+/// write it.
+pub fn legacy_checkpoint_host_key(host: &str, port: u16) -> String {
+    format!("ssh://{ASSUMED_USER}@{host}:{port}")
+}
+
+/// [`checkpoint_host_key`] with the resolver injected, so the format and the
+/// fallback can be tested without depending on the machine's `~/.ssh/config`.
+fn checkpoint_host_key_with(
+    resolve: impl Fn(&str) -> Option<String>,
+    user: Option<&str>,
+    host: &str,
+    port: u16,
+) -> String {
+    let effective = match user {
+        Some(named) => named.to_string(),
+        // A resolver that cannot answer leaves the old fabrication in place
+        // rather than inventing a different one. That is the pre-existing
+        // behaviour, and the collision refusal in `batch` is what catches the
+        // two targets it can still merge.
+        None => resolve(host).unwrap_or_else(|| ASSUMED_USER.to_string()),
+    };
+    format!("ssh://{effective}@{host}:{port}")
+}
+
+/// The user ssh itself would use for `host`, without opening a connection.
+///
+/// `ssh -G` prints the effective configuration for a target, `user` included,
+/// after applying every matching `Host` block in the operator's config. It
+/// connects to nothing, which is what keeps the key derivable before a
+/// connection exists: the fleet collision check needs it in advance.
+///
+/// `None` only when ssh cannot be run or prints no `user` line at all, which in
+/// practice means ssh is missing, and then nothing else here works either.
+fn resolve_ssh_user(host: &str) -> Option<String> {
+    let output = std::process::Command::new("ssh")
+        .args(["-G", "--", host])
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())?
+        .lines()
+        .find_map(|line| line.strip_prefix("user ").map(str::trim))
+        .filter(|user| !user.is_empty())
+        .map(str::to_string)
 }
 
 #[async_trait]
 impl SystemExecutor for SshExecutor {
     fn description(&self) -> String {
         checkpoint_host_key(self.user.as_deref(), &self.host, self.port)
+    }
+
+    /// Only a target that named no user moved: its key used to name the
+    /// fabricated `root`. A target that named its user has always been filed
+    /// under exactly what it named, so it has nothing to fall back to.
+    fn legacy_description(&self) -> Option<String> {
+        self.user
+            .is_none()
+            .then(|| legacy_checkpoint_host_key(&self.host, self.port))
     }
 
     fn is_remote(&self) -> bool {

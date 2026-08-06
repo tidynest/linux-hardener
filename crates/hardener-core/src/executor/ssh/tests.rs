@@ -368,21 +368,95 @@ fn checkpoint_host_key_names_the_account_the_target_gave() {
     );
 }
 
-/// The substitution this records is a defect being pinned, not a behaviour
-/// being endorsed: a target that named no user is filed under an account it
-/// never mentioned, and is then indistinguishable from one that asked for
-/// `root` outright. Until the key can say what the remote account actually is,
-/// a fleet run has to refuse the pair rather than let their checkpoints collide.
+/// The defect this used to pin is fixed, and what replaces it is deliberately
+/// weaker than "the two forms are always two keys".
+///
+/// A bare target now resolves through the operator's ssh configuration, so on a
+/// host whose config really does say `User root` the two forms agree, and they
+/// should: they name the same account on the same machine, and the fleet
+/// collision refusal is then right to treat a run selecting both as one target
+/// twice. What can no longer happen is the two agreeing because the key
+/// *invented* an account nobody named. That case is covered by
+/// [`a_bare_target_is_filed_under_the_resolved_user`], which is the one that
+/// pins the fix; this one pins only the part that does not depend on whose
+/// machine the suite runs on.
 #[test]
-fn checkpoint_host_key_cannot_tell_a_bare_target_from_an_explicit_root() {
+fn checkpoint_host_key_keeps_the_target_it_was_given() {
     assert_eq!(
-        checkpoint_host_key(None, "web-01", 22),
-        "ssh://root@web-01:22",
-        "no user given still produces a key naming root"
-    );
-    assert_eq!(
-        checkpoint_host_key(None, "web-01", 22),
         checkpoint_host_key(Some("root"), "web-01", 22),
-        "the two forms are one key, which is why they cannot both write checkpoints"
+        "ssh://root@web-01:22",
+        "an explicit root is still filed under root"
+    );
+    assert!(
+        checkpoint_host_key(None, "web-01", 22).ends_with("@web-01:22"),
+        "however the user resolves, the host and port are still the key's tail"
+    );
+}
+
+/// An explicitly named user is never resolved: the operator said which account.
+#[test]
+fn an_explicit_user_is_taken_at_its_word() {
+    let key = checkpoint_host_key_with(
+        |_| panic!("a target that names its user must not consult ssh"),
+        Some("admin"),
+        "web-01",
+        22,
+    );
+    assert_eq!(key, "ssh://admin@web-01:22");
+}
+
+/// A bare target is filed under the account ssh would actually reach, which is
+/// the whole defect: the fabricated `root` made it one key with `root@host`.
+#[test]
+fn a_bare_target_is_filed_under_the_resolved_user() {
+    let key = checkpoint_host_key_with(
+        |host| {
+            assert_eq!(
+                host, "web-01",
+                "the resolver is asked about the target host"
+            );
+            Some("deploy".to_string())
+        },
+        None,
+        "web-01",
+        22,
+    );
+    assert_eq!(key, "ssh://deploy@web-01:22");
+    assert_ne!(
+        key,
+        legacy_checkpoint_host_key("web-01", 22),
+        "a resolved bare target must not collide with an explicit root@host"
+    );
+}
+
+/// A resolver that cannot answer leaves the old fabrication rather than
+/// inventing a second one, so the worst case is the behaviour that shipped
+/// before, which the fleet collision refusal already guards.
+#[test]
+fn an_unanswerable_resolver_falls_back_to_the_legacy_key() {
+    let key = checkpoint_host_key_with(|_| None, None, "web-01", 22);
+    assert_eq!(key, legacy_checkpoint_host_key("web-01", 22));
+}
+
+/// The `user` line is parsed out of what ssh really prints.
+///
+/// A parse checked only against a hand-written fixture proves the fixture, not
+/// the format. `ssh -G` opens no connection, so this costs nothing and needs no
+/// host to exist. It is skipped rather than failed where ssh is absent, since
+/// then the resolver is correct to answer `None`.
+#[test]
+fn resolve_ssh_user_parses_what_ssh_actually_prints() {
+    if std::process::Command::new("ssh")
+        .arg("-V")
+        .output()
+        .is_err()
+    {
+        eprintln!("skipping: no ssh on this machine");
+        return;
+    }
+    let resolved = resolve_ssh_user("a-host-that-need-not-exist");
+    assert!(
+        resolved.is_some_and(|user| !user.is_empty()),
+        "ssh -G always reports an effective user, defaulting to the local one"
     );
 }

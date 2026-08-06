@@ -14,7 +14,7 @@ use hardener_core::HardenerConfig;
 use hardener_core::plugin::{Finding, UncheckedCheck};
 use hardener_core::{
     Context, PluginMetadata, ScanResult, SshExecutor,
-    executor::{SystemExecutor, host_key_for, ssh::checkpoint_host_key},
+    executor::{SystemExecutor, host_keys_for, ssh::checkpoint_host_key},
 };
 use hardener_distro::Distribution;
 use hardener_scheduler::ScanHistoryManager;
@@ -1558,8 +1558,8 @@ async fn rollback_one(
         ));
     }
 
-    let host_key = host_key_for(exec.as_ref());
-    let selected: Vec<Checkpoint> = match mgr.latest_named_for_host(&host_key, &names).await {
+    let host_keys = host_keys_for(exec.as_ref());
+    let selected: Vec<Checkpoint> = match mgr.latest_named_for_host(&host_keys, &names).await {
         Ok(v) => v,
         Err(e) => return fail_with(e.to_string()),
     };

@@ -189,6 +189,19 @@ pub trait SystemExecutor: Send + Sync {
     /// Returns a description of this executor (e.g., "local" or "ssh://user@host").
     fn description(&self) -> String;
 
+    /// The key an earlier release filed this target's checkpoints under, when
+    /// that differs from [`description`](Self::description).
+    ///
+    /// `None` for everything whose key never changed, which is every local
+    /// executor and every remote target that named its user outright. Only a
+    /// bare remote target moved, because its key used to name a fabricated
+    /// account. Lookups accept this beside the current key so an operator's
+    /// existing checkpoints stay visible and stay offered as rollback points;
+    /// captures never write it.
+    fn legacy_description(&self) -> Option<String> {
+        None
+    }
+
     /// Returns true if this is a remote executor.
     fn is_remote(&self) -> bool;
 
@@ -417,6 +430,25 @@ pub fn host_key_for(executor: &dyn SystemExecutor) -> String {
     } else {
         "local".to_string()
     }
+}
+
+/// Every key a lookup for this executor must accept, newest first.
+///
+/// Captures write only the first. The rest are keys earlier releases used for
+/// the same target, and they are here so that changing the key format does not
+/// make an operator's existing checkpoints invisible: losing sight of a
+/// rollback point is a worse failure than the filing bug that moved it.
+///
+/// See [`SystemExecutor::legacy_description`] for which targets have one.
+pub fn host_keys_for(executor: &dyn SystemExecutor) -> Vec<String> {
+    let current = host_key_for(executor);
+    let mut keys = vec![current.clone()];
+    if let Some(legacy) = executor.legacy_description()
+        && legacy != current
+    {
+        keys.push(legacy);
+    }
+    keys
 }
 
 /// The scan-history key for one session: the host that was actually scanned.

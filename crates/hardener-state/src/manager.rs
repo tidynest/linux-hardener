@@ -863,11 +863,11 @@ impl CheckpointManager {
     /// Returns an error if the database query fails.
     pub async fn latest_named_for_host(
         &self,
-        host_key: &str,
+        host_keys: &[String],
         names: &[String],
     ) -> Result<Vec<Checkpoint>> {
         let all = self.list_checkpoints().await?;
-        Ok(select_latest_named(&all, host_key, names))
+        Ok(select_latest_named(&all, host_keys, names))
     }
 
     /// Deletes a checkpoint and all its associated file states.
@@ -1398,7 +1398,7 @@ impl CheckpointManager {
 /// does not depend on the caller's sort order. Names with no match are omitted.
 fn select_latest_named(
     checkpoints: &[Checkpoint],
-    host_key: &str,
+    host_keys: &[String],
     names: &[String],
 ) -> Vec<Checkpoint> {
     names
@@ -1406,7 +1406,7 @@ fn select_latest_named(
         .filter_map(|name| {
             checkpoints
                 .iter()
-                .filter(|c| c.host_key.as_str() == host_key && c.checkpoint_name == *name)
+                .filter(|c| host_keys.contains(&c.host_key) && c.checkpoint_name == *name)
                 .max_by_key(|c| c.checkpoint_timestamp)
                 .cloned()
         })

@@ -42,6 +42,22 @@ fn scratch_home_named(label: &str) -> std::path::PathBuf {
     dir
 }
 
+/// A scratch home whose ssh configuration resolves `127.0.0.1` to `root`.
+///
+/// The collision this exercises needs a bare target and an explicit `root@` one
+/// to land on the same account, and a bare target is now resolved through
+/// `ssh -G` rather than assumed. `run_in` already pins `HOME`, so the test can
+/// own the configuration that resolution reads instead of depending on whose
+/// machine it runs on.
+fn scratch_home_resolving_to_root(label: &str) -> std::path::PathBuf {
+    let home = scratch_home_named(label);
+    let ssh = home.join(".ssh");
+    std::fs::create_dir_all(&ssh).expect("a scratch ssh directory");
+    std::fs::write(ssh.join("config"), "Host 127.0.0.1\n    User root\n")
+        .expect("seed the ssh configuration the resolver reads");
+    home
+}
+
 fn run(args: &[&str]) -> Output {
     run_in(scratch_home(), args)
 }
@@ -287,7 +303,7 @@ fn a_port_named_in_the_target_outranks_the_global_flag() {
 #[test]
 fn a_fleet_run_that_would_collide_two_checkpoints_is_refused_before_connecting() {
     let out = run_in(
-        scratch_home_named("collision"),
+        scratch_home_resolving_to_root("collision"),
         &[
             "batch",
             "apply",
@@ -378,7 +394,7 @@ fn a_fleet_run_naming_two_real_accounts_is_not_refused() {
 #[test]
 fn a_fleet_rollback_that_would_collide_two_checkpoints_is_refused_before_connecting() {
     let out = run_in(
-        scratch_home_named("collision-rollback"),
+        scratch_home_resolving_to_root("collision-rollback"),
         &[
             "batch",
             "rollback",
