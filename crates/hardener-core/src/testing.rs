@@ -139,6 +139,7 @@ impl HardeningPlugin for MockPlugin {
                 finding_title: format!("Mock directive finding: {key}"),
                 finding_compliance: vec![],
                 finding_policy_exception: None,
+                finding_exception_key: None,
             });
         }
         Ok(ScanResult {

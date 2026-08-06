@@ -719,6 +719,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     finding_policy_exception: config
                         .has_valid_exception(directive.service_name)
                         .map(|e| e.to_finding_exception()),
+                    finding_exception_key: None,
                 });
             }
         }

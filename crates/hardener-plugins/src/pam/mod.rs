@@ -700,6 +700,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                     ),
                     finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
                     finding_policy_exception: policy_exception,
+                    finding_exception_key: None,
                 });
             }
         }
@@ -1489,6 +1490,7 @@ fn min_days_unenforceable_finding(directive: &PamDirective) -> Finding {
         // exception documents a value the operator accepts, and this is not
         // about the value. The value is already correct.
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 
@@ -1521,6 +1523,7 @@ fn module_absent_finding(directive: &PamDirective, module: &str, conf_path: &str
         // Deliberately never excepted: an exception documents a value the
         // operator accepts, and this is not about the value.
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 

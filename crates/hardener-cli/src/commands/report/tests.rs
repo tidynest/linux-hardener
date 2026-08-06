@@ -41,6 +41,7 @@ fn finding_to_scan_finding_uses_display_strings() {
         finding_remediation_steps: vec![],
         finding_compliance: vec![],
         finding_policy_exception: None,
+        finding_exception_key: None,
     };
 
     let row = finding_to_scan_finding(&meta, &finding);

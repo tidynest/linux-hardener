@@ -916,6 +916,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_policy_exception: config
                     .has_valid_exception(AUDITD_PRESENT_EXCEPTION)
                     .map(|exception| exception.to_finding_exception()),
+                finding_exception_key: None,
             });
 
             // If not installed, no point checking further
@@ -948,6 +949,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_policy_exception: config
                     .has_valid_exception(AUDITD_AT_BOOT_EXCEPTION)
                     .map(|exception| exception.to_finding_exception()),
+                finding_exception_key: None,
             });
         }
 
@@ -968,6 +970,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_policy_exception: config
                     .has_valid_exception(AUDITD_RUNNING_EXCEPTION)
                     .map(|exception| exception.to_finding_exception()),
+                finding_exception_key: None,
             });
         }
 
@@ -1012,6 +1015,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                             finding_policy_exception: config
                                 .has_valid_exception(rule.audit_rule_category)
                                 .map(|e| e.to_finding_exception()),
+                            finding_exception_key: None,
                         });
                     }
                 }

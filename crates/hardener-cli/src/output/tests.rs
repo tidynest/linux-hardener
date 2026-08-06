@@ -246,6 +246,7 @@ fn finding(title: &str) -> Finding {
         finding_title: title.to_string(),
         finding_compliance: vec![],
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 

@@ -49,6 +49,7 @@ fn insecure_root_login() -> Finding {
             mapping(ComplianceFramework::STIG, "RHEL-08-010550"),
         ],
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 

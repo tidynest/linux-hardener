@@ -66,6 +66,7 @@ fn make_finding(id: &str, severity: Severity) -> Finding {
         finding_impact: "Test impact".to_string(),
         finding_compliance: vec![],
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 

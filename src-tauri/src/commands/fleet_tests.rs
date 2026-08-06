@@ -110,6 +110,7 @@ fn finding(id: &str) -> Finding {
         finding_remediation_steps: vec![],
         finding_compliance: vec![],
         finding_policy_exception: None,
+        finding_exception_key: None,
     }
 }
 
