@@ -343,7 +343,10 @@ total when the list is capped.
 the host key of the executor this invocation is using, so a plain run lists the
 local host and `hardener --ssh user@server checkpoint list` lists that server's.
 Checkpoints belonging to other hosts are never shown, which matches the rollback
-rule that refuses to restore one host's state onto another.
+rule that refuses to restore one host's state onto another. A target that names
+no user is filtered on the key ssh resolves it to *and* on the older key an
+earlier release fabricated for it, so nothing already recorded drops out of the
+list; see the checkpoint host key under [batch](#batch).
 
 ```
 hardener checkpoint list [FLAGS]
@@ -586,36 +589,45 @@ under its nickname and an ad-hoc target under `user@host:port`. Reaching one
 machine both ways in separate runs therefore records two series for it, which
 de-duplication cannot help with because only one form is present in each run.
 
-The **checkpoint** host key is a third identity, and it is coarser than either.
-It is `ssh://user@host:port`, and a target that named no user is filed under a
-literal `root` whether or not that is the account ssh resolves it to. Two
-consequences follow, and both are limitations rather than choices:
+The **checkpoint** host key is a third identity: `ssh://user@host:port`, where
+`user` is the account ssh itself would use. A target that names no user is
+**resolved**, through `ssh -G`, which applies your `~/.ssh/config` without
+opening a connection. So `--ssh web-01` and `--ssh admin@web-01` are one
+checkpoint host key whenever your configuration puts `web-01` on `admin`, and
+`hardener --ssh admin@web-01 rollback <id>` reaches a checkpoint that
+`hardener --ssh web-01 apply` wrote. Only if ssh cannot be run at all does the
+key fall back to the literal `root` an earlier release always used.
 
-- `hardener --ssh web-01 apply` files its checkpoint under
-  `ssh://root@web-01:22`, so `hardener --ssh admin@web-01 rollback <id>` is
-  refused as belonging to a different host, though it is the same machine. Roll
-  back with the same form of target you applied with.
-- `--ssh web-01` and `--ssh root@web-01` are two targets everywhere else and one
-  checkpoint host key. A fleet run that writes therefore **refuses** such a
-  selection, exit `2`, before it connects to anything: their pre-apply
-  checkpoints would land under one `(host key, name)` pair, the newest would
-  win, and a later rollback could restore state the other target had already
-  hardened while reporting success. The refusal names both hosts, by inventory
-  name and canonical target, and says what to change. `batch scan` and `batch
-  report` take no checkpoints and are not affected, nor is a dry run.
+> **Checkpoints written by an earlier release are still found.** A bare target
+> used to be filed under `ssh://root@host:port` whether or not that was the
+> account it reached. Lookups accept that older key alongside the resolved one,
+> so no existing checkpoint became invisible or stopped being offered as a
+> rollback point; new captures never write it. The two cannot be merged into
+> one: `ssh://root@web-01:22` cannot say whether the operator wrote
+> `root@web-01` or wrote `web-01` and had the `root` invented for them, so any
+> rewrite would corrupt whichever it guessed wrong.
+
+Two selections can still land on one checkpoint host key, and a fleet run that
+writes **refuses** such a selection, exit `2`, before it connects to anything:
+
+- two inventory entries pointing at one endpoint, or `--host web-01,web-01`;
+- a bare `--ssh web-01` alongside an explicit target naming the account ssh
+  resolves it to.
+
+Their pre-apply checkpoints would land under one `(host key, name)` pair, the
+newest would win, and a later rollback could restore state the other selection
+had already hardened while reporting success. The refusal names both hosts, by
+inventory name and canonical target, and says what to change. `batch scan` and
+`batch report` take no checkpoints and are not affected, nor is a dry run.
 
 > **The refusal covers one invocation, not the underlying collision.** The
 > newest checkpoint per key wins across the whole database rather than within a
-> run, so reaching one machine as `--ssh web-01` in one run and as
-> `--ssh root@web-01` in another files both under the same key with nothing to
-> refuse them, and a later rollback of either can restore the state the other
-> left behind. The single-host `apply` and `rollback` verbs do not pass through
-> this check at all. **Until the key itself is corrected, reach a given machine
-> by one and only one form of target.** Correcting it means resolving the
-> effective remote user when the connection is made, which changes the key and
-> orphans every checkpoint already filed under the old one, so it is deferred
-> rather than done. `checkpoint list` conflates the same pair, for the same
-> reason.
+> run, so reaching one machine under both forms in *separate* runs files both
+> under the same key with nothing to refuse them, and a later rollback of either
+> can restore the state the other left behind. The single-host `apply` and
+> `rollback` verbs do not pass through this check at all. Where two selections
+> genuinely name one account on one machine, no key format can tell them apart:
+> **reach a given machine once per run.**
 
 ### batch scan
 

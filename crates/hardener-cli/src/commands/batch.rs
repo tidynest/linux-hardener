@@ -134,12 +134,12 @@ pub fn parse_inline(
 /// operator gave them, so two inventory entries for one machine still produce
 /// two hosts.
 ///
-/// One caveat this does NOT resolve: `SshExecutor::description`, which supplies
-/// the *checkpoint* host key, substitutes a literal `root` when no user was
-/// given, so `--ssh web-01` and `--ssh root@web-01` are two targets here and
-/// one host key there. Distinguishing them here is right; the collision belongs
-/// to that fabricated `root`. Until it can be corrected, a run that writes
-/// refuses such a selection outright: see [`colliding_host_key`].
+/// Two selections can therefore still share one *checkpoint* host key, which
+/// this deliberately does not merge: two inventory entries for one endpoint, or
+/// a bare `--ssh web-01` that ssh resolves to the account an explicit target
+/// named outright. They are distinct selections and belong here as two, but a
+/// run that writes cannot file their checkpoints apart, so it refuses such a
+/// selection: see [`colliding_host_key`].
 pub fn resolve_hosts(
     inventory: &HostsConfig,
     all: bool,
@@ -249,15 +249,18 @@ struct HostKeyCollision {
 ///
 /// The key comes from [`checkpoint_host_key`] rather than from `target()`, which
 /// is a different identity: it carries no scheme and leaves the user out when
-/// the target did not name one, which is precisely the distinction the host key
-/// loses. Every input is on the profile, so this runs before any connection.
+/// the target did not name one, where the key resolves that user. Two distinct
+/// targets can therefore still be one key, which is the whole subject here.
+/// Every input is on the profile and the resolution reads the operator's ssh
+/// configuration rather than the host, so this runs before any connection.
 ///
 /// This closes the collision **within one invocation only**. The winner is
 /// chosen across the whole database rather than within a run, so the same harm
 /// is still reachable by running the two targets separately, and by the
-/// single-host verbs, which do not pass through here at all. Only correcting the
-/// key itself closes that, and doing so orphans every checkpoint already filed
-/// under the old one.
+/// single-host verbs, which do not pass through here at all. Resolving the user
+/// removed the fabricated `root` that used to make this wide; what remains is a
+/// selection genuinely naming one account on one machine twice, which no key
+/// format can tell apart.
 ///
 /// Compared pairwise rather than adjacently: a collision between the first and
 /// third target is the same collision.
