@@ -104,8 +104,9 @@ impl ScanHistoryManager {
                     "INSERT INTO scan_findings (
                         result_id, finding_id, category, severity, title, description,
                         explanation, impact, current_value, recommended_value,
-                        remediation_steps, compliance_mappings, policy_exception
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        remediation_steps, compliance_mappings, policy_exception,
+                        exception_key
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(result_id)
                 .bind(&finding.finding_id)
@@ -120,6 +121,7 @@ impl ScanHistoryManager {
                 .bind(&remediation_json)
                 .bind(&compliance_json)
                 .bind(&policy_exception_json)
+                .bind(&finding.finding_exception_key)
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| HardeningError::Database(e.to_string()))?;
@@ -255,7 +257,7 @@ impl ScanHistoryManager {
         let finding_rows = sqlx::query(
             "SELECT finding_id, category, severity, title, description, explanation,
                     impact, current_value, recommended_value, remediation_steps,
-                    compliance_mappings, policy_exception
+                    compliance_mappings, policy_exception, exception_key
              FROM scan_findings
              WHERE result_id = ?",
         )
@@ -307,7 +309,7 @@ impl ScanHistoryManager {
                 finding_remediation_steps: remediation_steps,
                 finding_compliance: compliance,
                 finding_policy_exception: policy_exception,
-                finding_exception_key: None,
+                finding_exception_key: row.get("exception_key"),
             });
         }
 

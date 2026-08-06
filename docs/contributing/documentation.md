@@ -2,14 +2,14 @@
 
 Commands for validating and auto-updating project documentation.
 
-`scripts/validate/` holds nineteen Python 3 scripts: the master runner
-`validate_all.py`, the auto-updater `update_all_docs.py`, the sixteen
+`scripts/validate/` holds twenty Python 3 scripts: the master runner
+`validate_all.py`, the auto-updater `update_all_docs.py`, the seventeen
 validators `validate_all.py` runs, and `validate_naming.py`, which is
 standalone and is what a hand-installed pre-commit hook runs, if there is one.
 The one check that is not
 Python lives elsewhere: version consistency is
 `scripts/release/release.sh --verify`, which `validate_all.py` shells out to,
-and it is why the run reports seventeen checks against sixteen Python
+and it is why the run reports eighteen checks against seventeen Python
 validators.
 
 ---
@@ -406,6 +406,38 @@ anyone had taken, while pam's module-absence finding is deliberate and says so
 at the site. Counting the sites cannot tell an oversight from a decision, and
 neither can a test, because a test asserting the field is `None` passes just as
 happily on either. A comment beside it can, and it travels with the exemption.
+
+### Persisted finding fields
+
+```bash
+python3 scripts/validate/validate_persisted_finding_fields.py
+```
+
+Checks that every field in the `Finding` literal that
+`ScanHistoryManager::get_result_findings` rebuilds from a database row, in
+`crates/hardener-state/src/scan_manager.rs`, comes from that row rather than a
+hardcoded default.
+
+The rebuild is not shaped uniformly: most fields read `row.get(...)` directly,
+two pass through a transform (`str_to_category`, `str_to_severity`), and three
+are local variables already deserialised from JSON earlier in the loop. A
+field given a hardcoded default such as `None` or `vec![]` instead compiles,
+passes every test that does not happen to assert on it, and drops the
+persisted value in silence. That is exactly how `finding_exception_key`
+shipped as a hardcoded `None`: nothing failed, and every scan history record
+silently lost its exception key.
+
+A comment written immediately above a hardcoded field exempts it, for a field
+that genuinely has no column, the same idiom Policy exception sites uses
+above. The check deliberately stops there rather than trying to prove
+provenance for every field: a rule demanding `row.get` appear in every
+expression would itself be wrong about five of the thirteen fields, the ones
+sitting behind a transform or already read out into a variable above the
+literal. What that leaves unseen, a field that is not one of the literal
+defaults this check recognises yet still fails to survive the round trip, is
+covered instead by `every_finding_field_survives_the_scan_history`, a
+whole-struct serde round-trip test in
+`crates/hardener-state/tests/scan_manager_tests.rs`.
 
 ### .SRCINFO
 

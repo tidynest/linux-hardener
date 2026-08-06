@@ -82,6 +82,7 @@ def main():
         ("Badges", "validate_badges.py", []),
         ("Test Assertions", "validate_test_assertions.py", []),
         ("Policy Exception Sites", "validate_policy_exception_sites.py", []),
+        ("Persisted Finding Fields", "validate_persisted_finding_fields.py", []),
         (".SRCINFO", "validate_srcinfo.py", []),
         ("CHANGELOG Headings", "validate_changelog_headings.py", []),
         ("Markdown Links", "validate_doc_links.py", []),

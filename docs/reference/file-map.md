@@ -799,6 +799,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/validate_doc_targets.py` | Doc sync target validator |
 | `scripts/validate/validate_file_map.py` | file-map.md accuracy validator |
 | `scripts/validate/validate_policy_exception_sites.py` | Policy exception site registry |
+| `scripts/validate/validate_persisted_finding_fields.py` | Persisted finding fields: every field of the `Finding` rebuilt by `ScanHistoryManager::get_result_findings` must be read from its database row, not given a hardcoded default, unless a comment above it gives the reason. A dropped field compiles and passes any test that does not assert on it |
 | `scripts/validate/validate_srcinfo.py` | `.SRCINFO` validator: the AUR reads it and never the PKGBUILD beside it, so the two must agree |
 | `scripts/validate/validate_last_updated.py` | Last Updated timestamp validator |
 | `scripts/validate/validate_plugin_docs.py` | Plugin documentation validator |
@@ -905,7 +906,7 @@ workspace run itself for what passed.
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 116 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 88 |
-| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 102 |
+| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 108 |
 | hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 104 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and eleven of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 231 |
