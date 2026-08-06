@@ -434,3 +434,73 @@ async fn test_ssh_executor_systemctl_command() {
         );
     }
 }
+
+/// `read_link` tells a real remote symlink from a real remote regular file.
+///
+/// This is the primitive a remote checkpoint capture rests on, and it had no
+/// live coverage: it was correct by reading, which is not the same thing. The
+/// failure mode it guards is the one this project keeps meeting, a probe that
+/// cannot reach the answer returning the reassuring one. `read_link` shells out
+/// to `readlink`, so a remote host where that is missing, or where the command
+/// fails for any reason, would answer `None`, and `None` means **positively not
+/// a symlink**. A symlink captured as a plain file restores another file's bytes
+/// through the link.
+///
+/// Both directions are asserted because either alone can pass while broken: an
+/// implementation that always answers `None` satisfies the regular-file case,
+/// and the symlink case is what refuses it.
+#[tokio::test]
+#[ignore = "Requires SSH_TEST_HOST environment variable"]
+async fn ssh_read_link_tells_a_symlink_from_a_regular_file() {
+    let config = get_test_config().expect("SSH_TEST_HOST not set");
+    let executor = SshExecutor::connect(config)
+        .await
+        .expect("Failed to connect");
+
+    let dir = "/tmp/hardener-readlink-fixture";
+    let target = format!("{dir}/target.conf");
+    let link = format!("{dir}/link.conf");
+
+    executor
+        .execute_command("rm", &["-rf", dir])
+        .await
+        .expect("clear any earlier fixture");
+    executor
+        .execute_command("mkdir", &["-p", dir])
+        .await
+        .expect("create the fixture directory");
+    executor
+        .write_file(Path::new(&target), "kernel.kptr_restrict = 2\n")
+        .await
+        .expect("write the link's target");
+    executor
+        .execute_command("ln", &["-s", &target, &link])
+        .await
+        .expect("create the symlink");
+
+    let seen = executor
+        .read_link(Path::new(&link))
+        .await
+        .expect("read_link must answer rather than error");
+    assert_eq!(
+        seen.as_deref(),
+        Some(target.as_str()),
+        "a real remote symlink must report its target; answering None here reads as \
+         'not a symlink' and restores another file's bytes through the link"
+    );
+
+    let plain = executor
+        .read_link(Path::new(&target))
+        .await
+        .expect("read_link must answer for a regular file too");
+    assert_eq!(
+        plain, None,
+        "a regular file is positively not a symlink, which is what makes the case above \
+         meaningful rather than an implementation that always answers Some"
+    );
+
+    executor
+        .execute_command("rm", &["-rf", dir])
+        .await
+        .expect("remove the fixture");
+}

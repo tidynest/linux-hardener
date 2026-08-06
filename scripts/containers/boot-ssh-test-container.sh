@@ -96,12 +96,20 @@ systemd-run --machine="$MACHINE" --wait --pipe --quiet /usr/bin/sh -c \
 # because the refusal is policy, not fault. Applied unconditionally: on an
 # image nothing has hardened yet, `prohibit-password` is what upstream
 # OpenSSH already defaults to, so nothing here changes behaviour.
+# `MaxAuthTries` is unlocked for the same reason and is the less obvious half.
+# A hardening run leaves it at 2, and the documented workflow below is
+# `ssh-add $SSH_TEST_KEY`, so a maintainer whose agent already holds a few keys
+# has the test key offered last and is disconnected before it is reached. That
+# surfaces as "Too many authentication failures" from the tests while a plain
+# `ssh -i` still works, which reads as a test-harness fault and is not one.
+# Harmless on an unhardened image: upstream OpenSSH defaults to 6.
 echo "unlocking root key login, in case an earlier hardening run disabled it..."
 systemd-run --machine="$MACHINE" --wait --pipe --quiet /usr/bin/bash -s <<'INNER'
 set -euo pipefail
 install -d -m 755 /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/00-0-hardener-test.conf <<'CONF'
 PermitRootLogin prohibit-password
+MaxAuthTries 10
 CONF
 sshd -t
 systemctl restart sshd
@@ -121,6 +129,20 @@ case "$value" in
         ;;
 esac
 INNER
+
+# A recreated container regenerates its host keys while keeping this fixed
+# address, so the operator's known_hosts still pins the previous container's
+# and ssh refuses the connection outright. `accept-new` below does NOT cover
+# it: that accepts an unknown host, never a changed one. The probe then spends
+# its whole window failing and reports "never became reachable", which sends
+# the reader to look at networking that was fine all along.
+#
+# Dropping the pin is safe specifically here and nowhere else: this script owns
+# this address, it is one end of a veth pair to a directory on this disk, and
+# the container is disposable by design. It is NOT a general answer to a
+# changed host key, which on any real host means stop and find out why.
+echo "clearing the previous container's host key for $CONTAINER_IP..."
+sudo -u "${SUDO_USER:-$USER}" ssh-keygen -R "$CONTAINER_IP" > /dev/null 2>&1 || true
 
 echo "waiting for sshd on $CONTAINER_IP..."
 READY=""

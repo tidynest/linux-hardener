@@ -399,6 +399,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`read_link` over SSH is measured against a real remote host rather than
+  read.** It is the primitive a remote checkpoint capture rests on, and it had
+  no live coverage at all: `ssh_executor_tests.rs` never mentioned it. The
+  failure it guards is the one this project keeps meeting, a probe that cannot
+  reach the answer returning the reassuring one. `read_link` shells out to
+  `readlink`, so a host where that is missing would answer `None`, and `None`
+  means **positively not a symlink**, which captures a symlink as a plain file
+  and restores another file's bytes through the link.
+  `ssh_read_link_tells_a_symlink_from_a_regular_file` creates a real symlink and
+  a real regular file on the remote and asserts both directions, because an
+  implementation that always answers `None` satisfies the regular-file case on
+  its own. Proven by mutation: making a symlink answer `None` fails it by name.
+  `#[ignore]`d like the rest of the live-fixture suite, so the standard run is
+  unchanged. Closes #44.
+
 - **The desktop's scan history keeps the exception key a finding names.** The
   key every plugin populates died at one line: `scan_manager` rebuilt a stored
   finding with `finding_exception_key: None` regardless of what had been found.
@@ -824,6 +839,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   second entry SQLite refuses. Both tests were watched failing first, the race
   with `duplicate column name: exception_key` and the rollback against an
   unconditional `COMMIT`. Closes #113.
+
+- **The SSH fixture failed in two ways that both read as something else.** A
+  recreated container regenerates its host keys while keeping the fixed address
+  `10.242.117.2`, so the operator's `known_hosts` still pinned the previous
+  container's key and ssh refused outright. The readiness probe uses
+  `StrictHostKeyChecking=accept-new`, which accepts an **unknown** host and never
+  a **changed** one, so it spent its whole window failing and reported "container
+  never became reachable over SSH" while ping answered in 0.085 ms and port 22
+  accepted connections. The script now drops the pin for that address before
+  probing, which is safe specifically there and nowhere else: it owns the
+  address, the peer is one end of a veth pair to a directory on the same disk,
+  and the container is disposable by design. Second, the drop-in that re-enables
+  root login after a hardening run did not also raise **`MaxAuthTries`**, which a
+  hardening run leaves at 2. Since the documented workflow is `ssh-add
+  $SSH_TEST_KEY`, a maintainer whose agent already holds a few keys has the test
+  key offered last and is disconnected before it is reached, which surfaces as
+  `Too many authentication failures` from the tests while a plain `ssh -i` still
+  works. Both unlocks are harmless on an unhardened image, where upstream
+  OpenSSH already defaults to `prohibit-password` and 6.
 
 - **The declared minimum Rust version was wrong, and the workspace could not be
   built on it.** `rust-version` said `1.85` and the README badge repeated it,
