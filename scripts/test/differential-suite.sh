@@ -2737,6 +2737,104 @@ run_seeded_kernel_check() {
     done
 }
 
+# === Services systemd will not start at boot ===
+#
+# The oracle is systemd, asked with `is-enabled` and `is-active`, and the
+# filesystem, asked with `readlink`. Both are consumers of what this plugin
+# writes: `systemctl disable` removes a wants/ symlink and `systemctl mask`
+# creates a link to /dev/null, and systemd reads both at the next boot.
+#
+# WHAT THIS ORACLE CANNOT SEE, and it is the limit issue #47 names as the rule
+# any new oracle must follow: both readers ask about a unit NAME, and it is the
+# name the tool asks about. A tool managing the wrong unit would be agreed with
+# here and both would be wrong. The permissions oracle carries the same limit
+# for the same reason, and closing it would need a second source for the name.
+#
+# The unit is chosen by the fixture rather than by this file.
+# scripts/containers/create-container.sh installs bluez on all five images and
+# ENABLES bluetooth.service, explicitly so this plugin has subject matter: it
+# raises a finding only for a unit that is enabled or active, and every image
+# shipped with none of the five units it assesses.
+SERVICES_UNIT="bluetooth"
+
+# The unit file `systemctl` resolves the bare name to, and therefore the
+# basename `systemctl mask` gives its link. Suffixed for the reason
+# crates/hardener-plugins/src/services/mod.rs:371 records: `list-unit-files`
+# matches patterns literally, and an unsuffixed pattern matches nothing, which
+# once made every service look absent.
+SERVICES_MASK_LINK="/etc/systemd/system/${SERVICES_UNIT}.service"
+
+# Unit-file states the services plugin counts as enabled, copied from
+# ENABLED_STATES in crates/hardener-plugins/src/services/mod.rs:407 rather than
+# restated in this file's own words. It mirrors the exit-code semantics of
+# `systemctl is-enabled`, which exits 0 for more states than `enabled`.
+#
+# Deliberately NOT the firewall oracle's NOT_AT_BOOT_STATES, which shares the
+# word `enabled-runtime` and means the opposite by it. That list answers "will
+# this survive a reboot"; this one answers "does this plugin raise a finding",
+# and an oracle must fail on exactly the set the plugin it judges repairs.
+SERVICES_ENABLED_STATES=(enabled enabled-runtime alias static indirect generated transient)
+
+# Is this word one the plugin treats as enabled?
+#
+# An empty word is not, so a systemctl that answered nothing fails toward "not
+# verified" rather than reading as a unit that was already disabled. That is the
+# admitting direction and it is the one this file refuses everywhere.
+services_unit_is_enabled() {
+    local word="$1" state
+    for state in "${SERVICES_ENABLED_STATES[@]}"; do
+        [[ "$word" == "$state" ]] && return 0
+    done
+    return 1
+}
+
+# What `systemctl is-active` printed, with the status discarded, for the reason
+# systemd_unit_boot_word gives: `is-active` prints `inactive` while exiting 3,
+# so a reading taken from the status throws the word away.
+systemd_unit_active_word() {
+    local word=""
+    word="$(systemctl is-active "$1" 2>/dev/null)" || true
+    printf '%s' "${word//[[:space:]]/}"
+}
+
+# What sits at the mask link, as `<kind>|<target>`, with three kinds and never
+# two meanings sharing one value.
+#
+# `absent` and `notlink` are deliberately distinct. A readlink-only reading
+# gives the empty string for both, and they are not the same host: a regular
+# file at that path is an administrator's own override unit, `systemctl mask`
+# will not replace it, and a control reading that as "absent" would admit a host
+# where the apply cannot do the thing this oracle is about to check.
+#
+# `-L` is asked before `-e` because a dangling symlink answers no to `-e` and
+# yes to `-L`. The limit, stated where it bites: `-e` is a stat, so a path this
+# run may not stat reads as absent. This suite runs as root inside a container,
+# where that cannot happen; anywhere else the reading would be wrong in the
+# admitting direction.
+services_mask_link_reading() {
+    if [[ -L "$SERVICES_MASK_LINK" ]]; then
+        printf 'link|%s' "$(readlink "$SERVICES_MASK_LINK")"
+    elif [[ -e "$SERVICES_MASK_LINK" ]]; then
+        printf 'notlink|'
+    else
+        printf 'absent|'
+    fi
+}
+
+# Whether the unit exists at all, asked of `list-unit-files` the way the plugin
+# asks it (services/mod.rs:534). The listing is captured and then matched, never
+# matched through a pipe, because `$?` after a pipe is the last stage's status
+# and the read this cares about is the first.
+services_unit_installed() {
+    local listing=""
+    listing="$(systemctl list-unit-files "${SERVICES_UNIT}.service" 2>/dev/null)" || true
+    if grep -q "^${SERVICES_UNIT}\.service" <<<"$listing"; then
+        printf 'yes'
+    else
+        printf 'no'
+    fi
+}
+
 SSH_CHECKS_EXPECTED=7
 SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
@@ -6885,6 +6983,73 @@ password required pam_unix.so"
     FIREWALL_AFTER="$fw_saved_after"
     FIREWALL_BOOT_BEFORE="$fw_saved_boot_before"
     FIREWALL_BOOT_AFTER="$fw_saved_boot_after"
+
+    # --- services oracle ---
+    #
+    # The word list is the services plugin's own, not the firewall oracle's
+    # above. The two disagree about `enabled-runtime`: the firewall counts it as
+    # not-at-boot and services counts it as enabled, because they answer
+    # different questions with the same word. An oracle has to fail on exactly
+    # the set the plugin it judges repairs, so neither list may be reused for
+    # the other.
+    check_status 0 "the plain enabled state counts as enabled" \
+        services_unit_is_enabled enabled
+    check_status 0 "and so does the runtime one, which this plugin treats as enabled where the firewall oracle does not" \
+        services_unit_is_enabled enabled-runtime
+    check_status 0 "a unit with no [Install] section is still counted enabled, because is-enabled exits zero for it" \
+        services_unit_is_enabled static
+    check_status 1 "a disabled unit is not" \
+        services_unit_is_enabled disabled
+    check_status 1 "nor is a masked one, which is what the apply leaves behind" \
+        services_unit_is_enabled masked
+    check_status 1 "and an empty word is not enabled, so a systemctl that answered nothing cannot read as a unit already disabled" \
+        services_unit_is_enabled ""
+
+    # The three-valued mask reading, driven against a real temporary tree rather
+    # than a stub. This function asks the filesystem, and a stubbed filesystem
+    # would prove only that the stub answers.
+    local svc_saved_link="$SERVICES_MASK_LINK" svc_tmp
+    svc_tmp="$(mktemp -d)"
+
+    SERVICES_MASK_LINK="$svc_tmp/absent.service"
+    check_eq "$(services_mask_link_reading)" "absent|" \
+        "a path with nothing at it reads absent"
+
+    SERVICES_MASK_LINK="$svc_tmp/masked.service"
+    ln -s /dev/null "$SERVICES_MASK_LINK"
+    check_eq "$(services_mask_link_reading)" "link|/dev/null" \
+        "a mask link reads as a link and carries its target"
+
+    SERVICES_MASK_LINK="$svc_tmp/override.service"
+    printf '[Unit]\n' > "$SERVICES_MASK_LINK"
+    check_eq "$(services_mask_link_reading)" "notlink|" \
+        "an administrator's own unit file at that path is NOT reported as absent, because systemctl mask will not replace it"
+
+    SERVICES_MASK_LINK="$svc_tmp/dangling.service"
+    ln -s "$svc_tmp/nothing-here" "$SERVICES_MASK_LINK"
+    check_eq "$(services_mask_link_reading)" "link|$svc_tmp/nothing-here" \
+        "a dangling link is still a link, which is why -L is asked before -e"
+
+    rm -rf "$svc_tmp"
+    SERVICES_MASK_LINK="$svc_saved_link"
+
+    # The installed probe, through a stubbed systemctl, because the real one
+    # would answer about whichever host this self-test happens to run on.
+    local svc_listing=""
+    systemctl() {
+        printf '%s\n' "$svc_listing"
+    }
+    svc_listing="UNIT FILE            STATE
+bluetooth.service    enabled"
+    check_eq "$(services_unit_installed)" "yes" \
+        "a listing naming the unit reports it installed"
+    svc_listing="0 unit files listed."
+    check_eq "$(services_unit_installed)" "no" \
+        "a listing that names no unit reports it absent rather than assuming it is there"
+    svc_listing="bluetooth.socket    enabled"
+    check_eq "$(services_unit_installed)" "no" \
+        "and a unit of the same name that is not the service does not count as one"
+    unset -f systemctl
 
     # The preview an operator approves, held against the apply that followed.
     # Both sides are injected here exactly as the firewall boot readings are: a
