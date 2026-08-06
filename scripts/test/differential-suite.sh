@@ -102,8 +102,19 @@ DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardeni
 # as coverage while proving nothing is what issue #47 exists to remove. Under
 # `--pipe` the services checks are declared unaskable instead, which is this
 # file's way of being absent out loud.
+# The services plugin's id, written once because two places need it and they
+# must not drift: the list above, and the skip in run_preapply_control.
+#
+# The FULL id, not a guess at one. `--plugin` takes the id or the segment
+# before its first hyphen (crates/hardener-cli/src/commands/plugin_filter.rs),
+# so `services-hardening` names nothing and is REFUSED with "Unknown
+# plugin(s)", and the same string is matched against `.plugin_id` in the scan
+# document besides. The self-test reads every compared id back out of the
+# plugin sources for this reason.
+SERVICES_PLUGIN_ID="service-minimisation"
+
 if run_is_booted; then
-    DIFF_PLUGINS+=(services-hardening)
+    DIFF_PLUGINS+=("$SERVICES_PLUGIN_ID")
 fi
 
 # How many plugins this run compares.
@@ -3718,8 +3729,8 @@ compared_finding_ids() {
 run_preapply_control() {
     local plugin entry_plugin id count matched total unreadable
     for plugin in "${DIFF_PLUGINS[@]}"; do
-        # firewall and kernel have no per-directive finding ids this suite
-        # compares, and each carries a control of its own instead. firewall's
+        # firewall, kernel and services have no per-directive finding ids this
+        # suite compares, and each carries a control of its own instead. firewall's
         # only scan finding is `{backend}-disabled`, and firewalld is already
         # active in three of the five containers, so a finding-count control
         # would fail there against a tool behaving correctly. The kernel rows
@@ -3728,8 +3739,12 @@ run_preapply_control() {
         # emptiness as a broken filter. Their controls are
         # run_firewall_preapply_control and run_kernel_preapply_control, which
         # ask whether the property under test was already true before the apply.
+        # services is skipped for the same reason and carries
+        # run_services_preapply_control: this loop would count zero compared
+        # directives for it and read that emptiness as a broken filter, failing
+        # a plugin that had behaved correctly.
         case "$plugin" in
-            firewall-hardening|kernel-hardening) continue ;;
+            firewall-hardening|kernel-hardening|"$SERVICES_PLUGIN_ID") continue ;;
         esac
         matched=0
         total=0
@@ -7248,6 +7263,43 @@ bluetooth.service    enabled"
     check_eq "$(services_unit_installed)" "no" \
         "and a unit of the same name that is not the service does not count as one"
     unset -f systemctl
+
+    # Every plugin this suite can compare must be a plugin that EXISTS. These
+    # strings do two jobs: they are passed to `--plugin`, which refuses an id
+    # naming nothing, and they are matched against `.plugin_id` in the scan
+    # document, where an id naming nothing matches no object and every finding
+    # filter over it counts zero, which reads as a clean plugin.
+    #
+    # Read back out of the plugin sources rather than restated here, which is
+    # how the firewall self-test pins its backend kinds. `services-hardening`
+    # was written into this file first and is not a plugin: the id is
+    # `service-minimisation`, and nothing in a green self-test noticed.
+    local svc_declared_ids svc_plugin
+    svc_declared_ids="$(grep -rhoE 'PluginId::(new|from)\("[a-z-]+"\)' \
+        "$DIFF_PROJECT_DIR"/crates/hardener-plugins/src/*/mod.rs \
+        | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u)"
+    check_status 1 "the plugin sources were readable, so the ids below are compared against something" \
+        test -z "$svc_declared_ids"
+    for svc_plugin in "${DIFF_PLUGINS[@]}" "$SERVICES_PLUGIN_ID"; do
+        check_eq "$(grep -cx "$svc_plugin" <<<"$svc_declared_ids" || true)" "1" \
+            "the compared plugin '$svc_plugin' is an id the plugin sources actually declare"
+    done
+
+    # The generic finding-count control must skip services exactly as it skips
+    # firewall and kernel. Services has no compared directives, so that loop
+    # counts zero for it and reads the emptiness as a broken filter, failing a
+    # plugin that behaved correctly.
+    local svc_saved_plugins=("${DIFF_PLUGINS[@]}")
+    local svc_control_total=$CHECKS_TOTAL svc_control_passed=$CHECKS_PASSED
+    local svc_control_failed=$CHECKS_FAILED
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
+    DIFF_PLUGINS=("$SERVICES_PLUGIN_ID")
+    run_preapply_control > /dev/null
+    check_eq "$CHECKS_TOTAL" "0" \
+        "the generic finding-count control records nothing for services, which carries a control of its own"
+    DIFF_PLUGINS=("${svc_saved_plugins[@]}")
+    CHECKS_TOTAL=$svc_control_total CHECKS_PASSED=$svc_control_passed
+    CHECKS_FAILED=$svc_control_failed
 
     # The runtime word, and the same exit-status rule the boot word follows:
     # `is-active` prints `inactive` while exiting 3, so a reading taken from the
