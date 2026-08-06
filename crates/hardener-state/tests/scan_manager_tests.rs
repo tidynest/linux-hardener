@@ -1,5 +1,8 @@
 use hardener_state::{ScanHistoryManager, ScanStatus, init_db};
-use hardener_types::{Finding, FindingCategory, PluginId, ScanResult, Severity, UncheckedCheck};
+use hardener_types::{
+    ComplianceFramework, ComplianceMapping, Finding, FindingCategory, FindingPolicyException,
+    PluginId, ScanResult, Severity, UncheckedCheck,
+};
 use tempfile::tempdir;
 
 async fn create_test_manager() -> (ScanHistoryManager, tempfile::TempDir) {
@@ -331,5 +334,74 @@ async fn a_finding_without_an_exception_key_reloads_without_one() {
     assert_eq!(
         restored[0].scan_findings[0].finding_exception_key, None,
         "no key must read back as None, never as Some(\"\")"
+    );
+}
+
+/// Every field of a `Finding` must survive the database, not only the fields
+/// somebody wrote an assertion for.
+///
+/// `finding_exception_key` shipped as a hardcoded `None` in the rebuild and no
+/// test noticed, because a per-field assertion only ever reaches the fields it
+/// was written for. Comparing the whole struct needs no per-field assertion:
+/// serde enumerates the fields, so a fourteenth one added and left unpersisted
+/// fails here with nobody having written a case for it.
+///
+/// Every value carries a distinct marker. A field rebuilt as `String::new()`
+/// against a fixture that also held `""` would pass while dropping the value.
+#[tokio::test]
+async fn every_finding_field_survives_the_scan_history() {
+    let (manager, _dir) = create_test_manager().await;
+    let session_id = manager.start_session().await.unwrap();
+
+    let original = Finding {
+        finding_id: "marker-id".to_string(),
+        finding_category: FindingCategory::MandatoryAccessControl,
+        finding_severity: Severity::Critical,
+        finding_title: "marker-title".to_string(),
+        finding_description: "marker-description".to_string(),
+        finding_explanation: "marker-explanation".to_string(),
+        finding_impact: "marker-impact".to_string(),
+        finding_current_value: "marker-current".to_string(),
+        finding_recommended_value: "marker-recommended".to_string(),
+        finding_remediation_steps: vec![
+            "marker-step-one".to_string(),
+            "marker-step-two".to_string(),
+        ],
+        finding_compliance: vec![ComplianceMapping {
+            compliance_framework: ComplianceFramework::CIS,
+            compliance_control_id: "marker-control-id".to_string(),
+            compliance_control_title: "marker-control-title".to_string(),
+            compliance_section: Some("marker-section".to_string()),
+        }],
+        finding_policy_exception: Some(FindingPolicyException {
+            exception_allowed_value: "marker-allowed".to_string(),
+            exception_reason: "marker-reason".to_string(),
+            exception_approved_by: Some("marker-approver".to_string()),
+            exception_approved_date: Some("2026-08-06".to_string()),
+            exception_ticket: Some("marker-ticket".to_string()),
+            exception_expires: Some("2027-08-06".to_string()),
+            exception_is_expired: true,
+        }),
+        finding_exception_key: Some("marker-exception-key".to_string()),
+    };
+
+    let mut results = sample_results();
+    results[0].scan_findings = vec![original.clone()];
+
+    manager.store_results(&session_id, &results).await.unwrap();
+    manager
+        .complete_session(&session_id, ScanStatus::Completed, 1, 1)
+        .await
+        .unwrap();
+
+    let (_, restored) = manager.get_latest_scan().await.unwrap().unwrap();
+    let reloaded = &restored[0].scan_findings[0];
+
+    assert_eq!(
+        serde_json::to_value(&original).unwrap(),
+        serde_json::to_value(reloaded).unwrap(),
+        "a finding must come back exactly as it went in: a field missing from \
+         the INSERT, hardcoded in the rebuild, or lost by a str conversion \
+         shows up here as a difference"
     );
 }
