@@ -113,6 +113,10 @@ DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardeni
 # plugin sources for this reason.
 SERVICES_PLUGIN_ID="service-minimisation"
 
+# The list before that append, kept because --self-test drives fixtures rather
+# than a host and every scan fixture in it describes a five-plugin run.
+DIFF_PLUGINS_BASE=("${DIFF_PLUGINS[@]}")
+
 if run_is_booted; then
     DIFF_PLUGINS+=("$SERVICES_PLUGIN_ID")
 fi
@@ -4381,6 +4385,18 @@ print_summary() {
 
 self_test() {
     local failures=0
+    # The mode this function runs in is PINNED rather than inherited.
+    #
+    # Every scan fixture below carries five plugin objects, and
+    # validate_scan_document requires each compared plugin to appear in the
+    # document, so a booted load would fail these assertions on their
+    # fixtures instead of on any behaviour. Each assertion that cares about
+    # the mode sets it for the one call it makes, which is how both arms get
+    # exercised from either environment. Measured: without this,
+    # `HARDENER_DIFF_BOOTED=1 --self-test` reported ten failures, none of
+    # which was about the code under test.
+    KERNEL_BOOTED=0
+    DIFF_PLUGINS=("${DIFF_PLUGINS_BASE[@]}")
     # The filter proofs below run jq, so --self-test depends on it as well.
     # Refusing beats skipping them: a proof that quietly did not run is worth
     # less than no proof at all, because it still prints a clean summary.
@@ -7263,6 +7279,27 @@ bluetooth.service    enabled"
     check_eq "$(services_unit_installed)" "no" \
         "and a unit of the same name that is not the service does not count as one"
     unset -f systemctl
+
+    # The load-time decision itself, read back by sourcing this file in a
+    # subshell under each mode.
+    #
+    # It cannot be read from the ambient DIFF_PLUGINS, because the pin at the
+    # top of this function replaces that list with the base five. Without these
+    # two, an append that lost its condition would go unnoticed and every
+    # `--pipe` run would then compare a plugin it has no systemd to ask about,
+    # failing rows on a fixture rather than on the tool. Measured: dropping the
+    # condition survived the whole suite until these were added.
+    local svc_suite="$DIFF_SCRIPT_DIR/differential-suite.sh" svc_loaded
+    svc_loaded="$(HARDENER_DIFF_BOOTED=1 bash -c 'source "$1"; printf "%s" "${DIFF_PLUGINS[*]}"' _ "$svc_suite")"
+    check_eq "${svc_loaded##* }" "$SERVICES_PLUGIN_ID" \
+        "a booted load appends the services plugin, last, so it is applied after the plugins that were already compared"
+    check_eq "$(wc -w <<<"$svc_loaded")" "6" \
+        "and compares six plugins in that mode"
+    svc_loaded="$(HARDENER_DIFF_BOOTED=0 bash -c 'source "$1"; printf "%s" "${DIFF_PLUGINS[*]}"' _ "$svc_suite")"
+    check_status 1 "an unbooted load does not compare the services plugin at all" \
+        grep -qF "$SERVICES_PLUGIN_ID" <<<"$svc_loaded"
+    check_eq "$(wc -w <<<"$svc_loaded")" "5" \
+        "and compares the five that need no systemd to ask"
 
     # Every plugin this suite can compare must be a plugin that EXISTS. These
     # strings do two jobs: they are passed to `--plugin`, which refuses an id
