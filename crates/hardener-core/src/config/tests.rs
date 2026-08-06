@@ -116,3 +116,70 @@ fn matching_mode_exception_normalises_octal_spelling() {
             .is_none()
     );
 }
+
+/// The section a plugin's exceptions live under and the field
+/// [`HardenerConfig::get_plugin_config`] returns are two separate eight-arm
+/// matches that could drift apart in silence. Writing an exception under the
+/// named section and reading it back through the other match is the only
+/// thing that proves they did not.
+#[test]
+fn every_plugin_reads_exceptions_from_the_section_it_names() {
+    const PLUGIN_IDS: &[&str] = &[
+        "ssh-hardening",
+        "kernel-hardening",
+        "firewall-hardening",
+        "pam-hardening",
+        "audit-hardening",
+        "mac-hardening",
+        "permissions-hardening",
+        "service-minimisation",
+    ];
+
+    for plugin_id in PLUGIN_IDS {
+        let section = HardenerConfig::config_section(plugin_id)
+            .unwrap_or_else(|| panic!("{plugin_id} names no config section"));
+        let document = format!(
+            "[{section}.exceptions.\"a.key\"]\n\
+             value = \"live\"\n\
+             allowed = true\n\
+             reason = \"test\"\n"
+        );
+        let config: HardenerConfig = toml::from_str(&document).unwrap_or_else(|e| {
+            panic!("{plugin_id} names section {section}, which did not parse: {e}")
+        });
+
+        assert!(
+            config
+                .get_plugin_config(plugin_id)
+                .has_valid_exception("a.key")
+                .is_some(),
+            "{plugin_id} names section {section}, but get_plugin_config does not read that section",
+        );
+    }
+}
+
+/// The control for the test above. Without it a `config_section` returning one
+/// wrong section for every plugin would still pass, because the exception
+/// would be written and read back in the same wrong place.
+#[test]
+fn an_exception_in_another_plugins_section_is_not_read() {
+    let config: HardenerConfig = toml::from_str(
+        "[ssh.exceptions.\"a.key\"]\nvalue = \"live\"\nallowed = true\nreason = \"test\"\n",
+    )
+    .expect("the fixture parses");
+
+    assert!(
+        config
+            .get_plugin_config("ssh-hardening")
+            .has_valid_exception("a.key")
+            .is_some(),
+        "the fixture must be a real exception, or this control measures nothing",
+    );
+    assert!(
+        config
+            .get_plugin_config("kernel-hardening")
+            .has_valid_exception("a.key")
+            .is_none(),
+        "an exception written under [ssh] must not be visible to the kernel plugin",
+    );
+}

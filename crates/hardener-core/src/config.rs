@@ -181,6 +181,33 @@ impl HardenerConfig {
             }
         }
     }
+
+    /// The `config.toml` section a plugin's directives and exceptions live
+    /// under, which is not its plugin id: the services plugin declares
+    /// `service-minimisation` and is configured under `[services]`.
+    ///
+    /// A plugin cannot answer this about itself, because `scan` and `apply`
+    /// receive a bare [`PluginConfig`] with nothing on it naming the section
+    /// it was taken from. Anything telling an operator where to write an
+    /// exception has to ask here.
+    ///
+    /// `None` for an unrecognised id, matching
+    /// [`get_plugin_config`](Self::get_plugin_config), which has no section to
+    /// return one either. A caller then says nothing rather than naming a
+    /// table that nothing reads.
+    pub fn config_section(plugin_id: &str) -> Option<&'static str> {
+        match plugin_id {
+            "ssh-hardening" => Some("ssh"),
+            "kernel-hardening" => Some("kernel"),
+            "firewall-hardening" => Some("firewall"),
+            "pam-hardening" => Some("pam"),
+            "audit-hardening" => Some("audit"),
+            "mac-hardening" => Some("mac"),
+            "permissions-hardening" => Some("permissions"),
+            "service-minimisation" => Some("services"),
+            _ => None,
+        }
+    }
 }
 
 impl PolicyException {
