@@ -195,6 +195,26 @@ fn scan_plugin_lines(metadata: &PluginMetadata, result: &ScanResult) -> Vec<Stri
             if !finding.finding_description.is_empty() {
                 lines.push(format!("    {}", finding.finding_description.dimmed()));
             }
+            // An exception is keyed per check, and nothing told an operator
+            // that key: a finding's id is derived from it by a transform that
+            // loses information. Say nothing rather than guess where an
+            // unrecognised plugin is configured, and say nothing to an
+            // operator already resting on an exception. The key is quoted
+            // unconditionally because net.ipv4.ip_forward and
+            // /etc/ssh/sshd_config are not bare TOML keys, and a document
+            // built from an unquoted one parses as nested tables rather than
+            // failing, so nothing would report the mistake.
+            if let Some(key) = &finding.finding_exception_key
+                && !finding.is_policy_excepted()
+                && let Some(section) =
+                    hardener_core::HardenerConfig::config_section(metadata.plugin_id.as_str())
+            {
+                lines.push(format!(
+                    "    {}",
+                    format!("accept as a documented deviation: [{section}.exceptions.{key:?}]")
+                        .dimmed()
+                ));
+            }
         }
         if !unchecked.is_empty() {
             lines.push(format!("  {} {}", "?".dimmed(), unchecked_note.dimmed()));
