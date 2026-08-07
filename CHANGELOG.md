@@ -399,6 +399,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A nineteenth validator: every exception key the configuration reference
+  publishes must exist in the plugins.** `docs/reference/configuration.md` names
+  the literal strings an operator types into `[<plugin>.exceptions."<key>"]`,
+  which is a published contract rather than a description. An exception whose key
+  matches nothing is not an error, it is **silence**: `matching_exception` never
+  fires, the plugin applies the change, and the host is hardened against a
+  deviation its operator wrote down and approved, with nothing in the run saying
+  so. The keys were already pinned inside the code, by tests such as
+  `every_audit_finding_names_the_exception_key_that_silences_it`, but that guards
+  the code's agreement with itself rather than with the documentation: renaming a
+  constant and updating the test beside it is one natural edit. Measured while
+  building this, rather than supposed: mutating `AUDITD_PRESENT_EXCEPTION` to
+  `auditd_present` failed that test and left **all eighteen validators passing**.
+  It now fails, naming the key and what its absence costs. Twenty-one documented
+  keys are covered, and the check states its own limit at the top of the file:
+  it validates documentation against source and cannot catch the reverse, a key
+  that exists in source and is documented nowhere, because source is full of
+  string literals that are not exception keys. An empty key set is a failure
+  rather than a pass, so the section being renamed or moved cannot turn this into
+  a validator that succeeds on nothing.
+
 - **`read_link` over SSH is measured against a real remote host rather than
   read.** It is the primitive a remote checkpoint capture rests on, and it had
   no live coverage at all: `ssh_executor_tests.rs` never mentioned it. The

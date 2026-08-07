@@ -800,6 +800,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/validate_file_map.py` | file-map.md accuracy validator |
 | `scripts/validate/validate_policy_exception_sites.py` | Policy exception site registry |
 | `scripts/validate/validate_persisted_finding_fields.py` | Persisted finding fields: every field of the `Finding` rebuilt by `ScanHistoryManager::get_result_findings` must be read from its database row, not given a hardcoded default, unless a comment above it gives the reason. A dropped field compiles and passes any test that does not assert on it |
+| `scripts/validate/validate_documented_exception_keys.py` | Documented exception keys: every key `docs/reference/configuration.md` names as one an operator types must exist as a string literal in `crates/hardener-plugins/src`. An exception whose key matches nothing never fires, so the host is hardened against a documented deviation and nothing reports it |
 | `scripts/validate/validate_srcinfo.py` | `.SRCINFO` validator: the AUR reads it and never the PKGBUILD beside it, so the two must agree |
 | `scripts/validate/validate_last_updated.py` | Last Updated timestamp validator |
 | `scripts/validate/validate_plugin_docs.py` | Plugin documentation validator |
