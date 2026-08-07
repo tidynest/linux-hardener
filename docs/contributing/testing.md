@@ -993,7 +993,9 @@ It refuses to start outside a container, and it refuses to start as a non-root
 user. It applies hardening and creates a probe account, so it is destructive by
 design and never safe on a real system. From the host it replaces the full suite
 for that run: `--differential` always applies, whether or not `--apply` is given,
-and results land in `test-results/<distro>.log` like any other run.
+and results land in `test-results/differential-<distro>.log`, kept apart from the
+full suite's `test-results/<distro>.log` so running both in sequence leaves both
+sets of evidence rather than only the second.
 
 Each run opens by printing the binary's path and its `--version` string, so a
 log can be attributed to a commit long afterwards rather than by reconstructing

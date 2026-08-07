@@ -656,11 +656,15 @@ suite_polkit() {
     log_step "Polkit matrix (host)"
     "$PROJECT_DIR/scripts/test/polkit/test-polkit-matrix.sh" > "$logfile" 2>&1 || exit_code=$?
 
-    if [[ $exit_code -eq 0 ]]; then
-        record_result polkit PASS "all automated checks passed (3 interactive tests skipped)"
-    else
-        record_result polkit FAIL "exit $exit_code, see $logfile"
-    fi
+    # Exit 2 is the matrix's "could not ask" state: a precondition was absent, so
+    # checks were skipped rather than failed. That is NOTRUN here, not FAIL. Folding
+    # it into FAIL would report a host without the package installed as a defect in
+    # the code, which is the conflation the matrix was fixed to stop making.
+    case $exit_code in
+        0) record_result polkit PASS "all automated checks passed (3 interactive tests skipped)" ;;
+        2) record_result polkit NOTRUN "a precondition was absent, see $logfile" ;;
+        *) record_result polkit FAIL "exit $exit_code, see $logfile" ;;
+    esac
 }
 
 # The full suite, across every distro in DISTRO_ORDER, booted and applying.

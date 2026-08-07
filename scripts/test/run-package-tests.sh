@@ -12,7 +12,7 @@
 #
 # Options:
 #   --apply           Enable destructive tests (apply + rollback)
-#   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+#   --distro NAME     Run only one distro (arch|debian|ubuntu|fedora|rhel|opensuse)
 #   --rebuild         Build musl binary before testing
 #   --help            Show usage
 # =============================================================================
@@ -65,7 +65,7 @@ Usage: sudo $0 [OPTIONS]
 
 Options:
   --apply           Enable destructive tests (apply + rollback)
-  --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+  --distro NAME     Run only one distro (arch|debian|ubuntu|fedora|rhel|opensuse)
   --rebuild         Build musl binary before testing
   --help            Show usage
 

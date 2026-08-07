@@ -9,7 +9,7 @@
 # Usage: sudo ./scripts/test/gui/run-gui-tests.sh [OPTIONS]
 #
 # Options:
-#   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+#   --distro NAME     Run only one distro (arch|debian|ubuntu|fedora|rhel|opensuse)
 #   --parallel        Run distros in parallel instead of serially
 #   --jobs N          Max parallel jobs (with --parallel; default: 5)
 #   --help            Show usage
@@ -61,7 +61,7 @@ Web UI GUI Test Orchestrator for Linux Hardener
 Usage: sudo ./scripts/test/gui/run-gui-tests.sh [OPTIONS]
 
 Options:
-  --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+  --distro NAME     Run only one distro (arch|debian|ubuntu|fedora|rhel|opensuse)
   --parallel        Run distros in parallel instead of serially (~5x speedup)
   --jobs N          Max parallel jobs (with --parallel; default: 5)
   --help            Show usage

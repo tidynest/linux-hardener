@@ -817,9 +817,9 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/test/run-cross-distro-tests.sh` | Non-interactive cross-distro test orchestrator (`--differential` swaps in the differential suite) |
 | `scripts/test/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/test/manual-verification-test.sh` | Interactive verification tests |
-| `scripts/containers/create-container.sh` | systemd-nspawn test containers for all five distros (`arch`, `debian`, `fedora`, `rhel`, `opensuse`) |
+| `scripts/containers/create-container.sh` | systemd-nspawn test containers for all six distros (`arch`, `debian`, `ubuntu`, `fedora`, `rhel`, `opensuse`) |
 | `scripts/test/verify-rollback.sh` | Rollback verification for nspawn containers, over four areas its own header names: kernel sysctl values plus config file content, `sshd_config` backup and content restoration, directory mode restoration, and `rollback --format json` producing a valid `RollbackResult` |
-| `scripts/test/release-readiness-root.sh` | One root invocation for every suite an unprivileged session cannot start: the polkit matrix, then the cross-distro, differential, packaging and Web UI suites and the rollback readback. All five containers are destroyed and rebuilt before each suite that runs inside one, and the run refuses to start unless the musl binary matches the working tree by version, commit and modification time |
+| `scripts/test/release-readiness-root.sh` | One root invocation for every suite an unprivileged session cannot start: the polkit matrix, then the cross-distro, differential, packaging and Web UI suites and the rollback readback. All six containers are destroyed and rebuilt before each suite that runs inside one, and the run refuses to start unless the musl binary matches the working tree by version, commit and modification time |
 
 ---
 
