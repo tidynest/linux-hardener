@@ -9,6 +9,24 @@ const { loadApp, runScan } = require('./helpers');
 // CONFIGURE SECTION
 // ---------------------------------------------------------------------------
 
+// The protection levels are a named radiogroup and the plugins a named group of
+// checkboxes, so both are reached by role rather than by `input[value=...]` and
+// `.plugin-grid`, neither of which survived the redesign.
+const level = (page, name) =>
+  page.getByRole('radiogroup', { name: 'Protection level' })
+    .getByRole('radio', { name, exact: true });
+
+const plugins = (page) => page.getByRole('group', { name: 'Plugin areas' });
+const pluginBoxes = (page) => plugins(page).getByRole('checkbox');
+
+const checkedPluginCount = async (page) => {
+  const boxes = pluginBoxes(page);
+  const states = await Promise.all(
+    Array.from({ length: await boxes.count() }, (_, i) => boxes.nth(i).isChecked()),
+  );
+  return states.filter(Boolean).length;
+};
+
 test.describe('Configure', () => {
   test.beforeEach(async ({ page }) => {
     await loadApp(page, '/hardening');
@@ -19,90 +37,60 @@ test.describe('Configure', () => {
     await expect(page.getByRole('heading', { name: 'System Hardening' })).toBeVisible();
   });
 
-  // T-CONF-02: Three profile radios present
-  test('T-CONF-02: three security profile radios present', async ({ page }) => {
-    const radios = page.locator('input[type="radio"][name]');
-    // Filter to profile radios by checking values
-    await expect(page.locator('input[value="baseline"]')).toBeVisible();
-    await expect(page.locator('input[value="secure"]')).toBeVisible();
-    await expect(page.locator('input[value="high"]')).toBeVisible();
+  // T-CONF-02: The protection levels on offer
+  //
+  // There are four, not three: the redesign added Custom, which is what a
+  // manual plugin change now selects. Reached through the radiogroup rather
+  // than `input[value=...]`, so the test reads what an operator is offered.
+  test('T-CONF-02: four protection levels are offered', async ({ page }) => {
+    const levels = page.getByRole('radiogroup', { name: 'Protection level' });
+    await expect(levels.getByRole('radio')).toHaveCount(4);
+    for (const level of ['Baseline', 'Secure', 'High', 'Custom']) {
+      await expect(levels.getByRole('radio', { name: level, exact: true })).toBeVisible();
+    }
   });
 
-  // T-CONF-03: Eight plugin checkboxes present
-  test('T-CONF-03: eight plugin checkboxes with correct names', async ({ page }) => {
-    const pluginGrid = page.locator('.plugin-grid .framework-checkbox');
-    await expect(pluginGrid).toHaveCount(8);
-    const texts = await pluginGrid.allTextContents();
-    const joined = texts.join(' ');
-    expect(joined).toContain('Kernel');
-    expect(joined).toContain('SSH');
-    expect(joined).toContain('Firewall');
-    expect(joined).toContain('PAM');
-    expect(joined).toContain('Service');
-    expect(joined).toContain('Audit');
-    expect(joined).toContain('Permissions');
-    expect(joined).toContain('MAC');
+  // T-CONF-03: Eight plugin areas present
+  test('T-CONF-03: eight plugin areas with correct names', async ({ page }) => {
+    await expect(pluginBoxes(page)).toHaveCount(8);
+    for (const name of [
+      'Kernel Hardening', 'SSH Hardening', 'Firewall', 'PAM Authentication',
+      'Service Minimisation', 'Audit Rules', 'File Permissions', 'MAC System',
+    ]) {
+      await expect(plugins(page).getByRole('checkbox', { name, exact: true })).toBeVisible();
+    }
   });
 
   // T-CONF-04: Secure profile (default) - 5 plugins on, 3 off
   test('T-CONF-04: Secure profile enables kernel, ssh, firewall, pam, services', async ({ page }) => {
-    await expect(page.locator('input[value="secure"]')).toBeChecked();
-    const checkboxes = page.locator('.plugin-grid input[type="checkbox"]');
-    const count = await checkboxes.count();
-    let checked = 0;
-    for (let i = 0; i < count; i++) {
-      if (await checkboxes.nth(i).isChecked()) checked++;
-    }
-    expect(checked).toBe(5);
+    await expect(level(page, 'Secure')).toBeChecked();
+    expect(await checkedPluginCount(page)).toBe(5);
   });
 
   // T-CONF-05: Baseline profile - only ssh and firewall
   test('T-CONF-05: Baseline profile enables only ssh and firewall', async ({ page }) => {
-    await page.locator('input[value="baseline"]').check();
-    const checkboxes = page.locator('.plugin-grid input[type="checkbox"]');
-    const count = await checkboxes.count();
-    let checked = 0;
-    for (let i = 0; i < count; i++) {
-      if (await checkboxes.nth(i).isChecked()) checked++;
-    }
-    expect(checked).toBe(2);
+    await level(page, 'Baseline').check();
+    expect(await checkedPluginCount(page)).toBe(2);
   });
 
-  // T-CONF-06: High Security profile - all 8 on
-  test('T-CONF-06: High Security profile enables all 8 plugins', async ({ page }) => {
-    await page.locator('input[value="high"]').check();
-    const checkboxes = page.locator('.plugin-grid input[type="checkbox"]');
-    const count = await checkboxes.count();
-    let checked = 0;
-    for (let i = 0; i < count; i++) {
-      if (await checkboxes.nth(i).isChecked()) checked++;
-    }
-    expect(checked).toBe(8);
+  // T-CONF-06: High profile - all 8 on
+  test('T-CONF-06: High profile enables all 8 plugins', async ({ page }) => {
+    await level(page, 'High').check();
+    expect(await checkedPluginCount(page)).toBe(8);
   });
 
-  // T-CONF-07: Manual toggle makes profile "custom" (no radio selected)
-  test('T-CONF-07: manually toggling a plugin deselects profile radios', async ({ page }) => {
-    // Start with Secure profile (default)
-    await expect(page.locator('input[value="secure"]')).toBeChecked();
-    // Toggle the last plugin checkbox (one that's off in Secure)
-    const checkboxes = page.locator('.plugin-grid input[type="checkbox"]');
-    const count = await checkboxes.count();
-    // Find first unchecked and check it
-    for (let i = 0; i < count; i++) {
-      if (!(await checkboxes.nth(i).isChecked())) {
-        await checkboxes.nth(i).check();
-        break;
-      }
-    }
-    // No profile radio should match exactly now
-    // (The Secure radio may or may not be unchecked - depends on implementation)
-    // At minimum, verify the checkbox state changed
-    let checked = 0;
-    for (let i = 0; i < count; i++) {
-      if (await checkboxes.nth(i).isChecked()) checked++;
-    }
-    // Was 5, now 6 - not matching any preset
-    expect(checked).toBe(6);
+  // T-CONF-07: A manual change moves the profile to Custom
+  //
+  // The old name said "deselects profile radios", and its comment admitted it
+  // did not know whether the radio cleared, so it asserted only that the count
+  // went from 5 to 6. That holds equally if the profile silently stayed on
+  // Secure while no longer describing the selection, which is the thing worth
+  // catching. Custom exists to represent this state, so it is what is checked.
+  test('T-CONF-07: manually toggling a plugin selects Custom', async ({ page }) => {
+    await expect(level(page, 'Secure')).toBeChecked();
+    await plugins(page).getByRole('checkbox', { name: 'Audit Rules', exact: true }).check();
+    expect(await checkedPluginCount(page)).toBe(6);
+    await expect(level(page, 'Custom')).toBeChecked();
   });
 
   // T-CONF-08: Preview button visible and enabled
@@ -112,23 +100,29 @@ test.describe('Configure', () => {
     await expect(btn).toBeEnabled();
   });
 
-  // T-CONF-09: Click Preview shows preview panel
-  test('T-CONF-09: clicking Preview shows preview panel with estimated changes', async ({ page }) => {
+  // T-CONF-09: Click Preview shows the estimated changes
+  //
+  // The preview replaces the configure panel rather than opening a
+  // `.preview-panel` beside it: a per-plugin breakdown of change counts, a
+  // confirmation to tick, and an Apply naming the total. Apply being disabled
+  // until the box is ticked is the safety property worth pinning here, since a
+  // preview that could apply without acknowledgement is the failure that
+  // matters.
+  test('T-CONF-09: clicking Preview shows the estimated changes', async ({ page }) => {
     await page.getByRole('button', { name: /Preview Changes/i }).click();
-    // Wait for preview to complete
-    await expect(page.locator('.preview-panel')).toBeVisible({ timeout: 10000 });
-    // Should show change items
-    const changes = page.locator('.preview-change-list li');
-    const count = await changes.count();
-    expect(count).toBeGreaterThan(0);
+    const apply = page.getByRole('button', { name: /Apply \d+ Changes/ });
+    await expect(apply).toBeVisible({ timeout: 10000 });
+    await expect(apply).toBeDisabled();
+    await expect(page.getByText(/\d+ changes/).first()).toBeVisible();
   });
 
-  // T-CONF-10: Cancel hides preview panel
-  test('T-CONF-10: Cancel hides preview panel', async ({ page }) => {
+  // T-CONF-10: Cancel returns to the configure panel
+  test('T-CONF-10: Cancel returns to the configure panel', async ({ page }) => {
     await page.getByRole('button', { name: /Preview Changes/i }).click();
-    await expect(page.locator('.preview-panel')).toBeVisible({ timeout: 10000 });
-    await page.getByRole('button', { name: /Cancel/i }).click();
-    await expect(page.locator('.preview-panel')).not.toBeVisible();
+    await expect(page.getByRole('button', { name: /Apply \d+ Changes/ }))
+      .toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(page.getByRole('radiogroup', { name: 'Protection level' })).toBeVisible();
   });
 });
 
