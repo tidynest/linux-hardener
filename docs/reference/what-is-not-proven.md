@@ -197,10 +197,16 @@ been run.** `Distribution::map_to_family` in
 so a distribution outside that list fails cleanly rather than guessing. Inside
 it, family routing means an identifier no container has ever presented takes a
 measured family's code path unchanged. **Ubuntu is the case worth naming**,
-because it is the release a newcomer is most likely to reach for and no
-container has ever run it: it routes as Debian family, and what protects an
-Ubuntu host is the assumption that its configuration layout matches Debian 13's.
-`README.md` marks it "by family, never run" for that reason. Linux Mint, Pop!\_OS, elementary, RHEL
+because it is the release a newcomer is most likely to reach for and no run
+against it exists: it routes as Debian family, and what protects an Ubuntu host
+is the assumption that its configuration layout matches Debian 13's.
+`scripts/containers/create-container.sh ubuntu` has built an Ubuntu 24.04 LTS
+"Noble" container since 2026-08-07, and **no suite has been run inside it**, so
+what changed on that date is that the run became possible and not that it
+happened. Ubuntu therefore stays in the count below, and `README.md` marks it
+"container exists, never run" for the same reason: the row moves only when a
+dated result exists in
+[distribution-validation.md](distribution-validation.md). Linux Mint, Pop!\_OS, elementary, RHEL
 proper, CentOS, AlmaLinux, Oracle Linux, Manjaro, EndeavourOS, Garuda, openSUSE
 Tumbleweed and SLES are accepted on the same terms, and so is whichever of
 `opensuse` and `opensuse-leap` the Leap container does not present, both being

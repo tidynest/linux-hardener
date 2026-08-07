@@ -8,7 +8,7 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 
 | Subdirectory | Contents |
 |--------------|----------|
-| `containers/` | systemd-nspawn container lifecycle: `create-container.sh` (all five distros), `boot-ssh-test-container.sh` (booted SSH fixture; unlocks root key login left disabled by an earlier hardening run, then confirms a real login before reporting ready), `nftables-fixture.sh` (makes nftables the selected backend in a container; stops every other running machine first and confirms the container's own `/etc/os-release` before touching it, since the fixed veth address it uses only ever admits one machine safely) |
+| `containers/` | systemd-nspawn container lifecycle: `create-container.sh` (all six distros), `boot-ssh-test-container.sh` (booted SSH fixture; unlocks root key login left disabled by an earlier hardening run, then confirms a real login before reporting ready), `nftables-fixture.sh` (makes nftables the selected backend in a container; stops every other running machine first and confirms the container's own `/etc/os-release` before touching it, since the fixed veth address it uses only ever admits one machine safely) |
 | `test/` | Host-side test suites and orchestrators: cross-distro, package-install, root/full suites, desktop tests, rollback verification, parallel runner, plus `release-readiness-root.sh` which batches every root-only suite into one invocation |
 | `test/gui/` | GUI test runners and inner scripts (Web UI and Tauri desktop), plus the host desktop UX/functional suites |
 | `test/polkit/` | Polkit authentication matrix tests and agent detection helper |
@@ -37,6 +37,7 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Create test container (Arch)** | `sudo ./scripts/containers/create-container.sh arch` |
 | **Enter test container** | `sudo ./scripts/containers/create-container.sh arch enter` |
 | **Create Debian container** | `sudo ./scripts/containers/create-container.sh debian` |
+| **Create Ubuntu container** | `sudo ./scripts/containers/create-container.sh ubuntu` |
 | **Create Fedora container** | `sudo ./scripts/containers/create-container.sh fedora` |
 | **Create openSUSE container** | `sudo ./scripts/containers/create-container.sh opensuse` |
 | **Create Rocky 10 container** | `sudo ./scripts/containers/create-container.sh rhel` |
@@ -884,7 +885,7 @@ The hardener modifies critical system files (`/etc/sysctl.conf`, `/etc/ssh/sshd_
 
 **Script**: `create-container.sh`
 
-**Purpose**: Creates and manages the isolated systemd-nspawn test containers for all five supported distributions. The distro is the first argument; the Arch container is the primary one used by most suites.
+**Purpose**: Creates and manages the isolated systemd-nspawn test containers for all six supported distributions. The distro is the first argument; the Arch container is the primary one used by most suites.
 
 **Usage**:
 ```bash
@@ -931,12 +932,13 @@ sudo ./scripts/containers/create-container.sh arch clean --no-confirm
 
 ### Distribution Containers
 
-`create-container.sh` covers all five distributions used for cross-distribution validation; the per-distro bootstrap mechanics differ:
+`create-container.sh` covers all six distributions the cross-distribution runner iterates; the per-distro bootstrap mechanics differ. Five of them have a dated result; the Ubuntu container was added on 2026-08-07 and no suite has been run inside it:
 
 | Distro argument | Distribution | Package Manager |
 |-----------------|--------------|-----------------|
 | `arch` | Arch Linux | pacman (pacstrap) |
 | `debian` | Debian 13 (Trixie) | apt/debootstrap |
+| `ubuntu` | Ubuntu 24.04 LTS (Noble) | apt/debootstrap |
 | `fedora` | Fedora 44 | podman export |
 | `rhel` | Rocky Linux 10 | podman export |
 | `opensuse` | openSUSE Leap 16.0 | podman export |
@@ -952,8 +954,8 @@ sudo ./scripts/containers/create-container.sh <distro> enter
 # Clean up
 sudo ./scripts/containers/create-container.sh <distro> clean
 
-# Recreate all five for a clean baseline, no prompts
-for d in arch debian fedora rhel opensuse; do
+# Recreate all six for a clean baseline, no prompts
+for d in arch debian ubuntu fedora rhel opensuse; do
     sudo ./scripts/containers/create-container.sh "$d" clean --no-confirm
     sudo ./scripts/containers/create-container.sh "$d" || { echo "CREATE FAILED: $d"; break; }
 done
@@ -964,6 +966,7 @@ done
 |--------------|----------|
 | Arch | `/var/lib/machines/hardener-test` |
 | Debian | `/var/lib/machines/hardener-test-debian` |
+| Ubuntu | `/var/lib/machines/hardener-test-ubuntu` |
 | Fedora | `/var/lib/machines/hardener-test-fedora` |
 | RHEL/Rocky | `/var/lib/machines/hardener-test-rhel` |
 | openSUSE | `/var/lib/machines/hardener-test-opensuse` |
@@ -1265,8 +1268,8 @@ sudo ./scripts/test/run-cross-distro-tests.sh
 | `--apply` | Enable destructive tests (apply + rollback) inside containers |
 | `--booted` | Boot the container under systemd instead of `--pipe`, so services, audit and firewall are testable |
 | `--gui` | Run Playwright GUI tests after CLI tests (requires WASM build in `dist/`) |
-| `--distro NAME` | Test single distro: `arch`, `debian`, `fedora`, `rhel`, `opensuse` |
-| `--parallel` | Run distros in parallel instead of serially (~5x speedup) |
+| `--distro NAME` | Test single distro: `arch`, `debian`, `ubuntu`, `fedora`, `rhel`, `opensuse` |
+| `--parallel` | Run distros in parallel instead of serially, up to `--jobs` of them at a time |
 | `--jobs N` | Max parallel jobs (with `--parallel`; default: 3) |
 | `--rebuild` | Build musl static binary before testing |
 | `--differential` | Run `differential-suite.sh` instead of `full-test-suite.sh` |
@@ -1310,11 +1313,11 @@ of `bluetooth`: whether systemd will still start it at the next boot, whether
 `/etc/systemd/system/bluetooth.service` is a link to `/dev/null` rather than
 merely absent from the wants directory, and whether a unit that was running was
 stopped. The last declares itself unaskable where the unit was never running,
-because a row that reports a pass on all five distributions without the tool
+because a row that reports a pass on every distribution without the tool
 having stopped anything proves nothing.
 
 `bluetooth` is the subject because `containers/create-container.sh` installs
-`bluez` on all five images and enables the unit, deliberately: the plugin raises
+`bluez` on every image and enables the unit, deliberately: the plugin raises
 a finding only for a unit that is enabled or active, and every image shipped
 with none of the five units it assesses.
 
@@ -1335,9 +1338,9 @@ environment declares the run booted.
 
 1. For each distribution, verifies the container exists at `/var/lib/machines/<name>`
 2. Executes `full-test-suite.sh` inside the container via `systemd-nspawn --pipe`
-3. Captures all output to `test-results/<distro>.log`
+3. Captures all output to `test-results/<distro>.log`, or `test-results/differential-<distro>.log` under `--differential`
 4. Strips ANSI escape codes and parses pass/fail/skip counts from the log
-5. Generates `test-results/summary.txt` with aggregated results
+5. Generates `test-results/summary.txt` with aggregated results (`differential-summary.txt` under `--differential`)
 6. Prints colour-coded summary table to stdout
 7. Exits non-zero if any distro had failures
 
@@ -1346,6 +1349,7 @@ environment declares the run booted.
 |--------|---------------|----------------|
 | arch | `/var/lib/machines/hardener-test` | pacstrap |
 | debian | `/var/lib/machines/hardener-test-debian` | debootstrap |
+| ubuntu | `/var/lib/machines/hardener-test-ubuntu` | debootstrap (24.04 LTS Noble) |
 | fedora | `/var/lib/machines/hardener-test-fedora` | podman export |
 | rhel | `/var/lib/machines/hardener-test-rhel` | podman export (Rocky 10) |
 | opensuse | `/var/lib/machines/hardener-test-opensuse` | podman export (Leap 16.0 image) |
@@ -1355,10 +1359,14 @@ environment declares the run booted.
 test-results/
   arch.log           # Full output from Arch container
   debian.log         # Full output from Debian container
+  ubuntu.log         # Full output from Ubuntu container
   fedora.log         # Full output from Fedora container
   rhel.log           # Full output from Rocky 10 container
   opensuse.log       # Full output from openSUSE container
   summary.txt        # Aggregated results table
+
+  differential-<distro>.log   # The same, one per distro, under --differential
+  differential-summary.txt    # so a differential run cannot overwrite a full one
 ```
 
 **Safety**:
@@ -1421,7 +1429,7 @@ sudo ./scripts/test/gui/run-gui-tests.sh --parallel
 sudo ./scripts/test/gui/run-gui-tests.sh --parallel --jobs 2
 ```
 
-**Speed Comparison** (5 distros, with `--apply`):
+**Speed Comparison** (measured on 5 distros, with `--apply`):
 | Mode | Time | Speedup |
 |------|------|---------|
 | Serial (default) | ~15 min | 1x |
@@ -1568,11 +1576,11 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 
 **Script**: `run-gui-tests.sh`
 
-**Purpose**: Host orchestrator that runs 113 Playwright Web UI tests across all 5 distributions. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
+**Purpose**: Host orchestrator that runs 113 Playwright Web UI tests across every distro in `DISTRO_ORDER`. The 113 figure is the 2026-06-29 five-distro reading; the Ubuntu container has never been run. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
 
 **Usage**:
 ```bash
-# Run GUI tests on all 5 distros
+# Run GUI tests on every distro in DISTRO_ORDER
 sudo ./scripts/test/gui/run-gui-tests.sh
 
 # Run distros in parallel
@@ -1728,11 +1736,11 @@ Two scripts validate that the distribution packages (AUR, deb, rpm) install corr
 
 **Script**: `run-package-tests.sh`
 
-**Purpose**: Host orchestrator that validates package installs across all 5 distributions. For each distro, copies the musl binary and `test-package-install.sh` into the container, then runs the inner script via `systemd-nspawn --pipe`. Mirrors the structure of `run-cross-distro-tests.sh` but focuses on packaging: install, validate, functional test, uninstall.
+**Purpose**: Host orchestrator that validates package installs across every distro in `DISTRO_ORDER`. For each distro, copies the musl binary and `test-package-install.sh` into the container, then runs the inner script via `systemd-nspawn --pipe`. Mirrors the structure of `run-cross-distro-tests.sh` but focuses on packaging: install, validate, functional test, uninstall.
 
 **Usage**:
 ```bash
-# Run on all 5 distros
+# Run on every distro in DISTRO_ORDER
 sudo ./scripts/test/run-package-tests.sh
 
 # Single distro
@@ -1749,7 +1757,7 @@ sudo ./scripts/test/run-package-tests.sh --rebuild
 | Flag | Description |
 |------|-------------|
 | `--apply` | Enable apply + rollback tests inside containers |
-| `--distro NAME` | Test single distro: `arch`, `debian`, `fedora`, `rhel`, `opensuse` |
+| `--distro NAME` | Test single distro: `arch`, `debian`, `ubuntu`, `fedora`, `rhel`, `opensuse` |
 | `--rebuild` | Build musl static binary before testing |
 | `--help` | Show usage |
 
@@ -1758,6 +1766,7 @@ sudo ./scripts/test/run-package-tests.sh --rebuild
 test-results/
   pkg-arch.log         # Package test output for Arch
   pkg-debian.log       # Package test output for Debian
+  pkg-ubuntu.log       # Package test output for Ubuntu
   pkg-fedora.log       # Package test output for Fedora
   pkg-rhel.log         # Package test output for Rocky 10
   pkg-opensuse.log     # Package test output for openSUSE
@@ -1840,10 +1849,10 @@ sudo ./scripts/test/release-readiness-root.sh --only differential
 | Suite | Invocation | Containers |
 |-------|-----------|------------|
 | `polkit` | `polkit/test-polkit-matrix.sh` | none, host check |
-| `cross-distro` | `run-cross-distro-tests.sh --apply --booted` | all five, rebuilt first |
-| `differential` | `run-cross-distro-tests.sh --differential --booted` | all five, rebuilt first |
-| `package` | `run-package-tests.sh --apply` | all five, rebuilt first |
-| `gui` | `gui/run-gui-tests.sh` | all five, rebuilt first |
+| `cross-distro` | `run-cross-distro-tests.sh --apply --booted` | all six, rebuilt first |
+| `differential` | `run-cross-distro-tests.sh --differential --booted` | all six, rebuilt first |
+| `package` | `run-package-tests.sh --apply` | all six, rebuilt first |
+| `gui` | `gui/run-gui-tests.sh` | all six, rebuilt first |
 | `rollback` | `verify-rollback.sh` under `systemd-nspawn --pipe` | arch, rebuilt first |
 
 The polkit matrix runs first because it is cheap and needs no container: a
@@ -1857,11 +1866,14 @@ fails a rotating subset that reads as a regression when each of those failures
 is really a pre-apply control working. The rule is uniform so there is no
 per-suite exception to get wrong, and it is what makes `--only` trustworthy.
 Each clean and create is judged on two signals rather than one. The container
-directory is checked directly on both sides, because `create-container.sh` exits
-0 when the container already exists; and the create's exit status is checked as
-well, because the arch and debian bootstraps create the directory before they
-populate it, so a bootstrap that dies halfway leaves the path in place. Either
-signal alone would let a half-built container reach a suite.
+directory is checked directly on both sides, because a clean that silently did
+nothing would leave the previous run's hardened container in place; and the
+create's exit status is checked as well, because the arch, debian and ubuntu
+bootstraps create the directory before they populate it, so a bootstrap that
+dies halfway leaves the path in place. Either signal alone would let a
+half-built container reach a suite. `create-container.sh` refuses a container
+that already exists with exit status 3 rather than the 0 it used to return, so
+the two signals now agree instead of disagreeing.
 
 **Binary freshness gate**: the run refuses to start unless the musl binary
 matches the working tree on all three of:
@@ -1893,10 +1905,11 @@ cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 | `<suite>/` | The suite runner's own artefacts, copied aside |
 | `summary.txt` | The status table |
 
-The per-suite subdirectories exist because the sub-runners write to fixed names:
-`run-cross-distro-tests.sh` writes `test-results/<distro>.log` for both the full
-and the differential suite, so the second run would otherwise overwrite the
-first's per-distro detail.
+The per-suite subdirectories exist because the sub-runners write to fixed names
+in one shared results directory, so a suite's artefacts are copied aside as soon
+as it finishes and stay attributable to it. The full and the differential suite
+no longer collide there either: the differential run prefixes its per-distro
+logs and its summary with `differential-`.
 
 **Exit codes**:
 - `0`: every selected suite passed

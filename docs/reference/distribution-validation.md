@@ -6,9 +6,14 @@ This document tracks validation testing across supported Linux distributions.
 
 **Last measured full cross-distro validation:** 2026-08-01, on containers
 recreated immediately beforehand.
-**Container set:** Arch rolling, Debian 13 "Trixie", Fedora 44, Rocky Linux 10
-(RHEL 10 binary-compatible) and openSUSE Leap 16.0, all built by
+**Container set that ran:** Arch rolling, Debian 13 "Trixie", Fedora 44, Rocky
+Linux 10 (RHEL 10 binary-compatible) and openSUSE Leap 16.0, all built by
 `scripts/containers/create-container.sh`.
+**Container set that exists:** those five plus Ubuntu 24.04 LTS "Noble", added
+on 2026-08-07. **No suite has been run inside the Ubuntu container**, so it
+appears in no results table in this document, and its absence from one is a
+missing measurement rather than a passing one. It joins the tables when a dated
+run puts it there.
 **Baseline validation:** hardener 0.3.3 (2026-02-23). The detailed per-distro
 sections lower down are that baseline and still describe the container versions
 of the time (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6).
@@ -189,9 +194,13 @@ failure path so any future capture anomaly is debuggable from the host log in on
 ## Automated Cross-Distro Testing
 
 All validation results in this document are produced by a fully automated test
-runner. One command runs the suite across all 5 distributions, collecting
-pass/fail/skip counts and writing `test-results/summary.txt`. On a booted
-container under `--apply` the suite records **149 checks** per distribution.
+runner. One command runs the suite across every distribution in
+`scripts/lib/common.sh`'s `DISTRO_ORDER`, collecting pass/fail/skip counts and
+writing `test-results/summary.txt` (`test-results/differential-summary.txt`
+under `--differential`, so the two suites do not overwrite each other). On a
+booted container under `--apply` the suite records **149 checks** per
+distribution. The results below are the five distributions that had been run
+when they were measured.
 
 ### Running the Tests
 

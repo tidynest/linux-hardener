@@ -2,10 +2,11 @@
 # Create an isolated distribution container for safe root testing
 # Uses systemd-nspawn for full systemd support
 #
-# One script for all five test distributions. Container names are stable and
+# One script for all six test distributions. Container names are stable and
 # relied upon by the test runners and docs:
 #   arch     -> hardener-test
 #   debian   -> hardener-test-debian
+#   ubuntu   -> hardener-test-ubuntu
 #   fedora   -> hardener-test-fedora
 #   rhel     -> hardener-test-rhel
 #   opensuse -> hardener-test-opensuse
@@ -16,7 +17,7 @@
 #   sudo ./scripts/containers/create-container.sh <distro> clean  # Remove container
 #
 # --no-confirm may be added in any position to answer the clean prompt, for the
-# recreate-then-measure loop that removes all five in sequence.
+# recreate-then-measure loop that removes all six in sequence.
 
 set -euo pipefail
 
@@ -38,13 +39,14 @@ Usage: sudo $0 <distro> [command] [--no-confirm]
 
 Options:
   --no-confirm  Answer the 'clean' deletion prompt with yes. Intended for the
-                recreate-then-measure loop, where five containers are removed
+                recreate-then-measure loop, where six containers are removed
                 in sequence and a baseline is worthless if any of them
                 survives. May appear in any argument position.
 
 Distros:
   arch      Arch Linux (pacstrap)                     -> hardener-test
   debian    Debian 13 Trixie (debootstrap)            -> hardener-test-debian
+  ubuntu    Ubuntu 24.04 LTS Noble (debootstrap)      -> hardener-test-ubuntu
   fedora    Fedora 44 (podman image export)           -> hardener-test-fedora
   rhel      Rocky Linux 10 (podman image export)      -> hardener-test-rhel
   opensuse  openSUSE Leap 16.0 (podman image export)  -> hardener-test-opensuse
@@ -55,6 +57,14 @@ Commands:
   shell     Quick shell access (no systemd)
   clean     Remove the container
   help      Show this help
+
+Exit codes:
+  0  the requested command did what it says
+  1  bad argument, missing dependency, or not root
+  3  create was asked for a container that already exists, and built nothing.
+     Distinct from 1 so a caller can tell "already there, possibly stale" from
+     "the bootstrap failed"; both are distinct from the 0 that used to be
+     returned for a container this script did not build.
 
 All containers provide:
   - Full systemd support (for service testing)
@@ -76,6 +86,10 @@ Example workflow:
 Notes:
   - Non-Arch containers should use the musl static binary for
     cross-distribution compatibility.
+  - Debian and Ubuntu bootstrap with debootstrap, which verifies the archive's
+    Release signature only when the matching keyring is installed on the host
+    (debian-archive-keyring, ubuntu-keyring). Without it debootstrap warns and
+    continues, so the rootfs arrives unverified.
   - Fedora/RHEL/openSUSE bootstraps pull the official image via podman
     (needs podman on the host).
   - Fedora, Rocky Linux (RHEL) and openSUSE use firewalld by default
@@ -128,6 +142,22 @@ case "$DISTRO" in
         DEPS=("debootstrap:debootstrap" "systemd-nspawn:systemd-container")
         POST_CREATE_NOTE=""
         ;;
+    ubuntu)
+        # 24.04 LTS rather than the newest LTS on purpose. It is the release a
+        # newcomer is most likely to be running, it is in standard support
+        # until 2029, and its archive layout is settled: debootstrap's suite
+        # script resolves it through 'ubuntu-distro-info --supported' where
+        # that exists and through a network query to endoflife.date where it
+        # does not, and a release the query does not yet know is sent to
+        # old-releases.ubuntu.com, which does not carry it. Moving to 26.04
+        # "resolute" is this one line plus the label, once someone has run it.
+        UBUNTU_RELEASE="noble"
+        CONTAINER_NAME="${CONTAINERS[ubuntu]}"
+        DISTRO_LABEL="Ubuntu 24.04 LTS (${UBUNTU_RELEASE})"
+        EXIT_HINT="Exit with 'poweroff' or Ctrl+]]]"
+        DEPS=("debootstrap:debootstrap" "systemd-nspawn:systemd-container")
+        POST_CREATE_NOTE=""
+        ;;
     fedora)
         FEDORA_VERSION="44"
         # Official Fedora container image, pulled and exported via podman.
@@ -166,13 +196,13 @@ Note: Rocky Linux (RHEL) uses SELinux (limited in container)"
         ;;
     "")
         log_error "Missing distro argument"
-        echo "Distros: arch debian fedora rhel opensuse"
+        echo "Distros: arch debian ubuntu fedora rhel opensuse"
         echo "Usage: sudo $0 <distro> [enter|shell|clean|help]"
         exit 1
         ;;
     *)
         log_error "Unknown distro: $DISTRO"
-        echo "Distros: arch debian fedora rhel opensuse"
+        echo "Distros: arch debian ubuntu fedora rhel opensuse"
         echo "Usage: sudo $0 <distro> [enter|shell|clean|help]"
         exit 1
         ;;
@@ -354,13 +384,25 @@ bootstrap_arch() {
     enable_test_services chroot "$CONTAINER_PATH" systemctl enable sshd auditd bluetooth
 }
 
-bootstrap_debian() {
-    log_info "This may take a few minutes..."
+# Shared by the apt-family distros (Debian, Ubuntu): both bootstrap with
+# debootstrap and then install the same package set, differing only in the suite
+# they target, the archive that carries it, and which of that archive's
+# components have to be enabled to reach what the suites install.
+#
+# --components is passed for both. Debian's value is debootstrap's own default,
+# so the Debian path is unchanged by this having been made a parameter, which
+# matters because that path is the one with a dated cross-distribution result
+# behind it.
+bootstrap_apt_family() {
+    local label="$1" suite="$2" mirror="$3" components="$4"
 
-    # Bootstrap minimal Debian system with essential utilities
+    log_info "Bootstrapping $label '$suite' from $mirror. This may take a few minutes..."
+
+    # Bootstrap a minimal system with essential utilities
     mkdir -p "$CONTAINER_PATH"
-    debootstrap --include=systemd,systemd-sysv,dbus,passwd,login,sudo \
-        "$DEBIAN_RELEASE" "$CONTAINER_PATH" http://deb.debian.org/debian
+    debootstrap --components="$components" \
+        --include=systemd,systemd-sysv,dbus,passwd,login,sudo \
+        "$suite" "$CONTAINER_PATH" "$mirror"
 
     # Set up container
     log_info "Configuring container..."
@@ -403,6 +445,20 @@ bootstrap_debian() {
 
     # Clean up apt cache to save space
     chroot "$CONTAINER_PATH" apt-get clean
+}
+
+bootstrap_debian() {
+    bootstrap_apt_family "Debian" "$DEBIAN_RELEASE" "http://deb.debian.org/debian" "main"
+}
+
+# universe is enabled because Ubuntu splits its archive where Debian does not.
+# The package set above is believed to be in main on 24.04, and jq and auditd
+# were checked there; npm is in universe, which the Web UI suite installs, and
+# a real Ubuntu host has universe enabled either way. A main-only container
+# would be a fixture no operator runs, and would fail on a package name nobody
+# had reason to expect.
+bootstrap_ubuntu() {
+    bootstrap_apt_family "Ubuntu" "$UBUNTU_RELEASE" "http://archive.ubuntu.com/ubuntu" "main,universe"
 }
 
 # Shared by the dnf-family distros (Fedora, Rocky/RHEL): both bootstrap from
@@ -604,10 +660,18 @@ bootstrap_opensuse() {
 create_container() {
     check_dependencies
 
+    # Refused, and refused with a status of its own. This used to exit 0, so a
+    # caller that asked for a container and was handed an older one could not
+    # tell that apart from a container this run built. That distinction is the
+    # whole of the problem: a container a previous --apply run left hardened
+    # fails a rotating subset of the next suite, and every one of those failures
+    # reads as a regression in the tool. release-readiness-root.sh cleans before
+    # every create and judges this status, so reaching this branch there means
+    # the clean did not take.
     if [[ -d "$CONTAINER_PATH" ]]; then
-        log_warn "Container already exists at $CONTAINER_PATH"
+        log_error "Container already exists at $CONTAINER_PATH, so nothing was built"
         log_info "Use '$SELF enter' to enter or '$SELF clean' to remove"
-        exit 0
+        exit 3
     fi
 
     log_info "Creating $DISTRO_LABEL container at $CONTAINER_PATH..."

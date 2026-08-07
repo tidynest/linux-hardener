@@ -39,10 +39,10 @@
 #      differential run leaves its own container hardened, and the next run
 #      against it fails a rotating subset that reads as a regression when every
 #      one of those failures is really a pre-apply control doing its job. So
-#      all five containers are destroyed and rebuilt immediately before each
-#      suite that runs inside one. The rule is uniform on purpose: there is no
-#      per-suite exception for a reader to get wrong, and it is what lets
-#      --only run any single suite on its own and still be trustworthy.
+#      every container in DISTRO_ORDER is destroyed and rebuilt immediately
+#      before each suite that runs inside one. The rule is uniform on purpose:
+#      there is no per-suite exception for a reader to get wrong, and it is what
+#      lets --only run any single suite on its own and still be trustworthy.
 #
 # The cost of that rule is time, not attention. Expect several hours unattended,
 # most of it in container creation, and a working network throughout: the
@@ -95,7 +95,7 @@ Options:
   --only NAME   Run one suite. Valid: ${SUITE_ORDER[*]}
   --help        Show usage
 
-Every suite that runs inside a container destroys and rebuilds all five
+Every suite that runs inside a container destroys and rebuilds all six
 containers first, so --only is safe to use on its own.
 
 Results are written under test-results/release-readiness/. The exit code is
@@ -378,13 +378,17 @@ run_preflight() {
 # Plan
 # =============================================================================
 
+# The distro count is read from DISTRO_ORDER rather than written out, so a
+# distribution added to the shared table cannot leave this plan describing a
+# smaller run than the one that follows it.
 describe_suite() {
+    local all="all ${#DISTRO_ORDER[@]} distros (${DISTRO_ORDER[*]})"
     case "$1" in
         polkit)       echo "polkit matrix on this host (no container, non-interactive)" ;;
-        cross-distro) echo "run-cross-distro-tests.sh --apply --booted, all five distros" ;;
-        differential) echo "run-cross-distro-tests.sh --differential --booted, all five distros" ;;
-        package)      echo "run-package-tests.sh --apply, all five distros" ;;
-        gui)          echo "gui/run-gui-tests.sh, all five distros" ;;
+        cross-distro) echo "run-cross-distro-tests.sh --apply --booted, $all" ;;
+        differential) echo "run-cross-distro-tests.sh --differential --booted, $all" ;;
+        package)      echo "run-package-tests.sh --apply, $all" ;;
+        gui)          echo "gui/run-gui-tests.sh, $all" ;;
         rollback)     echo "verify-rollback.sh inside the arch container" ;;
     esac
 }
@@ -394,7 +398,7 @@ print_plan() {
     local suite index=0
     for suite in "${SELECTED_SUITES[@]}"; do
         index=$((index + 1))
-        local rebuild="rebuilds all five containers first"
+        local rebuild="rebuilds all ${#DISTRO_ORDER[@]} containers first"
         [[ "$suite" == "polkit" ]] && rebuild="no container"
         [[ "$suite" == "rollback" ]] && rebuild="rebuilds the arch container first"
         echo "  $index. $suite: $(describe_suite "$suite")"
@@ -412,20 +416,24 @@ print_plan() {
 # each step and the container directory itself. Neither signal is sufficient on
 # its own, and each catches what the other cannot.
 #
-# The directory is needed because create-container.sh exits 0 when the container
-# already exists and prints a warning instead of rebuilding, so a clean that
-# silently did nothing would leave the previous run's hardened container in
-# place and an exit-status-only check would call that success.
+# The directory check after the clean is what proves the removal took: a clean
+# that silently did nothing would leave the previous run's hardened container in
+# place, and every failure the suite then reported against it would be a
+# pre-apply control working rather than a defect. create-container.sh now
+# refuses such a container rather than reporting success for one it did not
+# build (it exits 3), so the two signals agree instead of disagreeing; the check
+# is kept because it names which step went wrong, and because a create that
+# exits 3 here means the clean above it failed rather than the bootstrap.
 #
 # The exit status is needed because bootstrap_arch does `mkdir -p` on the
-# container path before pacstrap runs (create-container.sh:331) and debootstrap
-# creates its target the same way, so a bootstrap that dies halfway (a mirror
-# error, a network drop during a several-hour unattended run) leaves the
+# container path before pacstrap runs (create-container.sh:361) and the
+# debootstrap path does the same (:402), so a bootstrap that dies halfway (a
+# mirror error, a network drop during a several-hour unattended run) leaves the
 # directory behind. A directory-only check would hand a half-built container to
 # the suite and every failure it produced would be recorded against the code
 # under test, which is the same poisoned-container scar wearing a different hat.
 # The podman-based distros remove the directory themselves when their export
-# fails (create-container.sh:310 and :319); arch and debian do not.
+# fails (create-container.sh:340 and :349); arch, debian and ubuntu do not.
 recreate_containers() {
     local logfile="$1"; shift
     local distros=("$@")
@@ -489,12 +497,22 @@ recreate_containers() {
 # distinction is the whole point of the two functions below: everything is
 # removed before the runner starts, so anything present afterwards was produced
 # by the run being reported.
+#
+# The two run-cross-distro-tests.sh suites are listed separately because they no
+# longer write the same names: the differential suite prefixes its per-distro
+# logs and its summary, so the two are archived and cleared independently. The
+# prefixes below are the ONLY place this script knows those names; they must
+# match run-cross-distro-tests.sh's LOG_PREFIX and run-package-tests.sh's pkg-.
 runner_artefacts() {
     local distro
     case "$1" in
-        cross-distro|differential)
+        cross-distro)
             for distro in "${DISTRO_ORDER[@]}"; do echo "$RESULTS_DIR/$distro.log"; done
             echo "$RESULTS_DIR/summary.txt"
+            ;;
+        differential)
+            for distro in "${DISTRO_ORDER[@]}"; do echo "$RESULTS_DIR/differential-$distro.log"; done
+            echo "$RESULTS_DIR/differential-summary.txt"
             ;;
         package)
             for distro in "${DISTRO_ORDER[@]}"; do echo "$RESULTS_DIR/pkg-$distro.log"; done
@@ -526,10 +544,10 @@ clear_runner_artefacts() {
     return 0
 }
 
-# The sub-runners write to fixed names, and run-cross-distro-tests.sh writes
-# <distro>.log for BOTH the full and the differential suite, so the second of
-# the two would overwrite the first's per-distro detail. Each suite's artefacts
-# are copied aside under its own directory here as soon as it finishes.
+# The sub-runners write to fixed names in a shared results directory, so each
+# suite's artefacts are copied aside under its own directory here as soon as it
+# finishes. That is what keeps a suite's evidence attributable to it after the
+# next suite has run: the copy is per suite even where the names are not.
 archive_artefacts() {
     local suite="$1" path source
     local destination="$RR_DIR/$suite"
@@ -570,7 +588,7 @@ archive_artefacts() {
 #
 # A log that does not carry the line at all fails this check rather than
 # passing it, and so does a log that is not there. That is the whole point:
-# silence is not agreement. Iterating the five distros by name rather than
+# silence is not agreement. Iterating the distros by name rather than
 # globbing whatever landed in the directory is what makes an absent log
 # visible; a glob would simply have nothing to loop over and report success.
 assert_container_binary_version() {
@@ -645,7 +663,7 @@ suite_polkit() {
     fi
 }
 
-# The full suite, across all five distros, booted and applying.
+# The full suite, across every distro in DISTRO_ORDER, booted and applying.
 #
 # --booted and --apply together are what make this the deepest run the suite
 # has: full-test-suite.sh declares its own expected size from those two flags,
@@ -680,16 +698,16 @@ suite_cross_distro() {
         record_result cross-distro FAIL "a container ran an unverified binary, see cross-distro/"
         return
     fi
-    record_result cross-distro PASS "five distros, booted, apply"
+    record_result cross-distro PASS "${#DISTRO_ORDER[@]} distros, booted, apply"
 }
 
-# The differential suite, across all five distros, booted.
+# The differential suite, across every distro in DISTRO_ORDER, booted.
 #
 # It replaces the full suite rather than following it: it applies hardening
 # unconditionally, so it is never the read-only run that --apply gates. Note
 # that --apply is not passed alongside it and must not be read as optional here:
 # the runner does not refuse the combination, it silently ignores --apply
-# (run-cross-distro-tests.sh:543-548 selects the differential suite in an if and
+# (run-cross-distro-tests.sh:560-565 selects the differential suite in an if and
 # reaches --apply only in the elif), so a reader who added it would get no
 # warning and no change. --booted is what sets HARDENER_DIFF_BOOTED=1
 # inside the container, which is the only thing that makes the eleven kernel
@@ -717,11 +735,11 @@ suite_differential() {
         record_result differential FAIL "exit $exit_code, see $logfile"
         return
     fi
-    if ! assert_container_binary_version differential; then
+    if ! assert_container_binary_version differential "differential-"; then
         record_result differential FAIL "a container ran an unverified binary, see differential/"
         return
     fi
-    record_result differential PASS "five distros, booted"
+    record_result differential PASS "${#DISTRO_ORDER[@]} distros, booted"
 }
 
 # The packaging install tests: mirror the PKGBUILD package() function inside
@@ -765,7 +783,7 @@ suite_package() {
         record_result package FAIL "the installed binary was not the verified one, see package/"
         return
     fi
-    record_result package PASS "five distros, installed binary applied and rolled back"
+    record_result package PASS "${#DISTRO_ORDER[@]} distros, installed binary applied and rolled back"
 }
 
 # The Web UI suite: Playwright against the built WASM frontend with a Tauri IPC
@@ -800,7 +818,7 @@ suite_gui() {
     archive_artefacts gui
 
     if [[ $exit_code -eq 0 ]]; then
-        record_result gui PASS "five distros, Playwright against the built frontend"
+        record_result gui PASS "${#DISTRO_ORDER[@]} distros, Playwright against the built frontend"
     else
         record_result gui FAIL "exit $exit_code, see $logfile"
     fi

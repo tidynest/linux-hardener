@@ -81,8 +81,12 @@ resolve_target_dir() {
 declare -A CONTAINERS=(
     [arch]="hardener-test"
     [debian]="hardener-test-debian"
+    [ubuntu]="hardener-test-ubuntu"
     [fedora]="hardener-test-fedora"
     [rhel]="hardener-test-rhel"
     [opensuse]="hardener-test-opensuse"
 )
-DISTRO_ORDER=(arch debian fedora rhel opensuse)
+# Ubuntu sits beside Debian because it takes the Debian family's code path and
+# the same bootstrap. It is the newest entry and no run of any suite against it
+# is dated anywhere: a container existing is not a container that has been run.
+DISTRO_ORDER=(arch debian ubuntu fedora rhel opensuse)

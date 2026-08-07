@@ -6,7 +6,7 @@
 # all supported distributions using systemd-nspawn --pipe (non-interactive, no
 # boot/login needed), or with --booted under the container's own systemd.
 # Serial by default; --parallel tests multiple distros simultaneously with
-# background processes (~5x faster when testing all 5 distros).
+# background processes, up to --jobs of them at a time.
 #
 # Usage: sudo ./scripts/test/run-cross-distro-tests.sh [OPTIONS]
 #
@@ -15,7 +15,7 @@
 #   --booted          Boot under systemd rather than --pipe (services, audit,
 #                     firewall need PID 1 to be a service manager)
 #   --differential    Run differential-suite.sh instead of full-test-suite.sh
-#   --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+#   --distro NAME     Run only one distro (arch|debian|ubuntu|fedora|rhel|opensuse)
 #   --gui             Run GUI tests (Playwright Web UI) after CLI tests
 #   --parallel        Run distros in parallel instead of serially
 #   --jobs N          Max parallel jobs (with --parallel; default: 3)
@@ -113,9 +113,10 @@ Options:
                     Leaves a machine running if interrupted: clear it with
                     'machinectl terminate <container-name>'
   --differential    Run differential-suite.sh instead of full-test-suite.sh
-  --distro NAME     Run only one distro (arch|debian|fedora|rhel|opensuse)
+  --distro NAME     Run only one distro (arch|debian|ubuntu|fedora|rhel|opensuse)
   --gui             Run GUI tests (Playwright Web UI) after CLI tests
-  --parallel        Run distros in parallel instead of serially (~5x speedup)
+  --parallel        Run distros in parallel instead of serially, up to --jobs
+                    of them at a time
   --jobs N          Max parallel jobs (with --parallel; default: 3)
   --rebuild         Build musl binary before testing
   --self-test       Assert this runner's own count parsing and reporting and
@@ -129,9 +130,12 @@ it replaces the full suite for that run rather than running alongside it. A
 failure means the system disagrees with the tool: a product defect, not a
 flaky test.
 
-Output:
-  test-results/<distro>.log   Per-distro full output
-  test-results/summary.txt    Aggregated results table
+Output, with the differential suite writing under a prefix of its own so that
+running both suites leaves both results rather than only the second:
+  test-results/<distro>.log                Per-distro full output
+  test-results/summary.txt                 Aggregated results table
+  test-results/differential-<distro>.log   The same, for --differential
+  test-results/differential-summary.txt
 
 Containers must exist at /var/lib/machines/<name>.
 EOF
@@ -496,8 +500,13 @@ fi
 if [[ "$DO_REBUILD" == "true" ]]; then
     echo -e "${CYAN}Building musl binary...${NC}"
     rustup target add x86_64-unknown-linux-musl 2>/dev/null || true
+    # -p hardener-cli, not the workspace. The workspace holds src-tauri, which
+    # links against the host's GTK and WebKit stack, and hardener-ui, which is
+    # built for wasm32; asking musl for either of them fails the build outright
+    # and takes the only binary this runner needs down with it. Identical to
+    # run-package-tests.sh, which had the flag and this did not.
     cargo build --release --target x86_64-unknown-linux-musl \
-        --manifest-path "$PROJECT_DIR/Cargo.toml" || {
+        --manifest-path "$PROJECT_DIR/Cargo.toml" -p hardener-cli || {
         echo -e "${RED}Build failed${NC}"
         exit 1
     }
@@ -537,12 +546,21 @@ declare -A RESULT_UNASKABLE
 # suite replaces the full suite rather than following it: it applies hardening
 # unconditionally, so a run of it is never the read-only run --apply gates.
 # It takes no arguments, and refuses any it is given.
+#
+# LOG_PREFIX is what keeps the two suites' evidence apart on disk. Both wrote
+# test-results/<distro>.log and test-results/summary.txt, so running one after
+# the other left only the second one's logs, and release-readiness-root.sh runs
+# both in the same batch. The full suite keeps the bare names, which the docs
+# and the sibling runners already name; the differential suite takes a prefix of
+# its own, exactly as run-package-tests.sh writes pkg-<distro>.log.
 INNER_SUITE="/project/scripts/test/full-test-suite.sh"
 INNER_ARGS=()
 SUITE_LABEL="full"
+LOG_PREFIX=""
 if [[ "$DO_DIFFERENTIAL" == "true" ]]; then
     INNER_SUITE="/project/scripts/test/differential-suite.sh"
     SUITE_LABEL="differential"
+    LOG_PREFIX="differential-"
 elif [[ "$DO_APPLY" == "true" ]]; then
     INNER_ARGS=(--apply)
 fi
@@ -679,7 +697,7 @@ run_single_distro() {
     local distro="$1"
     local container="${CONTAINERS[$distro]}"
     local container_path="/var/lib/machines/$container"
-    local logfile="$RESULTS_DIR/${distro}.log"
+    local logfile="$RESULTS_DIR/${LOG_PREFIX}${distro}.log"
 
     [[ "$PARALLEL" != "true" ]] && echo -e "${CYAN}━━━ Testing: $distro ($container) ━━━${NC}"
 
@@ -724,7 +742,7 @@ record_distro_result() {
     RESULT_EXIT[$distro]=$exit_code
     local passed failed skipped total unaskable
     read -r passed failed skipped total unaskable \
-        <<< "$(parse_log_counts "$RESULTS_DIR/${distro}.log")"
+        <<< "$(parse_log_counts "$RESULTS_DIR/${LOG_PREFIX}${distro}.log")"
     RESULT_PASSED[$distro]=$passed
     RESULT_FAILED[$distro]=$failed
     RESULT_SKIPPED[$distro]=$skipped
@@ -755,7 +773,7 @@ fi
 # Generate summary
 # =============================================================================
 
-SUMMARY_FILE="$RESULTS_DIR/summary.txt"
+SUMMARY_FILE="$RESULTS_DIR/${LOG_PREFIX}summary.txt"
 
 {
     if [[ "$PARALLEL" == "true" ]]; then
@@ -805,7 +823,7 @@ SUMMARY_FILE="$RESULTS_DIR/summary.txt"
     echo "not. Unask counts the rows a differential run declared unaskable on this"
     echo "fixture and never asked; they are outside Total by design."
     echo ""
-    echo "Logs: $RESULTS_DIR/<distro>.log"
+    echo "Logs: $RESULTS_DIR/${LOG_PREFIX}<distro>.log"
 } > "$SUMMARY_FILE"
 
 # Print summary to stdout with colour
@@ -850,7 +868,7 @@ done
 
 echo ""
 echo -e "  Summary:  ${CYAN}$SUMMARY_FILE${NC}"
-echo -e "  Logs:     ${CYAN}$RESULTS_DIR/<distro>.log${NC}"
+echo -e "  Logs:     ${CYAN}$RESULTS_DIR/${LOG_PREFIX}<distro>.log${NC}"
 echo ""
 
 if [[ $overall_exit -eq 0 ]]; then

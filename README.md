@@ -149,7 +149,7 @@ identifiers automatically; `--profile` overrides that.
 | Distribution | Package manager | Init | Status |
 |---|---|---|---|
 | Debian 12 and later (incl. 13 "Trixie") | apt | systemd | validated on 13 |
-| Ubuntu 22.04 LTS and later (incl. 26.04) | apt | systemd | by family, never run |
+| Ubuntu 22.04 LTS and later (incl. 26.04) | apt | systemd | container exists, never run |
 | Fedora 40 and later (incl. 44) | dnf | systemd | validated on 44 |
 | RHEL 9 and later (incl. 10) | dnf | systemd | validated on Rocky 10 |
 | Arch Linux (rolling) | pacman | systemd | validated on rolling |
@@ -158,8 +158,13 @@ identifiers automatically; `--profile` overrides that.
 **Validated** means a dated end-to-end run against a container of that
 distribution, 149 checks, recorded in
 [distribution-validation.md](docs/reference/distribution-validation.md).
-**By family** means the release routes to a validated family's code path and is
-expected to behave identically, but no run against it exists.
+**Container exists, never run** means
+`sudo ./scripts/containers/create-container.sh ubuntu` now builds an Ubuntu
+24.04 LTS container, and that no suite has been run inside it. Being buildable
+is not evidence: the row turns to validated when a dated run of
+`run-cross-distro-tests.sh` records its checks in that document, and not before.
+Until then Ubuntu still routes to a validated family's code path and is expected
+to behave identically, which is an expectation rather than a measurement.
 
 Support is **family-based**: any release of the Debian, Red Hat, Arch or SUSE
 families maps to the same hardening behaviour, so current releases are covered
