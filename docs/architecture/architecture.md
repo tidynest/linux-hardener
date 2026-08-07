@@ -126,7 +126,7 @@ Linux Hardener is a modular security hardening tool for Linux systems, providing
 | `hardener-plugins` | 8 security plugin implementations | All plugin structs |
 | `hardener-state` | Checkpoint, audit, and scan-session persistence | `CheckpointManager`, `AuditLogger`, `ScanHistoryManager` |
 | `hardener-compliance` | Compliance framework mapping | `ReportGenerator`, frameworks (PDF behind `pdf` feature) |
-| `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily`, `DistributionAdapter` |
+| `hardener-distro` | Distribution detection | `Distribution`, `DistroFamily` |
 | `hardener-scheduler` | Scheduled scanning daemon | `SchedulerConfig`, `Daemon`, `ScanHistoryManager`, `JsonStore`, `NotificationDispatcher`, `ScanRunner`, `ScanSummary`, `TriggerType`, `SystemdGenerator`, `cron_to_calendar` |
 | `hardener-cli` | Command-line interface | Binary entry point |
 | `hardener-ui` | Leptos WASM frontend | 7-page architecture (Dashboard, Analysis, Hardening, Hosts, Fleet Apply, Scheduler, Settings) behind a grouped left sidebar; 7-theme system (default "Midnight Teal", plus Fortress, Sentinel, Command, Guardian, Daywatch, High Contrast) driven by a shared `AppState.theme` signal and `<html data-theme>` (depends only on hardener-types) |

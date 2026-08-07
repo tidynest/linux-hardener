@@ -1,11 +1,8 @@
-//! Distribution detection and adaptation layer.
+//! Distribution detection.
 //!
-//! Provides abstractions for working with different Linux distributions.
-
-pub mod adapter;
-pub mod package;
-
-pub use adapter::DistributionAdapter;
+//! Parses `/etc/os-release` into a [`Distribution`] and maps its ID onto a
+//! [`DistroFamily`], which is the whole of what dependent crates take from
+//! here.
 
 use serde::{Deserialize, Serialize};
 

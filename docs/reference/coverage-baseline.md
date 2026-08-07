@@ -33,6 +33,21 @@ neither of them reaches.
 Every figure below came from one of these two commands, run on commit `dfb9585`
 of `chore/release-readiness-phase-0` with a clean working tree.
 
+**These are the pre-deletion figures, and Phase 3 has since deleted code they
+measure.** Issue #127 removed `crates/hardener-distro/src/package/` in its
+entirety, 5 source files and 697 lines plus a 6th file of tests, and
+`crates/hardener-distro/src/adapter.rs` with its own test file, on the strength
+of the reference search this document called for rather than of these
+percentages. Nothing here has been recomputed for it: the point of a dated
+baseline is that a later run can be diffed against it, and silently editing the
+figures to match the tree would destroy exactly that. So the reading stands as
+taken, and every row it covers that no longer exists is marked **[deleted #127]**
+where it sits. What that costs a later re-measurement is written down under
+"What the next phases inherit": the `hardener-distro` row and both workspace
+totals describe a tree with 403 more instrumented lines than the current one,
+400 of them at 0 to 29 per cent, so the first re-run will show the workspace
+percentage rise without any test having been written.
+
 ```bash
 # Per-crate and per-file summary (the table below)
 cargo llvm-cov --workspace --summary-only
@@ -70,10 +85,13 @@ EOF
 ```
 
 Both `cargo llvm-cov` runs exited 0. Each ran the same test set: **1706 passed,
-0 failed, 40 ignored, across 51 test binaries**, which is the figure the
-evidence ledger records for `cargo nextest run --workspace`. The two readings
-agreeing is the check that this baseline measured the suite the rest of the
-release is judged on, and not some subset of it.
+0 failed, 40 ignored, across 51 test binaries**, which was the figure the
+evidence ledger recorded for `cargo nextest run --workspace` on the day both
+were taken. The two readings agreeing is the check that this baseline measured
+the suite the rest of the release is judged on, and not some subset of it. The
+ledger's figure has since moved down, by the 11 tests the #127 deletion took
+with the code they exercised and by 1 more from a separate change; read it
+there rather than expecting it to match this line.
 
 Toolchain, because a coverage figure is not comparable across compilers:
 
@@ -164,6 +182,14 @@ The file counts include `scripts/build_identity.rs` twice, once against each of
 the two crates that build it, which is why `hardener-ui` reads 44 files for 43
 instrumented source files and `hardener-cli` reads 19 for 18.
 
+The `hardener-distro` row is the one this table can no longer be checked
+against. **[deleted #127]** took 6 of its 7 files and 403 of its 456
+instrumented lines, leaving `lib.rs` alone, so a re-run will read that crate at
+1 file and the 53 lines the row's arithmetic leaves, and will not resemble the
+row above. Its 18.20 per
+cent was almost entirely the weight of the dead module; what remains is the
+`/etc/os-release` parser, which the crate's 5 surviving tests do reach.
+
 ### The two totals
 
 The workspace total is 60.09 per cent, and quoting it alone would be
@@ -203,26 +229,27 @@ the top of the sort:
 
 **Reaches nobody (Phase 3, delete rather than test):**
 
-- `crates/hardener-distro/src/package/` in its entirety, 5 files and 400
-  instrumented lines, 0 to 29 per cent. Nothing in the workspace calls it:
-  `PackageManager`,
+- **[deleted #127]** `crates/hardener-distro/src/package/` in its entirety, 5
+  files and 400 instrumented lines, 0 to 29 per cent. Nothing in the workspace
+  called it: `PackageManager`,
   `AptPackageManager`, `DnfPackageManager`, `PacmanPackageManager`,
-  `ZypperPackageManager` and `hardener_distro::package` have no reference
+  `ZypperPackageManager` and `hardener_distro::package` had no reference
   anywhere outside the module itself. Three crates depend on `hardener-distro`,
   and between them they import exactly two symbols, both defined in `lib.rs`:
   `Distribution` (`src-tauri/src/commands.rs:13`,
   `crates/hardener-cli/src/commands/batch.rs:19`,
   `crates/hardener-compliance/src/profiles.rs:13`) and `DistroFamily`
   (`crates/hardener-compliance/src/profiles.rs:13`). `Distribution::detect` and
-  `Distribution::from_os_release` are live and must not be touched with the
-  module.
-- `DistributionAdapter` is the separate case, and the opposite one. It has three
-  references in the whole tree, all inside `hardener-distro`: the definition at
-  `crates/hardener-distro/src/adapter.rs:12`, the re-export at
-  `crates/hardener-distro/src/lib.rs:8` and a mock implementation at
-  `crates/hardener-distro/src/adapter/tests.rs:24`. No dependent uses it. It
+  `Distribution::from_os_release` are live and were not touched with the
+  module; those two line numbers are the reading at commit `dfb9585` and are
+  not maintained here.
+- **[deleted #127]** `DistributionAdapter` is the separate case, and the
+  opposite one. It had three references in the whole tree, all inside
+  `hardener-distro`: the definition in `adapter.rs`, the re-export in `lib.rs`
+  and a mock implementation in `adapter/tests.rs`. No dependent used it. It
   does not appear in the table below, and cannot; see "What the next phases
-  inherit".
+  inherit". It went in the same change as the module above, which is the
+  outcome that section predicted a reference search would produce.
 - `crates/hardener-ui/src/utils/mock_data.rs`, 103 lines at 0 per cent. Already
   declared dead in the tree: `crates/hardener-ui/src/utils/mod.rs` carries
   `#[allow(dead_code)]` above the module and a comment reading "Mock data is
@@ -314,16 +341,16 @@ Three readings repeat, and are stated once here rather than 40 times below:
 | `crates/hardener-ui/src/components/host_row.rs` | 0.00% | 109 / 109 | [host-target view] |
 | `crates/hardener-ui/src/components/sidebar.rs` | 0.00% | 108 / 108 | [host-target view] |
 | `crates/hardener-ui/src/utils/mock_data.rs` | 0.00% | 103 / 103 | **Declared dead.** `#[allow(dead_code)]` in `utils/mod.rs` with a comment saying it is not currently used. Phase 3: delete. |
-| `crates/hardener-distro/src/package/apt.rs` | 0.00% | 102 / 102 | **No caller anywhere.** Phase 3: delete with the rest of `package/`. |
+| `crates/hardener-distro/src/package/apt.rs` | 0.00% | 102 / 102 | **[deleted #127]** No caller anywhere. Went with the rest of `package/`. |
 | `crates/hardener-ui/src/components/schedule_section.rs` | 0.00% | 95 / 95 | [host-target view] |
 | `crates/hardener-ui/src/components/tabs.rs` | 0.00% | 94 / 94 | [host-target view] |
 | `crates/hardener-ui/src/pages/analysis_page.rs` | 0.00% | 88 / 88 | [host-target view] |
-| `crates/hardener-distro/src/package/dnf.rs` | 0.00% | 76 / 76 | **No caller anywhere.** Phase 3: delete with the rest of `package/`. |
+| `crates/hardener-distro/src/package/dnf.rs` | 0.00% | 76 / 76 | **[deleted #127]** No caller anywhere. Went with the rest of `package/`. |
 | `crates/hardener-ui/src/components/notification_section.rs` | 0.00% | 70 / 70 | [host-target view] |
 | `crates/hardener-ui/src/components/segmented_control.rs` | 0.00% | 70 / 70 | [host-target view] |
 | `crates/hardener-ui/src/components/theme_picker.rs` | 0.00% | 70 / 70 | [host-target view] |
-| `crates/hardener-distro/src/package/zypper.rs` | 0.00% | 69 / 69 | **No caller anywhere.** Phase 3: delete with the rest of `package/`. |
-| `crates/hardener-distro/src/package/pacman.rs` | 0.00% | 61 / 61 | **No caller anywhere.** Phase 3: delete with the rest of `package/`. |
+| `crates/hardener-distro/src/package/zypper.rs` | 0.00% | 69 / 69 | **[deleted #127]** No caller anywhere. Went with the rest of `package/`. |
+| `crates/hardener-distro/src/package/pacman.rs` | 0.00% | 61 / 61 | **[deleted #127]** No caller anywhere. Went with the rest of `package/`. |
 | `crates/hardener-ui/src/components/modal.rs` | 0.00% | 58 / 58 | [host-target view] |
 | `crates/hardener-ui/src/components/recent_activity.rs` | 0.00% | 57 / 57 | [host-target view] |
 | `crates/hardener-ui/src/state/mod.rs` | 0.00% | 49 / 49 | [host-target view] `AppState` signal construction, which needs a Leptos runtime. |
@@ -350,7 +377,7 @@ Three readings repeat, and are stated once here rather than 40 times below:
 | `crates/hardener-scheduler/src/daemon.rs` | 24.50% | 114 / 151 | [needs privilege or a live service] `tokio-cron-scheduler` job loop and Unix signal shutdown. Awkward to cover, and a mutation in the shutdown path would currently be invisible, so worth Phase 4's attention despite the innocent reading. |
 | `src-tauri/src/commands.rs` | 26.60% | 1115 / 1519 | **Genuine gap, largest by volume.** 30 `#[tauri::command]` bodies, needing a Tauri runtime and `pkexec`. Contrast `src-tauri/src/validation.rs` at 91.39%. Hidden from CI by `--exclude linux-hardener-desktop`. |
 | `crates/hardener-cli/src/commands/history.rs` | 26.94% | 263 / 360 | **Genuine gap, cheapest to close.** One test, covering `find_regressions`. `truncate_string`, `format_timestamp` and `print_session_detail` are pure and untested; `trends` and `show` are whole subcommands. |
-| `crates/hardener-distro/src/package/mod.rs` | 29.35% | 65 / 92 | **No caller anywhere.** Phase 3: delete. The 27 covered lines are almost all `validate_package_name`, the shell-injection guard, which `package/tests.rs` enters 16 times over 6 tests across the Debian, RPM and Arch rule sets, injection cases (`package;rm`, `package;evil`, `package\|whoami`) included. Unreferenced from outside the module *and* well tested from inside is the argument for deleting it, not against: there is no test to write first. |
+| `crates/hardener-distro/src/package/mod.rs` | 29.35% | 65 / 92 | **[deleted #127]** No caller anywhere. The 27 covered lines were almost all `validate_package_name`, the shell-injection guard, which `package/tests.rs` entered 16 times over 6 tests across the Debian, RPM and Arch rule sets, injection cases (`package;rm`, `package;evil`, `package\|whoami`) included. Unreferenced from outside the module *and* well tested from inside was the argument for deleting it, not against: there was no test to write first. |
 | `crates/hardener-cli/src/commands/daemon.rs` | 37.42% | 102 / 163 | [needs privilege or a live service] Thin CLI wrapper over `hardener-scheduler`'s daemon; inherits that module's reading. |
 | `crates/hardener-cli/src/output.rs` | 46.17% | 253 / 470 | **Genuine gap.** 26 tests reach the string helpers; 11 renderers are entered by nothing. See "Where to start" for the list. |
 | `crates/hardener-compliance/src/output/mod.rs` | 47.27% | 29 / 55 | **Genuine gap, sharpest in the backend.** The default `ReportFormatter::format_all` and `compare_control_ids` are entered by no test, and `format_all` is what every real consumer calls. The uncovered `format_bytes` in this file is *not* part of that gap: it is an unreachable default, see "Where to start". |
@@ -360,25 +387,36 @@ Three readings repeat, and are stated once here rather than 40 times below:
 
 ## What the next phases inherit
 
-- **Phase 3** takes *at least* 6 files and 503 instrumented lines with no caller
+- **Phase 3** took *at least* 6 files and 503 instrumented lines with no caller
   in the tree: the 5 files of `crates/hardener-distro/src/package/` and
-  `crates/hardener-ui/src/utils/mock_data.rs`. Both are confirmed by reference
+  `crates/hardener-ui/src/utils/mock_data.rs`. Both were confirmed by reference
   search rather than by their coverage number, which is the only way a
   dead-code claim is safe to act on.
 
-  The converse of that rule matters more, and is why "at least" is not hedging.
-  **This list is a lower bound, not the set.** Coverage cannot see dead code
-  that its own tests cover: anything whose sole exercise is a test reads as
-  covered, so it can never surface in a list of files under 60 per cent, no
-  matter how dead it is. The worked example sits in the crate this document
-  already has open. `crates/hardener-distro/src/adapter.rs` is 23 lines
-  defining `DistributionAdapter`, its only implementor is the mock in
-  `adapter/tests.rs`, no crate outside `hardener-distro` refers to it, and its
-  3 instrumented lines read **100.00 per cent**. It is invisible to this method and dead all the
-  same, which already makes the real count 7 files rather than 6, before
-  Phase 3 has searched for anything. Phase 3 therefore needs a reference search of its own, run over the
-  whole tree and independently of these 58 rows, and should treat this section
-  as a head start rather than an inventory.
+  The converse of that rule matters more, and is why "at least" was not
+  hedging. **This list is a lower bound, not the set.** Coverage cannot see
+  dead code that its own tests cover: anything whose sole exercise is a test
+  reads as covered, so it can never surface in a list of files under 60 per
+  cent, no matter how dead it is. The worked example sat in the crate this
+  document already had open. `crates/hardener-distro/src/adapter.rs` was 23
+  lines defining `DistributionAdapter`, its only implementor was the mock in
+  `adapter/tests.rs`, no crate outside `hardener-distro` referred to it, and
+  its 3 instrumented lines read **100.00 per cent**. It was invisible to this
+  method and dead all the same, which made the real count 7 files rather than
+  6 before Phase 3 had searched for anything. Phase 3 therefore needed a
+  reference search of its own, run over the whole tree and independently of
+  these 58 rows, and had to treat this section as a head start rather than an
+  inventory.
+
+  **What is done and what is left.** Issue #127 ran that search and deleted
+  both `hardener-distro` entries: the 5 files of `package/` with their test
+  file, and `adapter.rs` with its own, 875 lines in all. The search found
+  nothing else in that crate, and it confirmed the prediction above: the file
+  this method could not see is exactly the one that needed a search to find.
+  `crates/hardener-ui/src/utils/mock_data.rs` is the remaining entry and is
+  untouched, so 103 of the 503 lines and 1 of the 6 files are still open. No
+  dependency left `crates/hardener-distro/Cargo.toml` with the module: both
+  `hardener-common` and `serde` are still used by `lib.rs`.
 - **Phase 4** takes the five genuine gaps named above. Two of them,
   `hardener-compliance/src/output/mod.rs` and `hardener-cli/src/output.rs`, are
   rendering paths a user sees on every run, and both are cheap to reach.

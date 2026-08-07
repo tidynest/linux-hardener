@@ -315,16 +315,15 @@ pub struct FileState {
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
-| `src/lib.rs` | Module exports | Re-exports |
-| `src/adapter.rs` | Distribution adapter | `DistributionAdapter`, `Distribution`, `DistroFamily` |
-| `src/package/mod.rs` | Package manager abstraction | `PackageManager` trait |
-| `src/package/apt.rs` | Debian family | `AptPackageManager` |
-| `src/package/dnf.rs` | Red Hat family | `DnfPackageManager` |
-| `src/package/pacman.rs` | Arch family | `PacmanPackageManager` |
-| `src/package/zypper.rs` | SUSE family | `ZypperPackageManager` |
+| `src/lib.rs` | `/etc/os-release` parsing and family mapping; the whole of the crate | `Distribution`, `DistroFamily` |
 | `src/tests.rs` | Unit tests for the crate root, split out of `lib.rs` | Test-only; a crate root cannot become a directory, so `super` here means this file and its `use super::*` became `use crate::*` |
-| `src/adapter/tests.rs` | Unit tests for `src/adapter.rs` | Test-only; `super` resolves to `crate::adapter`, so its imports carried across unchanged |
-| `src/package/tests.rs` | Unit tests for `src/package/mod.rs` | Test-only; `super` resolves to `crate::package`, the directory that file already owns |
+
+The crate held a `package/` module (a `PackageManager` trait over apt, dnf,
+pacman and zypper) and an `adapter.rs` defining `DistributionAdapter`. Both were
+deleted under issue #127 after a reference search found no user of either
+anywhere in the tree, dependent crates included. The two symbols above are what
+`src-tauri`, `hardener-cli` and `hardener-compliance` actually import, and they
+are the whole public surface now.
 
 ---
 
@@ -903,7 +902,7 @@ purpose-named directories.
 Unit tests sit beside the source file they exercise, in a `#[cfg(test)]` module of their own file rather than inside it: `foo.rs` is accompanied by `foo/tests.rs`, and a `foo/mod.rs` by `foo/tests.rs` in the directory it already owns. They are still child modules, so they still read private items; only their location changed. Integration tests, which see the public API only, remain in each crate's `tests/` directory. The **Unit Tests** column below names the source files under test, not the files the tests live in.
 
 The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
-tree on **2026-08-06**, not a run total: a run also executes doctests and, for
+tree on **2026-08-07**, not a run total: a run also executes doctests and, for
 `hardener-ui`, `wasm_bindgen_test` cases that no annotation count here covers.
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
@@ -911,9 +910,9 @@ workspace run itself for what passed.
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 116 |
-| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 88 |
+| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 87 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 114 |
-| hardener-distro | `lib.rs`, `adapter.rs`, `package/mod.rs` | - | 16 |
+| hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 104 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and eleven of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 231 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and all eight plugin modules (`ssh/dropin.rs` and `ssh/include.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 675 |

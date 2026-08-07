@@ -32,12 +32,12 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1706 passed, 40 skipped |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1694 passed, 40 skipped |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 20 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1746 |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1734 |
 
-The gap between 1746 annotations and 1706 executions is exactly 40, and all 40
+The gap between 1734 annotations and 1694 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -82,7 +82,7 @@ interesting.
 | Measurement | Command | Reading |
 |---|---|---|
 | Runner installed | `cargo install cargo-mutants --locked` | cargo-mutants 27.1.0 |
-| Mutants tested in `hardener-distro` | `cargo mutants -p hardener-distro --timeout 120 -j 1` | 126 tested in 68s: 36 caught, 73 missed, 17 unviable, 0 timeouts |
+| Mutants tested in `hardener-distro` | `cargo mutants -p hardener-distro --timeout 120 -j 1` | 126 tested in 68s: 36 caught, 73 missed, 17 unviable, 0 timeouts. Taken before the Phase 3 deletion recorded below, and not reproducible on the crate as it now stands. |
 
 Run that command as printed, with a bare `cargo` and no wrapper in front of it.
 One correction to it cost a wrong answer to find, and Phase 4 inherits it
@@ -98,7 +98,7 @@ is about to run. Under `-j 2`, 89 of the 126 per-mutant logs recorded a block on
 the shared build directory and five verdicts came back wrong: three mutants
 reported as survivors are caught, one reported as a survivor does not compile,
 and one reported caught does not compile either. `replace < with >` at line 34
-of `crates/hardener-distro/src/package/mod.rs` was reported a survivor with all
+of the crate's since-deleted `package/mod.rs` was reported a survivor with all
 16 tests passing; applied to that file by hand it fails six of them. Under
 `-j 1` no log blocks, that mutant is caught, and the totals above are what
 remains. Four of those five err towards claiming too much work rather than too
@@ -117,24 +117,32 @@ contention on the package cache, which accounted for 287 of the 415 hits in the
 `outcomes.json` to `mutants.out/` at the repository root, which is gitignored
 because the directory is 3 MB of regenerable output full of absolute paths.
 
-**The reading is not representative and must not be projected.** Five of this
-crate's seven non-test source files are `crates/hardener-distro/src/package/`, which the
-coverage baseline confirms has no reference anywhere outside the module and
-names as a Phase 3 deletion candidate. Every one of the 73 survivors is inside
-it. The live code, `crates/hardener-distro/src/lib.rs`, contributed 12 mutants
-of which 9 were caught and 3 could not compile, so **none survived**, and
-`crates/hardener-distro/src/adapter.rs` contributed one mutant that does not
-compile. The honest summary is therefore not that 58 per cent of this crate's
-mutants survive. It is that the live code killed everything thrown at it while
-the untested code is already scheduled for deletion. One survivor is worth
-naming anyway: `replace < with <=` on that same line 34 shows the minimum-length
-boundary in `validate_package_name` is unpinned, because no name in
-`crates/hardener-distro/src/package/tests.rs` is exactly two characters long.
-That is a real gap in a shell-injection guard, and it sits in the module Phase 3
-deletes, which is an argument for deleting rather than for testing it.
+**The reading is not representative, must not be projected, and can no longer
+be reproduced.** It was taken while five of this crate's seven non-test source
+files were its `package` module, which the coverage baseline confirmed had no
+reference anywhere outside itself and named as a Phase 3 deletion candidate.
+Every one of the 73 survivors sat inside it. The live code,
+`crates/hardener-distro/src/lib.rs`, contributed 12 mutants of which 9 were
+caught and 3 could not compile, so **none survived**, and the crate's
+`adapter.rs`, dead for the same reason and deleted with it, contributed one
+mutant that does not compile. The honest summary is therefore not that 58 per
+cent of this crate's mutants survive. It is that the live code killed
+everything thrown at it while the unreachable code was already scheduled for
+deletion.
 
-When Phase 3 removes that module the paths cited in this section go with it.
-What survives is the invocation and the `-j 1` finding.
+Phase 3 has since carried that deletion out, under issue #127: the `package`
+module and `adapter.rs` are gone, and with them every path this section used to
+cite. `crates/hardener-distro/src/lib.rs` and its tests are the whole crate
+now, so the command above no longer has 126 mutants to reach and cannot return
+the totals beside it. **Those totals are a historic reading kept for the `-j 1`
+finding they paid for, not a figure a later run should be compared against.**
+What carries forward is the invocation and that finding. One survivor is worth
+remembering as the shape of what the module hid: `replace < with <=` on the
+same line 34 showed the minimum-length boundary of `validate_package_name`, a
+shell-injection guard, was unpinned, because no name in the module's own tests
+was exactly two characters long. A guard nothing in the tree called, carrying a
+real gap no test would have caught, is an argument for deleting it rather than
+for testing it.
 
 ---
 
@@ -146,23 +154,23 @@ These are stated once here rather than repeated in every cell below.
   `cargo test --workspace $WORKSPACE_EXCLUDE`, where `WORKSPACE_EXCLUDE` is
   `--exclude linux-hardener-desktop --exclude hardener-ui`. It executes no
   `#[ignore]`d test and no shell suite, and those two exclusions make CI's set
-  strictly smaller than the 1706 recorded above, so a green CI run is a weaker
+  strictly smaller than the 1694 recorded above, so a green CI run is a weaker
   reading than that number. Every grade-3 result in this ledger was produced by
   a person running a container by hand, and the date of the last such run is in
   `docs/reference/distribution-validation.md`, not here.
 - **The gate's assertion check reads 39 per cent of the tree.**
   `validate_test_assertions.py` is registered in `validate_all.py` with no
   arguments, and in that mode it globs the integration-test directories only:
-  646 of the tree's 1647 tests, across 42 files. No test living in a `src/`
-  module is read at all. Run with `--all` it reaches all 1647 and reports 47
+  646 of the tree's 1635 tests, across 42 files. No test living in a `src/`
+  module is read at all. Run with `--all` it reaches all 1635 and reports 46
   that hold every assertion inside a conditional, among them
-  `test_pdf_formatter_default` in
-  `crates/hardener-compliance/src/output/pdf/tests.rs`. That is the test this
-  document names below, and `docs/reference/what-is-not-proven.md` names again,
-  as asserting nothing at all. So the check whose stated job is that a test
-  cannot exit 0 having asserted nothing does not read the tree's own headline
-  example of one. Widening the glob reds the gate on 47 findings, and that
-  triage is issue #130 rather than a thing this phase did.
+  `capture_refuses_to_record_an_unverifiable_path_as_absent` in
+  `crates/hardener-state/src/manager/tests.rs`, which is the checkpoint layer's
+  own guard against recording a file it could not read as one that was absent.
+  So the check whose stated job is that a test cannot exit 0 having asserted
+  nothing reads none of the modules where this tree's sharpest claims are
+  made. Widening the glob reds the gate on 46 findings, and that triage is
+  issue #130 rather than a thing this phase did.
 - **`scripts/test/differential-suite.sh` applies six plugins at most.** Its
   `DIFF_PLUGINS` list is ssh, pam, permissions, firewall and kernel, and the
   services plugin joins only in a booted run. `audit-hardening` and
@@ -221,7 +229,7 @@ These are stated once here rather than repeated in every cell below.
 | Claim | Evidence | Command | Ceiling |
 |---|---|---|---|
 | A control the engine does not assess is reported as ManualReview and never as a green Pass | `crates/hardener-compliance/tests/assessment_honesty.rs` (6 tests), `crates/hardener-compliance/src/generator/tests.rs` (18 tests), `crates/hardener-compliance/tests/report_tests.rs` (9 tests) | `cargo nextest run -p hardener-compliance --test assessment_honesty` | Coverage is declared by each plugin's own `coverage()` function, so the honesty guarantee is only as good as those declarations: a plugin that over-declares turns a ManualReview into a Pass and nothing here would notice. The framework catalogues themselves are curated for CIS and ISO 27001 and derived from coverage for the rest, so a mapping error in a derived framework is a data defect no test in this crate can see. |
-| Every output format renders a report the intended consumer can read | `crates/hardener-compliance/src/output/text/tests.rs` (4 tests), `crates/hardener-compliance/src/output/json/tests.rs` (2 tests), `crates/hardener-compliance/src/output/csv/tests.rs` (4 tests), `crates/hardener-compliance/src/output/html/tests.rs` (3 tests), `crates/hardener-compliance/src/output/pdf/tests.rs` (3 tests) | `cargo nextest run -p hardener-compliance output::` | **Sixteen tests, of which ten assert on substrings of the rendered string, one asserts a prefix and a byte length on it rather than a substring, four assert on a helper rather than on any rendered output (`test_csv_escape`, `test_csv_formula_injection_guard`, `test_html_escape`, `test_truncate_string`), and one asserts nothing at all: `test_pdf_formatter_default`, in `crates/hardener-compliance/src/output/pdf/tests.rs`, binds a `PdfFormatter` and ends.** No test parses a rendered report back with the consumer that will read it: the JSON is never handed to a deserialiser, the CSV never to a CSV reader, the HTML never to a parser, and the PDF row checks only that the output starts with `%PDF-` and exceeds 1000 bytes, so a structurally invalid document no reader can open would pass. The CSV escaping and formula-injection guard are the strongest of the four helper tests, being asserted directly on the escaper that the injection risk lives in. |
+| Every output format renders a report the intended consumer can read | `crates/hardener-compliance/src/output/text/tests.rs` (4 tests), `crates/hardener-compliance/src/output/json/tests.rs` (2 tests), `crates/hardener-compliance/src/output/csv/tests.rs` (4 tests), `crates/hardener-compliance/src/output/html/tests.rs` (3 tests), `crates/hardener-compliance/src/output/pdf/tests.rs` (2 tests) | `cargo nextest run -p hardener-compliance output::` | **Fifteen tests, of which ten assert on substrings of the rendered string, one asserts a prefix and a byte length on it rather than a substring, and four assert on a helper rather than on any rendered output (`test_csv_escape`, `test_csv_formula_injection_guard`, `test_html_escape`, `test_truncate_string`).** No test parses a rendered report back with the consumer that will read it: the JSON is never handed to a deserialiser, the CSV never to a CSV reader, the HTML never to a parser, and the PDF row checks only that the output starts with `%PDF-` and exceeds 1000 bytes, so a structurally invalid document no reader can open would pass. The CSV escaping and formula-injection guard are the strongest of the four helper tests, being asserted directly on the escaper that the injection risk lives in. |
 
 ### The fleet verbs
 
