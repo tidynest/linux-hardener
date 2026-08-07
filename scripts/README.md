@@ -9,7 +9,7 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | Subdirectory | Contents |
 |--------------|----------|
 | `containers/` | systemd-nspawn container lifecycle: `create-container.sh` (all five distros), `boot-ssh-test-container.sh` (booted SSH fixture; unlocks root key login left disabled by an earlier hardening run, then confirms a real login before reporting ready), `nftables-fixture.sh` (makes nftables the selected backend in a container; stops every other running machine first and confirms the container's own `/etc/os-release` before touching it, since the fixed veth address it uses only ever admits one machine safely) |
-| `test/` | Host-side test suites and orchestrators: cross-distro, package-install, root/full suites, desktop tests, rollback verification, parallel runner |
+| `test/` | Host-side test suites and orchestrators: cross-distro, package-install, root/full suites, desktop tests, rollback verification, parallel runner, plus `release-readiness-root.sh` which batches every root-only suite into one invocation |
 | `test/gui/` | GUI test runners and inner scripts (Web UI and Tauri desktop), plus the host desktop UX/functional suites |
 | `test/polkit/` | Polkit authentication matrix tests and agent detection helper |
 | `validate/` | Documentation and naming validators (`validate_*.py`) plus the auto-updater `update_all_docs.py` |
@@ -58,6 +58,9 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **PARALLEL: GUI only** | `sudo ./scripts/test/gui/run-gui-tests.sh --parallel` |
 | **Package install tests** | `sudo ./scripts/test/run-package-tests.sh` |
 | **Single distro pkg test** | `sudo ./scripts/test/run-package-tests.sh --distro arch` |
+| **Release readiness pre-check** | `./scripts/test/release-readiness-root.sh --dry-run` |
+| **Release readiness (all root suites)** | `sudo ./scripts/test/release-readiness-root.sh` |
+| **Release readiness (one suite)** | `sudo ./scripts/test/release-readiness-root.sh --only differential` |
 
 ---
 
@@ -1806,6 +1809,107 @@ test-results/
 - Pre-built musl binary at `/project/target/*/release/hardener`
 - Root privileges
 - Container environment
+
+---
+
+## Release Readiness Root Batch
+
+**Script**: `release-readiness-root.sh`
+
+**Purpose**: run every suite that needs root in one invocation, so a single
+privileged prompt buys all of them. An unprivileged session cannot start a
+systemd-nspawn container, which blocks the cross-distro suite, the differential
+suite, the packaging install tests, the Web UI suite and the rollback readback.
+Those are where the deepest evidence in this project comes from.
+
+**Usage**:
+
+```bash
+# Unprivileged pre-check: every read-only gate, plus the plan. Run this first.
+./scripts/test/release-readiness-root.sh --dry-run
+
+# The real run
+sudo ./scripts/test/release-readiness-root.sh
+
+# One suite (safe on its own: each suite rebuilds its own containers)
+sudo ./scripts/test/release-readiness-root.sh --only differential
+```
+
+**What it runs**, in order:
+
+| Suite | Invocation | Containers |
+|-------|-----------|------------|
+| `polkit` | `polkit/test-polkit-matrix.sh` | none, host check |
+| `cross-distro` | `run-cross-distro-tests.sh --apply --booted` | all five, rebuilt first |
+| `differential` | `run-cross-distro-tests.sh --differential --booted` | all five, rebuilt first |
+| `package` | `run-package-tests.sh --apply` | all five, rebuilt first |
+| `gui` | `gui/run-gui-tests.sh` | all five, rebuilt first |
+| `rollback` | `verify-rollback.sh` under `systemd-nspawn --pipe` | arch, rebuilt first |
+
+The polkit matrix runs first because it is cheap and needs no container: a
+failure there is worth knowing before an hour of container work. Its three
+interactive tests are not run, because they block on a human at an
+authentication dialog; the matrix reports them as skips.
+
+**Containers are rebuilt before every suite that uses one.** A completed
+differential run leaves its container hardened, and the next suite against it
+fails a rotating subset that reads as a regression when each of those failures
+is really a pre-apply control working. The rule is uniform so there is no
+per-suite exception to get wrong, and it is what makes `--only` trustworthy.
+`create-container.sh` exits 0 when the container already exists, so the script
+checks `/var/lib/machines/<name>` directly on both sides of each clean and
+create rather than trusting an exit code.
+
+**Binary freshness gate**: the run refuses to start unless the musl binary
+matches the working tree on all three of:
+
+1. semantic version against `[workspace.package]` in `Cargo.toml`;
+2. embedded build commit against `git rev-parse --short HEAD`;
+3. no tracked `*.rs`, `Cargo.toml` or `Cargo.lock` newer than the binary, which
+   is what catches an uncommitted edit that leaves the commit unchanged.
+
+After the cross-distro and differential suites it also greps the verified
+version string back out of each per-distro log, so a container that reached a
+different binary through its bind mount is caught rather than assumed. There is
+no override: the runners already check that a binary exists, and a run that
+attributed a container failure to code the binary did not contain is what this
+gate exists to prevent. Rebuild as your normal user, never under sudo, or the
+artefacts in `~/.cache/cargo-target` end up root-owned:
+
+```bash
+cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
+```
+
+**Output**: `test-results/release-readiness/`
+
+| File | Contents |
+|------|----------|
+| `00-preflight.log` | Binary path, version, tree version, commit, working-tree status. Written before any suite |
+| `<suite>.log` | That suite's own stdout and stderr |
+| `<suite>-containers.log` | That suite's container clean and create output |
+| `<suite>/` | The suite runner's own artefacts, copied aside |
+| `summary.txt` | The status table |
+
+The per-suite subdirectories exist because the sub-runners write to fixed names:
+`run-cross-distro-tests.sh` writes `test-results/<distro>.log` for both the full
+and the differential suite, so the second run would otherwise overwrite the
+first's per-distro detail.
+
+**Exit codes**:
+- `0`: every selected suite passed
+- `1`: pre-flight failed, or a suite reported `FAIL` or `NOTRUN`
+
+A suite that could not run is reported as `NOTRUN`, never as a skip and never
+as a pass, and it makes the exit code non-zero. `--dry-run` needs no privileges
+and exits non-zero for the same reasons the real run would, so a session that
+was going to abort in its first minute aborts before the root prompt.
+
+**Dependencies**: root, `systemd-nspawn`, `machinectl`, `systemd-run`, `git`,
+a current musl binary, a network throughout (the container bootstraps fetch
+packages, and the GUI suite installs Playwright inside each container), and
+`crates/hardener-ui/dist/index.html` from `trunk build --release` for the GUI
+suite. Without the GUI artefacts every other suite still runs and the GUI suite
+is recorded `NOTRUN`.
 
 ---
 
