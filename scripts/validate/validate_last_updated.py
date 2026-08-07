@@ -83,6 +83,17 @@ def parse_last_updated(content: str) -> tuple[str | None, datetime | None]:
     return None, None
 
 
+def is_archived(rel_path: Path) -> bool:
+    """Whether a document lives in an archive directory.
+
+    Matches any `archive` path component rather than a fixed prefix, because
+    the archives are not all in one place: `docs/archive/`,
+    `docs/plans/archive/` and `docs/security/archive/` all exist today, and a
+    prefix list would silently stop covering the next one.
+    """
+    return "archive" in rel_path.parts
+
+
 def find_markdown_files(root: Path) -> list[Path]:
     """Find all markdown files that should have Last Updated dates."""
     files = []
@@ -95,15 +106,46 @@ def find_markdown_files(root: Path) -> list[Path]:
     docs_dir = root / "docs"
     if docs_dir.exists():
         for md in docs_dir.rglob("*.md"):
-            if "superpowers" not in md.parts:
-                files.append(md)
+            files.append(md)
 
     # scripts/README.md
     scripts_readme = root / "scripts" / "README.md"
     if scripts_readme.exists():
         files.append(scripts_readme)
 
-    return sorted(files)
+    return sorted(f for f in files if f not in git_ignored(root, files))
+
+
+def git_ignored(root: Path, paths: list[Path]) -> set[Path]:
+    """The subset of `paths` git is ignoring.
+
+    Asked of git in one batch rather than by matching names, because the set is
+    not fixed: `docs/superpowers/` was hardcoded here while `docs/HANDOFF.md`,
+    `docs/NEXT-SESSION-PROMPT.md` and `docs/QUESTIONS-FOR-MAINTAINER.md` were
+    not, so three working-tree notes were reported as missing a date on every
+    run. A gitignored file is absent from a fresh clone, so a date on it is a
+    claim about a document no reader outside this machine has.
+
+    An empty set on any git failure, which keeps the validator working in a
+    tarball checkout: the cost is the old behaviour rather than a crash.
+    """
+    if not paths:
+        return set()
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            input="\n".join(str(p) for p in paths),
+            capture_output=True,
+            text=True,
+            cwd=root,
+        )
+    except OSError:
+        return set()
+    # Exit 0 means some paths matched, 1 means none did; anything else is an
+    # error and is treated as "nothing is ignored".
+    if result.returncode not in (0, 1):
+        return set()
+    return {Path(line) for line in result.stdout.split("\n") if line}
 
 
 def update_last_updated(filepath: Path, new_date: str) -> bool:
@@ -150,7 +192,14 @@ def main():
         git_date = get_git_last_modified(filepath)
 
         if doc_date is None:
-            missing_dates.append(rel_path)
+            # An archived document is frozen by definition, so a "Last Updated"
+            # date on it would be a claim nobody maintains. Requiring one
+            # produced 37 permanent warnings, every run, and a warning that is
+            # always present is a warning nobody reads. An archived file that
+            # *does* carry a date is still checked below, so an accidental edit
+            # leaving a stale one is still caught.
+            if not is_archived(rel_path):
+                missing_dates.append(rel_path)
             continue
 
         if git_date is None:

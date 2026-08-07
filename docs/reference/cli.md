@@ -1013,4 +1013,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path. JSON is the only document this command produces, so a path ending in one of the report formats this tool renders elsewhere (`.csv`, `.htm`, `.html`, `.pdf`, `.txt`) is refused rather than filled with JSON. Any other path is written as given, including one with no extension and one whose name merely contains dots, such as `backups.2026.08.03` | `session-<first 8 chars of id>.json` |
 
-**Last Updated**: 2026-08-06
+**Last Updated**: 2026-08-07
