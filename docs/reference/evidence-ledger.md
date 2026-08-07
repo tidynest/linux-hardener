@@ -65,6 +65,79 @@ Every row is graded by what its evidence actually asks:
 
 ---
 
+## Mutation testing, smoked on 2026-08-07
+
+The three grades above say what a test's evidence is worth once it runs. None
+of them, and no coverage figure either, can say whether a test checks anything
+at all: a line a test reaches and asserts nothing about counts exactly as
+covered as a line it pins. Mutation testing asks the one question that
+separates the two. Change the code, and does anything go red?
+
+Phase 4 is where that runs across the integrity-critical crates. What is
+recorded here is narrower, namely that the runner is installed and that its
+verdicts can be believed. Both were proven on `hardener-distro`, chosen because
+it is the smallest crate in the workspace and not because its result is
+interesting.
+
+| Measurement | Command | Reading |
+|---|---|---|
+| Runner installed | `cargo install cargo-mutants --locked` | cargo-mutants 27.1.0 |
+| Mutants tested in `hardener-distro` | `cargo mutants -p hardener-distro --timeout 120 -j 1` | 126 tested in 68s: 36 caught, 73 missed, 17 unviable, 0 timeouts |
+
+Two corrections to that command, both of which cost a wrong answer to find, and
+both of which Phase 4 inherits because it will copy the line above.
+
+**No `hotrun` prefix.** `~/.local/bin/hotrun` opens a transient systemd scope in
+`buildwork.slice`, and `~/.local/bin/cargo` is a PATH shim that opens one too,
+so `hotrun cargo` nests two scopes and the inner one fails. Bare `cargo` is
+already inside the same thermal cap, so dropping the prefix changes the CPU
+budget not at all. [The coverage baseline](coverage-baseline.md) records the
+same correction for the same reason.
+
+**`-j 1`, never `-j 2`.** On this machine that is a correctness requirement
+rather than a preference. A single global `build.target-dir` sends every one of
+the runner's scratch trees to one shared target directory, and because those
+trees are structurally identical cargo derives the same crate metadata hash in
+each, so every mutant's test binary is written to the same path. With two
+workers that is a race, and one worker's build overwrites the binary the other
+is about to run. Under `-j 2`, 89 of the 126 per-mutant logs recorded a block on
+the shared build directory and five verdicts came back wrong: three mutants
+reported as survivors are caught, one reported as a survivor does not compile,
+and one reported caught does not compile either. `replace < with >` at line 34
+of `crates/hardener-distro/src/package/mod.rs` was reported a survivor with all
+16 tests passing; applied to that file by hand it fails six of them. Under
+`-j 1` no log blocks, that mutant is caught, and the totals above are what
+remains. Four of those five err towards claiming too much work rather than too
+little, but the swap has no preferred direction and can as easily report a
+genuine survivor as caught, which is the reading that matters: a baseline
+overstating what its tests pin is worse than no baseline at all.
+**A run reporting survivors that cannot be reproduced by hand is reporting
+nothing.** So a Phase 4 run should grep its own logs for that block message
+before any of its numbers are written down, and should be the only cargo
+running on the machine while it does, because the shared target directory is
+reachable from another session just as easily as from a second worker.
+
+**The reading is not representative and must not be projected.** Five of this
+crate's seven source files are `crates/hardener-distro/src/package/`, which the
+coverage baseline confirms has no reference anywhere outside the module and
+names as a Phase 3 deletion candidate. Every one of the 73 survivors is inside
+it. The live code, `crates/hardener-distro/src/lib.rs`, contributed 12 mutants
+of which 9 were caught and 3 could not compile, so **none survived**, and
+`crates/hardener-distro/src/adapter.rs` contributed one mutant that does not
+compile. The honest summary is therefore not that 58 per cent of this crate's
+mutants survive. It is that the live code killed everything thrown at it while
+the untested code is already scheduled for deletion. One survivor is worth
+naming anyway: `replace < with <=` on that same line 34 shows the minimum-length
+boundary in `validate_package_name` is unpinned, because no name in
+`crates/hardener-distro/src/package/tests.rs` is exactly two characters long.
+That is a real gap in a shell-injection guard, and it sits in the module Phase 3
+deletes, which is an argument for deleting rather than for testing it.
+
+When Phase 3 removes that module the paths cited in this section go with it.
+What survives is the invocation and the `-j 1` finding.
+
+---
+
 ## Ceilings that apply to every row
 
 These are stated once here rather than repeated in every cell below.
