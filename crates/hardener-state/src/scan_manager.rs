@@ -95,6 +95,11 @@ impl ScanHistoryManager {
                 let compliance_json = serde_json::to_string(&finding.finding_compliance)
                     .unwrap_or_else(|_| "[]".to_string());
 
+                // There is no declined column yet, so a decline carries nothing into
+                // scan history. Folding it in with NotConfigured here is a no-op today
+                // only because nothing produces Declined; a later task adds that column
+                // and must give the decline reason and the operator's exception text
+                // their own branch here instead of dropping them silently.
                 let policy_exception_json = match &finding.finding_exception {
                     ExceptionOutcome::Applied(e) => serde_json::to_string(e).ok(),
                     ExceptionOutcome::NotConfigured | ExceptionOutcome::Declined(_) => None,

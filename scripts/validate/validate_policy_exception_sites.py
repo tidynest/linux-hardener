@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """Validate that every finding which forgoes a policy exception says why.
 
-A `Finding` carrying `finding_policy_exception: None` is a finding no operator
-can excuse. `ReportGenerator::has_live_finding` fails a compliance control on
-any finding whose exception is `None`, so a hardcoded `None` in a scan is not a
-missing feature: it silently overrides a deviation the operator wrote down and
-approved.
+A `Finding` carrying `finding_exception: ExceptionOutcome::NotConfigured` is a
+finding no operator can excuse. `ReportGenerator::has_live_finding` fails a
+compliance control on any finding whose exception is `NotConfigured`, so a
+hardcoded `NotConfigured` in a scan is not a missing feature: it silently
+overrides a deviation the operator wrote down and approved.
 
 Six of these shipped at once, in firewall, mac and audit, and none of them was
 a decision anyone had taken. The seventh, pam's module-absence finding, is
 deliberate and says so at the site: an exception documents a value the operator
 accepts, and that finding is not about a value.
 
-That difference is the whole check. A `None` with a reason written beside it is
-a decision; a `None` with nothing beside it is an oversight that reads exactly
-like a decision. Counting the sites cannot tell them apart, and neither can a
-test, because a test asserting a field is `None` passes just as happily on an
-oversight as on a choice.
+That difference is the whole check. A `NotConfigured` with a reason written
+beside it is a decision; a `NotConfigured` with nothing beside it is an
+oversight that reads exactly like a decision. Counting the sites cannot tell
+them apart, and neither can a test, because a test asserting a field is
+`NotConfigured` passes just as happily on an oversight as on a choice.
 
 Usage:
     ./scripts/validate/validate_policy_exception_sites.py
@@ -34,7 +34,7 @@ PLUGIN_SOURCE_ROOT = Path("crates") / "hardener-plugins" / "src"
 
 # The field as it is written at a struct literal. `\s*` rather than a single
 # space because rustfmt owns the whitespace and this check must not.
-FIELD = re.compile(r"^\s*finding_policy_exception:\s*(.+?),?\s*$")
+FIELD = re.compile(r"^\s*finding_exception:\s*(.+?),?\s*$")
 
 # A line carrying the exemption: an ordinary comment, or a doc comment, written
 # immediately above the field. Blank lines between the two are allowed, because
@@ -71,12 +71,22 @@ def key_beside(lines: list[str], index: int) -> str | None:
 
     Both fields belong to one `Finding`, so the search stops at the literal's
     closing brace rather than running on into the next one and reading its key.
+    `finding_exception` is now often a multi-line `.map_or(NotConfigured, |e|
+    { ... })` lookup, and that closure's own closing brace would otherwise be
+    mistaken for the end of the `Finding` literal, so the search tracks brace
+    depth rather than stopping at the first line that starts with `}`.
     """
+    depth = lines[index].count("{") - lines[index].count("}")
     for cursor in range(index + 1, min(index + 8, len(lines))):
-        match = KEY_FIELD.match(lines[cursor])
-        if match:
-            return match.group(1)
-        if lines[cursor].strip().startswith("}"):
+        line = lines[cursor]
+        if depth == 0:
+            match = KEY_FIELD.match(line)
+            if match:
+                return match.group(1)
+            if line.strip().startswith("}"):
+                break
+        depth += line.count("{") - line.count("}")
+        if depth < 0:
             break
     return None
 
@@ -96,13 +106,14 @@ def check_sites(root: Path) -> tuple[list[str], int, int]:
             total += 1
 
             # The two fields answer the same question and must agree. A key
-            # beside a hardcoded None advertises a setting that changes
-            # nothing; no key beside a live lookup hides a usable one. Neither
-            # is visible to a test: one asserting the field is None passes just
-            # as happily on an oversight as on a choice, which is why this
-            # check is here rather than in the suite.
+            # beside a hardcoded NotConfigured advertises a setting that
+            # changes nothing; no key beside a live lookup hides a usable one.
+            # Neither is visible to a test: one asserting the field is
+            # NotConfigured passes just as happily on an oversight as on a
+            # choice, which is why this check is here rather than in the
+            # suite.
             key = key_beside(lines, index)
-            consults_config = match.group(1) != "None"
+            consults_config = match.group(1) != "ExceptionOutcome::NotConfigured"
             if key is None:
                 failures.append(
                     f"{source.relative_to(root)}:{index + 1}: "
@@ -119,8 +130,8 @@ def check_sites(root: Path) -> tuple[list[str], int, int]:
                 failures.append(
                     f"{source.relative_to(root)}:{index + 1}: "
                     f"finding_exception_key names {key} while the exception is "
-                    f"hardcoded None, so an operator is offered a setting that "
-                    f"changes nothing"
+                    f"hardcoded ExceptionOutcome::NotConfigured, so an operator "
+                    f"is offered a setting that changes nothing"
                 )
 
             if consults_config:
@@ -130,9 +141,10 @@ def check_sites(root: Path) -> tuple[list[str], int, int]:
                 continue
             failures.append(
                 f"{source.relative_to(root)}:{index + 1}: "
-                f"finding_policy_exception is None with no reason written above "
-                f"it, so no operator can excuse this finding and report fails "
-                f"its controls. Write the reason, or look the exception up"
+                f"finding_exception is ExceptionOutcome::NotConfigured with no "
+                f"reason written above it, so no operator can excuse this "
+                f"finding and report fails its controls. Write the reason, or "
+                f"look the exception up"
             )
 
     return failures, exempted, total
@@ -149,7 +161,7 @@ def main() -> int:
     # quiet here: zero sites examined reads exactly like zero problems found.
     if total == 0:
         print(
-            f"  {RED}x{NC} no finding_policy_exception site found anywhere under "
+            f"  {RED}x{NC} no finding_exception site found anywhere under "
             f"{PLUGIN_SOURCE_ROOT}. Either the field was renamed or this check's "
             f"pattern no longer reaches it, and it compared nothing while "
             f"reporting success"
@@ -162,8 +174,8 @@ def main() -> int:
             print(f"    {RED}x{NC} {failure}")
         print(
             f"\n{RED}{len(failures)} unexplained site(s) against {total} "
-            f"examined. A hardcoded None overrides an approved deviation "
-            f"silently.{NC}"
+            f"examined. A hardcoded ExceptionOutcome::NotConfigured overrides "
+            f"an approved deviation silently.{NC}"
         )
         return 1
 
