@@ -14,11 +14,16 @@ test.describe('Findings', () => {
     await loadApp(page, '/analysis');
   });
 
-  // T-FIND-01: Page loads with heading and Findings tab active
-  test('T-FIND-01: page loads with Security Analysis heading', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Security Analysis' })).toBeVisible();
-    const findingsTab = page.locator('#tab-findings');
-    await expect(findingsTab).toHaveClass(/tab-active/);
+  // T-FIND-01: Page loads with heading and Findings tab selected
+  //
+  // The heading is 'Analysis'; the redesign dropped the 'Security' prefix. The
+  // selected tab is read from aria-selected rather than a `tab-active` class:
+  // the attribute is what a screen reader and the browser act on, so it is the
+  // thing that is actually wrong if it stops being set.
+  test('T-FIND-01: page loads with the Analysis heading', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Analysis', level: 1 })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Findings' }))
+      .toHaveAttribute('aria-selected', 'true');
   });
 
   // T-FIND-02: Empty state before scan
@@ -41,14 +46,20 @@ test.describe('Findings', () => {
     expect(count).toBeGreaterThan(0);
   });
 
-  // T-FIND-05: Table has correct columns
-  test('T-FIND-05: findings table has correct columns', async ({ page }) => {
+  // T-FIND-05: Findings are grouped by severity
+  //
+  // This asserted a table with Severity, Category and Title columns. The
+  // redesign has no findings table: findings are grouped under severity
+  // headings, which the empty state announces in as many words ("Findings are
+  // grouped by severity"). Repairing the column selectors would have pinned a
+  // layout the interface deliberately stopped having, so the test now covers
+  // the grouping that replaced it.
+  test('T-FIND-05: findings are grouped by severity', async ({ page }) => {
     await runScan(page);
-    const headers = page.locator('.findings-table th');
-    const texts = await headers.allTextContents();
-    expect(texts).toContain('Severity');
-    expect(texts).toContain('Category');
-    expect(texts).toContain('Title');
+    const panel = page.getByRole('tabpanel', { name: 'Findings' });
+    for (const severity of ['Critical', 'High', 'Medium']) {
+      await expect(panel.getByText(severity, { exact: true })).toBeVisible();
+    }
   });
 
   // T-FIND-06: Clicking a finding row shows detail panel
@@ -58,31 +69,40 @@ test.describe('Findings', () => {
     await expect(page.locator('.finding-detail')).toBeVisible();
   });
 
-  // T-FIND-07: Detail panel shows full content
-  test('T-FIND-07: detail panel contains title, severity, description, remediation', async ({ page }) => {
+  // T-FIND-07: An expanded finding shows its detail
+  //
+  // The detail is an inline expander below the finding, not a separate panel
+  // with its own header: the title stays in the button that expands it, so
+  // `.detail-header h2` describes markup that no longer exists.
+  //
+  // The remediation step count is asserted as a number. It previously read
+  // `toHaveCount(await ...count())`, which compares the count against itself
+  // and therefore passes for every value including zero, so the one assertion
+  // covering remediation steps could not fail.
+  test('T-FIND-07: an expanded finding shows its description and remediation', async ({ page }) => {
     await runScan(page);
-    await page.locator('.finding-row').first().click();
+    await page.getByRole('button', { name: /ASLR not fully enabled/ }).click();
     const detail = page.locator('.finding-detail');
-    // Title in header
-    await expect(detail.locator('.detail-header h2')).toBeVisible();
-    // Severity badge
-    await expect(detail.locator('.severity_badge')).toBeVisible();
-    // Description section
-    await expect(detail.locator('.detail-description')).toBeVisible();
-    // Explanation
-    await expect(detail.locator('.detail-explanation')).toBeVisible();
-    // Impact
-    await expect(detail.locator('.detail-impact')).toBeVisible();
-    // Remediation steps
-    await expect(detail.locator('.detail-remediation ol li')).toHaveCount(await detail.locator('.detail-remediation ol li').count());
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText('Address Space Layout Randomisation');
+    await expect(detail).toContainText('Remediation');
+    await expect(detail.getByRole('listitem')).toHaveCount(2);
+    await expect(detail.getByRole('link', { name: /Configure Fix/i })).toBeVisible();
   });
 
-  // T-FIND-08: Close button hides detail panel
-  test('T-FIND-08: close button hides detail panel', async ({ page }) => {
+  // T-FIND-08: The expander closes the way it opened
+  //
+  // There is no close button. The finding's own button toggles, so collapsing
+  // is a second click on the thing that expanded it. Asserted through the
+  // detail's visibility rather than aria-expanded, because whether the
+  // attribute is rendered at all in the collapsed state is a detail of the
+  // component and not the behaviour under test.
+  test('T-FIND-08: clicking an expanded finding collapses it', async ({ page }) => {
     await runScan(page);
-    await page.locator('.finding-row').first().click();
+    const finding = page.getByRole('button', { name: /ASLR not fully enabled/ });
+    await finding.click();
     await expect(page.locator('.finding-detail')).toBeVisible();
-    await page.locator('.close-button').click();
+    await finding.click();
     await expect(page.locator('.finding-detail')).not.toBeVisible();
   });
 

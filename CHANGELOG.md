@@ -926,6 +926,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads it**, so a type change can leave it behind in silence and the damage
   surfaces several layers away as a test suite that looks obsolete.
 
+- **The Findings tests, rewritten against what the redesign actually built.**
+  With the mock fixed, five of the nine passed unchanged, so `.finding-row` and
+  `.finding-detail` survived and the suite is far less stale than "every one of
+  the 34 died because it was a styling hook" suggests. The four that remained
+  were not all repairs. The heading lost its `Security` prefix and the selected
+  tab is now read from `aria-selected` rather than a `tab-active` class. The
+  findings **table is gone**: findings are grouped under severity headings, as
+  the empty state says in as many words, so repairing the column selectors
+  would have pinned a layout the interface deliberately stopped having. The
+  detail is an inline expander rather than a panel, so there is no
+  `.detail-header h2` and no close button, and collapsing is a second click on
+  the button that expanded it. One assertion was also worthless rather than
+  stale: the remediation-step check read `toHaveCount(await ...count())`,
+  comparing a count against itself, which passes for every value including
+  zero.
+
 - **An SSH policy exception could be reported as honoured by the same run that
   overwrote the value it documented.** Scan and the dry-run preview compared an
   exception against the value sshd actually obeys, resolved through the
