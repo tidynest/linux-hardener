@@ -1251,6 +1251,30 @@ apply_reported_failure() {
     grep -Eq '"apply_success"[[:space:]]*:[[:space:]]*false' "$1" 2>/dev/null
 }
 
+# The plugins in the table that an apply document holds no result for, one per
+# line, and nothing at all when every one of them is represented.
+#
+# This is what makes `--all` mean all. A plugin leaves no entry when its apply
+# returned an error outright, and when the config disabled it, and the CLI
+# prints neither fact into the results block: the first goes to stderr and the
+# second to a status line, so the aggregate output of a run that hardened six
+# plugins reads exactly like one that hardened eight. Section 2 already asserts
+# the binary REGISTERS these eight; this asserts `--all` SELECTED them.
+#
+# Matched on the key and its value together, the way `report_has_blocking_issue`
+# matches: the id also appears in the PluginMetadata half of each pair, so a
+# bare search for the name would find a plugin the tool named while listing and
+# never applied.
+apply_missing_plugins() {
+    local doc="$1" plugin
+    for plugin in "${PLUGINS[@]}"; do
+        if ! grep -Eq "\"apply_plugin_id\"[[:space:]]*:[[:space:]]*\"$plugin\"" \
+            "$doc" 2>/dev/null; then
+            printf '%s\n' "$plugin"
+        fi
+    done
+}
+
 # The issue lines of a validation report, so a log can say WHICH blocker fired
 # rather than only that one did. Raw document lines rather than extracted
 # values: matching the key is the one thing a quote inside a message cannot
@@ -1348,19 +1372,94 @@ test_apply_other_plugins() {
         fi
     done
 
+    # What is skipped here is the ROW, not the plugin. Neither plugin can do its
+    # real work in a container, so a row of its own would assert nothing about
+    # hardening; both are nonetheless applied one section down, because `--all`
+    # selects every registered plugin and nothing excludes these two. Section 15
+    # is where their container behaviour is pinned, and it says so there.
     if [[ "$CONTAINER_MODE" == "true" ]]; then
-        log_skip "Apply audit-hardening (no kernel audit subsystem in container)"
-        log_skip "Apply mac-hardening (no SELinux/AppArmor in container)"
+        log_skip "Apply audit-hardening on its own (no kernel audit subsystem here; section 15 applies it)"
+        log_skip "Apply mac-hardening on its own (no SELinux/AppArmor here; section 15 applies it)"
     else
         run_test "Apply audit-hardening" "\"$BINARY\" apply --plugin audit-hardening" || true
         run_test "Apply mac-hardening" "\"$BINARY\" apply --plugin mac-hardening" || true
     fi
 }
 
+# `apply --all` is the command most operators run, so it is the one this suite
+# can least afford to leave unproven, and it was the least proven row in it.
+#
+# The row greped the text output for `change.s. applied|Apply Results`. Both
+# halves match work that never happened. "Apply Results" is a header the
+# renderer prints before it looks at the results, so an apply where every
+# plugin failed printed it, and so did one where every plugin was a no-op; and
+# "N change(s) applied" is also the first half of "1 of 5 change(s) applied, 4
+# failed". Neither half reads the exit code. The row could only fail if the
+# tool bailed before rendering at all, which is why it never has.
+#
+# It is asked in JSON instead, for the reason section 14 is: the result
+# document carries each plugin's own verdict, and under `--format json` the
+# status and error lines go to stderr, leaving stdout parseable. Three things
+# are asserted, and the middle one is the point of the section:
+#
+#   ran      - a result document exists, told apart from an apply that never
+#              started by the document rather than by the exit code, exactly as
+#              section 14 tells them apart.
+#   covered  - every plugin in the table left a result. This is the assertion
+#              section 14's two skips make necessary: audit and mac ARE applied
+#              here, and if `--all` ever started excluding a plugin it cannot
+#              support, or a config quietly disabled one, the aggregate text
+#              would not change and this row is what notices.
+#   agreed   - the exit code and the document say the same thing. Exit 0 while a
+#              result reports failure is the aggregation defect this command is
+#              most exposed to, having eight verdicts to reduce to one; a
+#              non-zero exit with every result claiming success is a failure the
+#              run never wrote down. `run_dry_run_test` and section 14 pair the
+#              two the same way and for the same reason.
+#
+# A partial apply stays a pass in a container and only there: bind-mounted
+# paths that cannot be chmodded and services with no init to restart them are
+# this environment's limits rather than the tool's, and audit-hardening is
+# expected to be among them on most distributions. On a host, a non-zero exit
+# is a failure, matching how section 14 judges the same plugins there.
 test_apply_all() {
     log_header "15. APPLY --ALL"
 
-    run_test_output "Apply --all" "\"$BINARY\" apply --all" "change.s. applied|Apply Results"
+    log_test "Apply --all"
+    local all_json="$REPORT_DIR/apply-all.json"
+    local all_err="$REPORT_DIR/apply-all.err"
+    local exit_code=0
+    "$BINARY" apply --all --format json > "$all_json" 2>"$all_err" || exit_code=$?
+
+    local missing
+    missing="$(apply_missing_plugins "$all_json")"
+
+    if ! produced_result_document "$all_json" apply_plugin_id; then
+        log_fail "Apply --all (no plugin left a result at all)"
+        surface_tool_error "$all_err"
+    elif [[ -n "$missing" ]]; then
+        log_fail "Apply --all (no result for: ${missing//$'\n'/, })"
+        log_info "  --all selects every registered plugin, so a plugin with no result was"
+        log_info "  either disabled by config or failed before it could report."
+        surface_tool_error "$all_err"
+    elif (( exit_code == 0 )); then
+        if apply_reported_failure "$all_json"; then
+            log_fail "Apply --all (exit 0, and a result says it failed)"
+            surface_tool_error "$all_err"
+        else
+            log_pass "Apply --all (all $PLUGINS_EXPECTED plugins reported success)"
+            cat "$all_err" >> "$LOG_FILE"
+        fi
+    elif ! apply_reported_failure "$all_json"; then
+        log_fail "Apply --all (non-zero exit, and every result claims success)"
+        surface_tool_error "$all_err"
+    elif [[ "$CONTAINER_MODE" == "true" ]]; then
+        log_pass "Apply --all (all $PLUGINS_EXPECTED plugins ran, some partial: expected in container)"
+        cat "$all_err" >> "$LOG_FILE"
+    else
+        log_fail "Apply --all (exit code: $exit_code, and a result reports failure)"
+        surface_tool_error "$all_err"
+    fi
 }
 
 test_rollback() {
@@ -2142,6 +2241,83 @@ JSON
         apply_reported_failure "$workdir/apply-succeeded.json"
     check_status 1 "an apply that printed nothing reports no failure either" \
         apply_reported_failure "$workdir/empty.json"
+
+    # The `--all` row. It is driven rather than reasoned about because the row
+    # it replaces could not fail on any of these documents: the text it matched
+    # is a header the renderer prints before it looks at a single result, so an
+    # apply where every plugin failed and one where every plugin worked produced
+    # the same verdict. The stand-in tool supplies the document and the exit
+    # code, which together are the whole of what the row now decides.
+    #
+    # A result document naming every plugin in the table. $1 names the one whose
+    # apply failed, empty for a clean run; $2 the one left out of the document
+    # altogether, which is how a `--all` that quietly narrowed would read.
+    apply_all_doc() {
+        local failed="$1" omitted="$2" plugin sep='' verdict
+        printf '['
+        for plugin in "${PLUGINS[@]}"; do
+            if [[ "$plugin" == "$omitted" ]]; then
+                continue
+            fi
+            verdict=true
+            if [[ "$plugin" == "$failed" ]]; then
+                verdict=false
+            fi
+            printf '%s[{"plugin_id":"%s"},{"apply_plugin_id":"%s","apply_success":%s}]' \
+                "$sep" "$plugin" "$plugin" "$verdict"
+            sep=','
+        done
+        printf ']\n'
+    }
+
+    apply_all_doc "" "" > "$workdir/all-clean.json"
+    apply_all_doc audit-hardening "" > "$workdir/all-partial.json"
+    apply_all_doc "" mac-hardening > "$workdir/all-narrowed.json"
+
+    check_eq "$(apply_missing_plugins "$workdir/all-clean.json")" "" \
+        "a document naming every plugin is missing none of them"
+    check_eq "$(apply_missing_plugins "$workdir/all-narrowed.json")" "mac-hardening" \
+        "the one plugin a narrowed --all left out is named"
+    check_eq "$(apply_missing_plugins "$workdir/empty.json")" \
+        "$(printf '%s\n' "${PLUGINS[@]}")" \
+        "an apply that printed nothing is missing every plugin, not none"
+
+    local all_saved_binary="$BINARY" all_saved_report_dir="$REPORT_DIR"
+    local all_saved_container="$CONTAINER_MODE" all_saved_failed="$TESTS_FAILED"
+    local all_saved_failed_list=("${FAILED_TESTS[@]}")
+    BINARY="$workdir/fake-tool"
+    REPORT_DIR="$workdir"
+
+    row_all_verdict() {
+        local before="$TESTS_FAILED"
+        FAKE_DOC="$1"
+        FAKE_STATUS="$2"
+        CONTAINER_MODE="$3"
+        export FAKE_DOC FAKE_STATUS
+        test_apply_all >/dev/null 2>&1
+        if (( TESTS_FAILED > before )); then echo "fail"; else echo "pass"; fi
+    }
+
+    check_eq "$(row_all_verdict "$workdir/all-clean.json" 0 true)" "pass" \
+        "an --all that applied every plugin and exited 0 passes"
+    check_eq "$(row_all_verdict "$workdir/all-partial.json" 1 true)" "pass" \
+        "an --all whose audit plugin could not finish in a container is a partial apply, not a failure"
+    check_eq "$(row_all_verdict "$workdir/all-partial.json" 0 true)" "fail" \
+        "an --all that exited 0 while a result reports failure fails"
+    check_eq "$(row_all_verdict "$workdir/all-clean.json" 1 true)" "fail" \
+        "an --all that exited non-zero with every result claiming success fails"
+    check_eq "$(row_all_verdict "$workdir/all-narrowed.json" 0 true)" "fail" \
+        "an --all that left a registered plugin out of its results fails, though it exited 0"
+    check_eq "$(row_all_verdict "$workdir/empty.json" 1 true)" "fail" \
+        "an --all that produced no result document at all fails"
+    check_eq "$(row_all_verdict "$workdir/all-partial.json" 1 false)" "fail" \
+        "the partial-apply allowance is the container's alone: on a host the same run fails"
+
+    BINARY="$all_saved_binary"
+    REPORT_DIR="$all_saved_report_dir"
+    CONTAINER_MODE="$all_saved_container"
+    TESTS_FAILED="$all_saved_failed"
+    FAILED_TESTS=("${all_saved_failed_list[@]}")
 
     LOG_FILE="$saved_log"
     TESTS_TOTAL="$saved_total"
