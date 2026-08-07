@@ -7,12 +7,15 @@
 const { test, expect } = require('@playwright/test');
 const { loadApp } = require('./helpers');
 
-// Host checkboxes live in .fleet-host-select; the plugin selector reuses the
-// same .fleet-host-option class, so scope host lookups to the host fieldset.
-function host(page, name) {
-  return page.locator('.fleet-host-select .fleet-host-option').filter({ hasText: name });
-}
-const dryRunBtn = (page) => page.getByRole('button', { name: /Dry-run/i });
+// Hosts are checkboxes named "<host> (<address>)" inside a group of their own,
+// which is what separates them from the plugin selector; `.fleet-host-select`
+// and `.fleet-host-option` are both gone. The preview control is labelled
+// "Preview Changes" rather than "Dry-run".
+const host = (page, name) =>
+  page.getByRole('group', { name: 'Hosts', exact: true })
+    .getByRole('checkbox', { name: new RegExp(`^${name} `) });
+
+const dryRunBtn = (page) => page.getByRole('button', { name: /Preview Changes/i });
 const executeBtn = (page) => page.getByRole('button', { name: /^Execute/ });
 
 async function dryRun(page) {
@@ -28,19 +31,25 @@ test.describe('Fleet Apply', () => {
   // T-FAPPLY-01: Page loads with mode radios
   test('T-FAPPLY-01: page loads with Apply/Roll back modes', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'Fleet Apply' })).toBeVisible();
-    await expect(page.getByRole('radio', { name: 'Apply' })).toBeVisible();
-    await expect(page.getByRole('radio', { name: 'Roll back' })).toBeVisible();
+    const action = page.getByRole('radiogroup', { name: 'Action' });
+    await expect(action.getByRole('radio', { name: 'Apply', exact: true })).toBeChecked();
+    await expect(action.getByRole('radio', { name: 'Roll back' })).toBeVisible();
   });
 
-  // T-FAPPLY-02: Both actions gated before a selection / dry-run
-  test('T-FAPPLY-02: Dry-run and Execute disabled with no selection', async ({ page }) => {
+  // T-FAPPLY-02: Nothing can run before a host is chosen
+  //
+  // Execute is not rendered at all until a preview exists, so it is asserted
+  // absent rather than disabled: `toBeDisabled` on an element that is not
+  // there fails for the wrong reason.
+  test('T-FAPPLY-02: nothing can run with no selection', async ({ page }) => {
     await expect(dryRunBtn(page)).toBeDisabled();
-    await expect(executeBtn(page)).toBeDisabled();
+    await expect(page.getByText('Select at least one host to preview.')).toBeVisible();
+    await expect(executeBtn(page)).toHaveCount(0);
   });
 
   // T-FAPPLY-03: Dry-run enables once a host is picked and shows a preview
   test('T-FAPPLY-03: selecting a host enables Dry-run and shows preview', async ({ page }) => {
-    await host(page, 'web-01').locator('input[type=checkbox]').check();
+    await host(page, 'web-01').check();
     await expect(dryRunBtn(page)).toBeEnabled();
     await dryRun(page);
     await expect(page.locator('.fleet-preview').first()).toContainText(/web-01/);
@@ -48,7 +57,7 @@ test.describe('Fleet Apply', () => {
 
   // T-FAPPLY-04: Execute unlocks only AFTER a matching dry-run
   test('T-FAPPLY-04: Execute stays disabled until a dry-run runs', async ({ page }) => {
-    await host(page, 'web-01').locator('input[type=checkbox]').check();
+    await host(page, 'web-01').check();
     await expect(executeBtn(page)).toBeDisabled();
     await dryRun(page);
     await expect(executeBtn(page)).toBeEnabled();
@@ -56,17 +65,17 @@ test.describe('Fleet Apply', () => {
 
   // T-FAPPLY-05: THE GATE - changing the selection after a dry-run re-disables Execute
   test('T-FAPPLY-05: changing selection re-arms the dry-run gate', async ({ page }) => {
-    await host(page, 'web-01').locator('input[type=checkbox]').check();
+    await host(page, 'web-01').check();
     await dryRun(page);
     await expect(executeBtn(page)).toBeEnabled();
     // Add a second host -> selection no longer matches the previewed one.
-    await host(page, 'db-01').locator('input[type=checkbox]').check();
+    await host(page, 'db-01').check();
     await expect(executeBtn(page)).toBeDisabled();
   });
 
   // T-FAPPLY-06: Execute opens a confirm modal naming the host count
   test('T-FAPPLY-06: Execute opens the confirm modal', async ({ page }) => {
-    await host(page, 'web-01').locator('input[type=checkbox]').check();
+    await host(page, 'web-01').check();
     await dryRun(page);
     await executeBtn(page).click();
     await expect(page.locator('.modal')).toBeVisible();
@@ -75,7 +84,7 @@ test.describe('Fleet Apply', () => {
 
   // T-FAPPLY-07: Cancelling the modal performs no mutation
   test('T-FAPPLY-07: modal Cancel closes without applying', async ({ page }) => {
-    await host(page, 'web-01').locator('input[type=checkbox]').check();
+    await host(page, 'web-01').check();
     await dryRun(page);
     await executeBtn(page).click();
     await page.locator('.modal').getByRole('button', { name: 'Cancel' }).click();
@@ -85,7 +94,7 @@ test.describe('Fleet Apply', () => {
 
   // T-FAPPLY-08: Confirming executes and renders results
   test('T-FAPPLY-08: confirming the modal applies and shows results', async ({ page }) => {
-    await host(page, 'web-01').locator('input[type=checkbox]').check();
+    await host(page, 'web-01').check();
     await dryRun(page);
     await executeBtn(page).click();
     await page.getByRole('button', { name: /Yes, execute/i }).click();
@@ -96,7 +105,7 @@ test.describe('Fleet Apply', () => {
   // T-FAPPLY-09: Roll back mode also previews via dry-run
   test('T-FAPPLY-09: roll back mode previews via dry-run', async ({ page }) => {
     await page.getByRole('radio', { name: 'Roll back' }).check();
-    await host(page, 'web-01').locator('input[type=checkbox]').check();
+    await host(page, 'web-01').check();
     await dryRun(page);
     await expect(page.locator('.fleet-preview').first()).toBeVisible();
   });

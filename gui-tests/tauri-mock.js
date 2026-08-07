@@ -427,15 +427,21 @@
     },
   ];
 
+  // Mirrors PluginMetadata exactly: plugin_category, plugin_description,
+  // plugin_id, plugin_name, plugin_version. It carried a plugin_dependencies
+  // the type does not have and lacked plugin_version, which serde requires, so
+  // every list_plugins call failed with "missing field `plugin_version`" and
+  // the Fleet Apply plugin selector rendered empty. The alert saying so sat on
+  // the page while the tests around it reported selector problems.
   const PLUGINS = [
-    { plugin_id: 'kernel-hardening', plugin_name: 'Kernel Hardening', plugin_description: 'Hardens kernel parameters via sysctl', plugin_category: 'Kernel', plugin_dependencies: [] },
-    { plugin_id: 'ssh-hardening', plugin_name: 'SSH Hardening', plugin_description: 'Secures OpenSSH server configuration', plugin_category: 'Authentication', plugin_dependencies: [] },
-    { plugin_id: 'firewall-hardening', plugin_name: 'Firewall Hardening', plugin_description: 'Configures host firewall rules', plugin_category: 'Network', plugin_dependencies: [] },
-    { plugin_id: 'pam-hardening', plugin_name: 'PAM Hardening', plugin_description: 'Strengthens PAM authentication modules', plugin_category: 'Authentication', plugin_dependencies: [] },
-    { plugin_id: 'service-minimisation', plugin_name: 'Services Minimisation', plugin_description: 'Disables unnecessary system services', plugin_category: 'Services', plugin_dependencies: [] },
-    { plugin_id: 'audit-hardening', plugin_name: 'Audit Hardening', plugin_description: 'Configures auditd rules for system auditing', plugin_category: 'Logging', plugin_dependencies: [] },
-    { plugin_id: 'permissions-hardening', plugin_name: 'Permissions Hardening', plugin_description: 'Fixes insecure file and directory permissions', plugin_category: 'FileSystem', plugin_dependencies: [] },
-    { plugin_id: 'mac-hardening', plugin_name: 'MAC Hardening', plugin_description: 'Enforces SELinux or AppArmor mandatory access controls', plugin_category: 'AccessControl', plugin_dependencies: [] },
+    { plugin_id: 'kernel-hardening', plugin_name: 'Kernel Hardening', plugin_description: 'Hardens kernel parameters via sysctl', plugin_category: 'Kernel', plugin_version: '1.0.0' },
+    { plugin_id: 'ssh-hardening', plugin_name: 'SSH Hardening', plugin_description: 'Secures OpenSSH server configuration', plugin_category: 'Authentication', plugin_version: '1.0.0' },
+    { plugin_id: 'firewall-hardening', plugin_name: 'Firewall Hardening', plugin_description: 'Configures host firewall rules', plugin_category: 'Network', plugin_version: '1.0.0' },
+    { plugin_id: 'pam-hardening', plugin_name: 'PAM Hardening', plugin_description: 'Strengthens PAM authentication modules', plugin_category: 'Authentication', plugin_version: '1.0.0' },
+    { plugin_id: 'service-minimisation', plugin_name: 'Services Minimisation', plugin_description: 'Disables unnecessary system services', plugin_category: 'Services', plugin_version: '1.0.0' },
+    { plugin_id: 'audit-hardening', plugin_name: 'Audit Hardening', plugin_description: 'Configures auditd rules for system auditing', plugin_category: 'Logging', plugin_version: '1.0.0' },
+    { plugin_id: 'permissions-hardening', plugin_name: 'Permissions Hardening', plugin_description: 'Fixes insecure file and directory permissions', plugin_category: 'FileSystem', plugin_version: '1.0.0' },
+    { plugin_id: 'mac-hardening', plugin_name: 'MAC Hardening', plugin_description: 'Enforces SELinux or AppArmor mandatory access controls', plugin_category: 'AccessControl', plugin_version: '1.0.0' },
   ];
 
   // ---- Command Handler ----

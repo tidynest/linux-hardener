@@ -1,16 +1,24 @@
 // =============================================================================
 // FLEET SCAN TESTS (T-FLEET-01..07) - Linux Hardener GUI Tests
 // =============================================================================
-// Read-only multi-host scan: host selection, results table with compliance-score
-// column, expandable per-host rows, and the failed-host path.
+// Read-only multi-host scan: host selection, per-host results, expandable rows,
+// and the failed-host path.
+//
+// The redesign folded remote scanning into this page and renamed it Hosts.
+// There is no `.fleet-host-option`, no results table and no `.fleet-row`: hosts
+// are checkboxes named "Select <host>", the scan button carries its own
+// selection count, and an unscanned host says so in its row.
+//
+// Whether a host has been scanned is therefore readable without knowing how a
+// result is drawn, which is what the assertions below use: two hosts start as
+// "Not scanned yet", and scanning one leaves one.
 
 const { test, expect } = require('@playwright/test');
 const { loadApp } = require('./helpers');
 
-// Select a saved-host checkbox by its visible "name (hostname)" label.
-function hostOption(page, name) {
-  return page.locator('.fleet-host-option').filter({ hasText: name });
-}
+const selectHost = (page, name) => page.getByRole('checkbox', { name: `Select ${name}` });
+const scanButton = (page) => page.getByRole('button', { name: /Scan Selected/i });
+const unscanned = (page) => page.getByText('Not scanned yet');
 
 test.describe('Fleet Scan', () => {
   test.beforeEach(async ({ page }) => {
@@ -19,58 +27,55 @@ test.describe('Fleet Scan', () => {
 
   // T-FLEET-01: Page loads
   test('T-FLEET-01: page loads with heading', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Fleet Scan' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Hosts', level: 1 })).toBeVisible();
   });
 
-  // T-FLEET-02: Empty results state before any scan
-  test('T-FLEET-02: shows empty fleet-table state before scanning', async ({ page }) => {
-    await expect(page.getByText('No fleet scan yet')).toBeVisible();
+  // T-FLEET-02: Nothing is scanned before a scan
+  test('T-FLEET-02: both hosts start unscanned', async ({ page }) => {
+    await expect(unscanned(page)).toHaveCount(2);
   });
 
   // T-FLEET-03: Saved hosts listed; scan button disabled until a host is picked
   test('T-FLEET-03: lists saved hosts and disables Scan until selection', async ({ page }) => {
-    await expect(hostOption(page, 'web-01')).toBeVisible();
-    await expect(hostOption(page, 'db-01')).toBeVisible();
-    await expect(page.getByRole('button', { name: /Scan selected/i })).toBeDisabled();
+    await expect(selectHost(page, 'web-01')).toBeVisible();
+    await expect(selectHost(page, 'db-01')).toBeVisible();
+    await expect(scanButton(page)).toBeDisabled();
   });
 
-  // T-FLEET-04: Selecting a host enables Scan; running populates the table + CIS % column
-  test('T-FLEET-04: scanning a host populates the results table', async ({ page }) => {
-    await hostOption(page, 'web-01').locator('input[type=checkbox]').check();
-    const btn = page.getByRole('button', { name: /Scan selected/i });
+  // T-FLEET-04: Selecting a host enables Scan; running it scans that host alone
+  test('T-FLEET-04: scanning a host populates its result', async ({ page }) => {
+    await selectHost(page, 'web-01').check();
+    const btn = scanButton(page);
     await expect(btn).toBeEnabled();
     await btn.click();
-    await expect(page.getByRole('columnheader', { name: 'CIS %' })).toBeVisible();
-    const row = page.locator('.fleet-row').first();
-    await expect(row).toBeVisible();
-    await expect(row).toContainText('web-01');
-    await expect(row).toContainText('OK');
+    // web-01 has a result now; db-01 was not selected and still has none.
+    await expect(unscanned(page)).toHaveCount(1);
   });
 
-  // T-FLEET-05: A successful row expands to show that host's findings
-  test('T-FLEET-05: clicking a host row expands its detail', async ({ page }) => {
-    await hostOption(page, 'web-01').locator('input[type=checkbox]').check();
-    await page.getByRole('button', { name: /Scan selected/i }).click();
-    const row = page.locator('.fleet-row').first();
-    await expect(row).toBeVisible();
-    await row.click();
-    await expect(page.locator('.fleet-detail-row')).toBeVisible();
+  // T-FLEET-05: A scanned row expands to show that host's detail
+  test('T-FLEET-05: expanding a scanned host shows its detail', async ({ page }) => {
+    await selectHost(page, 'web-01').check();
+    await scanButton(page).click();
+    await expect(unscanned(page)).toHaveCount(1);
+    const expander = page.getByRole('button', { name: 'Expand host' }).first();
+    await expander.click();
+    await expect(expander).toHaveAttribute('aria-expanded', 'true');
   });
 
-  // T-FLEET-06: A host that fails to scan shows a Failed status, not a crash
-  test('T-FLEET-06: failed host shows Failed status', async ({ page }) => {
-    await hostOption(page, 'db-01').locator('input[type=checkbox]').check();
-    await page.getByRole('button', { name: /Scan selected/i }).click();
-    const row = page.locator('.fleet-row').first();
-    await expect(row).toBeVisible();
-    await expect(row).toContainText(/Failed/i);
+  // T-FLEET-06: A host that fails to scan says so rather than crashing
+  //
+  // db-01 is the mock's failing host, refused on port 2222.
+  test('T-FLEET-06: failed host shows its failure', async ({ page }) => {
+    await selectHost(page, 'db-01').check();
+    await scanButton(page).click();
+    await expect(page.getByText(/Failed|connection refused/i).first()).toBeVisible();
   });
 
-  // T-FLEET-07: Scanning two hosts yields two rows (one OK, one Failed)
-  test('T-FLEET-07: scanning multiple hosts yields a row each', async ({ page }) => {
-    await hostOption(page, 'web-01').locator('input[type=checkbox]').check();
-    await hostOption(page, 'db-01').locator('input[type=checkbox]').check();
-    await page.getByRole('button', { name: /Scan selected/i }).click();
-    await expect(page.locator('.fleet-row')).toHaveCount(2);
+  // T-FLEET-07: Scanning both hosts leaves neither unscanned
+  test('T-FLEET-07: scanning multiple hosts yields a result each', async ({ page }) => {
+    await selectHost(page, 'web-01').check();
+    await selectHost(page, 'db-01').check();
+    await scanButton(page).click();
+    await expect(unscanned(page)).toHaveCount(0);
   });
 });
