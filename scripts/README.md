@@ -193,7 +193,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
 
 **Modes**:
-- Default: Runs all 20 checks in the table above, which are 19 Python validators plus the one shell check, `release.sh --verify`
+- Default: Runs all 21 checks in the table above, which are 20 Python validators plus the one shell check, `release.sh --verify`
 - `--quick`: Skips CLI and Compliance validators (faster)
 - `--fix`: Passes `--fix` to validators that support it
 

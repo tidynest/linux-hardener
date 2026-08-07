@@ -2,13 +2,13 @@
 
 Commands for validating and auto-updating project documentation.
 
-`scripts/validate/` holds twenty-two Python 3 scripts: the master runner
-`validate_all.py`, the auto-updater `update_all_docs.py`, the nineteen
+`scripts/validate/` holds twenty-three Python 3 scripts: the master runner
+`validate_all.py`, the auto-updater `update_all_docs.py`, the twenty
 validators `validate_all.py` runs, and `validate_naming.py`, which is
 standalone and is what a hand-installed pre-commit hook runs, if there is one.
 The one check that is not Python lives elsewhere: version consistency is
 `scripts/release/release.sh --verify`, which `validate_all.py` shells out to,
-and it is why the run reports twenty checks against nineteen Python
+and it is why the run reports twenty-one checks against twenty Python
 validators.
 
 ---
@@ -496,6 +496,40 @@ defaults this check recognises yet still fails to survive the round trip, is
 covered instead by `every_finding_field_survives_the_scan_history`, a
 whole-struct serde round-trip test in
 `crates/hardener-state/tests/scan_manager_tests.rs`.
+
+### GUI mock fixtures
+
+```bash
+python3 scripts/validate/validate_gui_mock_fixtures.py
+```
+
+Checks that every payload `gui-tests/tauri-mock.js` returns carries the fields
+the Rust type requires, carries no field that type does not have, and gives
+every enum-valued field a real variant name.
+
+The mock is a hand-written mirror of the types the Leptos frontend
+deserialises, and until this check existed nothing in the tree read it. Eight
+separate drifts had accumulated: a removed `finding_policy_exception` still
+being sent, missing `finding_exception`, `plugin_version` and `controls`, an
+invented `plugin_dependencies`, `Logging` and `AccessControl` where
+`FindingCategory` has neither, a framework key nothing could match, four
+frameworks absent outright, and a `window.__TAURI__` claiming a runtime it
+implemented half of.
+
+Every one of them failed in the same misleading way. The frontend reports
+"missing field `x`" into an alert box no Playwright test asserts on, the view
+that consumes the payload renders empty, and the suite reports what reads as a
+stale selector. A release cycle was spent believing an interface redesign had
+invalidated 34 tests.
+
+The payloads are obtained by **running** the mock against a stubbed `window`
+and invoking each command, not by parsing the file, so what is compared is what
+serde actually receives. A field serde can supply is not required: `Option<T>`
+deserialises to `None` when absent and `#[serde(default)]` says so outright,
+and an earlier draft that ignored this reported three working fields as
+missing, which is the direction that would condemn a mock that works. An extra
+field is reported as well as a missing one, because a rename arrives as both
+and naming only the missing half describes half the problem.
 
 ### .SRCINFO
 
