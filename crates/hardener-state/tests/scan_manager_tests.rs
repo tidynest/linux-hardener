@@ -454,3 +454,72 @@ async fn a_declined_exception_round_trips() {
         "the operator's own reason survives the round trip too"
     );
 }
+
+/// Storing never produces a row with both `exception_declined` and
+/// `policy_exception` populated, but a hand-edited or corrupted row could.
+/// The read path must resolve that in favour of `Declined`: `Applied`
+/// excuses a finding from failing its compliance control, and no corrupt row
+/// should be able to buy that excuse.
+#[tokio::test]
+async fn a_row_with_both_columns_populated_reads_as_declined_not_applied() {
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("test.db");
+    let pool = init_db(Some(&db_path)).await.unwrap();
+    let manager = ScanHistoryManager::new(pool.clone());
+
+    let session_id = manager.start_session().await.unwrap();
+    let mut results = sample_results();
+    results[0].scan_findings[0].finding_exception =
+        ExceptionOutcome::Declined(FindingExceptionDeclined {
+            exception_declined_reason: DeclineReason::Expired {
+                expired_on: "2026-01-01".to_string(),
+            },
+            exception_reason: "temporary waiver".to_string(),
+        });
+
+    manager.store_results(&session_id, &results).await.unwrap();
+    manager
+        .complete_session(&session_id, ScanStatus::Completed, 1, 1)
+        .await
+        .unwrap();
+
+    // Reach behind the manager and populate policy_exception on the same row
+    // that already carries exception_declined. store_results never writes
+    // both columns on one row; this manufactures the shape a corrupt or
+    // hand-edited row would have.
+    let applied_json = serde_json::to_string(&FindingPolicyException {
+        exception_allowed_value: "marker-allowed".to_string(),
+        exception_reason: "marker-reason".to_string(),
+        exception_approved_by: None,
+        exception_approved_date: None,
+        exception_ticket: None,
+        exception_expires: None,
+        exception_is_expired: false,
+    })
+    .unwrap();
+    sqlx::query("UPDATE scan_findings SET policy_exception = ?")
+        .bind(applied_json)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (_, restored) = manager.get_latest_scan().await.unwrap().unwrap();
+    let stored = &restored[0].scan_findings[0];
+
+    match &stored.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(
+                    expired_on, "2026-01-01",
+                    "the declined reason still survives with policy_exception also set"
+                );
+            }
+            other => panic!("the arm changed on the way through: {other:?}"),
+        },
+        other => panic!(
+            "a row carrying both columns must read as Declined, never Applied: \
+             Applied excuses a finding from its compliance control, and no \
+             corrupt row should be able to buy that excuse, got {other:?}"
+        ),
+    }
+}

@@ -322,6 +322,12 @@ impl ScanHistoryManager {
             // Read it as Declined, never Applied: Applied excuses a finding
             // from its compliance control, and no corrupt row should buy that.
             // Declined is live and carries the reason, so it is the safe read.
+            //
+            // Named apart from the field on purpose: a local spelled
+            // `finding_exception` would let clippy::redundant_field_names push
+            // the struct literal below toward shorthand, but
+            // validate_persisted_finding_fields.py only recognises the
+            // literal `finding_exception: value` form.
             let exception_outcome = match (exception_declined, policy_exception) {
                 (Some(declined), _) => ExceptionOutcome::Declined(declined),
                 (None, Some(applied)) => ExceptionOutcome::Applied(applied),
