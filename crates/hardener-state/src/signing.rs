@@ -10,6 +10,17 @@ use std::{fs, path::Path};
 use zeroize::Zeroize;
 
 /// File header magic bytes identifying an encrypted key file (v1).
+///
+/// **Keeps its spelling deliberately.** `LSH` is Linux System Hardener, the name
+/// the project carried before #51 unified it on Linux Hardener, and correcting
+/// it to match is the obvious tidy-up. It is not a label: `load_key` decides
+/// between the encrypted and the legacy format by testing these exact bytes, so
+/// a different magic makes every key file already on a host fail that test and
+/// take the legacy branch, where it is the wrong length and errors.
+///
+/// Unlike [`KEY_DERIVATION_SALT`], changing this fails loudly rather than
+/// silently, and `test_signer_creates_new_key` catches it. The note is here so
+/// the next reader learns why from the constant rather than from a red test.
 const ENCRYPTED_KEY_MAGIC: &[u8; 4] = b"LSH1";
 
 /// HKDF salt for the key that encrypts the signing key at rest. **Frozen.**

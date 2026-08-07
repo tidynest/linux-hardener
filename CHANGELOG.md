@@ -839,6 +839,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The tag bytes a recorded content absence contributes to a checkpoint's
+  signature were never pinned, only required to differ.** `ContentAbsence`
+  hashes `b"d"` for `ByDesign` and `b"f"` for `ReadFailed` into the signed
+  digest. The test covering it asserted that the two differ from each other and
+  from a row recording no absence, which is a weaker promise than it reads as:
+  every one of those assertions stays true if the bytes are changed to anything
+  else at all. The obvious tidy-up is the dangerous one, since spelling them
+  `b"by_design"` and `b"read_failed"` to match `as_column` looks like a
+  consistency fix and **silently stops every checkpoint signed since the field
+  existed from verifying**, on a database nobody touched. Measured rather than
+  supposed: with `b"d"` changed to `b"D"`, `hardener-state` passed 113 of 113.
+  The expected digests are now built independently, in the order the real
+  algorithm uses and with the tag written out as a literal, the same way the
+  pre-field oracle beside them is. Both bytes were mutated separately and each
+  killed the new test by name. `ENCRYPTED_KEY_MAGIC` was checked for the same
+  weakness and does not have it, since changing it fails loudly and
+  `test_signer_creates_new_key` catches it; it gains a note instead, because
+  `LSH` spells the pre-rename product name and correcting it to match #51 is an
+  edit somebody will reach for.
 - **The HKDF salt that protects every signing key reads like a path, and a
   rename would have taken it.** `signing.rs` derived the AES-256-GCM key that
   encrypts `/etc/linux-hardener/signing.key` at rest from the host's machine

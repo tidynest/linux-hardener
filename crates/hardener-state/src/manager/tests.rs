@@ -1760,6 +1760,78 @@ fn a_row_with_no_recorded_absence_hashes_exactly_as_it_did_before_the_field() {
     );
 }
 
+/// The tag bytes a recorded absence contributes are the exact bytes they were,
+/// not merely distinct ones.
+///
+/// The test above asserts that the two absences differ from each other and from
+/// `None`, and that is not the same promise. Renaming `digest_tag`'s `b"d"` and
+/// `b"f"` to anything else at all, `b"by_design"` and `b"read_failed"` for
+/// instance, which is the obvious tidy-up for making them match `as_column`,
+/// keeps all three of those assertions true and **silently stops every
+/// checkpoint signed since the field existed from verifying.** Measured, not
+/// supposed: with `b"d"` changed to `b"D"`, `hardener-state` passes 113 of 113.
+///
+/// So the expected digests are built here independently, in the order the real
+/// algorithm uses, with the tag written out as a literal. A second copy on
+/// purpose, the same way the pre-field oracle above is.
+#[test]
+fn the_absence_tag_bytes_are_pinned_and_not_merely_distinct() {
+    use ring::digest::{Context as DigestContext, SHA256};
+
+    let id = CheckpointId::new("cp-1".to_string());
+    let state = |absence: Option<ContentAbsence>| FileState {
+        file_path: "/etc/sysctl.d/99-hardener.conf".to_string(),
+        file_content: Some(b"kernel.kptr_restrict = 2\n".to_vec()),
+        file_permissions: 0o100644,
+        file_owner_uid: 0,
+        file_owner_gid: 0,
+        file_link_target: None,
+        file_content_absence: absence,
+    };
+
+    let oracle_with_tag = |tag: &[u8]| {
+        let mut oracle = DigestContext::new(&SHA256);
+        oracle.update(id.as_str().as_bytes());
+        oracle.update(b"legacy");
+        oracle.update(&7i64.to_be_bytes());
+        oracle.update(b"root");
+        let row = state(None);
+        oracle.update(row.file_path.as_bytes());
+        oracle.update(row.file_content.as_ref().expect("content"));
+        oracle.update(&row.file_permissions.to_be_bytes());
+        oracle.update(&row.file_owner_uid.to_be_bytes());
+        oracle.update(&row.file_owner_gid.to_be_bytes());
+        oracle.update(tag);
+        oracle.finish().as_ref().to_vec()
+    };
+
+    assert_eq!(
+        CheckpointManager::generate_digest(
+            &id,
+            "legacy",
+            7,
+            "root",
+            &[state(Some(ContentAbsence::ByDesign))]
+        ),
+        oracle_with_tag(b"d"),
+        "ByDesign must contribute exactly b\"d\". Changing it is not a rename: \
+         every checkpoint that recorded a by-design absence was signed over this \
+         byte, and a different one makes all of them fail verification on a \
+         database nobody touched."
+    );
+    assert_eq!(
+        CheckpointManager::generate_digest(
+            &id,
+            "legacy",
+            7,
+            "root",
+            &[state(Some(ContentAbsence::ReadFailed))]
+        ),
+        oracle_with_tag(b"f"),
+        "ReadFailed must contribute exactly b\"f\", for the same reason."
+    );
+}
+
 #[tokio::test]
 async fn deleting_a_checkpoint_that_exists_removes_it() {
     let exec = MockExecutor::new().with_file("/etc/sysctl.conf", "kernel.kptr_restrict = 1\n");
