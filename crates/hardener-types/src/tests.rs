@@ -645,6 +645,7 @@ mod policy_exception_tests {
         assert_eq!(live.evidence_label(), "CRITICAL");
     }
 }
+
 mod exception_declined_tests {
     use crate::*;
 
@@ -661,12 +662,12 @@ mod exception_declined_tests {
         let line = exception_declined_line(&declined);
 
         assert!(
-            line.contains("'yes'"),
-            "the documented value must appear: {line}"
+            line.contains("documents 'yes'"),
+            "the documented value must be attributed to the exception, not the host: {line}"
         );
         assert!(
-            line.contains("'prohibit-password'"),
-            "the observed value must appear: {line}"
+            line.contains("host has 'prohibit-password'"),
+            "the observed value must be attributed to the host, not the exception: {line}"
         );
         assert!(
             line.contains("legacy jump host"),
@@ -694,7 +695,29 @@ mod exception_declined_tests {
             "the operator's own reason must appear: {line}"
         );
     }
+
+    /// The two tags feed CLI JSON output and a SQLite column read back by
+    /// later tasks, so a wrong tag would only surface much later than here.
+    #[test]
+    fn declined_outcome_serialises_with_both_tags() {
+        let value = serde_json::to_value(ExceptionOutcome::Declined(FindingExceptionDeclined {
+            exception_declined_reason: DeclineReason::Expired {
+                expired_on: "2026-01-01".to_string(),
+            },
+            exception_reason: "temporary waiver".to_string(),
+        }))
+        .unwrap();
+
+        assert_eq!(value["state"], "declined");
+        assert_eq!(value["exception_declined_reason"]["reason"], "expired");
+        assert_eq!(
+            value["exception_declined_reason"]["expired_on"],
+            "2026-01-01"
+        );
+        assert_eq!(value["exception_reason"], "temporary waiver");
+    }
 }
+
 mod rollback_result_tests {
     use crate::*;
 
