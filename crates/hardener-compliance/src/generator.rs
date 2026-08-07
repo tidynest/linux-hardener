@@ -10,6 +10,7 @@ use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
 use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, ControlStatus};
 use hardener_core::plugin::{Finding, UncheckedCheck};
+use hardener_types::ExceptionOutcome;
 use std::collections::HashSet;
 
 /// Generates compliance reports from scan findings.
@@ -216,13 +217,14 @@ fn related_findings(
         .collect()
 }
 
-/// Whether any of these findings is still a live violation. A finding carrying
-/// a policy exception (validated by `Plugin::scan` against the config) is a
-/// documented deviation, not a failure, so it never drives a control to Fail.
+/// Whether any of these findings is still a live violation. Only a finding
+/// whose exception outcome is `Applied` (validated by `Plugin::scan` against
+/// the config) is a documented deviation, not a failure; `NotConfigured` and
+/// `Declined` are both live and drive a control to Fail.
 fn has_live_finding(findings: &[Finding]) -> bool {
     findings
         .iter()
-        .any(|f| f.finding_policy_exception.is_none())
+        .any(|f| !matches!(f.finding_exception, ExceptionOutcome::Applied(_)))
 }
 
 #[cfg(test)]

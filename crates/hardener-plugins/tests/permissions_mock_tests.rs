@@ -965,7 +965,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "perm--root")
         .expect("non-compliant path should still produce a finding");
     assert!(
-        finding.finding_policy_exception.is_some(),
+        finding.is_policy_excepted(),
         "finding should be annotated with the valid exception"
     );
 }
@@ -1706,7 +1706,7 @@ async fn every_permissions_finding_names_the_exception_key_that_silences_it() {
 
     for finding in &scan(&config).await.scan_findings {
         assert!(
-            finding.finding_policy_exception.is_some(),
+            finding.is_policy_excepted(),
             "{} was not annotated by an exception written under the key it named",
             finding.finding_id,
         );

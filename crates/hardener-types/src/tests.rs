@@ -264,7 +264,7 @@ mod fleet_tests {
             finding_severity: severity,
             finding_title: String::new(),
             finding_compliance: Vec::new(),
-            finding_policy_exception: None,
+            finding_exception: ExceptionOutcome::NotConfigured,
             finding_exception_key: None,
         }
     }
@@ -624,7 +624,11 @@ mod policy_exception_tests {
             finding_severity: severity,
             finding_title: "Test".to_string(),
             finding_compliance: Vec::new(),
-            finding_policy_exception: excepted.then(FindingPolicyException::default),
+            finding_exception: if excepted {
+                ExceptionOutcome::Applied(FindingPolicyException::default())
+            } else {
+                ExceptionOutcome::NotConfigured
+            },
             finding_exception_key: None,
         }
     }

@@ -6,8 +6,8 @@
 use crate::scan_history::{ScanSession, ScanSessionId, ScanStatus};
 use hardener_common::error::{HardeningError, Result};
 use hardener_types::{
-    ComplianceMapping, Finding, FindingCategory, FindingPolicyException, PluginId, ScanResult,
-    Severity, UncheckedCheck,
+    ComplianceMapping, ExceptionOutcome, Finding, FindingCategory, FindingPolicyException,
+    PluginId, ScanResult, Severity, UncheckedCheck,
 };
 use sqlx::{Row, SqlitePool};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -95,10 +95,10 @@ impl ScanHistoryManager {
                 let compliance_json = serde_json::to_string(&finding.finding_compliance)
                     .unwrap_or_else(|_| "[]".to_string());
 
-                let policy_exception_json = finding
-                    .finding_policy_exception
-                    .as_ref()
-                    .and_then(|e| serde_json::to_string(e).ok());
+                let policy_exception_json = match &finding.finding_exception {
+                    ExceptionOutcome::Applied(e) => serde_json::to_string(e).ok(),
+                    ExceptionOutcome::NotConfigured | ExceptionOutcome::Declined(_) => None,
+                };
 
                 sqlx::query(
                     "INSERT INTO scan_findings (
@@ -308,7 +308,8 @@ impl ScanHistoryManager {
                 finding_recommended_value: row.get("recommended_value"),
                 finding_remediation_steps: remediation_steps,
                 finding_compliance: compliance,
-                finding_policy_exception: policy_exception,
+                finding_exception: policy_exception
+                    .map_or(ExceptionOutcome::NotConfigured, ExceptionOutcome::Applied),
                 finding_exception_key: row.get("exception_key"),
             });
         }

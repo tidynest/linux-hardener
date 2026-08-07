@@ -17,6 +17,7 @@
 use super::*;
 use hardener_common::types::{ControlStatus, FindingCategory, PluginId, Severity};
 use hardener_core::{MockExecutor, PolicyException};
+use hardener_types::ExceptionOutcome;
 use std::sync::Arc;
 
 #[test]
@@ -40,7 +41,7 @@ fn finding_to_scan_finding_uses_display_strings() {
         finding_recommended_value: "recommended".to_string(),
         finding_remediation_steps: vec![],
         finding_compliance: vec![],
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     };
 

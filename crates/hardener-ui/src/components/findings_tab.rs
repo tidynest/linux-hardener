@@ -9,7 +9,7 @@
 use super::icons::IconChevron;
 use crate::state::{AppState, unchecked_tally};
 use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report};
-use crate::types::{Finding, Severity};
+use crate::types::{ExceptionOutcome, Finding, Severity};
 use crate::utils::{
     group_findings_by_severity, is_auth_cancelled, severity_class, severity_label,
     split_policy_excepted, unchecked_honesty_line,
@@ -231,11 +231,11 @@ fn finding_row(f: Finding, expanded: RwSignal<Option<String>>) -> impl IntoView 
     // documented exception rather than an unexplained gap, so the detail
     // carries it. The rest of the approval metadata stays out until someone
     // asks for it.
-    let exception_reason = f
-        .finding_policy_exception
-        .as_ref()
-        .map(|e| e.exception_reason.clone())
-        .filter(|r| !r.is_empty());
+    let exception_reason = match &f.finding_exception {
+        ExceptionOutcome::Applied(e) => Some(e.exception_reason.clone()),
+        ExceptionOutcome::NotConfigured | ExceptionOutcome::Declined(_) => None,
+    }
+    .filter(|r| !r.is_empty());
     view! {
         <li class="finding-row" class:open=move || is_open.get()>
             <div

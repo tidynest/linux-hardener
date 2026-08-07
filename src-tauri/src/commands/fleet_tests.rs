@@ -109,7 +109,7 @@ fn finding(id: &str) -> Finding {
         finding_recommended_value: String::new(),
         finding_remediation_steps: vec![],
         finding_compliance: vec![],
-        finding_policy_exception: None,
+        finding_exception: hardener_types::ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }

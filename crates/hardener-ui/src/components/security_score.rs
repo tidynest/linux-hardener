@@ -60,7 +60,7 @@ fn calculate_framework_score(report: &ComplianceReport) -> Option<f64> {
                 control
                     .control_findings
                     .iter()
-                    .filter(|f| f.finding_policy_exception.is_none())
+                    .filter(|f| !f.is_policy_excepted())
                     .map(|f| severity_to_weight(&f.finding_severity))
                     .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
                     .unwrap_or(50.0) // Default to Medium if no findings

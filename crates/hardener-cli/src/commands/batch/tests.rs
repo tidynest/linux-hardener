@@ -20,6 +20,7 @@ use super::*;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity};
 use hardener_compliance::Scenario;
 use hardener_core::ValidationReport;
+use hardener_types::ExceptionOutcome;
 
 /// Every `batch` subcommand accepted the global `--config` flag and threw
 /// it away, so a fleet was assessed and hardened against whatever config
@@ -779,7 +780,7 @@ fn finding(sev: Severity) -> Finding {
         finding_severity: sev,
         finding_title: "t".into(),
         finding_compliance: vec![],
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }

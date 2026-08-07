@@ -20,6 +20,7 @@ use hardener_common::types::{
 use hardener_compliance::config::OutputFormat;
 use hardener_compliance::{ComplianceReport, ReportConfig, ReportGenerator, Scenario};
 use hardener_core::plugin::Finding;
+use hardener_types::ExceptionOutcome;
 
 fn mapping(framework: ComplianceFramework, id: &str) -> ComplianceMapping {
     ComplianceMapping {
@@ -48,7 +49,7 @@ fn insecure_root_login() -> Finding {
             mapping(ComplianceFramework::CIS, "5.2.10"),
             mapping(ComplianceFramework::STIG, "RHEL-08-010550"),
         ],
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }

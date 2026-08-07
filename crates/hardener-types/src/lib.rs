@@ -624,8 +624,9 @@ pub struct Finding {
     pub finding_title: String,
     /// Compliance framework mappings for this finding.
     pub finding_compliance: Vec<ComplianceMapping>,
-    /// Policy exception if this finding is covered by config.
-    pub finding_policy_exception: Option<FindingPolicyException>,
+    /// What the configuration had to say about this finding: nothing, an
+    /// exception that applied, or an exception that did not.
+    pub finding_exception: ExceptionOutcome,
     /// The `exceptions` key an operator writes to accept this finding as a
     /// documented deviation, where one would mean anything.
     ///
@@ -687,7 +688,7 @@ impl Finding {
     /// Whether the configuration documents this finding as an accepted
     /// deviation rather than a live violation.
     pub fn is_policy_excepted(&self) -> bool {
-        self.finding_policy_exception.is_some()
+        matches!(self.finding_exception, ExceptionOutcome::Applied(_))
     }
 
     /// The label for this finding's evidence line: [`POLICY_EXCEPTION_LABEL`]

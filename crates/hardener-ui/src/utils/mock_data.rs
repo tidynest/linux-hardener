@@ -1,4 +1,4 @@
-use crate::types::{Finding, FindingCategory, PluginId, ScanResult, Severity};
+use crate::types::{ExceptionOutcome, Finding, FindingCategory, PluginId, ScanResult, Severity};
 
 /// Creates mock scan results for UI testing and development.
 ///
@@ -26,7 +26,7 @@ pub fn create_mock_scan_results() -> Vec<ScanResult> {
                         "Run 'sudo sysctl -p' to apply changes".to_string(),
                     ],
                     finding_compliance: vec![],
-                    finding_policy_exception: None,
+                    finding_exception: ExceptionOutcome::NotConfigured,
                     finding_exception_key: None,
                 },
                 Finding {
@@ -43,7 +43,7 @@ pub fn create_mock_scan_results() -> Vec<ScanResult> {
                         "Set kernel.kptr_restrict = 2".to_string(),
                     ],
                     finding_compliance: vec![],
-                    finding_policy_exception: None,
+                    finding_exception: ExceptionOutcome::NotConfigured,
                     finding_exception_key: None,
                 },
             ],
@@ -73,7 +73,7 @@ pub fn create_mock_scan_results() -> Vec<ScanResult> {
                         "Restart SSH service: sudo systemctl restart sshd".to_string(),
                     ],
                     finding_compliance: vec![],
-                    finding_policy_exception: None,
+                    finding_exception: ExceptionOutcome::NotConfigured,
                     finding_exception_key: None,
                 },
             ],
@@ -101,7 +101,7 @@ pub fn create_mock_scan_results() -> Vec<ScanResult> {
                         "Configure default deny: sudo ufw default deny incoming".to_string(),
                     ],
                     finding_compliance: vec![],
-                    finding_policy_exception: None,
+                    finding_exception: ExceptionOutcome::NotConfigured,
                     finding_exception_key: None,
                 },
             ],

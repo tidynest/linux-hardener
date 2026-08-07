@@ -19,6 +19,7 @@ use crate::config::{OutputFormat, Scenario};
 use hardener_common::types::{
     ComplianceProfile, FindingCategory, FindingPolicyException, Severity,
 };
+use hardener_types::{DeclineReason, ExceptionOutcome, FindingExceptionDeclined};
 
 /// A finding carrying a single CIS mapping for the given control id.
 fn cis_finding(control_id: &str) -> Finding {
@@ -34,7 +35,7 @@ fn cis_finding(control_id: &str) -> Finding {
         finding_severity: Severity::Medium,
         finding_title: "Test Finding".to_string(),
         finding_compliance: vec![mapping(ComplianceFramework::CIS, control_id)],
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }
@@ -66,6 +67,29 @@ fn config_with_profile(framework: ComplianceFramework, profile: ComplianceProfil
         output_dir: None,
         profile,
     }
+}
+
+#[test]
+fn a_declined_exception_still_fails_its_control() {
+    let finding = Finding {
+        finding_exception: ExceptionOutcome::Declined(FindingExceptionDeclined {
+            exception_declined_reason: DeclineReason::ValueMismatch {
+                documented: "yes".to_string(),
+                observed: "prohibit-password".to_string(),
+            },
+            exception_reason: "legacy jump host".to_string(),
+        }),
+        ..cis_finding("1.1.1")
+    };
+
+    assert!(
+        has_live_finding(std::slice::from_ref(&finding)),
+        "an exception that did not apply excuses nothing, so the control must fail"
+    );
+    assert!(
+        !finding.is_policy_excepted(),
+        "a declined exception must never read as a documented deviation"
+    );
 }
 
 #[test]
@@ -163,7 +187,7 @@ fn excepted_finding_does_not_fail_control() {
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
     let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
     let mut excepted = cis_finding("1.5.1");
-    excepted.finding_policy_exception = Some(FindingPolicyException::default());
+    excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
     let report = generator.generate(&[excepted], &[]).pop().unwrap();
 
     let result = report
@@ -179,11 +203,7 @@ fn excepted_finding_does_not_fail_control() {
         1,
         "the excepted finding must stay attached as visible evidence"
     );
-    assert!(
-        result.control_findings[0]
-            .finding_policy_exception
-            .is_some()
-    );
+    assert!(result.control_findings[0].is_policy_excepted());
 }
 
 #[test]
@@ -195,7 +215,7 @@ fn live_finding_still_fails_a_control_that_also_has_an_excepted_one() {
     let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
     let mut excepted = cis_finding("1.5.1");
     excepted.finding_id = "test_excepted".to_string();
-    excepted.finding_policy_exception = Some(FindingPolicyException::default());
+    excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
     let report = generator
         .generate(&[excepted, cis_finding("1.5.1")], &[])
         .pop()
@@ -217,7 +237,7 @@ fn safe_failure_net_fails_a_mixed_uncatalogued_control() {
     // as a Fail carrying both findings.
     let mut excepted = cis_finding("ZZ-UNCATALOGUED-9999");
     excepted.finding_id = "test_excepted".to_string();
-    excepted.finding_policy_exception = Some(FindingPolicyException::default());
+    excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
     let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
     let report = generator
         .generate(&[excepted, cis_finding("ZZ-UNCATALOGUED-9999")], &[])
@@ -242,7 +262,7 @@ fn excepted_finding_on_uncatalogued_control_is_not_emitted() {
     // no live violation to surface, so the net must skip it entirely
     // rather than manufacture a Fail row with an empty findings list.
     let mut excepted = cis_finding("ZZ-UNCATALOGUED-9999");
-    excepted.finding_policy_exception = Some(FindingPolicyException::default());
+    excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
     let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
     let report = generator.generate(&[excepted], &[]).pop().unwrap();
 

@@ -1534,7 +1534,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "ssh-permitrootlogin")
         .expect("non-compliant directive should still produce a finding");
     assert!(
-        directive_finding.finding_policy_exception.is_some(),
+        directive_finding.is_policy_excepted(),
         "directive finding should be annotated with the valid exception"
     );
 
@@ -1544,7 +1544,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "ssh-kexalgorithms")
         .expect("non-compliant crypto directive should still produce a finding");
     assert!(
-        crypto_finding.finding_policy_exception.is_some(),
+        crypto_finding.is_policy_excepted(),
         "crypto finding should be annotated with the valid exception"
     );
 }
@@ -1593,7 +1593,7 @@ async fn scan_ignores_exception_whose_value_does_not_match() {
         .find(|f| f.finding_id == "ssh-permitrootlogin")
         .expect("non-compliant directive should still produce a finding");
     assert!(
-        directive_finding.finding_policy_exception.is_none(),
+        !directive_finding.is_policy_excepted(),
         "an exception for a value the host does not have must not be honoured"
     );
 
@@ -1605,7 +1605,7 @@ async fn scan_ignores_exception_whose_value_does_not_match() {
         .find(|f| f.finding_id == "ssh-kexalgorithms")
         .expect("non-compliant crypto directive should still produce a finding");
     assert!(
-        crypto_finding.finding_policy_exception.is_none(),
+        !crypto_finding.is_policy_excepted(),
         "an exception for a value the host does not have must not be honoured"
     );
 }
@@ -3279,7 +3279,7 @@ async fn assert_key_silences(finding_id: &str, key: &str) {
         .unwrap_or_else(|| panic!("an excepted {finding_id} is still reported, annotated"));
 
     assert!(
-        annotated.finding_policy_exception.is_some(),
+        annotated.is_policy_excepted(),
         "an exception written under {key} must annotate {finding_id}",
     );
 }

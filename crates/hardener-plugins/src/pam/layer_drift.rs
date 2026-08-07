@@ -16,6 +16,7 @@
 
 use hardener_common::types::{FindingCategory, Severity};
 use hardener_core::plugin::Finding;
+use hardener_types::ExceptionOutcome;
 use std::collections::BTreeSet;
 
 /// One configuration file that can be masked, and what masking it costs.
@@ -167,7 +168,7 @@ pub(super) fn masked_keys_finding(
         // No directive to match an exception against: this names a set of keys
         // the tool does not manage, so there is no setting for a configured
         // exception to be about.
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }

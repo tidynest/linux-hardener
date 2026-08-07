@@ -25,6 +25,7 @@ use hardener_core::{
         UncheckedCheck, ValidationIssue, ValidationReport,
     },
 };
+use hardener_types::ExceptionOutcome;
 use std::path::Path;
 use std::time::Instant;
 use tracing::{debug, info, warn};
@@ -668,7 +669,9 @@ impl HardeningPlugin for PamHardeningPlugin {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
                 let policy_exception = config
                     .matching_exception(directive.pam_directive_name, &current_display)
-                    .map(|e| e.to_finding_exception());
+                    .map_or(ExceptionOutcome::NotConfigured, |e| {
+                        ExceptionOutcome::Applied(e.to_finding_exception())
+                    });
 
                 findings.push(Finding {
                     finding_id: format!(
@@ -699,7 +702,7 @@ impl HardeningPlugin for PamHardeningPlugin {
                         directive.pam_directive_name
                     ),
                     finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
-                    finding_policy_exception: policy_exception,
+                    finding_exception: policy_exception,
                     finding_exception_key: Some(directive.pam_directive_name.to_string()),
                 });
             }
@@ -1489,7 +1492,7 @@ fn min_days_unenforceable_finding(directive: &PamDirective) -> Finding {
         // Never excepted, for the same reason as the module-absent finding: an
         // exception documents a value the operator accepts, and this is not
         // about the value. The value is already correct.
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }
@@ -1522,7 +1525,7 @@ fn module_absent_finding(directive: &PamDirective, module: &str, conf_path: &str
         finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
         // Deliberately never excepted: an exception documents a value the
         // operator accepts, and this is not about the value.
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }

@@ -11,6 +11,7 @@ use hardener_common::{
     error::Result,
     types::{FindingCategory, PluginId, Severity},
 };
+use hardener_types::ExceptionOutcome;
 
 /// A configurable mock plugin for testing.
 ///
@@ -138,7 +139,7 @@ impl HardeningPlugin for MockPlugin {
                 finding_severity: Severity::Low,
                 finding_title: format!("Mock directive finding: {key}"),
                 finding_compliance: vec![],
-                finding_policy_exception: None,
+                finding_exception: ExceptionOutcome::NotConfigured,
                 finding_exception_key: None,
             });
         }

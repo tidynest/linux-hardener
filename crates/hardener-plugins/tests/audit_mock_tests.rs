@@ -1366,7 +1366,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "audit_rule_modules")
         .expect("missing modules rule should still produce a finding");
     assert!(
-        f.finding_policy_exception.is_some(),
+        f.is_policy_excepted(),
         "finding should be annotated with the valid exception"
     );
 
@@ -1378,7 +1378,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "audit_not_enabled")
         .expect("disabled auditd should still produce a finding");
     assert!(
-        daemon_finding.finding_policy_exception.is_none(),
+        !daemon_finding.is_policy_excepted(),
         "daemon-state findings have no exception key and stay unannotated"
     );
 }
@@ -2159,7 +2159,7 @@ async fn scan_honours_an_exception_for_a_host_without_auditd_installed() {
         .find(|f| f.finding_id == "audit_not_installed")
         .expect("a host without auditd raises the finding at all");
     assert!(
-        plain_finding.finding_policy_exception.is_none(),
+        !plain_finding.is_policy_excepted(),
         "with nothing declared the finding must stay a live violation"
     );
 
@@ -2173,8 +2173,7 @@ async fn scan_honours_an_exception_for_a_host_without_auditd_installed() {
             .iter()
             .find(|f| f.finding_id == "audit_not_installed")
             .expect("an approved deviation is still reported, annotated rather than dropped")
-            .finding_policy_exception
-            .is_some(),
+            .is_policy_excepted(),
         "the declared exception must reach the finding, or report fails the control"
     );
 }
@@ -2192,7 +2191,7 @@ async fn scan_honours_separate_exceptions_for_auditd_at_boot_and_running() {
             .find(|f| f.finding_id == id)
             .unwrap_or_else(|| panic!("{id} is raised at all on this host"));
         assert!(
-            finding.finding_policy_exception.is_none(),
+            !finding.is_policy_excepted(),
             "{id} must stay a live violation when nothing excuses it"
         );
     }
@@ -2207,7 +2206,7 @@ async fn scan_honours_separate_exceptions_for_auditd_at_boot_and_running() {
             .scan_findings
             .iter()
             .find(|f| f.finding_id == id)
-            .map(|f| f.finding_policy_exception.is_some())
+            .map(|f| f.is_policy_excepted())
     };
     assert_eq!(
         excepted("audit_not_enabled"),
@@ -2281,7 +2280,7 @@ async fn every_audit_finding_names_the_exception_key_that_silences_it() {
 
     for finding in &scan(&config).await.scan_findings {
         assert!(
-            finding.finding_policy_exception.is_some(),
+            finding.is_policy_excepted(),
             "{} was not annotated by an exception written under the key it named",
             finding.finding_id,
         );

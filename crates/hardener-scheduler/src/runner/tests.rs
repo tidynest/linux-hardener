@@ -16,7 +16,7 @@
 
 use super::*;
 use hardener_common::types::FindingCategory;
-use hardener_core::Finding;
+use hardener_core::{ExceptionOutcome, Finding};
 use tempfile::tempdir;
 
 /// The session row naming which plugins a scan covers is written before any
@@ -65,7 +65,7 @@ fn make_finding(id: &str, severity: Severity) -> Finding {
         finding_remediation_steps: vec!["Step 1".to_string()],
         finding_impact: "Test impact".to_string(),
         finding_compliance: vec![],
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }

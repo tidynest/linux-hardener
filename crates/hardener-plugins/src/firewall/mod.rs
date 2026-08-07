@@ -22,6 +22,7 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
+use hardener_types::ExceptionOutcome;
 use std::cmp::Ordering;
 use std::path::Path;
 use std::time::Instant;
@@ -875,9 +876,11 @@ fn not_at_boot_finding(
         finding_severity: Severity::High,
         finding_title: "Firewall does not start at boot".to_string(),
         finding_compliance: get_firewall_compliance_mappings(),
-        finding_policy_exception: config
+        finding_exception: config
             .has_valid_exception(FIREWALL_AT_BOOT_EXCEPTION)
-            .map(|exception| exception.to_finding_exception()),
+            .map_or(ExceptionOutcome::NotConfigured, |exception| {
+                ExceptionOutcome::Applied(exception.to_finding_exception())
+            }),
         finding_exception_key: Some(FIREWALL_AT_BOOT_EXCEPTION.to_string()),
     }
 }
@@ -1282,9 +1285,11 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 finding_severity: Severity::High,
                 finding_title: "Firewall disabled".to_string(),
                 finding_compliance: get_firewall_compliance_mappings(),
-                finding_policy_exception: config
+                finding_exception: config
                     .has_valid_exception(FIREWALL_ENABLED_EXCEPTION)
-                    .map(|exception| exception.to_finding_exception()),
+                    .map_or(ExceptionOutcome::NotConfigured, |exception| {
+                        ExceptionOutcome::Applied(exception.to_finding_exception())
+                    }),
                 finding_exception_key: Some(FIREWALL_ENABLED_EXCEPTION.to_string()),
             });
         }

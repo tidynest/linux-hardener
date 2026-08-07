@@ -14,7 +14,9 @@
 //! five formatter test modules reach it by its absolute path,
 //! `crate::output::test_support`, which the move left untouched.
 
-use hardener_types::{Finding, FindingCategory, FindingPolicyException, Severity};
+use hardener_types::{
+    ExceptionOutcome, Finding, FindingCategory, FindingPolicyException, Severity,
+};
 
 /// A finding as a scan emits it. Passing `exception` mirrors what
 /// `Plugin::scan` attaches when the config documents the deviation.
@@ -31,7 +33,11 @@ pub(crate) fn finding(title: &str, excepted: bool) -> Finding {
         finding_severity: Severity::High,
         finding_title: title.to_string(),
         finding_compliance: vec![],
-        finding_policy_exception: excepted.then(FindingPolicyException::default),
+        finding_exception: if excepted {
+            ExceptionOutcome::Applied(FindingPolicyException::default())
+        } else {
+            ExceptionOutcome::NotConfigured
+        },
         finding_exception_key: None,
     }
 }

@@ -9,6 +9,7 @@ use hardener_core::{
     UncheckedBlocker, plugin::HardeningPlugin,
 };
 use hardener_plugins::FirewallHardeningPlugin;
+use hardener_types::ExceptionOutcome;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -3681,7 +3682,7 @@ fn whole_firewall_exception_config(key: &str) -> PluginConfig {
 
 /// The finding an operator has approved must still be reported, carrying the
 /// exception, because `ReportGenerator` fails a control on any finding whose
-/// `finding_policy_exception` is `None`. Scan is the only site that can attach
+/// `finding_exception` is not `Applied`. Scan is the only site that can attach
 /// it, so a scan that ignores the config makes the deviation unexcusable
 /// however the operator writes it down.
 #[tokio::test]
@@ -3700,7 +3701,7 @@ async fn scan_honours_an_exception_for_a_host_with_no_firewall_enabled() {
         .find(|f| f.finding_title == "Firewall disabled")
         .expect("a disabled firewall raises the finding at all");
     assert!(
-        plain_finding.finding_policy_exception.is_none(),
+        !plain_finding.is_policy_excepted(),
         "with nothing declared the finding must stay a live violation"
     );
 
@@ -3714,10 +3715,9 @@ async fn scan_honours_an_exception_for_a_host_with_no_firewall_enabled() {
         .find(|f| f.finding_title == "Firewall disabled")
         .expect("an approved deviation is still reported, annotated rather than dropped");
 
-    let exception = finding
-        .finding_policy_exception
-        .as_ref()
-        .expect("the declared exception must reach the finding, or report fails the control");
+    let ExceptionOutcome::Applied(exception) = &finding.finding_exception else {
+        panic!("the declared exception must reach the finding, or report fails the control");
+    };
     assert!(
         exception.exception_reason.contains("JIRA-8812"),
         "the operator's own reason travels with the finding, got {:?}",
@@ -3756,7 +3756,7 @@ async fn scan_honours_an_exception_for_a_firewall_that_does_not_start_at_boot() 
         .find(|f| f.finding_title == "Firewall does not start at boot")
         .expect("a unit not wanted at boot raises the finding at all");
     assert!(
-        plain_finding.finding_policy_exception.is_none(),
+        !plain_finding.is_policy_excepted(),
         "with nothing declared the finding must stay a live violation"
     );
 
@@ -3771,7 +3771,7 @@ async fn scan_honours_an_exception_for_a_firewall_that_does_not_start_at_boot() 
         .expect("an approved deviation is still reported, annotated rather than dropped");
 
     assert!(
-        finding.finding_policy_exception.is_some(),
+        finding.is_policy_excepted(),
         "the boot-persistence finding takes its own key, so an exception for the \
          disabled state must not silence it and its own key must reach it"
     );
@@ -3937,7 +3937,7 @@ async fn every_firewall_finding_names_the_exception_key_that_silences_it() {
 
     for finding in &scan(&config).await.scan_findings {
         assert!(
-            finding.finding_policy_exception.is_some(),
+            finding.is_policy_excepted(),
             "{} was not annotated by an exception written under the key it named",
             finding.finding_id,
         );

@@ -513,7 +513,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "selinux-not-enforcing")
         .expect("non-compliant SELinux mode should still produce a finding");
     assert!(
-        selinux_finding.finding_policy_exception.is_some(),
+        selinux_finding.is_policy_excepted(),
         "SELinux finding should be annotated with the valid exception"
     );
 
@@ -544,7 +544,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "apparmor-complain-mode")
         .expect("non-compliant AppArmor mode should still produce a finding");
     assert!(
-        apparmor_finding.finding_policy_exception.is_some(),
+        apparmor_finding.is_policy_excepted(),
         "AppArmor finding should be annotated with the valid exception"
     );
 
@@ -561,7 +561,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "no-mac-system")
         .expect("absent MAC system should still produce a finding");
     assert!(
-        no_mac_finding.finding_policy_exception.is_none(),
+        !no_mac_finding.is_policy_excepted(),
         "no-mac-system has no exception key and must never be annotated"
     );
 }
@@ -595,7 +595,7 @@ async fn scan_annotates_apparmor_no_profiles_exception() {
         .find(|f| f.finding_id == "apparmor-no-profiles")
         .expect("no loaded AppArmor profiles should still produce a finding");
     assert!(
-        finding.finding_policy_exception.is_some(),
+        finding.is_policy_excepted(),
         "AppArmor no-profiles finding should be annotated with the valid exception"
     );
 }
@@ -1098,7 +1098,7 @@ async fn scan_honours_an_exception_for_a_host_with_no_mac_system() {
         .find(|f| f.finding_id == "no-mac-system")
         .expect("a host with no MAC system raises the finding at all");
     assert!(
-        plain_finding.finding_policy_exception.is_none(),
+        !plain_finding.is_policy_excepted(),
         "with nothing declared the finding must stay a live violation"
     );
 
@@ -1113,7 +1113,7 @@ async fn scan_honours_an_exception_for_a_host_with_no_mac_system() {
         .expect("an approved deviation is still reported, annotated rather than dropped");
 
     assert!(
-        finding.finding_policy_exception.is_some(),
+        finding.is_policy_excepted(),
         "the declared exception must reach the finding, or report fails the control"
     );
 }
@@ -1177,7 +1177,7 @@ async fn every_mac_finding_names_the_exception_key_that_silences_it() {
 
     for finding in &scan(&config).await.scan_findings {
         assert!(
-            finding.finding_policy_exception.is_some(),
+            finding.is_policy_excepted(),
             "{} was not annotated by an exception written under the key it named",
             finding.finding_id,
         );

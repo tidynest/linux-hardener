@@ -15,9 +15,9 @@
 
 use super::*;
 use crate::types::{
-    Change, ChangeType, CheckpointInfo, ComplianceSummary, ControlStatus, FileRestoreAction,
-    FileRestoreResult, Finding, FindingCategory, PluginId, RollbackResult, ScanSessionInfo,
-    Severity,
+    Change, ChangeType, CheckpointInfo, ComplianceSummary, ControlStatus, ExceptionOutcome,
+    FileRestoreAction, FileRestoreResult, Finding, FindingCategory, PluginId, RollbackResult,
+    ScanSessionInfo, Severity,
 };
 
 #[test]
@@ -91,7 +91,7 @@ fn a_finding() -> Finding {
         finding_severity: Severity::High,
         finding_title: "t".to_string(),
         finding_compliance: vec![],
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }
@@ -747,7 +747,7 @@ fn finding(id: &str, sev: Severity) -> Finding {
         finding_severity: sev,
         finding_title: "t".to_string(),
         finding_compliance: vec![],
-        finding_policy_exception: None,
+        finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }
@@ -773,7 +773,8 @@ fn groups_by_severity_critical_first_skipping_empty() {
 #[test]
 fn a_documented_deviation_survives_the_split_instead_of_vanishing() {
     let mut excepted = finding("2", Severity::Critical);
-    excepted.finding_policy_exception = Some(crate::types::FindingPolicyException::default());
+    excepted.finding_exception =
+        ExceptionOutcome::Applied(crate::types::FindingPolicyException::default());
     let fs = vec![finding("1", Severity::High), excepted];
 
     let (live, deviations) = split_policy_excepted(&fs);
@@ -796,8 +797,10 @@ fn a_documented_deviation_survives_the_split_instead_of_vanishing() {
 fn an_all_excepted_host_still_has_evidence_to_render() {
     let mut a = finding("1", Severity::Critical);
     let mut b = finding("2", Severity::Low);
-    a.finding_policy_exception = Some(crate::types::FindingPolicyException::default());
-    b.finding_policy_exception = Some(crate::types::FindingPolicyException::default());
+    a.finding_exception =
+        ExceptionOutcome::Applied(crate::types::FindingPolicyException::default());
+    b.finding_exception =
+        ExceptionOutcome::Applied(crate::types::FindingPolicyException::default());
 
     let (live, deviations) = split_policy_excepted(&[a, b]);
     assert!(live.is_empty(), "no live violations: {live:?}");

@@ -937,7 +937,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "kernel_kernel_randomize_va_space")
         .expect("non-compliant param should still produce a finding");
     assert!(
-        f.finding_policy_exception.is_some(),
+        f.is_policy_excepted(),
         "finding should be annotated with the valid exception"
     );
 }
@@ -974,7 +974,7 @@ async fn scan_ignores_exception_whose_value_does_not_match() {
         .find(|f| f.finding_id == "kernel_kernel_randomize_va_space")
         .expect("non-compliant param should still produce a finding");
     assert!(
-        f.finding_policy_exception.is_none(),
+        !f.is_policy_excepted(),
         "an exception for a value the host does not have must not be honoured"
     );
 }
@@ -2474,7 +2474,7 @@ async fn a_kernel_finding_names_the_exception_key_that_silences_it() {
         .expect("an excepted finding is still reported, annotated");
 
     assert!(
-        annotated.finding_policy_exception.is_some(),
+        annotated.is_policy_excepted(),
         "an exception written under the advertised key must annotate the finding",
     );
 }
@@ -2515,7 +2515,7 @@ async fn a_boot_override_finding_names_the_exception_key_that_silences_it() {
         .expect("an excepted finding is still reported, annotated");
 
     assert!(
-        annotated.finding_policy_exception.is_some(),
+        annotated.is_policy_excepted(),
         "an exception written under the advertised key must annotate the finding",
     );
 }

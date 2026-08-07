@@ -41,6 +41,7 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
+use hardener_types::ExceptionOutcome;
 use std::{path::Path, time::Instant};
 use tracing::{error, info, warn};
 
@@ -1313,7 +1314,9 @@ impl HardeningPlugin for SshHardeningPlugin {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
                 let policy_exception = config
                     .matching_exception(directive.ssh_directive_name, &current_display)
-                    .map(|e| e.to_finding_exception());
+                    .map_or(ExceptionOutcome::NotConfigured, |e| {
+                        ExceptionOutcome::Applied(e.to_finding_exception())
+                    });
                 findings.push(Finding {
                     finding_category: FindingCategory::Network,
                     finding_current_value: current_display.clone(),
@@ -1355,7 +1358,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                         directive.ssh_directive_name,
                     ),
                     finding_compliance: get_ssh_compliance_mappings(directive.ssh_directive_name),
-                    finding_policy_exception: policy_exception,
+                    finding_exception: policy_exception,
                     finding_exception_key: Some(directive.ssh_directive_name.to_string()),
                 });
             }
@@ -1383,7 +1386,9 @@ impl HardeningPlugin for SshHardeningPlugin {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
                 let policy_exception = config
                     .matching_exception(crypto.crypto_directive_name, &current_display)
-                    .map(|e| e.to_finding_exception());
+                    .map_or(ExceptionOutcome::NotConfigured, |e| {
+                        ExceptionOutcome::Applied(e.to_finding_exception())
+                    });
                 findings.push(Finding {
                     finding_category: FindingCategory::Network,
                     finding_current_value: current_display.clone(),
@@ -1425,7 +1430,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                         crypto.crypto_directive_name,
                     ),
                     finding_compliance: get_ssh_compliance_mappings(crypto.crypto_directive_name),
-                    finding_policy_exception: policy_exception,
+                    finding_exception: policy_exception,
                     finding_exception_key: Some(crypto.crypto_directive_name.to_string()),
                 });
             }

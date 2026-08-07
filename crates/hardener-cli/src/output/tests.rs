@@ -245,7 +245,7 @@ fn finding(title: &str) -> Finding {
         finding_severity: Severity::Medium,
         finding_title: title.to_string(),
         finding_compliance: vec![],
-        finding_policy_exception: None,
+        finding_exception: hardener_types::ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
     }
 }
@@ -324,7 +324,9 @@ fn a_failed_scan_never_renders_as_a_clean_plugin() {
 #[test]
 fn a_policy_excepted_finding_is_not_rendered_as_a_violation() {
     let mut excepted = finding("Root login permitted");
-    excepted.finding_policy_exception = Some(hardener_types::FindingPolicyException::default());
+    excepted.finding_exception = hardener_types::ExceptionOutcome::Applied(
+        hardener_types::FindingPolicyException::default(),
+    );
     let lines = scan_plugin_lines(
         &metadata("Audit Rules Hardening"),
         &scan_result(true, vec![excepted], vec![]),
@@ -465,7 +467,9 @@ fn a_dotted_exception_key_is_quoted() {
 fn an_already_excepted_finding_is_not_told_how_to_except_it() {
     let mut excepted = finding("Bluetooth service is enabled");
     excepted.finding_exception_key = Some("bluetooth".to_string());
-    excepted.finding_policy_exception = Some(hardener_types::FindingPolicyException::default());
+    excepted.finding_exception = hardener_types::ExceptionOutcome::Applied(
+        hardener_types::FindingPolicyException::default(),
+    );
     let lines = scan_plugin_lines(
         &metadata("Audit Rules Hardening"),
         &scan_result(true, vec![excepted], vec![]),

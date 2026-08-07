@@ -23,6 +23,7 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
+use hardener_types::ExceptionOutcome;
 use std::os::unix::fs::OpenOptionsExt;
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
@@ -460,7 +461,9 @@ async fn check_vendor_layer_permissions(
     let target = target_mode(directive, current_mode);
     let policy_exception = config
         .matching_mode_exception(directive.permission_path, current_mode)
-        .map(|e| e.to_finding_exception());
+        .map_or(ExceptionOutcome::NotConfigured, |e| {
+            ExceptionOutcome::Applied(e.to_finding_exception())
+        });
     PermissionCheck::VendorOnly(Box::new(Finding {
         finding_category: FindingCategory::FileSystem,
         finding_current_value: format!("{:04o}", current_mode),
@@ -488,7 +491,7 @@ async fn check_vendor_layer_permissions(
         finding_severity: directive.permission_severity,
         finding_title: format!("Insecure permissions on {vendor_path}"),
         finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
-        finding_policy_exception: policy_exception,
+        finding_exception: policy_exception,
         finding_exception_key: Some(directive.permission_path.to_string()),
     }))
 }
@@ -499,7 +502,7 @@ async fn check_vendor_layer_permissions(
 /// `permission_path`) replaces the built-in baseline mode before the
 /// compliance check runs, so a stricter override can flag an
 /// otherwise-compliant path. A valid policy exception for the path annotates
-/// a resulting finding via `finding_policy_exception` rather than dropping it.
+/// a resulting finding via `finding_exception` rather than dropping it.
 ///
 /// Returns [`PermissionCheck::Insecure`] when the path violates its directive on
 /// a POSIX filesystem, [`PermissionCheck::NonPosix`] when it violates but sits on
@@ -571,7 +574,9 @@ async fn check_path_permissions(
     let target = target_mode(directive, current_mode);
     let policy_exception = config
         .matching_mode_exception(directive.permission_path, current_mode)
-        .map(|e| e.to_finding_exception());
+        .map_or(ExceptionOutcome::NotConfigured, |e| {
+            ExceptionOutcome::Applied(e.to_finding_exception())
+        });
     PermissionCheck::Insecure(Box::new(Finding {
         finding_category: FindingCategory::FileSystem,
         finding_current_value: format!("{:04o}", current_mode),
@@ -590,7 +595,7 @@ async fn check_path_permissions(
         finding_severity: directive.permission_severity,
         finding_title: format!("Insecure permissions on {}", directive.permission_path),
         finding_compliance: get_permissions_compliance_mappings(directive.permission_path),
-        finding_policy_exception: policy_exception,
+        finding_exception: policy_exception,
         finding_exception_key: Some(directive.permission_path.to_string()),
     }))
 }

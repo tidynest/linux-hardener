@@ -1,7 +1,7 @@
 use hardener_state::{ScanHistoryManager, ScanStatus, init_db};
 use hardener_types::{
-    ComplianceFramework, ComplianceMapping, Finding, FindingCategory, FindingPolicyException,
-    PluginId, ScanResult, Severity, UncheckedCheck,
+    ComplianceFramework, ComplianceMapping, ExceptionOutcome, Finding, FindingCategory,
+    FindingPolicyException, PluginId, ScanResult, Severity, UncheckedCheck,
 };
 use tempfile::tempdir;
 
@@ -29,7 +29,7 @@ fn sample_results() -> Vec<ScanResult> {
             finding_recommended_value: "good".to_string(),
             finding_remediation_steps: vec!["Step 1".to_string()],
             finding_compliance: vec![],
-            finding_policy_exception: None,
+            finding_exception: ExceptionOutcome::NotConfigured,
             finding_exception_key: Some("test-exception-key".to_string()),
         }],
         scan_duration_us: 1000,
@@ -373,7 +373,7 @@ async fn every_finding_field_survives_the_scan_history() {
             compliance_control_title: "marker-control-title".to_string(),
             compliance_section: Some("marker-section".to_string()),
         }],
-        finding_policy_exception: Some(FindingPolicyException {
+        finding_exception: ExceptionOutcome::Applied(FindingPolicyException {
             exception_allowed_value: "marker-allowed".to_string(),
             exception_reason: "marker-reason".to_string(),
             exception_approved_by: Some("marker-approver".to_string()),

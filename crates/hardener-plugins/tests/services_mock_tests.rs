@@ -713,7 +713,7 @@ async fn scan_annotates_valid_exception() {
         .find(|f| f.finding_id == "service_bluetooth")
         .expect("unnecessary service should still produce a finding");
     assert!(
-        f.finding_policy_exception.is_some(),
+        f.is_policy_excepted(),
         "finding should be annotated with the valid exception"
     );
 }
@@ -1069,7 +1069,7 @@ async fn a_service_finding_names_the_exception_key_that_silences_it() {
         .expect("an excepted finding is still reported, annotated");
 
     assert!(
-        annotated.finding_policy_exception.is_some(),
+        annotated.is_policy_excepted(),
         "an exception written under the advertised key must annotate the finding",
     );
 }
