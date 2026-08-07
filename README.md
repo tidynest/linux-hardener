@@ -420,6 +420,13 @@ Open defects are tracked as
 including the ones not yet fixed, so the risk is yours to judge rather than
 mine to summarise.
 
+Those are the limits that are **known**. The limits of what has been
+**measured** are a different question and a separate document, written for
+someone deciding whether to run this on a host that matters:
+[what this release does not prove](docs/reference/what-is-not-proven.md). It
+names, among other things, the two plugins whose applies no independent oracle
+has ever read back, and the one of them that `apply --all` includes anyway.
+
 ---
 
 ## Project status
@@ -452,6 +459,13 @@ apply through an oracle independent of the tool. Both are described in
 The browser-level end-to-end suite is stale against the redesigned interface and
 is being rewritten
 ([#48](https://github.com/tidynest/linux-hardener/issues/48)).
+
+A test count says how much ran, not what it asked. What each capability's
+evidence actually asks, and the grade of that evidence, is in the
+[evidence ledger](docs/reference/evidence-ledger.md); what no test reaches is in
+the [coverage baseline](docs/reference/coverage-baseline.md); and what the
+release therefore cannot claim is in
+[what this release does not prove](docs/reference/what-is-not-proven.md).
 
 ---
 

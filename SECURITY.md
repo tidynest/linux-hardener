@@ -104,6 +104,15 @@ This tool is designed to harden systems against common attack vectors, but is **
 
 ### Known Limitations
 
+The limitations below are the ones that are known. The separate question of what
+has never been **measured** is answered in
+[what this release does not prove](docs/reference/what-is-not-proven.md), which
+ships with the release and names, for each capability, the reading that does not
+exist: the plugins whose applies no independent oracle reads back, the
+distributions accepted by name and never run, and the fleet test file that
+reports four passes having asserted nothing. Read it alongside this section
+before deploying to a host that matters.
+
 1. **Race Conditions**: Configuration file locking is implemented for `sshd_config` via an exclusive advisory `flock` held across the full read-modify-write cycle. Other configuration files do not currently use advisory locking.
 
 2. **Symbolic Links**: The permissions plugin uses `O_NOFOLLOW` with `fchmod` on local targets to prevent TOCTOU symlink substitution. Backup creation refuses to follow or overwrite symlinks at the destination. Remote execution paths fall back to the executor's `chmod` command and do not carry this guarantee.
