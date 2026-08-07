@@ -439,9 +439,9 @@
     { plugin_id: 'firewall-hardening', plugin_name: 'Firewall Hardening', plugin_description: 'Configures host firewall rules', plugin_category: 'Network', plugin_version: '1.0.0' },
     { plugin_id: 'pam-hardening', plugin_name: 'PAM Hardening', plugin_description: 'Strengthens PAM authentication modules', plugin_category: 'Authentication', plugin_version: '1.0.0' },
     { plugin_id: 'service-minimisation', plugin_name: 'Services Minimisation', plugin_description: 'Disables unnecessary system services', plugin_category: 'Services', plugin_version: '1.0.0' },
-    { plugin_id: 'audit-hardening', plugin_name: 'Audit Hardening', plugin_description: 'Configures auditd rules for system auditing', plugin_category: 'Logging', plugin_version: '1.0.0' },
+    { plugin_id: 'audit-hardening', plugin_name: 'Audit Hardening', plugin_description: 'Configures auditd rules for system auditing', plugin_category: 'Audit', plugin_version: '1.0.0' },
     { plugin_id: 'permissions-hardening', plugin_name: 'Permissions Hardening', plugin_description: 'Fixes insecure file and directory permissions', plugin_category: 'FileSystem', plugin_version: '1.0.0' },
-    { plugin_id: 'mac-hardening', plugin_name: 'MAC Hardening', plugin_description: 'Enforces SELinux or AppArmor mandatory access controls', plugin_category: 'AccessControl', plugin_version: '1.0.0' },
+    { plugin_id: 'mac-hardening', plugin_name: 'MAC Hardening', plugin_description: 'Enforces SELinux or AppArmor mandatory access controls', plugin_category: 'MandatoryAccessControl', plugin_version: '1.0.0' },
   ];
 
   // ---- Command Handler ----
@@ -632,8 +632,21 @@
           { framework: 'CIS', summary: { summary_total_controls: 40, summary_passing: 33, summary_failing: 5, summary_manual_review: 2, summary_not_applicable: 0, summary_score_percentage: 82.5 } },
           { framework: 'STIG', summary: { summary_total_controls: 31, summary_passing: 22, summary_failing: 8, summary_manual_review: 1, summary_not_applicable: 0, summary_score_percentage: 71.0 } },
         ];
+        // A fleet-progress event per host, which is how the page knows the scan
+        // finished: it counts completions against the hosts it expects and
+        // stays on "Scanning..." until they match. FleetProgress is
+        // { host, done, total, failed }.
+        const targets = names.concat((args && args.adhoc) || []);
+        targets.forEach((name, index) => {
+          emit('fleet-progress', {
+            host: name,
+            done: index + 1,
+            total: targets.length,
+            failed: name === 'db-01',
+          });
+        });
         // db-01 exercises the failed-row path; everything else is a healthy host.
-        return names.map((name) =>
+        return targets.map((name) =>
           name === 'db-01'
             ? { host_name: name, status: { Failed: 'SSH connection refused on port 2222' }, tallies: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, scan_results: [], compliance: [] }
             : { host_name: name, status: 'Ok', tallies: okTallies, scan_results: SCAN_RESULTS, compliance }
@@ -684,9 +697,35 @@
 
   // ---- Install Mock ----
 
+  // The frontend decides a Tauri runtime is present by `typeof window.__TAURI__
+  // !== 'undefined'` and then uses whatever it needs from it. Defining only
+  // `core` therefore claims a runtime this mock does not supply: the Hosts page
+  // awaits `event.listen('fleet-progress')` before issuing its scan, and with
+  // no `event` namespace that call could never succeed, so the scan sat at
+  // "Scanning... 0 of 1 finished" for as long as the test waited. Nothing
+  // reported an error, because the page treats live progress as best-effort.
+  const listeners = new Map();
+
+  function listen(name, handler) {
+    const forName = listeners.get(name) || new Set();
+    forName.add(handler);
+    listeners.set(name, forName);
+    return Promise.resolve(() => forName.delete(handler));
+  }
+
+  function emit(name, payload) {
+    for (const handler of listeners.get(name) || []) {
+      handler({ event: name, payload });
+    }
+  }
+
   window.__TAURI__ = {
     core: {
       invoke: handleInvoke,
+    },
+    event: {
+      listen,
+      emit: (name, payload) => Promise.resolve(emit(name, payload)),
     },
   };
 
