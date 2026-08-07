@@ -439,8 +439,15 @@ expires = "2026-07-15"
 | `expires` | string | no | Expiry date, ISO 8601 (`YYYY-MM-DD`). After this date the exception stops applying and the finding counts as a violation again. |
 
 An exception is **valid** only while `allowed = true` and the `expires` date
-(if set) has not passed. Expired exceptions are ignored, which means
-exceptions age out rather than being forgotten forever.
+(if set) has not passed. `allowed = false` is the operator explicitly
+declining the exception, and that stays silent by design: nothing is
+reported, because withholding an exception on purpose needs no comment. An
+exception that expired, or whose `value` no longer matches the host, is
+different: it is **declined** rather than merely ignored, the finding it
+would have covered stays a live violation, and `scan` prints a line against
+that finding naming which of the two happened. Age does not remove an
+exception quietly; it turns the exception into evidence that something
+drifted.
 
 ### Finding the key
 
@@ -477,10 +484,14 @@ exception to document.
 On every path, `scan`, `report`, `apply` and `apply --dry-run`, for `[ssh]`,
 `[kernel]`, `[pam]`, and `[permissions]`, the `value` field is compared
 against the value found on the system. An exception whose `value` does not
-match is ignored: the finding stays a live violation, still fails its
+match is declined: the finding stays a live violation, still fails its
 compliance controls, and `apply` hardens the setting instead of skipping it.
 This stops a config from passing a control, or a setting from being left
 unhardened, by documenting a deviation the host does not actually have.
+`scan` reports the decline rather than staying quiet about it: the finding
+keeps its real severity and gains a line naming the documented value against
+the one actually observed, so a stale exception reads as a stale exception
+rather than as one that simply never existed.
 
 The check is fail-closed by design: nothing is exempted merely because its
 current value could not be established, except for one narrow carve-out
@@ -588,7 +599,11 @@ checkpoint manager configured.
 For `[services]`, `[mac]`, `[audit]`, and `[firewall]` this comparison does
 not apply on any path, including `apply`: the key itself names the deviating
 item and there is no single system value to compare, so `value` is advisory
-only; it is recorded in the audit trail but never matched.
+only; it is recorded in the audit trail but never matched. With no value to
+mismatch, these four can only be declined for one reason, expiry, but an
+expired exception here is reported exactly as a value mismatch is
+elsewhere: the finding stays live and `scan` gains the same declined line,
+naming the date the exception lapsed.
 
 Because it is never matched, `apply --dry-run` does not print it either. The
 preview line for one of those four reads `left at 'unchanged'`, which claims

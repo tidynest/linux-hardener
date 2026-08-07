@@ -157,10 +157,14 @@ stdout stays machine-parseable.
 
 - A `directives` entry overrides the target value a check is measured against,
   so a check is judged against your policy rather than the shipped baseline.
-- A finding covered by a valid policy exception is **annotated** with that
+- A finding covered by a policy exception whose `value` still matches the
+  host, and whose `expires` date has not passed, is **annotated** with that
   exception rather than hidden. `scan` never removes a finding; it is
   `hardener report` that treats an annotated finding as satisfied for a
-  compliance control, while still listing it as evidence.
+  compliance control, while still listing it as evidence. `allowed = true` on
+  its own is not enough: an exception the host has since drifted away from, or
+  that has aged past `expires`, is **declined** instead, the finding stays
+  live with its real severity, and `scan` prints a line saying why.
 - `[global] enabled_plugins` and `disabled_plugins` gate which plugins run.
   A plugin you asked for that the config disables is named in a
   `Skipped by config:` line rather than silently omitted, because silence

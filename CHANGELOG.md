@@ -456,6 +456,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   absent is already set correctly and simply reaches nothing, so there is no
   value for an exception to document (#66).
 
+- **A policy exception that was configured but did not apply is now reported
+  against the finding rather than passed over in silence.** An `allowed = true`
+  exception whose `value` no longer matches the host, or whose `expires` date
+  has passed, leaves the finding a live violation exactly as before, but
+  `scan` now prints a line naming which of the two happened; `allowed = false`
+  stays silent, since that is the operator deliberately declining the
+  exception rather than one that lapsed on its own. Second half of #66, the
+  half that reads exceptions; the desktop still does not render the new line
+  (#133).
+
 - **The services plugin has differential coverage.** Nothing but the tool's own
   report previously said a unit it claimed to have disabled would fail to start
   at the next boot. `differential-suite.sh` now asks systemd and the filesystem,
