@@ -348,6 +348,79 @@ pub struct FindingPolicyException {
     pub exception_is_expired: bool,
 }
 
+/// Why a configured policy exception did not apply to a finding.
+///
+/// Each variant carries the values that variant needs rather than sharing one
+/// flat set of fields. The four plugins asking a presence question (services,
+/// mac, audit, firewall) have no observed value to name, so a shared
+/// `observed: Option<String>` would be `None` for every expiry and would mean
+/// different things in different arms. See [`EXCEPTION_OBSERVED_UNCHANGED`],
+/// which documents the same asymmetry from the other side.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "reason", rename_all = "lowercase")]
+pub enum DeclineReason {
+    /// The exception documents a value the host does not have.
+    ValueMismatch {
+        /// The value the exception says the host keeps.
+        documented: String,
+        /// The value actually read from the host.
+        observed: String,
+    },
+    /// The exception passed its expiry date and stopped applying.
+    Expired {
+        /// The `expires` date the exception carried, ISO 8601.
+        expired_on: String,
+    },
+}
+
+/// A policy exception that was configured, was allowed, and did not apply.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct FindingExceptionDeclined {
+    /// Why it did not apply, with the values that reason needs.
+    pub exception_declined_reason: DeclineReason,
+    /// The operator's own `reason` text, so they can tell which exception of
+    /// several this was without opening the config.
+    pub exception_reason: String,
+}
+
+/// What the configuration had to say about a finding.
+///
+/// This replaced an `Option<FindingPolicyException>` that had to stand for two
+/// situations needing opposite advice: no exception was configured, and an
+/// exception was configured and did not apply. Only the first is true of most
+/// findings carrying `None`, and an operator whose exception silently did
+/// nothing was told nothing at all.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+pub enum ExceptionOutcome {
+    /// No exception names this check, or one does and sets `allowed = false`,
+    /// which is the operator saying not to treat it as an exception.
+    #[default]
+    NotConfigured,
+    /// An exception applied. The finding is a documented deviation.
+    Applied(FindingPolicyException),
+    /// An exception was configured and did not apply. The finding is live.
+    Declined(FindingExceptionDeclined),
+}
+
+/// One line saying an exception did not apply, and why.
+///
+/// Shared for the same reason [`exception_preview_line`] is shared: hand-written
+/// copies of one sentence are how one ends up worded differently, or omitted.
+pub fn exception_declined_line(declined: &FindingExceptionDeclined) -> String {
+    let cause = match &declined.exception_declined_reason {
+        DeclineReason::ValueMismatch {
+            documented,
+            observed,
+        } => format!("documents '{documented}', host has '{observed}'"),
+        DeclineReason::Expired { expired_on } => format!("expired {expired_on}"),
+    };
+    format!(
+        "exception not applied: {cause} ({}: {})",
+        POLICY_EXCEPTION_LABEL, declined.exception_reason
+    )
+}
+
 // ============================================================================
 // Plugin Types (from hardener-core)
 // ============================================================================

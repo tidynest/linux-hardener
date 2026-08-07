@@ -645,6 +645,56 @@ mod policy_exception_tests {
         assert_eq!(live.evidence_label(), "CRITICAL");
     }
 }
+mod exception_declined_tests {
+    use crate::*;
+
+    #[test]
+    fn declined_line_for_a_value_mismatch_names_both_values() {
+        let declined = FindingExceptionDeclined {
+            exception_declined_reason: DeclineReason::ValueMismatch {
+                documented: "yes".to_string(),
+                observed: "prohibit-password".to_string(),
+            },
+            exception_reason: "legacy jump host".to_string(),
+        };
+
+        let line = exception_declined_line(&declined);
+
+        assert!(
+            line.contains("'yes'"),
+            "the documented value must appear: {line}"
+        );
+        assert!(
+            line.contains("'prohibit-password'"),
+            "the observed value must appear: {line}"
+        );
+        assert!(
+            line.contains("legacy jump host"),
+            "the operator's own reason must appear so they can tell which exception this was: {line}"
+        );
+    }
+
+    #[test]
+    fn declined_line_for_an_expiry_names_the_date() {
+        let declined = FindingExceptionDeclined {
+            exception_declined_reason: DeclineReason::Expired {
+                expired_on: "2026-01-01".to_string(),
+            },
+            exception_reason: "temporary waiver".to_string(),
+        };
+
+        let line = exception_declined_line(&declined);
+
+        assert!(
+            line.contains("2026-01-01"),
+            "the expiry date must appear: {line}"
+        );
+        assert!(
+            line.contains("temporary waiver"),
+            "the operator's own reason must appear: {line}"
+        );
+    }
+}
 mod rollback_result_tests {
     use crate::*;
 
