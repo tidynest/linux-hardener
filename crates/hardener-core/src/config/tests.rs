@@ -326,3 +326,77 @@ fn exception_outcome_is_not_configured_when_no_exception_names_the_key() {
 
     assert!(matches!(outcome, ExceptionOutcome::NotConfigured));
 }
+
+/// The regression this exists for: the permissions plugin formats an
+/// observed mode zero-padded (`"0640"`), but an operator may document their
+/// exception without the leading zero (`"640"`), and `docs/reference/
+/// configuration.md` promises both spellings match the same mode. Comparing
+/// them as text via `exception_outcome` reports a working exception as a
+/// declined value mismatch; `exception_outcome_for_mode` must compare
+/// numerically instead and apply it.
+#[test]
+fn exception_outcome_for_mode_applies_an_exception_spelled_without_the_leading_zero() {
+    let config = plugin_with("/etc/shadow", exception("640", None));
+
+    let outcome = config.exception_outcome_for_mode("/etc/shadow", 0o640);
+
+    match outcome {
+        ExceptionOutcome::Applied(applied) => {
+            assert_eq!(
+                applied.exception_allowed_value, "640",
+                "the operator's own spelling is carried onto the finding unchanged"
+            );
+        }
+        other => panic!("expected Applied, got {other:?}"),
+    }
+}
+
+/// The control for the test above: a genuinely different mode must still
+/// decline, so the numeric comparison is not accidentally matching
+/// everything.
+#[test]
+fn exception_outcome_for_mode_declines_a_genuinely_different_mode() {
+    let config = plugin_with("/etc/shadow", exception("640", None));
+
+    let outcome = config.exception_outcome_for_mode("/etc/shadow", 0o600);
+
+    match outcome {
+        ExceptionOutcome::Declined(declined) => match declined.exception_declined_reason {
+            DeclineReason::ValueMismatch {
+                documented,
+                observed,
+            } => {
+                assert_eq!(
+                    documented, "640",
+                    "the documented value is reported as the operator wrote it"
+                );
+                assert_eq!(
+                    observed, "0600",
+                    "the observed mode is reported zero-padded, matching finding_current_value"
+                );
+            }
+            other => panic!("expected a value mismatch, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
+/// A value that is not valid octal can never describe a mode, so it must
+/// never match, regardless of what the observed mode happens to be.
+#[test]
+fn exception_outcome_for_mode_declines_a_non_octal_value() {
+    let config = plugin_with("/etc/shadow", exception("rw-r-----", None));
+
+    let outcome = config.exception_outcome_for_mode("/etc/shadow", 0o640);
+
+    assert!(
+        matches!(
+            outcome,
+            ExceptionOutcome::Declined(FindingExceptionDeclined {
+                exception_declined_reason: DeclineReason::ValueMismatch { .. },
+                ..
+            })
+        ),
+        "a non-octal value must decline as a value mismatch, got {outcome:?}"
+    );
+}

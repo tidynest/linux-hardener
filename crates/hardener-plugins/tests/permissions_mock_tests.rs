@@ -1018,6 +1018,117 @@ async fn a_permissions_exception_documenting_the_wrong_mode_is_reported_as_decli
     }
 }
 
+/// The regression this guards: `/root`'s mode reads 0640 on the host and the
+/// operator documented the exception without the leading zero, "640". Both
+/// spellings name the same mode (docs/reference/configuration.md), so a
+/// scan that formats the observed mode zero-padded and compares as text
+/// would report this working, documented exception as a declined value
+/// mismatch, the exact opposite of what an exception is for. It must be
+/// honoured.
+#[tokio::test]
+async fn a_permissions_exception_matches_the_mode_regardless_of_leading_zero_spelling() {
+    let executor = MockExecutor::new().with_file_metadata(
+        "/root",
+        "",
+        FileMetadata {
+            exists: true,
+            is_file: false,
+            is_dir: true,
+            mode: 0o640,
+            size: 0,
+            uid: 0,
+            gid: 0,
+        },
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/root".to_string(),
+        PolicyException {
+            value: "640".to_string(),
+            allowed: true,
+            reason: "documented without the leading zero".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "perm--root")
+        .expect("/root still violates the 0700 baseline, so the finding is still reported");
+
+    assert!(
+        matches!(finding.finding_exception, ExceptionOutcome::Applied(_)),
+        "expected Applied for a numerically matching, differently-spelled mode, got {:?}",
+        finding.finding_exception
+    );
+}
+
+/// The control for the test above: a genuinely different mode, not merely a
+/// different spelling of the same one, must still decline.
+#[tokio::test]
+async fn a_permissions_exception_documenting_a_genuinely_different_mode_still_declines() {
+    let executor = MockExecutor::new().with_file_metadata(
+        "/root",
+        "",
+        FileMetadata {
+            exists: true,
+            is_file: false,
+            is_dir: true,
+            mode: 0o640,
+            size: 0,
+            uid: 0,
+            gid: 0,
+        },
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/root".to_string(),
+        PolicyException {
+            value: "600".to_string(),
+            allowed: true,
+            reason: "documents the wrong mode entirely".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "perm--root")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::ValueMismatch {
+                documented,
+                observed,
+            } => {
+                assert_eq!(documented, "600");
+                assert_eq!(observed, "0640");
+            }
+            other => panic!("expected a value mismatch, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn test_permissions_validate_skips_exceptions() {
     let executor = insecure_permissions_executor();

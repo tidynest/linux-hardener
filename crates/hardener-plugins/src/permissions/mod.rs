@@ -459,7 +459,7 @@ async fn check_vendor_layer_permissions(
 
     let target = target_mode(directive, current_mode);
     let policy_exception =
-        config.exception_outcome(directive.permission_path, &format!("{current_mode:04o}"));
+        config.exception_outcome_for_mode(directive.permission_path, current_mode);
     PermissionCheck::VendorOnly(Box::new(Finding {
         finding_category: FindingCategory::FileSystem,
         finding_current_value: format!("{:04o}", current_mode),
@@ -569,7 +569,7 @@ async fn check_path_permissions(
 
     let target = target_mode(directive, current_mode);
     let policy_exception =
-        config.exception_outcome(directive.permission_path, &format!("{current_mode:04o}"));
+        config.exception_outcome_for_mode(directive.permission_path, current_mode);
     PermissionCheck::Insecure(Box::new(Finding {
         finding_category: FindingCategory::FileSystem,
         finding_current_value: format!("{:04o}", current_mode),

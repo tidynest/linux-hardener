@@ -98,7 +98,7 @@ impl PluginConfig {
     /// read from the host.
     ///
     /// The single place that decides what a scan reports: every plugin's
-    /// `Finding` construction site calls one of the two methods below rather
+    /// `Finding` construction site calls one of the three methods below rather
     /// than `has_valid_exception`, `matching_exception` or
     /// `matching_mode_exception` directly. Those three remain, permanently,
     /// for the apply and validate paths, which want the plain "did it apply"
@@ -117,7 +117,7 @@ impl PluginConfig {
     /// silently stopped, which is the whole reason this method exists. Anyone
     /// changing what "valid" means must change both.
     pub fn exception_outcome(&self, key: &str, observed: &str) -> ExceptionOutcome {
-        self.exception_outcome_with(key, Some(observed))
+        self.exception_outcome_with(key, Some(observed), |value, observed| value == observed)
     }
 
     /// What the configuration has to say about `key` for a check that is
@@ -129,23 +129,58 @@ impl PluginConfig {
     /// [`EXCEPTION_OBSERVED_UNCHANGED`] documents from the other side. Only
     /// expiry can decline one of these.
     pub fn exception_outcome_for_presence(&self, key: &str) -> ExceptionOutcome {
-        self.exception_outcome_with(key, None)
+        self.exception_outcome_with(key, None, |_, _| true)
+    }
+
+    /// Octal-mode variant of [`exception_outcome`](Self::exception_outcome)
+    /// for `[permissions]` findings.
+    ///
+    /// A permission mode may be spelled with or without the leading zero
+    /// ("644" and "0644" name the same mode, exactly as
+    /// [`matching_mode_exception`](Self::matching_mode_exception) already
+    /// treats them for the apply and validate paths), so this compares the
+    /// documented `value` against `observed_mode` numerically via
+    /// `u32::from_str_radix(value, 8)` rather than as text. A `value` that is
+    /// not valid octal never matches and declines as a mismatch. Using the
+    /// plain string comparison here previously reported a working,
+    /// differently-spelled exception as a broken one: the scan formats the
+    /// observed mode zero-padded (`"0640"`), which never equals an operator's
+    /// unpadded `"640"` as text even though both name mode 0640.
+    ///
+    /// `documented` in the resulting [`DeclineReason::ValueMismatch`] is the
+    /// operator's own spelling, unmodified, so they can find the line they
+    /// wrote it on; `observed` is the host's mode, zero-padded to match
+    /// `finding_current_value`'s formatting elsewhere in the permissions
+    /// plugin.
+    pub fn exception_outcome_for_mode(&self, key: &str, observed_mode: u32) -> ExceptionOutcome {
+        let observed = format!("{observed_mode:04o}");
+        self.exception_outcome_with(key, Some(&observed), |value, _observed| {
+            u32::from_str_radix(value, 8).is_ok_and(|mode| mode == observed_mode)
+        })
     }
 
     /// Shared body. `observed` is `None` for a presence check, which is the
-    /// only thing that can suppress a value mismatch.
+    /// only thing that can suppress a value mismatch. `matches` decides
+    /// whether the exception's documented value describes `observed`; it is
+    /// only ever called once `observed` is known to be `Some`.
     ///
     /// The `Option` lives here and not on the public surface deliberately: a
     /// caller passing `None` to a method named `exception_outcome` would be
     /// switching off one of three outcomes through a parameter, which is the
     /// same one-value-several-meanings problem this whole type exists to
-    /// remove. Two named public methods say which question is being asked.
+    /// remove. Named public methods say which question is being asked, and
+    /// which comparison answers it.
     ///
     /// Expiry is checked before the value, so an exception that is both
     /// expired and mismatched reports the expiry. That ordering is deliberate:
     /// the expiry is the reason it stopped applying, and correcting the value
     /// would not bring it back.
-    fn exception_outcome_with(&self, key: &str, observed: Option<&str>) -> ExceptionOutcome {
+    fn exception_outcome_with(
+        &self,
+        key: &str,
+        observed: Option<&str>,
+        matches: impl Fn(&str, &str) -> bool,
+    ) -> ExceptionOutcome {
         let Some(exception) = self.exceptions.get(key) else {
             return ExceptionOutcome::NotConfigured;
         };
@@ -164,7 +199,7 @@ impl PluginConfig {
             });
         }
         if let Some(observed) = observed
-            && exception.value != observed
+            && !matches(&exception.value, observed)
         {
             return declined(DeclineReason::ValueMismatch {
                 documented: exception.value.clone(),

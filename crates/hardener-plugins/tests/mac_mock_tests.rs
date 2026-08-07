@@ -646,6 +646,132 @@ async fn a_mac_exception_that_has_expired_is_reported_as_declined() {
     }
 }
 
+/// Same guarantee as the test above, for the second `Finding`-construction
+/// site: AppArmor profiles present but some in complain mode, keyed on
+/// "apparmor-enforce".
+#[tokio::test]
+async fn an_apparmor_complain_mode_exception_that_has_expired_is_reported_as_declined() {
+    let executor = apparmor_complain_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "apparmor-enforce".to_string(),
+        PolicyException {
+            value: "complain".to_string(),
+            allowed: true,
+            reason: "Profile rollout in progress".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "apparmor-complain-mode")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
+/// Same guarantee, for the third `Finding`-construction site: AppArmor
+/// installed with no profiles loaded at all, also keyed on
+/// "apparmor-enforce" (the same key the complain-mode site above uses).
+#[tokio::test]
+async fn an_apparmor_no_profiles_exception_that_has_expired_is_reported_as_declined() {
+    let executor = apparmor_no_profiles_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "apparmor-enforce".to_string(),
+        PolicyException {
+            value: "0 profiles loaded".to_string(),
+            allowed: true,
+            reason: "Fresh install, profiles not yet deployed".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "apparmor-no-profiles")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
+/// Same guarantee, for the fourth `Finding`-construction site: no MAC system
+/// detected at all, keyed on "mac-present", the one key the other three
+/// sites cannot speak for.
+#[tokio::test]
+async fn a_no_mac_system_exception_that_has_expired_is_reported_as_declined() {
+    let executor = no_mac_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "mac-present".to_string(),
+        PolicyException {
+            value: "absent".to_string(),
+            allowed: true,
+            reason: "confinement is enforced by the hypervisor layer instead".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "no-mac-system")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn test_mac_apply_skips_exceptions() {
     // SELinux permissive, but NO setenforce command registered.

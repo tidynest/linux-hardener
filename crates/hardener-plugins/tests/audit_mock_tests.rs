@@ -1428,6 +1428,129 @@ async fn an_audit_exception_that_has_expired_is_reported_as_declined() {
     }
 }
 
+/// Same guarantee as the test above, for the second `Finding`-construction
+/// site: auditd installed but not enabled to start at boot, keyed on
+/// "auditd-at-boot".
+#[tokio::test]
+async fn an_audit_at_boot_exception_that_has_expired_is_reported_as_declined() {
+    let ctx = Context::with_executor(Arc::new(auditd_disabled_executor()));
+    let plugin = AuditHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "auditd-at-boot".to_string(),
+        PolicyException {
+            value: "disabled".to_string(),
+            allowed: true,
+            reason: "start-up is orchestrated by a unit override, JIRA-7731".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "audit_not_enabled")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
+/// Same guarantee, for the third `Finding`-construction site: auditd
+/// installed and enabled but not currently running, keyed on
+/// "auditd-running".
+#[tokio::test]
+async fn an_audit_running_exception_that_has_expired_is_reported_as_declined() {
+    let ctx = Context::with_executor(Arc::new(auditd_disabled_executor()));
+    let plugin = AuditHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "auditd-running".to_string(),
+        PolicyException {
+            value: "stopped".to_string(),
+            allowed: true,
+            reason: "restarted by a maintenance window job, JIRA-7731".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "auditd_not_running")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
+/// Same guarantee, for the fourth `Finding`-construction site: a missing
+/// audit rule category, keyed on the category's own name (here
+/// "network-change", missing from `partial_rules_executor`'s ruleset).
+#[tokio::test]
+async fn an_audit_rule_exception_that_has_expired_is_reported_as_declined() {
+    let ctx = Context::with_executor(Arc::new(partial_rules_executor()));
+    let plugin = AuditHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "network-change".to_string(),
+        PolicyException {
+            value: "not configured".to_string(),
+            allowed: true,
+            reason: "network changes are audited by the switch fabric, JIRA-7731".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "audit_rule_network_change")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
 /// The rules file names every path and syscall this host watches, so it is not
 /// a world-readable file. A local create lands 0644 like any other
 /// configuration file and a remote one lands whatever `tee` gives it, so the
