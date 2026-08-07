@@ -24,7 +24,6 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
-use hardener_types::ExceptionOutcome;
 use std::{path::Path, time::Instant};
 use tracing::info;
 
@@ -914,11 +913,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_severity: Severity::Critical,
                 finding_title: "Audit daemon is not installed".to_string(),
                 finding_compliance: get_audit_compliance_mappings("not_installed"),
-                finding_exception: config
-                    .has_valid_exception(AUDITD_PRESENT_EXCEPTION)
-                    .map_or(ExceptionOutcome::NotConfigured, |exception| {
-                        ExceptionOutcome::Applied(exception.to_finding_exception())
-                    }),
+                finding_exception: config.exception_outcome_for_presence(AUDITD_PRESENT_EXCEPTION),
                 finding_exception_key: Some(AUDITD_PRESENT_EXCEPTION.to_string()),
             });
 
@@ -949,11 +944,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_severity: Severity::High,
                 finding_title: "Audit daemon not enabled".to_string(),
                 finding_compliance: get_audit_compliance_mappings("not_enabled"),
-                finding_exception: config
-                    .has_valid_exception(AUDITD_AT_BOOT_EXCEPTION)
-                    .map_or(ExceptionOutcome::NotConfigured, |exception| {
-                        ExceptionOutcome::Applied(exception.to_finding_exception())
-                    }),
+                finding_exception: config.exception_outcome_for_presence(AUDITD_AT_BOOT_EXCEPTION),
                 finding_exception_key: Some(AUDITD_AT_BOOT_EXCEPTION.to_string()),
             });
         }
@@ -972,11 +963,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_severity: Severity::High,
                 finding_title: "Audit daemon not running".to_string(),
                 finding_compliance: get_audit_compliance_mappings("not_running"),
-                finding_exception: config
-                    .has_valid_exception(AUDITD_RUNNING_EXCEPTION)
-                    .map_or(ExceptionOutcome::NotConfigured, |exception| {
-                        ExceptionOutcome::Applied(exception.to_finding_exception())
-                    }),
+                finding_exception: config.exception_outcome_for_presence(AUDITD_RUNNING_EXCEPTION),
                 finding_exception_key: Some(AUDITD_RUNNING_EXCEPTION.to_string()),
             });
         }
@@ -1020,10 +1007,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                             ),
                             finding_compliance: get_audit_compliance_mappings("rules"),
                             finding_exception: config
-                                .has_valid_exception(rule.audit_rule_category)
-                                .map_or(ExceptionOutcome::NotConfigured, |e| {
-                                    ExceptionOutcome::Applied(e.to_finding_exception())
-                                }),
+                                .exception_outcome_for_presence(rule.audit_rule_category),
                             finding_exception_key: Some(rule.audit_rule_category.to_string()),
                         });
                     }

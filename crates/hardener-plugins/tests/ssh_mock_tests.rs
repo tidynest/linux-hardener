@@ -5,13 +5,14 @@
 use hardener_common::types::{ComplianceFramework, PluginId, Severity};
 use hardener_core::executor::CommandOutput;
 use hardener_core::{
-    ApplyResult, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
-    plugin::HardeningPlugin,
+    ApplyResult, Context, ExceptionOutcome, MockExecutor, PluginConfig, PolicyException,
+    SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::ssh::{
     SshHardeningPlugin, select_algorithms, sshd_validate_scratch_path, supported_algorithms,
     validate_sshd_config,
 };
+use hardener_types::DeclineReason;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -1608,6 +1609,52 @@ async fn scan_ignores_exception_whose_value_does_not_match() {
         !crypto_finding.is_policy_excepted(),
         "an exception for a value the host does not have must not be honoured"
     );
+}
+
+/// The host runs "PermitRootLogin yes", the operator's exception documents
+/// "prohibit-password". Silently falling back to `NotConfigured` here would
+/// look identical to no exception having been written at all, and an operator
+/// reading the report would believe their exception was honoured when it was
+/// not.
+#[tokio::test]
+async fn an_ssh_exception_documenting_the_wrong_value_is_reported_as_declined() {
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "PermitRootLogin".to_string(),
+        PolicyException {
+            value: "prohibit-password".to_string(),
+            allowed: true,
+            reason: "documented the wrong value".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let ctx = Context::with_executor(Arc::new(insecure_ssh_executor()));
+    let plugin = SshHardeningPlugin::new();
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "ssh-permitrootlogin")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::ValueMismatch {
+                documented,
+                observed,
+            } => {
+                assert_eq!(documented, "prohibit-password");
+                assert_eq!(observed, "yes");
+            }
+            other => panic!("expected a value mismatch, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
 }
 
 #[tokio::test]

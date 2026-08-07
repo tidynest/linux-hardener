@@ -7,10 +7,11 @@ mod common;
 use common::test_checkpoint_manager;
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
-    SystemExecutor, UncheckedBlocker, plugin::HardeningPlugin,
+    CommandOutput, Context, ExceptionOutcome, FileMetadata, MockExecutor, PluginConfig,
+    PolicyException, SystemExecutor, UncheckedBlocker, plugin::HardeningPlugin,
 };
 use hardener_plugins::AuditHardeningPlugin;
+use hardener_types::DeclineReason;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -1381,6 +1382,50 @@ async fn scan_annotates_valid_exception() {
         !daemon_finding.is_policy_excepted(),
         "daemon-state findings have no exception key and stay unannotated"
     );
+}
+
+/// A presence check can only ever decline on expiry: there is no host value
+/// to mismatch against, since the exception key already names the deviating
+/// subsystem state. Silently falling back to `NotConfigured` here would look
+/// identical to no exception having been written at all, and an operator
+/// reading the report would believe their exception was honoured when it was
+/// not.
+#[tokio::test]
+async fn an_audit_exception_that_has_expired_is_reported_as_declined() {
+    let ctx = Context::with_executor(Arc::new(no_auditd_executor()));
+    let plugin = AuditHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "auditd-present".to_string(),
+        PolicyException {
+            value: "absent".to_string(),
+            allowed: true,
+            reason: "auditing is collected off-host by the agent, JIRA-7731".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "audit_not_installed")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
 }
 
 /// The rules file names every path and syscall this host watches, so it is not

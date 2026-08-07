@@ -667,11 +667,8 @@ impl HardeningPlugin for PamHardeningPlugin {
 
             if !is_secure {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
-                let policy_exception = config
-                    .matching_exception(directive.pam_directive_name, &current_display)
-                    .map_or(ExceptionOutcome::NotConfigured, |e| {
-                        ExceptionOutcome::Applied(e.to_finding_exception())
-                    });
+                let policy_exception =
+                    config.exception_outcome(directive.pam_directive_name, &current_display);
 
                 findings.push(Finding {
                     finding_id: format!(

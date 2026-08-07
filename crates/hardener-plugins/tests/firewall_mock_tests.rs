@@ -9,7 +9,7 @@ use hardener_core::{
     UncheckedBlocker, plugin::HardeningPlugin,
 };
 use hardener_plugins::FirewallHardeningPlugin;
-use hardener_types::ExceptionOutcome;
+use hardener_types::{DeclineReason, ExceptionOutcome};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -3775,6 +3775,50 @@ async fn scan_honours_an_exception_for_a_firewall_that_does_not_start_at_boot() 
         "the boot-persistence finding takes its own key, so an exception for the \
          disabled state must not silence it and its own key must reach it"
     );
+}
+
+/// A presence check can only ever decline on expiry: there is no host value
+/// to mismatch against, since the exception key already names the deviating
+/// subsystem state. Silently falling back to `NotConfigured` here would look
+/// identical to no exception having been written at all, and an operator
+/// reading the report would believe their exception was honoured when it was
+/// not.
+#[tokio::test]
+async fn a_firewall_exception_that_has_expired_is_reported_as_declined() {
+    let ctx = Context::with_executor(Arc::new(ufw_disabled_executor()));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "firewall-enabled".to_string(),
+        PolicyException {
+            value: "disabled".to_string(),
+            allowed: true,
+            reason: "perimeter firewall covers this host, tracked in JIRA-8812".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_title == "Firewall disabled")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
 }
 
 /// The checkpoint has to capture the file this host boots from, which is not a

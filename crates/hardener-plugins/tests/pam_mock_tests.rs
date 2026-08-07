@@ -4,10 +4,11 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    Change, CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
-    plugin::HardeningPlugin,
+    Change, CommandOutput, Context, ExceptionOutcome, MockExecutor, PluginConfig, PolicyException,
+    SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::PamHardeningPlugin;
+use hardener_types::DeclineReason;
 use std::sync::Arc;
 
 /// The secure fixture minus faillock.conf, so callers can model an absent or
@@ -885,6 +886,53 @@ async fn scan_annotates_valid_exception() {
         finding.is_policy_excepted(),
         "finding should be annotated with the valid exception"
     );
+}
+
+/// minlen = 8 on the host, the operator's exception documents 10. Silently
+/// falling back to `NotConfigured` here would look identical to no exception
+/// having been written at all, and an operator reading the report would
+/// believe their exception was honoured when it was not.
+#[tokio::test]
+async fn a_pam_exception_documenting_the_wrong_value_is_reported_as_declined() {
+    let executor = insecure_pam_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PamHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "minlen".to_string(),
+        PolicyException {
+            value: "10".to_string(),
+            allowed: true,
+            reason: "documented the wrong value".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-minlen")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::ValueMismatch {
+                documented,
+                observed,
+            } => {
+                assert_eq!(documented, "10");
+                assert_eq!(observed, "8");
+            }
+            other => panic!("expected a value mismatch, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
 }
 
 #[tokio::test]

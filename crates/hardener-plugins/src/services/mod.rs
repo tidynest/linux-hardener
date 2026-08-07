@@ -19,7 +19,6 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
-use hardener_types::ExceptionOutcome;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tracing::{info, warn};
@@ -718,10 +717,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     ),
                     finding_compliance: get_service_compliance_mappings(directive.service_name),
                     finding_exception: config
-                        .has_valid_exception(directive.service_name)
-                        .map_or(ExceptionOutcome::NotConfigured, |e| {
-                            ExceptionOutcome::Applied(e.to_finding_exception())
-                        }),
+                        .exception_outcome_for_presence(directive.service_name),
                     finding_exception_key: Some(directive.service_name.to_string()),
                 });
             }

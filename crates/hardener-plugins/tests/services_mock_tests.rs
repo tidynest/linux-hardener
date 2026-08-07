@@ -7,10 +7,11 @@ mod common;
 use common::test_checkpoint_manager;
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, MockExecutor, PluginConfig, PolicyException, SystemExecutor,
-    plugin::HardeningPlugin,
+    CommandOutput, Context, ExceptionOutcome, MockExecutor, PluginConfig, PolicyException,
+    SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::ServicesHardeningPlugin;
+use hardener_types::DeclineReason;
 use std::sync::Arc;
 
 /// Unit patterns the scan path's batched spawns pass, in directive order.
@@ -716,6 +717,51 @@ async fn scan_annotates_valid_exception() {
         f.is_policy_excepted(),
         "finding should be annotated with the valid exception"
     );
+}
+
+/// A presence check can only ever decline on expiry: there is no host value
+/// to mismatch against, since the exception key already names the deviating
+/// service. Silently falling back to `NotConfigured` here would look
+/// identical to no exception having been written at all, and an operator
+/// reading the report would believe their exception was honoured when it was
+/// not.
+#[tokio::test]
+async fn a_services_exception_that_has_expired_is_reported_as_declined() {
+    let executor = insecure_services_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = ServicesHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "bluetooth".to_string(),
+        PolicyException {
+            value: "enabled".to_string(),
+            allowed: true,
+            reason: "Desktop workstation needs Bluetooth".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "service_bluetooth")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
 }
 
 #[tokio::test]

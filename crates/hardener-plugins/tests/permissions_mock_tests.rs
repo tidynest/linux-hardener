@@ -4,10 +4,11 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
-    SystemExecutor, plugin::HardeningPlugin,
+    CommandOutput, Context, ExceptionOutcome, FileMetadata, MockExecutor, PluginConfig,
+    PolicyException, SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::PermissionsHardeningPlugin;
+use hardener_types::DeclineReason;
 use std::sync::Arc;
 
 /// Creates a mock executor with secure file permissions.
@@ -968,6 +969,53 @@ async fn scan_annotates_valid_exception() {
         finding.is_policy_excepted(),
         "finding should be annotated with the valid exception"
     );
+}
+
+/// /root is 0755 on the mock, the operator's exception documents 0700.
+/// Silently falling back to `NotConfigured` here would look identical to no
+/// exception having been written at all, and an operator reading the report
+/// would believe their exception was honoured when it was not.
+#[tokio::test]
+async fn a_permissions_exception_documenting_the_wrong_mode_is_reported_as_declined() {
+    let executor = insecure_permissions_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = PermissionsHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "/root".to_string(),
+        PolicyException {
+            value: "0700".to_string(),
+            allowed: true,
+            reason: "documented the wrong value".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "perm--root")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::ValueMismatch {
+                documented,
+                observed,
+            } => {
+                assert_eq!(documented, "0700");
+                assert_eq!(observed, "0755");
+            }
+            other => panic!("expected a value mismatch, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
 }
 
 #[tokio::test]

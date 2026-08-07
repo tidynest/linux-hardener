@@ -23,7 +23,6 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
-use hardener_types::ExceptionOutcome;
 use std::os::unix::fs::OpenOptionsExt;
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
@@ -459,11 +458,8 @@ async fn check_vendor_layer_permissions(
     }
 
     let target = target_mode(directive, current_mode);
-    let policy_exception = config
-        .matching_mode_exception(directive.permission_path, current_mode)
-        .map_or(ExceptionOutcome::NotConfigured, |e| {
-            ExceptionOutcome::Applied(e.to_finding_exception())
-        });
+    let policy_exception =
+        config.exception_outcome(directive.permission_path, &format!("{current_mode:04o}"));
     PermissionCheck::VendorOnly(Box::new(Finding {
         finding_category: FindingCategory::FileSystem,
         finding_current_value: format!("{:04o}", current_mode),
@@ -572,11 +568,8 @@ async fn check_path_permissions(
     }
 
     let target = target_mode(directive, current_mode);
-    let policy_exception = config
-        .matching_mode_exception(directive.permission_path, current_mode)
-        .map_or(ExceptionOutcome::NotConfigured, |e| {
-            ExceptionOutcome::Applied(e.to_finding_exception())
-        });
+    let policy_exception =
+        config.exception_outcome(directive.permission_path, &format!("{current_mode:04o}"));
     PermissionCheck::Insecure(Box::new(Finding {
         finding_category: FindingCategory::FileSystem,
         finding_current_value: format!("{:04o}", current_mode),

@@ -41,7 +41,6 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
-use hardener_types::ExceptionOutcome;
 use std::{path::Path, time::Instant};
 use tracing::{error, info, warn};
 
@@ -1312,11 +1311,8 @@ impl HardeningPlugin for SshHardeningPlugin {
                 // host actually has, so a config cannot pass a control by
                 // describing a deviation that is not there.
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
-                let policy_exception = config
-                    .matching_exception(directive.ssh_directive_name, &current_display)
-                    .map_or(ExceptionOutcome::NotConfigured, |e| {
-                        ExceptionOutcome::Applied(e.to_finding_exception())
-                    });
+                let policy_exception =
+                    config.exception_outcome(directive.ssh_directive_name, &current_display);
                 findings.push(Finding {
                     finding_category: FindingCategory::Network,
                     finding_current_value: current_display.clone(),
@@ -1384,11 +1380,8 @@ impl HardeningPlugin for SshHardeningPlugin {
 
             if !crypto_value_is_secure(current_value.as_deref(), crypto.crypto_desired) {
                 let current_display = current_value.unwrap_or_else(|| "not set".to_string());
-                let policy_exception = config
-                    .matching_exception(crypto.crypto_directive_name, &current_display)
-                    .map_or(ExceptionOutcome::NotConfigured, |e| {
-                        ExceptionOutcome::Applied(e.to_finding_exception())
-                    });
+                let policy_exception =
+                    config.exception_outcome(crypto.crypto_directive_name, &current_display);
                 findings.push(Finding {
                     finding_category: FindingCategory::Network,
                     finding_current_value: current_display.clone(),

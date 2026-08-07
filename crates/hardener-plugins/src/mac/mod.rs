@@ -20,7 +20,6 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
-use hardener_types::ExceptionOutcome;
 use std::path::Path;
 use std::time::Instant;
 use tracing::{info, warn};
@@ -705,10 +704,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_title:    "SELinux Not Enforcing".to_string(),
                                 finding_compliance: get_mac_compliance_mappings("selinux-not-enforcing"),
                                 finding_exception: config
-                                    .has_valid_exception("selinux-enforcing")
-                                    .map_or(ExceptionOutcome::NotConfigured, |e| {
-                                        ExceptionOutcome::Applied(e.to_finding_exception())
-                                    }),
+                                    .exception_outcome_for_presence("selinux-enforcing"),
                                 finding_exception_key: Some("selinux-enforcing".to_string()),
                             });
                         }
@@ -739,10 +735,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                 finding_title: "AppArmor Profiles in Complain Mode".to_string(),
                                 finding_compliance: get_mac_compliance_mappings("apparmor-complain-mode"),
                                 finding_exception: config
-                                    .has_valid_exception("apparmor-enforce")
-                                    .map_or(ExceptionOutcome::NotConfigured, |e| {
-                                        ExceptionOutcome::Applied(e.to_finding_exception())
-                                    }),
+                                    .exception_outcome_for_presence("apparmor-enforce"),
                                 finding_exception_key: Some("apparmor-enforce".to_string()),
                             });
                         }
@@ -768,10 +761,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                                     "apparmor-no-profiles",
                                 ),
                                 finding_exception: config
-                                    .has_valid_exception("apparmor-enforce")
-                                    .map_or(ExceptionOutcome::NotConfigured, |e| {
-                                        ExceptionOutcome::Applied(e.to_finding_exception())
-                                    }),
+                                    .exception_outcome_for_presence("apparmor-enforce"),
                                 finding_exception_key: Some("apparmor-enforce".to_string()),
                             });
                         }
@@ -843,11 +833,7 @@ impl HardeningPlugin for MacHardeningPlugin {
                     // `apparmor-enforce`: those two accept a MAC system that
                     // is present and not enforcing, and neither can speak for
                     // a host that has no MAC system to enforce anything.
-                    finding_exception: config
-                        .has_valid_exception(MAC_PRESENT_EXCEPTION)
-                        .map_or(ExceptionOutcome::NotConfigured, |exception| {
-                            ExceptionOutcome::Applied(exception.to_finding_exception())
-                        }),
+                    finding_exception: config.exception_outcome_for_presence(MAC_PRESENT_EXCEPTION),
                     finding_exception_key: Some(MAC_PRESENT_EXCEPTION.to_string()),
                 });
             }

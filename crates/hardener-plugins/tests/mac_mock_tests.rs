@@ -4,10 +4,11 @@
 
 use hardener_common::types::{FindingCategory, PluginId, Severity};
 use hardener_core::{
-    ChangeType, CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
-    SystemExecutor, plugin::HardeningPlugin,
+    ChangeType, CommandOutput, Context, ExceptionOutcome, FileMetadata, MockExecutor, PluginConfig,
+    PolicyException, SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::MacHardeningPlugin;
+use hardener_types::DeclineReason;
 use std::sync::Arc;
 
 /// Creates a mock executor with SELinux in enforcing mode.
@@ -598,6 +599,51 @@ async fn scan_annotates_apparmor_no_profiles_exception() {
         finding.is_policy_excepted(),
         "AppArmor no-profiles finding should be annotated with the valid exception"
     );
+}
+
+/// A presence check can only ever decline on expiry: there is no host value
+/// to mismatch against, since the exception key already names the deviating
+/// subsystem state. Silently falling back to `NotConfigured` here would look
+/// identical to no exception having been written at all, and an operator
+/// reading the report would believe their exception was honoured when it was
+/// not.
+#[tokio::test]
+async fn a_mac_exception_that_has_expired_is_reported_as_declined() {
+    let executor = selinux_permissive_executor();
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "selinux-enforcing".to_string(),
+        PolicyException {
+            value: "Permissive".to_string(),
+            allowed: true,
+            reason: "Development environment".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: Some("2020-01-01".to_string()),
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "selinux-not-enforcing")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(expired_on, "2020-01-01");
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
 }
 
 #[tokio::test]
