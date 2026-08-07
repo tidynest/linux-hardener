@@ -148,18 +148,27 @@ identifiers automatically; `--profile` overrides that.
 
 | Distribution | Package manager | Init | Status |
 |---|---|---|---|
-| Ubuntu 22.04 LTS and later (incl. 26.04) | apt | systemd | supported |
-| Debian 12 and later (incl. 13 "Trixie") | apt | systemd | supported |
-| Fedora 40 and later (incl. 44) | dnf | systemd | supported |
-| RHEL 9 and later (incl. 10) | dnf | systemd | supported |
-| Arch Linux (rolling) | pacman | systemd | supported |
-| openSUSE Leap 15.6 / 16, Tumbleweed | zypper | systemd | supported, see below |
+| Debian 12 and later (incl. 13 "Trixie") | apt | systemd | validated on 13 |
+| Ubuntu 22.04 LTS and later (incl. 26.04) | apt | systemd | by family, never run |
+| Fedora 40 and later (incl. 44) | dnf | systemd | validated on 44 |
+| RHEL 9 and later (incl. 10) | dnf | systemd | validated on Rocky 10 |
+| Arch Linux (rolling) | pacman | systemd | validated on rolling |
+| openSUSE Leap 15.6 / 16, Tumbleweed | zypper | systemd | validated on Leap 16, see below |
+
+**Validated** means a dated end-to-end run against a container of that
+distribution, 149 checks, recorded in
+[distribution-validation.md](docs/reference/distribution-validation.md).
+**By family** means the release routes to a validated family's code path and is
+expected to behave identically, but no run against it exists.
 
 Support is **family-based**: any release of the Debian, Red Hat, Arch or SUSE
 families maps to the same hardening behaviour, so current releases are covered
-without a code change. openSUSE Leap 15.x reached end of life in April 2026; use
-Leap 16. The versions last validated end to end are listed in
-[distribution-validation.md](docs/reference/distribution-validation.md).
+without a code change. That routing is why Ubuntu is listed at all, and it is a
+design decision rather than a measurement: the tool accepts nineteen
+distribution identifiers and five have ever been run. Which are which, and what
+follows from it, is in
+[what this release does not prove](docs/reference/what-is-not-proven.md).
+openSUSE Leap 15.x reached end of life in April 2026; use Leap 16.
 
 **openSUSE keeps packaged configuration under `/usr/etc`** and reserves `/etc`
 for administrator overrides, where an `/etc` file overrides the vendor copy as a
