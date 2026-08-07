@@ -868,6 +868,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   blocking issues are printed into the log, so a run can say which blocker
   fired rather than only that one did.
 
+### Added
+
+- **A validator for the GUI mock fixtures**, which nothing read.
+  `gui-tests/tauri-mock.js` is a hand-written mirror of the Rust types the
+  frontend deserialises, and eight separate drifts had accumulated in it: a
+  removed `finding_policy_exception` still being sent, missing
+  `finding_exception`, `plugin_version` and `controls`, an invented
+  `plugin_dependencies`, `Logging` and `AccessControl` where `FindingCategory`
+  has neither, a framework key nothing could match, four frameworks absent
+  outright, and a `window.__TAURI__` claiming a runtime it implemented half of.
+  Every one failed silently: the frontend's "missing field" message lands in an
+  alert box no test asserts on, the view empties, and the Playwright suite
+  reports what reads as a stale selector. The check obtains its payloads by
+  **running** the mock against a stubbed `window` rather than parsing it, so
+  what it compares is what serde receives, and it treats `Option<T>` and
+  `#[serde(default)]` as the optional fields they are. Proved against five of
+  the eight historical defects by reintroducing each and confirming it is
+  named. Twenty validators become twenty-one.
+
 ### Fixed
 
 - **The Web UI suite installed nothing on three of six distributions, and the

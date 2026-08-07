@@ -36,7 +36,7 @@ them; do not copy a figure from an older document.
 | Tests `cargo test` runs, doctests included | `cargo test --workspace`, summing every `test result:` line | 1733 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
-| Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 20 validations passed |
+| Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
 | Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1767 |
 | Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1767 across 275 files |
 

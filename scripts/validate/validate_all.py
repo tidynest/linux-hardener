@@ -89,6 +89,10 @@ def main():
         ("Documented Exception Keys", "validate_documented_exception_keys.py", []),
         ("Evidence Ledger", "validate_evidence_ledger.py", []),
         ("Persisted Finding Fields", "validate_persisted_finding_fields.py", []),
+        # The neighbouring check above covers the Rust side of a finding. This
+        # one covers the JavaScript fixture the GUI suite deserialises, which
+        # nothing read until eight drifts had accumulated in it.
+        ("GUI Mock Fixtures", "validate_gui_mock_fixtures.py", []),
         (".SRCINFO", "validate_srcinfo.py", []),
         ("CHANGELOG Headings", "validate_changelog_headings.py", []),
         ("Markdown Links", "validate_doc_links.py", []),
