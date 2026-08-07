@@ -50,9 +50,13 @@ test.describe('Scheduler', () => {
   // control, labelled "Save", and it reports through a live status region
   // naming the file it wrote rather than the words "Schedule saved". `exact`
   // keeps the name off "Saving...", which is the same button mid-flight.
+  // The page carries two live regions with role="status", the save region and
+  // the notification-test region, and neither has an accessible name to tell
+  // them apart, so the save region is reached by its class. Naming them would
+  // be the better fix and belongs in the interface rather than here.
   test('T-SCHED-04: Save reports success', async ({ page }) => {
     await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText(/Saved to/i);
+    await expect(page.locator('.scheduler-save-region')).toContainText(/Saved to/i);
   });
 
   // T-SCHED-05: Notification config exposes Email + Webhook subsections

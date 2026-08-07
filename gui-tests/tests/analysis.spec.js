@@ -132,6 +132,8 @@ test.describe('Findings', () => {
 // The frameworks are aria-pressed toggle buttons inside a named group, not
 // checkboxes in a `.framework-grid`, so selecting them means reading `pressed`
 // rather than `checked`.
+const compliancePanel = (page) => page.getByRole('tabpanel', { name: 'Compliance' });
+
 const frameworkToggles = (page) =>
   page.getByRole('group', { name: 'Compliance frameworks' }).getByRole('button');
 
@@ -191,25 +193,34 @@ test.describe('Compliance', () => {
     await expect(btn).toBeEnabled();
   });
 
-  // T-COMP-05: Generate reports shows report cards
-  test('T-COMP-05: generating reports shows report cards', async ({ page }) => {
+  // T-COMP-05: Generating a report shows a report card
+  //
+  // `.report-card` is gone. A report renders as a level-3 heading naming its
+  // framework, a control count, a score and the four control tallies, so the
+  // heading is what identifies one.
+  test('T-COMP-05: generating a report shows a report card', async ({ page }) => {
     const btn = page.getByRole('button', { name: /Generate Report/i });
     await btn.click();
     await expect(btn).not.toHaveText(/Generating/i, { timeout: 10000 });
-    const cards = page.locator('.report-card');
-    await expect(cards.first()).toBeVisible();
+    // CIS is selected by default, so it is the report that appears.
+    await expect(page.getByRole('heading', { name: 'CIS Benchmark', level: 3 })).toBeVisible();
+    await expect(compliancePanel(page).getByText(/\d+ controls assessed/)).toBeVisible();
   });
 
-  // T-COMP-06: Score colours match thresholds
-  test('T-COMP-06: score colours match thresholds', async ({ page }) => {
-    // Check all frameworks to get varied scores
-    await selectAllFrameworks(page);
+  // T-COMP-06: A report carries its score and control tallies
+  //
+  // This asserted a `score-(high|medium|low)` class on `.compliance-score`.
+  // Both are gone: the score renders as "<n>/100" beside the counts it is
+  // derived from. Asserting the numbers rather than the colour is the better
+  // test regardless, since a colour alone tells an operator nothing they can
+  // read, and the tallies are what the score has to agree with.
+  test('T-COMP-06: a report carries its score and control tallies', async ({ page }) => {
     await page.getByRole('button', { name: /Generate Report/i }).click();
-    await page.waitForSelector('.report-card', { timeout: 10000 });
-    // Verify at least one score element exists with a colour class
-    const scores = page.locator('.compliance-score');
-    const firstClasses = await scores.first().getAttribute('class');
-    expect(firstClasses).toMatch(/score-(high|medium|low)/);
+    const panel = compliancePanel(page);
+    await expect(panel.getByText(/^\d+\/100$/)).toBeVisible();
+    for (const tally of [/\d+ Pass/, /\d+ Fail/, /\d+ Manual review/]) {
+      await expect(panel.getByText(tally)).toBeVisible();
+    }
   });
 
   // T-COMP-07: Deselect all disables generate button
@@ -219,20 +230,18 @@ test.describe('Compliance', () => {
     await expect(btn).toBeDisabled();
   });
 
-  // T-COMP-08: Multi-framework generates multiple report cards
-  test('T-COMP-08: selecting 3 frameworks generates multiple report cards', async ({ page }) => {
-    // Select all 6 frameworks to maximize chance of multiple cards
+  // T-COMP-08: Every selected framework produces a report
+  //
+  // The old assertion was `toBeGreaterThanOrEqual(1)` under a name promising
+  // multiple cards, so one card satisfied it: the very thing "multiple" exists
+  // to exclude. An exact count is what makes this test able to fail, and it is
+  // now derivable, the mock carrying a report for all ten frameworks.
+  test('T-COMP-08: selecting every framework generates a report each', async ({ page }) => {
     await selectAllFrameworks(page);
-    // Verify generate button is enabled before clicking
     const btn = page.getByRole('button', { name: /Generate Report/i });
     await expect(btn).toBeEnabled();
     await btn.click();
-    // Wait for at least one card, then allow more to render
-    await page.waitForSelector('.report-card', { timeout: 10000 });
-    await page.waitForTimeout(2000);
-    const cards = page.locator('.report-card');
-    const cardCount = await cards.count();
-    // More than 1 card confirms multi-framework generation works
-    expect(cardCount).toBeGreaterThanOrEqual(1);
+    await expect(btn).not.toHaveText(/Generating/i, { timeout: 10000 });
+    await expect(compliancePanel(page).getByRole('heading', { level: 3 })).toHaveCount(10);
   });
 });

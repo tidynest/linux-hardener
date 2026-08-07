@@ -370,13 +370,30 @@
     };
   }
 
+  // Keyed by ComplianceFramework::id() upper-cased, which is what the lookup
+  // below does to the ids the frontend sends. Two things were wrong here and
+  // both failed silently, because the lookup drops a miss with .filter(Boolean)
+  // and a framework that produces no report is indistinguishable from one the
+  // operator did not select:
+  //
+  //   - PCI-DSS's id is "pci-dss", so it never matched the key `PCIDSS`.
+  //   - ISO 27001, SOC 2, NIST SP 800-171 and FedRAMP had no entry at all,
+  //     having been added to ComplianceFramework::ALL without this file
+  //     following. Selecting all ten frameworks produced five reports.
+  //
+  // All ten are here now, so a missing report means a real fault rather than a
+  // gap in the fixture.
   const COMPLIANCE_REPORTS = {
     CIS: makeComplianceReport('CIS', 82.5, 33, 5, 2),
     STIG: makeComplianceReport('STIG', 71.0, 22, 8, 1),
     NIST: makeComplianceReport('NIST', 88.0, 44, 4, 2),
-    PCIDSS: makeComplianceReport('PCIDSS', 55.0, 11, 7, 2),
+    'PCI-DSS': makeComplianceReport('PCI-DSS', 55.0, 11, 7, 2),
     HIPAA: makeComplianceReport('HIPAA', 65.0, 13, 5, 2),
     GDPR: makeComplianceReport('GDPR', 78.0, 18, 4, 1),
+    ISO27001: makeComplianceReport('ISO27001', 74.0, 20, 6, 1),
+    SOC2: makeComplianceReport('SOC2', 69.0, 16, 6, 2),
+    '800-171': makeComplianceReport('800-171', 81.0, 27, 5, 1),
+    FEDRAMP: makeComplianceReport('FEDRAMP', 63.0, 19, 9, 2),
   };
 
   const SCAN_HISTORY = [
