@@ -370,30 +370,37 @@
     };
   }
 
-  // Keyed by ComplianceFramework::id() upper-cased, which is what the lookup
-  // below does to the ids the frontend sends. Two things were wrong here and
-  // both failed silently, because the lookup drops a miss with .filter(Boolean)
-  // and a framework that produces no report is indistinguishable from one the
-  // operator did not select:
+  // Two different strings name a framework across this boundary, and the
+  // fixture has to hold both:
   //
-  //   - PCI-DSS's id is "pci-dss", so it never matched the key `PCIDSS`.
-  //   - ISO 27001, SOC 2, NIST SP 800-171 and FedRAMP had no entry at all,
-  //     having been added to ComplianceFramework::ALL without this file
-  //     following. Selecting all ten frameworks produced five reports.
+  //   - the KEY is `ComplianceFramework::id()`, lowercase, which is what every
+  //     one of the five call sites sends (`.map(|f| f.id().to_string())`);
+  //   - `report_framework` is the serde VARIANT name, which is what the reply
+  //     is deserialised back into the enum by. Sending an id there fails with
+  //     "unknown variant `pci-dss`".
   //
-  // All ten are here now, so a missing report means a real fault rather than a
-  // gap in the fixture.
+  // They differ for exactly the three that are not a plain upper-casing:
+  // pci-dss/PCIDSS, 800-171/NIST800171 and fedramp/FedRAMP. The table used to
+  // be keyed on an upper-cased id, which cannot express that, so `PCIDSS` was
+  // a key nothing could ever match: "pci-dss" upper-cases to "PCI-DSS".
+  //
+  // ISO 27001, SOC 2, NIST SP 800-171 and FedRAMP had no entry at all, having
+  // joined ComplianceFramework::ALL without this file following. Between that
+  // and the dead PCI-DSS key, selecting all ten frameworks produced five
+  // reports and said nothing about the other five: the lookup drops a miss
+  // with `.filter(Boolean)`, so a framework yielding no report is
+  // indistinguishable from one nobody selected.
   const COMPLIANCE_REPORTS = {
-    CIS: makeComplianceReport('CIS', 82.5, 33, 5, 2),
-    STIG: makeComplianceReport('STIG', 71.0, 22, 8, 1),
-    NIST: makeComplianceReport('NIST', 88.0, 44, 4, 2),
-    'PCI-DSS': makeComplianceReport('PCI-DSS', 55.0, 11, 7, 2),
-    HIPAA: makeComplianceReport('HIPAA', 65.0, 13, 5, 2),
-    GDPR: makeComplianceReport('GDPR', 78.0, 18, 4, 1),
-    ISO27001: makeComplianceReport('ISO27001', 74.0, 20, 6, 1),
-    SOC2: makeComplianceReport('SOC2', 69.0, 16, 6, 2),
-    '800-171': makeComplianceReport('800-171', 81.0, 27, 5, 1),
-    FEDRAMP: makeComplianceReport('FEDRAMP', 63.0, 19, 9, 2),
+    'cis': makeComplianceReport('CIS', 82.5, 33, 5, 2),
+    'stig': makeComplianceReport('STIG', 71.0, 22, 8, 1),
+    'nist': makeComplianceReport('NIST', 88.0, 44, 4, 2),
+    'pci-dss': makeComplianceReport('PCIDSS', 55.0, 11, 7, 2),
+    'hipaa': makeComplianceReport('HIPAA', 65.0, 13, 5, 2),
+    'gdpr': makeComplianceReport('GDPR', 78.0, 18, 4, 1),
+    'iso27001': makeComplianceReport('ISO27001', 74.0, 20, 6, 1),
+    'soc2': makeComplianceReport('SOC2', 69.0, 16, 6, 2),
+    '800-171': makeComplianceReport('NIST800171', 81.0, 27, 5, 1),
+    'fedramp': makeComplianceReport('FedRAMP', 63.0, 19, 9, 2),
   };
 
   const SCAN_HISTORY = [
@@ -516,9 +523,12 @@
         };
 
       case 'generate_compliance_report': {
-        const frameworks = (args && args.frameworks) || ['CIS'];
+        const frameworks = (args && args.frameworks) || ['cis'];
+        // Looked up by the id exactly as sent. Upper-casing it was what made
+        // `pci-dss` unmatchable, and no single casing rule can reach both
+        // `PCIDSS` and `FedRAMP` anyway.
         return frameworks
-          .map((f) => COMPLIANCE_REPORTS[f.toUpperCase()])
+          .map((f) => COMPLIANCE_REPORTS[f])
           .filter(Boolean);
       }
 
