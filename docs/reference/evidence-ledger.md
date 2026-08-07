@@ -34,7 +34,7 @@ them; do not copy a figure from an older document.
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
 | Tests the default suite runs | `cargo nextest run --workspace` | 1706 passed, 40 skipped |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
-| Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 19 validations passed |
+| Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 20 validations passed |
 | Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1746 |
 
 The gap between 1746 annotations and 1706 executions is exactly 40, and all 40
