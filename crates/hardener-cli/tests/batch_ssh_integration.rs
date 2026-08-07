@@ -15,21 +15,27 @@
 //!
 //! Run: `cargo test -p hardener-cli --test batch_ssh_integration -- --ignored`
 //!
+//! Without that environment these tests panic rather than skip, so a green
+//! run is evidence that a real host answered every verb.
+//!
 //! Auth is key/agent only; the SSH executor has no password path.
 
 use std::process::{Command, Output};
 
-/// Ad-hoc `--ssh` target from the fixture env, or `None` to skip.
-fn target() -> Option<String> {
-    let Ok(host) = std::env::var("SSH_TEST_HOST") else {
-        eprintln!(
-            "skipping: SSH_TEST_HOST not set (see scripts/containers/boot-ssh-test-container.sh)"
-        );
-        return None;
-    };
+/// Ad-hoc `--ssh` target from the fixture env.
+///
+/// Every test in this file is `#[ignore]`d, so the only way to reach this
+/// helper is to ask for these tests by name or with `--ignored`. A missing
+/// fixture is then a mis-run, not a reason to pass quietly: returning here
+/// would make a run that proved nothing byte-identical to a run that proved
+/// all four verbs. The neighbouring SSH suites in `hardener-core` and
+/// `hardener-plugins` fail loudly for the same reason.
+fn target() -> String {
+    let host = std::env::var("SSH_TEST_HOST")
+        .expect("SSH_TEST_HOST not set (see scripts/containers/boot-ssh-test-container.sh)");
     let user = std::env::var("SSH_TEST_USER").unwrap_or_else(|_| "root".to_string());
     let port = std::env::var("SSH_TEST_PORT").unwrap_or_else(|_| "22".to_string());
-    Some(format!("{user}@{host}:{port}"))
+    format!("{user}@{host}:{port}")
 }
 
 fn run_batch(args: &[&str]) -> Output {
@@ -61,7 +67,7 @@ fn stderr_of(out: &Output) -> String {
 #[test]
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 fn batch_scan_over_ssh_succeeds_with_json() {
-    let Some(t) = target() else { return };
+    let t = target();
     let out = run_batch(&["batch", "scan", "--ssh", &t, "--format", "json"]);
     let code = exit_code(&out);
     assert!(
@@ -88,7 +94,7 @@ fn batch_scan_over_ssh_succeeds_with_json() {
 #[test]
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 fn batch_report_over_ssh_assesses_framework() {
-    let Some(t) = target() else { return };
+    let t = target();
     let out = run_batch(&[
         "batch",
         "report",
@@ -119,7 +125,7 @@ fn batch_report_over_ssh_assesses_framework() {
 #[test]
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 fn batch_apply_dry_run_over_ssh_validates() {
-    let Some(t) = target() else { return };
+    let t = target();
     // Dry-run is the default: validates remotely, mutates nothing.
     let out = run_batch(&["batch", "apply", "--ssh", &t, "--format", "json"]);
     let code = exit_code(&out);
@@ -141,7 +147,7 @@ fn batch_apply_dry_run_over_ssh_validates() {
 #[test]
 #[ignore = "Requires SSH_TEST_HOST environment variable"]
 fn batch_rollback_dry_run_over_ssh_previews() {
-    let Some(t) = target() else { return };
+    let t = target();
     let out = run_batch(&["batch", "rollback", "--ssh", &t, "--format", "json"]);
     let code = exit_code(&out);
     assert!(

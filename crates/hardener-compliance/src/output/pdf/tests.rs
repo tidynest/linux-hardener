@@ -67,8 +67,3 @@ fn test_truncate_string() {
         "this is a ..."
     );
 }
-
-#[test]
-fn test_pdf_formatter_default() {
-    let _formatter = PdfFormatter;
-}
