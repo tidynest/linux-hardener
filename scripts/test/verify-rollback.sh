@@ -2,38 +2,58 @@
 # =============================================================================
 # ROLLBACK VERIFICATION SCRIPT
 # =============================================================================
-# Thorough verification that checkpoint/rollback actually restores file contents
-# and runtime kernel parameters to their pre-apply state.
+# Reads back off the system what a rollback claims to have restored: file
+# contents, a directory mode, and, where the container permits the question,
+# a runtime kernel parameter. Nothing here trusts the tool's own report.
 #
-# Run INSIDE a test container as root:
-#   sudo ./scripts/test/verify-rollback.sh
+# Run INSIDE a test container as root. Two binds are needed: the project at
+# /project, and cargo's target directory at /project/target, because a machine
+# with CARGO_TARGET_DIR or a [build] target-dir in ~/.cargo/config.toml builds
+# the binary outside the tree and the first bind then carries no binary at all:
+#
+#   TARGET_DIR=$(cargo metadata --format-version 1 --no-deps |
+#       sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+#   sudo systemd-nspawn -D /var/lib/machines/hardener-test \
+#       --bind="$PWD:/project" --bind-ro="$TARGET_DIR:/project/target" --pipe \
+#       /bin/bash /project/scripts/test/verify-rollback.sh
+#
+# The second bind is harmless when the target directory is already inside the
+# tree: it then mounts the same directory onto itself. scripts/test/
+# release-readiness-root.sh adds it only when it differs, and is the only
+# runner that calls this script.
 #
 # Tests:
-#   1. Kernel plugin:  sysctl values + config file content
+#   1. Kernel plugin:  persistent config file written by the apply, then
+#                      removed (or restored) by the rollback, plus the runtime
+#                      sysctl value where /proc/sys/net is writable (see TEST 1)
 #   2. SSH plugin:     sshd_config backup + content restoration
 #   3. Permissions:    directory mode restoration
 #   4. JSON output:    rollback --format json produces valid RollbackResult
+#   5. Checkpoints:    two applies leave two checkpoints
 # =============================================================================
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BINARY="${BINARY:-$PROJECT_DIR/target/x86_64-unknown-linux-musl/release/hardener}"
-[[ -x "$BINARY" ]] || BINARY="$PROJECT_DIR/target/release/hardener"
 
-# Colours
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
-BOLD='\033[1m'
-NC='\033[0m'
+# shellcheck source=../lib/common.sh
+source "$SCRIPT_DIR/../lib/common.sh"
+
+# Resolved the way every other runner resolves it, rather than by naming
+# $PROJECT_DIR/target directly: cargo redirects its output out of the tree
+# whenever CARGO_TARGET_DIR or a [build] target-dir is set, and a hand-written
+# path then misses both candidates and stops the run before it starts.
+if [[ -z "${BINARY:-}" ]]; then
+    TARGET_DIR="$(resolve_target_dir "x86_64-unknown-linux-musl/release/hardener" "release/hardener")"
+    BINARY="$TARGET_DIR/x86_64-unknown-linux-musl/release/hardener"
+    [[ -x "$BINARY" ]] || BINARY="$TARGET_DIR/release/hardener"
+fi
 
 TESTS_TOTAL=0
 TESTS_PASSED=0
 TESTS_FAILED=0
+TESTS_SKIPPED=0
 FAILED_TESTS=()
 
 # ---------------------------------------------------------------------------
@@ -45,7 +65,10 @@ if [[ -f /run/systemd/container ]] || systemd-detect-virt -c &>/dev/null; then
 fi
 if [[ "$CONTAINER_MODE" != "true" ]]; then
     echo -e "${RED}ERROR: This script must run INSIDE a test container.${NC}"
-    echo "Use: sudo systemd-nspawn -D /var/lib/machines/hardener-test --bind $PROJECT_DIR:/project -- /bin/bash /project/scripts/test/verify-rollback.sh"
+    echo "Use: sudo systemd-nspawn -D /var/lib/machines/hardener-test \\"
+    echo "         --bind=$PROJECT_DIR:/project \\"
+    echo "         --bind-ro=${TARGET_DIR:-$PROJECT_DIR/target}:/project/target \\"
+    echo "         --pipe /bin/bash /project/scripts/test/verify-rollback.sh"
     exit 1
 fi
 
@@ -55,10 +78,14 @@ fi
 log() { echo -e "$1"; }
 pass() { log "  ${GREEN}[PASS]${NC} $1"; ((TESTS_PASSED++)); ((TESTS_TOTAL++)); }
 fail() { log "  ${RED}[FAIL]${NC} $1"; ((TESTS_FAILED++)); ((TESTS_TOTAL++)); FAILED_TESTS+=("$1"); }
+# A question this environment cannot answer. Counted and printed rather than
+# passed, so an arm that could not be asked never reads as an arm that was
+# asked and was clean. Every call must name the reason.
+skip() { log "  ${YELLOW}[SKIP]${NC} $1"; ((TESTS_SKIPPED++)); ((TESTS_TOTAL++)); }
 info() { log "  ${CYAN}[INFO]${NC} $1"; }
 header() {
     log ""
-    log "${MAGENTA}═══ $1 ═══${NC}"
+    log "${MAGENTA}=== $1 ===${NC}"
 }
 
 assert_eq() {
@@ -88,13 +115,32 @@ assert_file_missing() {
     fi
 }
 
+# Literal match (-F): every needle passed here is a fixed string, and the
+# sysctl names among them are full of dots that a regexp would treat as
+# wildcards, so a near-miss could match and be reported as a pass.
 assert_contains() {
     local label="$1" haystack="$2" needle="$3"
-    if echo "$haystack" | grep -q "$needle"; then
+    if echo "$haystack" | grep -qF "$needle"; then
         pass "$label"
     else
         fail "$label (missing '$needle')"
     fi
+}
+
+# Whether this container may write the sysctl at PATH, measured by writing the
+# value already there (a no-op whatever the answer is).
+#
+# The inode cannot be asked: every file under /proc/sys is 0644 whether or not
+# the mount allows writing, so `[[ -w ]]` says yes on a read-only /proc/sys and
+# only the write itself tells the truth.
+# The redirection is inside the group so that the shell's own "Read-only file
+# system" message goes to /dev/null with everything else: a failed redirection
+# is reported before a trailing 2>/dev/null on the same command takes effect,
+# which would put a bare error line above the SKIP that explains it.
+sysctl_write_allowed() {
+    local path="$1" current
+    current=$(cat "$path" 2>/dev/null) || return 1
+    { printf '%s\n' "$current" > "$path"; } 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -113,31 +159,95 @@ rm -rf /var/lib/linux-hardener
 info "Cleaned /var/lib/linux-hardener"
 
 # =============================================================================
-# TEST 1: KERNEL PLUGIN: sysctl values + config file
+# TEST 1: KERNEL PLUGIN: persistent config file + runtime sysctl value
 # =============================================================================
+# The parameter this arm asks about, and why it is a net.ipv4 one.
+#
+# systemd-nspawn mounts /proc/sys read-only and it is the HOST's, so the
+# kernel.* and fs.* parameters the plugin manages cannot be moved by any apply
+# run in here: an assertion that one of them came back would compare a constant
+# with itself and pass whatever the code did. Only /proc/sys/net is remounted
+# read-write, and only for a container holding its own network namespace
+# (--boot --private-network, not --pipe), which is the same measured finding
+# differential-suite.sh records for its own kernel table.
+#
+# log_martians rather than one of the other ten net.ipv4 parameters: it is the
+# only one whose value cannot cost anything if the container turns out to share
+# the host's network namespace after all (rp_filter and the redirect settings
+# decide whether packets are dropped; this one decides whether a line is
+# logged), and nothing in /usr/lib/sysctl.d names it on Arch, which is the
+# distribution release-readiness-root.sh gives this script. A distribution that
+# does ship a log_martians default would win over the baseline drop-in below
+# under sysctl's merge order, and this arm would then report the restored value
+# as that default rather than as the seed: a named failure to read, not a
+# silent pass.
+KERNEL_PROBE_PARAM="net.ipv4.conf.all.log_martians"
+KERNEL_PROBE_PROC="/proc/sys/net/ipv4/conf/all/log_martians"
+KERNEL_PROBE_BASELINE="0"   # looser than the plugin's target, so apply must move it
+KERNEL_PROBE_TARGET="1"     # KERNEL_PARAMS in crates/hardener-plugins/src/kernel/mod.rs
+KERNEL_BASELINE_CONF="/etc/sysctl.d/00-rollback-readback-baseline.conf"
+HARDENER_CONF="/etc/sysctl.d/99-hardener.conf"
+
 header "TEST 1: KERNEL PLUGIN ROLLBACK"
 
 # Record BEFORE state
-BEFORE_KPTR=$(cat /proc/sys/kernel/kptr_restrict 2>/dev/null || echo "N/A")
-BEFORE_DMESG=$(cat /proc/sys/kernel/dmesg_restrict 2>/dev/null || echo "N/A")
 BEFORE_CONF_EXISTS="false"
-[[ -f /etc/sysctl.d/99-hardener.conf ]] && BEFORE_CONF_EXISTS="true"
+BEFORE_CONF_HASH=""
+if [[ -f "$HARDENER_CONF" ]]; then
+    BEFORE_CONF_EXISTS="true"
+    BEFORE_CONF_HASH=$(sha256sum "$HARDENER_CONF" | awk '{print $1}')
+fi
 
-info "BEFORE: kptr_restrict=$BEFORE_KPTR  dmesg_restrict=$BEFORE_DMESG  conf_exists=$BEFORE_CONF_EXISTS"
+# Seed the runtime half, where this container permits it at all.
+#
+# The seed is two writes, and both are needed. The runtime write puts the
+# parameter below the plugin's target so the apply has to move it; the baseline
+# drop-in puts the same value in the configuration that survives the rollback,
+# because a rollback restores files and then runs `sysctl --system` and never
+# writes /proc/sys itself. Without a surviving file naming the pre-apply value
+# there is nothing for that reload to read, and the runtime value would stay
+# hardened after a rollback that did everything it promises.
+RUNTIME_ASKABLE=false
+BEFORE_PROBE=""
+if sysctl_write_allowed "$KERNEL_PROBE_PROC"; then
+    RUNTIME_ASKABLE=true
+    printf '# Pre-apply baseline written by verify-rollback.sh\n%s = %s\n' \
+        "$KERNEL_PROBE_PARAM" "$KERNEL_PROBE_BASELINE" > "$KERNEL_BASELINE_CONF"
+    printf '%s\n' "$KERNEL_PROBE_BASELINE" > "$KERNEL_PROBE_PROC"
+    BEFORE_PROBE=$(cat "$KERNEL_PROBE_PROC")
+    info "BEFORE: $KERNEL_PROBE_PARAM=$BEFORE_PROBE (seeded)  conf_exists=$BEFORE_CONF_EXISTS"
+    # Asserted rather than assumed: if the seed did not take, the pre-apply
+    # value is already the target and both assertions below would compare the
+    # target with itself, which is the exact defect this arm was rebuilt to
+    # get rid of.
+    assert_eq "Seeded $KERNEL_PROBE_PARAM below its target" \
+        "$KERNEL_PROBE_BASELINE" "$BEFORE_PROBE"
+else
+    skip "Runtime sysctl readback: /proc/sys/net is read-only here, so no apply can move $KERNEL_PROBE_PARAM and no rollback can bring it back"
+    info "  nspawn remounts /proc/sys/net read-write only for a container holding its"
+    info "  own network namespace (--boot --private-network). Under --pipe the file"
+    info "  assertions below are the whole of this arm."
+    info "BEFORE: conf_exists=$BEFORE_CONF_EXISTS"
+fi
 
 # Apply kernel hardening
 info "Applying kernel hardening..."
-APPLY_OUTPUT=$("$BINARY" apply --plugin kernel-hardening 2>&1) || true
+"$BINARY" apply --plugin kernel-hardening > /dev/null 2>&1 || true
 
-# Verify changes took effect
-AFTER_KPTR=$(cat /proc/sys/kernel/kptr_restrict 2>/dev/null || echo "N/A")
-AFTER_DMESG=$(cat /proc/sys/kernel/dmesg_restrict 2>/dev/null || echo "N/A")
-info "AFTER APPLY: kptr_restrict=$AFTER_KPTR  dmesg_restrict=$AFTER_DMESG"
+# The persistent file is written whether or not the runtime writes succeed, so
+# these two are asked in every container. Reported as failures rather than as
+# information: an apply that silently wrote nothing leaves exactly the state a
+# rollback is supposed to leave, and the removal assertion further down would
+# pass over a file that was never there.
+assert_file_exists "Persistent sysctl config after apply" "$HARDENER_CONF"
+assert_contains "Persistent sysctl config names $KERNEL_PROBE_PARAM" \
+    "$(cat "$HARDENER_CONF" 2>/dev/null)" "$KERNEL_PROBE_PARAM = $KERNEL_PROBE_TARGET"
 
-if [[ -f /etc/sysctl.d/99-hardener.conf ]]; then
-    pass "Config file created: /etc/sysctl.d/99-hardener.conf"
-else
-    info "Config file not created (may be container limitation with /etc bind-mount)"
+if [[ "$RUNTIME_ASKABLE" == "true" ]]; then
+    AFTER_PROBE=$(cat "$KERNEL_PROBE_PROC")
+    info "AFTER APPLY: $KERNEL_PROBE_PARAM=$AFTER_PROBE"
+    assert_eq "Apply raised $KERNEL_PROBE_PARAM to its target" \
+        "$KERNEL_PROBE_TARGET" "$AFTER_PROBE"
 fi
 
 # Get checkpoint ID
@@ -151,23 +261,34 @@ fi
 # Rollback
 if [[ -n "$KERNEL_CP" ]]; then
     info "Rolling back kernel hardening..."
-    ROLLBACK_OUTPUT=$("$BINARY" rollback "$KERNEL_CP" 2>&1) || true
+    "$BINARY" rollback "$KERNEL_CP" > /dev/null 2>&1 || true
 
-    # Verify sysctl values restored
-    RESTORED_KPTR=$(cat /proc/sys/kernel/kptr_restrict 2>/dev/null || echo "N/A")
-    RESTORED_DMESG=$(cat /proc/sys/kernel/dmesg_restrict 2>/dev/null || echo "N/A")
-    info "AFTER ROLLBACK: kptr_restrict=$RESTORED_KPTR  dmesg_restrict=$RESTORED_DMESG"
-
-    # Note: sysctl runtime values are restored via /proc/sys writes during rollback
-    # The config FILE should be removed (it didn't exist before apply)
+    # The persistent file: removed if the apply created it, restored byte for
+    # byte if it was already there. One of the two is always asked, so the file
+    # half of this arm can never go quiet.
     if [[ "$BEFORE_CONF_EXISTS" == "false" ]]; then
-        assert_file_missing "Config file after rollback" "/etc/sysctl.d/99-hardener.conf"
+        assert_file_missing "Config file after rollback" "$HARDENER_CONF"
+    else
+        RESTORED_CONF_HASH=$(sha256sum "$HARDENER_CONF" 2>/dev/null | awk '{print $1}')
+        assert_eq "Pre-existing config file restored" \
+            "$BEFORE_CONF_HASH" "${RESTORED_CONF_HASH:-<file missing>}"
     fi
 
-    # Verify runtime values match pre-apply state
-    assert_eq "kptr_restrict restored" "$BEFORE_KPTR" "$RESTORED_KPTR"
-    assert_eq "dmesg_restrict restored" "$BEFORE_DMESG" "$RESTORED_DMESG"
+    # The runtime value: back to the baseline the surviving drop-in names,
+    # which is what the rollback's `sysctl --system` reload has to produce once
+    # the hardener's own file is gone.
+    if [[ "$RUNTIME_ASKABLE" == "true" ]]; then
+        RESTORED_PROBE=$(cat "$KERNEL_PROBE_PROC")
+        info "AFTER ROLLBACK: $KERNEL_PROBE_PARAM=$RESTORED_PROBE"
+        assert_eq "Rollback restored $KERNEL_PROBE_PARAM" \
+            "$BEFORE_PROBE" "$RESTORED_PROBE"
+    fi
 fi
+
+# The baseline drop-in is this script's, not the tool's: taken back out so the
+# container is left as it was found and nothing downstream reads it as an
+# operator's own setting.
+rm -f "$KERNEL_BASELINE_CONF"
 
 # =============================================================================
 # TEST 2: SSH PLUGIN: sshd_config content restoration
@@ -264,7 +385,7 @@ header "TEST 4: ROLLBACK JSON OUTPUT"
 rm -rf /var/lib/linux-hardener
 
 # Apply kernel (simplest plugin for JSON test)
-"$BINARY" apply --plugin kernel-hardening 2>&1 >/dev/null || true
+"$BINARY" apply --plugin kernel-hardening > /dev/null 2>&1 || true
 
 JSON_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
 if [[ -n "$JSON_CP" ]]; then
@@ -307,10 +428,10 @@ rm -rf /var/lib/linux-hardener
 
 # Apply two plugins sequentially: each creates its own checkpoint
 info "Applying kernel-hardening..."
-"$BINARY" apply --plugin kernel-hardening 2>&1 >/dev/null || true
+"$BINARY" apply --plugin kernel-hardening > /dev/null 2>&1 || true
 
 info "Applying ssh-hardening..."
-"$BINARY" apply --plugin ssh-hardening 2>&1 >/dev/null || true
+"$BINARY" apply --plugin ssh-hardening > /dev/null 2>&1 || true
 
 # List checkpoints: should have at least 2
 CP_COUNT=$("$BINARY" checkpoint list 2>&1 | grep -cE 'cp_[0-9]+_[a-f0-9]+' || echo "0")
@@ -334,6 +455,7 @@ header "SUMMARY"
 log ""
 log "  Total:   $TESTS_TOTAL"
 log "  ${GREEN}Passed:  $TESTS_PASSED${NC}"
+log "  ${YELLOW}Skipped: $TESTS_SKIPPED${NC}"
 if [[ $TESTS_FAILED -gt 0 ]]; then
     log "  ${RED}Failed:  $TESTS_FAILED${NC}"
     log ""
