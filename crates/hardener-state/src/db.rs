@@ -77,6 +77,7 @@ const SCHEMA: &str = r#"
         compliance_mappings TEXT NOT NULL,
         policy_exception TEXT,
         exception_key TEXT,
+        exception_declined TEXT,
         FOREIGN KEY(result_id) REFERENCES scan_results(id) ON DELETE CASCADE
     );
 
@@ -248,6 +249,16 @@ const MIGRATIONS: &[Migration] = &[
         table: "scan_findings",
         column: "exception_key",
         ddl: "exception_key TEXT",
+        absent: None,
+    },
+    // A finding stored before this column existed carries no declined
+    // exception, and NULL reads back as exactly that: NotConfigured. That is
+    // the honest reading, because nothing at the time could have recorded a
+    // decline, and a rescan replaces the row.
+    Migration {
+        table: "scan_findings",
+        column: "exception_declined",
+        ddl: "exception_declined TEXT",
         absent: None,
     },
 ];

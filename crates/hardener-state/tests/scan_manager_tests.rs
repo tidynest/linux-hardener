@@ -1,7 +1,8 @@
 use hardener_state::{ScanHistoryManager, ScanStatus, init_db};
 use hardener_types::{
-    ComplianceFramework, ComplianceMapping, ExceptionOutcome, Finding, FindingCategory,
-    FindingPolicyException, PluginId, ScanResult, Severity, UncheckedCheck,
+    ComplianceFramework, ComplianceMapping, DeclineReason, ExceptionOutcome, Finding,
+    FindingCategory, FindingExceptionDeclined, FindingPolicyException, PluginId, ScanResult,
+    Severity, UncheckedCheck,
 };
 use tempfile::tempdir;
 
@@ -403,5 +404,53 @@ async fn every_finding_field_survives_the_scan_history() {
         "a finding must come back exactly as it went in: a field missing from \
          the INSERT, hardcoded in the rebuild, or lost by a str conversion \
          shows up here as a difference"
+    );
+}
+
+/// A declined exception is a live violation carrying the reason it did not
+/// apply, and must survive the round trip rather than being folded into
+/// `NotConfigured` for lack of a column to hold it.
+#[tokio::test]
+async fn a_declined_exception_round_trips() {
+    let (manager, _dir) = create_test_manager().await;
+    let session_id = manager.start_session().await.unwrap();
+
+    let mut results = sample_results();
+    results[0].scan_findings[0].finding_exception =
+        ExceptionOutcome::Declined(FindingExceptionDeclined {
+            exception_declined_reason: DeclineReason::Expired {
+                expired_on: "2026-01-01".to_string(),
+            },
+            exception_reason: "temporary waiver".to_string(),
+        });
+
+    manager.store_results(&session_id, &results).await.unwrap();
+    manager
+        .complete_session(&session_id, ScanStatus::Completed, 1, 1)
+        .await
+        .unwrap();
+
+    let (_, restored) = manager.get_latest_scan().await.unwrap().unwrap();
+    let stored = &restored[0].scan_findings[0];
+
+    match &stored.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(
+                    expired_on, "2026-01-01",
+                    "the expiry survives the round trip"
+                );
+            }
+            other => panic!("the arm changed on the way through: {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+
+    let ExceptionOutcome::Declined(declined) = &stored.finding_exception else {
+        panic!("already matched above, so this cannot differ");
+    };
+    assert_eq!(
+        declined.exception_reason, "temporary waiver",
+        "the operator's own reason survives the round trip too"
     );
 }

@@ -6,8 +6,8 @@
 use crate::scan_history::{ScanSession, ScanSessionId, ScanStatus};
 use hardener_common::error::{HardeningError, Result};
 use hardener_types::{
-    ComplianceMapping, ExceptionOutcome, Finding, FindingCategory, FindingPolicyException,
-    PluginId, ScanResult, Severity, UncheckedCheck,
+    ComplianceMapping, ExceptionOutcome, Finding, FindingCategory, FindingExceptionDeclined,
+    FindingPolicyException, PluginId, ScanResult, Severity, UncheckedCheck,
 };
 use sqlx::{Row, SqlitePool};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -95,23 +95,28 @@ impl ScanHistoryManager {
                 let compliance_json = serde_json::to_string(&finding.finding_compliance)
                     .unwrap_or_else(|_| "[]".to_string());
 
-                // There is no declined column yet, so a decline carries nothing into
-                // scan history. Folding it in with NotConfigured here is a no-op today
-                // only because nothing produces Declined; a later task adds that column
-                // and must give the decline reason and the operator's exception text
-                // their own branch here instead of dropping them silently.
-                let policy_exception_json = match &finding.finding_exception {
-                    ExceptionOutcome::Applied(e) => serde_json::to_string(e).ok(),
-                    ExceptionOutcome::NotConfigured | ExceptionOutcome::Declined(_) => None,
-                };
+                // Applied and Declined are mutually exclusive outcomes, so each
+                // takes its own column: an applied exception excuses the finding
+                // from its compliance control, and a declined one is a live
+                // violation that still carries the reason it did not apply.
+                let (policy_exception_json, exception_declined_json) =
+                    match &finding.finding_exception {
+                        ExceptionOutcome::NotConfigured => (None, None),
+                        ExceptionOutcome::Applied(applied) => {
+                            (serde_json::to_string(applied).ok(), None)
+                        }
+                        ExceptionOutcome::Declined(declined) => {
+                            (None, serde_json::to_string(declined).ok())
+                        }
+                    };
 
                 sqlx::query(
                     "INSERT INTO scan_findings (
                         result_id, finding_id, category, severity, title, description,
                         explanation, impact, current_value, recommended_value,
                         remediation_steps, compliance_mappings, policy_exception,
-                        exception_key
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        exception_key, exception_declined
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(result_id)
                 .bind(&finding.finding_id)
@@ -127,6 +132,7 @@ impl ScanHistoryManager {
                 .bind(&compliance_json)
                 .bind(&policy_exception_json)
                 .bind(&finding.finding_exception_key)
+                .bind(&exception_declined_json)
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| HardeningError::Database(e.to_string()))?;
@@ -262,7 +268,7 @@ impl ScanHistoryManager {
         let finding_rows = sqlx::query(
             "SELECT finding_id, category, severity, title, description, explanation,
                     impact, current_value, recommended_value, remediation_steps,
-                    compliance_mappings, policy_exception, exception_key
+                    compliance_mappings, policy_exception, exception_key, exception_declined
              FROM scan_findings
              WHERE result_id = ?",
         )
@@ -301,6 +307,27 @@ impl ScanHistoryManager {
                 })
                 .transpose()?;
 
+            let exception_declined: Option<FindingExceptionDeclined> = row
+                .get::<Option<String>, _>("exception_declined")
+                .map(|s| {
+                    serde_json::from_str(&s).map_err(|e| {
+                        HardeningError::Database(format!(
+                            "Corrupted exception_declined JSON for result {result_id}: {e}"
+                        ))
+                    })
+                })
+                .transpose()?;
+
+            // Both columns populated is a row that construction cannot produce.
+            // Read it as Declined, never Applied: Applied excuses a finding
+            // from its compliance control, and no corrupt row should buy that.
+            // Declined is live and carries the reason, so it is the safe read.
+            let exception_outcome = match (exception_declined, policy_exception) {
+                (Some(declined), _) => ExceptionOutcome::Declined(declined),
+                (None, Some(applied)) => ExceptionOutcome::Applied(applied),
+                (None, None) => ExceptionOutcome::NotConfigured,
+            };
+
             findings.push(Finding {
                 finding_id: row.get("finding_id"),
                 finding_category: str_to_category(row.get("category")),
@@ -313,8 +340,7 @@ impl ScanHistoryManager {
                 finding_recommended_value: row.get("recommended_value"),
                 finding_remediation_steps: remediation_steps,
                 finding_compliance: compliance,
-                finding_exception: policy_exception
-                    .map_or(ExceptionOutcome::NotConfigured, ExceptionOutcome::Applied),
+                finding_exception: exception_outcome,
                 finding_exception_key: row.get("exception_key"),
             });
         }
