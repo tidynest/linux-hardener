@@ -1,6 +1,11 @@
 // =============================================================================
 // DASHBOARD TESTS (T-DASH-01..09) - Linux Hardener GUI Tests
 // =============================================================================
+//
+// The redesign renamed the heading, replaced the numeric score panel with a
+// score bar exposed as a status region reading "<score>/100" beside a band
+// label, and dropped the two quick-action buttons: the only in-page link is the
+// activity entry's "View", and Hardening is reached from the sidebar.
 
 const { test, expect } = require('@playwright/test');
 const { loadApp, runScan } = require('./helpers');
@@ -12,48 +17,53 @@ test.describe('Dashboard', () => {
 
   // T-DASH-01: Page loads
   test('T-DASH-01: page loads with heading', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'System Security Dashboard' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
   });
 
-  // T-DASH-02: Initial score shows --/100
-  test('T-DASH-02: initial score shows placeholder', async ({ page }) => {
-    const scoreValue = page.locator('.score-value');
-    await expect(scoreValue).toHaveText('--');
-    const scoreMax = page.locator('.score-max');
-    await expect(scoreMax).toHaveText('/100');
-    await expect(page.locator('.score-status')).toContainText('Run a scan');
+  // T-DASH-02: Before a scan there is no score to show
+  //
+  // Was `.score-value` reading '--' beside a `.score-max` of '/100'. The score
+  // is now a bar that is simply absent until there is something to plot, so the
+  // placeholder it used to assert no longer exists to be checked.
+  test('T-DASH-02: initial state reports nothing scanned', async ({ page }) => {
+    await expect(page.getByText('Not scanned yet').first()).toBeVisible();
+    await expect(page.getByRole('status')).toHaveCount(0);
   });
 
   // T-DASH-03: Run Scan button visible and enabled
-  test('T-DASH-03: Run Scan button is visible and enabled', async ({ page }) => {
-    const btn = page.getByRole('button', { name: /Run Scan/i });
+  test('T-DASH-03: Run Security Scan button is visible and enabled', async ({ page }) => {
+    const btn = page.getByRole('button', { name: /Run Security Scan/i });
     await expect(btn).toBeVisible();
     await expect(btn).toBeEnabled();
   });
 
   // T-DASH-04: Click Run Scan populates results
-  test('T-DASH-04: clicking Run Scan populates results', async ({ page }) => {
+  test('T-DASH-04: clicking Run Security Scan populates the score', async ({ page }) => {
     await runScan(page);
-    // After scan completes, score should no longer be pending
-    const scoreValue = page.locator('.score-value');
-    await expect(scoreValue).not.toHaveText('--', { timeout: 10000 });
+    await expect(page.getByRole('status')).toHaveText(/^\d+\/100$/);
   });
 
-  // T-DASH-05: View Analysis navigates to /analysis
-  test('T-DASH-05: View Analysis navigates to /analysis', async ({ page }) => {
-    const link = page.getByRole('link', { name: /View Analysis/i }).or(
-      page.locator('.btn', { hasText: /View Analysis/i })
-    );
-    await link.click();
+  // T-DASH-05: The activity entry links through to Analysis
+  //
+  // Was a "View Analysis" quick-action button. The redesign moved that journey
+  // into the activity entry the scan produces, which is the only place on this
+  // page that now links to /analysis.
+  test('T-DASH-05: activity entry links to Analysis', async ({ page }) => {
+    await runScan(page);
+    await page.getByRole('link', { name: 'View' }).first().click();
     await expect(page).toHaveURL(/\/analysis/);
   });
 
-  // T-DASH-06: Configure Hardening navigates to /hardening
-  test('T-DASH-06: Configure Hardening navigates to /hardening', async ({ page }) => {
-    const link = page.getByRole('link', { name: /Configure Hardening/i }).or(
-      page.locator('.btn', { hasText: /Configure Hardening/i })
-    );
-    await link.click();
+  // T-DASH-06: Hardening is reachable from the sidebar
+  //
+  // Was a "Configure Hardening" quick-action button, which the redesign
+  // dropped: the grouped sidebar is how the sections are reached. The journey
+  // being covered is the same one, by the route an operator now takes.
+  test('T-DASH-06: sidebar navigates to Hardening', async ({ page }) => {
+    await page
+      .getByRole('navigation', { name: 'Main navigation' })
+      .getByRole('link', { name: 'Hardening' })
+      .click();
     await expect(page).toHaveURL(/\/hardening/);
   });
 
@@ -70,17 +80,20 @@ test.describe('Dashboard', () => {
     await expect(activity).toContainText('findings');
   });
 
-  // T-DASH-09: Post-scan score is numeric and colour-coded
-  test('T-DASH-09: after scan, score is numeric and colour-coded', async ({ page }) => {
+  // T-DASH-09: Post-scan score is numeric and banded
+  //
+  // The colour class this used to read (`score-pending` on `.score-display`) is
+  // gone with the numeric panel. The band label beside the score carries the
+  // same meaning in text, which is the more honest thing to assert: a colour
+  // an operator cannot read is not what tells them where they stand.
+  test('T-DASH-09: after scan, score is numeric and banded', async ({ page }) => {
     await runScan(page);
-    const scoreValue = page.locator('.score-value');
-    // Should be a number, not "--"
-    await expect(scoreValue).not.toHaveText('--');
-    const text = await scoreValue.textContent();
-    expect(Number(text)).toBeGreaterThan(0);
-    // Score display should have a colour class (not score-pending)
-    const scoreDisplay = page.locator('.score-display');
-    const classes = await scoreDisplay.getAttribute('class');
-    expect(classes).not.toContain('score-pending');
+    const score = page.getByRole('status');
+    await expect(score).toHaveText(/^\d+\/100$/);
+    const value = Number((await score.textContent()).split('/')[0]);
+    expect(value).toBeGreaterThan(0);
+    expect(value).toBeLessThanOrEqual(100);
+    // The mock scores 60, which is the middle band.
+    await expect(page.getByText('Needs attention')).toBeVisible();
   });
 });

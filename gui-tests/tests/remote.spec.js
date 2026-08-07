@@ -1,64 +1,50 @@
 // =============================================================================
-// REMOTE SCANNING TESTS (T-REMOTE-01..07) - Linux Hardener GUI Tests
+// REMOTE ROUTE TESTS (T-REMOTE-01..03) - Linux Hardener GUI Tests
 // =============================================================================
-// Host inventory list, connect/disconnect lifecycle, remote scan, add-host form,
-// and two-step delete.
+//
+// The redesign folded remote scanning into the Hosts page. There is no separate
+// Remote Scanning screen and no connect/disconnect lifecycle: an operator
+// selects hosts and scans them, and /remote survives only as a redirect for
+// links written before the redesign.
+//
+// This file used to cover seven things against that screen. What happened to
+// each, stated rather than quietly dropped:
+//
+//   T-REMOTE-01 host inventory      -> kept below, against the Hosts page
+//   T-REMOTE-02 not-connected guide -> gone; the concept no longer exists
+//   T-REMOTE-03 connect             -> gone; same reason
+//   T-REMOTE-04 remote scan         -> covered by fleet.spec.js T-FLEET-04
+//   T-REMOTE-05 disconnect          -> gone; same reason
+//   T-REMOTE-06 Add Host form       -> kept below
+//   T-REMOTE-07 two-step delete     -> NOT carried over. The affordance is not
+//       on the collapsed row and this session could not open the expander to
+//       see whether it survived, so writing a test for it would be a guess.
+//       Host deletion is currently uncovered and wants a test once someone can
+//       confirm where the control lives.
 
 const { test, expect } = require('@playwright/test');
 const { loadApp } = require('./helpers');
 
-const entry = (page, name) => page.locator('.host-entry').filter({ hasText: name });
-
-test.describe('Remote Scanning', () => {
-  test.beforeEach(async ({ page }) => {
+test.describe('Remote route', () => {
+  // T-REMOTE-01: /remote redirects to the Hosts page
+  //
+  // The redirect exists for pre-redesign links and nothing else covered it.
+  test('T-REMOTE-01: /remote redirects to Hosts', async ({ page }) => {
     await loadApp(page, '/remote');
+    await expect(page.getByRole('heading', { name: 'Hosts', level: 1 })).toBeVisible();
   });
 
-  // T-REMOTE-01: Page loads with the saved-host inventory
-  test('T-REMOTE-01: page loads listing saved hosts', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Remote Scanning' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Saved Hosts' })).toBeVisible();
-    await expect(entry(page, 'web-01')).toBeVisible();
-    await expect(entry(page, 'db-01')).toBeVisible();
+  // T-REMOTE-02: The saved-host inventory is listed there
+  test('T-REMOTE-02: the saved hosts are listed', async ({ page }) => {
+    await loadApp(page, '/remote');
+    await expect(page.getByRole('checkbox', { name: 'Select web-01' })).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: 'Select db-01' })).toBeVisible();
   });
 
-  // T-REMOTE-02: With no connection, the status panel shows the guide
-  test('T-REMOTE-02: shows the not-connected guide', async ({ page }) => {
-    await expect(page.locator('.remote-empty')).toBeVisible();
-    await expect(page.getByText(/Add a remote host using the sidebar/i)).toBeVisible();
-  });
-
-  // T-REMOTE-03: Connecting marks the host active and reveals connected actions
-  test('T-REMOTE-03: connecting a host shows connected state', async ({ page }) => {
-    await entry(page, 'web-01').getByRole('button', { name: 'Connect' }).click();
-    await expect(page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
-    await expect(entry(page, 'web-01')).toContainText('Connected');
-  });
-
-  // T-REMOTE-04: A connected host can run a scan, populating results
-  test('T-REMOTE-04: running a remote scan populates results', async ({ page }) => {
-    await entry(page, 'web-01').getByRole('button', { name: 'Connect' }).click();
-    await page.getByRole('button', { name: /Run Scan/i }).click();
-    await expect(page.locator('.remote-results')).toBeVisible();
-  });
-
-  // T-REMOTE-05: Disconnecting returns to the guide
-  test('T-REMOTE-05: disconnecting returns to the guide', async ({ page }) => {
-    await entry(page, 'web-01').getByRole('button', { name: 'Connect' }).click();
-    await page.getByRole('button', { name: 'Disconnect' }).click();
-    await expect(page.locator('.remote-empty')).toBeVisible();
-  });
-
-  // T-REMOTE-06: "Add Host" swaps the sidebar to the host form
-  test('T-REMOTE-06: Add Host opens the host form', async ({ page }) => {
+  // T-REMOTE-03: "Add Host" opens the host form
+  test('T-REMOTE-03: Add Host opens the host form', async ({ page }) => {
+    await loadApp(page, '/remote');
     await page.getByRole('button', { name: 'Add Host' }).click();
     await expect(page.getByRole('textbox').first()).toBeVisible();
-  });
-
-  // T-REMOTE-07: Two-step delete removes a host from the inventory
-  test('T-REMOTE-07: deleting a host removes it', async ({ page }) => {
-    await entry(page, 'db-01').getByRole('button', { name: 'Delete' }).click();
-    await entry(page, 'db-01').getByRole('button', { name: 'Confirm' }).click();
-    await expect(entry(page, 'db-01')).toHaveCount(0);
   });
 });
