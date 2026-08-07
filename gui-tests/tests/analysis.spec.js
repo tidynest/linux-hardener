@@ -115,13 +115,26 @@ test.describe('Findings', () => {
     expect(count).toBe(8);
   });
 
-  // T-FIND-10: MiniSecurityScore appears after scan
-  test('T-FIND-10: mini security score component is visible', async ({ page }) => {
-    const miniScore = page.locator('.mini-security-score');
-    await expect(miniScore).toBeVisible();
-    // Score value starts as "--" (pending) until compliance reports are generated
-    const value = page.locator('.mini-score-value');
-    await expect(value).toBeVisible();
+  // T-FIND-10: The Scan History tab
+  //
+  // This asserted a `.mini-security-score` on Analysis. The component is gone
+  // from the interface entirely, not renamed: neither MiniSecurityScore nor
+  // either of its classes appears anywhere in `crates/hardener-ui/src`, and
+  // the page carries no score markup at all. The score lives on the Dashboard,
+  // where T-DASH-04 and T-DASH-09 cover it.
+  //
+  // The test also never scanned, though its own comment said the component
+  // appeared after a scan, so it was asserting a pending placeholder rather
+  // than the thing it named.
+  //
+  // Repointed at the third tab, which nothing covered: Analysis has Findings,
+  // Compliance and Scan History, and the first two have eighteen tests between
+  // them while the third had none.
+  test('T-FIND-10: the Scan History tab opens', async ({ page }) => {
+    await page.getByRole('tab', { name: 'Scan History' }).click();
+    await expect(page.getByRole('tab', { name: 'Scan History' }))
+      .toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel', { name: 'Scan History' })).toBeVisible();
   });
 });
 
