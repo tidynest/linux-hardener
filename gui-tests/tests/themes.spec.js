@@ -83,13 +83,14 @@ const STATES = [
   },
   {
     name: 'analysis-findings',
+    // Reached directly rather than through the dashboard. This used to click a
+    // "View Analysis" quick-action, which the redesign removed, and the click
+    // failed for all six themes: one dead control, six failing screenshots.
+    // The state being captured is Analysis carrying findings, and scanning from
+    // that page produces it without depending on how one arrives.
     setup: async (page) => {
-      await loadApp(page, '/');
+      await loadApp(page, '/analysis');
       await runScan(page);
-      await page.getByRole('link', { name: /View Analysis/i }).or(
-        page.locator('.btn', { hasText: /View Analysis/i })
-      ).click();
-      await page.waitForURL(/\/analysis/);
     },
   },
   {

@@ -42,9 +42,18 @@ test.describe('Remote route', () => {
   });
 
   // T-REMOTE-03: "Add Host" opens the host form
+  //
+  // Two buttons carry this name: the toolbar's, which opens the form, and the
+  // form's own submit. In document order the toolbar's comes first.
+  //
+  // The absence of a textbox is asserted before the click as well as its
+  // presence after. Without that, a form that were always in the DOM would
+  // satisfy the second assertion whether or not the click did anything, and
+  // the test would pass while covering nothing.
   test('T-REMOTE-03: Add Host opens the host form', async ({ page }) => {
     await loadApp(page, '/remote');
-    await page.getByRole('button', { name: 'Add Host' }).click();
+    await expect(page.getByRole('textbox')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Add Host' }).first().click();
     await expect(page.getByRole('textbox').first()).toBeVisible();
   });
 });
