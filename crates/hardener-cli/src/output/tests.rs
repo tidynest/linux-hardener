@@ -343,6 +343,46 @@ fn a_policy_excepted_finding_is_not_rendered_as_a_violation() {
     );
 }
 
+/// A finding whose configured exception did not apply is still a live
+/// violation, so it keeps its real severity, but the operator must be told
+/// the exception did nothing rather than left to assume it was covered.
+#[test]
+fn a_declined_exception_gets_its_own_line_and_keeps_its_severity() {
+    let mut declined = finding("Root login permitted");
+    declined.finding_severity = Severity::High;
+    declined.finding_exception =
+        hardener_types::ExceptionOutcome::Declined(hardener_types::FindingExceptionDeclined {
+            exception_declined_reason: hardener_types::DeclineReason::ValueMismatch {
+                documented: "yes".to_string(),
+                observed: "prohibit-password".to_string(),
+            },
+            exception_reason: "legacy jump host".to_string(),
+        });
+    let lines = scan_plugin_lines(
+        &metadata("Audit Rules Hardening"),
+        &scan_result(true, vec![declined], vec![]),
+    );
+    let joined = lines.join("\n");
+
+    assert!(
+        joined.contains("exception not applied"),
+        "the operator must be told their exception did nothing: {joined}"
+    );
+    assert!(
+        joined.contains("'prohibit-password'"),
+        "and what the host actually has: {joined}"
+    );
+    assert!(
+        joined.contains("[HIGH"),
+        "a declined finding is live, so it must keep its real severity: {joined}"
+    );
+    assert!(
+        !joined.contains(&format!("[{}]", hardener_types::POLICY_EXCEPTION_LABEL)),
+        "a declined finding must not wear the exception label in the severity slot, \
+         which is what an applied exception does instead: {joined}"
+    );
+}
+
 #[test]
 fn unchecked_only_plugin_gets_a_named_header_and_deduped_lines() {
     let entries = vec![

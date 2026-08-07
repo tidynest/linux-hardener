@@ -215,6 +215,17 @@ fn scan_plugin_lines(metadata: &PluginMetadata, result: &ScanResult) -> Vec<Stri
                         .dimmed()
                 ));
             }
+            // A configured exception that did not apply leaves the finding
+            // live, so it keeps its real severity above and merely gains
+            // this line, rather than the label branch that replaces
+            // severity for an applied exception.
+            if let hardener_types::ExceptionOutcome::Declined(declined) = &finding.finding_exception
+            {
+                lines.push(format!(
+                    "    {}",
+                    hardener_types::exception_declined_line(declined).yellow()
+                ));
+            }
         }
         if !unchecked.is_empty() {
             lines.push(format!("  {} {}", "?".dimmed(), unchecked_note.dimmed()));
