@@ -130,6 +130,8 @@ test.describe('Configure', () => {
 // HISTORY SECTION
 // ---------------------------------------------------------------------------
 
+const rollbackButtons = (page) => page.getByRole('button', { name: 'Roll back' });
+
 test.describe('History', () => {
   test.beforeEach(async ({ page }) => {
     await loadApp(page, '/hardening');
@@ -142,26 +144,21 @@ test.describe('History', () => {
     await expect(page.locator('.history-section')).toBeVisible();
   });
 
-  // T-HIST-02: Checkpoints table with rows
-  test('T-HIST-02: checkpoints table shows 3 rows with correct columns', async ({ page }) => {
-    // Wait for checkpoint data to load
-    await page.waitForSelector('.checkpoints-section table', { timeout: 10000 });
-    const headers = page.locator('.checkpoints-section table th');
-    const texts = await headers.allTextContents();
-    expect(texts).toContain('ID');
-    expect(texts).toContain('Name');
-    expect(texts).toContain('Created');
-    expect(texts).toContain('Actions');
-    // 3 mock checkpoints
-    const rows = page.locator('.checkpoints-section table tbody tr');
-    await expect(rows).toHaveCount(3);
+  // T-HIST-02: The checkpoints, grouped by the day they were taken
+  //
+  // There is no checkpoints table. The redesign groups checkpoints under a
+  // date, each carrying its name, time, the user who took it, and its three
+  // actions, so the ID/Name/Created/Actions columns this asserted are gone
+  // along with the table that held them.
+  test('T-HIST-02: the three checkpoints are listed with their detail', async ({ page }) => {
+    await expect(rollbackButtons(page)).toHaveCount(3);
+    await expect(page.getByText('Pre-hardening checkpoint')).toBeVisible();
+    await expect(page.getByText('Latest')).toBeVisible();
   });
 
   // T-HIST-03: Rollback button present per checkpoint
   test('T-HIST-03: rollback button present per checkpoint', async ({ page }) => {
-    await page.waitForSelector('.rollback-button', { timeout: 10000 });
-    const buttons = page.locator('.rollback-button');
-    await expect(buttons).toHaveCount(3);
+    await expect(rollbackButtons(page)).toHaveCount(3);
   });
 
   // T-HIST-04: Refresh button triggers checkpoint reload
@@ -169,33 +166,45 @@ test.describe('History', () => {
     const btn = page.getByRole('button', { name: /Refresh/i });
     await expect(btn).toBeVisible();
     await btn.click();
-    // Button should show refreshing state briefly
-    // Then return to normal - verify table still has data
-    await page.waitForSelector('.checkpoints-section table tbody tr', { timeout: 10000 });
-    const rows = page.locator('.checkpoints-section table tbody tr');
-    const count = await rows.count();
-    expect(count).toBe(3);
+    await expect(rollbackButtons(page)).toHaveCount(3);
   });
 
-  // T-HIST-05: Initial apply shows empty state
-  test('T-HIST-05: apply results shows "No apply operations yet"', async ({ page }) => {
-    const emptyTitle = page.locator('.apply-results-summary .empty-state-title');
-    await expect(emptyTitle).toContainText('No apply operations yet');
+  // T-HIST-05: Creating a checkpoint needs a name
+  //
+  // This asserted an "No apply operations yet" empty state in an apply-results
+  // summary. That section is not in History any more: the panel shows
+  // checkpoints and nothing else. Rather than drop the slot, it covers the one
+  // ungated control the panel does have, whose disabled state is the only
+  // thing stopping a nameless checkpoint being created.
+  test('T-HIST-05: Create Checkpoint is disabled until the name is given', async ({ page }) => {
+    const create = page.getByRole('button', { name: 'Create Checkpoint' });
+    await expect(create).toBeDisabled();
+    await page.getByRole('textbox', { name: 'Checkpoint name...' }).fill('Before the change');
+    await expect(create).toBeEnabled();
   });
 
-  // T-HIST-06: After apply, shows success status
-  test('T-HIST-06: after apply, shows success with change count', async ({ page }) => {
-    // Switch back to Configure, trigger apply
+  // T-HIST-06: An apply cannot proceed without acknowledgement
+  //
+  // The flow changed shape. There is no "Confirm & Apply": a preview is
+  // acknowledged by ticking "I understand this can affect how I log in...",
+  // and only then does "Apply N Changes" become usable. The old test waited on
+  // a `.preview-panel` that no longer exists and so never reached an apply at
+  // all, which is why no artefact in this repository shows what a completed
+  // apply looks like.
+  //
+  // What is asserted is the gate, which is the part worth protecting and which
+  // can be checked from here. The result the apply produces is deliberately
+  // not asserted: nothing has ever observed it, and a guess would be the kind
+  // of assertion that passes without covering anything.
+  test('T-HIST-06: apply is gated on acknowledging the warning', async ({ page }) => {
     await page.getByRole('tab', { name: 'Configure' }).click();
     await page.getByRole('button', { name: /Preview Changes/i }).click();
-    await expect(page.locator('.preview-panel')).toBeVisible({ timeout: 10000 });
-    await page.getByRole('button', { name: /Confirm & Apply/i }).click();
-    // Wait for apply to complete, switch to History
-    await page.waitForTimeout(2000);
-    await page.getByRole('tab', { name: 'History' }).click();
-    // Verify apply result displayed
-    const summary = page.locator('.result-summary-card');
-    await expect(summary).toBeVisible({ timeout: 10000 });
-    await expect(summary).toContainText(/Success|changes/i);
+
+    const apply = page.getByRole('button', { name: /Apply \d+ Changes/ });
+    await expect(apply).toBeVisible({ timeout: 10000 });
+    await expect(apply).toBeDisabled();
+
+    await page.getByText(/I understand this can affect/).click();
+    await expect(apply).toBeEnabled();
   });
 });
