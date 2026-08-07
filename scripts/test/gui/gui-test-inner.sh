@@ -219,18 +219,22 @@ run_playwright() {
     echo -e "${CYAN}[playwright] Running tests...${NC}"
     mkdir -p test-results/screenshots
 
+    # PLAYWRIGHT_GREP narrows the run to one spec or one test, so a session
+    # diagnosing the suite can get an answer inside the 600 s ceiling instead of
+    # waiting out 113 tests to reach the one it cares about.
+    local -a filter=()
+    [[ -n "${PLAYWRIGHT_GREP:-}" ]] && filter=(--grep "$PLAYWRIGHT_GREP")
+
     local exit_code=0
     npx playwright test \
         --reporter=list \
+        "${filter[@]}" \
         2>&1 || exit_code=$?
 
-    # Copy results to project output
-    if [[ -d test-results ]]; then
-        mkdir -p "$PROJECT/test-results/gui/screenshots/webui"
-        cp -r test-results/* "$PROJECT/test-results/gui/" 2>/dev/null || true
-        cp -r test-results/screenshots/* "$PROJECT/test-results/gui/screenshots/webui/" 2>/dev/null || true
-    fi
-
+    # The artefacts are written into the bind mount and are already on the host.
+    # run-gui-tests.sh files them under test-results/gui once nspawn returns,
+    # which is the only place that still runs when the ceiling kills this
+    # container.
     return $exit_code
 }
 

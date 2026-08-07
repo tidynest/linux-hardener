@@ -6,10 +6,18 @@ const { expect } = require('@playwright/test');
 
 /**
  * Wait for WASM to finish loading and the app to render.
- * Checks for the nav header which only appears after Leptos hydrates.
+ *
+ * Waits on the main landmark, which exists once Leptos has hydrated and
+ * routed. This used to wait on `.nav-header`, a class the interface redesign
+ * removed, and the cost was not one failing test but the whole suite: every
+ * spec's beforeEach calls this, so all 113 tests spent the full 30 s here
+ * before reaching an assertion of their own, and the run passed the outer
+ * 600 s ceiling and was killed. A landmark is the right thing to wait on
+ * anyway. It says the application rendered, where a class says only that
+ * someone kept the name.
  */
 async function waitForApp(page) {
-  await page.waitForSelector('.nav-header', { timeout: 30000 });
+  await page.getByRole('main').waitFor({ state: 'visible', timeout: 30000 });
 }
 
 /**

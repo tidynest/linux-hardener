@@ -12,6 +12,7 @@
 #   --distro NAME     Run only one distro (arch|debian|ubuntu|fedora|rhel|opensuse)
 #   --parallel        Run distros in parallel instead of serially
 #   --jobs N          Max parallel jobs (with --parallel; default: 5)
+#   --grep PATTERN    Run only tests whose title matches PATTERN
 #   --help            Show usage
 # =============================================================================
 
@@ -30,6 +31,7 @@ source "$SCRIPT_DIR/../../lib/parallel.sh"
 SINGLE_DISTRO=""
 PARALLEL=false
 MAX_JOBS=5
+GREP_PATTERN=""
 
 # =============================================================================
 # Argument parsing
@@ -50,6 +52,10 @@ while [[ $# -gt 0 ]]; do
             PARALLEL=true
             shift
             ;;
+        --grep)
+            GREP_PATTERN="$2"
+            shift 2
+            ;;
         --jobs)
             MAX_JOBS="$2"
             shift 2
@@ -64,6 +70,7 @@ Options:
   --distro NAME     Run only one distro (arch|debian|ubuntu|fedora|rhel|opensuse)
   --parallel        Run distros in parallel instead of serially (~6x speedup)
   --jobs N          Max parallel jobs (with --parallel; default: 5)
+  --grep PATTERN    Run only tests whose title matches PATTERN
   --help            Show usage
 
 Runs Playwright tests against the WASM frontend served with a Tauri IPC mock
@@ -115,10 +122,29 @@ BOX_W=74
 # The nspawn invocation shared by both execution modes.
 nspawn_gui_tests() {
     local container_path="$1"
+    local -a env_args=()
+    [[ -n "$GREP_PATTERN" ]] && env_args=(--setenv="PLAYWRIGHT_GREP=$GREP_PATTERN")
     timeout 600 systemd-nspawn -D "$container_path" \
         --bind="$PROJECT_DIR:/project" \
+        "${env_args[@]}" \
         --pipe \
         /bin/bash /project/scripts/test/gui/gui-test-inner.sh
+}
+
+# Files the suite's artefacts under the results directory the summary points at.
+#
+# Done here rather than inside the container because the 600 s ceiling kills the
+# container outright, so a copy placed after the suite never runs for the run
+# whose artefacts are most wanted. Playwright writes into the bind mount, so the
+# files are already on this side of it and this only relocates them: the first
+# timed-out run left fifteen populated directories under gui-tests/test-results
+# and nothing at all where the summary said to look.
+collect_gui_artefacts() {
+    local source_dir="$PROJECT_DIR/gui-tests/test-results"
+    [[ -d "$source_dir" ]] || return 0
+    mkdir -p "$RESULTS_DIR/screenshots/webui"
+    cp -r "$source_dir"/* "$RESULTS_DIR/" 2>/dev/null || true
+    cp -r "$source_dir"/screenshots/* "$RESULTS_DIR/screenshots/webui/" 2>/dev/null || true
 }
 
 echo ""
@@ -182,6 +208,8 @@ run_single_distro() {
         fi
         echo ""
     fi
+
+    collect_gui_artefacts
 
     return "$exit_code"
 }

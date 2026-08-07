@@ -898,6 +898,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not do whatever it exits with, and a distribution with no usable system
   Chromium falls back to Playwright's own build.
 
+- **One stale class in a shared helper, not 113 stale tests, is what blew the
+  Web UI suite's 600 s ceiling.** With Ubuntu finally reaching a browser, every
+  test failed at exactly 30.1 s, and the failure snapshots showed the redesigned
+  interface rendering perfectly: the sidebar, the `Analysis` heading and the
+  `Run Security Scan` button all present under the accessible names the tests
+  ask for. `waitForApp` waited on `.nav-header`, which the redesign removed, and
+  every spec's `beforeEach` calls it, so all 113 tests spent their full 30 s in
+  setup before reaching an assertion of their own. It now waits on the `main`
+  landmark. Two harness gaps found alongside it: the suite's artefacts were
+  copied out from inside the container, after the tests, so the ceiling killing
+  the container discarded the copy for exactly the runs whose evidence was
+  wanted, and the copy now runs in the outer script once nspawn returns; and
+  `--grep` is passed through to Playwright, so a session diagnosing the suite
+  can run one spec within the ceiling rather than waiting out 113 tests.
+
 - **An SSH policy exception could be reported as honoured by the same run that
   overwrote the value it documented.** Scan and the dry-run preview compared an
   exception against the value sshd actually obeys, resolved through the
