@@ -5,7 +5,7 @@
 # No new container image is needed, contrary to what issue #52 assumed. Backend
 # selection takes the first ACTIVE backend rather than the first installed one
 # (`find_winner`, crates/hardener-plugins/src/firewall/mod.rs), `nft` is already
-# installed on all five images, and the nftables backend's `is_enabled` only
+# installed on all six images, and the nftables backend's `is_enabled` only
 # requires a ruleset containing an input-hook chain. Stopping the incumbent and
 # loading one chain is therefore enough.
 #
@@ -104,13 +104,18 @@ echo "container reports: ${name:-unknown} ${version:-unknown}"
 # family is. hardener-test-rhel actually boots Rocky Linux, a RHEL rebuild
 # (create-container.sh), so its os-release NAME says "Rocky Linux" and not
 # anything containing "rhel"; matched here against what the image genuinely
-# reports rather than the machine name's own wording. A machine name outside
-# this fixture's five known images warns and skips the check rather than
-# failing, so a future distro does not need this script edited before it can
-# be booted.
+# reports rather than the machine name's own wording. hardener-test-ubuntu is
+# the case that tempts the opposite mistake: it is bootstrapped through the
+# Debian family's shared path in create-container.sh, but the image answers
+# NAME="Ubuntu" with ID=ubuntu, and Debian appears only in ID_LIKE, which
+# nothing here reads. What a machine is built from is not what it reports. A
+# machine name outside this fixture's six known images warns and skips the
+# check rather than failing, so a future distro does not need this script
+# edited before it can be booted.
 case "$MACHINE" in
     hardener-test) expect="arch" ;;
     hardener-test-debian) expect="debian" ;;
+    hardener-test-ubuntu) expect="ubuntu" ;;
     hardener-test-fedora) expect="fedora" ;;
     hardener-test-rhel) expect="rocky" ;;
     hardener-test-opensuse) expect="opensuse" ;;

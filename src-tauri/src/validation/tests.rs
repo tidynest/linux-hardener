@@ -16,6 +16,19 @@
 
 use super::*;
 
+/// The home directory the checks below resolve `~` and dotfile prefixes through.
+///
+/// A host without one is a broken test environment, not a reason to skip. Nine
+/// of these tests once opened with `if let Some(home) = dirs::home_dir()` and no
+/// `else`, so on such a host they asserted nothing whatsoever and still reported
+/// green. That is precisely backwards for this module: it decides whether a path
+/// the desktop was handed may be written to, and the paths it is strictest about
+/// (`~/.ssh/`, `~/.bashrc`) are the ones only expressible relative to a home.
+/// Failing loudly on a missing home tells the truth; passing silently does not.
+fn test_home() -> PathBuf {
+    dirs::home_dir().expect("these tests need a home directory; the checks under test resolve one")
+}
+
 #[test]
 fn ipc_string_accepts_normal_text() {
     assert!(validate_ipc_string("Hello World 123", "test").is_ok());
@@ -174,9 +187,7 @@ fn dangerous_path_detects_shadow() {
 
 #[test]
 fn dangerous_path_detects_ssh_dir() {
-    if let Some(home) = dirs::home_dir() {
-        assert!(is_dangerous_path(&home.join(".ssh/id_rsa")));
-    }
+    assert!(is_dangerous_path(&test_home().join(".ssh/id_rsa")));
 }
 
 #[test]
@@ -188,10 +199,8 @@ fn dangerous_path_allows_safe_location() {
 
 #[test]
 fn expand_home_resolves_tilde() {
-    if let Some(home) = dirs::home_dir() {
-        let result = expand_home("~/Documents/report.txt").unwrap();
-        assert_eq!(result, home.join("Documents/report.txt"));
-    }
+    let result = expand_home("~/Documents/report.txt").unwrap();
+    assert_eq!(result, test_home().join("Documents/report.txt"));
 }
 
 #[test]
@@ -221,10 +230,8 @@ fn privileged_config_rejects_proc() {
 
 #[test]
 fn user_config_accepts_toml_in_downloads() {
-    if let Some(home) = dirs::home_dir() {
-        let path = format!("{}/Downloads/custom.toml", home.display());
-        assert!(validate_user_config_path(&path).is_ok());
-    }
+    let path = format!("{}/Downloads/custom.toml", test_home().display());
+    assert!(validate_user_config_path(&path).is_ok());
 }
 
 #[test]
@@ -239,20 +246,16 @@ fn user_config_rejects_proc() {
 
 #[test]
 fn user_config_rejects_ssh_dir() {
-    if let Some(home) = dirs::home_dir() {
-        let path = format!("{}/.ssh/id_rsa", home.display());
-        assert!(validate_user_config_path(&path).is_err());
-    }
+    let path = format!("{}/.ssh/id_rsa", test_home().display());
+    assert!(validate_user_config_path(&path).is_err());
 }
 
 // --- Output path tests ---
 
 #[test]
 fn output_path_accepts_documents() {
-    if let Some(home) = dirs::home_dir() {
-        let path = format!("{}/Documents/report.html", home.display());
-        assert!(validate_output_path(&path).is_ok());
-    }
+    let path = format!("{}/Documents/report.html", test_home().display());
+    assert!(validate_output_path(&path).is_ok());
 }
 
 #[test]
@@ -262,10 +265,8 @@ fn output_path_accepts_tmp() {
 
 #[test]
 fn output_path_rejects_bashrc() {
-    if let Some(home) = dirs::home_dir() {
-        let path = format!("{}/.bashrc", home.display());
-        assert!(validate_output_path(&path).is_err());
-    }
+    let path = format!("{}/.bashrc", test_home().display());
+    assert!(validate_output_path(&path).is_err());
 }
 
 #[test]
@@ -275,19 +276,18 @@ fn output_path_rejects_etc() {
 
 #[test]
 fn output_path_rejects_ssh_authorized_keys() {
-    if let Some(home) = dirs::home_dir() {
-        let path = format!("{}/.ssh/authorized_keys", home.display());
-        assert!(validate_output_path(&path).is_err());
-    }
+    let path = format!("{}/.ssh/authorized_keys", test_home().display());
+    assert!(validate_output_path(&path).is_err());
 }
 
 // --- SSH key path tests ---
 
 #[test]
 fn ssh_key_accepts_standard_path() {
-    if dirs::home_dir().is_some() {
-        assert!(validate_ssh_key_path("~/.ssh/id_ed25519").is_ok());
-    }
+    // The tilde form is the subject here, so the home is a precondition rather
+    // than an input: `validate_ssh_key_path` resolves it itself.
+    test_home();
+    assert!(validate_ssh_key_path("~/.ssh/id_ed25519").is_ok());
 }
 
 #[test]
@@ -302,8 +302,6 @@ fn ssh_key_rejects_traversal_escape() {
 
 #[test]
 fn ssh_key_rejects_absolute_outside() {
-    if let Some(home) = dirs::home_dir() {
-        let path = format!("{}/Documents/key.pem", home.display());
-        assert!(validate_ssh_key_path(&path).is_err());
-    }
+    let path = format!("{}/Documents/key.pem", test_home().display());
+    assert!(validate_ssh_key_path(&path).is_err());
 }

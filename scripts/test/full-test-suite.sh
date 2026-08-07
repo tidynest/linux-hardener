@@ -831,7 +831,7 @@ test_audit_rollback_restores() {
 
     if [[ ! -d "$audit_tree" ]]; then
         log_fail "Audit rollback: $audit_tree is absent, so no audit package is installed here"
-        log_info "  create-container.sh installs it on all five images, so a missing tree is a broken image"
+        log_info "  create-container.sh installs it on all six images, so a missing tree is a broken image"
         log_info "  and not a host this check does not apply to"
         return
     fi
@@ -1023,7 +1023,7 @@ test_services_rollback_restores() {
 
     if ! systemctl list-unit-files "$unit_file" 2>/dev/null | grep -q "$unit_file"; then
         log_fail "Services rollback: $unit_file is not installed, so the plugin manages nothing here"
-        log_info "  create-container.sh installs bluez on all five images, so a missing unit"
+        log_info "  create-container.sh installs bluez on all six images, so a missing unit"
         log_info "  is a broken image and not a host this check does not apply to"
         return
     fi

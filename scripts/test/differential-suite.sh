@@ -2292,7 +2292,7 @@ firewall_ruleset_snapshot() {
 }
 
 # Which backend is in force, decided from the ruleset rather than from installed
-# packages: all five images ship both ufw/firewalld and nftables, so presence
+# packages: all six images ship both ufw/firewalld and nftables, so presence
 # proves nothing about which one the tool selected.
 firewall_backend_kind() {
     local snapshot="$1"

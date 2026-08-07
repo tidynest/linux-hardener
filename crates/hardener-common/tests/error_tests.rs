@@ -19,12 +19,6 @@ fn test_error_display_dependency() {
 }
 
 #[test]
-fn test_error_display_package_manager() {
-    let err = HardeningError::PackageManager("apt failed".to_string());
-    assert_eq!(format!("{}", err), "Package manager error: apt failed");
-}
-
-#[test]
 fn test_error_display_plugin() {
     let err = HardeningError::Plugin("scan failed".to_string());
     assert_eq!(format!("{}", err), "Plugin error: scan failed");

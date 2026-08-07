@@ -30,10 +30,6 @@ pub enum HardeningError {
     #[error("Notification error: {0}")]
     Notification(String),
 
-    /// Package manager operation failed.
-    #[error("Package manager error: {0}")]
-    PackageManager(String),
-
     /// Plugin operation failed.
     #[error("Plugin error: {0}")]
     Plugin(String),

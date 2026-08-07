@@ -293,7 +293,7 @@ generate_host_keys() {
 # count: the plugin raises a finding only for a unit that is enabled or active,
 # so an installed but disabled bluetooth.service would leave the fixture with
 # nothing to find. Leaving that to the packaging would not do either, because
-# Debian enables a daemon on install where Arch does not, and the five images
+# Debian enables a daemon on install where Arch does not, and the six images
 # would then disagree with each other. The enable is also the backstop for the
 # openSUSE install below, which warns and continues rather than failing: a
 # bluez that did not install there cannot reach the end of creation unnoticed,

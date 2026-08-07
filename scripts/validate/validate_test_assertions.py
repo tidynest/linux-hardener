@@ -62,17 +62,23 @@ tree with its justification attached.
 Usage:
     ./scripts/validate/validate_test_assertions.py [--all]
 
-    `--all` is the whole tree, and it is what the gate runs. It adds the
-    unit-test files split out under `src/` to the integration suites under
-    `crates/*/tests/` and `src-tauri/tests/`.
+    `--all` is the whole tree, and it is what the gate runs. It adds every
+    `.rs` file under `crates/*/src/` and `src-tauri/src/` to the integration
+    suites under `crates/*/tests/` and `src-tauri/tests/`. Not the file names
+    unit tests are conventionally split out under, every file: a test module is
+    wherever someone put it, and scoping by convention meant the run twice
+    reported a whole tree it had not read. See `test_files` for both misses.
 
     Without it the scope is those integration suites alone. That was the
     default the gate used until issue #130, and it meant the check read 646
     tests, reported "all 646 assert unconditionally", and never opened the
     inline `#[cfg(test)]` modules under `src/` where most of this workspace's
     tests live. Run that way it found 0 offenders; run over the tree it found
-    45, and a test that asserted nothing whatsoever had already been sitting in
-    the unread half. A check that reports a clean tree it cannot see is the
+    46, and a test that asserted nothing whatsoever had already been sitting in
+    the unread half. That 46 is the check as it stood before the widening, run
+    with `--all` against `3e22d29`, the commit the widening landed on; the same
+    reading against this branch's base is 47, and a bare number with neither
+    tree nor check version beside it is what went stale here once already. A check that reports a clean tree it cannot see is the
     failure this file was written about, so the narrow scope is kept only as a
     faster local pass and never as the gate.
 
@@ -173,13 +179,30 @@ def find_project_root() -> Path:
 
 
 def test_files(root: Path, everything: bool) -> list[Path]:
-    """The files in scope, sorted so the report is stable between runs."""
+    """The files in scope, sorted so the report is stable between runs.
+
+    `--all` globs every `.rs` under `src/` rather than the file names unit tests
+    are usually split out under, and that is a correction rather than a
+    flourish. The globs were `crates/*/src/**/tests.rs` and
+    `src-tauri/src/**/*_tests.rs`, one convention each, and each one missed
+    exactly what the other caught: `crates/*/src/**/*_tests.rs` and
+    `src-tauri/src/**/tests.rs` were both unread. 62 tests in 4 files sat
+    outside them while the docstring said the run was the whole tree, and 48 of
+    those were `src-tauri/src/validation/tests.rs`, the check that decides
+    whether a path the desktop was handed may be written to. 9 of its tests
+    asserted nothing on a host with no home directory.
+
+    Naming one more convention would have closed today's gap and reopened on the
+    next file named a third way, so scope is no longer a guess about file names.
+    A source file with no test functions in it contributes nothing to the walk
+    and costs a regex pass, and the whole tree reads in well under a second.
+    """
     found = sorted(root.glob("crates/*/tests/**/*.rs")) + sorted(
         root.glob("src-tauri/tests/**/*.rs")
     )
     if everything:
-        found += sorted(root.glob("crates/*/src/**/tests.rs"))
-        found += sorted(root.glob("src-tauri/src/**/*_tests.rs"))
+        found += sorted(root.glob("crates/*/src/**/*.rs"))
+        found += sorted(root.glob("src-tauri/src/**/*.rs"))
     return found
 
 

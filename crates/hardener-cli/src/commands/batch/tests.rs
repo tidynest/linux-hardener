@@ -182,9 +182,22 @@ fn a_severity_the_single_host_dry_run_blocks_on_is_a_fleet_failure() {
 // assertions-in-helper: asserts nothing by design. This is the printing half
 // of the renderers' coverage, not a test: it renders all four verbs to stdout
 // for a human to look at colour and alignment, which no assertion can judge.
-// What the renderers must *say* is asserted by render_text_*, render_report_*,
-// render_apply_text_* and render_rollback_text_* in this same file, so the
-// exemption removes no coverage. It is `#[ignore]`d and never runs in a suite.
+// What each renderer must *say* is asserted elsewhere in this same file:
+//   render_text          -> text_render_has_rollup,
+//                           text_render_scanned_section_shows_counts,
+//                           text_render_unchecked_line_only_when_nonzero,
+//                           text_render_failed_row_shows_error
+//   render_report_text   -> report_text_render_has_sections_and_rollup
+//   render_apply_text    -> render_apply_text_sections_and_summary,
+//                           render_apply_text_validation_states
+//   render_rollback_text -> render_rollback_text_sections_and_summary,
+//                           render_rollback_text_partial_and_nothing_to_do,
+//                           render_rollback_text_names_a_reload_failure_separately_from_a_file_failure
+// so the exemption removes no coverage. The names are written out rather than
+// globbed because a grep for this marker is meant to land on tests that exist:
+// the previous wording pointed at render_text_* and render_report_*, and
+// neither prefix has ever matched a test in this file.
+// It is `#[ignore]`d and never runs in a suite.
 #[test]
 #[ignore = "visual eyeball helper, run with --ignored --nocapture"]
 fn eyeball_render_all_verbs() {
