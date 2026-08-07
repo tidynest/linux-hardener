@@ -4,10 +4,11 @@
 
 use hardener_common::types::{PluginId, Severity};
 use hardener_core::{
-    ChangeType, CommandOutput, Context, FileMetadata, MockExecutor, PluginConfig, PolicyException,
-    SystemExecutor, UncheckedBlocker, plugin::HardeningPlugin,
+    ChangeType, CommandOutput, Context, ExceptionOutcome, FileMetadata, MockExecutor, PluginConfig,
+    PolicyException, SystemExecutor, UncheckedBlocker, plugin::HardeningPlugin,
 };
 use hardener_plugins::KernelHardeningPlugin;
+use hardener_types::DeclineReason;
 use std::sync::Arc;
 
 /// Every managed parameter at its secure value, as one list.
@@ -977,6 +978,49 @@ async fn scan_ignores_exception_whose_value_does_not_match() {
         !f.is_policy_excepted(),
         "an exception for a value the host does not have must not be honoured"
     );
+}
+
+/// The host is at "0", the operator's exception documents "2". Silently
+/// falling back to `NotConfigured` here would look identical to no exception
+/// having been written at all, and an operator reading the report would
+/// believe their exception was honoured when it was not.
+#[tokio::test]
+async fn a_kernel_exception_documenting_the_wrong_value_is_reported_as_declined() {
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "kernel.dmesg_restrict".to_string(),
+        PolicyException {
+            value: "2".to_string(),
+            allowed: true,
+            reason: "documented the wrong value".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = scan_host_with(insecure_kernel_executor(), &config).await;
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "kernel_kernel_dmesg_restrict")
+        .expect("the finding is still reported");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::ValueMismatch {
+                documented,
+                observed,
+            } => {
+                assert_eq!(documented, "2");
+                assert_eq!(observed, "0");
+            }
+            other => panic!("expected a value mismatch, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -2518,4 +2562,51 @@ async fn a_boot_override_finding_names_the_exception_key_that_silences_it() {
         annotated.is_policy_excepted(),
         "an exception written under the advertised key must annotate the finding",
     );
+}
+
+/// The boot-override finding goes through the same lookup as the live one
+/// above, so a wrong exception on it must be declined rather than silently
+/// read as no exception at all: ufw sets `log_martians` to "0" and the
+/// operator's exception documents "2", which describes neither the value ufw
+/// applies nor the target it undercuts.
+#[tokio::test]
+async fn a_boot_override_exception_documenting_the_wrong_value_is_declined() {
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "net.ipv4.conf.all.log_martians".to_string(),
+        PolicyException {
+            value: "2".to_string(),
+            allowed: true,
+            reason: "documented the wrong value".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = scan_host_with(
+        ufw_enabled(fully_secure_kernel_executor(), UFW_SHIPPED_SYSCTL),
+        &config,
+    )
+    .await;
+
+    let finding = boot_findings(&result)
+        .into_iter()
+        .find(|f| f.finding_id.ends_with("net_ipv4_conf_all_log_martians"))
+        .expect("the ufw fixture undoes the all-interfaces log_martians at boot");
+
+    match &finding.finding_exception {
+        ExceptionOutcome::Declined(declined) => match &declined.exception_declined_reason {
+            DeclineReason::ValueMismatch {
+                documented,
+                observed,
+            } => {
+                assert_eq!(documented, "2");
+                assert_eq!(observed, "0");
+            }
+            other => panic!("expected a value mismatch, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
 }

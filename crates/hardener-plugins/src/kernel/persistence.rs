@@ -32,7 +32,6 @@ use hardener_core::{
     context::Context,
     plugin::{Finding, UncheckedBlocker, UncheckedCheck},
 };
-use hardener_types::ExceptionOutcome;
 use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
@@ -435,11 +434,7 @@ fn overridden_finding(
         finding_severity: parameter.kernel_severity,
         finding_title: format!("{name} is overridden after boot by {path}"),
         finding_compliance: super::get_compliance_mappings(name),
-        finding_exception: config
-            .matching_exception(name, value)
-            .map_or(ExceptionOutcome::NotConfigured, |e| {
-                ExceptionOutcome::Applied(e.to_finding_exception())
-            }),
+        finding_exception: config.exception_outcome(name, value),
         finding_exception_key: Some(name.to_string()),
     }
 }

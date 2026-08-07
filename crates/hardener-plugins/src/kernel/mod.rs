@@ -24,7 +24,6 @@ use hardener_core::{
         UncheckedCheck,
     },
 };
-use hardener_types::ExceptionOutcome;
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
 
@@ -999,11 +998,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
                         .kernel_compare
                         .violated_by(&target, Some(&actual_value))
                     {
-                        let policy_exception = config
-                            .matching_exception(param_name, &actual_value)
-                            .map_or(ExceptionOutcome::NotConfigured, |e| {
-                                ExceptionOutcome::Applied(e.to_finding_exception())
-                            });
+                        let policy_exception = config.exception_outcome(param_name, &actual_value);
                         findings.push(Finding {
                             finding_category: FindingCategory::Kernel,
                             finding_current_value: actual_value.clone(),
