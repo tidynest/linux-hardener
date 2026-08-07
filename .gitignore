@@ -102,3 +102,6 @@ packaging/*.tar.zst
 
 # CodeGraphContext index configuration (per-developer tooling, auto-generated)
 .cgcignore
+
+# cargo-mutants run artefacts (regenerable; 3 MB and full of absolute paths)
+mutants.out/

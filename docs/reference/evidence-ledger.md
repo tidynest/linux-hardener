@@ -115,10 +115,16 @@ overstating what its tests pin is worse than no baseline at all.
 nothing.** So a Phase 4 run should grep its own logs for that block message
 before any of its numbers are written down, and should be the only cargo
 running on the machine while it does, because the shared target directory is
-reachable from another session just as easily as from a second worker.
+reachable from another session just as easily as from a second worker. The
+predicate has to be the long one, `Blocking waiting for file lock on build
+directory`: the shorter `Blocking waiting for file lock` also matches benign
+contention on the package cache, which accounted for 287 of the 415 hits in the
+`-j 2` run and would over-flag a clean one. The runner writes its logs and its
+`outcomes.json` to `mutants.out/` at the repository root, which is gitignored
+because the directory is 3 MB of regenerable output full of absolute paths.
 
 **The reading is not representative and must not be projected.** Five of this
-crate's seven source files are `crates/hardener-distro/src/package/`, which the
+crate's seven non-test source files are `crates/hardener-distro/src/package/`, which the
 coverage baseline confirms has no reference anywhere outside the module and
 names as a Phase 3 deletion candidate. Every one of the 73 survivors is inside
 it. The live code, `crates/hardener-distro/src/lib.rs`, contributed 12 mutants
