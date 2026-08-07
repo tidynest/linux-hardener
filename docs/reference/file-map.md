@@ -816,7 +816,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/test/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/test/manual-verification-test.sh` | Interactive verification tests |
 | `scripts/containers/create-container.sh` | systemd-nspawn test containers for all six distros (`arch`, `debian`, `ubuntu`, `fedora`, `rhel`, `opensuse`) |
-| `scripts/test/verify-rollback.sh` | Rollback verification for nspawn containers: `sysctl.d` config file content, `sshd_config` backup and content restoration, directory mode restoration, `rollback --format json` producing a valid `RollbackResult`, and, gated on a measured write probe because `/proc/sys` is the host's and read-only under `--pipe`, one runtime kernel parameter. The runtime arm reports a named skip rather than a pass when the container will not answer |
+| `scripts/test/verify-rollback.sh` | Rollback verification for nspawn containers, in five tests: `sysctl.d` config file content, `sshd_config` backup and content restoration, directory mode restoration, `rollback --format json` producing a valid `RollbackResult`, and multi-plugin checkpoint ordering, where two applies leave two checkpoints and a selective rollback has to be paired with its own apply rather than with whichever checkpoint is newest. The first of those also reads one runtime kernel parameter, gated on a measured write probe because `/proc/sys` is the host's and read-only under `--pipe`; that arm reports a named skip rather than a pass when the container will not answer |
 | `scripts/test/release-readiness-root.sh` | One root invocation for every suite an unprivileged session cannot start: the polkit matrix, then the cross-distro, differential, packaging and Web UI suites and the rollback readback. All six containers are destroyed and rebuilt before each suite that runs inside one, and the run refuses to start unless the musl binary matches the working tree by version, commit and modification time |
 
 ---
@@ -906,9 +906,13 @@ tree on **2026-08-07**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
+The table covers the ten crates under `crates/` and sums to 1628. The eleventh
+workspace member, `src-tauri`, carries 104 more, which is why the tree total the
+evidence ledger records is 1732 and not this table's sum.
+
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
-| hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 115 |
+| hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 114 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 87 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 114 |
 | hardener-distro | `lib.rs` | - | 5 |
@@ -935,7 +939,7 @@ counts measured the same way and on the same date as the table above.
 
 ## GUI Tests (Playwright + Desktop)
 
-113 Playwright tests validate the Web UI across 5 distributions. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
+113 Playwright tests validate the Web UI across every distro in `DISTRO_ORDER`. The 113 figure is the 2026-06-29 five-distro reading; the Ubuntu container has never been run. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
 
 ### Test Files
 

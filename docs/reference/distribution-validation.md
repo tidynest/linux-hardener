@@ -317,11 +317,19 @@ upon by the test runners.
 |--------|---------------|-------------|---------------|
 | Arch Linux (rolling) | hardener-test | pacstrap | base, base-devel, openssh, audit, bluez, ufw, iptables, nftables, sudo, polkit, jq |
 | Debian 13 (Trixie) | hardener-test-debian | debootstrap | systemd, openssh-server, auditd, bluez, ufw, iptables, nftables, sudo, polkitd, pkexec, procps, iproute2, jq |
+| Ubuntu 24.04 LTS (Noble) | hardener-test-ubuntu | debootstrap | as Debian: both go through `bootstrap_apt_family` and install the same set, differing only in the suite, the archive, and that Ubuntu enables `universe` as well as `main` |
 | Fedora 44 | hardener-test-fedora | podman image export | openssh-server, openssh-clients, audit, bluez, cracklib-dicts, firewalld, nftables, iptables, polkit, procps-ng, iproute, jq |
 | Rocky Linux 10 | hardener-test-rhel | podman image export | as Fedora, but `iptables-nft` in place of `iptables` (Rocky 10 dropped the legacy package) |
 | openSUSE Leap 16.0 | hardener-test-opensuse | podman image export | openssh-server, openssh-clients, audit, bluez, firewalld, nftables, iptables, polkit, procps, iproute2, jq |
 
-All five containers additionally have:
+**The Ubuntu container is built and has never been run.** It joined
+`DISTRO_ORDER` on 2026-08-07, so `create-container.sh` builds six images and
+every runner iterates six, but no suite result from inside it exists. The dated
+tables further up this file record five-container runs and are left as taken.
+What that leaves unproven for an Ubuntu host is stated in
+[what-is-not-proven.md](what-is-not-proven.md).
+
+All six containers additionally have:
 
 - root/test and testuser/test with passwordless sudo
 - SSH host keys generated with `ssh-keygen -A`, run under nspawn rather than
@@ -333,11 +341,11 @@ All five containers additionally have:
   only for a unit that is enabled or active, so an installed but disabled
   `bluetooth.service` would leave the fixture with nothing to find. Leaving it to
   the packaging would not do either, since Debian enables a daemon on install
-  where Arch does not and the five images would then disagree with each other.
+  where Arch does not and the six images would then disagree with each other.
   The enable step is called bare so a failure aborts creation rather than
   producing a container that builds cleanly and tests nothing
 
-**Why bluez is on all five.** The service-minimisation plugin assesses five units
+**Why bluez is on all six.** The service-minimisation plugin assesses five units
 and every base image shipped with none of them, so the plugin had no subject
 matter and an oracle over it could only read the same "nothing to report" on
 every distribution. `bluetooth.service` is the fixture section 12B masks and then

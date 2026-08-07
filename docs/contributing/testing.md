@@ -13,8 +13,11 @@ cargo test --workspace
 ```
 
 Runs every test across all 11 workspace members (the ten crates under `crates/`
-plus `src-tauri`). Measured 2026-08-07: 1700 passed, 0 failed, 47 ignored, over
-60 result lines. The
+plus `src-tauri`). Measured 2026-08-07: 1698 passed, 0 failed, 47 ignored, over
+60 result lines. 1692 of those passes and 40 of those ignores are the
+unit and integration tests `cargo nextest run --workspace` also runs; the
+remaining 6 passes and 7 ignores are doctests, which nextest does not run at
+all. The
 ignored ones are mostly the root-only and live-sshd tests described further down,
 with a few that want a particular firewall backend installed; they are not
 failures and an ordinary `cargo test` does not run them.

@@ -22,7 +22,7 @@ the engine cannot actually assess is reported as needing manual review rather
 than assumed to pass.
 
 Written in Rust. One CLI binary, one desktop application, eight hardening
-plugins, five distribution families.
+plugins, four distribution families.
 
 > New here? Start with the [getting started guide](docs/guide/getting-started.md).
 > Upgrading from an earlier release? Read [upgrading](docs/guide/upgrading.md)
@@ -459,12 +459,12 @@ hardened host still carries is in [upgrading](docs/guide/upgrading.md).
 ### Tests
 
 ```
-Rust workspace:  1711 passed, 0 failed, 47 ignored
+Rust workspace:  1698 passed, 0 failed, 47 ignored
 ```
 
 The 47 ignored tests need root, a live SSH host, or a specific firewall backend,
 so they run only inside the test containers. Beyond the workspace suite there is
-a cross-distribution suite that applies and rolls back on five booted
+a cross-distribution suite that applies and rolls back on six booted
 containers, and a differential suite that compares the host before and after an
 apply through an oracle independent of the tool. Both are described in
 [testing.md](docs/contributing/testing.md) and

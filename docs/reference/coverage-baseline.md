@@ -88,10 +88,20 @@ Both `cargo llvm-cov` runs exited 0. Each ran the same test set: **1706 passed,
 0 failed, 40 ignored, across 51 test binaries**, which was the figure the
 evidence ledger recorded for `cargo nextest run --workspace` on the day both
 were taken. The two readings agreeing is the check that this baseline measured
-the suite the rest of the release is judged on, and not some subset of it. The
-ledger's figure has since moved down, by the 11 tests the #127 deletion took
-with the code they exercised and by 1 more from a separate change; read it
-there rather than expecting it to match this line.
+the suite the rest of the release is judged on, and not some subset of it.
+
+The ledger's figure has since moved down by 14, to 1692, and four separate
+changes account for that rather than one. The #127 deletion recorded above took
+11 of them with the code they exercised, `crates/hardener-distro` going from 16
+`#[test]` annotations to 5. The other three were each removed on their own
+account: `test_pdf_formatter_default`, `test_logger_initialisation`, and
+`test_error_display_package_manager`, which went with the dead
+`HardeningError::PackageManager` variant the module deletion orphaned. Read the
+current figure in the evidence ledger rather than expecting it to match this
+line. This line is a record of what one day's run executed, and it is left
+uncorrected for the same reason the percentages below are: a dated measurement
+that is quietly edited to match a later tree can no longer be diffed against
+one.
 
 Toolchain, because a coverage figure is not comparable across compilers:
 
