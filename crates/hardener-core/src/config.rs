@@ -97,14 +97,16 @@ impl PluginConfig {
     /// What the configuration has to say about `key`, given the value actually
     /// read from the host.
     ///
-    /// The single place that decides what a scan reports. The apply path keeps
-    /// its own three lookups, and they are deliberately not expressed in terms
-    /// of this one: `has_valid_exception` and its two callers hand back
-    /// `Option<&PolicyException>`, a borrow into the config, while this returns
-    /// an owned outcome carrying a converted `FindingPolicyException`. The
-    /// borrow cannot be recovered from the owned value, so unifying them would
-    /// mean changing the apply path's public signatures, which this slice does
-    /// not do.
+    /// Intended as the single place that decides what a scan reports, but the
+    /// scan and validate paths still call `has_valid_exception`,
+    /// `matching_exception` and `matching_mode_exception` directly today;
+    /// later tasks switch them over to this method. Those three stay in place
+    /// permanently for the apply path, and are deliberately not expressed in
+    /// terms of this one: they hand back `Option<&PolicyException>`, a borrow
+    /// into the config, while this returns an owned outcome carrying a
+    /// converted `FindingPolicyException`. The borrow cannot be recovered from
+    /// the owned value, so unifying them would mean changing the apply path's
+    /// public signatures, which this slice does not do.
     ///
     /// What that leaves is one real duplication, recorded here rather than left
     /// to be discovered: `PolicyException::is_valid` is `allowed && !expired`,

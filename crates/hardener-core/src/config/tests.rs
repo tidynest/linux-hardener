@@ -235,6 +235,30 @@ fn exception_outcome_declines_an_expired_exception() {
 }
 
 #[test]
+fn exception_outcome_declines_expiry_over_a_simultaneous_value_mismatch() {
+    // Both conditions hold at once: the exception documents "yes" but the
+    // host now reads "prohibit-password", AND the exception expired in 2000.
+    // Expiry must win, because expiry is the reason the exception stopped
+    // applying, and correcting the value would not bring it back.
+    let config = plugin_with("PermitRootLogin", exception("yes", Some("2000-01-01")));
+
+    let outcome = config.exception_outcome("PermitRootLogin", "prohibit-password");
+
+    match outcome {
+        ExceptionOutcome::Declined(declined) => match declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(
+                    expired_on, "2000-01-01",
+                    "the expiry the operator wrote is the one reported"
+                );
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
+#[test]
 fn exception_outcome_stays_silent_when_the_operator_wrote_allowed_false() {
     let mut refused = exception("yes", None);
     refused.allowed = false;
