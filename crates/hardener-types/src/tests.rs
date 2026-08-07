@@ -713,7 +713,7 @@ mod exception_declined_tests {
         .unwrap();
 
         assert_eq!(value["state"], "declined");
-        assert_eq!(value["exception_declined_reason"]["reason"], "expired");
+        assert_eq!(value["exception_declined_reason"]["cause"], "expired");
         assert_eq!(
             value["exception_declined_reason"]["expired_on"],
             "2026-01-01"

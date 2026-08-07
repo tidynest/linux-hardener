@@ -357,7 +357,7 @@ pub struct FindingPolicyException {
 /// different things in different arms. See [`EXCEPTION_OBSERVED_UNCHANGED`],
 /// which documents the same asymmetry from the other side.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "reason", rename_all = "lowercase")]
+#[serde(tag = "cause", rename_all = "lowercase")]
 pub enum DeclineReason {
     /// The exception documents a value the host does not have.
     ValueMismatch {

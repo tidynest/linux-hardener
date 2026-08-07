@@ -155,7 +155,7 @@ impl PluginConfig {
     pub fn exception_outcome_for_mode(&self, key: &str, observed_mode: u32) -> ExceptionOutcome {
         let observed = format!("{observed_mode:04o}");
         self.exception_outcome_with(key, Some(&observed), |value, _observed| {
-            u32::from_str_radix(value, 8).is_ok_and(|mode| mode == observed_mode)
+            mode_is_documented_by(value, observed_mode)
         })
     }
 
@@ -229,8 +229,23 @@ impl PluginConfig {
     /// never matches.
     pub fn matching_mode_exception(&self, key: &str, actual_mode: u32) -> Option<&PolicyException> {
         self.has_valid_exception(key)
-            .filter(|e| u32::from_str_radix(&e.value, 8).is_ok_and(|mode| mode == actual_mode))
+            .filter(|e| mode_is_documented_by(&e.value, actual_mode))
     }
+}
+
+/// Whether `documented`, an operator's own octal spelling, names the same
+/// mode as `observed_mode`.
+///
+/// Shared by [`HardenerConfig::exception_outcome_for_mode`] and
+/// [`HardenerConfig::matching_mode_exception`], which both need to treat
+/// "644" and "0644" as the same mode. Comparing the two as text does not:
+/// the scan formats a mode zero-padded, which never equals an operator's
+/// unpadded spelling even when both name the same mode. Writing the
+/// comparison out twice is exactly how it was written correctly in one
+/// place and incorrectly in the other; this is the one place either caller
+/// changes it.
+fn mode_is_documented_by(documented: &str, observed_mode: u32) -> bool {
+    u32::from_str_radix(documented, 8).is_ok_and(|mode| mode == observed_mode)
 }
 
 /// A policy exception that allows a value deviating from secure baseline.

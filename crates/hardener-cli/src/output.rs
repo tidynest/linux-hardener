@@ -204,8 +204,19 @@ fn scan_plugin_lines(metadata: &PluginMetadata, result: &ScanResult) -> Vec<Stri
             // /etc/ssh/sshd_config are not bare TOML keys, and a document
             // built from an unquoted one parses as nested tables rather than
             // failing, so nothing would report the mistake.
+            //
+            // A declined exception is excluded for the same reason: the
+            // operator already wrote one at this key and it did not apply.
+            // Telling them how to write it again, right beside the line
+            // saying why the one they have did not work, reads as though
+            // the tool never noticed their exception at all. What they need
+            // is the declined line below, which says what to fix.
             if let Some(key) = &finding.finding_exception_key
                 && !finding.is_policy_excepted()
+                && !matches!(
+                    finding.finding_exception,
+                    hardener_types::ExceptionOutcome::Declined(_)
+                )
                 && let Some(section) =
                     hardener_core::HardenerConfig::config_section(metadata.plugin_id.as_str())
             {

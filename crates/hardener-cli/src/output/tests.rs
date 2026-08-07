@@ -383,6 +383,42 @@ fn a_declined_exception_gets_its_own_line_and_keeps_its_severity() {
     );
 }
 
+/// A declined finding already carries a `finding_exception_key`, the operator
+/// having written the exception at that key already. The hint that tells an
+/// operator with no exception how to write one must not also print here: it
+/// would tell them to write the exception they already wrote, right next to
+/// the line explaining why that exception did not work.
+#[test]
+fn a_declined_exception_is_not_told_how_to_except_it_again() {
+    let mut declined = finding("Root login permitted");
+    declined.finding_severity = Severity::High;
+    declined.finding_exception_key = Some("permit-root-login".to_string());
+    declined.finding_exception =
+        hardener_types::ExceptionOutcome::Declined(hardener_types::FindingExceptionDeclined {
+            exception_declined_reason: hardener_types::DeclineReason::ValueMismatch {
+                documented: "yes".to_string(),
+                observed: "prohibit-password".to_string(),
+            },
+            exception_reason: "legacy jump host".to_string(),
+        });
+    let lines = scan_plugin_lines(
+        &metadata("Audit Rules Hardening"),
+        &scan_result(true, vec![declined], vec![]),
+    );
+    let joined = lines.join("\n");
+
+    assert!(
+        !joined.contains("accept as a documented deviation"),
+        "an operator whose exception was declined already wrote one; \
+         telling them to write it again is telling them to repeat what \
+         did not work: {joined}"
+    );
+    assert!(
+        joined.contains("exception not applied"),
+        "the declined line must still be present: {joined}"
+    );
+}
+
 #[test]
 fn unchecked_only_plugin_gets_a_named_header_and_deduped_lines() {
     let entries = vec![

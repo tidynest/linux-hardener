@@ -289,11 +289,38 @@ real defect, fixed in `7a29f7d`; `matching_exception` and
 `matching_mode_exception` are the same check plus the value comparison, and they
 are what `[ssh]`, `[kernel]`, `[pam]` and `[permissions]` use.
 
-`scan()` has the matching obligation on the read side: annotate a finding
-covered by a matching exception rather than dropping it, so a pass carried by a
-documented deviation is never presented as a clean pass. See the
-[configuration reference](../reference/configuration.md) for the user-facing
-format.
+`matching_exception` and `matching_mode_exception` (and the `has_valid_exception`
+they build on) stay correct for the **apply and validate paths**, and only
+those: both want the plain "did it apply" answer, an `Option` that is `Some`
+when the exception covers what is actually there and `None` otherwise, and
+neither has any use for the *reason* a `None` came back.
+
+`scan()` wants that reason, so it does not use these three at all. A scan-side
+finding is built from one of three `exception_outcome*` methods, each handing
+back an owned `ExceptionOutcome` rather than an `Option`:
+
+```rust
+// A check with a host value to compare: ssh, pam, kernel.
+finding_exception: config.exception_outcome(param_name, &actual_value),
+
+// A permission mode: compares octal numerically, so "644" and "0644"
+// both match, exactly as matching_mode_exception does for apply.
+finding_exception: config.exception_outcome_for_mode(directive.permission_path, current_mode),
+
+// A present-or-absent check with no value to compare: services, mac,
+// audit, firewall. Can only ever decline on expiry, never on a value
+// mismatch, because there is no observed value to mismatch against.
+finding_exception: config.exception_outcome_for_presence(directive.service_name),
+```
+
+`ExceptionOutcome` is `NotConfigured`, `Applied(..)` or `Declined(..)`.
+`NotConfigured` and `Declined` are both live violations; only `Applied` excuses
+the finding from its compliance control. Picking the right method matters
+because a check that has a host value to compare and is scanned with
+`exception_outcome_for_presence` can never report `ValueMismatch`, only
+`Expired`, silently losing the case where the exception simply documents the
+wrong value. See the [configuration reference](../reference/configuration.md)
+for the user-facing format.
 
 ## Compliance coverage
 

@@ -329,11 +329,13 @@ expires = "2027-06-30"
 ```
 
 Two scan modes interact with the configuration. The default applies `directives`
-overrides and annotates any finding covered by a valid exception;
-`hardener scan --audit` ignores the configuration entirely and measures against
-the unmodified baseline. It is `hardener report` that treats an annotated
-finding as satisfied for a compliance control, while still listing it as
-evidence.
+overrides and reports what happened to each configured exception: one that
+matches the host annotates its finding, one that does not, because its value
+no longer matches or it expired, leaves the finding live with a line
+explaining why. `hardener scan --audit` ignores the configuration entirely and
+measures against the unmodified baseline. It is `hardener report` that treats
+an annotated finding as satisfied for a compliance control, while still
+listing it as evidence.
 
 Every section, key and default is in the
 [configuration reference](docs/reference/configuration.md).

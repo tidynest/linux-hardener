@@ -406,15 +406,19 @@ is what the directives above are for.
 ## Policy exceptions
 
 An exception documents an intentional, approved deviation from the secure
-baseline. `scan` still shows the finding, annotated with the exception it
-matched; `hardener report` treats an annotated finding as satisfied, so it no
-longer fails a compliance control. The text, HTML, PDF and JSON reports still
-list that finding under its control as evidence, labelled `POLICY EXCEPTION`
-instead of a severity, so a control passed by a documented deviation is never
-presented as a clean pass. `apply --dry-run` lists an excepted setting
-separately from the pending changes, so a preview whose only drift is excepted
-is never rendered as nothing to do, and an exception cannot inflate the change
-count either. Audit mode
+baseline. What `scan` does with it depends on what happened to it: no
+exception configured for a check is an ordinary live violation; one configured
+and matching the host annotates the finding with it; one configured but
+declined, either because its `value` no longer matches the host or because it
+expired, leaves the finding live and gains a line naming why (see "Where
+`value` is checked", below). `hardener report` treats only the annotated,
+matching case as satisfied, so it no longer fails a compliance control. The
+text, HTML, PDF and JSON reports still list that finding under its control as
+evidence, labelled `POLICY EXCEPTION` instead of a severity, so a control
+passed by a documented deviation is never presented as a clean pass. `apply
+--dry-run` lists an excepted setting separately from the pending changes, so a
+preview whose only drift is excepted is never rendered as nothing to do, and
+an exception cannot inflate the change count either. Audit mode
 (`scan --audit`) ignores the config, exceptions included.
 
 ```toml
