@@ -888,7 +888,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolver. **Xvfb is no longer installed or started at all**: the Playwright
   config is `headless: true`, and Fedora's `headless_shell` binary, which cannot
   talk to X, ran the suite regardless, so it was one more package to get right
-  on six distributions in exchange for nothing.
+  on six distributions in exchange for nothing. With Ubuntu resolving again, a
+  fourth fault came out from behind the first: its `chromium` package is a
+  transitional stub for the snap, and `/usr/bin/chromium-browser` exits telling
+  you to install one on a container with no snapd. **The probe tested only that
+  the file was executable**, accepted the signpost, and all 113 tests failed in
+  about three milliseconds each having never started a browser. A candidate is
+  now asked for its version and must name itself, which an apologetic stub does
+  not do whatever it exits with, and a distribution with no usable system
+  Chromium falls back to Playwright's own build.
 
 - **An SSH policy exception could be reported as honoured by the same run that
   overwrote the value it documented.** Scan and the dry-run preview compared an

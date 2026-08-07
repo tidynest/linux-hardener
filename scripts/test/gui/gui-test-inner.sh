@@ -153,6 +153,21 @@ start_http_server() {
 # Install Playwright and run tests
 # =============================================================================
 
+# True when a candidate path is a browser rather than a message about one.
+#
+# The exit code is not enough by itself, because a stub is free to apologise
+# and exit 0; what settles it is whether the thing names itself when asked for
+# a version. Captured rather than piped: `cmd | grep -q` under `set -o
+# pipefail` reports failure when grep exits at its first match and the writer
+# dies of SIGPIPE, which is how six assertions in the package suite came to
+# fail because the string they looked for was present.
+usable_chromium() {
+    local output
+    [[ -x "$1" ]] || return 1
+    output=$("$1" --version 2>/dev/null) || true
+    grep -qiE 'chrom' <<<"$output"
+}
+
 run_playwright() {
     echo -e "${CYAN}[playwright] Installing npm dependencies...${NC}"
     cd "$GUI_TESTS"
@@ -161,7 +176,15 @@ run_playwright() {
     npm install --no-audit --no-fund 2>/dev/null
     export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-    # Locate system Chromium binary
+    # Locate a system Chromium that actually runs.
+    #
+    # Executable is not the same as usable. Ubuntu's `chromium` package is a
+    # transitional stub for the snap, and its /usr/bin/chromium-browser exits
+    # saying "requires the chromium snap to be installed" on a container that
+    # has no snapd. The probe tested `-x` alone, accepted the signpost, and all
+    # 113 tests failed in about three milliseconds each with no browser ever
+    # started. `usable_chromium` above is the cheapest question that tells a
+    # browser from a message about one.
     local chromium_bin=""
     for candidate in \
         /usr/bin/chromium \
@@ -171,17 +194,27 @@ run_playwright() {
         /usr/lib/chromium-browser/chromium-browser \
         /usr/lib64/chromium/chromium \
         /usr/lib/chromium/chromium; do
-        if [[ -x "$candidate" ]]; then
+        if usable_chromium "$candidate"; then
             chromium_bin="$candidate"
             break
         fi
     done
-    if [[ -z "$chromium_bin" ]]; then
-        echo -e "${RED}[playwright] No system Chromium found${NC}"
-        return 1
+
+    if [[ -n "$chromium_bin" ]]; then
+        export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="$chromium_bin"
+        echo -e "${GREEN}[playwright] Using system Chromium: $chromium_bin${NC}"
+    else
+        # Playwright's own browser, fetched here rather than baked into the
+        # image. It is the fallback and not the default because it costs a
+        # download on every run, but a distribution that ships no usable
+        # Chromium outside a snap leaves nothing else, and a suite that cannot
+        # start a browser reports on the browser rather than on the interface.
+        # --with-deps because a debootstrap container carries none of the
+        # libraries the downloaded build links against.
+        echo -e "${CYAN}[playwright] No usable system Chromium; fetching Playwright's own...${NC}"
+        unset PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        run_install npx playwright install --with-deps chromium || return 1
     fi
-    export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="$chromium_bin"
-    echo -e "${GREEN}[playwright] Using system Chromium: $chromium_bin${NC}"
 
     echo -e "${CYAN}[playwright] Running tests...${NC}"
     mkdir -p test-results/screenshots
