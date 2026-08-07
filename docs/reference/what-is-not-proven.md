@@ -78,12 +78,14 @@ assertion compares a constant with itself and proves nothing. **No reading
 anywhere confirms that a rollback restores a kernel runtime value.**
 
 **None of those readings runs unless a person starts a container.**
-`scripts/test/verify-rollback.sh` is invoked by no runner and by no CI job, and
-no run of it is dated anywhere in this repository. Sections 12A and 12B need
-`scripts/test/full-test-suite.sh` started as root inside a container with its
-`--apply` flag; 12B additionally needs that container booted under systemd, and
-12A needs a container no earlier `--apply` run has touched, or it reports its
-own reading void rather than passing it.
+`scripts/test/verify-rollback.sh` is invoked by no CI job, and by exactly one
+runner, `scripts/test/release-readiness-root.sh`, which is a root-only batch
+that has itself never been run. Being wired into a script is not evidence that
+the script was started: no run of it is dated anywhere in this repository.
+Sections 12A and 12B need `scripts/test/full-test-suite.sh` started as root
+inside a container with its `--apply` flag; 12B additionally needs that
+container booted under systemd, and 12A needs a container no earlier `--apply`
+run has touched, or it reports its own reading void rather than passing it.
 
 **On a remote host without root, a restore degrades to content only.** The
 content write goes through `sudo tee`, but the `chmod`, `chown` and `rm` that

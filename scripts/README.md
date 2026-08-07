@@ -1856,9 +1856,12 @@ differential run leaves its container hardened, and the next suite against it
 fails a rotating subset that reads as a regression when each of those failures
 is really a pre-apply control working. The rule is uniform so there is no
 per-suite exception to get wrong, and it is what makes `--only` trustworthy.
-`create-container.sh` exits 0 when the container already exists, so the script
-checks `/var/lib/machines/<name>` directly on both sides of each clean and
-create rather than trusting an exit code.
+Each clean and create is judged on two signals rather than one. The container
+directory is checked directly on both sides, because `create-container.sh` exits
+0 when the container already exists; and the create's exit status is checked as
+well, because the arch and debian bootstraps create the directory before they
+populate it, so a bootstrap that dies halfway leaves the path in place. Either
+signal alone would let a half-built container reach a suite.
 
 **Binary freshness gate**: the run refuses to start unless the musl binary
 matches the working tree on all three of:

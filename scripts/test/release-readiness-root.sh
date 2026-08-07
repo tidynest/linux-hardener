@@ -408,18 +408,34 @@ print_plan() {
 # Containers
 # =============================================================================
 
-# Destroy and rebuild the named containers, proving each step rather than
-# trusting an exit code.
+# Destroy and rebuild the named containers, checking BOTH the exit status of
+# each step and the container directory itself. Neither signal is sufficient on
+# its own, and each catches what the other cannot.
 #
-# create-container.sh exits 0 when the container already exists and prints a
-# warning instead of rebuilding, so a clean that silently did nothing would
-# leave the previous run's hardened container in place and this function would
-# still report success. That is the exact shape of the poisoned-container
-# failure, so the directory is checked directly on both sides of each step.
+# The directory is needed because create-container.sh exits 0 when the container
+# already exists and prints a warning instead of rebuilding, so a clean that
+# silently did nothing would leave the previous run's hardened container in
+# place and an exit-status-only check would call that success.
+#
+# The exit status is needed because bootstrap_arch does `mkdir -p` on the
+# container path before pacstrap runs (create-container.sh:331) and debootstrap
+# creates its target the same way, so a bootstrap that dies halfway (a mirror
+# error, a network drop during a several-hour unattended run) leaves the
+# directory behind. A directory-only check would hand a half-built container to
+# the suite and every failure it produced would be recorded against the code
+# under test, which is the same poisoned-container scar wearing a different hat.
+# The podman-based distros remove the directory themselves when their export
+# fails (create-container.sh:310 and :319); arch and debian do not.
 recreate_containers() {
     local logfile="$1"; shift
     local distros=("$@")
-    local distro container container_path
+    local distro container container_path create_status
+
+    # Truncated once here, then appended to, so this log describes this run
+    # only. Opened for append throughout, an earlier run's FATAL lines would sit
+    # above this run's with no separator and read as current. The per-suite
+    # logs are opened the same way.
+    : > "$logfile"
 
     for distro in "${distros[@]}"; do
         container="${CONTAINERS[$distro]}"
@@ -441,10 +457,17 @@ recreate_containers() {
             return 1
         fi
 
+        create_status=0
         {
             echo "=== $distro: create ==="
-            "$CREATE_CONTAINER" "$distro" 2>&1 || true
+            "$CREATE_CONTAINER" "$distro" 2>&1 || create_status=$?
         } >> "$logfile" 2>&1
+
+        if [[ $create_status -ne 0 ]]; then
+            log_error "Container create failed: $distro (exit $create_status)"
+            echo "FATAL: create exited $create_status for $distro" >> "$logfile"
+            return 1
+        fi
 
         if [[ ! -d "$container_path" ]]; then
             log_error "Container was not created: $container_path"
@@ -483,16 +506,22 @@ runner_artefacts() {
     esac
 }
 
-clear_runner_artefacts() {
-    local path
-    # A guard, not a formality: every path below is an rm -rf target assembled
-    # from this variable, and this script runs as root.
-    if [[ -z "$RESULTS_DIR" || "$RESULTS_DIR" != "$PROJECT_DIR/"* ]]; then
-        log_error "Refusing to clear artefacts: RESULTS_DIR is not inside the project"
+# Every removal in this script goes through here. A guard, not a formality:
+# each target is assembled from variables and this script runs as root, so it
+# is proved to sit inside the project's own results tree before it is removed.
+remove_results_path() {
+    local path="$1"
+    if [[ -z "$RESULTS_DIR" || "$RESULTS_DIR" != "$PROJECT_DIR/"* || "$path" != "$RESULTS_DIR/"* ]]; then
+        log_error "Refusing to remove a path outside the results tree: $path"
         return 1
     fi
+    rm -rf "$path"
+}
+
+clear_runner_artefacts() {
+    local path
     while read -r path; do
-        rm -rf "$path"
+        remove_results_path "$path" || return 1
     done < <(runner_artefacts "$1")
     return 0
 }
@@ -502,13 +531,31 @@ clear_runner_artefacts() {
 # the two would overwrite the first's per-distro detail. Each suite's artefacts
 # are copied aside under its own directory here as soon as it finishes.
 archive_artefacts() {
-    local suite="$1" path
+    local suite="$1" path source
     local destination="$RR_DIR/$suite"
+
+    # Cleared rather than merged into, so the promise made above holds here too:
+    # what is in this directory afterwards came from the run being reported. A
+    # second run into the same results tree would otherwise leave the first
+    # run's per-distro logs sitting beside this one's.
+    if ! remove_results_path "$destination"; then
+        # Not fatal, and deliberately not an early exit that would throw away
+        # the suites still to run. The version readback below finds no logs and
+        # records the suite as a failure, which is the fail-closed direction.
+        log_error "Not archiving $suite: $destination could not be cleared"
+        return 0
+    fi
+
     mkdir -p "$destination"
     while read -r path; do
-        if [[ -e "$path" ]]; then
-            cp -a "$path" "$destination/" || log_warn "Could not copy $path"
-        fi
+        [[ -e "$path" ]] || continue
+        # An artefact can be a directory: the GUI suite writes a whole
+        # test-results/gui tree. Copying the directory itself would land it at
+        # <suite>/<name>/, a level deeper than the <suite>/ layout scripts
+        # README documents, so its contents are copied instead.
+        source="$path"
+        [[ -d "$path" ]] && source="$path/."
+        cp -a "$source" "$destination/" || log_warn "Could not copy $path"
     done < <(runner_artefacts "$suite")
 }
 
@@ -529,6 +576,15 @@ archive_artefacts() {
 assert_container_binary_version() {
     local suite="$1" prefix="${2:-}" distro logfile
     local missing=() mismatched=()
+
+    # An empty needle makes grep -qF match every line of every log, so the one
+    # function whose purpose is to refuse silence would become a guaranteed
+    # pass. No path currently reaches here with the version line unset, which is
+    # precisely why the invariant is asserted rather than assumed.
+    if [[ -z "$EXPECTED_VERSION_LINE" ]]; then
+        log_error "No verified binary version to read back for suite $suite"
+        return 1
+    fi
 
     for distro in "${DISTRO_ORDER[@]}"; do
         logfile="$RR_DIR/$suite/${prefix}${distro}.log"
@@ -630,8 +686,12 @@ suite_cross_distro() {
 # The differential suite, across all five distros, booted.
 #
 # It replaces the full suite rather than following it: it applies hardening
-# unconditionally, so it is never the read-only run that --apply gates, and the
-# runner refuses to combine them. --booted is what sets HARDENER_DIFF_BOOTED=1
+# unconditionally, so it is never the read-only run that --apply gates. Note
+# that --apply is not passed alongside it and must not be read as optional here:
+# the runner does not refuse the combination, it silently ignores --apply
+# (run-cross-distro-tests.sh:543-548 selects the differential suite in an if and
+# reaches --apply only in the elif), so a reader who added it would get no
+# warning and no change. --booted is what sets HARDENER_DIFF_BOOTED=1
 # inside the container, which is the only thing that makes the eleven kernel
 # rows askable; without it they are declared unaskable rather than measured
 # against the host's own kernel.
@@ -872,7 +932,9 @@ write_summary() {
 restore_results_ownership() {
     [[ -n "${SUDO_USER:-}" ]] || return 0
     [[ -d "$RESULTS_DIR" ]] || return 0
-    chown -R "$SUDO_USER" "$RESULTS_DIR" 2>/dev/null \
+    # The trailing colon hands the group back too; without it the tree stays
+    # group-root and a later unprivileged run can still be blocked by it.
+    chown -R "$SUDO_USER:" "$RESULTS_DIR" 2>/dev/null \
         || log_warn "Could not hand $RESULTS_DIR back to $SUDO_USER"
 }
 
@@ -912,6 +974,12 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 mkdir -p "$RR_DIR"
+
+# summary.txt is written only when a traversal completes, so a run interrupted
+# at hour three would otherwise leave the PREVIOUS run's summary sitting beside
+# this run's fresh 00-preflight.log and partial suite logs, for a later reader
+# to take as this run's result. Removed before anything else is written.
+rm -f "$RR_DIR/summary.txt"
 
 # Written before any suite runs, so the identity every result below is
 # attributed to is on disk even if the run is interrupted a minute later.
