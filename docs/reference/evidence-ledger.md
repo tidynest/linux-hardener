@@ -18,7 +18,7 @@ has not been thought about hard enough.
 | Column | What it holds |
 |---|---|
 | Claim | What the release says the capability does, stated as narrowly as the evidence actually supports. |
-| Evidence | The files that carry the proof, as repo-relative paths in backticks. A validator added later in this phase reads this column and fails the build when a path cited here no longer exists, so a row cannot outlive the file it points at. |
+| Evidence | The files that carry the proof, as repo-relative paths in backticks. `validate_evidence_ledger.py` reads every path in this document rather than this column alone, the Command and Ceiling cells and the surrounding prose included, and fails `validate_all.py` when one no longer exists, so a row cannot outlive the file it points at and no citation is exempt because of where it sits. |
 | Command | What a reader runs to watch the evidence pass, with no privileged setup unless the cell says otherwise. In most rows this is deliberately the part of the Evidence column a reader can run unprivileged rather than all of it, and what it leaves out of the row's strongest evidence is named in that row's Ceiling: a container suite, a booted host, an `#[ignore]`d test. A cited file the default suite already runs may go unnamed there. |
 | Ceiling | What the row does **not** prove. Where the only evidence is a mock, it says so. Where the evidence is an `#[ignore]`d test the default suite never runs, it says so, because a regression there is invisible to `cargo test`. |
 
@@ -84,15 +84,9 @@ interesting.
 | Runner installed | `cargo install cargo-mutants --locked` | cargo-mutants 27.1.0 |
 | Mutants tested in `hardener-distro` | `cargo mutants -p hardener-distro --timeout 120 -j 1` | 126 tested in 68s: 36 caught, 73 missed, 17 unviable, 0 timeouts |
 
-Two corrections to that command, both of which cost a wrong answer to find, and
-both of which Phase 4 inherits because it will copy the line above.
-
-**No `hotrun` prefix.** `~/.local/bin/hotrun` opens a transient systemd scope in
-`buildwork.slice`, and `~/.local/bin/cargo` is a PATH shim that opens one too,
-so `hotrun cargo` nests two scopes and the inner one fails. Bare `cargo` is
-already inside the same thermal cap, so dropping the prefix changes the CPU
-budget not at all. [The coverage baseline](coverage-baseline.md) records the
-same correction for the same reason.
+Run that command as printed, with a bare `cargo` and no wrapper in front of it.
+One correction to it cost a wrong answer to find, and Phase 4 inherits it
+because it will copy the line above.
 
 **`-j 1`, never `-j 2`.** On this machine that is a correctness requirement
 rather than a preference. A single global `build.target-dir` sends every one of
@@ -156,6 +150,19 @@ These are stated once here rather than repeated in every cell below.
   reading than that number. Every grade-3 result in this ledger was produced by
   a person running a container by hand, and the date of the last such run is in
   `docs/reference/distribution-validation.md`, not here.
+- **The gate's assertion check reads 39 per cent of the tree.**
+  `validate_test_assertions.py` is registered in `validate_all.py` with no
+  arguments, and in that mode it globs the integration-test directories only:
+  646 of the tree's 1647 tests, across 42 files. No test living in a `src/`
+  module is read at all. Run with `--all` it reaches all 1647 and reports 47
+  that hold every assertion inside a conditional, among them
+  `test_pdf_formatter_default` in
+  `crates/hardener-compliance/src/output/pdf/tests.rs`. That is the test this
+  document names below, and `docs/reference/what-is-not-proven.md` names again,
+  as asserting nothing at all. So the check whose stated job is that a test
+  cannot exit 0 having asserted nothing does not read the tree's own headline
+  example of one. Widening the glob reds the gate on 47 findings, and that
+  triage is issue #130 rather than a thing this phase did.
 - **`scripts/test/differential-suite.sh` applies six plugins at most.** Its
   `DIFF_PLUGINS` list is ssh, pam, permissions, firewall and kernel, and the
   services plugin joins only in a booted run. `audit-hardening` and

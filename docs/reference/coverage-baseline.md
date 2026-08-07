@@ -83,14 +83,10 @@ Toolchain, because a coverage figure is not comparable across compilers:
 | `cargo-llvm-cov` | 0.8.7 |
 | Export format | `llvm.coverage.json.export` 3.1.0 |
 
-**On `hotrun`.** The task brief prefixes both commands with `hotrun`. That does
-not work here and the numbers were produced without it. `~/.local/bin/hotrun`
-opens a transient systemd scope in `buildwork.slice`, and `~/.local/bin/cargo`
-is a PATH shim that opens one too, so `hotrun cargo` nests two scopes and the
-inner one fails with `Unit run-pNNNNN-iNNNNN.scope was already loaded`. Bare
-`cargo` still lands inside the same thermal cap through the shim, so dropping
-the prefix changes the CPU budget not at all. Use the commands exactly as
-printed above.
+**Run the commands exactly as printed above**, with a bare `cargo` and no
+wrapper in front of it. That is how these numbers were produced. Whatever CPU or
+thermal harness a particular machine puts around `cargo` is that machine's
+concern and not a property of this baseline.
 
 ---
 

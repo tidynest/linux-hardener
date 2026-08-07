@@ -806,10 +806,11 @@ suite_gui() {
     fi
 }
 
-# The rollback readback. Included here because it had nowhere else to live:
-# no runner and no CI job calls verify-rollback.sh (issue #125), yet it is the
-# only check that reads a rolled-back kernel parameter, sshd_config and
-# directory mode back off the system rather than trusting the tool's own report.
+# The rollback readback. Included here because it had nowhere else to live: no
+# CI job calls verify-rollback.sh, and before this script no runner called it
+# either (issue #125), yet it is the only check that reads a rolled-back kernel
+# parameter, sshd_config and directory mode back off the system rather than
+# trusting the tool's own report.
 # It needs root and a container, which is exactly the class of work this script
 # exists to batch, so it costs one arch container to give it a home.
 #
