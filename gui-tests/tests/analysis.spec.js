@@ -129,47 +129,71 @@ test.describe('Findings', () => {
 // COMPLIANCE TAB
 // ---------------------------------------------------------------------------
 
+// The frameworks are aria-pressed toggle buttons inside a named group, not
+// checkboxes in a `.framework-grid`, so selecting them means reading `pressed`
+// rather than `checked`.
+const frameworkToggles = (page) =>
+  page.getByRole('group', { name: 'Compliance frameworks' }).getByRole('button');
+
+const setAllFrameworks = async (page, pressed) => {
+  const toggles = frameworkToggles(page);
+  for (let i = 0; i < (await toggles.count()); i++) {
+    const toggle = toggles.nth(i);
+    if ((await toggle.getAttribute('aria-pressed')) !== String(pressed)) {
+      await toggle.click();
+    }
+  }
+};
+const selectAllFrameworks = (page) => setAllFrameworks(page, true);
+const deselectAllFrameworks = (page) => setAllFrameworks(page, false);
+
 test.describe('Compliance', () => {
   test.beforeEach(async ({ page }) => {
     await loadApp(page, '/analysis');
-    // Switch to compliance tab
-    await page.locator('#tab-compliance').click();
+    await page.getByRole('tab', { name: 'Compliance' }).click();
   });
 
   // T-COMP-01: Tab switch shows compliance content
   test('T-COMP-01: compliance tab shows framework selection', async ({ page }) => {
-    await expect(page.locator('.framework-selection')).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Compliance frameworks' })).toBeVisible();
   });
 
-  // T-COMP-02: Six framework checkboxes present
-  test('T-COMP-02: six framework checkboxes present', async ({ page }) => {
-    const labels = page.locator('.framework-grid .framework-checkbox');
-    await expect(labels).toHaveCount(6);
-    const texts = await labels.allTextContents();
-    expect(texts.join(' ')).toContain('CIS');
-    expect(texts.join(' ')).toContain('DISA STIG');
-    expect(texts.join(' ')).toContain('NIST');
-    expect(texts.join(' ')).toContain('PCI-DSS');
-    expect(texts.join(' ')).toContain('HIPAA');
-    expect(texts.join(' ')).toContain('GDPR');
+  // T-COMP-02: Every supported framework is offered
+  //
+  // This asserted six. There are ten, and there were ten before the redesign
+  // touched this screen: `ComplianceFramework::ALL` gained ISO 27001, SOC 2,
+  // NIST SP 800-171 and FedRAMP, and the test was never updated, so it was
+  // wrong about the product rather than about the markup. The count is pinned
+  // to catch a framework silently disappearing from the picker; it has to be
+  // raised deliberately when `ComplianceFramework::ALL` grows.
+  test('T-COMP-02: all ten frameworks are offered', async ({ page }) => {
+    const toggles = frameworkToggles(page);
+    await expect(toggles).toHaveCount(10);
+    const names = (await toggles.allTextContents()).join(' ');
+    for (const framework of [
+      'CIS', 'DISA STIG', 'NIST 800-53', 'PCI-DSS', 'HIPAA', 'GDPR',
+      'ISO/IEC 27001', 'SOC 2', 'NIST SP 800-171', 'FedRAMP',
+    ]) {
+      expect(names).toContain(framework);
+    }
   });
 
-  // T-COMP-03: CIS checked by default
-  test('T-COMP-03: CIS is checked by default', async ({ page }) => {
-    const cisCheckbox = page.locator('.framework-grid input[type="checkbox"]').first();
-    await expect(cisCheckbox).toBeChecked();
+  // T-COMP-03: CIS selected by default
+  test('T-COMP-03: CIS is selected by default', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'CIS Benchmark' }))
+      .toHaveAttribute('aria-pressed', 'true');
   });
 
   // T-COMP-04: Generate button visible and enabled
   test('T-COMP-04: Generate Reports button visible when frameworks selected', async ({ page }) => {
-    const btn = page.getByRole('button', { name: /Generate Reports/i });
+    const btn = page.getByRole('button', { name: /Generate Report/i });
     await expect(btn).toBeVisible();
     await expect(btn).toBeEnabled();
   });
 
   // T-COMP-05: Generate reports shows report cards
   test('T-COMP-05: generating reports shows report cards', async ({ page }) => {
-    const btn = page.getByRole('button', { name: /Generate Reports/i });
+    const btn = page.getByRole('button', { name: /Generate Report/i });
     await btn.click();
     await expect(btn).not.toHaveText(/Generating/i, { timeout: 10000 });
     const cards = page.locator('.report-card');
@@ -179,14 +203,8 @@ test.describe('Compliance', () => {
   // T-COMP-06: Score colours match thresholds
   test('T-COMP-06: score colours match thresholds', async ({ page }) => {
     // Check all frameworks to get varied scores
-    const checkboxes = page.locator('.framework-grid input[type="checkbox"]');
-    const count = await checkboxes.count();
-    for (let i = 0; i < count; i++) {
-      if (!(await checkboxes.nth(i).isChecked())) {
-        await checkboxes.nth(i).check();
-      }
-    }
-    await page.getByRole('button', { name: /Generate Reports/i }).click();
+    await selectAllFrameworks(page);
+    await page.getByRole('button', { name: /Generate Report/i }).click();
     await page.waitForSelector('.report-card', { timeout: 10000 });
     // Verify at least one score element exists with a colour class
     const scores = page.locator('.compliance-score');
@@ -196,30 +214,17 @@ test.describe('Compliance', () => {
 
   // T-COMP-07: Deselect all disables generate button
   test('T-COMP-07: deselecting all frameworks disables generate button', async ({ page }) => {
-    const checkboxes = page.locator('.framework-grid input[type="checkbox"]');
-    const count = await checkboxes.count();
-    for (let i = 0; i < count; i++) {
-      if (await checkboxes.nth(i).isChecked()) {
-        await checkboxes.nth(i).uncheck();
-      }
-    }
-    const btn = page.getByRole('button', { name: /Generate Reports/i });
+    await deselectAllFrameworks(page);
+    const btn = page.getByRole('button', { name: /Generate Report/i });
     await expect(btn).toBeDisabled();
   });
 
   // T-COMP-08: Multi-framework generates multiple report cards
   test('T-COMP-08: selecting 3 frameworks generates multiple report cards', async ({ page }) => {
     // Select all 6 frameworks to maximize chance of multiple cards
-    const checkboxes = page.locator('.framework-grid input[type="checkbox"]');
-    const count = await checkboxes.count();
-    for (let i = 0; i < count; i++) {
-      if (!(await checkboxes.nth(i).isChecked())) {
-        await checkboxes.nth(i).check();
-        await page.waitForTimeout(100);
-      }
-    }
+    await selectAllFrameworks(page);
     // Verify generate button is enabled before clicking
-    const btn = page.getByRole('button', { name: /Generate Reports/i });
+    const btn = page.getByRole('button', { name: /Generate Report/i });
     await expect(btn).toBeEnabled();
     await btn.click();
     // Wait for at least one card, then allow more to render
