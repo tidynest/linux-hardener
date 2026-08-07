@@ -3,6 +3,7 @@
 //! This module provides the configuration structures that control plugin behaviour
 //! and policy exceptions. Configuration annotates findings; it never hides them.
 
+use hardener_types::{DeclineReason, ExceptionOutcome, FindingExceptionDeclined};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -91,6 +92,71 @@ impl PluginConfig {
             .get(key)
             .map(|value| value.as_str())
             .unwrap_or(baseline)
+    }
+
+    /// What the configuration has to say about `key`, given the value actually
+    /// read from the host.
+    ///
+    /// The single place that decides. `has_valid_exception`,
+    /// `matching_exception` and `matching_mode_exception` are all expressed in
+    /// terms of the two `exception_outcome` methods so four functions stop
+    /// deciding the same thing separately.
+    pub fn exception_outcome(&self, key: &str, observed: &str) -> ExceptionOutcome {
+        self.exception_outcome_with(key, Some(observed))
+    }
+
+    /// What the configuration has to say about `key` for a check that is
+    /// present or absent, with no host value to compare.
+    ///
+    /// Can never return [`DeclineReason::ValueMismatch`]. For `[services]`,
+    /// `[mac]`, `[audit]` and `[firewall]` the exception key already names the
+    /// deviating item and the exception's own `value` is advisory, which
+    /// [`EXCEPTION_OBSERVED_UNCHANGED`] documents from the other side. Only
+    /// expiry can decline one of these.
+    pub fn exception_outcome_for_presence(&self, key: &str) -> ExceptionOutcome {
+        self.exception_outcome_with(key, None)
+    }
+
+    /// Shared body. `observed` is `None` for a presence check, which is the
+    /// only thing that can suppress a value mismatch.
+    ///
+    /// The `Option` lives here and not on the public surface deliberately: a
+    /// caller passing `None` to a method named `exception_outcome` would be
+    /// switching off one of three outcomes through a parameter, which is the
+    /// same one-value-several-meanings problem this whole type exists to
+    /// remove. Two named public methods say which question is being asked.
+    ///
+    /// Expiry is checked before the value, so an exception that is both
+    /// expired and mismatched reports the expiry. That ordering is deliberate:
+    /// the expiry is the reason it stopped applying, and correcting the value
+    /// would not bring it back.
+    fn exception_outcome_with(&self, key: &str, observed: Option<&str>) -> ExceptionOutcome {
+        let Some(exception) = self.exceptions.get(key) else {
+            return ExceptionOutcome::NotConfigured;
+        };
+        if !exception.allowed {
+            return ExceptionOutcome::NotConfigured;
+        }
+        let declined = |reason| {
+            ExceptionOutcome::Declined(FindingExceptionDeclined {
+                exception_declined_reason: reason,
+                exception_reason: exception.reason.clone(),
+            })
+        };
+        if exception.is_expired() {
+            return declined(DeclineReason::Expired {
+                expired_on: exception.expires.clone().unwrap_or_default(),
+            });
+        }
+        if let Some(observed) = observed
+            && exception.value != observed
+        {
+            return declined(DeclineReason::ValueMismatch {
+                documented: exception.value.clone(),
+                observed: observed.to_string(),
+            });
+        }
+        ExceptionOutcome::Applied(exception.to_finding_exception())
     }
 
     /// Returns a valid, non-expired exception for the given key, if one exists.

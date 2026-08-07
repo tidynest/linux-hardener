@@ -183,3 +183,122 @@ fn an_exception_in_another_plugins_section_is_not_read() {
         "an exception written under [ssh] must not be visible to the kernel plugin",
     );
 }
+
+#[test]
+fn exception_outcome_declines_a_value_the_host_does_not_have() {
+    let config = plugin_with("PermitRootLogin", exception("yes", None));
+
+    let outcome = config.exception_outcome("PermitRootLogin", "prohibit-password");
+
+    match outcome {
+        ExceptionOutcome::Declined(declined) => match declined.exception_declined_reason {
+            DeclineReason::ValueMismatch {
+                documented,
+                observed,
+            } => {
+                assert_eq!(
+                    documented, "yes",
+                    "the documented value is reported as written"
+                );
+                assert_eq!(
+                    observed, "prohibit-password",
+                    "the observed value is reported as read"
+                );
+            }
+            other => panic!("expected a value mismatch, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
+#[test]
+fn exception_outcome_declines_an_expired_exception() {
+    let config = plugin_with(
+        "PermitRootLogin",
+        exception("prohibit-password", Some("2000-01-01")),
+    );
+
+    let outcome = config.exception_outcome("PermitRootLogin", "prohibit-password");
+
+    match outcome {
+        ExceptionOutcome::Declined(declined) => match declined.exception_declined_reason {
+            DeclineReason::Expired { expired_on } => {
+                assert_eq!(
+                    expired_on, "2000-01-01",
+                    "the expiry the operator wrote is the one reported"
+                );
+            }
+            other => panic!("expected an expiry, got {other:?}"),
+        },
+        other => panic!("expected Declined, got {other:?}"),
+    }
+}
+
+#[test]
+fn exception_outcome_stays_silent_when_the_operator_wrote_allowed_false() {
+    let mut refused = exception("yes", None);
+    refused.allowed = false;
+    let config = plugin_with("PermitRootLogin", refused);
+
+    let outcome = config.exception_outcome("PermitRootLogin", "prohibit-password");
+
+    assert!(
+        matches!(outcome, ExceptionOutcome::NotConfigured),
+        "allowed = false is the operator declining to except this, and honouring \
+         that by doing nothing is correct rather than silent"
+    );
+}
+
+#[test]
+fn exception_outcome_applies_a_valid_matching_exception() {
+    let config = plugin_with("PermitRootLogin", exception("yes", None));
+
+    let outcome = config.exception_outcome("PermitRootLogin", "yes");
+
+    match outcome {
+        ExceptionOutcome::Applied(applied) => {
+            assert_eq!(applied.exception_allowed_value, "yes");
+        }
+        other => panic!("expected Applied, got {other:?}"),
+    }
+}
+
+#[test]
+fn exception_outcome_for_presence_never_reports_a_value_mismatch() {
+    let config = plugin_with("bluetooth", exception("running", None));
+
+    let outcome = config.exception_outcome_for_presence("bluetooth");
+
+    assert!(
+        matches!(outcome, ExceptionOutcome::Applied(_)),
+        "a presence check has no host value to compare, so the exception's own \
+         value field is advisory and must never decline the exception"
+    );
+}
+
+#[test]
+fn exception_outcome_for_presence_still_declines_an_expiry() {
+    let config = plugin_with("bluetooth", exception("running", Some("2000-01-01")));
+
+    let outcome = config.exception_outcome_for_presence("bluetooth");
+
+    assert!(
+        matches!(
+            outcome,
+            ExceptionOutcome::Declined(FindingExceptionDeclined {
+                exception_declined_reason: DeclineReason::Expired { .. },
+                ..
+            })
+        ),
+        "expiry applies to every check, valued or not"
+    );
+}
+
+#[test]
+fn exception_outcome_is_not_configured_when_no_exception_names_the_key() {
+    let config = PluginConfig::default();
+
+    let outcome = config.exception_outcome("PermitRootLogin", "prohibit-password");
+
+    assert!(matches!(outcome, ExceptionOutcome::NotConfigured));
+}
