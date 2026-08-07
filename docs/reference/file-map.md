@@ -816,7 +816,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/test/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/test/manual-verification-test.sh` | Interactive verification tests |
 | `scripts/containers/create-container.sh` | systemd-nspawn test containers for all six distros (`arch`, `debian`, `ubuntu`, `fedora`, `rhel`, `opensuse`) |
-| `scripts/test/verify-rollback.sh` | Rollback verification for nspawn containers, over four areas its own header names: kernel sysctl values plus config file content, `sshd_config` backup and content restoration, directory mode restoration, and `rollback --format json` producing a valid `RollbackResult` |
+| `scripts/test/verify-rollback.sh` | Rollback verification for nspawn containers: `sysctl.d` config file content, `sshd_config` backup and content restoration, directory mode restoration, `rollback --format json` producing a valid `RollbackResult`, and, gated on a measured write probe because `/proc/sys` is the host's and read-only under `--pipe`, one runtime kernel parameter. The runtime arm reports a named skip rather than a pass when the container will not answer |
 | `scripts/test/release-readiness-root.sh` | One root invocation for every suite an unprivileged session cannot start: the polkit matrix, then the cross-distro, differential, packaging and Web UI suites and the rollback readback. All six containers are destroyed and rebuilt before each suite that runs inside one, and the run refuses to start unless the musl binary matches the working tree by version, commit and modification time |
 
 ---

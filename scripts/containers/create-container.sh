@@ -288,7 +288,7 @@ generate_host_keys() {
 # bluetooth is here for a reason of its own. The service-minimisation plugin
 # assesses five units and every image shipped with none of them, so the plugin
 # had no subject matter and an oracle over it could only read the same
-# "nothing to report" on all five distributions. bluez is installed everywhere
+# "nothing to report" on all six distributions. bluez is installed everywhere
 # to supply that subject matter, and enabling it is what makes installing it
 # count: the plugin raises a finding only for a unit that is enabled or active,
 # so an installed but disabled bluetooth.service would leave the fixture with

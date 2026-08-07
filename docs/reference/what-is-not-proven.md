@@ -360,7 +360,7 @@ and the date of the last such run is in
 [distribution-validation.md](distribution-validation.md).
 
 **A green CI run is a weaker reading than the workspace suite**, because the two
-crate exclusions above make CI's set strictly smaller than the 1694 tests
+crate exclusions above make CI's set strictly smaller than the 1693 tests
 `cargo nextest run --workspace` passed on 2026-08-07.
 
 **The 40 tests the workspace suite skips, and what each needs:**

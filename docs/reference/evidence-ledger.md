@@ -32,12 +32,12 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1694 passed, 40 skipped |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1693 passed, 40 skipped |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 20 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1734 |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1733 |
 
-The gap between 1734 annotations and 1694 executions is exactly 40, and all 40
+The gap between 1733 annotations and 1693 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -158,19 +158,16 @@ These are stated once here rather than repeated in every cell below.
   reading than that number. Every grade-3 result in this ledger was produced by
   a person running a container by hand, and the date of the last such run is in
   `docs/reference/distribution-validation.md`, not here.
-- **The gate's assertion check reads 39 per cent of the tree.**
-  `validate_test_assertions.py` is registered in `validate_all.py` with no
-  arguments, and in that mode it globs the integration-test directories only:
-  646 of the tree's 1635 tests, across 42 files. No test living in a `src/`
-  module is read at all. Run with `--all` it reaches all 1635 and reports 46
-  that hold every assertion inside a conditional, among them
-  `capture_refuses_to_record_an_unverifiable_path_as_absent` in
-  `crates/hardener-state/src/manager/tests.rs`, which is the checkpoint layer's
-  own guard against recording a file it could not read as one that was absent.
-  So the check whose stated job is that a test cannot exit 0 having asserted
-  nothing reads none of the modules where this tree's sharpest claims are
-  made. Widening the glob reds the gate on 46 findings, and that triage is
-  issue #130 rather than a thing this phase did.
+- **The gate's assertion check proves an assertion is reached, never that it is
+  worth reaching.** `validate_test_assertions.py` now runs over the whole tree
+  (issue #130), so no test escapes it by living in a `src/` module. What it
+  reads is control flow: every path through a test body must arrive at an
+  assertion. It cannot judge whether that assertion pins anything, so a test
+  asserting `true == true` on every path satisfies it. That half is a reading
+  made at review time and by mutation testing, not by this check.
+  It also cannot see a table declared in another file, and refuses to count a
+  loop over one, deliberately: an emptied table is exactly the silent vacuity
+  the check exists to catch.
 - **`scripts/test/differential-suite.sh` applies six plugins at most.** Its
   `DIFF_PLUGINS` list is ssh, pam, permissions, firewall and kernel, and the
   services plugin joins only in a booted run. `audit-hardening` and
