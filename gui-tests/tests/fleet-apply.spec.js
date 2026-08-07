@@ -18,9 +18,11 @@ const host = (page, name) =>
 const dryRunBtn = (page) => page.getByRole('button', { name: /Preview Changes/i });
 const executeBtn = (page) => page.getByRole('button', { name: /^Execute/ });
 
+// A completed preview is what puts Execute on the page, so its appearance is
+// the signal to wait on. `.fleet-preview` no longer exists.
 async function dryRun(page) {
   await dryRunBtn(page).click();
-  await expect(page.locator('.fleet-preview').first()).toBeVisible();
+  await expect(executeBtn(page)).toBeVisible();
 }
 
 test.describe('Fleet Apply', () => {
@@ -52,13 +54,15 @@ test.describe('Fleet Apply', () => {
     await host(page, 'web-01').check();
     await expect(dryRunBtn(page)).toBeEnabled();
     await dryRun(page);
-    await expect(page.locator('.fleet-preview').first()).toContainText(/web-01/);
+    await expect(page.getByText(/would change/)).toBeVisible();
   });
 
   // T-FAPPLY-04: Execute unlocks only AFTER a matching dry-run
   test('T-FAPPLY-04: Execute stays disabled until a dry-run runs', async ({ page }) => {
+    // Execute is not rendered until a preview exists, so the gate before one
+    // is its absence rather than a disabled state.
     await host(page, 'web-01').check();
-    await expect(executeBtn(page)).toBeDisabled();
+    await expect(executeBtn(page)).toHaveCount(0);
     await dryRun(page);
     await expect(executeBtn(page)).toBeEnabled();
   });
@@ -68,9 +72,10 @@ test.describe('Fleet Apply', () => {
     await host(page, 'web-01').check();
     await dryRun(page);
     await expect(executeBtn(page)).toBeEnabled();
-    // Add a second host -> selection no longer matches the previewed one.
+    // Add a second host -> selection no longer matches the previewed one, and
+    // Execute goes away until it is previewed again.
     await host(page, 'db-01').check();
-    await expect(executeBtn(page)).toBeDisabled();
+    await expect(executeBtn(page)).toHaveCount(0);
   });
 
   // T-FAPPLY-06: Execute opens a confirm modal naming the host count
@@ -107,6 +112,6 @@ test.describe('Fleet Apply', () => {
     await page.getByRole('radio', { name: 'Roll back' }).check();
     await host(page, 'web-01').check();
     await dryRun(page);
-    await expect(page.locator('.fleet-preview').first()).toBeVisible();
+    await expect(page.getByText(/would change/)).toBeVisible();
   });
 });
