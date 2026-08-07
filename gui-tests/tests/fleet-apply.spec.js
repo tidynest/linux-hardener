@@ -84,7 +84,7 @@ test.describe('Fleet Apply', () => {
     await dryRun(page);
     await executeBtn(page).click();
     await expect(page.locator('.modal')).toBeVisible();
-    await expect(page.locator('#fleet-apply-modal-title')).toContainText('Execute apply on 1 host(s)?');
+    await expect(page.locator('#fleet-apply-modal-title')).toContainText('Execute Apply on 1 host?');
   });
 
   // T-FAPPLY-07: Cancelling the modal performs no mutation
@@ -94,7 +94,11 @@ test.describe('Fleet Apply', () => {
     await executeBtn(page).click();
     await page.locator('.modal').getByRole('button', { name: 'Cancel' }).click();
     await expect(page.locator('.modal')).toHaveCount(0);
-    await expect(page.locator('.fleet-results')).toHaveCount(0);
+    // No outcome was produced. Asserted on the text an executed apply prints,
+    // because the old `.fleet-results` count-of-zero held whether or not the
+    // cancel worked: that element does not exist in either case.
+    await expect(page.getByText(/applied/)).toHaveCount(0);
+    await expect(page.getByText(/would change/)).toBeVisible();
   });
 
   // T-FAPPLY-08: Confirming executes and renders results
@@ -103,8 +107,10 @@ test.describe('Fleet Apply', () => {
     await dryRun(page);
     await executeBtn(page).click();
     await page.getByRole('button', { name: /Yes, execute/i }).click();
-    await expect(page.locator('.fleet-results')).toBeVisible();
-    await expect(page.locator('.fleet-results')).toContainText('web-01');
+    // An executed apply reports per host: the outcome row names it and says
+    // how many changes landed. `.fleet-results` never existed.
+    await expect(page.getByText(/\d+ applied/)).toBeVisible();
+    await expect(page.getByText('web-01').first()).toBeVisible();
   });
 
   // T-FAPPLY-09: Roll back mode also previews via dry-run
@@ -112,6 +118,8 @@ test.describe('Fleet Apply', () => {
     await page.getByRole('radio', { name: 'Roll back' }).check();
     await host(page, 'web-01').check();
     await dryRun(page);
-    await expect(page.getByText(/would change/)).toBeVisible();
+    // Roll back previews in its own terms: checkpoints to restore, not changes
+    // to make.
+    await expect(page.getByText(/would restore/)).toBeVisible();
   });
 });
