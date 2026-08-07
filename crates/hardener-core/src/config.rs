@@ -97,10 +97,22 @@ impl PluginConfig {
     /// What the configuration has to say about `key`, given the value actually
     /// read from the host.
     ///
-    /// The single place that decides. `has_valid_exception`,
-    /// `matching_exception` and `matching_mode_exception` are all expressed in
-    /// terms of the two `exception_outcome` methods so four functions stop
-    /// deciding the same thing separately.
+    /// The single place that decides what a scan reports. The apply path keeps
+    /// its own three lookups, and they are deliberately not expressed in terms
+    /// of this one: `has_valid_exception` and its two callers hand back
+    /// `Option<&PolicyException>`, a borrow into the config, while this returns
+    /// an owned outcome carrying a converted `FindingPolicyException`. The
+    /// borrow cannot be recovered from the owned value, so unifying them would
+    /// mean changing the apply path's public signatures, which this slice does
+    /// not do.
+    ///
+    /// What that leaves is one real duplication, recorded here rather than left
+    /// to be discovered: `PolicyException::is_valid` is `allowed && !expired`,
+    /// and this method takes those two apart, because they need opposite
+    /// answers. `allowed = false` is an operator declining to except something
+    /// and reports nothing; an expiry is an exception that used to work and
+    /// silently stopped, which is the whole reason this method exists. Anyone
+    /// changing what "valid" means must change both.
     pub fn exception_outcome(&self, key: &str, observed: &str) -> ExceptionOutcome {
         self.exception_outcome_with(key, Some(observed))
     }
