@@ -53,15 +53,19 @@ import json
 with open("/tmp/cov.json") as handle:
     data = json.load(handle)
 
-rows = [
-    (entry["summary"]["lines"]["percent"], entry["filename"])
-    for entry in data["data"][0]["files"]
-    if entry["summary"]["lines"]["count"]
-    and entry["summary"]["lines"]["percent"] < 60
-]
+rows = []
+for entry in data["data"][0]["files"]:
+    lines = entry["summary"]["lines"]
+    if not lines["count"] or lines["percent"] >= 60:
+        continue
+    missed = lines["count"] - lines["covered"]
+    rows.append((lines["percent"], -missed, entry["filename"], missed, lines["count"]))
 
-for percent, path in sorted(rows):
-    print(f"{percent:6.2f}  {path}")
+# Missed lines descending is the secondary key, because 43 of these rows tie at
+# 0.00 per cent and alphabetical order would rank a 4-line file above a 400-line
+# one. Missed lines are what ranks the work, so the table is ordered by them.
+for percent, _, path, missed, total in sorted(rows):
+    print(f"{percent:6.2f}  {missed:5d}/{total:<5d}  {path}")
 EOF
 ```
 
@@ -373,9 +377,10 @@ Three readings repeat, and are stated once here rather than 40 times below:
   matter how dead it is. The worked example sits in the crate this document
   already has open. `crates/hardener-distro/src/adapter.rs` is 23 lines
   defining `DistributionAdapter`, its only implementor is the mock in
-  `adapter/tests.rs`, no crate outside `hardener-distro` refers to it, and it
-  reads **100.00 per cent**. It is invisible to this method and dead all the
-  same. Phase 3 therefore needs a reference search of its own, run over the
+  `adapter/tests.rs`, no crate outside `hardener-distro` refers to it, and its
+  3 instrumented lines read **100.00 per cent**. It is invisible to this method and dead all the
+  same, which already makes the real count 7 files rather than 6, before
+  Phase 3 has searched for anything. Phase 3 therefore needs a reference search of its own, run over the
   whole tree and independently of these 58 rows, and should treat this section
   as a head start rather than an inventory.
 - **Phase 4** takes the five genuine gaps named above. Two of them,
