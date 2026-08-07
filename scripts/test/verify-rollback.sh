@@ -118,9 +118,16 @@ assert_file_missing() {
 # Literal match (-F): every needle passed here is a fixed string, and the
 # sysctl names among them are full of dots that a regexp would treat as
 # wildcards, so a near-miss could match and be reported as a pass.
+#
+# The haystack arrives on a herestring rather than a pipe. Under `set -o
+# pipefail`, piping a large payload into `grep -q` reports the pipeline as
+# failed whenever grep matches early and leaves the writer to die of SIGPIPE,
+# so the assertion fails precisely when the needle IS present and the haystack
+# outgrows the 64 KB pipe buffer. Found in test-package-install.sh, where a
+# 165 KB scan payload failed this way on all six distros.
 assert_contains() {
     local label="$1" haystack="$2" needle="$3"
-    if echo "$haystack" | grep -qF "$needle"; then
+    if grep -qF "$needle" <<< "$haystack"; then
         pass "$label"
     else
         fail "$label (missing '$needle')"

@@ -220,7 +220,7 @@ log_header "5. FUNCTIONAL: CLI Tests"
 
 # Version
 version_out=$(hardener --version 2>&1)
-if echo "$version_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
+if grep -qE '[0-9]+\.[0-9]+\.[0-9]+' <<< "$version_out"; then
     log_pass "hardener --version ($version_out)"
 else
     log_fail "hardener --version (unexpected: $version_out)"
@@ -236,7 +236,7 @@ fi
 
 # Scan JSON
 scan_json=$(hardener --format json scan 2>&1)
-if echo "$scan_json" | grep -q '"plugin_id"'; then
+if grep -q '"plugin_id"' <<< "$scan_json"; then
     log_pass "hardener scan --format json (valid structure)"
 else
     log_fail "hardener scan --format json (missing plugin_id)"
@@ -251,7 +251,7 @@ fi
 
 # Dry-run
 dry_out=$(hardener apply --all --dry-run 2>&1)
-if echo "$dry_out" | grep -qEi 'item.s. to apply|dry.run|preview'; then
+if grep -qEi 'item.s. to apply|dry.run|preview' <<< "$dry_out"; then
     log_pass "hardener apply --all --dry-run"
 else
     # Some containers might not have any findings; still not a failure

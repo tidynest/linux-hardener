@@ -1553,7 +1553,7 @@ test_scan_history_persistence() {
     log_test "Scan session appears in history list"
     local history_output
     history_output=$("$BINARY" history list 2>&1)
-    if echo "$history_output" | grep -qE '[a-f0-9]{8}-[a-f0-9]{4}'; then
+    if grep -qE '[a-f0-9]{8}-[a-f0-9]{4}' <<< "$history_output"; then
         log_pass "Scan session appears in history list"
     else
         log_fail "Scan session not found in history list"

@@ -322,7 +322,7 @@ run_no_agent_test() {
     echo ""
     echo -e "${CYAN}Test 2: Error message references polkit${NC}"
 
-    if echo "$pkexec_output" | grep -qiE 'polkit|authority|authentication agent'; then
+    if grep -qiE 'polkit|authority|authentication agent' <<< "$pkexec_output"; then
         pass "Error output mentions polkit/authority"
     else
         fail "Error output mentions polkit/authority (got: ${pkexec_output:0:120})"
