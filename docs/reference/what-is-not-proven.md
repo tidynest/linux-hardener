@@ -90,9 +90,13 @@ that a rollback restores a kernel runtime value.**
 
 **None of those readings runs unless a person starts a container.**
 `scripts/test/verify-rollback.sh` is invoked by no CI job, and by exactly one
-runner, `scripts/test/release-readiness-root.sh`, which is a root-only batch
-that has itself never been run. Being wired into a script is not evidence that
-the script was started: no run of it is dated anywhere in this repository.
+runner, `scripts/test/release-readiness-root.sh`, a root-only batch that was
+first run on 2026-08-07. Its rollback suite passed that day, 11 checks with none
+failing, reading kernel, ssh and permissions back after a rollback. That is one
+dated run rather than a habit, and the ceiling above still holds: no reading
+anywhere has yet confirmed that a rollback restores a kernel **runtime** value,
+because the arm that would ask is unreachable under the invocation its only
+runner uses. That gap is issue #131.
 Sections 12A and 12B need `scripts/test/full-test-suite.sh` started as root
 inside a container with its `--apply` flag; 12B additionally needs that
 container booted under systemd, and 12A needs a container no earlier `--apply`
@@ -196,37 +200,33 @@ six in a booted run.
 
 ## Will it behave the same on my distribution, my hardware and my kernel?
 
-**Five distributions have been run end to end, across four families.** They are
-Arch rolling, Debian 13 "Trixie", Fedora 44, Rocky Linux 10 and openSUSE Leap
-16.0, all built by `scripts/containers/create-container.sh`, and the last full
-cross-distribution run was 2026-08-01 with the containers recreated first. Every
+**Six distributions have been run end to end, across four families.** They are
+Arch rolling, Debian 13 "Trixie", Ubuntu 24.04 LTS "Noble", Fedora 44, Rocky
+Linux 10 and openSUSE Leap 16.0, all built by
+`scripts/containers/create-container.sh`, and the last full cross-distribution
+run was 2026-08-07 with the containers recreated first. Every
 result and every per-distribution difference is in
 [distribution-validation.md](distribution-validation.md). Four families, not
 five: `DistroFamily` in `crates/hardener-distro/src/lib.rs` has exactly the
 variants Debian, RedHat, Arch and Suse, and Fedora and Rocky are both RedHat.
 
-**Nineteen distribution identifiers are accepted, and five distributions have
+**Nineteen distribution identifiers are accepted, and six distributions have
 been run.** `Distribution::map_to_family` in
 `crates/hardener-distro/src/lib.rs` matches an allowlist of nineteen
 `/etc/os-release` `ID` values and returns `UnsupportedDistro` for anything else,
 so a distribution outside that list fails cleanly rather than guessing. Inside
 it, family routing means an identifier no container has ever presented takes a
-measured family's code path unchanged. **Ubuntu is the case worth naming**,
-because it is the release a newcomer is most likely to reach for and no run
-against it exists: it routes as Debian family, and what protects an Ubuntu host
-is the assumption that its configuration layout matches Debian 13's.
-`scripts/containers/create-container.sh ubuntu` has built an Ubuntu 24.04 LTS
-"Noble" container since 2026-08-07, and **no suite has been run inside it**, so
-what changed on that date is that the run became possible and not that it
-happened. Ubuntu therefore stays in the count below, and `README.md` marks it
-"container exists, never run" for the same reason: the row moves only when a
-dated result exists in
-[distribution-validation.md](distribution-validation.md). Linux Mint, Pop!\_OS, elementary, RHEL
-proper, CentOS, AlmaLinux, Oracle Linux, Manjaro, EndeavourOS, Garuda, openSUSE
-Tumbleweed and SLES are accepted on the same terms, and so is whichever of
-`opensuse` and `opensuse-leap` the Leap container does not present, both being
-in the allowlist. That is fourteen identifiers no container has ever run,
-against the five that one has.
+measured family's code path unchanged. **Ubuntu used to be the case worth
+naming** and is no longer: it was the release a newcomer is most likely to reach
+for with no run behind it, and on 2026-08-07 it got one. Its container was built
+by `scripts/containers/create-container.sh ubuntu` and ran the full cross-distro
+suite under `--apply --booted` and the differential suite, both passing, with a
+dated result in [distribution-validation.md](distribution-validation.md). Linux
+Mint, Pop!\_OS, elementary, RHEL proper, CentOS, AlmaLinux, Oracle Linux,
+Manjaro, EndeavourOS, Garuda, openSUSE Tumbleweed and SLES are still accepted on
+family routing alone, and so is whichever of `opensuse` and `opensuse-leap` the
+Leap container does not present, both being in the allowlist. That is thirteen
+identifiers no container has ever run, against the six that one has.
 
 **No hardware variation is covered and no kernel variation is covered.** Every
 container is `systemd-nspawn`, which shares the host's kernel, so five

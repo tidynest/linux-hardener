@@ -939,7 +939,7 @@ counts measured the same way and on the same date as the table above.
 
 ## GUI Tests (Playwright + Desktop)
 
-113 Playwright tests validate the Web UI across every distro in `DISTRO_ORDER`. The 113 figure is the 2026-06-29 five-distro reading; the Ubuntu container has never been run. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
+113 Playwright tests target the Web UI across every distro in `DISTRO_ORDER`. The 113 figure is the 2026-06-29 five-distro reading and is **stale**: the suite was re-run across all six on 2026-08-07 and failed on every one, for two separate reasons. On arch, debian and fedora the environment was healthy and the suite itself blew the 600 s ceiling against markup the redesign replaced, which is issue #48. On ubuntu, rhel and opensuse name resolution fails inside the container, so the Xvfb and Chromium install is a no-op and no test runs at all. Treat 113 as a count of tests written, not of tests passing. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
 
 ### Test Files
 

@@ -170,8 +170,13 @@ These are stated once here rather than repeated in every cell below.
   `#[ignore]`d test and no shell suite, and those two exclusions make CI's set
   strictly smaller than the 1692 recorded above, so a green CI run is a weaker
   reading than that number. Every grade-3 result in this ledger was produced by
-  a person running a container by hand, and the date of the last such run is in
-  `docs/reference/distribution-validation.md`, not here.
+  a person starting a root session, since 2026-08-07 through
+  `scripts/test/release-readiness-root.sh`, which batches every root-only suite
+  into one prompt and rebuilds all six containers before each suite that uses
+  one. The date of the last such run, and its per-distribution readings, are in
+  `docs/reference/distribution-validation.md`, not here. That script was first
+  run on 2026-08-07: four of its six suites passed, and neither failure was a
+  product defect. Both are recorded in that document.
 - **The gate's assertion check proves an assertion is reached, never that it is
   worth reaching.** `validate_test_assertions.py` now runs over the whole tree
   (issue #130), so no test escapes it by living in a `src/` module. What it

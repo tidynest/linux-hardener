@@ -4,16 +4,14 @@
 
 This document tracks validation testing across supported Linux distributions.
 
-**Last measured full cross-distro validation:** 2026-08-01, on containers
+**Last measured full cross-distro validation:** 2026-08-07, on containers
 recreated immediately beforehand.
-**Container set that ran:** Arch rolling, Debian 13 "Trixie", Fedora 44, Rocky
-Linux 10 (RHEL 10 binary-compatible) and openSUSE Leap 16.0, all built by
-`scripts/containers/create-container.sh`.
-**Container set that exists:** those five plus Ubuntu 24.04 LTS "Noble", added
-on 2026-08-07. **No suite has been run inside the Ubuntu container**, so it
-appears in no results table in this document, and its absence from one is a
-missing measurement rather than a passing one. It joins the tables when a dated
-run puts it there.
+**Container set that ran:** Arch rolling, Debian 13 "Trixie", Ubuntu 24.04 LTS
+"Noble", Fedora 44, Rocky Linux 10 (RHEL 10 binary-compatible) and openSUSE
+Leap 16.0, all built by `scripts/containers/create-container.sh`.
+**Container set that exists:** those same six. Ubuntu was added on 2026-08-07
+and ran the same day, so the set that exists and the set that has run are now
+the same set.
 **Baseline validation:** hardener 0.3.3 (2026-02-23). The detailed per-distro
 sections lower down are that baseline and still describe the container versions
 of the time (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6).
@@ -24,7 +22,7 @@ of the time (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6).
 > version a container happens to carry is the version validated and not the
 > boundary of what is supported.
 
-> **What is historical here.** The 2026-08-01 summary immediately below is the
+> **What is historical here.** The 2026-08-07 summary immediately below is the
 > current reading. Everything under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28)
 > and every per-distro breakdown after it is a dated record kept for its failure
 > analysis and its per-plugin detail, not a statement about the containers as they
@@ -34,25 +32,34 @@ of the time (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6).
 
 ## Summary
 
-Measured 2026-08-01 with the containers recreated first:
+Measured 2026-08-07 by `scripts/test/release-readiness-root.sh`, which recreates
+all six containers before every suite that uses one:
 
 ```bash
-for d in arch debian fedora rhel opensuse; do
-    sudo ./scripts/containers/create-container.sh "$d" clean --no-confirm
-    sudo ./scripts/containers/create-container.sh "$d"
-done
-sudo ./scripts/test/run-cross-distro-tests.sh --apply --booted
+sudo ./scripts/test/release-readiness-root.sh
 ```
 
 | Distribution | Family | Version | Test Date | Declared | Recorded | Pass | Fail | Skip | Status |
 |--------------|--------|---------|-----------|----------|----------|------|------|------|--------|
-| Arch Linux | Arch | Rolling | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
-| Debian | Debian | 13 (Trixie) | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
-| Fedora | Red Hat | 44 | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
-| Rocky Linux | Red Hat | 10 | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
-| openSUSE | SUSE | Leap 16.0 | 2026-08-01 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| Arch Linux | Arch | Rolling | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| Debian | Debian | 13 (Trixie) | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| Ubuntu | Debian | 24.04 LTS (Noble) | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| Fedora | Red Hat | 44 | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| Rocky Linux | Red Hat | 10 | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| openSUSE | SUSE | Leap 16.0 | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
 
-> **All five distributions were identical on every column.** "Declared" is what
+The differential suite ran the same day on the same six: arch 86 of 86 with 10
+unaskable, and the other five 88 of 88 with 8 unaskable. Arch differs because two
+further rows are unaskable there, not because anything failed.
+
+Two suites in that run did not pass, and neither reading is about a distribution.
+The package suite failed one check on all six, which was a `pipefail` and `grep -q`
+SIGPIPE inversion in the harness rather than a product defect, fixed in `6a82a5b`
+and re-measured on arch at 28 passed, 0 failed, 2 skipped. The GUI suite failed on
+all six, for the stale Playwright suite on three and a container name-resolution
+gap on the other three; both are recorded on issue #48.
+
+> **All six distributions were identical on every column.** "Declared" is what
 > `suite_section_sizes` in `scripts/test/full-test-suite.sh` says a run of this
 > shape should record, and "Recorded" is what the run actually recorded;
 > `require_expected_total` refuses a run where the two differ, and reports the
@@ -67,7 +74,7 @@ sudo ./scripts/test/run-cross-distro-tests.sh --apply --booted
 > are never recorded as checks at all. The full breakdown is under
 > [Expected Container Skips](#expected-container-skips-9-per-distro).
 
-> **The audit plugin's apply fails in a container, by design, on all five.**
+> **The audit plugin's apply fails in a container, by design, on all six.**
 > There is no auditd to reload, so `augenrules --load` and `systemctl restart
 > auditd` both fail and the plugin reports the run unsuccessful having already
 > written `/etc/audit/rules.d/hardening.rules`. Section 12A applies that plugin
@@ -199,7 +206,7 @@ runner. One command runs the suite across every distribution in
 writing `test-results/summary.txt` (`test-results/differential-summary.txt`
 under `--differential`, so the two suites do not overwrite each other). On a
 booted container under `--apply` the suite records **149 checks** per
-distribution. The results below are the five distributions that had been run
+distribution. The results below are the six distributions that had been run
 when they were measured.
 
 ### Running the Tests
@@ -322,12 +329,12 @@ upon by the test runners.
 | Rocky Linux 10 | hardener-test-rhel | podman image export | as Fedora, but `iptables-nft` in place of `iptables` (Rocky 10 dropped the legacy package) |
 | openSUSE Leap 16.0 | hardener-test-opensuse | podman image export | openssh-server, openssh-clients, audit, bluez, firewalld, nftables, iptables, polkit, procps, iproute2, jq |
 
-**The Ubuntu container is built and has never been run.** It joined
-`DISTRO_ORDER` on 2026-08-07, so `create-container.sh` builds six images and
-every runner iterates six, but no suite result from inside it exists. The dated
-tables further up this file record five-container runs and are left as taken.
-What that leaves unproven for an Ubuntu host is stated in
-[what-is-not-proven.md](what-is-not-proven.md).
+**The Ubuntu container is built and has been run.** It joined `DISTRO_ORDER` on
+2026-08-07, so `create-container.sh` builds six images and every runner iterates
+six, and on the same day it ran the cross-distro suite under `--apply --booted`
+and the differential suite, both passing with counts matching the other five.
+The dated tables lower down this file that predate 2026-08-07 record
+five-container runs and are left as taken.
 
 All six containers additionally have:
 
