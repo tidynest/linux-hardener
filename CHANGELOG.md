@@ -913,6 +913,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--grep` is passed through to Playwright, so a session diagnosing the suite
   can run one spec within the ceiling rather than waiting out 113 tests.
 
+- **The Playwright Tauri mock was left behind by the exception-outcome type
+  change, and it read as stale selectors.** With the suite finally running,
+  six of nine Findings tests failed on an empty findings table. The cause was
+  not markup: the Analysis view was showing **"Scan failed: Failed to
+  deserialise scan result: Error: missing field `finding_exception`"**.
+  `finding_policy_exception: Option<..>` became `finding_exception:
+  ExceptionOutcome`, which is not optional, so serde rejected every finding in
+  `gui-tests/tauri-mock.js` and no scan populated anything. The mock now sends
+  `{ state: 'notconfigured' }`, the wire form measured rather than assumed. The
+  fixture is a hand-written mirror of the backend types and **no validator
+  reads it**, so a type change can leave it behind in silence and the damage
+  surfaces several layers away as a test suite that looks obsolete.
+
 - **An SSH policy exception could be reported as honoured by the same run that
   overwrote the value it documented.** Scan and the dry-run preview compared an
   exception against the value sshd actually obeys, resolved through the

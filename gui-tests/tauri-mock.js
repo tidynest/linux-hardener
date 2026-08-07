@@ -42,6 +42,17 @@
 
   // ---- Mock Data ----
 
+  // Field names match the Rust types exactly, and the frontend deserialises
+  // this with serde, so a missing field fails the whole scan rather than the
+  // one finding carrying it. `finding_exception` is an ExceptionOutcome, an
+  // enum internally tagged on "state" with lowercase variant names, so the
+  // "no exception configured" case is { state: 'notconfigured' } and not null.
+  //
+  // It replaced `finding_policy_exception: null`, and this file was not
+  // updated with it: every finding then failed to deserialise, the Analysis
+  // view showed "Scan failed: missing field `finding_exception`", and six
+  // tests reported an empty findings table. Read as stale selectors, it was a
+  // fixture a type change had left behind.
   const SCAN_RESULTS = [
     {
       scan_plugin_id: 'kernel-hardening',
@@ -62,7 +73,7 @@
             "Run 'sudo sysctl -p' to apply changes",
           ],
           finding_compliance: [],
-          finding_policy_exception: null,
+          finding_exception: { state: 'notconfigured' },
         },
         {
           finding_id: 'kernel-002',
@@ -76,7 +87,7 @@
           finding_impact: 'Exposed kernel pointers aid in kernel exploitation.',
           finding_remediation_steps: ['Set kernel.kptr_restrict = 2'],
           finding_compliance: [],
-          finding_policy_exception: null,
+          finding_exception: { state: 'notconfigured' },
         },
       ],
       scan_duration_us: 1250,
@@ -102,7 +113,7 @@
             'Restart SSH service: sudo systemctl restart sshd',
           ],
           finding_compliance: [],
-          finding_policy_exception: null,
+          finding_exception: { state: 'notconfigured' },
         },
       ],
       scan_duration_us: 890,
@@ -127,7 +138,7 @@
             'Configure default deny: sudo ufw default deny incoming',
           ],
           finding_compliance: [],
-          finding_policy_exception: null,
+          finding_exception: { state: 'notconfigured' },
         },
       ],
       scan_duration_us: 450,
@@ -152,7 +163,7 @@
             'Configure /etc/security/pwquality.conf',
           ],
           finding_compliance: [],
-          finding_policy_exception: null,
+          finding_exception: { state: 'notconfigured' },
         },
       ],
       scan_duration_us: 320,
@@ -177,7 +188,7 @@
             'Disable with: sudo systemctl disable --now <service>',
           ],
           finding_compliance: [],
-          finding_policy_exception: null,
+          finding_exception: { state: 'notconfigured' },
         },
         {
           finding_id: 'services-002',
@@ -193,7 +204,7 @@
             'Disable with: sudo systemctl disable --now bluetooth.service',
           ],
           finding_compliance: [],
-          finding_policy_exception: null,
+          finding_exception: { state: 'notconfigured' },
         },
       ],
       scan_duration_us: 580,
@@ -218,7 +229,7 @@
             'Audit all files in /etc for correct permissions',
           ],
           finding_compliance: [],
-          finding_policy_exception: null,
+          finding_exception: { state: 'notconfigured' },
         },
       ],
       scan_duration_us: 720,
