@@ -791,9 +791,9 @@ suite_package() {
 }
 
 # The Web UI suite: Playwright against the built WASM frontend with a Tauri IPC
-# mock, inside each container under Xvfb. The container installs its own
-# browser and Node at run time, so this one needs the network from inside the
-# container as well as outside.
+# mock, headless inside each container. The container installs its own browser
+# and Node at run time, so this one needs the network from inside the container
+# as well as outside.
 #
 # The Tauri desktop GUI suite (gui/run-tauri-gui-tests.sh) is NOT run here. It
 # wants a debug build of linux-hardener-desktop, which pre-flight does not

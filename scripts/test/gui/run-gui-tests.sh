@@ -4,7 +4,7 @@
 # =============================================================================
 # Runs Playwright GUI tests inside systemd-nspawn containers.
 # Serial by default; --parallel tests multiple distros simultaneously with
-# background processes (~5x faster when testing all 5 distros).
+# background processes (~6x faster when testing all six distros).
 #
 # Usage: sudo ./scripts/test/gui/run-gui-tests.sh [OPTIONS]
 #
@@ -62,12 +62,12 @@ Usage: sudo ./scripts/test/gui/run-gui-tests.sh [OPTIONS]
 
 Options:
   --distro NAME     Run only one distro (arch|debian|ubuntu|fedora|rhel|opensuse)
-  --parallel        Run distros in parallel instead of serially (~5x speedup)
+  --parallel        Run distros in parallel instead of serially (~6x speedup)
   --jobs N          Max parallel jobs (with --parallel; default: 5)
   --help            Show usage
 
 Runs Playwright tests against the WASM frontend served with a Tauri IPC mock
-inside systemd-nspawn containers with Xvfb virtual display.
+headless inside systemd-nspawn containers.
 
 Output:
   test-results/gui/<distro>-webui.log    Per-distro test output

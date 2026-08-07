@@ -870,6 +870,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Web UI suite installed nothing on three of six distributions, and the
+  run said so on only one of them.** The first cross-distribution run of the
+  suite recorded a single cause, name resolution, for all three; the logs
+  support it on one. Ubuntu could genuinely not resolve, its `/etc/resolv.conf`
+  being a symlink to a systemd-resolved stub nothing in the container starts,
+  which `systemd-nspawn --resolv-conf=auto` leaves alone where it would manage
+  a regular file; the apt bootstrap now leaves the regular file the four
+  working containers already have. Rocky reached EPEL over the network and then
+  installed nothing in silence, because every install ended `2>/dev/null ||
+  true`; installs now run through a helper that keeps the output and names the
+  failure, the same shape `enable_test_services` already uses next door.
+  openSUSE asked for `nodejs20`, `npm20` and `libicu73_2`, which Leap 16 does
+  not carry, and zypper abandons the entire transaction when one name does not
+  resolve, so Python and Chromium went uninstalled too; it now asks for the
+  `-default` metapackages and leaves Chromium's own library dependencies to the
+  resolver. **Xvfb is no longer installed or started at all**: the Playwright
+  config is `headless: true`, and Fedora's `headless_shell` binary, which cannot
+  talk to X, ran the suite regardless, so it was one more package to get right
+  on six distributions in exchange for nothing.
+
 - **An SSH policy exception could be reported as honoured by the same run that
   overwrote the value it documented.** Scan and the dry-run preview compared an
   exception against the value sshd actually obeys, resolved through the

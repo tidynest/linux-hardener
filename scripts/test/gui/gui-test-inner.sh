@@ -2,7 +2,13 @@
 # =============================================================================
 # GUI TEST INNER SCRIPT: Runs INSIDE systemd-nspawn container
 # =============================================================================
-# Installs deps, sets up Xvfb + HTTP server, runs Playwright tests.
+# Installs deps, serves the built frontend over HTTP, runs Playwright tests.
+#
+# No X server is started. playwright.config.js sets `headless: true`, and a
+# headless Chromium opens no display; Fedora's binary is `headless_shell`,
+# which cannot talk to X at all and ran the suite regardless. Installing Xvfb
+# was therefore one more package to get right on six distributions in exchange
+# for nothing, and it was one of the two missing on the three that failed.
 # Expects /project bind-mount with dist/ and gui-tests/ directories.
 #
 # Usage (called by run-gui-tests.sh):
@@ -13,7 +19,6 @@ set -uo pipefail
 
 PROJECT="/project"
 SERVE_DIR="/tmp/gui-serve"
-DISPLAY_NUM=":99"
 HTTP_PORT=8787
 GUI_TESTS="$PROJECT/gui-tests"
 
@@ -26,36 +31,63 @@ NC='\033[0m'
 # Detect distro and install packages
 # =============================================================================
 
+# Runs a package install, keeping its output and naming it when it fails.
+#
+# Every install here used to end `2>/dev/null || true`, which is how a run that
+# installed nothing reported nothing: on Rocky the EPEL step succeeded over the
+# network and the install after it failed in silence, so the first sign of
+# trouble was Chromium turning up missing three functions later, and the cause
+# was read as a network fault it demonstrably was not. `-q` hides a successful
+# install's output; only an unsuccessful one is worth printing.
+#
+# Returns non-zero rather than aborting: a distribution missing one package can
+# still be worth attempting, and the Chromium probe below fails closed anyway.
+run_install() {
+    local output status=0
+    output=$("$@" 2>&1) || status=$?
+    [[ $status -eq 0 ]] && return 0
+    echo -e "${RED}[deps] install failed (exit $status): $*${NC}"
+    echo "$output" | tail -20
+    return "$status"
+}
+
 install_deps() {
     if command -v pacman &>/dev/null; then
         echo -e "${CYAN}[deps] Arch: installing packages...${NC}"
-        pacman -Sy --noconfirm --needed \
-            python xorg-server-xvfb chromium nodejs npm 2>/dev/null || true
+        run_install pacman -Sy --noconfirm --needed \
+            python chromium nodejs npm
     elif command -v apt-get &>/dev/null; then
         echo -e "${CYAN}[deps] Debian: installing packages...${NC}"
-        apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            python3 xvfb chromium nodejs npm 2>/dev/null || true
+        export DEBIAN_FRONTEND=noninteractive
+        run_install apt-get update -qq
+        run_install apt-get install -y -qq \
+            python3 chromium nodejs npm
     elif command -v dnf &>/dev/null; then
-        # Rocky/RHEL needs EPEL + CRB for Chromium, Xvfb, nodejs
+        # Rocky/RHEL needs EPEL for Chromium, and CRB for what EPEL builds on.
         if grep -qi 'rocky\|rhel\|centos\|alma' /etc/os-release 2>/dev/null; then
-            echo -e "${CYAN}[deps] RHEL/Rocky: enabling EPEL + CRB + Node 20...${NC}"
-            dnf install -y -q epel-release 2>/dev/null || true
+            echo -e "${CYAN}[deps] RHEL/Rocky: enabling EPEL + CRB...${NC}"
+            run_install dnf install -y -q epel-release
             dnf config-manager --set-enabled crb 2>/dev/null || true
-            dnf module reset -y -q nodejs 2>/dev/null || true
-            dnf module enable -y -q nodejs:20 2>/dev/null || true
+            # `dnf module` was dropped with modularity in EL10, so the reset and
+            # enable that used to pin nodejs:20 here failed on every run and
+            # said nothing. EL10 carries nodejs and npm in AppStream directly.
         else
             echo -e "${CYAN}[deps] Fedora: installing packages...${NC}"
         fi
-        dnf install -y -q \
-            python3 xorg-x11-server-Xvfb chromium-headless nodejs npm 2>/dev/null || true
+        run_install dnf install -y -q \
+            python3 chromium-headless nodejs npm
     elif command -v zypper &>/dev/null; then
         echo -e "${CYAN}[deps] openSUSE: installing packages...${NC}"
         zypper --gpg-auto-import-keys refresh 2>/dev/null || true
-        zypper --non-interactive install -y \
-            python3 xorg-x11-server-Xvfb chromium \
-            nodejs20 npm20 nodejs-common \
-            libpango-1_0-0 libicu73_2 Mesa-libGL1 2>/dev/null || true
+        # Version-suffixed names, not the distribution's own. Leap 16 answered
+        # `nodejs20`, `npm20` and `libicu73_2` with "not found in package
+        # names", and zypper abandons the whole transaction when one name does
+        # not resolve, so python3 and Chromium were never installed either and
+        # the run read as a network fault. The -default metapackages track
+        # whatever the distribution's current Node is; the hand-listed
+        # libraries were Chromium's own dependencies, which zypper resolves.
+        run_install zypper --non-interactive install -y \
+            python3 chromium nodejs-default npm-default
     else
         echo -e "${RED}[deps] Unknown distro: skipping package install${NC}"
     fi
@@ -87,24 +119,6 @@ open(sys.argv[2], 'w').write(html)
 
     echo -e "${GREEN}[setup] Serve directory ready: $SERVE_DIR${NC}"
     ls -la "$SERVE_DIR/"
-}
-
-# =============================================================================
-# Start virtual display
-# =============================================================================
-
-start_xvfb() {
-    echo -e "${CYAN}[xvfb] Starting Xvfb on $DISPLAY_NUM...${NC}"
-    Xvfb "$DISPLAY_NUM" -screen 0 1280x720x24 -ac &
-    XVFB_PID=$!
-    export DISPLAY="$DISPLAY_NUM"
-    sleep 1
-
-    if ! kill -0 "$XVFB_PID" 2>/dev/null; then
-        echo -e "${RED}[xvfb] Failed to start Xvfb${NC}"
-        return 1
-    fi
-    echo -e "${GREEN}[xvfb] Xvfb running (PID $XVFB_PID)${NC}"
 }
 
 # =============================================================================
@@ -194,7 +208,6 @@ run_playwright() {
 cleanup() {
     echo -e "${CYAN}[cleanup] Stopping services...${NC}"
     [[ -n "${HTTP_PID:-}" ]] && kill "$HTTP_PID" 2>/dev/null || true
-    [[ -n "${XVFB_PID:-}" ]] && kill "$XVFB_PID" 2>/dev/null || true
     rm -rf "$SERVE_DIR"
 }
 trap cleanup EXIT
@@ -211,7 +224,6 @@ echo ""
 
 install_deps
 prepare_serve_dir
-start_xvfb
 start_http_server
 
 pw_exit=0

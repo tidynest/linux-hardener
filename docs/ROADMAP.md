@@ -215,7 +215,7 @@ DE testing under v0.4.0 §D, names its issue.
 | `scripts/containers/create-container.sh` | Create/manage test containers (arch/debian/fedora/rhel/opensuse) |
 | `scripts/test/root-test-suite.sh` | Comprehensive root test suite |
 | `scripts/test/gui/run-gui-tests.sh` | Web UI Playwright test orchestrator (5 distros) |
-| `scripts/test/gui/gui-test-inner.sh` | Container inner script (Xvfb + HTTP + Playwright; dynamically generates index.html from dist/) |
+| `scripts/test/gui/gui-test-inner.sh` | Container inner script (HTTP + headless Playwright; dynamically generates index.html from dist/) |
 | `scripts/test/gui/run-tauri-gui-tests.sh` | Tauri desktop test orchestrator |
 | `scripts/test/gui/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
 

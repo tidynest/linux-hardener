@@ -939,7 +939,7 @@ counts measured the same way and on the same date as the table above.
 
 ## GUI Tests (Playwright + Desktop)
 
-113 Playwright tests target the Web UI across every distro in `DISTRO_ORDER`. The 113 figure is the 2026-06-29 five-distro reading and is **stale**: the suite was re-run across all six on 2026-08-07 and failed on every one, for two separate reasons. On arch, debian and fedora the environment was healthy and the suite itself blew the 600 s ceiling against markup the redesign replaced, which is issue #48. On ubuntu, rhel and opensuse name resolution fails inside the container, so the Xvfb and Chromium install is a no-op and no test runs at all. Treat 113 as a count of tests written, not of tests passing. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
+113 Playwright tests target the Web UI across every distro in `DISTRO_ORDER`. The 113 figure is the 2026-06-29 five-distro reading and is **stale**: the suite was re-run across all six on 2026-08-07 and failed on every one, for two separate reasons. On arch, debian and fedora the environment was healthy and the suite itself blew the 600 s ceiling against markup the redesign replaced, which is issue #48. On ubuntu, rhel and opensuse the dependency install never happened, so no test ran at all, for three separate reasons rather than the one first recorded: ubuntu could not resolve names, its `/etc/resolv.conf` being a symlink to a systemd-resolved stub nothing in the container starts; rhel reached EPEL over the network and then installed nothing in silence, its failure swallowed by `2>/dev/null || true`; and opensuse asked for package names Leap 16 does not carry, which makes zypper abandon the whole transaction. Treat 113 as a count of tests written, not of tests passing. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
 
 ### Test Files
 
@@ -969,7 +969,7 @@ counts measured the same way and on the same date as the table above.
 | File | Purpose |
 |------|---------|
 | `scripts/test/gui/run-gui-tests.sh` | Host orchestrator for Web UI tests across all distros |
-| `scripts/test/gui/gui-test-inner.sh` | Container inner script (Xvfb + SPA server + Playwright); dynamically generates `index.html` at serve-time by stripping SRI `integrity` attributes and injecting `tauri-mock.js` into the built `dist/index.html` |
+| `scripts/test/gui/gui-test-inner.sh` | Container inner script (SPA server + headless Playwright, no X server); dynamically generates `index.html` at serve-time by stripping SRI `integrity` attributes and injecting `tauri-mock.js` into the built `dist/index.html` |
 | `scripts/test/gui/run-tauri-gui-tests.sh` | Host orchestrator for Tauri desktop tests |
 | `scripts/test/gui/tauri-gui-test-inner.sh` | Container inner script for Tauri desktop tests |
 

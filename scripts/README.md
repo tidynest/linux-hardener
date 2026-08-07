@@ -1608,26 +1608,27 @@ sudo ./scripts/test/run-cross-distro-tests.sh --gui
 
 **Script**: `gui-test-inner.sh`
 
-**Purpose**: Runs inside the nspawn container. Starts Xvfb virtual display, launches the SPA Python server on port 8787, installs npm dependencies, then executes Playwright tests.
+**Purpose**: Runs inside the nspawn container. Launches the SPA Python server on port 8787, installs npm dependencies, then executes Playwright tests.
 
 **What It Does**:
-1. Starts Xvfb on display `:99`
-2. Generates `index.html` dynamically from `dist/index.html` (SRI `integrity` attributes stripped, `tauri-mock.js` injected before the first `<script type="module">` tag) using a Python one-liner, then launches `spa-server.py` serving the modified file
-3. Auto-detects system Chromium path per distribution
-4. Runs `npx playwright test` with the detected browser
-5. Cleans up Xvfb and server on exit
+1. Generates `index.html` dynamically from `dist/index.html` (SRI `integrity` attributes stripped, `tauri-mock.js` injected before the first `<script type="module">` tag) using a Python one-liner, then launches `spa-server.py` serving the modified file
+2. Auto-detects system Chromium path per distribution
+3. Runs `npx playwright test` with the detected browser
+4. Cleans up the server on exit
+
+No X server is started. `playwright.config.js` sets `headless: true`, and Fedora's binary is `headless_shell`, which has no X support at all and runs the suite regardless.
 
 **Distro-Specific Setup**:
 | Distribution | Chromium Path | Extra Setup |
 |--------------|--------------|-------------|
 | Arch | `/usr/bin/chromium` | -- |
-| Debian | `/usr/bin/chromium` | -- |
+| Debian, Ubuntu | `/usr/bin/chromium` | -- |
 | Fedora | `/usr/lib64/chromium-browser/headless_shell` | `chromium-headless` package |
-| Rocky 10 | `/usr/bin/chromium-browser` | EPEL + CRB repos, Node.js 20 module |
-| openSUSE | `/usr/bin/chromium` | `--gpg-auto-import-keys`, specific lib names |
+| Rocky 10 | `/usr/bin/chromium-browser` | EPEL + CRB repos |
+| openSUSE | `/usr/bin/chromium` | `--gpg-auto-import-keys`, `nodejs-default`/`npm-default` |
 
 **Dependencies** (installed inside container):
-- Xvfb, Python 3, Node.js, npm, system Chromium
+- Python 3, Node.js, npm, system Chromium
 
 ---
 

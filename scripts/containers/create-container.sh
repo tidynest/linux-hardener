@@ -434,6 +434,21 @@ bootstrap_apt_family() {
         iproute2 \
         jq
 
+    # Ubuntu's systemd pulls systemd-resolved, whose install replaces
+    # /etc/resolv.conf with a symlink to a stub under /run that nothing in this
+    # container ever starts. systemd-nspawn's --resolv-conf=auto manages a
+    # regular file or a missing one and leaves a symlink alone, so the
+    # container was left unable to resolve any name: the Web UI suite reported
+    # "Temporary failure resolving archive.ubuntu.com" and installed nothing.
+    # Debian does not package systemd-resolved with systemd and was unaffected,
+    # which is why one apt-family container worked and the other did not.
+    #
+    # Replaced with a regular copy, the shape the four working containers
+    # already have, rather than merely deleted: nspawn then supplies the host's
+    # resolver at run time exactly as it does for them.
+    rm -f "$CONTAINER_PATH/etc/resolv.conf"
+    cp /etc/resolv.conf "$CONTAINER_PATH/etc/resolv.conf"
+
     # Allow sudo without password for testuser
     echo "testuser ALL=(ALL:ALL) NOPASSWD: ALL" > "$CONTAINER_PATH/etc/sudoers.d/testuser"
     chmod 440 "$CONTAINER_PATH/etc/sudoers.d/testuser"
