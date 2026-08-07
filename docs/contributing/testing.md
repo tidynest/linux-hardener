@@ -13,7 +13,7 @@ cargo test --workspace
 ```
 
 Runs every test across all 11 workspace members (the ten crates under `crates/`
-plus `src-tauri`). Measured 2026-08-07: 1711 passed, 0 failed, 47 ignored, over
+plus `src-tauri`). Measured 2026-08-07: 1700 passed, 0 failed, 47 ignored, over
 60 result lines. The
 ignored ones are mostly the root-only and live-sshd tests described further down,
 with a few that want a particular firewall backend installed; they are not
@@ -79,7 +79,7 @@ Some tests require root privileges and are marked `#[ignore]`. These test operat
 
 All root-level and destructive tests run inside `systemd-nspawn` containers, never on the host. Each script creates a minimal container under `/var/lib/machines/`.
 
-All five containers are created by one script, `create-container.sh`, which takes the distro as its first argument:
+All six containers are created by one script, `create-container.sh`, which takes the distro as its first argument:
 
 ```bash
 sudo ./scripts/containers/create-container.sh arch              # Create container
@@ -91,9 +91,17 @@ sudo ./scripts/containers/create-container.sh arch clean         # Remove contai
 |-----------------|----------------|
 | `arch` (primary) | `hardener-test` |
 | `debian` | `hardener-test-debian` |
+| `ubuntu` (Ubuntu 24.04 LTS "Noble", Debian family) | `hardener-test-ubuntu` |
 | `fedora` | `hardener-test-fedora` |
 | `rhel` (Rocky Linux, RHEL-compatible) | `hardener-test-rhel` |
 | `opensuse` | `hardener-test-opensuse` |
+
+**The Ubuntu container is the newest entry and no suite has been run inside it.**
+It takes the Debian family's code path and the same `debootstrap` bootstrap,
+with `universe` enabled because Ubuntu splits its archive where Debian does not.
+A container existing is not a container that has been run: until a dated result
+appears in [distribution-validation.md](../reference/distribution-validation.md),
+Ubuntu is family-routed rather than validated.
 
 Enabling `sshd`, `auditd` and `bluetooth` is a required step, not a best-effort
 one: if it fails the script reports what the service manager said and refuses to
@@ -129,7 +137,12 @@ sudo machinectl stop hardener-test                   # tear down
 ```
 
 The batch tests are read-only against the fixture (scan/report scan; apply and
-rollback run as dry-runs). Without `SSH_TEST_HOST` they skip.
+rollback run as dry-runs). **Without `SSH_TEST_HOST` they panic rather than
+skip**, with `SSH_TEST_HOST not set` naming the fixture script, so a run that
+reached no host cannot be mistaken for four passes. That is deliberate: every
+test in the file is `#[ignore]`d, so the only way to reach them is to ask for
+them, and asking for them without a fixture is a mis-run rather than a reason to
+pass quietly. The two SSH suites above behave the same way.
 
 ### Booted suite containers (`--booted`)
 
@@ -313,7 +326,7 @@ expected size of the section, so the two cannot come to disagree about what a
 booted host is.
 
 The fixture it rests on is `bluez`, which `scripts/containers/create-container.sh`
-installs and enables on all five images.
+installs and enables on all six images.
 
 Seven checks booted, in the same shape as 12A: the precondition, the apply having
 masked the unit, exactly one checkpoint carrying the apply's name, the rollback
@@ -466,7 +479,29 @@ than the system it makes them about:
 sudo ./scripts/test/verify-rollback.sh
 ```
 
-Runs 5 targeted tests that verify checkpoint creation, apply, and rollback produce the expected system state. Must be run inside a container.
+Runs 5 targeted tests that read back off the system what a rollback claims to
+have restored: the kernel plugin's persistent drop-in and, where the container
+permits the question, its runtime `sysctl` value; `sshd_config` content; a
+directory mode; `rollback --format json` producing a valid `RollbackResult`; and
+two applies leaving two checkpoints. It refuses to run outside a container, and
+it resolves its binary through the same target-directory helper the host-side
+runners use, so a machine with `CARGO_TARGET_DIR` or a `[build] target-dir` set
+needs `/project/target` bound as well as `/project` (see "Cargo target directory
+resolution" below); the script's own header prints the invocation.
+
+Three things about the kernel arm are worth knowing before reading a log from
+it. Its file assertions are unconditional, so an apply that wrote no
+`/etc/sysctl.d/99-hardener.conf` fails there rather than passing the later
+removal check by having nothing to remove. Its runtime probe is
+`net.ipv4.conf.all.log_martians`, seeded below the plugin's target before the
+apply and read back after the rollback, with the seed itself asserted. And
+`/proc/sys/net` is writable only in a container holding its own network
+namespace, so under `--pipe` that half records a counted, named `[SKIP]` rather
+than a pass, and the file assertions are the whole of the arm.
+
+`scripts/test/release-readiness-root.sh` is the only runner that calls this
+script, under `systemd-nspawn --pipe` against the arch container, and no dated
+run of it exists. Its first result is a baseline rather than a regression.
 
 ### Manual verification
 
@@ -1148,7 +1183,7 @@ The host-side test runners no longer assume binaries live under `./target`. Each
 resolves the real cargo target directory in this order:
 
 1. `$CARGO_TARGET_DIR`, if set.
-2. `cargo metadata --format-version 1 --no-deps` → `target_directory` (honours a
+2. `cargo metadata --format-version 1 --no-deps` -> `target_directory` (honours a
    `[build] target-dir` in `~/.cargo/config.toml`), when cargo is on `PATH`.
 3. `./target` (the default for a fresh clone); if the wanted binary is absent
    there but present under the invoking user's `~/.cache/cargo-target` (checked
@@ -1166,13 +1201,17 @@ sudo ./scripts/test/run-cross-distro-tests.sh              # Read-only, all dist
 sudo ./scripts/test/run-cross-distro-tests.sh --apply       # Destructive, all distros
 ```
 
-Iterates through all 5 container types (Arch, Debian, Fedora, Rocky, openSUSE), copies the musl binary into each, and runs the full test suite.
+Iterates through all 6 container types (Arch, Debian, Ubuntu, Fedora, Rocky,
+openSUSE), copies the musl binary into each, and runs the full test suite.
+Ubuntu is in the iteration order but no run against it is dated anywhere, so a
+result from it is a first reading rather than a comparison.
 
 ### Single distribution
 
 ```bash
 sudo ./scripts/test/run-cross-distro-tests.sh --distro arch
 sudo ./scripts/test/run-cross-distro-tests.sh --distro debian
+sudo ./scripts/test/run-cross-distro-tests.sh --distro ubuntu
 sudo ./scripts/test/run-cross-distro-tests.sh --distro fedora
 sudo ./scripts/test/run-cross-distro-tests.sh --distro rhel
 sudo ./scripts/test/run-cross-distro-tests.sh --distro opensuse

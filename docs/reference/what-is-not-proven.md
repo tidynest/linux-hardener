@@ -49,8 +49,8 @@ Usually, and here is the boundary of that word.
 cannot round-trip, and no test asserts that it can. If a path this tool touches
 on your host is not text, its restore is unproven.
 
-**Five of the eight plugins have had a rollback read back off a real system, and
-one of those five, the kernel, is weaker than it looks.**
+**Five of the eight plugins have a rollback reading written against a real
+system, and the kernel's is the one to read the small print on.**
 `scripts/test/verify-rollback.sh` re-reads kernel sysctl values, `sshd_config`
 content and directory modes after a rollback. Section 12A of
 `scripts/test/full-test-suite.sh` requires that the audit rules file the apply
@@ -62,20 +62,31 @@ firewall and mac plugins have no such reading**: their rollback is covered by
 in-crate tests over temporary directories and by nothing that re-examines a real
 host.
 
-**The kernel reading in that script is one assertion, not two.** What it can
-show is that the rollback removed `/etc/sysctl.d/99-hardener.conf`, the file the
-apply wrote, and even that is graded loosely: a run in which the apply creates
-no file records the absence as information rather than as a failure, so the
-removal can pass over a file that was never written. The runtime-value half
-cannot fail at all. `scripts/test/verify-rollback.sh` refuses to run anywhere
-but inside a container, and `scripts/test/differential-suite.sh` records,
-measured under both `--pipe` and `--boot`, that `/proc/sys` in such a container
-is the host's and read-only outside `/proc/sys/net`, naming
-`kernel.kptr_restrict` and `kernel.dmesg_restrict` as permanently unaskable.
-Those are exactly the two values the script reads before the apply and again
-after the rollback and then asserts equal: the apply cannot move them, so the
-assertion compares a constant with itself and proves nothing. **No reading
-anywhere confirms that a rollback restores a kernel runtime value.**
+**The kernel reading in that script can now fail, and its runtime half is asked
+only where a container permits the question.** Both halves used to be
+unfalsifiable. The file half recorded an apply that wrote no
+`/etc/sysctl.d/99-hardener.conf` as information rather than as a failure, so the
+removal assertion could pass over a file that was never written; it now fails
+that run at the apply, and separately requires the written file to name the
+parameter under test. The runtime half read `kernel.kptr_restrict` and
+`kernel.dmesg_restrict` before the apply and again after the rollback and
+asserted them equal, which no apply inside a container can move, so it compared
+a constant with itself. The probe is now `net.ipv4.conf.all.log_martians`,
+seeded below the plugin's target before the apply and read back after the
+rollback, with the seed itself asserted so that a seed which did not take fails
+rather than quietly restoring the old vacuity.
+
+**That stronger reading is still one this project has never taken.**
+`/proc/sys` inside an nspawn container is the host's and read-only outside
+`/proc/sys/net`, and even `/proc/sys/net` is writable only for a container
+holding its own network namespace. Where it is not, the arm records a named skip
+rather than a pass, and the file assertions are the whole of it. The one runner
+that calls this script invokes it under `systemd-nspawn --pipe`, which is
+exactly the case that skips, and that runner has never been started. The seven
+`kernel.` and `fs.` parameters
+`scripts/test/differential-suite.sh` declares permanently unaskable stay
+unaskable here for the same reason. **So no reading anywhere has yet confirmed
+that a rollback restores a kernel runtime value.**
 
 **None of those readings runs unless a person starts a container.**
 `scripts/test/verify-rollback.sh` is invoked by no CI job, and by exactly one
@@ -164,8 +175,12 @@ SELinux or AppArmor there. Section 15 then runs `apply --all`, which carries no
 container guard, and `crates/hardener-cli/src/commands/apply.rs` selects **every
 registered plugin** under `--all`, all eight of which are registered
 unconditionally in `crates/hardener-plugins/src/lib.rs`. So the two applies
-section 14 calls unsafe run anyway, one section later, and section 15's only
-check greps the aggregate output for a summary line. **If you run
+section 14 calls unsafe run anyway, one section later, and section 15 now says
+so rather than leaving it to be inferred: its check reads the apply's own JSON
+result document and fails a run in which any of the eight plugins left no
+result, which is what would catch `--all` quietly ceasing to select one. Reading
+the tool's account of itself is the whole of what it can do, and no check
+anywhere reads the host back after that apply. **If you run
 `hardener apply --all`, MAC hardening is included**, on a plugin whose live
 behaviour no reading has ever confirmed. `disabled_plugins = ["mac-hardening"]`
 in the configuration is how you decline it.
@@ -229,20 +244,21 @@ single runner image.
 
 ## Can I point it at a fleet over SSH and believe what comes back?
 
-This is the section to read hardest, because the evidence here is weaker than
-its own test output suggests.
+This is the section to read hardest, because almost nothing in it runs unless a
+person boots a container first.
 
-**`crates/hardener-cli/tests/batch_ssh_integration.rs` reports "4 passed" having
-asserted nothing.** It holds one happy-path test for each of the four fleet
-verbs, `batch scan`, `report`, `apply` and `rollback`, and each opens with an
-early return when `SSH_TEST_HOST` is unset. Run without a container booted, the
-command in that file's own header prints
-`test result: ok. 4 passed; 0 failed`. That is the only live evidence any of the
-four fleet verbs has, and **a green reading from it is indistinguishable from
-not running it**. The two SSH suites in `crates/hardener-core` and
-`crates/hardener-plugins` fail loudly in the same situation, which is the
-correct behaviour and is not shared here. If you rely on fleet apply, confirm a
-host was actually set before treating that output as evidence.
+**One happy path per fleet verb, and not one of them runs by default.**
+`crates/hardener-cli/tests/batch_ssh_integration.rs` holds a single test each
+for `batch scan`, `report`, `apply` and `rollback`, all four `#[ignore]`d behind
+a live `SSH_TEST_HOST`. That is the only live evidence any of the four fleet
+verbs has. A green reading from that file used to be indistinguishable from not
+running it, because each test opened with an early return when the variable was
+unset and the run then printed `test result: ok. 4 passed; 0 failed` having
+reached no host at all. It now aborts with `SSH_TEST_HOST not set` instead,
+matching the two SSH suites in `crates/hardener-core` and
+`crates/hardener-plugins`, so the output can be believed. What that fixed is
+whether you can read the result, not how much of the fleet path was exercised:
+four happy paths, against one container, started by hand.
 
 **Nothing that touches a wire runs by default or in CI.** Of the 40 tests the
 workspace suite skips, 25 need `SSH_TEST_HOST` and a booted fixture from
@@ -285,10 +301,9 @@ framework is a data defect no test can see.
 The JSON is handed to no deserialiser, the CSV to no CSV reader, the HTML to no
 parser, and the PDF row checks only that the output starts with `%PDF-` and
 exceeds 1000 bytes, so a structurally invalid document no viewer could open
-would pass. Of the sixteen output tests, four assert on a helper rather than on
-any rendered output, and one, `test_pdf_formatter_default` in
-`crates/hardener-compliance/src/output/pdf/tests.rs`, binds a formatter and
-asserts nothing at all.
+would pass. Of the fifteen output tests, ten assert on substrings of the
+rendered string, one asserts a prefix and a byte length on it, and four assert
+on a helper rather than on any rendered output.
 
 **The entry point every real consumer calls is entered by no test.**
 `ReportFormatter::format_all` is the multi-report path used by `hardener report`,
@@ -345,7 +360,7 @@ and the date of the last such run is in
 [distribution-validation.md](distribution-validation.md).
 
 **A green CI run is a weaker reading than the workspace suite**, because the two
-crate exclusions above make CI's set strictly smaller than the 1706 tests
+crate exclusions above make CI's set strictly smaller than the 1694 tests
 `cargo nextest run --workspace` passed on 2026-08-07.
 
 **The 40 tests the workspace suite skips, and what each needs:**
