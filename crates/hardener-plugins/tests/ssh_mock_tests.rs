@@ -2172,6 +2172,99 @@ async fn ssh_scan_accepts_a_drop_in_that_holds_the_secure_value() {
     );
 }
 
+/// A drop-in supplies the directive and the exception documents the drop-in's
+/// value. Scan, the preview and apply must reach the same conclusion about it.
+///
+/// They did not. Apply read the main file's global scope alone, where this
+/// layout has `PermitRootLogin no`, so an exception documenting the `yes` the
+/// host actually runs did not match and the apply hardened over it, while scan
+/// and the preview compared against the effective `yes` and reported the
+/// exception honoured. One run told an operator their documented deviation was
+/// respected and removed it. Issue #134.
+#[tokio::test]
+async fn an_exception_documenting_a_drop_ins_value_binds_scan_preview_and_apply() {
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "PermitRootLogin".to_string(),
+        PolicyException {
+            // The value the drop-in forces, which is the one sshd obeys, not
+            // the one sitting in the main file underneath it.
+            value: "yes".to_string(),
+            allowed: true,
+            reason: "Legacy jump host".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    // Clones share state, so the same host is put to all three questions, and
+    // the apply's writes are visible afterwards. The drop-in write commands are
+    // registered so the apply can complete the write this asserts it does not
+    // make: without them it would abort early and the assertion would hold for
+    // a reason that has nothing to do with the exception.
+    let executor = dropin_apply_commands(
+        MockExecutor::new()
+            .with_file("/etc/ssh/sshd_config", SHIPPED_LAYOUT)
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/99-legacy.conf",
+                "PermitRootLogin yes\n",
+            ),
+    );
+    let plugin = SshHardeningPlugin::new();
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+
+    let finding = plugin
+        .scan(&ctx, &config)
+        .await
+        .unwrap()
+        .scan_findings
+        .into_iter()
+        .find(|f| f.finding_id == "ssh-permitrootlogin")
+        .expect("the drop-in forces an insecure value, so this must be a finding");
+    assert_eq!(
+        finding.finding_current_value, "yes",
+        "scan reads the value in force"
+    );
+    assert!(
+        finding.is_policy_excepted(),
+        "the exception documents the value in force, so scan honours it: {:?}",
+        finding.finding_exception
+    );
+
+    let report = plugin.validate(&ctx, &config).await.unwrap();
+    assert!(
+        report
+            .validation_report_exceptions
+            .iter()
+            .any(|e| e.contains("PermitRootLogin")),
+        "the preview must honour the exception scan honoured, got: {:?}",
+        report.validation_report_exceptions
+    );
+
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+    let change = result
+        .apply_changes
+        .iter()
+        .find(|c| c.change_description.contains("PermitRootLogin"))
+        .expect("apply must account for PermitRootLogin one way or the other");
+    assert!(
+        change.is_skipped() && change.change_description.contains("Legacy jump host"),
+        "apply must honour the exception scan and the preview honoured, got: {change:?}"
+    );
+    assert!(
+        !dropin_written(&executor)
+            .unwrap_or_default()
+            .contains("PermitRootLogin"),
+        "an excepted directive must not be hardened through this tool's own fragment, \
+         which is how the main-file reading overwrote it: {:?}",
+        dropin_written(&executor)
+    );
+}
+
 /// The crypto directives are read from the same resolved configuration as
 /// every other directive, because sshd reads them from the same place.
 ///

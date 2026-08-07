@@ -388,6 +388,25 @@ fn resolved_target(directive: &SshConfigDirective, config: &PluginConfig) -> Str
     )
 }
 
+/// How a directive's current value is rendered when it is compared against a
+/// policy exception's documented value: what sshd obeys, from whichever file
+/// supplies it, or `not set` where nothing supplies it at all.
+///
+/// Scan, validate and apply all read it here for the same reason they all
+/// resolve their target through `resolved_target`: the three have to agree
+/// about which host an exception applies to, and the exception is honoured
+/// only when it documents the value the host actually has.
+///
+/// Apply used to read the main file's global scope alone. On the layout RHEL,
+/// Fedora and openSUSE ship, where a drop-in answers the keyword before
+/// anything this tool writes, that made it compare an exception against
+/// `not set` while scan and the preview compared it against the drop-in's
+/// value. The operator was told their exception was honoured, and the apply
+/// that message described went on to overwrite the value it documented.
+fn observed_value(effective: Option<&include::EffectiveValue>) -> String {
+    effective.map_or_else(|| "not set".to_string(), |e| e.value.clone())
+}
+
 /// True when this apply runs as root over a remote executor, i.e. the very
 /// session `PermitRootLogin no` would sever on restart (live-reproduced:
 /// a remote root apply locked itself out of the target host).
@@ -1310,7 +1329,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 // An exception is honoured only when it documents the value the
                 // host actually has, so a config cannot pass a control by
                 // describing a deviation that is not there.
-                let current_display = current_value.unwrap_or_else(|| "not set".to_string());
+                let current_display = observed_value(effective.as_ref());
                 let policy_exception =
                     config.exception_outcome(directive.ssh_directive_name, &current_display);
                 findings.push(Finding {
@@ -1379,7 +1398,7 @@ impl HardeningPlugin for SshHardeningPlugin {
             let current_value = effective.as_ref().map(|e| e.value.clone());
 
             if !crypto_value_is_secure(current_value.as_deref(), crypto.crypto_desired) {
-                let current_display = current_value.unwrap_or_else(|| "not set".to_string());
+                let current_display = observed_value(effective.as_ref());
                 let policy_exception =
                     config.exception_outcome(crypto.crypto_directive_name, &current_display);
                 findings.push(Finding {
@@ -1508,15 +1527,11 @@ impl HardeningPlugin for SshHardeningPlugin {
         for directive in SSH_DIRECTIVES {
             // The exception is honoured only when it documents the value the
             // host actually has, so a stale exception cannot stop hardening.
-            // An absent directive reads as "not set", matching scan's rendering
-            // and therefore what an operator writes in the config.
-            let observed = parse_config_value(
-                global_scope(&original_content),
-                directive.ssh_directive_name,
-                ConfigFormat::SpaceSeparated,
-                false,
-            )
-            .unwrap_or_else(|| "not set".to_string());
+            // Read from the resolved configuration, so this agrees with scan
+            // and with the preview about which host an exception applies to;
+            // see `observed_value` for what reading the main file alone cost.
+            let observed =
+                observed_value(resolved.effective(directive.ssh_directive_name).as_ref());
             if let Some(exception) =
                 config.matching_exception(directive.ssh_directive_name, &observed)
             {
@@ -1791,14 +1806,10 @@ impl HardeningPlugin for SshHardeningPlugin {
         for crypto in SSH_CRYPTO_DIRECTIVES {
             // As above: the crypto allow-list intersection deliberately has no
             // directive override, but the exception itself still only applies
-            // when it documents the value actually on the host.
-            let observed = parse_config_value(
-                global_scope(&original_content),
-                crypto.crypto_directive_name,
-                ConfigFormat::SpaceSeparated,
-                false,
-            )
-            .unwrap_or_else(|| "not set".to_string());
+            // when it documents the value actually on the host, read the way
+            // scan and the preview read it.
+            let observed =
+                observed_value(resolved.effective(crypto.crypto_directive_name).as_ref());
             if let Some(exception) =
                 config.matching_exception(crypto.crypto_directive_name, &observed)
             {
@@ -2300,11 +2311,11 @@ impl HardeningPlugin for SshHardeningPlugin {
                         .is_some_and(|e| e.source != resolved_path);
 
                     // The exception is honoured only when it documents the
-                    // value the host actually has, matching apply's rendering
-                    // of an absent directive as "not set".
-                    let observed = current_value
-                        .clone()
-                        .unwrap_or_else(|| "not set".to_string());
+                    // value the host actually has. Scan, this preview and
+                    // apply all read that value through `observed_value`, so a
+                    // preview cannot report an exception honoured for a host
+                    // whose apply would overwrite it.
+                    let observed = observed_value(effective.as_ref());
                     if let Some(exception) =
                         config.matching_exception(directive.ssh_directive_name, &observed)
                     {
@@ -2356,9 +2367,7 @@ impl HardeningPlugin for SshHardeningPlugin {
                 for crypto in SSH_CRYPTO_DIRECTIVES {
                     let effective = resolved.effective(crypto.crypto_directive_name);
                     let current_value = effective.as_ref().map(|e| e.value.clone());
-                    let observed = current_value
-                        .clone()
-                        .unwrap_or_else(|| "not set".to_string());
+                    let observed = observed_value(effective.as_ref());
                     if let Some(exception) =
                         config.matching_exception(crypto.crypto_directive_name, &observed)
                     {

@@ -870,6 +870,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An SSH policy exception could be reported as honoured by the same run that
+  overwrote the value it documented.** Scan and the dry-run preview compared an
+  exception against the value sshd actually obeys, resolved through the
+  `Include`; apply compared it against the main file's global scope alone. On
+  the layout RHEL, Fedora and openSUSE ship, where a drop-in answers the
+  keyword above everything this tool writes, the two readings disagree: scan
+  saw the drop-in's value, matched the operator's exception and annotated the
+  finding, `report --framework cis` passed the control, and apply saw
+  "not set", declined to honour the exception, and hardened over the deviation
+  by writing its own fragment. The three now read one function, so an exception
+  binds all of them or none. Two comments claiming the readings already matched,
+  one on each side, were false in mirror image and are replaced. Found while
+  reviewing the exception-outcome work, which turned a silent disagreement into
+  two contradictory sentences an operator reads in one sitting.
+
 - **The tag bytes a recorded content absence contributes to a checkpoint's
   signature were never pinned, only required to differ.** `ContentAbsence`
   hashes `b"d"` for `ByDesign` and `b"f"` for `ReadFailed` into the signed
