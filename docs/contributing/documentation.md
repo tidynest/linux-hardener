@@ -412,8 +412,8 @@ happily on either. A comment beside it can, and it travels with the exemption.
 python3 scripts/validate/validate_evidence_ledger.py
 ```
 
-Checks that every path `docs/reference/evidence-ledger.md` cites in its Evidence
-column still exists.
+Checks that every path `docs/reference/evidence-ledger.md` cites still exists,
+and that the ledger's own table is what the citations are counted against.
 
 A ledger row states a claim and names the file that backs it. Rename or delete
 that file and the row goes on asserting coverage that is gone, which makes the
@@ -422,11 +422,27 @@ the paths are prose to every other tool in the tree.
 
 It reads the whole file rather than one table, matching backticked paths that
 begin `crates/`, `scripts/`, `src-tauri/` or `gui-tests/`, which is the citation
-form the ledger's own "Adding a row" section requires. A ledger yielding no
-matches at all is failed rather than passed, since that is how a rewritten table
-would slip through as a vacuous success. What it cannot check is whether the
-named test exercises the claim beside it; that judgement is made at review time,
-and this catches only the mechanical half.
+form the ledger's own "Adding a row" section requires. The Evidence column is
+therefore not the only column checked: a citation in a Command or a Ceiling cell,
+or in the prose around the tables, is held to exactly the same rule, so no path
+in the document is exempt because of where it sits.
+
+Existence on its own would not be worth much, because any non-empty result passes
+it. Measured on a modified copy: stripping the backticks out of the Evidence
+column left eleven references and exit 0, and deleting every table row while
+keeping the prose left seven and exit 0, a ledger promising nothing reporting
+green. So the references are cross-checked against the ledger's structure. Every
+row of a capability table, meaning every row under a
+`| Claim | Evidence | Command | Ceiling |` header, must cite at least one path in
+its Evidence cell, and a run with no such row at all is failed rather than passed
+on whatever the prose still carries. Both of those gutting edits now die by name,
+as does emptying one row's Evidence cell while its claim stays.
+
+The floor is derived from the document rather than written into the validator, so
+adding a row raises it with no edit here, and amending a citation as Phase 3 will
+have to leaves it alone. What it cannot check is whether the named test exercises
+the claim beside it; that judgement is made at review time, and this catches only
+the mechanical half.
 
 ### Persisted finding fields
 
