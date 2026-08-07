@@ -425,7 +425,7 @@ Those are the limits that are **known**. The limits of what has been
 someone deciding whether to run this on a host that matters:
 [what this release does not prove](docs/reference/what-is-not-proven.md). It
 names, among other things, the two plugins whose applies no independent oracle
-has ever read back, and the one of them that `apply --all` includes anyway.
+has ever read back, and that `apply --all` includes both of them anyway.
 
 ---
 

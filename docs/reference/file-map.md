@@ -857,6 +857,9 @@ purpose-named directories.
 | `docs/reference/file-map.md` | This file |
 | `docs/reference/data-flow.md` | Data flow diagrams |
 | `docs/reference/distribution-validation.md` | Multi-distro validation results |
+| `docs/reference/evidence-ledger.md` | Per-capability evidence: what each claim's tests actually ask, the command that reproduces the reading, and the ceiling on what it can show |
+| `docs/reference/coverage-baseline.md` | Measured line coverage per crate and per file, what no test reaches at all, and the limitations of the measurement itself |
+| `docs/reference/what-is-not-proven.md` | The release's stated limits, written for an operator: where this tool may well be correct and nothing has ever checked |
 
 ### Architecture (`docs/architecture/`)
 

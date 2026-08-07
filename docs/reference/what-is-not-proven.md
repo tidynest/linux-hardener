@@ -49,7 +49,8 @@ Usually, and here is the boundary of that word.
 cannot round-trip, and no test asserts that it can. If a path this tool touches
 on your host is not text, its restore is unproven.
 
-**Five of the eight plugins have had a rollback read back off a real system.**
+**Five of the eight plugins have had a rollback read back off a real system, and
+one of those five, the kernel, is weaker than it looks.**
 `scripts/test/verify-rollback.sh` re-reads kernel sysctl values, `sshd_config`
 content and directory modes after a rollback. Section 12A of
 `scripts/test/full-test-suite.sh` requires that the audit rules file the apply
@@ -60,6 +61,21 @@ puts an ssh rollback and reload cycle back through `sshd -T`. **The pam,
 firewall and mac plugins have no such reading**: their rollback is covered by
 in-crate tests over temporary directories and by nothing that re-examines a real
 host.
+
+**The kernel reading in that script is one assertion, not two.** What it can
+show is that the rollback removed `/etc/sysctl.d/99-hardener.conf`, the file the
+apply wrote, and even that is graded loosely: a run in which the apply creates
+no file records the absence as information rather than as a failure, so the
+removal can pass over a file that was never written. The runtime-value half
+cannot fail at all. `scripts/test/verify-rollback.sh` refuses to run anywhere
+but inside a container, and `scripts/test/differential-suite.sh` records,
+measured under both `--pipe` and `--boot`, that `/proc/sys` in such a container
+is the host's and read-only outside `/proc/sys/net`, naming
+`kernel.kptr_restrict` and `kernel.dmesg_restrict` as permanently unaskable.
+Those are exactly the two values the script reads before the apply and again
+after the rollback and then asserts equal: the apply cannot move them, so the
+assertion compares a constant with itself and proves nothing. **No reading
+anywhere confirms that a rollback restores a kernel runtime value.**
 
 **None of those readings runs unless a person starts a container.**
 `scripts/test/verify-rollback.sh` is invoked by no runner and by no CI job, and
@@ -97,10 +113,10 @@ container, as root, by hand.
 
 | Plugin | Is there an oracle that reads the system back? |
 |---|---|
-| `ssh-hardening` | Yes. `sshd -T` answers for it, which this project's parser cannot satisfy by agreeing with this project's writer. The best-evidenced plugin in the tree. |
+| `ssh-hardening` | Yes. `sshd -T` answers for it, which this project's parser cannot satisfy by agreeing with this project's writer. The best-evidenced plugin in the tree, with one thing about it that no test pins: the crypto allow-lists are intersected with `ssh -Q` at runtime, so which ciphers, key exchanges and MACs your host ends up offering follows its own OpenSSH build and is fixed by nothing here. |
 | `permissions-hardening` | Yes, for modes. `stat` is asked about nine paths. Ownership and ACLs are read back by nothing. |
 | `firewall-hardening` | Yes, for nftables only. Three rows against `nft list ruleset` in the fixture container from `scripts/containers/nftables-fixture.sh`. The firewalld and ufw backends have mock evidence only. |
-| `pam-hardening` | Partly. `chage` and `passwd -S` answer for password ageing, and libpwquality's own `pwscore` answers for password strength. **No probe password ever reaches the live PAM stack**, so the path from a real authentication attempt through PAM to a refusal is tested nowhere. |
+| `pam-hardening` | Partly. `chage` and `passwd -S` answer for password ageing, and libpwquality's own `pwscore` answers for password strength. **No probe password ever reaches the live PAM stack**, so the path from a real authentication attempt through PAM to a refusal is tested nowhere. The apply is also narrower than the name suggests: it writes `/etc/security/*.conf` and `/etc/login.defs`, and it refuses by design to edit `/etc/pam.d/*`, because a malformed edit to the authentication stack can lock every user out. Where a directive is set inline in that stack it overrides the file the apply may write, so the plugin reports the manual edit you must make and marks the run unsuccessful rather than making it for you. |
 | `kernel-hardening` | Only in a booted container holding its own network namespace, and only for 11 of the 18 parameters the plugin manages. |
 | `service-minimisation` | Only in a booted container, because `systemctl` needs systemd as PID 1. |
 | `audit-hardening` | **No.** See below. |
@@ -183,7 +199,10 @@ because it is listed as supported and no container has ever run it: it routes as
 Debian family, and what protects an Ubuntu host is the assumption that its
 configuration layout matches Debian 13's. Linux Mint, Pop!\_OS, elementary, RHEL
 proper, CentOS, AlmaLinux, Oracle Linux, Manjaro, EndeavourOS, Garuda, openSUSE
-Tumbleweed and SLES are accepted on the same terms.
+Tumbleweed and SLES are accepted on the same terms, and so is whichever of
+`opensuse` and `opensuse-leap` the Leap container does not present, both being
+in the allowlist. That is fourteen identifiers no container has ever run,
+against the five that one has.
 
 **No hardware variation is covered and no kernel variation is covered.** Every
 container is `systemd-nspawn`, which shares the host's kernel, so five
