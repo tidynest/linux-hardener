@@ -62,9 +62,19 @@ tree with its justification attached.
 Usage:
     ./scripts/validate/validate_test_assertions.py [--all]
 
-    Default scope is the integration suites under `crates/*/tests/` and
-    `src-tauri/tests/`. `--all` adds the unit-test files split out under
-    `src/`, which is slower and noisier.
+    `--all` is the whole tree, and it is what the gate runs. It adds the
+    unit-test files split out under `src/` to the integration suites under
+    `crates/*/tests/` and `src-tauri/tests/`.
+
+    Without it the scope is those integration suites alone. That was the
+    default the gate used until issue #130, and it meant the check read 646
+    tests, reported "all 646 assert unconditionally", and never opened the
+    inline `#[cfg(test)]` modules under `src/` where most of this workspace's
+    tests live. Run that way it found 0 offenders; run over the tree it found
+    45, and a test that asserted nothing whatsoever had already been sitting in
+    the unread half. A check that reports a clean tree it cannot see is the
+    failure this file was written about, so the narrow scope is kept only as a
+    faster local pass and never as the gate.
 
 Exit codes:
     0: every test function asserts something unconditionally
@@ -93,7 +103,17 @@ FN_START = re.compile(r"^\s*(pub )?(async )?fn\s+(\w+)")
 # statement is `plugin.scan(..).await.expect("scan")` does assert something,
 # namely that the call succeeded, and calling that "no assertion" would push
 # people to write a weaker test to satisfy this script.
-ASSERTION = re.compile(r"\b(assert|assert_eq|assert_ne|debug_assert|panic|unreachable)!|\.expect\(|\.unwrap\(")
+#
+# `expect_err` and `unwrap_err` are the same family pointed the other way: they
+# fail the test when the call *succeeded*. Leaving them out said that a test
+# proving a refusal asserts nothing, which is backwards. The whole point of
+# `probe_rejects_an_unrecognised_marker` is that the parse must not succeed, and
+# the tree's refusal tests are exactly the ones guarding the sentinel-conflation
+# bugs this project has been paying for.
+ASSERTION = re.compile(
+    r"\b(assert|assert_eq|assert_ne|debug_assert|panic|unreachable)!"
+    r"|\.(expect|unwrap)(_err)?\("
+)
 
 EXEMPTION = re.compile(r"//\s*assertions-in-helper:\s*(\S.*)")
 
@@ -107,6 +127,41 @@ BLOCK_OPENER = re.compile(r"^\s*(\}\s*)?(if|for|while|match|else)\b")
 # test that says exactly what it covers. Only a loop over something computed can
 # quietly run zero times.
 LITERAL_LOOP = re.compile(r"^\s*for\b.*\bin\s*&?(\[|vec!\[)")
+
+# The same table one line further away. A case list long enough to be worth
+# writing is too long to sit in the `for` header, so it is bound first and
+# looped over by name, and the count is just as countable by the reader for
+# being on the line above. `for (family, name, version, expected) in cases`
+# reads zero times only if `cases` does, and `cases` is right there.
+#
+# The binding must not be `mut`: a `let mut` can be drained or filtered between
+# its literal and the loop, and then the count at the site is not the count that
+# runs. A subject that is a path rather than a bare name (`ComplianceFramework::
+# ALL`, `CRITICAL_PERMISSIONS`) does not match either, deliberately. Those tables
+# live in another file, this script cannot see whether they are empty, and an
+# emptied table is precisely the silent vacuity it exists to catch.
+NAMED_LOOP = re.compile(r"^\s*for\b.*\bin\s+&?([A-Za-z_]\w*)\s*\{")
+EMPTY_LITERAL = re.compile(r"=\s*&?(\[\s*\]|vec!\[\s*\])")
+
+# The openers `blank_literals` needs. A character literal is matched whole, so
+# that the `'` of a lifetime is never read as an opening quote.
+RAW_OPEN = re.compile(r'r(#*)"')
+CHAR_LITERAL = re.compile(r"'(\\.|[^'\\])'")
+
+
+def loop_runs_a_countable_number_of_times(body: list[str], index: int, stripped: str) -> bool:
+    """Whether this `for`'s subject is written out where the reader can count it."""
+    if LITERAL_LOOP.match(stripped):
+        return True
+
+    named = NAMED_LOOP.match(stripped)
+    if not named:
+        return False
+
+    binding = re.compile(rf"^\s*(let|const)\s+{re.escape(named.group(1))}\b[^=]*=\s*&?(\[|vec!\[)")
+    return any(
+        binding.match(line) and not EMPTY_LITERAL.search(line) for line in body[:index]
+    )
 
 
 def find_project_root() -> Path:
@@ -133,16 +188,126 @@ def strip_strings(line: str) -> str:
     return re.sub(r'"(\\.|[^"\\])*"', '""', line)
 
 
+def blank_literals(lines: list[str]) -> list[str]:
+    """The file with every brace that is not code neutralised, line count intact.
+
+    A line at a time is not enough, and the shortfall was not cosmetic. Blanking
+    each line on its own left 37 test functions in this tree unread, because a
+    brace that is not code still moved the walk's idea of where a test body
+    ends, and a body that ends in the wrong place takes every test after it out
+    of scope. A validator that silently stops reading is the failure it exists
+    to catch, so the three sources are handled here rather than worked around at
+    the call sites:
+
+    - A string literal that spans lines. `firewall_mock_tests.rs` holds whole
+      nftables rulesets in one, `table inet linux_hardener {` and all, and a
+      per-line regex can never pair those quotes. 34 tests in that one file.
+    - A character literal. `json_from(&out.stdout, '{')` opened a block that
+      nothing closed and swallowed the three tests that followed it.
+    - A brace inside a comment. Only the braces are blanked there, not the text,
+      because the `assertions-in-helper` marker is read off these same lines.
+
+    Lifetimes are the trap in the character case: `&'a str` and `<'a>` must not
+    read as an opening quote, so a character literal is recognised only in full,
+    as a quote-delimited single character or escape.
+    """
+    blanked: list[str] = []
+    normal = False
+    raw_hashes: int | None = None
+
+    for line in lines:
+        rendered: list[str] = []
+        index = 0
+        while index < len(line):
+            if raw_hashes is not None:
+                closer = '"' + "#" * raw_hashes
+                if line.startswith(closer, index):
+                    raw_hashes = None
+                    rendered.append('""')
+                    index += len(closer)
+                else:
+                    index += 1
+                continue
+
+            if normal:
+                if line[index] == "\\":
+                    index += 2
+                    continue
+                if line[index] == '"':
+                    normal = False
+                    rendered.append('""')
+                index += 1
+                continue
+
+            if line.startswith("//", index):
+                rendered.append(line[index:].replace("{", " ").replace("}", " "))
+                break
+
+            raw = RAW_OPEN.match(line, index)
+            if raw and (index == 0 or not (line[index - 1].isalnum() or line[index - 1] == "_")):
+                raw_hashes = raw.group(1).count("#")
+                index = raw.end()
+                continue
+
+            if line[index] == '"':
+                normal = True
+                index += 1
+                continue
+
+            character = CHAR_LITERAL.match(line, index)
+            if character:
+                rendered.append("''")
+                index = character.end()
+                continue
+
+            rendered.append(line[index])
+            index += 1
+
+        blanked.append("".join(rendered))
+
+    return blanked
+
+
 def block_extent(body: list[str], start: int) -> int:
-    """Index of the line closing the block opened at or after `start`."""
-    depth = 0
-    entered = False
-    for index in range(start, len(body)):
+    """Index of the line holding the brace that closes the block opened at `start`.
+
+    Two things make this more than a running brace count, and both were found
+    by this script reporting `if cond { assert } else { panic }` as a test that
+    asserts nothing.
+
+    The first is that `} else {` nets to zero. Counted a line at a time, the
+    closing brace of one branch and the opening brace of the next cancel, the
+    depth never falls back, and the scan runs on to the end of the whole chain.
+    The caller then sees no `else` where one is written and reads a total
+    if/else as an `if` with no `else`, which is the one shape it is supposed to
+    accept. So the close is recognised by a line that *begins* with `}` while
+    exactly one block is open, which is the closing brace whatever follows it on
+    that line.
+
+    The second is that an opener carries braces of its own. `if let
+    Command::Scan { plugin, .. } = cli.command {` closes a struct pattern before
+    it opens a block, so the depth returns to zero mid-header and a scan that
+    stopped there would call the pattern the block. The header is therefore
+    measured whole, and the search for the close starts on the line after it. A
+    leading `}` is dropped from that measurement for the same reason, so a
+    `} else {` passed in as its own opener measures its own branch rather than
+    starting one short.
+    """
+    header = strip_strings(body[start]).strip()
+    if header.startswith("}"):
+        header = header[1:]
+    depth = header.count("{") - header.count("}")
+
+    # A block that opens and closes inside its own header holds nothing worth
+    # walking into, and has no separate closing line to find.
+    if depth <= 0 and "{" in header:
+        return start
+
+    for index in range(start + 1, len(body)):
         text = strip_strings(body[index])
-        depth += text.count("{") - text.count("}")
-        entered = entered or depth > 0
-        if entered and depth <= 0:
+        if depth == 1 and text.strip().startswith("}"):
             return index
+        depth += text.count("{") - text.count("}")
     return len(body) - 1
 
 
@@ -207,7 +372,11 @@ def asserts_on_every_path(body: list[str]) -> bool:
         ):
             return True
 
-        if keyword == "for" and LITERAL_LOOP.match(stripped) and asserts_on_every_path(inner):
+        if (
+            keyword == "for"
+            and loop_runs_a_countable_number_of_times(body, index, stripped)
+            and asserts_on_every_path(inner)
+        ):
             return True
 
         if keyword in ("if", "else"):
@@ -237,7 +406,7 @@ def asserts_on_every_path(body: list[str]) -> bool:
 
 def check_file(path: Path) -> tuple[list[tuple[int, str]], int]:
     """Returns the offending (line, name) pairs and how many tests were read."""
-    lines = path.read_text(encoding="utf-8").split("\n")
+    lines = blank_literals(path.read_text(encoding="utf-8").split("\n"))
     offenders: list[tuple[int, str]] = []
     total = 0
 

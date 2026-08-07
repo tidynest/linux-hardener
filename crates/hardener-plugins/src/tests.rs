@@ -56,7 +56,15 @@ fn test_macro_generates_plugin() {
 #[test]
 fn every_registered_plugin_declares_its_coverage() {
     let registry = crate::create_plugin_registry();
-    for metadata in registry.list().unwrap() {
+    let registered = registry.list().expect("the registry lists its plugins");
+    // A registry that listed nothing would satisfy "every registered plugin
+    // declares its coverage" by having none, which is the reassuring answer a
+    // check that cannot reach the question always gives.
+    assert!(
+        !registered.is_empty(),
+        "the registry listed no plugins, so the loop below proves nothing"
+    );
+    for metadata in registered {
         assert!(
             crate::coverage_for(metadata.plugin_id.as_str()).is_some(),
             "plugin '{}' is registered but absent from coverage_table",
@@ -85,7 +93,14 @@ fn every_registered_plugin_routes_to_its_own_config_section() {
     // is precisely the fell-through state and nothing else.
     let fallback = config.get_plugin_config("no-plugin-answers-to-this-id");
 
-    for metadata in crate::create_plugin_registry().list().unwrap() {
+    let registered = crate::create_plugin_registry()
+        .list()
+        .expect("the registry lists its plugins");
+    assert!(
+        !registered.is_empty(),
+        "the registry listed no plugins, so the loop below proves nothing"
+    );
+    for metadata in registered {
         let id = metadata.plugin_id.as_str();
         assert!(
             !std::ptr::eq(config.get_plugin_config(id), fallback),

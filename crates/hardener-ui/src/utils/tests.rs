@@ -1174,6 +1174,10 @@ fn effective_cron_empty_when_neither_resolves() {
 
 #[test]
 fn preset_round_trips() {
+    assert!(
+        !SCHEDULE_PRESETS.is_empty(),
+        "an emptied preset table would leave the round trip below proving nothing"
+    );
     for (label, _) in SCHEDULE_PRESETS {
         assert_eq!(
             preset_label_for_cron(preset_cron(label).unwrap()),

@@ -80,7 +80,11 @@ def main():
         ("Unit State Reads", "validate_unit_state_reads.py", []),
         ("Doc Sync Targets", "validate_doc_targets.py", []),
         ("Badges", "validate_badges.py", []),
-        ("Test Assertions", "validate_test_assertions.py", []),
+        # `--all` is the whole tree. Without it the check globbed the
+        # integration suites alone and exempted every inline `#[cfg(test)]`
+        # module under `src/`, which is where most of this workspace's tests
+        # live: it read 646 of them and reported a clean tree (issue #130).
+        ("Test Assertions", "validate_test_assertions.py", ["--all"]),
         ("Policy Exception Sites", "validate_policy_exception_sites.py", []),
         ("Documented Exception Keys", "validate_documented_exception_keys.py", []),
         ("Evidence Ledger", "validate_evidence_ledger.py", []),

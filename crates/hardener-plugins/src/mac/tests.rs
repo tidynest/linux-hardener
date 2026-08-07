@@ -345,6 +345,10 @@ fn selinux_enforcing_has_privacy_and_iso_mappings() {
 /// criterion CC6.8, filed under its Trust Services Criteria series.
 #[test]
 fn mac_findings_map_soc2_unauthorised_software() {
+    assert!(
+        !MAC_FINDING_TYPES.is_empty(),
+        "an emptied finding-type table would leave the loop below proving nothing"
+    );
     for finding_type in MAC_FINDING_TYPES {
         let soc2 = get_mac_compliance_mappings(finding_type)
             .into_iter()
@@ -362,6 +366,10 @@ fn mac_findings_map_soc2_unauthorised_software() {
 /// AC-3 entry to requirement 3.1.2 under the Access Control family.
 #[test]
 fn mac_findings_map_nist_800_171_access_enforcement() {
+    assert!(
+        !MAC_FINDING_TYPES.is_empty(),
+        "an emptied finding-type table would leave the loop below proving nothing"
+    );
     for finding_type in MAC_FINDING_TYPES {
         let mapping = get_mac_compliance_mappings(finding_type)
             .into_iter()
@@ -380,6 +388,10 @@ fn mac_findings_map_nist_800_171_access_enforcement() {
 /// verbatim under the Access Control family.
 #[test]
 fn mac_findings_map_fedramp_access_enforcement() {
+    assert!(
+        !MAC_FINDING_TYPES.is_empty(),
+        "an emptied finding-type table would leave the loop below proving nothing"
+    );
     for finding_type in MAC_FINDING_TYPES {
         let mapping = get_mac_compliance_mappings(finding_type)
             .into_iter()

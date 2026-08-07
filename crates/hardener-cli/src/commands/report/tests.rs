@@ -195,6 +195,16 @@ fn every_canonical_framework_id_parses() {
     // Guards the shared enum ids against drift: the UI builds its picker
     // and auto-report requests from ComplianceFramework::ALL, so every
     // canonical id must stay accepted by the CLI parser.
+    // The canonical list is the single source the pickers, the CLI parser and
+    // this layer all build from, so a framework added to or removed from it
+    // must be re-checked here rather than silently skipping this layer. The
+    // count is pinned to say so: the loop below covers whatever ALL holds,
+    // and an ALL that changed size is exactly the case nobody looked at.
+    assert_eq!(
+        ComplianceFramework::ALL.len(),
+        10,
+        "the canonical framework list changed size; confirm every id still parses here"
+    );
     for framework in ComplianceFramework::ALL {
         assert_eq!(
             parse_framework(framework.id()).unwrap(),

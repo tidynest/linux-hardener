@@ -251,6 +251,10 @@ fn every_plugin_stig_or_cis_mapping_translates_or_is_a_documented_drop() {
 
 #[test]
 fn stig_rows_are_well_formed() {
+    assert!(
+        !RHEL10_STIG.is_empty(),
+        "an emptied table would leave the loop below proving nothing"
+    );
     for (canonical, target, title, _) in RHEL10_STIG {
         let digits = target
             .strip_prefix("RHEL-10-")
@@ -266,6 +270,10 @@ fn stig_rows_are_well_formed() {
 
 #[test]
 fn cis_rows_are_well_formed() {
+    assert!(
+        !RHEL10_CIS.is_empty(),
+        "an emptied table would leave the loop below proving nothing"
+    );
     for (canonical, target, title, _) in RHEL10_CIS {
         let parts: Vec<&str> = target.split('.').collect();
         assert!(

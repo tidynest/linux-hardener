@@ -102,6 +102,11 @@ fn the_key_is_the_first_token_in_either_syntax() {
 /// `None` for it and the check silently covers one file fewer.
 #[test]
 fn every_table_entry_has_a_vendor_counterpart() {
+    assert!(
+        !LAYERED_CONFS.is_empty(),
+        "an emptied table would leave the loop below proving nothing, and the \
+         drift check covering no file at all"
+    );
     for conf in LAYERED_CONFS {
         assert!(
             hardener_common::vendor_config::vendor_path_for(conf.admin_path).is_some(),

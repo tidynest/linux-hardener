@@ -40,6 +40,3 @@ pub fn init_logger() {
         .with_writer(std::io::stderr)
         .init();
 }
-
-#[cfg(test)]
-mod tests;

@@ -150,7 +150,6 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/executor/mock.rs` | Virtual filesystem for unit testing | `MockExecutor` |
 | `src/vendor_config.rs` | Resolves configuration a distribution layers across `/etc` and `/usr/etc`. `/usr/etc` is consulted only on absence positively confirmed at `/etc`, because an `/etc` file that exists but cannot be read is still the file the system obeys, and answering with the vendor copy would report a configuration that is not in force | `ConfigLayer`, `LayeredRead`, `read_layered()`, `vendor_path_for()` |
 | `src/error/tests.rs` | Unit tests for `src/error.rs` | Test-only; `super` resolves to `crate::error` |
-| `src/logging/tests.rs` | Unit tests for `src/logging.rs` | Test-only; `super` resolves to `crate::logging` |
 | `src/binary_utils/tests.rs` | Unit tests for `src/binary_utils.rs` | Test-only; `super` resolves to `crate::binary_utils` |
 | `src/vendor_config/tests.rs` | Unit tests for `src/vendor_config.rs` | Test-only; `super` resolves to `crate::vendor_config` |
 | `src/file_utils/tests.rs` | Unit tests for `src/file_utils.rs`, the first of the two test modules that file carried | Test-only; `super` resolves to `crate::file_utils` |
@@ -807,7 +806,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/validate_tauri_docs.py` | Tauri integration documentation validator |
 | `scripts/validate/validate_write_sites.py` | File-creation site registry: every plugin call site that creates a file is classified on two questions, `ensured` or `exempt` for its parent directory and `declared` or `exempt` for its plugin's pre-apply checkpoint, each with a written reason; the `cp` sites are additionally asserted to copy with both `-p` and `--no-dereference` |
 | `scripts/validate/validate_unit_state_reads.py` | Unit state read registry: every `systemctl is-enabled` call site declares whether it judges systemd's word or its exit status and why, with the declared answer cross-checked against whether the enclosing function reads `output.success()` |
-| `scripts/validate/validate_test_assertions.py` | Test assertion reachability: every test function must reach an assertion on every path through its body, so a test cannot exit 0 having asserted nothing while still counting towards the suite total. A `match` with every arm asserting, an `if`/`else` chain ending in a bare `else`, and a `for` over an array literal all satisfy it; an `if` with no `else` and a loop over a computed collection do not |
+| `scripts/validate/validate_test_assertions.py` | Test assertion reachability across the whole tree: every test function must reach an assertion on every path through its body, so a test cannot exit 0 having asserted nothing while still counting towards the suite total. A `match` with every arm asserting, an `if`/`else` chain ending in a bare `else`, and a `for` over a table written at the site (in the header, or bound just above by a non-`mut` `let` or `const`) all satisfy it; an `if` with no `else`, a loop over a `let mut` binding, and a loop over a table declared in another file do not |
 | `scripts/validate/update_all_docs.py` | Batch documentation updater |
 | `scripts/release/release.sh` | Automated version bumping and release |
 | `scripts/dev/tauri-dev.sh` | Tauri development launcher |
@@ -909,7 +908,7 @@ workspace run itself for what passed.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
-| hardener-common | `error.rs`, `file_utils.rs`, `logging.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 116 |
+| hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 115 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 87 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 114 |
 | hardener-distro | `lib.rs` | - | 5 |

@@ -27,6 +27,10 @@ fn theme_ids_are_unique() {
 
 #[test]
 fn every_theme_has_a_name() {
+    assert!(
+        !THEMES.is_empty(),
+        "an emptied theme table would leave the loop below proving nothing"
+    );
     for (id, name) in THEMES {
         assert!(!name.is_empty(), "theme {id} has an empty display name");
     }

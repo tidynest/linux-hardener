@@ -323,10 +323,18 @@ is served from cache and the check reports on a file that no longer exists.
 ### Test assertions
 
 ```bash
-python3 scripts/validate/validate_test_assertions.py
+python3 scripts/validate/validate_test_assertions.py --all
 ```
 
 Checks that every test reaches an assertion on every path through its body.
+
+`--all` is the whole tree, and it is what `validate_all.py` runs. Without it the
+scope is the integration suites under `crates/*/tests/` and `src-tauri/tests/`
+alone. The gate used that narrow scope until issue #130, and it meant the check
+read 646 tests, reported them all clean, and never opened an inline
+`#[cfg(test)]` module under `src/`, which is where most of this workspace's
+tests live. A test that asserted nothing at all sat in that unread half. Run the
+narrow form for a faster local pass if you like, but the gate reads everything.
 
 A test whose only assertions sit inside an `if` with no `else`, or inside a loop
 over a collection that might be empty, does not assert when the condition does
@@ -338,9 +346,21 @@ flag, made them assert one string equality and pass.
 
 Constructs that cover all their own paths satisfy the check: a `match`, which
 Rust makes exhaustive, provided every arm asserts or panics; an `if`/`else`
-chain ending in a bare `else` with every branch asserting; and a `for` over an
-array literal written at the site, which is the good form of the table-driven
-test rather than the bad one.
+chain ending in a bare `else` with every branch asserting; and a `for` over a
+table written at the site, which is the good form of the table-driven test
+rather than the bad one. The table counts as written at the site whether it sits
+in the `for` header or is bound just above it by a non-`mut` `let` or `const`,
+because the reader can count it either way. A `let mut` does not count: it can be
+drained or filtered between its literal and the loop.
+
+A loop over a table declared in another file is a different matter, and is
+reported. This script cannot see whether such a table is empty, and an emptied
+one is exactly the silent vacuity it exists to catch, so assert the table is not
+empty before the loop.
+
+`expect_err` and `unwrap_err` count as assertions, as `expect` and `unwrap` do.
+They are the same family pointed the other way: they fail the test when the call
+succeeded, which is the whole point of a test that proves a refusal.
 
 Where the assertions genuinely live in a helper the test calls, write
 

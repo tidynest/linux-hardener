@@ -179,6 +179,12 @@ fn a_severity_the_single_host_dry_run_blocks_on_is_a_fleet_failure() {
     }
 }
 
+// assertions-in-helper: asserts nothing by design. This is the printing half
+// of the renderers' coverage, not a test: it renders all four verbs to stdout
+// for a human to look at colour and alignment, which no assertion can judge.
+// What the renderers must *say* is asserted by render_text_*, render_report_*,
+// render_apply_text_* and render_rollback_text_* in this same file, so the
+// exemption removes no coverage. It is `#[ignore]`d and never runs in a suite.
 #[test]
 #[ignore = "visual eyeball helper, run with --ignored --nocapture"]
 fn eyeball_render_all_verbs() {

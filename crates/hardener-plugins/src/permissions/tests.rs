@@ -297,6 +297,10 @@ fn critical_paths_map_fedramp_moderate_controls() {
 /// state.
 #[tokio::test]
 async fn validate_predicts_what_apply_does_for_an_unverified_mode() {
+    assert!(
+        !CRITICAL_PERMISSIONS.is_empty(),
+        "an emptied directive table would leave the loop below proving nothing"
+    );
     for directive in CRITICAL_PERMISSIONS {
         // `path_exists` must read true; the current mode is supplied
         // directly as `None` below rather than through the mock, so the
@@ -396,6 +400,10 @@ fn every_critical_path_is_protected_from_rollback_deletion() {
     // is one-directional only: UNDELETABLE_ROLLBACK_PATHS may legitimately
     // protect paths this plugin does not harden, so the reverse is not
     // asserted here.
+    assert!(
+        !CRITICAL_PERMISSIONS.is_empty(),
+        "an emptied directive table would leave the loop below proving nothing"
+    );
     for directive in CRITICAL_PERMISSIONS {
         assert!(
             hardener_common::types::UNDELETABLE_ROLLBACK_PATHS.contains(&directive.permission_path),
