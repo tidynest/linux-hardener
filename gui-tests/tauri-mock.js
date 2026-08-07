@@ -628,9 +628,18 @@
       case 'run_fleet_scan': {
         const names = (args && args.hostNames) || [];
         const okTallies = { critical: 2, high: 3, medium: 2, low: 1, info: 0 };
+        // FleetFrameworkPosture is { framework, summary, controls }. The
+        // controls were missing, so every host carrying compliance failed to
+        // deserialise with "missing field `controls`" and the whole scan was
+        // discarded. db-01 scans with `compliance: []` and so had nothing to
+        // fail on, which is why the failed-host path was the one that worked.
+        const controls = (prefix) => [
+          { control_id: `${prefix}-1.1`, control_title: 'Ensure filesystem integrity checking is configured', control_section: '1. Initial Setup', control_status: 'Pass' },
+          { control_id: `${prefix}-5.2.1`, control_title: 'Ensure permissions on SSH config files', control_section: '5. Access and Authentication', control_status: 'Fail' },
+        ];
         const compliance = [
-          { framework: 'CIS', summary: { summary_total_controls: 40, summary_passing: 33, summary_failing: 5, summary_manual_review: 2, summary_not_applicable: 0, summary_score_percentage: 82.5 } },
-          { framework: 'STIG', summary: { summary_total_controls: 31, summary_passing: 22, summary_failing: 8, summary_manual_review: 1, summary_not_applicable: 0, summary_score_percentage: 71.0 } },
+          { framework: 'CIS', summary: { summary_total_controls: 40, summary_passing: 33, summary_failing: 5, summary_manual_review: 2, summary_not_applicable: 0, summary_score_percentage: 82.5 }, controls: controls('CIS') },
+          { framework: 'STIG', summary: { summary_total_controls: 31, summary_passing: 22, summary_failing: 8, summary_manual_review: 1, summary_not_applicable: 0, summary_score_percentage: 71.0 }, controls: controls('STIG') },
         ];
         // A fleet-progress event per host, which is how the page knows the scan
         // finished: it counts completions against the hosts it expects and
