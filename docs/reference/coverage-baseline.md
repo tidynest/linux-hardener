@@ -41,11 +41,35 @@ cargo llvm-cov --workspace --summary-only
 cargo llvm-cov --workspace --json --output-path /tmp/cov.json
 ```
 
-Both exited 0. Each ran the same test set: **1706 passed, 0 failed, 40 ignored,
-across 51 test binaries**, which is the figure the evidence ledger records for
-`cargo nextest run --workspace`. The two readings agreeing is the check that
-this baseline measured the suite the rest of the release is judged on, and not
-some subset of it.
+The 58-row work-list at the end of this document is a filter over that JSON
+rather than a third measurement: the entries whose `summary.lines.count` is
+non-zero, whose `summary.lines.percent` is below 60, sorted ascending. Stated
+here so the table that matters most is as reproducible as the totals are.
+
+```bash
+python3 - <<'EOF'
+import json
+
+with open("/tmp/cov.json") as handle:
+    data = json.load(handle)
+
+rows = [
+    (entry["summary"]["lines"]["percent"], entry["filename"])
+    for entry in data["data"][0]["files"]
+    if entry["summary"]["lines"]["count"]
+    and entry["summary"]["lines"]["percent"] < 60
+]
+
+for percent, path in sorted(rows):
+    print(f"{percent:6.2f}  {path}")
+EOF
+```
+
+Both `cargo llvm-cov` runs exited 0. Each ran the same test set: **1706 passed,
+0 failed, 40 ignored, across 51 test binaries**, which is the figure the
+evidence ledger records for `cargo nextest run --workspace`. The two readings
+agreeing is the check that this baseline measured the suite the rest of the
+release is judged on, and not some subset of it.
 
 Toolchain, because a coverage figure is not comparable across compilers:
 
@@ -83,10 +107,13 @@ future run against this one.
    What ships is the WASM build. Nothing here is a statement about that artefact.
    On the host there is no DOM, so a Leptos `#[component]` body is compiled and
    never instantiated, and a `#[wasm_bindgen]` extern cannot execute at all.
-   That is the whole of why 42 of this crate's 43 source files sit under 60 per
-   cent, most of them at zero. The one exception, `src/utils/mod.rs` at 93.71
-   per cent, is the crate's pure logic and shows what the rest would look like
-   if a DOM were available.
+   That is the whole of why 42 of this crate's 43 *instrumented* source files
+   sit under 60 per cent, most of them at zero. The crate holds 46 non-test
+   `.rs` files; `components/mod.rs`, `pages/mod.rs` and `types.rs` carry no
+   instrumented lines and never enter the report at all, which is where 46 and
+   43 differ. The one exception among the 43, `src/utils/mod.rs` at 93.71 per
+   cent, is the crate's pure logic and shows what the rest would look like if a
+   DOM were available.
 3. **No doctests ran.** `cargo llvm-cov` needs the unstable `--doctests` flag on
    nightly, which this run did not pass. That accounts for the difference
    between the 51 test binaries counted above and the 60 the evidence ledger
@@ -135,7 +162,7 @@ Sorted best first, so the shape of the workspace is visible in one read.
 
 The file counts include `scripts/build_identity.rs` twice, once against each of
 the two crates that build it, which is why `hardener-ui` reads 44 files for 43
-source files and `hardener-cli` reads 19 for 18.
+instrumented source files and `hardener-cli` reads 19 for 18.
 
 ### The two totals
 
@@ -150,7 +177,14 @@ misleading in both directions.
 The second row is the set CI tests. The engine, the plugins, the state layer
 and the compliance renderers sit at 79.11 per cent line coverage between them;
 the workspace figure is 19 points lower because two front-end crates contribute
-7506 lines of which 6367 are never reached on the host target.
+7506 source lines of which 6367 are never reached on the host target.
+
+Those two crates' rows in the per-crate table sum to 7550, not 7506, and 7550
+is what both the 25199 and the 17649 totals are computed with. The 44-line
+difference is the shared build script `scripts/build_identity.rs`, counted once
+against each of the two crates that build it. So `hardener-ui`'s 5779 includes
+44 lines that are not front-end source; 5779 - 44 = 5735 is the crate's own,
+and 5735 + 1771 = 7506.
 
 Neither number is the honest headline on its own. **60.09 per cent is what the
 release ships. 79.11 per cent is what the release tests.** The gap between them
@@ -162,7 +196,7 @@ says it has no row for.
 ## Where to start
 
 The list below is sorted worst first because that is the literal work-list, and
-sorting it that way puts 43 near-identical front-end files at the top. They are
+sorting it that way puts 42 near-identical front-end files at the top. They are
 the largest uncovered surface and they are also the most uniformly explained.
 The entries a later phase should read first are these, and none of them is at
 the top of the sort:
@@ -174,8 +208,21 @@ the top of the sort:
   `PackageManager`,
   `AptPackageManager`, `DnfPackageManager`, `PacmanPackageManager`,
   `ZypperPackageManager` and `hardener_distro::package` have no reference
-  anywhere outside the module itself. Three crates depend on `hardener-distro`
-  and all three use only `DistributionAdapter` from `lib.rs`.
+  anywhere outside the module itself. Three crates depend on `hardener-distro`,
+  and between them they import exactly two symbols, both defined in `lib.rs`:
+  `Distribution` (`src-tauri/src/commands.rs:13`,
+  `crates/hardener-cli/src/commands/batch.rs:19`,
+  `crates/hardener-compliance/src/profiles.rs:13`) and `DistroFamily`
+  (`crates/hardener-compliance/src/profiles.rs:13`). `Distribution::detect` and
+  `Distribution::from_os_release` are live and must not be touched with the
+  module.
+- `DistributionAdapter` is the separate case, and the opposite one. It has three
+  references in the whole tree, all inside `hardener-distro`: the definition at
+  `crates/hardener-distro/src/adapter.rs:12`, the re-export at
+  `crates/hardener-distro/src/lib.rs:8` and a mock implementation at
+  `crates/hardener-distro/src/adapter/tests.rs:24`. No dependent uses it. It
+  does not appear in the table below, and cannot; see "What the next phases
+  inherit".
 - `crates/hardener-ui/src/utils/mock_data.rs`, 103 lines at 0 per cent. Already
   declared dead in the tree: `crates/hardener-ui/src/utils/mod.rs` carries
   `#[allow(dead_code)]` above the module and a comment reading "Mock data is
@@ -187,12 +234,12 @@ the top of the sort:
   `ReportFormatter::format_all` is entered by no test, in no formatter, and it
   is the multi-report path that `hardener report`, the report wizard and the
   desktop all call (`commands/report.rs:107-123`,
-  `commands/report_wizard.rs:536-552`). `ReportFormatter::format_bytes` and
-  `compare_control_ids`, the comparator that decides control ordering in every
-  rendered report, are also never entered. This sharpens rather than repeats the
-  evidence ledger's renderer ceiling: the ledger records that no test parses a
-  rendered report back with its real consumer; this adds that the entry point
-  the real consumers use is not called at all.
+  `commands/report_wizard.rs:536-552`). `compare_control_ids`, the comparator
+  that decides control ordering in every rendered report, is also never
+  entered. This sharpens rather than repeats the evidence ledger's renderer
+  ceiling: the ledger records that no test parses a rendered report back with
+  its real consumer; this adds that the entry point the real consumers use is
+  not called at all.
 - `crates/hardener-cli/src/commands/history.rs` at 26.94 per cent, 263 lines
   missed, against **one** test in `history/tests.rs`. `truncate_string`,
   `format_timestamp` and `print_session_detail` are pure or near-pure and have
@@ -214,6 +261,17 @@ the top of the sort:
 - `crates/hardener-cli/src/commands/systemd.rs` at 22.47 per cent, against 2
   tests for 359 lines. The unit-file generation half needs no root and is not
   covered.
+
+**Reads like a gap and is not:** `ReportFormatter::format_bytes` sits in the
+same file as `format_all` and is likewise entered by nothing, but it belongs on
+neither list. Its default body in `output/mod.rs` is one line,
+`self.format(report).into_bytes()`, and every call site in the tree is
+`PdfFormatter::new().format_bytes(...)` (`commands/report.rs:138` and `:151`,
+`commands/report_wizard.rs:591` and `:608`, `src-tauri/src/commands.rs:1316`),
+all of which take the override at `output/pdf.rs:104`. The default is
+unreachable rather than merely unreached, so a test for it would raise a
+percentage and change nothing else. Named here so it is not mistaken for the
+gap next to it.
 
 ---
 
@@ -292,25 +350,38 @@ Three readings repeat, and are stated once here rather than 40 times below:
 | `crates/hardener-scheduler/src/daemon.rs` | 24.50% | 114 / 151 | [needs privilege or a live service] `tokio-cron-scheduler` job loop and Unix signal shutdown. Awkward to cover, and a mutation in the shutdown path would currently be invisible, so worth Phase 4's attention despite the innocent reading. |
 | `src-tauri/src/commands.rs` | 26.60% | 1115 / 1519 | **Genuine gap, largest by volume.** 30 `#[tauri::command]` bodies, needing a Tauri runtime and `pkexec`. Contrast `src-tauri/src/validation.rs` at 91.39%. Hidden from CI by `--exclude linux-hardener-desktop`. |
 | `crates/hardener-cli/src/commands/history.rs` | 26.94% | 263 / 360 | **Genuine gap, cheapest to close.** One test, covering `find_regressions`. `truncate_string`, `format_timestamp` and `print_session_detail` are pure and untested; `trends` and `show` are whole subcommands. |
-| `crates/hardener-distro/src/package/mod.rs` | 29.35% | 65 / 92 | **No caller anywhere.** Phase 3: delete. If it is kept instead, note that `validate_package_name` is a shell-injection guard and is entered by nothing, so keeping it means testing it before it acquires a caller. |
+| `crates/hardener-distro/src/package/mod.rs` | 29.35% | 65 / 92 | **No caller anywhere.** Phase 3: delete. The 27 covered lines are almost all `validate_package_name`, the shell-injection guard, which `package/tests.rs` enters 16 times over 6 tests across the Debian, RPM and Arch rule sets, injection cases (`package;rm`, `package;evil`, `package\|whoami`) included. Unreferenced from outside the module *and* well tested from inside is the argument for deleting it, not against: there is no test to write first. |
 | `crates/hardener-cli/src/commands/daemon.rs` | 37.42% | 102 / 163 | [needs privilege or a live service] Thin CLI wrapper over `hardener-scheduler`'s daemon; inherits that module's reading. |
 | `crates/hardener-cli/src/output.rs` | 46.17% | 253 / 470 | **Genuine gap.** 26 tests reach the string helpers; 11 renderers are entered by nothing. See "Where to start" for the list. |
-| `crates/hardener-compliance/src/output/mod.rs` | 47.27% | 29 / 55 | **Genuine gap, sharpest in the backend.** `ReportFormatter::format_all`, `format_bytes` and `compare_control_ids` are entered by no test, and `format_all` is what every real consumer calls. |
+| `crates/hardener-compliance/src/output/mod.rs` | 47.27% | 29 / 55 | **Genuine gap, sharpest in the backend.** The default `ReportFormatter::format_all` and `compare_control_ids` are entered by no test, and `format_all` is what every real consumer calls. The uncovered `format_bytes` in this file is *not* part of that gap: it is an unreachable default, see "Where to start". |
 | `crates/hardener-scheduler/src/notification/email.rs` | 54.29% | 48 / 105 | Mostly innocent. The 2 tests in `notification/email/tests.rs` cover the free `format_subject`, `format_body` and the `sanitise_for_header` injection guard. Uncovered are `EmailNotifier::build_transport`, its method wrappers and `Notifier::send`, which need an SMTP peer. `build_transport` chooses TLS mode and applies credentials, so it is the one piece here worth separating out and testing without a server. |
 
 ---
 
 ## What the next phases inherit
 
-- **Phase 3** takes 6 files and 503 instrumented lines with no caller in the
-  tree: the 5 files of `crates/hardener-distro/src/package/` and
+- **Phase 3** takes *at least* 6 files and 503 instrumented lines with no caller
+  in the tree: the 5 files of `crates/hardener-distro/src/package/` and
   `crates/hardener-ui/src/utils/mock_data.rs`. Both are confirmed by reference
   search rather than by their coverage number, which is the only way a
   dead-code claim is safe to act on.
+
+  The converse of that rule matters more, and is why "at least" is not hedging.
+  **This list is a lower bound, not the set.** Coverage cannot see dead code
+  that its own tests cover: anything whose sole exercise is a test reads as
+  covered, so it can never surface in a list of files under 60 per cent, no
+  matter how dead it is. The worked example sits in the crate this document
+  already has open. `crates/hardener-distro/src/adapter.rs` is 23 lines
+  defining `DistributionAdapter`, its only implementor is the mock in
+  `adapter/tests.rs`, no crate outside `hardener-distro` refers to it, and it
+  reads **100.00 per cent**. It is invisible to this method and dead all the
+  same. Phase 3 therefore needs a reference search of its own, run over the
+  whole tree and independently of these 58 rows, and should treat this section
+  as a head start rather than an inventory.
 - **Phase 4** takes the five genuine gaps named above. Two of them,
   `hardener-compliance/src/output/mod.rs` and `hardener-cli/src/output.rs`, are
   rendering paths a user sees on every run, and both are cheap to reach.
-- **Nobody takes the 43 front-end files** on the strength of this document
+- **Nobody takes the 42 front-end files** on the strength of this document
   alone. Their number is an artefact of measuring a WASM crate on the host
   target. Deciding what to do about the desktop's evidence is a separate
   question from coverage, and the evidence ledger is where it belongs.
