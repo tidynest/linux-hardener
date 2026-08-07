@@ -83,6 +83,7 @@ def main():
         ("Test Assertions", "validate_test_assertions.py", []),
         ("Policy Exception Sites", "validate_policy_exception_sites.py", []),
         ("Documented Exception Keys", "validate_documented_exception_keys.py", []),
+        ("Evidence Ledger", "validate_evidence_ledger.py", []),
         ("Persisted Finding Fields", "validate_persisted_finding_fields.py", []),
         (".SRCINFO", "validate_srcinfo.py", []),
         ("CHANGELOG Headings", "validate_changelog_headings.py", []),

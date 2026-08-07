@@ -2,14 +2,13 @@
 
 Commands for validating and auto-updating project documentation.
 
-`scripts/validate/` holds twenty Python 3 scripts: the master runner
-`validate_all.py`, the auto-updater `update_all_docs.py`, the seventeen
+`scripts/validate/` holds twenty-two Python 3 scripts: the master runner
+`validate_all.py`, the auto-updater `update_all_docs.py`, the nineteen
 validators `validate_all.py` runs, and `validate_naming.py`, which is
 standalone and is what a hand-installed pre-commit hook runs, if there is one.
-The one check that is not
-Python lives elsewhere: version consistency is
+The one check that is not Python lives elsewhere: version consistency is
 `scripts/release/release.sh --verify`, which `validate_all.py` shells out to,
-and it is why the run reports eighteen checks against seventeen Python
+and it is why the run reports twenty checks against nineteen Python
 validators.
 
 ---
@@ -406,6 +405,28 @@ anyone had taken, while pam's module-absence finding is deliberate and says so
 at the site. Counting the sites cannot tell an oversight from a decision, and
 neither can a test, because a test asserting the field is `None` passes just as
 happily on either. A comment beside it can, and it travels with the exemption.
+
+### Evidence ledger
+
+```bash
+python3 scripts/validate/validate_evidence_ledger.py
+```
+
+Checks that every path `docs/reference/evidence-ledger.md` cites in its Evidence
+column still exists.
+
+A ledger row states a claim and names the file that backs it. Rename or delete
+that file and the row goes on asserting coverage that is gone, which makes the
+ledger worse than no ledger: a promise nobody checks. Nothing else looks, because
+the paths are prose to every other tool in the tree.
+
+It reads the whole file rather than one table, matching backticked paths that
+begin `crates/`, `scripts/`, `src-tauri/` or `gui-tests/`, which is the citation
+form the ledger's own "Adding a row" section requires. A ledger yielding no
+matches at all is failed rather than passed, since that is how a rewritten table
+would slip through as a vacuous success. What it cannot check is whether the
+named test exercises the claim beside it; that judgement is made at review time,
+and this catches only the mechanical half.
 
 ### Persisted finding fields
 
