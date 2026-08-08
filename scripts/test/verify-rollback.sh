@@ -783,7 +783,16 @@ if [[ "$RUNTIME_ASKABLE" == "true" ]]; then
             fail "The rollback left $KERNEL_PROBE_PARAM hardened but did not report it as a divergence. Rows: ${DIVERGE_ROWS:-none}"
         fi
 
-        info "Rows reported: $(printf '%s' "$DIVERGE_ROWS" | grep -c . || true)"
+        # The breakdown, not just the total. A row that reports a real
+        # divergence and a row that reports an unanswerable probe are the
+        # difference between a probe worth reading and one an operator learns
+        # to skip, and the total cannot tell them apart.
+        DIVERGED_COUNT=$(printf '%s\n' "$DIVERGE_ROWS" | grep -c ':Diverged$' || true)
+        UNVERIFIABLE_COUNT=$(printf '%s\n' "$DIVERGE_ROWS" | grep -c ':Unverifiable$' || true)
+        info "Rows reported: $(printf '%s' "$DIVERGE_ROWS" | grep -c . || true) ($DIVERGED_COUNT diverged, $UNVERIFIABLE_COUNT unchecked)"
+        if [[ "$UNVERIFIABLE_COUNT" != "0" ]]; then
+            info "  Unchecked subjects: $(printf '%s\n' "$DIVERGE_ROWS" | grep ':Unverifiable$' | sed 's/:Unverifiable$//' | tr '\n' ' ')"
+        fi
 
         rm -f /tmp/diverge.json
     fi
