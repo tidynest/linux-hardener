@@ -34,20 +34,20 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// The sentence states the measurement and draws no conclusion about the
 /// rollback: on a host whose kernel default already matches, the value is
 /// correct and the sentence is still true.
+///
+/// **An unresolved source turns that same case into `Unverifiable`, not
+/// `Diverged`.** [`persistence::effective_boot_values`] never inserts a
+/// glob-matched key, so a parameter no *explicit* assignment names looks
+/// identical whether nothing names it or a glob this scan could not resolve
+/// does. Claiming `Diverged` there would be exactly the confident claim this
+/// probe exists to refuse, so when any source went unresolved, that
+/// parameter's own row says the attribution could not be made, rather than
+/// stating a fact the scan does not actually have.
 pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
     let plugin = KernelHardeningPlugin::new();
     let effective = persistence::effective_boot_values(ctx, DropinScope::All).await;
-    let mut rows: Vec<RollbackDivergence> = effective
-        .unresolved
-        .iter()
-        .map(|reason| {
-            row(
-                "kernel parameters",
-                DivergenceState::Unverifiable,
-                format!("{reason}, so whether the restored configuration names them is unknown"),
-            )
-        })
-        .collect();
+    let source_unresolved = !effective.unresolved.is_empty();
+    let mut rows: Vec<RollbackDivergence> = Vec::new();
 
     for parameter in KERNEL_PARAMS {
         let name = parameter.kernel_parameter_name;
@@ -73,23 +73,36 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                 ),
             )),
             Some(_) => {}
-            // Nothing names it. Reported only where the running value is at
-            // least as strict as this tool's baseline, which is what the apply
-            // would have left behind.
+            // No explicit assignment names it. Reported only where the running
+            // value is at least as strict as this tool's baseline, which is
+            // what the apply would have left behind.
             None if !parameter
                 .kernel_compare
                 .violated_by(parameter.kernel_secure_value, Some(&runtime)) =>
             {
-                rows.push(row(
-                    name,
-                    DivergenceState::Diverged,
-                    format!(
-                        "{name} reads {runtime} in the running kernel and no configuration file \
-                         names it. A rollback restores files and reloads them; it does not write \
-                         /proc/sys, so this value did not come from the restored configuration \
-                         and will not survive a reboot unless the kernel default matches it"
-                    ),
-                ));
+                let (state, detail) = if source_unresolved {
+                    (
+                        DivergenceState::Unverifiable,
+                        format!(
+                            "{name} reads {runtime} in the running kernel and no explicit \
+                             assignment names it, but this scan could not resolve every \
+                             configuration source, so whether an unresolved one names it is \
+                             unknown"
+                        ),
+                    )
+                } else {
+                    (
+                        DivergenceState::Diverged,
+                        format!(
+                            "{name} reads {runtime} in the running kernel and no configuration \
+                             file names it. A rollback restores files and reloads them; it does \
+                             not write /proc/sys, so this value did not come from the restored \
+                             configuration and will not survive a reboot unless the kernel \
+                             default matches it"
+                        ),
+                    )
+                };
+                rows.push(row(name, state, detail));
             }
             None => {}
         }
