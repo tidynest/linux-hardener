@@ -57,9 +57,24 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// nothing went unchecked. A row here, naming the file, is what the invariant
 /// this module states in its own comment requires: silence never stands for
 /// "nobody looked".
+///
+/// **`/etc/sysctl.conf` is a third case, and it splits the sentence in two.**
+/// The rollback's reload is `procps sysctl --system`, which reads that file;
+/// the next boot is `systemd-sysctl`, which does not. A parameter named only
+/// there therefore DID come from the restored configuration and still will not
+/// survive a reboot, so the row stays `Diverged` and says the second thing
+/// rather than the first. Where no applier is recognised the row is
+/// `Unverifiable` instead: see [`persistence::boot_reads_legacy_conf`].
 pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
     let plugin = KernelHardeningPlugin::new();
     let effective = persistence::effective_boot_values(ctx, DropinScope::All).await;
+    // `/etc/sysctl.conf` is read here and not through `effective_boot_values`
+    // because only this caller may see it: the scan's question is which file
+    // overrides this tool's own, and a file the boot applier does not read
+    // overrides nothing at boot. Read once, outside the loop, because the
+    // answer is the same for every parameter.
+    let legacy = persistence::legacy_sysctl_conf(ctx).await;
+    let reach = persistence::boot_reads_legacy_conf(ctx).await;
     let mut rows: Vec<RollbackDivergence> = effective
         .unresolved
         .iter()
@@ -71,6 +86,17 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
             )
         })
         .collect();
+
+    // The same invariant the drop-in sources carry: silence never stands for
+    // "nobody looked". A file that exists and could not be read is a question
+    // left open, and the row names it so an operator can go and settle it.
+    if let Some(reason) = &legacy.unreadable {
+        rows.push(row(
+            "kernel parameters",
+            DivergenceState::Unverifiable,
+            format!("{reason}, so whether it names a parameter this rollback restored is unknown"),
+        ));
+    }
 
     // The clause a blocked per-parameter row adds to its own sentence. With
     // exactly one unresolved source, naming it here is more actionable than
@@ -120,8 +146,14 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                 let matched_pattern = effective
                     .glob_patterns
                     .iter()
+                    .chain(legacy.glob_patterns.iter())
                     .find(|pattern| persistence::glob_could_match(pattern, &key));
-                let (state, detail) = if effective.blocks_all {
+                // `/etc/sysctl.conf` is consulted only here, after the two
+                // not-knowing cases above: an unresolved source could name
+                // this parameter in a file the boot applier DOES read, which
+                // would make the reboot claim below wrong.
+                let named_by_legacy = legacy.values.get(&key);
+                let (state, detail) = if effective.blocks_all || legacy.unreadable.is_some() {
                     (
                         DivergenceState::Unverifiable,
                         format!(
@@ -138,6 +170,33 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                              configuration could name it, so whether it does is unknown"
                         ),
                     )
+                } else if let Some(configured) = named_by_legacy {
+                    match reach {
+                        // The file names it and the rollback's own `sysctl
+                        // --system` applied it, so the running value did come
+                        // from the restored configuration. What does not
+                        // follow is the reboot: the boot applier does not read
+                        // this file, so the value is lost at the next one.
+                        persistence::Reach::DoesNotRead => (
+                            DivergenceState::Diverged,
+                            format!(
+                                "{name} reads {runtime} in the running kernel and the only file \
+                                 naming it is /etc/sysctl.conf, which says {configured}. The \
+                                 rollback's own `sysctl --system` reads that file, but the \
+                                 applier that runs at boot does not, so this value is lost at \
+                                 the next reboot unless the kernel default matches it"
+                            ),
+                        ),
+                        persistence::Reach::Unknown => (
+                            DivergenceState::Unverifiable,
+                            format!(
+                                "{name} reads {runtime} in the running kernel and the only file \
+                                 naming it is /etc/sysctl.conf, which says {configured}. Which \
+                                 applier runs at boot on this host was not established, so \
+                                 whether the value survives a reboot is unknown"
+                            ),
+                        ),
+                    }
                 } else {
                     (
                         DivergenceState::Diverged,

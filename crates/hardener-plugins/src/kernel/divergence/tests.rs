@@ -359,3 +359,180 @@ async fn an_unreadable_dropin_blocks_a_parameter_no_glob_could_name() {
          parameter no glob pattern could ever have named: {row:?}"
     );
 }
+
+/// #140 exactly. `/etc/sysctl.conf` names the parameter, so the sentence that
+/// no configuration file names it is false, and so is the claim that the value
+/// did not come from the restored configuration: the rollback's own
+/// `sysctl --system` reads this file.
+#[tokio::test]
+async fn a_parameter_named_only_in_sysctl_conf_is_not_reported_as_named_by_nothing() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 1\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still be reported");
+    assert!(
+        !row.divergence_detail
+            .contains("no configuration file names it"),
+        "a file names it, so this clause is false: {}",
+        row.divergence_detail
+    );
+    assert!(
+        row.divergence_detail.contains("/etc/sysctl.conf"),
+        "the sentence must name the file an operator has to go and look at: {}",
+        row.divergence_detail
+    );
+}
+
+/// The clause that survives. systemd-sysctl does not read the file, so the
+/// value really is lost at the next boot and the row stays Diverged.
+#[tokio::test]
+async fn a_parameter_named_only_in_sysctl_conf_stays_diverged_because_the_reboot_drops_it() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 1\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Diverged,
+        "the next boot drops the value, which is a real divergence: {row:?}"
+    );
+}
+
+/// No applier this probe recognises. The file names the parameter and whether
+/// the host applies that file at boot was not established, so neither claim
+/// is earned.
+#[tokio::test]
+async fn an_unknown_boot_applier_downgrades_the_sysctl_conf_case_to_unverifiable() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 1\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", false)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "which applier runs at boot was not established, so neither claim is earned: {row:?}"
+    );
+}
+
+/// A host with no `/etc/sysctl.conf` at all, which is four of the five
+/// distributions measured. Nothing about the existing #138 case may move.
+#[tokio::test]
+async fn an_absent_sysctl_conf_leaves_the_original_sentence_untouched() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must be reported");
+    assert_eq!(row.divergence_state, DivergenceState::Diverged);
+    assert!(
+        row.divergence_detail
+            .contains("no configuration file names it"),
+        "with no such file, the original measurement is still the true one: {}",
+        row.divergence_detail
+    );
+}
+
+/// An unreadable `/etc/sysctl.conf` could name anything, so it blocks
+/// attribution the way an unreadable drop-in does, and it earns a row of its
+/// own naming the file.
+#[tokio::test]
+async fn an_unreadable_sysctl_conf_blocks_attribution_and_earns_its_own_row() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/sysctl.conf", "irrelevant\n")
+            .with_read_permission_denied("/etc/sysctl.conf")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let parameter_row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still carry a row");
+    assert_eq!(
+        parameter_row.divergence_state,
+        DivergenceState::Unverifiable,
+        "a file nobody could open could name this parameter: {parameter_row:?}"
+    );
+    assert!(
+        rows.iter()
+            .any(|r| r.divergence_subject == "kernel parameters"
+                && r.divergence_state == DivergenceState::Unverifiable
+                && r.divergence_detail.contains("/etc/sysctl.conf")),
+        "the file that could not be read must earn a row naming it: {rows:?}"
+    );
+}
+
+/// A glob in `/etc/sysctl.conf` blocks only the keys it could name, matching
+/// how a glob in a drop-in is already treated. Without this the narrowing that
+/// landed in `7cc4f9a1` would be undone for this one file.
+#[tokio::test]
+async fn a_glob_in_sysctl_conf_blocks_only_the_keys_it_could_name() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.*.log_martians = 1\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n")
+            .with_file("/proc/sys/kernel/kptr_restrict", "2\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let blocked = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the key the pattern could name must carry a row");
+    assert_eq!(blocked.divergence_state, DivergenceState::Unverifiable);
+
+    let unblocked = rows
+        .iter()
+        .find(|r| r.divergence_subject == "kernel.kptr_restrict")
+        .expect("a key the pattern cannot name must still be reported");
+    assert_eq!(
+        unblocked.divergence_state,
+        DivergenceState::Diverged,
+        "net.ipv4.conf.* cannot name kernel.kptr_restrict: {unblocked:?}"
+    );
+}

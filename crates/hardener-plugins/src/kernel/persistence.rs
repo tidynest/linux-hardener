@@ -688,17 +688,11 @@ pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> 
 }
 
 /// The file `procps sysctl --system` reads that `systemd-sysctl` does not.
-// Wired into a caller by the divergence probe that lands separately on this
-// branch; unused until then.
-#[allow(dead_code)]
 const LEGACY_SYSCTL_CONF: &str = "/etc/sysctl.conf";
 
 /// The applier this probe recognises. Its presence is the capability the
 /// rollback sentence depends on, and it is probed rather than assumed from
 /// the host being a systemd one.
-// Wired into a caller by the divergence probe that lands separately on this
-// branch; unused until then.
-#[allow(dead_code)]
 const SYSTEMD_SYSCTL: &str = "/usr/lib/systemd/systemd-sysctl";
 
 /// What `/etc/sysctl.conf` assigns, for the one caller that needs it.
@@ -707,9 +701,6 @@ const SYSTEMD_SYSCTL: &str = "/usr/lib/systemd/systemd-sysctl";
 /// file names nothing because it is not there. A file that exists and could
 /// not be read fills `unreadable` instead, because a read that failed is not
 /// an absence and must not be folded into one.
-// Wired into a caller by the divergence probe that lands separately on this
-// branch; unused until then.
-#[allow(dead_code)]
 #[derive(Default)]
 pub(super) struct LegacyConf {
     /// Explicit assignments keyed by [`procfs_key`].
@@ -730,9 +721,6 @@ pub(super) struct LegacyConf {
 /// code path can construct would be a claim about the world with no evidence
 /// behind it. If a real second applier is ever found, it is named here the way
 /// ufw is named in [`ufw_applied_file`], never inferred.
-// Wired into a caller by the divergence probe that lands separately on this
-// branch; unused until then.
-#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Reach {
     /// The boot applier will not apply this file, so what it names does not
@@ -748,9 +736,6 @@ pub(super) enum Reach {
 /// The scan must never call this. Its question is which file overrides this
 /// tool's own, and a file the boot applier does not read cannot override
 /// anything at boot.
-// Called by the divergence probe that lands separately on this branch;
-// unused until then.
-#[allow(dead_code)]
 pub(super) async fn legacy_sysctl_conf(ctx: &Context) -> LegacyConf {
     match read_boot_file(ctx, LEGACY_SYSCTL_CONF).await {
         FileRead::Content(content) => {
@@ -770,9 +755,6 @@ pub(super) async fn legacy_sysctl_conf(ctx: &Context) -> LegacyConf {
 }
 
 /// Which applier runs at boot, as a capability rather than a host label.
-// Called by the divergence probe that lands separately on this branch;
-// unused until then.
-#[allow(dead_code)]
 pub(super) async fn boot_reads_legacy_conf(ctx: &Context) -> Reach {
     match ctx.executor().path_exists(Path::new(SYSTEMD_SYSCTL)).await {
         Ok(true) => Reach::DoesNotRead,
