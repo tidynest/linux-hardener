@@ -120,8 +120,9 @@ rollback, with the runtime kernel arm skipped. It was run again on 2026-08-08
 with `--private-network`, and passed 18 checks with none skipped: three new ones
 for the runtime arm that issue #131 was filed about, and four more for the pam
 readback added the same day. A third run the same day added the firewall arm and
-passed 21. **Three dated runs rather than a habit**: nothing runs this without a
-person.
+passed 21. A fourth added TEST 8 and passed 23, and a fifth added TEST 9 and
+passed 26; both are described below. **Five dated runs rather than a habit**,
+at 11, 18, 21, 23 and 26 checks: nothing runs this without a person.
 
 **A rollback can now say what it left diverged, and that capability is itself
 unproven by a container run.** Two of the eight plugins, kernel and firewall,
@@ -154,8 +155,11 @@ one, so **the suite is now nine tests and 26 checks, read green on the arch
 container on 2026-08-08 at 26 of 26 with none failed and none skipped.** The row
 it read was `net.ipv4.conf.all.log_martians`, reported `Diverged`.
 
-The 23-of-23 run measured what the kernel probe actually says, which no reasoning
-had settled: **15 rows, 12 of them `Diverged` and 3 `Unverifiable`.** The 12 are
+The 26-of-26 run measured what the kernel probe actually says, which no reasoning
+had settled: **15 rows, 12 of them `Diverged` and 3 `Unverifiable`.** The
+23-of-23 run had read the same three figures before the `/etc/sysctl.conf` work,
+so that work moved no row in this breakdown; the reading quoted here is the one
+taken against the post-change binary. The 12 are
 not noise. An apply writes one drop-in naming every parameter it moves and the
 rollback deletes it, so those 12 parameters really are still hardened in the
 running kernel with no surviving file naming them, and every one of them is an
@@ -437,8 +441,10 @@ and the date of the last such run is in
 [distribution-validation.md](distribution-validation.md).
 
 **A green CI run is a weaker reading than the workspace suite**, because the two
-crate exclusions above make CI's set strictly smaller than the 1693 tests
-`cargo nextest run --workspace` passed on 2026-08-07.
+crate exclusions above make CI's set strictly smaller than the 1810 tests
+`cargo nextest run --workspace` passed on 2026-08-08. That is the same figure
+[evidence-ledger.md](evidence-ledger.md) records for the CI ceiling; the 1693
+this paragraph used to quote was the 2026-08-07 reading of the same suite.
 
 **The 40 tests the workspace suite skips, and what each needs:**
 

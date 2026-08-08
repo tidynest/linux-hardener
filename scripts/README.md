@@ -1057,7 +1057,9 @@ sudo ./scripts/test/verify-rollback.sh
 - Bash
 - Pre-built musl binary at `/project/target/release/hardener`
 - Root privileges
-- Container environment (Fedora recommended)
+- Container environment. The runner, `release-readiness-root.sh --only rollback`,
+  builds and uses the arch container, which is what the 26-of-26 reading above
+  was taken on
 
 ---
 

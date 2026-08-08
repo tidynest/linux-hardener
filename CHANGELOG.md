@@ -469,11 +469,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a surviving file does not name the seeded parameter, then requires the
   rollback's own JSON to carry the resulting row as `Diverged`. **Read green on
   a real arch container, 23 of 23 with none skipped**, up from the suite's
-  previous 21 of 21; TEST 9 has since taken the suite to 26, recorded above.
-  The 23-of-23 run also measured what the kernel probe says on a real host:
-  15 rows, 12 `Diverged` and 3 `Unverifiable`, the 3 being the glob source
-  `/usr/lib/sysctl.d/50-default.conf` and the two managed keys its own patterns
-  could name.
+  previous 21 of 21; TEST 9 has since taken the suite to 26, recorded below
+  under `### Fixed`. The 26-of-26 run measured what the kernel probe says on a
+  real host: 15 rows, 12 `Diverged` and 3 `Unverifiable`, the 3 being the glob
+  source `/usr/lib/sysctl.d/50-default.conf` and the two managed keys its own
+  patterns could name, `net.ipv4.conf.all.rp_filter` and
+  `net.ipv4.conf.all.accept_source_route`. The 23-of-23 run had read the same
+  15/12/3 before the `/etc/sysctl.conf` work, so that work moved no row in it.
 
 - **The mac plugin's rollback is recorded as a ceiling rather than covered.**
   Measured rather than assumed, after three "cannot" claims fell over the same
