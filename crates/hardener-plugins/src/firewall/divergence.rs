@@ -42,21 +42,39 @@ enum LiveEnforcement {
 /// Reads `ufw status` directly through the executor, deliberately bypassing
 /// `UfwBackend::is_enabled`, and classifies the result.
 ///
+/// **The status line, not the whole output.** A host that carries any rules,
+/// which is this probe's whole reason for existing, prints `Status: active`
+/// followed by a blank line and a rule table; matching the entire trimmed
+/// stdout against `Status: active` therefore falls through to unverifiable on
+/// exactly the hosts this exists to read. The line whose trimmed content
+/// begins `Status:` is found first, and only that line is compared.
+///
 /// **Exact matching, not `contains`.** `Status: inactive` contains the
 /// substring `active`, so a `contains("active")` check reads a stopped
-/// firewall as a running one. The line is matched only after trimming, and
-/// only against the two lines ufw actually prints; anything else, including a
-/// line ufw might print in some future version, is unverifiable rather than
-/// guessed at.
+/// firewall as a running one. The status line is matched only after
+/// trimming, and only against the two lines ufw actually prints for it;
+/// anything else, including a line ufw might print there in some future
+/// version, is unverifiable rather than guessed at.
 async fn read_live_enforcement(ctx: &Context) -> LiveEnforcement {
     match ctx.executor().execute_command("ufw", &["status"]).await {
-        Ok(output) if output.success() => match output.stdout.trim() {
-            "Status: active" => LiveEnforcement::Enforcing,
-            "Status: inactive" => LiveEnforcement::NotEnforcing,
-            other => LiveEnforcement::Unverifiable(format!(
-                "ufw status printed neither 'Status: active' nor 'Status: inactive': {other:?}"
-            )),
-        },
+        Ok(output) if output.success() => {
+            let status_line = output
+                .stdout
+                .lines()
+                .map(str::trim)
+                .find(|line| line.starts_with("Status:"));
+            match status_line {
+                Some("Status: active") => LiveEnforcement::Enforcing,
+                Some("Status: inactive") => LiveEnforcement::NotEnforcing,
+                Some(other) => LiveEnforcement::Unverifiable(format!(
+                    "ufw status's status line was neither 'Status: active' nor 'Status: inactive': {other:?}"
+                )),
+                None => LiveEnforcement::Unverifiable(format!(
+                    "ufw status printed no 'Status:' line: {:?}",
+                    output.stdout.trim()
+                )),
+            }
+        }
         Ok(output) => LiveEnforcement::Unverifiable(format!(
             "ufw status exited with a failure: {}",
             output.stderr

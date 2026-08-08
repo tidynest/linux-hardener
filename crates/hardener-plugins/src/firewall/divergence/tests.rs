@@ -13,6 +13,16 @@ use super::*;
 use hardener_common::executor::{CommandOutput, MockExecutor};
 use std::sync::Arc;
 
+/// `ufw status` on a host that carries any rules, which is the shape this
+/// probe exists to read: the status line, a blank line, the `To / Action /
+/// From` header, its separator, and at least one rule row.
+const UFW_STATUS_ACTIVE_WITH_RULES: &str = "Status: active\n\
+\n\
+To                         Action      From\n\
+--                         ------      ----\n\
+22/tcp                     ALLOW       Anywhere\n\
+22/tcp (v6)                ALLOW       Anywhere (v6)\n";
+
 fn ufw_host(status: &str, conf: &str) -> Context {
     Context::with_executor(Arc::new(
         MockExecutor::new()
@@ -36,7 +46,7 @@ fn ufw_host(status: &str, conf: &str) -> Context {
 /// and ufw is still enforcing.
 #[tokio::test]
 async fn a_live_ufw_over_a_disabled_config_is_reported() {
-    let ctx = ufw_host("Status: active\n", "ENABLED=no\n");
+    let ctx = ufw_host(UFW_STATUS_ACTIVE_WITH_RULES, "ENABLED=no\n");
 
     let rows = firewall_divergences(&ctx).await;
 
@@ -84,7 +94,7 @@ async fn an_unreadable_config_is_unverifiable() {
                 "ufw",
                 &["status"],
                 CommandOutput {
-                    stdout: "Status: active\n".to_string(),
+                    stdout: UFW_STATUS_ACTIVE_WITH_RULES.to_string(),
                     stderr: String::new(),
                     exit_code: 0,
                 },
@@ -142,6 +152,51 @@ async fn unrecognised_status_output_is_unverifiable() {
     let rows = firewall_divergences(&ctx).await;
 
     assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+}
+
+/// #139's own scenario, pinned by name. A host that carries any rules, which
+/// is this probe's whole reason for existing, prints `ufw status` as several
+/// lines. Matching the entire trimmed output against `Status: active` reads
+/// exactly this host as unverifiable instead of diverged; this must fail
+/// against the code that does that, and pass once the status line alone is
+/// what gets compared.
+#[tokio::test]
+async fn a_multiline_active_ufw_over_a_disabled_config_diverges() {
+    let ctx = ufw_host(UFW_STATUS_ACTIVE_WITH_RULES, "ENABLED=no\n");
+
+    let rows = firewall_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert_eq!(
+        rows[0].divergence_state,
+        DivergenceState::Diverged,
+        "a live ufw carrying rules must not be read as unverifiable just \
+         because its status output has more than one line: {:?}",
+        rows[0].divergence_detail
+    );
+}
+
+/// The `Err` arm of `read_live_enforcement`, the one sub-path of
+/// `Unverifiable` this file had not exercised: the command fails to execute
+/// at all, distinct from running and exiting non-zero.
+#[tokio::test]
+async fn a_status_probe_that_cannot_be_run_is_unverifiable() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new()
+            .with_command_exists("ufw", true)
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("nft", false)
+            .with_file("/etc/ufw/ufw.conf", "ENABLED=yes\n"),
+        // No `.with_command("ufw", &["status"], ..)` registration: the mock
+        // executor returns `Err` for a program/argument pair nothing has
+        // registered, which is how `execute_command` fails outright rather
+        // than returning a non-zero exit.
+    ));
+
+    let rows = firewall_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "an unrunnable probe is one row, not silence");
     assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
 }
 
