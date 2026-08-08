@@ -137,7 +137,11 @@ The v1.1.0 musl static binary (`hardener 1.1.0`, ~13.6 MB, `static-pie`) was run
 through the full CLI suite (`sudo ./scripts/test/run-cross-distro-tests.sh --apply`)
 across all five containers. The GUI/Playwright suite was **subsequently re-run and
 is green on all five distros** (113 tests across 9 specs, 2026-06-29, adds fleet,
-fleet-apply, remote, and scheduler coverage).
+fleet-apply, remote, and scheduler coverage). That GUI reading is a record of its
+own date and has been superseded twice over: the specs were rewritten in August
+and the current one is
+[GUI Test Suite, 2026-08-08](#gui-test-suite-2026-08-08), green on all **six**
+at 110 tests.
 
 ### Result (final, all harness fixes applied)
 
@@ -939,14 +943,55 @@ In addition to CLI testing, the Web UI is validated with Playwright across all 5
 | Rocky Linux | Red Hat | 9 | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
 | openSUSE | SUSE | Leap 15.6 | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
 
-The suite has grown since that baseline. It was last re-run on 2026-06-29 and was
-green on all five distributions at **113 tests across 9 specs**, the run recorded
-under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28); the fleet,
-fleet-apply, remote and scheduler specs were added between the two.
+The suite has grown since that baseline, and has since been rewritten. The
+current reading is under
+[GUI Test Suite, 2026-08-08](#gui-test-suite-2026-08-08) below: **110 tests
+across 9 specs, green on all six distributions**. The 2026-06-29 figure of 113
+across five, recorded under
+[v1.1.0 Re-validation](#v110-re-validation-2026-06-28), is superseded and is not
+comparable: the specs were rewritten in between, so the two numbers count
+different tests rather than measuring growth.
+
+### GUI Test Suite, 2026-08-08
+
+| Distribution | Tests run | Passed | Failed | Wall clock |
+|--------------|-----------|--------|--------|------------|
+| Arch | 110 | 110 | 0 | 1.9 min |
+| Debian | 110 | 110 | 0 | 1.8 min |
+| Ubuntu | 110 | 110 | 0 | 1.7 min |
+| Fedora | 110 | 110 | 0 | 1.7 min |
+| Rocky/RHEL | 110 | 110 | 0 | 1.8 min |
+| openSUSE Leap 16 | 110 | 110 | 0 | 2.2 min |
+
+The ceiling is 600 s per distribution and nothing is now close to it. It was
+binding before this repair, which is what began the investigation: a stale class
+in `waitForApp` meant every spec's `beforeEach` waited 30 s, so the setup alone
+consumed more than the whole run now takes.
+
+Five faults stood between the previous reading and this one, and only one of
+them was about the interface. Recorded here because each failed in a way that
+pointed somewhere other than its cause:
+
+- **Ubuntu could not resolve names.** `/etc/resolv.conf` was a symlink to a
+  systemd-resolved stub nothing in the container starts, and `--resolv-conf=auto`
+  leaves a symlink alone.
+- **Rocky installed EPEL over the network and then installed nothing**, in
+  silence, every install carrying `2>/dev/null || true` with `-q` hiding the
+  successful case.
+- **openSUSE asked for package names Leap 16 does not carry**, and zypper
+  abandons the whole transaction on one bad name, so Python and Chromium were
+  never installed either.
+- **openSUSE then had no font.** Its `chromium` pulls none, and a browser with
+  no font lays every glyph out at zero width: the markup renders, the icons
+  draw, and only assertions on visible text fail, as `hidden`. 72 of 110 failed
+  that way against entirely correct markup. `require_a_font` now refuses to
+  start the suite, for every distribution rather than this one.
+- **Ubuntu's `chromium` is a snap stub**, and the probe tested only that the
+  file was executable.
 
 ### Test Infrastructure
 
-- **Virtual Display**: Xvfb (X virtual framebuffer) provides a headless display inside containers
+- **Virtual Display**: none. Xvfb was removed rather than repaired: the config sets `headless: true`, and Fedora's `headless_shell` cannot talk to X at all yet ran the suite, which is the proof that no display was ever wanted. A **font** is required instead, and `require_a_font` refuses to start without one
 - **SPA Server**: `gui-tests/spa-server.py` -- Python HTTP server on port 8787 with client-side routing support (all non-file paths return `index.html`)
 - **Test Index Generation**: `scripts/test/gui/gui-test-inner.sh` dynamically generates the served `index.html` at test-time by reading `dist/index.html`, stripping SRI `integrity` attributes, and injecting `<script src="/tauri-mock.js"></script>` before the first `<script type="module">` tag
 - **Tauri IPC Mock**: `gui-tests/tauri-mock.js` -- JavaScript mock of `window.__TAURI__` injected before WASM loads, covering 31 IPC commands: `run_scan`, `run_scan_filtered`, `run_scan_with_options`, `get_latest_scan`, `run_apply`, `run_apply_dry_run`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `run_rollback`, `generate_compliance_report`, `export_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `list_plugins`, `get_checkpoint_detail`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `run_fleet_scan`, `run_fleet_apply`, `run_fleet_rollback`, `validate_config`, `pick_config_file`
@@ -983,7 +1028,7 @@ not been re-checked against Debian 13, Fedora 44, Rocky 10 or Leap 16.0.
 | Debian 12 | `/usr/bin/chromium` | Standard package |
 | Fedora 41 | `/usr/lib64/chromium-browser/headless_shell` | Uses `chromium-headless` package |
 | Rocky Linux 9 | `/usr/bin/chromium-browser` | Requires EPEL + CRB repos, Node.js 20 module |
-| openSUSE Leap 15.6 | `/usr/bin/chromium` | Requires `--gpg-auto-import-keys` for zypper + specific lib package names |
+| openSUSE Leap 16 | `/usr/bin/chromium` | Requires `--gpg-auto-import-keys` for zypper, the `-default` Node metapackages rather than version-suffixed names, and a font package of its own: `chromium` pulls none |
 
 ### Running GUI Tests
 

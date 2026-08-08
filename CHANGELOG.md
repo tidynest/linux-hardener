@@ -417,6 +417,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which was chosen over adding a finding because a declined finding changes no
   count the suite asserts.
 
+- **The GUI suite is green on all six distributions**, 110 of 110 each, in 1.7
+  to 2.2 minutes against a 600 s ceiling the investigation began with it
+  exceeding. Recorded in `docs/reference/distribution-validation.md` under
+  **GUI Test Suite, 2026-08-08**, which supersedes a 2026-06-29 reading of 113
+  across five. The two figures are not comparable and the document now says so:
+  the specs were rewritten in between, so they count different tests rather
+  than measuring growth. The stale claim that Xvfb provides a display is gone
+  with it, Xvfb having been removed rather than repaired.
+
 - **The GUI containers are checked for a font, and openSUSE is given one.** No
   distribution's package list ever named a font; they passed because Chromium's
   own dependencies happened to drag one in, and Leap 16 was the first where
