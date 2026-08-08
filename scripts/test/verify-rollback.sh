@@ -30,6 +30,18 @@
 #   3. Permissions:    directory mode restoration
 #   4. JSON output:    rollback --format json produces valid RollbackResult
 #   5. Checkpoints:    two applies leave two checkpoints
+#
+# Exit status:
+#   0  every check ran and passed
+#   1  at least one check failed
+#   2  every check that ran passed, and at least one was SKIPPED
+#
+# 2 exists because 0 was a lie by omission. A container that cannot answer the
+# runtime sysctl question skips that arm and exits 0, and the only runner then
+# recorded "kernel, ssh and permissions read back after rollback", naming a
+# reading it had not taken. The skip was in the log and absent from the
+# summary, which is the half nobody reads twice. A caller that does not
+# distinguish 2 from 0 is no worse off than before.
 # =============================================================================
 
 set -uo pipefail
@@ -174,9 +186,13 @@ info "Cleaned /var/lib/linux-hardener"
 # kernel.* and fs.* parameters the plugin manages cannot be moved by any apply
 # run in here: an assertion that one of them came back would compare a constant
 # with itself and pass whatever the code did. Only /proc/sys/net is remounted
-# read-write, and only for a container holding its own network namespace
-# (--boot --private-network, not --pipe), which is the same measured finding
-# differential-suite.sh records for its own kernel table.
+# read-write, and only for a container holding its own network namespace, which
+# `--private-network` is sufficient to give: measured on 2026-08-08, under
+# `--pipe`, without `--boot`. This comment previously said `--boot
+# --private-network, not --pipe`, and the boot half was wrong. The requirement
+# is the namespace, and booting is one way to have been given one rather than
+# the condition itself. differential-suite.sh still conflates the two for its
+# own kernel table, which is tracked separately.
 #
 # log_martians rather than one of the other ten net.ipv4 parameters: it is the
 # only one whose value cannot cost anything if the container turns out to share
@@ -232,8 +248,8 @@ if sysctl_write_allowed "$KERNEL_PROBE_PROC"; then
 else
     skip "Runtime sysctl readback: /proc/sys/net is read-only here, so no apply can move $KERNEL_PROBE_PARAM and no rollback can bring it back"
     info "  nspawn remounts /proc/sys/net read-write only for a container holding its"
-    info "  own network namespace (--boot --private-network). Under --pipe the file"
-    info "  assertions below are the whole of this arm."
+    info "  own network namespace. Add --private-network to the invocation; --boot is"
+    info "  not required. Without it the file assertions below are the whole of this arm."
     info "BEFORE: conf_exists=$BEFORE_CONF_EXISTS"
 fi
 
@@ -480,5 +496,11 @@ rm -rf /var/lib/linux-hardener
 
 if [[ $TESTS_FAILED -gt 0 ]]; then
     exit 1
+fi
+# A skip is not a failure and must not read as a pass either. See the exit
+# status block in this file's header.
+if [[ $TESTS_SKIPPED -gt 0 ]]; then
+    log "  ${YELLOW}Exit 2: passed, but $TESTS_SKIPPED check(s) were not asked.${NC}"
+    exit 2
 fi
 exit 0

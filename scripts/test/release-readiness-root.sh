@@ -855,18 +855,38 @@ suite_rollback() {
     }
 
     log_step "Rollback readback (arch container)"
+    # --private-network is what makes the runtime sysctl arm askable at all.
+    # nspawn remounts /proc/sys/net read-write only for a container holding its
+    # own network namespace; without it /proc/sys is the host's and read-only,
+    # so that arm skipped on every run this script has ever made and the
+    # capability existed without ever being exercised (issue #131).
+    #
+    # Measured on 2026-08-08 rather than assumed: --private-network alone is
+    # enough under --pipe, and --boot is NOT required, which is what the code
+    # and three documents had said. Nothing here needs the network: the script
+    # runs a local binary, writes files and reads them back.
     systemd-nspawn -D "$container_path" \
         --bind="$PROJECT_DIR:/project" \
         "${TARGET_BIND[@]}" \
+        --private-network \
         --pipe \
         /bin/bash /project/scripts/test/verify-rollback.sh \
         > "$logfile" 2>&1 || exit_code=$?
 
-    if [[ $exit_code -eq 0 ]]; then
-        record_result rollback PASS "kernel, ssh and permissions read back after rollback"
-    else
-        record_result rollback FAIL "exit $exit_code, see $logfile (first ever run: baseline, not a regression)"
-    fi
+    # Exit 2 is "passed, and something was not asked". It is reported as its own
+    # sentence rather than folded into the PASS above, because the detail line
+    # is the part that gets read: the previous wording claimed kernel, ssh and
+    # permissions had been read back whether or not the runtime sysctl arm had
+    # run, and under --pipe it never runs. Still a PASS, because nothing failed
+    # and a skip is not a regression.
+    case $exit_code in
+        0) record_result rollback PASS \
+            "kernel (file and runtime), ssh and permissions read back after rollback" ;;
+        2) record_result rollback PASS \
+            "ssh, permissions and the kernel config file read back; the runtime sysctl arm was skipped, see $logfile" ;;
+        *) record_result rollback FAIL \
+            "exit $exit_code, see $logfile (first ever run: baseline, not a regression)" ;;
+    esac
 }
 
 run_suite() {

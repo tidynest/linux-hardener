@@ -417,6 +417,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which was chosen over adding a finding because a declined finding changes no
   count the suite asserts.
 
+- **A rolled-back kernel runtime value has been read off a real system**, for
+  the first time (#131, part 1). `net.ipv4.conf.all.log_martians` seeded to 0,
+  raised to 1 by the apply, read back at 0 after the rollback, all three
+  asserted. The capability to ask had existed since #125 and had never once
+  been exercised: `/proc/sys/net` is writable only for a container holding its
+  own network namespace, and the sole runner of `verify-rollback.sh` did not
+  give it one, so the arm recorded a named skip on every run. **The flag was
+  withheld by a wrong belief rather than by a limitation.** A code comment and
+  three documents all stated that `--boot --private-network` was required;
+  measured, `--private-network` alone is sufficient under `--pipe`. Two
+  documents had taken that claim from the code and the code cited the
+  documents, which is two restatements rather than two measurements.
+
+- **A skipped check can no longer be recorded as a reading.**
+  `verify-rollback.sh` exits **2** for "everything that ran passed, and
+  something was not asked", distinct from 0 and 1. Its runner recorded
+  `rollback PASS` with the detail "kernel, ssh and permissions read back after
+  rollback" whether or not the runtime arm had run, and under the old
+  invocation it never ran: the skip was in the log and absent from the summary,
+  which is the half that gets read. The detail line now names which half was
+  taken. Callers testing `-eq 0` are unaffected, and callers testing `-ne 0`
+  treat a skip as a failure, which is the safe direction.
+
 - **What an executed hardening apply produces is asserted at last** (#136).
   Nothing in this repository had ever observed it: `T-HIST-06` covers the
   acknowledgement gate and stops there. **The obstacle was the fixture, not the

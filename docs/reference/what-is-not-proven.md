@@ -76,27 +76,47 @@ seeded below the plugin's target before the apply and read back after the
 rollback, with the seed itself asserted so that a seed which did not take fails
 rather than quietly restoring the old vacuity.
 
-**That stronger reading is still one this project has never taken.**
-`/proc/sys` inside an nspawn container is the host's and read-only outside
-`/proc/sys/net`, and even `/proc/sys/net` is writable only for a container
-holding its own network namespace. Where it is not, the arm records a named skip
-rather than a pass, and the file assertions are the whole of it. The one runner
-that calls this script invokes it under `systemd-nspawn --pipe`, which is
-exactly the case that skips, and that runner has never been started. The seven
-`kernel.` and `fs.` parameters
+**That stronger reading has now been taken, on 2026-08-08.** A rolled-back
+kernel runtime value has been read off a real system:
+`net.ipv4.conf.all.log_martians` seeded to 0, raised to 1 by the apply and read
+back at 0 after the rollback, all three asserted. 14 checks, none skipped, none
+failing.
+
+It took a one-flag change to get there, and the flag was withheld by a wrong
+belief rather than by a limitation. `/proc/sys` inside an nspawn container is
+the host's and read-only outside `/proc/sys/net`, and even `/proc/sys/net` is
+writable only for a container holding its own network namespace. The one runner
+that calls this script did not give it one, so the arm recorded a named skip on
+every run and the capability existed without ever being exercised: issue #131.
+The runner now passes `--private-network`, **measured** to be sufficient under
+`--pipe`, `--boot` not being required despite a code comment and three
+documents saying it was. Where the namespace is absent the arm still skips
+rather than passing, and the script now exits 2 rather than 0 so that a skip
+cannot be reported as a reading.
+
+The seven `kernel.` and `fs.` parameters
 `scripts/test/differential-suite.sh` declares permanently unaskable stay
-unaskable here for the same reason. **So no reading anywhere has yet confirmed
-that a rollback restores a kernel runtime value.**
+unaskable here: `/proc/sys` outside `/proc/sys/net` is the host's and read-only
+whatever the namespace. **So the confirmed reading covers one `net.ipv4`
+parameter, and is one parameter rather than a class.**
 
 **None of those readings runs unless a person starts a container.**
 `scripts/test/verify-rollback.sh` is invoked by no CI job, and by exactly one
 runner, `scripts/test/release-readiness-root.sh`, a root-only batch that was
 first run on 2026-08-07. Its rollback suite passed that day, 11 checks with none
-failing, reading kernel, ssh and permissions back after a rollback. That is one
-dated run rather than a habit, and the ceiling above still holds: no reading
-anywhere has yet confirmed that a rollback restores a kernel **runtime** value,
-because the arm that would ask is unreachable under the invocation its only
-runner uses. That gap is issue #131.
+failing, reading the kernel config file, ssh and permissions back after a
+rollback, with the runtime kernel arm skipped. It was run again on 2026-08-08
+with `--private-network`, and passed 14 checks with none skipped, the three new
+ones being the runtime arm that issue #131 was filed about. **Two dated runs
+rather than a habit**: nothing runs this without a person.
+
+That container must be a fresh one, and the runner rebuilds it for exactly that
+reason. Run by hand against a container an earlier run has finished with, the
+suite reports three failures that are all one artefact: the pre-apply state it
+records is the previous run's post-apply state, so the config file it "restores"
+is already the hardened one, sshd is already compliant and leaves no checkpoint,
+and the checkpoint count is then short. Measured 2026-08-08, and none of the
+three was a defect.
 Sections 12A and 12B need `scripts/test/full-test-suite.sh` started as root
 inside a container with its `--apply` flag; 12B additionally needs that
 container booted under systemd, and 12A needs a container no earlier `--apply`
