@@ -628,6 +628,12 @@ pub(super) async fn boot_persistence(
 pub(super) struct EffectiveBoot {
     /// Assignments keyed by [`procfs_key`].
     pub(super) values: BTreeMap<String, String>,
+    /// The path of the file each key in `values` took its value from, keyed
+    /// alike. [`merge_effective`] already decides which file wins, and a
+    /// finding that has to send an operator somewhere is worth far more when
+    /// it names the file than when it says "a drop-in": the same key can be
+    /// assigned by several, and only one of them decides.
+    pub(super) sources: BTreeMap<String, String>,
     /// Paths whose assignments this reader could not resolve, and paths it
     /// could not read at all, each with the reason. Every entry here still
     /// earns its own row: see the caller in `divergence.rs`.
@@ -653,8 +659,10 @@ pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> 
     let ordered: Vec<LaterFile> = dropins_read.into_iter().chain(ufw).collect();
 
     let mut values = BTreeMap::new();
-    for (key, (_, value)) in merge_effective(&ordered) {
-        values.insert(key, value);
+    let mut sources = BTreeMap::new();
+    for (key, (file, value)) in merge_effective(&ordered) {
+        values.insert(key.clone(), value);
+        sources.insert(key, file.path.clone());
     }
 
     let mut unresolved: Vec<String> = ordered
@@ -681,6 +689,7 @@ pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> 
 
     EffectiveBoot {
         values,
+        sources,
         unresolved,
         glob_patterns,
         blocks_all,
