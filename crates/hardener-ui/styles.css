@@ -1967,6 +1967,7 @@ tbody tr:hover {
 .restore-fail .restore-icon { color: var(--color-critical); }
 .restore-action { color: var(--text-secondary); font-size: var(--font-size-caption); }
 .restore-error { color: var(--color-critical); font-size: var(--font-size-caption); }
+.restore-warn .restore-error { color: var(--color-warning); }
 
 .modal-actions {
   display: flex;

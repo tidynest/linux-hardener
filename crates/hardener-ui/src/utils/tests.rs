@@ -15,9 +15,9 @@
 
 use super::*;
 use crate::types::{
-    Change, ChangeType, CheckpointInfo, ComplianceSummary, ControlStatus, ExceptionOutcome,
-    FileRestoreAction, FileRestoreResult, Finding, FindingCategory, PluginId, RollbackResult,
-    ScanSessionInfo, Severity,
+    Change, ChangeType, CheckpointInfo, ComplianceSummary, ControlStatus, DivergenceState,
+    ExceptionOutcome, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, PluginId,
+    RollbackDivergence, RollbackResult, ScanSessionInfo, Severity,
 };
 
 #[test]
@@ -696,6 +696,17 @@ fn restore(action: FileRestoreAction, success: bool) -> FileRestoreResult {
     }
 }
 
+fn rollback_result_with(divergences: Vec<RollbackDivergence>) -> RollbackResult {
+    RollbackResult {
+        rollback_checkpoint_id: "cp1".to_string(),
+        rollback_checkpoint_name: "before".to_string(),
+        rollback_success: true,
+        rollback_files: Vec::new(),
+        rollback_reloads: Vec::new(),
+        rollback_divergences: divergences,
+    }
+}
+
 #[test]
 fn restore_kind_reflects_captured_content() {
     assert_eq!(restore_kind(true), "content + permissions");
@@ -731,6 +742,35 @@ fn rollback_summary_counts_successes_over_total() {
         rollback_divergences: Vec::new(),
     };
     assert_eq!(rollback_summary_sentence(&result), "2 of 3 files restored.");
+}
+
+/// A clean rollback's sentence is unchanged, so the ordinary case does not
+/// grow a clause about nothing.
+#[test]
+fn a_clean_rollback_sentence_is_unchanged() {
+    let result = rollback_result_with(Vec::new());
+
+    assert_eq!(rollback_summary_sentence(&result), "0 of 0 files restored.");
+}
+
+/// A divergence is named in the summary, because the modal's file list is
+/// where an operator's eye goes last and this is the part that changes what
+/// they do next.
+#[test]
+fn a_divergence_is_named_in_the_summary() {
+    let result = rollback_result_with(vec![RollbackDivergence {
+        divergence_plugin_id: "firewall-hardening".to_string(),
+        divergence_subject: "ufw".to_string(),
+        divergence_state: DivergenceState::Diverged,
+        divergence_detail: "ufw is enforcing while its config says ENABLED=no".to_string(),
+    }]);
+
+    let sentence = rollback_summary_sentence(&result);
+
+    assert!(
+        sentence.contains("1 divergence"),
+        "the count must be in the sentence: {sentence}"
+    );
 }
 
 // --- Task 1: Severity grouping and label/class helpers ---

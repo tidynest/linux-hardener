@@ -422,7 +422,12 @@ pub fn restore_kind(has_content: bool) -> &'static str {
     }
 }
 
-/// One-line rollback summary: successful restores over total files.
+/// One-line rollback summary: successful restores over total files, and what
+/// the rollback left diverged.
+///
+/// The divergence clause is a count and not a list: the modal's own section
+/// carries the sentences. It is in the summary because that is the line an
+/// operator reads, and a divergence changes what they do next.
 pub fn rollback_summary_sentence(result: &RollbackResult) -> String {
     let total = result.rollback_files.len();
     let restored = result
@@ -430,7 +435,12 @@ pub fn rollback_summary_sentence(result: &RollbackResult) -> String {
         .iter()
         .filter(|f| f.restore_success)
         .count();
-    format!("{restored} of {total} files restored.")
+    let files = format!("{restored} of {total} files restored.");
+    match result.rollback_divergences.len() {
+        0 => files,
+        1 => format!("{files} 1 divergence reported."),
+        n => format!("{files} {n} divergences reported."),
+    }
 }
 
 /// Score band for the security-score visual. Design bands (authoritative):

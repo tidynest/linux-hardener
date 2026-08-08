@@ -10,7 +10,7 @@
 use crate::components::{IconCheck, IconX, Modal};
 use crate::state::AppState;
 use crate::tauri_bindings::{invoke_get_checkpoint_detail, invoke_rollback};
-use crate::types::{CheckpointDetail, CheckpointInfo, RollbackResult};
+use crate::types::{CheckpointDetail, CheckpointInfo, DivergenceState, RollbackResult};
 use crate::utils::{
     is_auth_cancelled, restore_action_label, restore_kind, rollback_summary_sentence,
 };
@@ -219,6 +219,7 @@ fn result_view(result: RollbackResult, close: impl Fn(bool) + 'static + Copy) ->
     let summary = rollback_summary_sentence(&result);
     let files = result.rollback_files.clone();
     let reloads = result.rollback_reloads.clone();
+    let divergences = result.rollback_divergences.clone();
     view! {
         <div class=move || if success { "rollback-outcome ok" } else { "rollback-outcome fail" }>
             {if success {
@@ -269,6 +270,25 @@ fn result_view(result: RollbackResult, close: impl Fn(bool) + 'static + Copy) ->
                             <code>{plugin}</code>
                             <span class="restore-action">{action}</span>
                             {err.map(|e| view! { <span class="restore-error">{e}</span> })}
+                        </li>
+                    }
+                }).collect::<Vec<_>>()}
+            </ul>
+        })}
+        {(!divergences.is_empty()).then(|| view! {
+            <p class="rollback-body">"Still diverged:"</p>
+            <ul class="rollback-file-list">
+                {divergences.iter().map(|d| {
+                    let subject = d.divergence_subject.clone();
+                    let detail = d.divergence_detail.clone();
+                    let checked = d.divergence_state == DivergenceState::Diverged;
+                    view! {
+                        <li class="restore-warn">
+                            <code>{subject}</code>
+                            <span class="restore-action">
+                                {if checked { "diverged" } else { "could not check" }}
+                            </span>
+                            <span class="restore-error">{detail}</span>
                         </li>
                     }
                 }).collect::<Vec<_>>()}
