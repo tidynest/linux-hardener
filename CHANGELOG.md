@@ -1090,7 +1090,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/etc/sysctl.conf`, while the procps `sysctl` binary names those four plus the
   file and reads it **last**, so it can override any of them. Of arch, Debian 13
   trixie, Fedora, RHEL and openSUSE, **only Fedora ships `/etc/sysctl.conf`, as
-  a real file, and none ships an `/etc/sysctl.d/99-sysctl.conf` symlink.** That
+  a real file, and none ships an `/etc/sysctl.d/99-sysctl.conf` symlink.**
+  Fedora's copy assigns nothing, being a comment block that points the reader at
+  `/etc/sysctl.d/`, so **no tested distribution ships a value in that file** and
+  a parameter named there is one an operator wrote by hand. That
   retires two claims in #140, which had it that Debian derivatives ship the file
   and that Arch ships the symlink, and the symlink justification that used to
   stand on `SYSCTL_DROPIN_DIRS`. **One behaviour change is stated rather than
