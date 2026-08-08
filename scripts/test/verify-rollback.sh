@@ -37,6 +37,10 @@
 #                      (see TEST 7)
 #   8. Divergences:    a rollback with no surviving file naming a parameter
 #                      reports it rather than reporting plain success
+#   9. Legacy file:    a parameter named only in /etc/sysctl.conf, the file
+#                      procps sysctl --system reads and systemd-sysctl does
+#                      not. The fixture creates it and restores whatever was
+#                      there before; only fedora ships one (see TEST 9)
 #
 # Exit status:
 #   0  every check ran and passed
@@ -798,6 +802,117 @@ if [[ "$RUNTIME_ASKABLE" == "true" ]]; then
     fi
 else
     skip "Divergence reporting: /proc/sys/net is read-only here, so no apply can move $KERNEL_PROBE_PARAM"
+fi
+
+# =============================================================================
+# TEST 9: A PARAMETER NAMED ONLY IN /etc/sysctl.conf
+# =============================================================================
+# TEST 8 leaves nothing naming the parameter. This arm names it in
+# /etc/sysctl.conf, which `sysctl --system` reads and systemd-sysctl does not.
+# The row must still be Diverged, because the next boot drops the value, but
+# it must NOT say no configuration file names it: a file does, and that
+# sentence was issue #140.
+#
+# The file is created here rather than relied upon. Of the five distributions
+# measured 2026-08-08 only fedora ships one, and a fixture that depends on
+# which container it lands in decides a different thing on every run.
+#
+# Counting: this arm adds THREE checks to the total on the path where every
+# check runs (state, the claim it must not make, the file it must name), so a
+# clean run reports 26 rather than the 23 that preceded it. Any arm that skips,
+# and the missing-detail arm below, contribute one instead of three.
+header "TEST 9: A PARAMETER NAMED ONLY IN /etc/sysctl.conf"
+
+LEGACY_CONF="/etc/sysctl.conf"
+
+if [[ "$RUNTIME_ASKABLE" != "true" ]]; then
+    skip "Legacy sysctl.conf reporting: /proc/sys/net is read-only here, so no apply can move $KERNEL_PROBE_PARAM"
+elif ! command -v python3 &>/dev/null; then
+    skip "Legacy sysctl.conf reporting: python3 is not available to parse the rollback's JSON output"
+elif [[ ! -e /usr/lib/systemd/systemd-sysctl ]]; then
+    # Without the boot applier on disk, `boot_reads_legacy_conf` cannot say
+    # which applier runs at boot and answers Unknown, which makes the row
+    # Unverifiable. That is the code behaving as designed, so asserting
+    # Diverged here would report a correct answer as a regression.
+    skip "Legacy sysctl.conf reporting: /usr/lib/systemd/systemd-sysctl is absent, so the probe cannot say which applier runs at boot and the row is Unverifiable by design rather than by fault"
+else
+    rm -rf /var/lib/linux-hardener
+    # Same precondition as TEST 8, for the same reason: a surviving
+    # $HARDENER_CONF or baseline drop-in would name the parameter from a
+    # directory the boot applier DOES read, which is not the case under test.
+    rm -f "$HARDENER_CONF" "$KERNEL_BASELINE_CONF"
+
+    LEGACY_EXISTED=false
+    if [[ -e "$LEGACY_CONF" ]]; then
+        LEGACY_EXISTED=true
+        cp -a "$LEGACY_CONF" "$LEGACY_CONF.rollback-readback.bak"
+    fi
+    printf '%s = %s\n' "$KERNEL_PROBE_PARAM" "$KERNEL_PROBE_TARGET" > "$LEGACY_CONF"
+
+    printf '%s\n' "$KERNEL_PROBE_BASELINE" > "$KERNEL_PROBE_PROC"
+    "$BINARY" apply --plugin kernel-hardening > /dev/null 2>&1 || true
+
+    LEGACY_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+    if [[ -z "$LEGACY_CP" ]]; then
+        fail "No checkpoint created during legacy sysctl.conf apply"
+    else
+        "$BINARY" --format json rollback "$LEGACY_CP" > /tmp/legacy.json 2>/dev/null || true
+
+        # Read out of a file, never a pipe: this shell reports the last command
+        # in a pipeline and that has inverted an assertion in this script before.
+        #
+        # One invocation for both fields, tab separated and split with
+        # parameter expansion: two near-identical parsers of the same document
+        # is duplication, and a rollback that wrote unparsable JSON printed the
+        # same traceback twice. stderr goes to /dev/null so an unparsable
+        # document reads as an empty answer, which the assertions below report
+        # in the script's own words.
+        LEGACY_ROW=$(python3 -c 'import json,sys;rows=[d for d in json.load(open("/tmp/legacy.json")).get("rollback_divergences",[]) if d["divergence_subject"]==sys.argv[1]];print(rows[0]["divergence_state"]+"\t"+rows[0]["divergence_detail"] if rows else "none\t")' "$KERNEL_PROBE_PARAM" 2>/dev/null)
+        LEGACY_STATE=${LEGACY_ROW%%$'\t'*}
+        LEGACY_DETAIL=${LEGACY_ROW#*$'\t'}
+
+        # Which sentence the container produced, recorded before anything is
+        # asserted. More than one Diverged sentence satisfies all three checks
+        # below, and which one this run reached depends on the state the
+        # earlier arms left behind. One container cycle is expensive enough
+        # that it should record the branch it exercised, not only that some
+        # branch passed.
+        info "Row for $KERNEL_PROBE_PARAM: state='$LEGACY_STATE' detail='${LEGACY_DETAIL:-none}'"
+
+        assert_eq "The row for $KERNEL_PROBE_PARAM is Diverged" "Diverged" "$LEGACY_STATE"
+
+        # Both sentence checks need a sentence. With no row at all the pair
+        # would otherwise print a PASS saying the rollback did not make the
+        # false claim, which is true of silence and proves nothing.
+        if [[ -z "$LEGACY_DETAIL" ]]; then
+            fail "The rollback reported no detail sentence for $KERNEL_PROBE_PARAM, so neither wording check could be asked (state='$LEGACY_STATE')"
+        else
+            # The point of the whole issue. Substring, not equality: the
+            # sentence is allowed to change wording, it is not allowed to make
+            # this claim. Literal match on a herestring for the two reasons
+            # written out at assert_contains above.
+            if grep -qF "no configuration file names it" <<< "$LEGACY_DETAIL"; then
+                fail "The rollback claimed no file names $KERNEL_PROBE_PARAM while $LEGACY_CONF names it: $LEGACY_DETAIL"
+            else
+                pass "The rollback did not claim $KERNEL_PROBE_PARAM is named by nothing"
+            fi
+
+            if grep -qF "$LEGACY_CONF" <<< "$LEGACY_DETAIL"; then
+                pass "The sentence names $LEGACY_CONF"
+            else
+                fail "The sentence does not name the file an operator must go and look at: $LEGACY_DETAIL"
+            fi
+        fi
+
+        rm -f /tmp/legacy.json
+    fi
+
+    # Put the host back the way it was found, whichever way that was.
+    if [[ "$LEGACY_EXISTED" == "true" ]]; then
+        mv "$LEGACY_CONF.rollback-readback.bak" "$LEGACY_CONF"
+    else
+        rm -f "$LEGACY_CONF"
+    fi
 fi
 
 # =============================================================================
