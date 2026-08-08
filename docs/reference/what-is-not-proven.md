@@ -141,10 +141,23 @@ has been written for them, not because nothing there could diverge.
 `scripts/test/verify-rollback.sh` gained an eighth arm, TEST 8, which removes
 TEST 1's own baseline-drop-in workaround so that a surviving file does not name
 the seeded parameter, then requires the rollback's own JSON to carry it as
-`Diverged`. **That arm has never run.** The three dated readings above, most
-recently 21 of 21 on 2026-08-08, all predate it. The suite has not been rerun
-since TEST 8 was added, so its new total is not stated here rather than
-guessed.
+`Diverged`. **It was read green on 2026-08-08, 23 of 23 with none skipped**, on
+the arch container, against a musl binary the pre-flight verified against the
+working tree. That run is the first time a rollback's own report of what it
+left behind has been read off a real system.
+
+The same run measured what the kernel probe actually says, which no reasoning
+had settled: **15 rows, 12 of them `Diverged` and 3 `Unverifiable`.** The 12 are
+not noise. An apply writes one drop-in naming every parameter it moves and the
+rollback deletes it, so those 12 parameters really are still hardened in the
+running kernel with no surviving file naming them, and every one of them is an
+instance of the defect this reporting exists to surface. The 3 are the glob
+source row for `/usr/lib/sysctl.d/50-default.conf` and the two managed keys its
+patterns could name, `net.ipv4.conf.all.rp_filter` and
+`net.ipv4.conf.all.accept_source_route`. That is the narrowing working: the
+same file's patterns block those two parameters and leave the other seventeen
+attributable, where an earlier draft let one glob anywhere make every parameter
+on every systemd host unverifiable.
 
 That container must be a fresh one, and the runner rebuilds it for exactly that
 reason. Run by hand against a container an earlier run has finished with, the

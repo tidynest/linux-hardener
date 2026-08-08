@@ -467,9 +467,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing there could diverge. `scripts/test/verify-rollback.sh` gained an
   eighth arm, TEST 8, which removes TEST 1's own baseline-drop-in workaround so
   a surviving file does not name the seeded parameter, then requires the
-  rollback's own JSON to carry the resulting row. **That arm has not yet run
-  against a real container**, so the count this adds to the suite's previous
-  21 of 21 is not stated here, and neither issue is closed by this change.
+  rollback's own JSON to carry the resulting row as `Diverged`. **Read green on
+  a real arch container, 23 of 23 with none skipped**, up from the suite's
+  previous 21 of 21. That run also measured what the kernel probe says on a
+  real host: 15 rows, 12 `Diverged` and 3 `Unverifiable`, the 3 being the glob
+  source `/usr/lib/sysctl.d/50-default.conf` and the two managed keys its own
+  patterns could name.
 
 - **The mac plugin's rollback is recorded as a ceiling rather than covered.**
   Measured rather than assumed, after three "cannot" claims fell over the same
