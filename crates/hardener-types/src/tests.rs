@@ -738,6 +738,7 @@ mod rollback_result_tests {
                 reload_success: true,
                 reload_error: None,
             }],
+            rollback_divergences: Vec::new(),
         };
         assert!(result.reloads_ok());
     }
@@ -763,6 +764,7 @@ mod rollback_result_tests {
                     reload_error: Some("augenrules exited 1".to_string()),
                 },
             ],
+            rollback_divergences: Vec::new(),
         };
         assert!(!result.reloads_ok());
         assert!(
@@ -796,5 +798,50 @@ mod rollback_result_tests {
             crate::rollback_failed_label(3, 2),
             "3 failed (2 due to reload)"
         );
+    }
+}
+
+mod rollback_divergence_tests {
+    use crate::*;
+
+    /// A payload written by a release that predates the field must read as
+    /// "nothing reported" rather than failing to parse, which is the same
+    /// contract `rollback_reloads` carries and for the same reason.
+    #[test]
+    fn a_rollback_payload_without_divergences_still_parses() {
+        let json = r#"{
+        "rollback_checkpoint_id": "cp-1",
+        "rollback_checkpoint_name": "before apply",
+        "rollback_success": true,
+        "rollback_files": []
+    }"#;
+
+        let parsed: RollbackResult =
+            serde_json::from_str(json).expect("an older payload must still parse");
+
+        assert!(
+            parsed.rollback_divergences.is_empty(),
+            "an absent field means nothing was reported, not that something failed"
+        );
+    }
+
+    /// The row survives a round trip with both states, so a fleet payload
+    /// carrying one is not silently reshaped in transit.
+    #[test]
+    fn a_divergence_row_round_trips_in_both_states() {
+        for state in [DivergenceState::Diverged, DivergenceState::Unverifiable] {
+            let row = RollbackDivergence {
+                divergence_plugin_id: "kernel-hardening".to_string(),
+                divergence_subject: "net.ipv4.conf.all.log_martians".to_string(),
+                divergence_state: state,
+                divergence_detail: "reads 1 and no file names it".to_string(),
+            };
+
+            let json = serde_json::to_string(&row).expect("a divergence row serialises");
+            let back: RollbackDivergence = serde_json::from_str(&json).expect("and parses back");
+
+            assert_eq!(back.divergence_state, state);
+            assert_eq!(back.divergence_subject, "net.ipv4.conf.all.log_martians");
+        }
     }
 }

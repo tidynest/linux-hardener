@@ -1389,6 +1389,7 @@ impl CheckpointManager {
             rollback_success: all_ok,
             rollback_files: files,
             rollback_reloads: Vec::new(),
+            rollback_divergences: Vec::new(),
         })
     }
 }

@@ -142,6 +142,7 @@ mod fleet_partial_restore {
                 failed_restore("/etc/stub/four"),
             ],
             rollback_reloads: Vec::new(),
+            rollback_divergences: Vec::new(),
         };
 
         let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
@@ -258,6 +259,7 @@ mod nothing_restored_never_lists_the_registry {
                 restore_error: Some("permission denied".to_string()),
             }],
             rollback_reloads: Vec::new(),
+            rollback_divergences: Vec::new(),
         };
 
         let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
@@ -292,6 +294,7 @@ fn a_rollback_whose_reload_failed_does_not_report_success() {
             reload_success: false,
             reload_error: Some("sshd -t refused the restored config".to_string()),
         }],
+        rollback_divergences: Vec::new(),
     };
     assert_eq!(
         rollback_failure_reason(&result),
@@ -307,6 +310,7 @@ fn a_rollback_whose_files_failed_says_so_rather_than_blaming_the_reload() {
         rollback_success: false,
         rollback_files: Vec::new(),
         rollback_reloads: Vec::new(),
+        rollback_divergences: Vec::new(),
     };
     assert_eq!(rollback_failure_reason(&result), Some(FailureReason::Files));
 }
@@ -319,6 +323,7 @@ fn a_clean_rollback_has_no_failure_reason() {
         rollback_success: true,
         rollback_files: Vec::new(),
         rollback_reloads: Vec::new(),
+        rollback_divergences: Vec::new(),
     };
     assert_eq!(rollback_failure_reason(&result), None);
 }

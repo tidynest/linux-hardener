@@ -945,6 +945,35 @@ pub struct ReloadResult {
     pub reload_error: Option<String>,
 }
 
+/// Whether a subject came back, or could not be shown to have come back.
+///
+/// Two variants and no `Converged`, deliberately. A plugin emits a row for
+/// every subject it examined and could not confirm returned, so an empty
+/// vector has a defined meaning: everything checkable came back, and
+/// everything uncheckable carries an `Unverifiable` row. Silence never
+/// stands for "nobody looked", which is the conflation the checkpoint work
+/// and the pam-unreadable-config arc both existed to remove.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub enum DivergenceState {
+    /// Measured: the running system disagrees with the restored configuration.
+    Diverged,
+    /// The probe could not answer. Not a claim that anything is wrong.
+    Unverifiable,
+}
+
+/// One thing a rollback knowingly left diverged, or could not check.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RollbackDivergence {
+    /// Plugin that took the reading.
+    pub divergence_plugin_id: String,
+    /// What was examined: "net.ipv4.conf.all.log_martians", "ufw".
+    pub divergence_subject: String,
+    /// Measured divergence, or an unanswerable probe.
+    pub divergence_state: DivergenceState,
+    /// The operator's sentence, carrying both values where the probe has them.
+    pub divergence_detail: String,
+}
+
 /// Results of a full rollback operation.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RollbackResult {
@@ -960,6 +989,12 @@ pub struct RollbackResult {
     /// and empty when the payload came from a release that predates them.
     #[serde(default)]
     pub rollback_reloads: Vec<ReloadResult>,
+    /// What the rollback left diverged from the configuration it restored,
+    /// and what it could not check. Empty when every subject examined came
+    /// back. Reporting only: nothing may branch on this, because a branch is
+    /// how reporting turns into behaviour.
+    #[serde(default)]
+    pub rollback_divergences: Vec<RollbackDivergence>,
 }
 
 impl RollbackResult {
