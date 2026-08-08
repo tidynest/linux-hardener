@@ -448,7 +448,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than by an equality this path has no `PluginConfig` to check against.
   An unreadable `/proc/sys` entry and an unresolved configuration source, a
   glob-assigning file or an unreadable drop-in, are each `Unverifiable`, and
-  every unresolved source gets a row of its own naming the file. The firewall
+  every unresolved source gets a row of its own naming the file. The two kinds
+  of unresolved source block different amounts: an unreadable file could name
+  anything, so it blocks every parameter, while a glob blocks only the
+  parameters its own pattern could name. Without that narrowing the stock
+  `/usr/lib/sysctl.d/50-default.conf`, which globs three `net.ipv4` keys, would
+  make every parameter on every systemd host unverifiable. The firewall
   probe is ufw only: it reads `ufw status` itself and classifies on the status
   line exactly, enforcing against `ENABLED=no` in `/etc/ufw/ufw.conf` or the
   reverse. firewalld's restored directory is re-read by its own daemon, which

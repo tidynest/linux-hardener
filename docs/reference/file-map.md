@@ -913,9 +913,9 @@ tree on **2026-08-08**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 1704. The eleventh
+The table covers the ten crates under `crates/` and sums to 1720. The eleventh
 workspace member, `src-tauri`, carries 104 more, which is why the tree total the
-evidence ledger records is 1808 and not this table's sum.
+evidence ledger records is 1824 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
