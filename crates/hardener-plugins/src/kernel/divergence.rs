@@ -43,11 +43,44 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// probe exists to refuse, so when any source went unresolved, that
 /// parameter's own row says the attribution could not be made, rather than
 /// stating a fact the scan does not actually have.
+///
+/// **Every unresolved source also gets a row of its own,** independent of how
+/// the parameter loop below classifies anything. Consulting `effective.unresolved`
+/// only from inside that loop was tried once already: if every managed
+/// parameter happens to land somewhere else (an explicit assignment that
+/// agrees, a runtime read that errors, a value looser than the baseline), the
+/// unresolved source produces no row anywhere, and the operator learns
+/// nothing went unchecked. A row here, naming the file, is what the invariant
+/// this module states in its own comment requires: silence never stands for
+/// "nobody looked".
 pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
     let plugin = KernelHardeningPlugin::new();
     let effective = persistence::effective_boot_values(ctx, DropinScope::All).await;
     let source_unresolved = !effective.unresolved.is_empty();
-    let mut rows: Vec<RollbackDivergence> = Vec::new();
+    let mut rows: Vec<RollbackDivergence> = effective
+        .unresolved
+        .iter()
+        .map(|reason| {
+            row(
+                "kernel parameters",
+                DivergenceState::Unverifiable,
+                format!("{reason}, so whether the restored configuration names them is unknown"),
+            )
+        })
+        .collect();
+
+    // The clause a blocked per-parameter row adds to its own sentence. With
+    // exactly one unresolved source, naming it here is more actionable than
+    // sending the operator to cross-reference the generic rows above; with
+    // several, naming just one would read as though that one were the cause,
+    // which is not known, so the sentence stays generic and the rows above
+    // remain where every path is named.
+    let unresolved_clause = match effective.unresolved.as_slice() {
+        [reason] => format!(", but {reason}, so whether it names it is unknown"),
+        _ => ", but this scan could not resolve every configuration source, so whether an \
+              unresolved one names it is unknown"
+            .to_string(),
+    };
 
     for parameter in KERNEL_PARAMS {
         let name = parameter.kernel_parameter_name;
@@ -85,9 +118,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                         DivergenceState::Unverifiable,
                         format!(
                             "{name} reads {runtime} in the running kernel and no explicit \
-                             assignment names it, but this scan could not resolve every \
-                             configuration source, so whether an unresolved one names it is \
-                             unknown"
+                             assignment names it{unresolved_clause}"
                         ),
                     )
                 } else {

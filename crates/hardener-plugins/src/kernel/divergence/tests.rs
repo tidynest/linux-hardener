@@ -173,3 +173,91 @@ async fn nothing_names_it_and_runtime_is_looser_produces_no_row() {
         "a value looser than the baseline that nothing names is not this rollback's doing"
     );
 }
+
+/// Fix round 2, finding 1: an unresolved source must produce a row of its
+/// own, not only a row reached through the per-parameter loop. Here every
+/// managed parameter's `/proc/sys` read fails (nothing is mocked under
+/// `/proc/sys`), so none of them ever reaches the arm that used to be the
+/// only place `source_unresolved` was consulted. Before the fix this left the
+/// glob-assigning file with no row anywhere in the output.
+#[tokio::test]
+async fn an_unresolved_source_is_reported_even_when_no_parameter_reaches_the_unnamed_arm() {
+    let ctx = ctx_with(MockExecutor::new().with_file(
+        "/etc/sysctl.d/99-glob.conf",
+        "net.ipv4.conf.*.log_martians = 1\n",
+    ));
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    assert!(
+        rows.iter()
+            .any(|r| r.divergence_state == DivergenceState::Unverifiable
+                && r.divergence_detail.contains("/etc/sysctl.d/99-glob.conf")),
+        "an unresolved source must produce its own row naming the file, regardless of how \
+         every managed parameter happens to classify: {rows:?}"
+    );
+}
+
+/// Fix round 2, finding 2: the row an unresolved source produces must name
+/// the file. Round 1's collapse to a boolean left the per-parameter sentence
+/// generic; the row the unresolved source itself produces is where the path
+/// has to survive.
+#[tokio::test]
+async fn an_unresolved_sources_row_names_the_file() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/99-glob.conf",
+                "net.ipv4.conf.*.log_martians = 1\n",
+            )
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let unresolved_row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "kernel parameters")
+        .expect("the unresolved source must carry a row of its own");
+    assert_eq!(
+        unresolved_row.divergence_state,
+        DivergenceState::Unverifiable
+    );
+    assert!(
+        unresolved_row
+            .divergence_detail
+            .contains("/etc/sysctl.d/99-glob.conf"),
+        "the row must name the file an operator has to go and look at: {}",
+        unresolved_row.divergence_detail
+    );
+}
+
+/// Fix round 2, finding 3: the other flavour of unresolved source, a drop-in
+/// this scan could list but not read, exercised by name rather than only
+/// through the glob-file flavour above.
+#[tokio::test]
+async fn an_unreadable_dropin_file_is_an_unresolved_source() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file("/etc/sysctl.d/50-locked.conf", "irrelevant\n")
+            .with_read_permission_denied("/etc/sysctl.d/50-locked.conf"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let unresolved_row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "kernel parameters")
+        .expect("a drop-in this scan could not read must be reported as an unresolved source");
+    assert_eq!(
+        unresolved_row.divergence_state,
+        DivergenceState::Unverifiable
+    );
+    assert!(
+        unresolved_row
+            .divergence_detail
+            .contains("/etc/sysctl.d/50-locked.conf"),
+        "the row must name the file that could not be read: {}",
+        unresolved_row.divergence_detail
+    );
+}
