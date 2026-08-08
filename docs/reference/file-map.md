@@ -940,7 +940,7 @@ counts measured the same way and on the same date as the table above.
 
 ## GUI Tests (Playwright + Desktop)
 
-114 Playwright tests target the Web UI across every distro in `DISTRO_ORDER`. **Green on all six on 2026-08-08**, 110 of 110 each, in 1.7 to 2.2 minutes against the 600 s ceiling the whole investigation began with the suite exceeding. The suite has since grown to 114, `T-APPLY-01..04` having been added and run on Fedora only, so five distributions stand measured at 110 rather than at 114. That reading replaces a 113 figure from 2026-06-29 which had gone stale in both directions: the suite had been rewritten, and it failed on all six on 2026-08-07 for reasons that were environmental rather than about the interface. Those are recorded in [distribution-validation.md](distribution-validation.md#gui-test-suite-2026-08-08) and in issue #48. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
+114 Playwright tests target the Web UI across every distro in `DISTRO_ORDER`. **Green on all six on 2026-08-08**, 114 of 114 each, in 1.7 to 2.4 minutes against the 600 s ceiling the whole investigation began with the suite exceeding. That reading replaces a 113 figure from 2026-06-29 which had gone stale in both directions: the suite had been rewritten, and it failed on all six on 2026-08-07 for reasons that were environmental rather than about the interface. Those are recorded in [distribution-validation.md](distribution-validation.md#gui-test-suite-2026-08-08) and in issue #48. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
 
 ### Test Files
 

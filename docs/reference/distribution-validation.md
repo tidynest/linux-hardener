@@ -141,7 +141,7 @@ fleet-apply, remote, and scheduler coverage). That GUI reading is a record of it
 own date and has been superseded twice over: the specs were rewritten in August
 and the current one is
 [GUI Test Suite, 2026-08-08](#gui-test-suite-2026-08-08), green on all **six**
-at 110 tests.
+at 114 tests.
 
 ### Result (final, all harness fixes applied)
 
@@ -945,7 +945,7 @@ In addition to CLI testing, the Web UI is validated with Playwright across all 5
 
 The suite has grown since that baseline, and has since been rewritten. The
 current reading is under
-[GUI Test Suite, 2026-08-08](#gui-test-suite-2026-08-08) below: **110 tests
+[GUI Test Suite, 2026-08-08](#gui-test-suite-2026-08-08) below: **114 tests
 across 9 specs, green on all six distributions**. The 2026-06-29 figure of 113
 across five, recorded under
 [v1.1.0 Re-validation](#v110-re-validation-2026-06-28), is superseded and is not
@@ -956,12 +956,15 @@ different tests rather than measuring growth.
 
 | Distribution | Tests run | Passed | Failed | Wall clock |
 |--------------|-----------|--------|--------|------------|
-| Arch | 110 | 110 | 0 | 1.9 min |
-| Debian | 110 | 110 | 0 | 1.8 min |
-| Ubuntu | 110 | 110 | 0 | 1.7 min |
-| Fedora | 110 | 110 | 0 | 1.7 min |
-| Rocky/RHEL | 110 | 110 | 0 | 1.8 min |
-| openSUSE Leap 16 | 110 | 110 | 0 | 2.2 min |
+| Arch | 114 | 114 | 0 | 1.8 min |
+| Debian | 114 | 114 | 0 | 1.7 min |
+| Ubuntu | 114 | 114 | 0 | 1.9 min |
+| Fedora | 114 | 114 | 0 | 1.8 min |
+| Rocky/RHEL | 114 | 114 | 0 | 1.9 min |
+| openSUSE Leap 16 | 114 | 114 | 0 | 2.4 min |
+
+Taken at 10:13, after `T-APPLY-01..04` landed. An earlier sweep the same
+morning read 110 of 110 across the same six, before those four existed.
 
 The ceiling is 600 s per distribution and nothing is now close to it. It was
 binding before this repair, which is what began the investigation: a stale class
@@ -1005,11 +1008,8 @@ theme spec generates at collection time (5 states x 6 themes). The 2026-08-07
 suite repair rewrote most of these, so the per-spec figures here are a fresh
 count and not the 2026-08-01 one they replace.
 
-**This total is four ahead of the six-distribution reading above**, which was
-taken at 110 before `T-APPLY-01..04` were added. Those four have been run on
-Fedora and pass; the other five distributions have not been re-measured since,
-and the table is left at what it actually recorded rather than being edited to
-match a number nobody ran.
+This matches the six-distribution reading above, which was re-run at 114 once
+`T-APPLY-01..04` landed.
 
 | Spec | Test IDs | Tests | Description |
 |------|----------|-------|-------------|

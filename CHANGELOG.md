@@ -437,8 +437,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hardening. The mock validator gained `ApplyResult` and `Change` probes, so a
   field rename in either is now caught statically for both fixtures.
 
-- **The GUI suite is green on all six distributions**, 110 of 110 each, in 1.7
-  to 2.2 minutes against a 600 s ceiling the investigation began with it
+- **The GUI suite is green on all six distributions**, 114 of 114 each, in 1.7
+  to 2.4 minutes against a 600 s ceiling the investigation began with it
   exceeding. Recorded in `docs/reference/distribution-validation.md` under
   **GUI Test Suite, 2026-08-08**, which supersedes a 2026-06-29 reading of 113
   across five. The two figures are not comparable and the document now says so:
