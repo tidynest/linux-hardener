@@ -417,6 +417,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which was chosen over adding a finding because a declined finding changes no
   count the suite asserts.
 
+- **The pam plugin has a rollback readback** (#131, part 2). Six of the eight
+  plugins now have one; before this, pam, firewall and mac had none at all and
+  their rollback was covered only by in-crate tests over temporary directories.
+  TEST 6 seeds `PASS_MAX_DAYS` in `/etc/login.defs` to **shadow's own default
+  of 99999**, which the plugin's `AtMost 90` makes a genuine violation rather
+  than an invented one, then asserts that the apply lowers it, that the
+  rollback returns it, and that the file comes back byte for byte. The hash is
+  asked beside the value because a restore can produce the right directive
+  inside a file it otherwise rewrote. `/etc/login.defs` over the plugin's four
+  other files because shadow ships it on every distribution the suite runs
+  against, where the others arrive with libpwquality or pam and a container
+  missing one would skip.
+
 - **A rolled-back kernel runtime value has been read off a real system**, for
   the first time (#131, part 1). `net.ipv4.conf.all.log_martians` seeded to 0,
   raised to 1 by the apply, read back at 0 after the rollback, all three

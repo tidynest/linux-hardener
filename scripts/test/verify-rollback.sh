@@ -30,6 +30,8 @@
 #   3. Permissions:    directory mode restoration
 #   4. JSON output:    rollback --format json produces valid RollbackResult
 #   5. Checkpoints:    two applies leave two checkpoints
+#   6. PAM plugin:     a login.defs directive seeded looser than its target,
+#                      moved by the apply and read back after the rollback
 #
 # Exit status:
 #   0  every check ran and passed
@@ -469,6 +471,87 @@ if [[ "$CP_COUNT" -ge 2 ]]; then
     done
 else
     fail "Expected >= 2 checkpoints, got $CP_COUNT"
+fi
+
+# =============================================================================
+# TEST 6: PAM PLUGIN: a login.defs directive moved by apply and restored
+# =============================================================================
+#
+# Part 2 of issue #131: pam, firewall and mac had no rollback readback of any
+# kind. This closes pam, which the #125 assessment called the achievable one.
+#
+# `/etc/login.defs` rather than one of the four other files the plugin manages.
+# It is shipped by shadow, so it is present on every distribution this suite
+# runs against, where `/etc/security/pwquality.conf` arrives with libpwquality
+# and `faillock.conf` and `pwhistory.conf` with pam itself: a container without
+# them would skip rather than read, and a skip is the outcome this arm exists
+# to stop being the only one available.
+#
+# PASS_MAX_DAYS rather than PASS_MIN_DAYS or PASS_WARN_AGE, because it is the
+# one whose comparison is AtMost. Its target is 90 and shadow's own default is
+# 99999, so the pre-apply state is genuinely a violation without inventing one,
+# and the apply has to move the value rather than agreeing with it. Seeding a
+# value that already passes is how the kernel arm used to compare a constant
+# with itself.
+header "TEST 6: PAM PLUGIN ROLLBACK"
+
+rm -rf /var/lib/linux-hardener
+
+PAM_PROBE_FILE="/etc/login.defs"
+PAM_PROBE_DIRECTIVE="PASS_MAX_DAYS"
+PAM_PROBE_BASELINE="99999"  # shadow's default, and looser than the target
+PAM_PROBE_TARGET="90"       # PAM_DIRECTIVES in crates/hardener-plugins/src/pam/mod.rs
+
+# The directive's value, read the way login.defs is actually parsed: first
+# match wins, whitespace-separated, comments ignored because a commented line
+# does not start with the key.
+login_defs_value() {
+    awk -v key="$PAM_PROBE_DIRECTIVE" '$1 == key { print $2; exit }' \
+        "$PAM_PROBE_FILE" 2>/dev/null
+}
+
+if [[ ! -f "$PAM_PROBE_FILE" ]]; then
+    skip "PAM rollback readback: $PAM_PROBE_FILE is absent, so there is no directive to move"
+else
+    # Seed by deleting any existing setting and appending one, rather than by
+    # editing in place: a distribution that ships the directive commented out,
+    # twice, or not at all would otherwise need three different edits.
+    sed -i "/^[[:space:]]*${PAM_PROBE_DIRECTIVE}[[:space:]]/d" "$PAM_PROBE_FILE"
+    printf '%s\t%s\n' "$PAM_PROBE_DIRECTIVE" "$PAM_PROBE_BASELINE" >> "$PAM_PROBE_FILE"
+
+    PAM_BEFORE_HASH=$(sha256sum "$PAM_PROBE_FILE" | awk '{print $1}')
+    PAM_BEFORE_VALUE=$(login_defs_value)
+    info "BEFORE: $PAM_PROBE_DIRECTIVE=$PAM_BEFORE_VALUE (seeded)"
+    assert_eq "Seeded $PAM_PROBE_DIRECTIVE above its target" \
+        "$PAM_PROBE_BASELINE" "$PAM_BEFORE_VALUE"
+
+    info "Applying PAM hardening..."
+    "$BINARY" apply --plugin pam-hardening > /dev/null 2>&1 || true
+
+    PAM_AFTER_VALUE=$(login_defs_value)
+    info "AFTER APPLY: $PAM_PROBE_DIRECTIVE=$PAM_AFTER_VALUE"
+    assert_eq "Apply lowered $PAM_PROBE_DIRECTIVE to its target" \
+        "$PAM_PROBE_TARGET" "$PAM_AFTER_VALUE"
+
+    PAM_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+    if [[ -z "$PAM_CP" ]]; then
+        fail "No PAM checkpoint found"
+    else
+        info "Rolling back PAM (checkpoint: $PAM_CP)..."
+        "$BINARY" rollback "$PAM_CP" > /dev/null 2>&1 || true
+
+        # Both halves are asked. The value is what an operator cares about; the
+        # hash is what catches a restore that produced the right directive in a
+        # file it had otherwise rewritten.
+        PAM_RESTORED_VALUE=$(login_defs_value)
+        info "AFTER ROLLBACK: $PAM_PROBE_DIRECTIVE=$PAM_RESTORED_VALUE"
+        assert_eq "Rollback restored $PAM_PROBE_DIRECTIVE" \
+            "$PAM_BEFORE_VALUE" "$PAM_RESTORED_VALUE"
+
+        PAM_RESTORED_HASH=$(sha256sum "$PAM_PROBE_FILE" 2>/dev/null | awk '{print $1}')
+        assert_eq "Rollback restored $PAM_PROBE_FILE byte for byte" \
+            "$PAM_BEFORE_HASH" "${PAM_RESTORED_HASH:-<file missing>}"
+    fi
 fi
 
 # =============================================================================

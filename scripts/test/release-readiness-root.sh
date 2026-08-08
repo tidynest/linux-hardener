@@ -877,13 +877,18 @@ suite_rollback() {
     # sentence rather than folded into the PASS above, because the detail line
     # is the part that gets read: the previous wording claimed kernel, ssh and
     # permissions had been read back whether or not the runtime sysctl arm had
-    # run, and under --pipe it never runs. Still a PASS, because nothing failed
+    # run, and under --pipe it never ran. Still a PASS, because nothing failed
     # and a skip is not a regression.
+    #
+    # The 2 branch deliberately names no arm. There are now two that can skip,
+    # the runtime sysctl one and pam where login.defs is absent, and a sentence
+    # listing what was read has to be corrected every time another is added or
+    # it starts overstating again. Pointing at the log cannot rot.
     case $exit_code in
         0) record_result rollback PASS \
-            "kernel (file and runtime), ssh and permissions read back after rollback" ;;
+            "kernel (file and runtime), ssh, permissions and pam read back after rollback" ;;
         2) record_result rollback PASS \
-            "ssh, permissions and the kernel config file read back; the runtime sysctl arm was skipped, see $logfile" ;;
+            "passed, but at least one arm was not asked, see $logfile" ;;
         *) record_result rollback FAIL \
             "exit $exit_code, see $logfile (first ever run: baseline, not a regression)" ;;
     esac

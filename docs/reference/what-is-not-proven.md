@@ -1,6 +1,6 @@
 # What This Release Does Not Prove
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-08
 
 This release does not claim to be proven bug-free, and no release of anything
 ever has been. It claims something narrower and checkable: every capability it
@@ -49,7 +49,7 @@ Usually, and here is the boundary of that word.
 cannot round-trip, and no test asserts that it can. If a path this tool touches
 on your host is not text, its restore is unproven.
 
-**Five of the eight plugins have a rollback reading written against a real
+**Six of the eight plugins have a rollback reading written against a real
 system, and the kernel's is the one to read the small print on.**
 `scripts/test/verify-rollback.sh` re-reads kernel sysctl values, `sshd_config`
 content and directory modes after a rollback. Section 12A of
@@ -57,10 +57,13 @@ content and directory modes after a rollback. Section 12A of
 wrote is gone, that the whole `/etc/audit` tree diffs identical to its pre-apply
 state, and that the compiled rule count came back. Section 12B does the same for
 the `systemctl mask` symlink the services plugin leaves. The differential suite
-puts an ssh rollback and reload cycle back through `sshd -T`. **The pam,
-firewall and mac plugins have no such reading**: their rollback is covered by
-in-crate tests over temporary directories and by nothing that re-examines a real
-host.
+puts an ssh rollback and reload cycle back through `sshd -T`. The same script's
+TEST 6 seeds `PASS_MAX_DAYS` in `/etc/login.defs` to shadow's own default of
+99999, which the pam plugin's `AtMost 90` makes a genuine violation, and asserts
+that the apply lowers it, that the rollback returns it, and that the file comes
+back byte for byte. **The firewall and mac plugins have no such reading**: their
+rollback is covered by in-crate tests over temporary directories and by nothing
+that re-examines a real host. That is issue #131, of which pam is now closed.
 
 **The kernel reading in that script can now fail, and its runtime half is asked
 only where a container permits the question.** Both halves used to be
@@ -79,7 +82,7 @@ rather than quietly restoring the old vacuity.
 **That stronger reading has now been taken, on 2026-08-08.** A rolled-back
 kernel runtime value has been read off a real system:
 `net.ipv4.conf.all.log_martians` seeded to 0, raised to 1 by the apply and read
-back at 0 after the rollback, all three asserted. 14 checks, none skipped, none
+back at 0 after the rollback, all three asserted. 18 checks, none skipped, none
 failing.
 
 It took a one-flag change to get there, and the flag was withheld by a wrong
@@ -106,8 +109,9 @@ runner, `scripts/test/release-readiness-root.sh`, a root-only batch that was
 first run on 2026-08-07. Its rollback suite passed that day, 11 checks with none
 failing, reading the kernel config file, ssh and permissions back after a
 rollback, with the runtime kernel arm skipped. It was run again on 2026-08-08
-with `--private-network`, and passed 14 checks with none skipped, the three new
-ones being the runtime arm that issue #131 was filed about. **Two dated runs
+with `--private-network`, and passed 18 checks with none skipped: three new ones
+for the runtime arm that issue #131 was filed about, and four more for the pam
+readback added the same day. **Two dated runs
 rather than a habit**: nothing runs this without a person.
 
 That container must be a fresh one, and the runner rebuilds it for exactly that
