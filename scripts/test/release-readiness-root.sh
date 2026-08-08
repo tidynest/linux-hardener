@@ -886,7 +886,7 @@ suite_rollback() {
     # it starts overstating again. Pointing at the log cannot rot.
     case $exit_code in
         0) record_result rollback PASS \
-            "kernel (file and runtime), ssh, permissions and pam read back after rollback" ;;
+            "kernel (file and runtime), ssh, permissions, pam and firewall (config and live) read back after rollback" ;;
         2) record_result rollback PASS \
             "passed, but at least one arm was not asked, see $logfile" ;;
         *) record_result rollback FAIL \

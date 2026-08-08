@@ -32,6 +32,9 @@
 #   5. Checkpoints:    two applies leave two checkpoints
 #   6. PAM plugin:     a login.defs directive seeded looser than its target,
 #                      moved by the apply and read back after the rollback
+#   7. Firewall:       the backend's own config AND what the host is actually
+#                      enforcing, asked of whichever backend the plugin picks
+#                      (see TEST 7)
 #
 # Exit status:
 #   0  every check ran and passed
@@ -551,6 +554,165 @@ else
         PAM_RESTORED_HASH=$(sha256sum "$PAM_PROBE_FILE" 2>/dev/null | awk '{print $1}')
         assert_eq "Rollback restored $PAM_PROBE_FILE byte for byte" \
             "$PAM_BEFORE_HASH" "${PAM_RESTORED_HASH:-<file missing>}"
+    fi
+fi
+
+# =============================================================================
+# TEST 7: FIREWALL PLUGIN: the restored config AND the live enforcement state
+# =============================================================================
+#
+# Part 2 of issue #131, for firewall. The #125 assessment recorded the live
+# half as needing "a booted container with its own network namespace", so only
+# the file half was thought reachable. Measured on 2026-08-08: nft creates,
+# lists and deletes a table under `--private-network --pipe` with no `--boot`.
+# That is the third place where a requirement stated as "booted" turned out to
+# be "has its own network namespace", after the kernel arm above and
+# differential-suite.sh (#137).
+#
+# The backend is asked for rather than assumed. The first draft of this arm
+# asserted nftables specifics and failed on the arch container, which has ufw
+# installed as well: the plugin picked ufw, correctly, and reported so. A test
+# that hard-codes one backend does not test the plugin, it tests the container.
+#
+# The order below mirrors `classify_installed` in
+# crates/hardener-plugins/src/firewall/mod.rs and must be changed with it.
+# `find_winner` prefers an ACTIVE backend over installed-order, which nothing
+# in a freshly built container is, so the two agree here. Where they ever
+# disagree the assertions below fail loudly rather than passing on the wrong
+# backend's state, which is the safe direction.
+header "TEST 7: FIREWALL PLUGIN ROLLBACK"
+
+rm -rf /var/lib/linux-hardener
+
+FW_BACKEND=""
+if command -v firewall-cmd > /dev/null 2>&1; then
+    FW_BACKEND="firewalld"
+elif command -v ufw > /dev/null 2>&1; then
+    FW_BACKEND="ufw"
+elif command -v nft > /dev/null 2>&1; then
+    FW_BACKEND="nftables"
+fi
+
+# What the host is actually enforcing, as one line, asked of the backend in
+# charge and of nothing else. Compared before and after rather than matched
+# against an expected string: the point is that the rollback returns the host
+# to where it started, not that it reaches some particular wording.
+firewall_live_state() {
+    case "$FW_BACKEND" in
+        ufw)       ufw status 2>/dev/null | head -1 ;;
+        nftables)  if nft list table inet linux_hardener > /dev/null 2>&1;
+                   then echo "managed table present"; else echo "managed table absent"; fi ;;
+        firewalld) firewall-cmd --state 2>&1 | head -1 ;;
+    esac
+}
+
+# Whether a live state string means the host is being protected. Derived from
+# the string `firewall_live_state` produced rather than re-asking, so the two
+# can never answer about different moments.
+# Whitespace is squeezed and the match is exact. `*active*` was the first
+# version and it reported "Status: inactive" as enforcing, "inactive" containing
+# "active": the arm would then have called a firewall that a rollback switched
+# off no worse than one it left on, which is the precise failure it exists to
+# catch.
+firewall_enforcing() {
+    local state="${1// /}"
+    case "$FW_BACKEND" in
+        ufw)       [[ "$state" == "Status:active" ]] ;;
+        nftables)  [[ "$state" == "managedtablepresent" ]] ;;
+        firewalld) [[ "$state" == "running" ]] ;;
+        *)         return 1 ;;
+    esac
+}
+
+# The configuration the backend owns, as one digest. A directory for ufw and
+# firewalld, a single file for nftables, so it is hashed as a tree either way.
+firewall_config_digest() {
+    local path="$1"
+    if [[ ! -e "$path" ]]; then
+        echo "<absent>"
+        return
+    fi
+    find "$path" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}'
+}
+
+case "$FW_BACKEND" in
+    ufw)       FW_CONFIG_PATH="/etc/ufw" ;;
+    nftables)  FW_CONFIG_PATH="/etc/nftables.conf" ;;
+    firewalld) FW_CONFIG_PATH="/etc/firewalld" ;;
+    *)         FW_CONFIG_PATH="" ;;
+esac
+
+if [[ -z "$FW_BACKEND" ]]; then
+    skip "Firewall rollback readback: no firewall backend is installed in this container"
+elif [[ "$FW_BACKEND" == "nftables" ]] && ! nft list tables > /dev/null 2>&1; then
+    skip "Firewall rollback readback: nft cannot reach a ruleset here, which needs --private-network"
+else
+    info "Backend in charge: $FW_BACKEND (config: $FW_CONFIG_PATH)"
+
+    FW_BEFORE_STATE=$(firewall_live_state)
+    FW_BEFORE_DIGEST=$(firewall_config_digest "$FW_CONFIG_PATH")
+    info "BEFORE: live='$FW_BEFORE_STATE'  config=${FW_BEFORE_DIGEST:0:16}"
+
+    info "Applying firewall hardening..."
+    "$BINARY" apply --plugin firewall-hardening > /dev/null 2>&1 || true
+
+    FW_AFTER_STATE=$(firewall_live_state)
+    FW_AFTER_DIGEST=$(firewall_config_digest "$FW_CONFIG_PATH")
+    info "AFTER APPLY: live='$FW_AFTER_STATE'  config=${FW_AFTER_DIGEST:0:16}"
+
+    # The apply has to have moved something, or every assertion after it
+    # compares a constant with itself. Both halves are asked because a backend
+    # may express hardening in either: ufw flips from inactive to active and
+    # rewrites /etc/ufw, nftables writes a file and loads a table.
+    if [[ "$FW_AFTER_STATE" == "$FW_BEFORE_STATE" && "$FW_AFTER_DIGEST" == "$FW_BEFORE_DIGEST" ]]; then
+        fail "Apply changed neither the live firewall state nor $FW_CONFIG_PATH, so nothing here can be read back"
+    else
+        pass "Apply changed the firewall (live and/or $FW_CONFIG_PATH)"
+
+        FW_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+        if [[ -z "$FW_CP" ]]; then
+            fail "No firewall checkpoint found"
+        else
+            info "Rolling back firewall (checkpoint: $FW_CP)..."
+            "$BINARY" rollback "$FW_CP" > /dev/null 2>&1 || true
+
+            FW_RESTORED_DIGEST=$(firewall_config_digest "$FW_CONFIG_PATH")
+            assert_eq "Rollback restored $FW_CONFIG_PATH" \
+                "$FW_BEFORE_DIGEST" "$FW_RESTORED_DIGEST"
+
+            # The half nothing has ever asked, and the contract it is asked
+            # against is NOT "the live state comes back".
+            #
+            # The first version of this assertion demanded exactly that and
+            # failed: ufw was inactive before the apply and active after the
+            # rollback. Reading the plugin, that is deliberate.
+            # `reload_after_rollback` re-reads the restored configuration and
+            # "never starts or enables a unit either", because the settled rule
+            # is that undoing a hardening run must not leave a host less secure
+            # than it was found. Disabling a firewall the operator now has would
+            # do exactly that.
+            #
+            # So what is asserted is the rule itself: a rollback may leave the
+            # host better protected than it found it, and may never leave it
+            # worse. Where the live state has not come back, that is reported
+            # rather than failed, because the running host then disagrees with
+            # its own configuration files and an operator should know: see the
+            # issue named below.
+            FW_RESTORED_STATE=$(firewall_live_state)
+            info "AFTER ROLLBACK: live='$FW_RESTORED_STATE'"
+
+            if firewall_enforcing "$FW_BEFORE_STATE" && ! firewall_enforcing "$FW_RESTORED_STATE"; then
+                fail "Rollback left the host less protected than it found it (was '$FW_BEFORE_STATE', now '$FW_RESTORED_STATE')"
+            else
+                pass "Rollback did not leave the host less protected"
+            fi
+
+            if [[ "$FW_RESTORED_STATE" != "$FW_BEFORE_STATE" ]]; then
+                info "  Divergence: $FW_CONFIG_PATH is back to its pre-apply bytes while the"
+                info "  running host is still '$FW_RESTORED_STATE'. Deliberate, and it means a"
+                info "  reboot can change the posture with nothing having been asked. See #139."
+            fi
+        fi
     fi
 fi
 

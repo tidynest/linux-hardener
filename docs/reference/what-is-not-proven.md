@@ -49,7 +49,7 @@ Usually, and here is the boundary of that word.
 cannot round-trip, and no test asserts that it can. If a path this tool touches
 on your host is not text, its restore is unproven.
 
-**Six of the eight plugins have a rollback reading written against a real
+**Seven of the eight plugins have a rollback reading written against a real
 system, and the kernel's is the one to read the small print on.**
 `scripts/test/verify-rollback.sh` re-reads kernel sysctl values, `sshd_config`
 content and directory modes after a rollback. Section 12A of
@@ -61,9 +61,17 @@ puts an ssh rollback and reload cycle back through `sshd -T`. The same script's
 TEST 6 seeds `PASS_MAX_DAYS` in `/etc/login.defs` to shadow's own default of
 99999, which the pam plugin's `AtMost 90` makes a genuine violation, and asserts
 that the apply lowers it, that the rollback returns it, and that the file comes
-back byte for byte. **The firewall and mac plugins have no such reading**: their
-rollback is covered by in-crate tests over temporary directories and by nothing
-that re-examines a real host. That is issue #131, of which pam is now closed.
+back byte for byte. TEST 7 does the same for the firewall, against whichever
+backend the plugin selects rather than an assumed one, and asks both the
+backend's own configuration and **what the host is actually enforcing**.
+
+**Only the mac plugin now has no such reading, and it cannot have one here.**
+Measured in the arch container on 2026-08-08: no AppArmor or SELinux tooling,
+no `/sys/kernel/security/lsm`, and no securityfs mounted at all. This is not a
+missing nspawn flag, the way the kernel arm's private network namespace turned
+out to be. Loading an LSM policy is host-global, so a container cannot be given
+the question. Reading mac enforcement back needs a virtual machine, which is
+issue #18.
 
 **The kernel reading in that script can now fail, and its runtime half is asked
 only where a container permits the question.** Both halves used to be
@@ -111,8 +119,9 @@ failing, reading the kernel config file, ssh and permissions back after a
 rollback, with the runtime kernel arm skipped. It was run again on 2026-08-08
 with `--private-network`, and passed 18 checks with none skipped: three new ones
 for the runtime arm that issue #131 was filed about, and four more for the pam
-readback added the same day. **Two dated runs
-rather than a habit**: nothing runs this without a person.
+readback added the same day. A third run the same day added the firewall arm and
+passed 21. **Three dated runs rather than a habit**: nothing runs this without a
+person.
 
 That container must be a fresh one, and the runner rebuilds it for exactly that
 reason. Run by hand against a container an earlier run has finished with, the

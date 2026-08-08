@@ -417,6 +417,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which was chosen over adding a finding because a declined finding changes no
   count the suite asserts.
 
+- **The firewall plugin has a rollback readback, including what the host is
+  actually enforcing** (#131, part 2). Seven of the eight plugins now have one.
+  The live half was recorded as needing a booted container; measured, it needs
+  only the network namespace, which is the **third** place today a requirement
+  written down as "booted" turned out to be narrower than stated. The arm asks
+  whichever backend the plugin selects rather than an assumed one: a first
+  draft hard-coded nftables and failed on a container that also has ufw
+  installed, where the plugin correctly picked ufw. A test naming one backend
+  tests the container, not the plugin.
+  **It asserts the plugin's actual rule, which is not "the live state comes
+  back".** A rollback may leave the host better protected than it found it and
+  may never leave it worse, `reload_after_rollback` deliberately never starting
+  or enabling a unit in either direction. Where the live state has not
+  returned, the divergence is reported rather than failed, and is #139: after a
+  firewall rollback `/etc/ufw` is back to its pre-apply bytes while ufw is
+  still enforcing, so a reboot can change the posture with nothing having been
+  asked.
+
+- **The mac plugin's rollback is recorded as a ceiling rather than covered.**
+  Measured rather than assumed, after three "cannot" claims fell over the same
+  day: the container has no AppArmor or SELinux tooling, no
+  `/sys/kernel/security/lsm`, and no securityfs at all. Loading an LSM policy
+  is host-global, so no nspawn flag can grant the question. It needs a virtual
+  machine, which is #18. No skipping arm was added for it, because a permanent
+  skip would make the script exit 2 on every future run and trade its detailed
+  summary line for a fact that never changes.
+
 - **The pam plugin has a rollback readback** (#131, part 2). Six of the eight
   plugins now have one; before this, pam, firewall and mac had none at all and
   their rollback was covered only by in-crate tests over temporary directories.
