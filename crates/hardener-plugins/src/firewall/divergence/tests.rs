@@ -155,6 +155,26 @@ async fn unrecognised_status_output_is_unverifiable() {
     assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
 }
 
+/// `ufw status` can succeed and still print nothing that looks like a status
+/// line at all, distinct from printing one that does not match either known
+/// value. That output is not evidence that ufw is enforcing, nor that it is
+/// not: it is evidence that this probe could not read the state, and must be
+/// reported as unverifiable rather than defaulted to either side.
+#[tokio::test]
+async fn a_status_output_with_no_status_line_is_unverifiable() {
+    let ctx = ufw_host("", "ENABLED=yes\n");
+
+    let rows = firewall_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+    assert!(
+        rows.iter()
+            .all(|r| r.divergence_state != DivergenceState::Diverged),
+        "an unread running state must never be reported as a measured divergence"
+    );
+}
+
 /// #139's own scenario, pinned by name. A host that carries any rules, which
 /// is this probe's whole reason for existing, prints `ufw status` as several
 /// lines. Matching the entire trimmed output against `Status: active` reads
