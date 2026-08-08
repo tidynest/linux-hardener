@@ -417,6 +417,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which was chosen over adding a finding because a declined finding changes no
   count the suite asserts.
 
+- **What an executed hardening apply produces is asserted at last** (#136).
+  Nothing in this repository had ever observed it: `T-HIST-06` covers the
+  acknowledgement gate and stops there. **The obstacle was the fixture, not the
+  test.** `APPLY_RESULTS` is three changes, all successful, so
+  `applied_change_count()` and `apply_changes.len()` both return 3 and any
+  assertion on the count passes under either implementation, which is an
+  assertion that cannot fail. A second fixture, reached with
+  `?apply_mode=mixed`, makes the two diverge: **seven entries, three genuinely
+  applied**, spread over four areas so each lands on a different branch of the
+  classifier. Kernel applies two settings beside a checkpoint entry that counts
+  as neither; Firewall installs one rule and fails another, which must read as
+  failed rather than applied, because an area that did real work and still
+  failed is a failure; MAC returns a single skipped no-op; and PAM fails with
+  the sole string in `MANUAL_ACTION_MARKERS`, so it is a manual step rather
+  than a failure. `T-APPLY-01..04` assert the success path's own totals, that
+  the header reads `3 of 5 settings applied` and never 7, each area's outcome
+  and badge, and that neither a skip nor a checkpoint is ever counted as
+  hardening. The mock validator gained `ApplyResult` and `Change` probes, so a
+  field rename in either is now caught statically for both fixtures.
+
 - **The GUI suite is green on all six distributions**, 110 of 110 each, in 1.7
   to 2.2 minutes against a 600 s ceiling the investigation began with it
   exceeding. Recorded in `docs/reference/distribution-validation.md` under

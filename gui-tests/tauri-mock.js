@@ -12,6 +12,12 @@
 
   const params = new URLSearchParams(window.location.search);
   const errorMode = params.get('error_mode') || '';
+  // Which apply outcome `run_apply` replies with. Selected the same way as
+  // error_mode, per test, so the default stays the all-success path the
+  // existing tests expect. `mixed` reaches the partial panel, which nothing
+  // could reach before: with an all-success fixture the done panel is the only
+  // one the interface can render.
+  const applyMode = params.get('apply_mode') || '';
 
   function shouldError(cmd) {
     if (errorMode === 'all') return true;
@@ -289,6 +295,115 @@
     },
   ];
 
+  // The apply nobody has ever seen. Reached with `?apply_mode=mixed`.
+  //
+  // APPLY_RESULTS above is three changes, all successful, so
+  // `applied_change_count()` and `apply_changes.len()` are both 3 and a test
+  // written against it passes whether the renderer follows the counting rule
+  // or ignores it. This fixture exists to make those two numbers differ, which
+  // is the only way an assertion on them can fail.
+  //
+  // Shape reminders, all enforced by the Rust types:
+  //   change_type: 'ConfigFile' | 'FirewallRule' | 'KernelParameter' |
+  //                'Package' | 'Permissions' | 'Service' | 'Skipped' |
+  //                'Checkpoint'
+  //   'Skipped' and 'Checkpoint' are excluded from BOTH the applied and the
+  //   failed totals; a plugin whose only entry is the checkpoint has hardened
+  //   nothing.
+  //   A failed change is change_success: false with a change_error. It counts
+  //   as a manual step rather than a failure only when change_error matches a
+  //   marker in MANUAL_ACTION_MARKERS (crates/hardener-ui/src/utils/mod.rs).
+  //
+  // Four areas, one per outcome the partial panel can classify, chosen so the
+  // two totals diverge as widely as the type allows: seven entries, three of
+  // them genuinely applied. A renderer reaching for `apply_changes.len()`
+  // reports 7.
+  const MIXED_APPLY_RESULTS = [
+    {
+      // Applied. The checkpoint entry is the sneaky one: it counts toward
+      // neither total, so this area applied 2 of its 3 entries.
+      apply_plugin_id: 'kernel-hardening',
+      apply_success: true,
+      apply_changes: [
+        {
+          change_description: 'Captured rollback checkpoint chk-20260808-002',
+          change_type: 'Checkpoint',
+          change_success: true,
+          change_error: null,
+        },
+        {
+          change_description: 'Set kernel.randomize_va_space = 2',
+          change_type: 'KernelParameter',
+          change_success: true,
+          change_error: null,
+        },
+        {
+          change_description: 'Set kernel.kptr_restrict = 2',
+          change_type: 'KernelParameter',
+          change_success: true,
+          change_error: null,
+        },
+      ],
+      apply_checkpoint_id: 'chk-20260808-002',
+      apply_error: null,
+    },
+    {
+      // Failed, and deliberately alongside a success: an area that did some
+      // real work and still failed must report Failed, not Applied.
+      apply_plugin_id: 'firewall-hardening',
+      apply_success: false,
+      apply_changes: [
+        {
+          change_description: 'Allow SSH to prevent lockout',
+          change_type: 'FirewallRule',
+          change_success: true,
+          change_error: null,
+        },
+        {
+          change_description: 'Enable nftables with default deny policy',
+          change_type: 'FirewallRule',
+          change_success: false,
+          change_error: 'nft: Could not process rule: Operation not permitted',
+        },
+      ],
+      apply_checkpoint_id: 'chk-20260808-002',
+      apply_error: 'One rule could not be installed',
+    },
+    {
+      // Skipped. Nothing applicable on this host, which is not a failure and
+      // must not read as one.
+      apply_plugin_id: 'mac-hardening',
+      apply_success: true,
+      apply_changes: [
+        {
+          change_description: 'No MAC system present (neither AppArmor nor SELinux)',
+          change_type: 'Skipped',
+          change_success: true,
+          change_error: null,
+        },
+      ],
+      apply_checkpoint_id: 'chk-20260808-002',
+      apply_error: null,
+    },
+    {
+      // ManualStep. A failed change whose error matches the sole entry in
+      // MANUAL_ACTION_MARKERS exactly; any other text would classify as
+      // Failed, which is the deliberate fallback direction.
+      apply_plugin_id: 'pam-hardening',
+      apply_success: false,
+      apply_changes: [
+        {
+          change_description: 'Set faillock deny = 5',
+          change_type: 'ConfigFile',
+          change_success: false,
+          change_error: 'inline pam.d override present',
+        },
+      ],
+      apply_checkpoint_id: 'chk-20260808-002',
+      apply_error: 'Manual action required',
+    },
+  ];
+
   const DRY_RUN_RESULTS = [
     {
       validation_report_plugin_id: 'kernel-hardening',
@@ -508,7 +623,7 @@
         return scanHasRun ? SCAN_RESULTS : null;
 
       case 'run_apply':
-        return APPLY_RESULTS;
+        return applyMode === 'mixed' ? MIXED_APPLY_RESULTS : APPLY_RESULTS;
 
       case 'run_apply_dry_run':
         return DRY_RUN_RESULTS;

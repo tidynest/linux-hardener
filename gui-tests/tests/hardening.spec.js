@@ -208,3 +208,122 @@ test.describe('History', () => {
     await expect(apply).toBeEnabled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// APPLY RESULTS (T-APPLY-01..04)
+// ---------------------------------------------------------------------------
+
+// Issue #136. Until these, nothing in this repository had ever observed what a
+// completed apply produces: T-HIST-06 asserts the gate and stops at it.
+//
+// The reason that was safe to leave, and the reason it stopped being safe, is
+// the fixture. The default APPLY_RESULTS is three changes, all successful, so
+// `applied_change_count()` and `apply_changes.len()` are both 3 and any
+// assertion on the count passes under either implementation. `?apply_mode=mixed`
+// selects a fixture where they differ: seven entries, three genuinely applied.
+// That divergence is what makes the assertions below capable of failing.
+//
+// Why this matters more than the usual test: the renderers have a standing rule
+// to use `applied_change_count()` and `is_skipped()` rather than
+// `apply_changes.len()`. Breaking it does not crash, does not empty a view and
+// does not fail any other test. It reports more success than occurred, which is
+// the worst available failure for a hardening tool.
+
+// Runs an apply to completion and returns once a result panel is on screen.
+// The preview, the acknowledgement and the apply are one sequence because no
+// test wants any prefix of it.
+async function runApply(page) {
+  await page.getByRole('tab', { name: 'Configure' }).click();
+  await page.getByRole('button', { name: /Preview Changes/i }).click();
+  const apply = page.getByRole('button', { name: /Apply \d+ Changes/ });
+  await expect(apply).toBeVisible({ timeout: 10000 });
+  await page.getByText(/I understand this can affect/).click();
+  await apply.click();
+}
+
+test.describe('Apply results', () => {
+  // T-APPLY-01: The success path renders the done panel and its own totals
+  //
+  // The default fixture applies 2 kernel settings and 1 SSH setting, so the
+  // count is the sum across areas and the area count excludes any area that
+  // changed nothing.
+  test('T-APPLY-01: a fully successful apply reports its settings and areas', async ({ page }) => {
+    await loadApp(page, '/hardening');
+    await runApply(page);
+
+    const done = page.locator('.done-panel');
+    await expect(done).toBeVisible({ timeout: 15000 });
+    await expect(done.locator('.done-summary-line'))
+      .toHaveText('3 settings applied across 2 areas');
+    await expect(page.locator('.partial-panel')).toHaveCount(0);
+  });
+
+  // T-APPLY-02: The count is of settings applied, not of entries returned
+  //
+  // This is the assertion the issue was filed for. The mixed fixture returns
+  // seven entries: three genuinely applied, two failed, one skipped no-op and
+  // one checkpoint. A renderer counting `apply_changes.len()` reports 7; one
+  // following the rule reports 3. The denominator is 5, being what was meant
+  // to change, which deliberately excludes the skip and the checkpoint rather
+  // than inflating the total with work nobody asked for.
+  test('T-APPLY-02: the mixed apply counts settings applied, not entries returned', async ({ page }) => {
+    await loadApp(page, '/hardening', 'apply_mode=mixed');
+    await runApply(page);
+
+    const partial = page.locator('.partial-panel');
+    await expect(partial).toBeVisible({ timeout: 15000 });
+    await expect(partial.locator('.partial-heading-text'))
+      .toHaveText('3 of 5 settings applied. Firewall failed, PAM needs a manual step.');
+    await expect(partial.locator('.partial-heading-text')).not.toContainText('7');
+  });
+
+  // T-APPLY-03: Each area reports its own outcome, and the four differ
+  //
+  // The classifier's precedence is the part worth pinning. Firewall applied one
+  // rule and failed another, and must read as failed rather than applied: an
+  // area that did some real work and still failed is a failure. PAM's error is
+  // the sole entry in MANUAL_ACTION_MARKERS, so it is a manual step rather than
+  // a failure, and a genuine failure would have dominated it had both been
+  // present. MAC did nothing applicable, which is not a failure and must not
+  // read as one.
+  test('T-APPLY-03: each area reports its own outcome', async ({ page }) => {
+    await loadApp(page, '/hardening', 'apply_mode=mixed');
+    await runApply(page);
+
+    const rows = page.locator('.partial-panel .partial-row');
+    await expect(rows).toHaveCount(4);
+
+    await expect(rows.filter({ hasText: 'Kernel Hardening' })).toContainText('2 applied');
+
+    // Applied one rule, failed another. The badge must be the failure, and the
+    // row must not claim the success it did have.
+    const firewall = rows.filter({ hasText: 'Firewall' });
+    await expect(firewall.locator('.partial-row-badge')).toHaveText('Failed');
+    await expect(firewall).not.toContainText('applied');
+    await expect(firewall.getByRole('button', { name: 'Retry' })).toBeVisible();
+
+    await expect(rows.filter({ hasText: 'PAM Authentication' }).locator('.partial-row-badge'))
+      .toHaveText('Manual step');
+
+    await expect(rows.filter({ hasText: 'MAC System' }))
+      .toContainText('Skipped: No MAC system present');
+  });
+
+  // T-APPLY-04: A skipped area is never counted as hardened
+  //
+  // The narrow case behind the wide one. MAC returned a single Skipped entry
+  // and the kernel's checkpoint entry is bookkeeping; neither is a setting
+  // applied. If either were ever counted, the header's first number would rise
+  // and this assertion is what notices.
+  test('T-APPLY-04: skipped and checkpoint entries are not counted as applied', async ({ page }) => {
+    await loadApp(page, '/hardening', 'apply_mode=mixed');
+    await runApply(page);
+
+    const heading = page.locator('.partial-panel .partial-heading-text');
+    await expect(heading).toBeVisible({ timeout: 15000 });
+    await expect(heading).toContainText('3 of 5');
+    // 4 would mean the skip was counted, 5 the checkpoint as well.
+    await expect(heading).not.toContainText('4 of');
+    await expect(heading).not.toContainText('5 of 5');
+  });
+});

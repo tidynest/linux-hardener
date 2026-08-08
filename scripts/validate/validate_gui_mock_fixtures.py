@@ -36,6 +36,11 @@ MOCK = PROJECT / "gui-tests" / "tauri-mock.js"
 PROBES = [
     ("run_scan", {}, "[]", "ScanResult"),
     ("run_scan", {}, "[].scan_findings[]", "Finding"),
+    ("run_apply", {}, "[]", "ApplyResult"),
+    # Reached through the default all-success fixture, but the mixed-outcome
+    # one added for #136 is the same two structs, so a field rename in either
+    # is caught here for both.
+    ("run_apply", {}, "[].apply_changes[]", "Change"),
     ("list_plugins", {}, "[]", "PluginMetadata"),
     ("run_fleet_scan", {"hostNames": ["web-01"], "adhoc": []}, "[]", "FleetHostScan"),
     (

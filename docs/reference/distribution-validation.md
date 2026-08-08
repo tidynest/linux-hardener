@@ -998,18 +998,24 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (9 Specs, 110 Tests)
+### Spec Inventory (9 Specs, 114 Tests)
 
-Counted off `gui-tests/tests/` on 2026-08-08: 80 tests written out, plus 30 the
+Counted off `gui-tests/tests/` on 2026-08-08: 84 tests written out, plus 30 the
 theme spec generates at collection time (5 states x 6 themes). The 2026-08-07
 suite repair rewrote most of these, so the per-spec figures here are a fresh
 count and not the 2026-08-01 one they replace.
+
+**This total is four ahead of the six-distribution reading above**, which was
+taken at 110 before `T-APPLY-01..04` were added. Those four have been run on
+Fedora and pass; the other five distributions have not been re-measured since,
+and the table is left at what it actually recorded rather than being edited to
+match a number nobody ran.
 
 | Spec | Test IDs | Tests | Description |
 |------|----------|-------|-------------|
 | `dashboard.spec.js` | T-DASH-01..09 | 9 | Score display, scan trigger, navigation, activity feed |
 | `analysis.spec.js` | T-FIND-01..11, T-COMP-01..08 | 19 | Findings grouping and detail expander, declined exceptions, framework selection, report generation |
-| `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 | 16 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, apply results |
+| `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06, T-APPLY-01..04 | 20 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback; what an executed apply produces |
 | `themes.spec.js` | T-THEME-01..07 | 7 + 30 | 6 of the 7 themes verified, High Contrast not yet covered. The 30 screenshot tests are generated as 5 states x 6 themes |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 | `fleet.spec.js` | - | 7 | Fleet scan view |
