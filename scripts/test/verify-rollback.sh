@@ -35,6 +35,8 @@
 #   7. Firewall:       the backend's own config AND what the host is actually
 #                      enforcing, asked of whichever backend the plugin picks
 #                      (see TEST 7)
+#   8. Divergences:    a rollback with no surviving file naming a parameter
+#                      reports it rather than reporting plain success
 #
 # Exit status:
 #   0  every check ran and passed
@@ -714,6 +716,48 @@ else
             fi
         fi
     fi
+fi
+
+# =============================================================================
+# TEST 8: A ROLLBACK REPORTS WHAT IT LEFT DIVERGED
+# =============================================================================
+# TEST 1 seeds a baseline drop-in so a surviving file names the pre-apply
+# value. This arm deliberately does not: with nothing naming it, the rollback
+# restores files, runs `sysctl --system`, and leaves the parameter hardened.
+# That is correct behaviour and it is issue #138. What is asserted here is
+# that the rollback SAYS so.
+header "TEST 8: DIVERGENCE REPORTING"
+
+if [[ "$RUNTIME_ASKABLE" == "true" ]]; then
+    rm -f "$KERNEL_BASELINE_CONF"
+    printf '%s\n' "$KERNEL_PROBE_BASELINE" > "$KERNEL_PROBE_PROC"
+    assert_eq "Seeded $KERNEL_PROBE_PARAM with no file naming it" \
+        "$KERNEL_PROBE_BASELINE" "$(cat "$KERNEL_PROBE_PROC")"
+
+    "$BINARY" apply --plugin kernel-hardening > /dev/null 2>&1 || true
+
+    # The script's own idiom for both halves, taken from TEST 4: the id is
+    # grepped out of the text listing, and `--format json` is a GLOBAL flag
+    # that precedes the verb. The verb is a top-level `rollback`, not
+    # `checkpoint rollback`.
+    DIVERGE_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+    "$BINARY" --format json rollback "$DIVERGE_CP" > /tmp/diverge.json 2>/dev/null || true
+
+    # Read back out of a file rather than a pipe: this shell reports the last
+    # command in a pipeline, which has inverted an assertion here before.
+    DIVERGE_SUBJECTS=$(python3 -c 'import json;print("\n".join(d["divergence_subject"] for d in json.load(open("/tmp/diverge.json")).get("rollback_divergences",[])))')
+
+    if printf '%s' "$DIVERGE_SUBJECTS" | grep -qx "$KERNEL_PROBE_PARAM"; then
+        pass "The rollback reported $KERNEL_PROBE_PARAM as diverged"
+    else
+        fail "The rollback left $KERNEL_PROBE_PARAM hardened and reported nothing. Subjects: ${DIVERGE_SUBJECTS:-none}"
+    fi
+
+    info "Rows reported: $(printf '%s' "$DIVERGE_SUBJECTS" | grep -c . || true)"
+
+    rm -f /tmp/diverge.json
+else
+    skip "Divergence reporting: /proc/sys/net is read-only here, so no apply can move $KERNEL_PROBE_PARAM"
 fi
 
 # =============================================================================
