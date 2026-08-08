@@ -469,10 +469,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a surviving file does not name the seeded parameter, then requires the
   rollback's own JSON to carry the resulting row as `Diverged`. **Read green on
   a real arch container, 23 of 23 with none skipped**, up from the suite's
-  previous 21 of 21. That run also measured what the kernel probe says on a
-  real host: 15 rows, 12 `Diverged` and 3 `Unverifiable`, the 3 being the glob
-  source `/usr/lib/sysctl.d/50-default.conf` and the two managed keys its own
-  patterns could name.
+  previous 21 of 21; TEST 9 has since taken the suite to 26, recorded above.
+  The 23-of-23 run also measured what the kernel probe says on a real host:
+  15 rows, 12 `Diverged` and 3 `Unverifiable`, the 3 being the glob source
+  `/usr/lib/sysctl.d/50-default.conf` and the two managed keys its own patterns
+  could name.
 
 - **The mac plugin's rollback is recorded as a ceiling rather than covered.**
   Measured rather than assumed, after three "cannot" claims fell over the same
@@ -1072,6 +1073,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fired rather than only that one did.
 
 ### Fixed
+
+- **Rollback divergence reporting no longer claims that nothing names a kernel
+  parameter that `/etc/sysctl.conf` names** (#140). The row stays a divergence,
+  because the applier that runs at boot does not read that file and the value is
+  lost at the next reboot, but the sentence now says that rather than the two
+  things that were untrue. Where no boot applier can be identified the row is
+  reported as unverifiable instead. The file is read by a second reader
+  belonging to the rollback probe alone, `legacy_sysctl_conf`, rather than by
+  widening `SYSCTL_DROPIN_DIRS`: the scan path wants the files `systemd-sysctl`
+  merges at boot, which is a different question, so `boot_persistence` never
+  sees `/etc/sysctl.conf` and cannot start reporting it as an override. Measured
+  on 2026-08-08: `systemd-sysctl` names four `sysctl.d` directories and not
+  `/etc/sysctl.conf`, while the procps `sysctl` binary names those four plus the
+  file and reads it **last**, so it can override any of them. Of arch, Debian 13
+  trixie, Fedora, RHEL and openSUSE, **only Fedora ships `/etc/sysctl.conf`, as
+  a real file, and none ships an `/etc/sysctl.d/99-sysctl.conf` symlink.** That
+  retires two claims in #140, which had it that Debian derivatives ship the file
+  and that Arch ships the symlink, and the symlink justification that used to
+  stand on `SYSCTL_DROPIN_DIRS`. **One behaviour change is stated rather than
+  hidden:** `effective.blocks_all` is a whole-host flag, so an unprivileged run
+  against a drop-in it cannot read now reports every disagreeing parameter as
+  unverifiable rather than diverged. That is the same fail-closed shape the
+  silence arm already had, and a probe that cannot read the files is not
+  entitled to accuse the host. `scripts/test/verify-rollback.sh` gained a ninth
+  arm, TEST 9, which names a managed parameter in `/etc/sysctl.conf` with no
+  drop-in surviving and requires the row to come back `Diverged` carrying the
+  true sentence; it calls the counting helper three times, which moves that
+  suite from 23 checks to **26**. Read green against the arch container on
+  2026-08-08: **26 of 26, none failed and none skipped**, with TEST 9 reporting
+  `net.ipv4.conf.all.log_martians` as `Diverged` off a real system.
 
 - **The Web UI suite installed nothing on three of six distributions, and the
   run said so on only one of them.** The first cross-distribution run of the

@@ -1027,7 +1027,7 @@ sudo ./scripts/containers/create-container.sh rhel clean
 
 **Script**: `verify-rollback.sh`
 
-**Purpose**: Runs 5 targeted tests with 10 assertions to verify that the rollback system works correctly inside a Fedora nspawn container. Validates the complete apply-then-rollback cycle for multiple plugins.
+**Purpose**: Runs 9 targeted tests, 26 checks on the all-pass path, to verify that the rollback system works correctly inside an nspawn container. Validates the complete apply-then-rollback cycle for multiple plugins. The runner is `release-readiness-root.sh --only rollback`, which builds the arch container; read green at 26 of 26 on 2026-08-08.
 
 **Usage**:
 ```bash
@@ -1043,10 +1043,15 @@ sudo ./scripts/test/verify-rollback.sh
 | 3 | Permissions rollback | Directory modes restored, mixed actions (permissions/skipped) |
 | 4 | JSON output validation | Valid `RollbackResult` with per-file `restore_action` |
 | 5 | Multi-checkpoint | Sequential applies create separate checkpoints, both roll back correctly |
+| 6 | PAM rollback | `PASS_MAX_DAYS` in `/etc/login.defs` seeded to shadow's 99999, moved by the apply, read back by value and by file hash |
+| 7 | Firewall rollback | Whichever backend the plugin selects: its own configuration and what the host is actually enforcing |
+| 8 | Divergence reporting | A rollback leaving a sysctl no surviving file names reports it as `Diverged` rather than plain success |
+| 9 | Legacy `/etc/sysctl.conf` | A parameter named only in that file stays `Diverged`, with the sentence saying the value is lost at the next reboot rather than that no file names it |
 
 **Exit Codes**:
-- `0`: All 10 assertions passed
-- `1`: One or more assertions failed
+- `0`: Every check ran and passed
+- `1`: One or more checks failed
+- `2`: Every check that ran passed and at least one was skipped
 
 **Dependencies**:
 - Bash

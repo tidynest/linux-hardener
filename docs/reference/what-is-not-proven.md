@@ -146,7 +146,15 @@ the arch container, against a musl binary the pre-flight verified against the
 working tree. That run is the first time a rollback's own report of what it
 left behind has been read off a real system.
 
-The same run measured what the kernel probe actually says, which no reasoning
+A ninth arm, TEST 9, followed on the same day for #140: it names a managed
+parameter in `/etc/sysctl.conf` with no drop-in surviving, and requires the row
+to come back `Diverged` saying that the rollback's own `sysctl --system` reads
+that file while the boot applier does not. It asks three questions rather than
+one, so **the suite is now nine tests and 26 checks, read green on the arch
+container on 2026-08-08 at 26 of 26 with none failed and none skipped.** The row
+it read was `net.ipv4.conf.all.log_martians`, reported `Diverged`.
+
+The 23-of-23 run measured what the kernel probe actually says, which no reasoning
 had settled: **15 rows, 12 of them `Diverged` and 3 `Unverifiable`.** The 12 are
 not noise. An apply writes one drop-in naming every parameter it moves and the
 rollback deletes it, so those 12 parameters really are still hardened in the

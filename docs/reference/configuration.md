@@ -178,10 +178,17 @@ lets the lexicographically **last** name win, so kernel hardening is written to
 fragment for the same reason. A drop-in sorting before it therefore loses and is
 not reported: Debian 13 ships `/usr/lib/sysctl.d/50-default.conf` with a looser
 `rp_filter`, and this tool still wins at boot. `/etc/sysctl.conf` is not among
-the files `systemd-sysctl` reads for itself; a distribution that still applies it
-reaches it through an `/etc/sysctl.d/99-sysctl.conf` symlink, which is a file in
-one of those directories and sorts after `99-hardener.conf`, so it does outrank
-it. A file that sorts after this tool's, or one applied by a
+the files `systemd-sysctl` reads for itself, and the earlier claim here that a
+distribution reaches it through an `/etc/sysctl.d/99-sysctl.conf` symlink was
+measured false on 2026-08-08: of arch, Debian 13 trixie, Fedora, RHEL and
+openSUSE, none ships such a symlink and only Fedora ships `/etc/sysctl.conf` at
+all, as a real file. What does read it is the procps `sysctl` binary, which
+names those four directories plus `/etc/sysctl.conf` and reads the file **last**,
+so an operator running `sysctl --system` by hand, or this tool's own rollback
+reload, lets that file override `99-hardener.conf`. Nothing applies it at boot on
+a systemd host, so a value that lives only there is lost at the next reboot; the
+rollback divergence report says exactly that rather than claiming no file names
+the parameter. A file that sorts after this tool's, or one applied by a
 unit ordered after `systemd-sysctl.service` (ufw is the only such case this tool
 knows of, and it is named rather than inferred), is reported as a finding. That
 reporting is read-only: this tool does not edit another package's configuration

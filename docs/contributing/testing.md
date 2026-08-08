@@ -482,11 +482,16 @@ than the system it makes them about:
 sudo ./scripts/test/verify-rollback.sh
 ```
 
-Runs 5 targeted tests that read back off the system what a rollback claims to
-have restored: the kernel plugin's persistent drop-in and, where the container
-permits the question, its runtime `sysctl` value; `sshd_config` content; a
-directory mode; `rollback --format json` producing a valid `RollbackResult`; and
-two applies leaving two checkpoints. It refuses to run outside a container, and
+Runs 9 targeted tests, 26 checks on the all-pass path, that read back off the
+system what a rollback claims to have restored: the kernel plugin's persistent
+drop-in and, where the container permits the question, its runtime `sysctl`
+value; `sshd_config` content; a directory mode; `rollback --format json`
+producing a valid `RollbackResult`; two applies leaving two checkpoints; a
+`login.defs` directive; the selected firewall backend's configuration and what
+the host enforces; that a rollback leaving a sysctl no surviving file names
+reports it as `Diverged`; and that a parameter named only in `/etc/sysctl.conf`
+stays `Diverged` while saying the value is lost at the next reboot rather than
+that no file names it. It refuses to run outside a container, and
 it resolves its binary through the same target-directory helper the host-side
 runners use, so a machine with `CARGO_TARGET_DIR` or a `[build] target-dir` set
 needs `/project/target` bound as well as `/project` (see "Cargo target directory
