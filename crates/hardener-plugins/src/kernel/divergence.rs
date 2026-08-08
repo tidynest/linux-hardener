@@ -81,13 +81,19 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// an operator sent to the drop-in instead would edit it, reload, and still
 /// not get what it says.
 ///
-/// **The same two not-knowing cases block a disagreement as block a silence.**
-/// An `/etc/sysctl.conf` nobody could read, and a glob in it
-/// [`persistence::glob_could_match`] says could name the parameter, each leave
-/// the file that decides the reload unread for that key. A `Diverged` row
-/// there would accuse a host of ignoring its own files on the strength of
-/// every file but the one read last, so both downgrade to `Unverifiable`,
-/// exactly as they already do where no drop-in names the parameter at all.
+/// **The same not-knowing cases block a disagreement as block a silence.**
+/// An `/etc/sysctl.conf` nobody could read, a glob in it
+/// [`persistence::glob_could_match`] says could name the parameter, a drop-in
+/// source this scan could not resolve, and a drop-in glob that could name the
+/// parameter each leave a file that decides the value unread for that key. A
+/// `Diverged` row there would accuse a host of ignoring its own files, and name
+/// the value the next boot brings, on the strength of every file but the ones
+/// nobody read: the winner among the drop-ins this scan could read is not the
+/// winner among all of them. So all four downgrade to `Unverifiable`, exactly
+/// as they already do where no drop-in names the parameter at all. The two
+/// globs keep their per-key narrowing in both places, because
+/// `net.ipv4.conf.*` still cannot name `kernel.kptr_restrict` and blocking it
+/// on that pattern would be a wrong answer in caution's wording.
 pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
     let plugin = KernelHardeningPlugin::new();
     let effective = persistence::effective_boot_values(ctx, DropinScope::All).await;
@@ -183,30 +189,48 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
         let key = persistence::procfs_key(name);
         match effective.values.get(&key) {
             Some(configured) if configured != &runtime => {
-                // The file the drop-in value actually came from, which is what
+                // The file the winning drop-in value came from, which is what
                 // an operator has to go and edit. `sources` is filled from the
                 // same merge as `values`, so the fallback is unreachable; it
                 // exists so a broken invariant degrades to a vaguer sentence
-                // rather than to a named file that was never measured.
-                let dropin = effective
+                // rather than to a named file that was never measured. It is
+                // not always a sysctl.d drop-in: `effective_boot_values` chains
+                // `/etc/ufw/sysctl.conf` onto the drop-ins, so the fallback
+                // wording has to be true of any restored configuration file.
+                let deciding_file = effective
                     .sources
                     .get(&key)
-                    .map_or("a restored sysctl.d drop-in", String::as_str);
+                    .map_or("a restored configuration file", String::as_str);
+                // Every blocked sentence opens on the same measurement, so it
+                // is built once and each branch adds only what it could not
+                // settle.
+                let measured = format!(
+                    "the running kernel reads {runtime} while {deciding_file} says {configured}"
+                );
+                // Four not-knowing cases come before any verdict, and for one
+                // reason between them: the value in hand is the winner among
+                // the files this scan could read, which is not the winner among
+                // all of them.
+                //
                 // `man sysctl`, SYSTEM FILE PRECEDENCE: `/etc/sysctl.conf` is
-                // read last and replaces whatever a drop-in set, so it, and
-                // not the drop-in, decides what a reload leaves running. The
-                // two not-knowing cases come first for that reason: a file
-                // nobody could read, or a glob nobody resolved, could be the
-                // whole explanation for the running value, and accusing the
-                // host of ignoring its own files without having read the file
-                // that decides is the confident claim this probe refuses.
+                // read last and replaces whatever a drop-in set, so it, and not
+                // the drop-in, decides what a reload leaves running. A copy
+                // nobody could read, or a glob nobody resolved, could therefore
+                // be the whole explanation for the running value.
+                //
+                // A drop-in source this scan could not resolve, and a drop-in
+                // glob that could name this key, block just as much: either
+                // could assign the running value, in which case the host IS
+                // running what its files describe, and either could outrank the
+                // drop-in named above, in which case the value the next boot
+                // brings is not the one measured here.
                 let (state, detail) = if let Some(reason) = &legacy.unreadable {
                     (
                         DivergenceState::Unverifiable,
                         format!(
-                            "the running kernel reads {runtime} while {dropin} says {configured}, \
-                             but {reason}, and a reload reads that file last, so whether it is \
-                             what assigns {name} the running value is unknown"
+                            "{measured}, but {reason}, and if that file is there a reload reads \
+                             it after every drop-in, so whether it is what assigns {name} the \
+                             running value is unknown"
                         ),
                     )
                 } else if legacy
@@ -217,10 +241,31 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                     (
                         DivergenceState::Unverifiable,
                         format!(
-                            "the running kernel reads {runtime} while {dropin} says {configured}, \
-                             but a glob pattern in /etc/sysctl.conf could name {name}, and a \
-                             reload reads that file last, so whether it is what assigns {name} \
-                             the running value is unknown"
+                            "{measured}, but a glob pattern in /etc/sysctl.conf could name \
+                             {name}, and a reload reads that file after every drop-in, so \
+                             whether it is what assigns {name} the running value is unknown"
+                        ),
+                    )
+                } else if effective.blocks_all {
+                    (
+                        DivergenceState::Unverifiable,
+                        format!(
+                            "{measured}, but this scan could not resolve every configuration \
+                             source, so whether an unresolved one assigns {name} the running \
+                             value, and what the next boot leaves it at, are unknown"
+                        ),
+                    )
+                } else if effective
+                    .glob_patterns
+                    .iter()
+                    .any(|pattern| persistence::glob_could_match(pattern, &key))
+                {
+                    (
+                        DivergenceState::Unverifiable,
+                        format!(
+                            "{measured}, but a glob pattern in the surviving drop-in \
+                             configuration could name {name}, so whether it assigns {name} the \
+                             running value, and what the next boot leaves it at, are unknown"
                         ),
                     )
                 } else {
@@ -236,8 +281,9 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                                 DivergenceState::Diverged,
                                 format!(
                                     "the running kernel reads {runtime} because /etc/sysctl.conf \
-                                     assigns it and is read last, ahead of {dropin}, which says \
-                                     {configured}. The applier that runs at boot does not read \
+                                     assigns it and is read last, ahead of {deciding_file}, \
+                                     which says {configured}. The applier that runs at boot does \
+                                     not read \
                                      /etc/sysctl.conf at all, so the next boot switches {name} \
                                      to {configured}"
                                 ),
@@ -246,8 +292,9 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                                 DivergenceState::Unverifiable,
                                 format!(
                                     "the running kernel reads {runtime} because /etc/sysctl.conf \
-                                     assigns it and is read last, ahead of {dropin}, which says \
-                                     {configured}. Which applier runs at boot on this host was \
+                                     assigns it and is read last, ahead of {deciding_file}, \
+                                     which says {configured}. Which applier runs at boot on this \
+                                     host was \
                                      not established, so whether the next boot switches {name} \
                                      to {configured} is unknown"
                                 ),
@@ -263,8 +310,9 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                             format!(
                                 "the running kernel reads {runtime} while a reload restores \
                                  {legacy_value}, which /etc/sysctl.conf assigns and is read \
-                                 last, ahead of {dropin}, which says {configured}. So this host \
-                                 is not running what its own files describe, and the value that \
+                                 last, ahead of {deciding_file}, which says {configured}. So \
+                                 this host is not running what its own files describe, and the \
+                                 value that \
                                  decides is the one in /etc/sysctl.conf"
                             ),
                         ),
@@ -315,7 +363,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                     let legacy_clause = match named_by_legacy {
                         Some(configured) => format!(
                             ". What was read says /etc/sysctl.conf assigns {name} {configured}, \
-                             and a reload reads that file last"
+                             and a reload reads that file after every drop-in"
                         ),
                         None => String::new(),
                     };

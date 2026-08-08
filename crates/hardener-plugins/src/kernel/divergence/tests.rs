@@ -771,6 +771,26 @@ async fn an_unreadable_sysctl_conf_blocks_the_disagreement_row_too() {
         "one of this host's files went unread, so this clause is not measured: {}",
         row.divergence_detail
     );
+    // An absence assertion alone passes against any other unverifiable
+    // sentence, including one claiming the file was read and named nothing.
+    // These pin the wording this test exists for: what was measured, which
+    // read failed, and which question that leaves open.
+    assert!(
+        row.divergence_detail
+            .contains("/etc/sysctl.d/50-x.conf says 1")
+            && row
+                .divergence_detail
+                .contains("/etc/sysctl.conf could not be read")
+            && row
+                .divergence_detail
+                .contains("a reload reads it after every drop-in")
+            && row
+                .divergence_detail
+                .contains("the running value is unknown"),
+        "the row must carry the measurement, the read that failed, and the question it leaves \
+         open: {}",
+        row.divergence_detail
+    );
 }
 
 /// Review finding C1, the glob half. A pattern in `/etc/sysctl.conf` that
@@ -804,6 +824,22 @@ async fn a_legacy_glob_blocks_the_disagreement_row_for_the_keys_it_could_name() 
         !row.divergence_detail
             .contains("not running what its own files describe"),
         "the pattern was never resolved, so this clause is not measured: {}",
+        row.divergence_detail
+    );
+    // Same reason as the test above: the absence of one clause is not evidence
+    // that the clause which replaced it says anything true, so the pattern, the
+    // file it is in, and the key it could reach are all pinned here.
+    assert!(
+        row.divergence_detail
+            .contains("/etc/sysctl.d/50-x.conf says 1")
+            && row.divergence_detail.contains(
+                "a glob pattern in /etc/sysctl.conf could name net.ipv4.conf.all.log_martians"
+            )
+            && row
+                .divergence_detail
+                .contains("the running value is unknown"),
+        "the row must name the pattern's file, the key it could reach, and what that leaves \
+         open: {}",
         row.divergence_detail
     );
 }
@@ -889,5 +925,210 @@ async fn a_legacy_glob_naming_nothing_managed_still_earns_the_file_a_row() {
         parameter.divergence_state,
         DivergenceState::Diverged,
         "vm.* cannot name net.ipv4.conf.all.log_martians: {parameter:?}"
+    );
+}
+
+/// Review finding B1: the value the precedence sentence predicts for the next
+/// boot is the winner among the drop-ins this scan could READ, which is not the
+/// winner among all of them. Here `/etc/sysctl.d/60-y.conf` is unreadable and
+/// sorts after the drop-in that was read, so the next boot could just as well
+/// switch the parameter to 2, and the file the sentence names as deciding could
+/// be the wrong one. Neither claim is earned, so the row makes neither.
+#[tokio::test]
+async fn an_unread_dropin_blocks_the_precedence_rows_boot_prediction() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/50-x.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_file(
+                "/etc/sysctl.d/60-y.conf",
+                "net.ipv4.conf.all.log_martians = 2\n",
+            )
+            .with_read_permission_denied("/etc/sysctl.d/60-y.conf")
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 0\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still carry a row");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "a drop-in nobody could read could outrank the one that was, so the boot value is not \
+         measured: {row:?}"
+    );
+    assert!(
+        !row.divergence_detail.contains("the next boot switches"),
+        "the value the next boot brings was not measured, so the row may not name one: {}",
+        row.divergence_detail
+    );
+    assert!(
+        row.divergence_detail
+            .contains("could not resolve every configuration source")
+            && row
+                .divergence_detail
+                .contains("what the next boot leaves it at, are unknown"),
+        "the row must say which question went unanswered: {}",
+        row.divergence_detail
+    );
+}
+
+/// Review finding B1, the drop-in glob half. A pattern in a drop-in this scan
+/// chose not to resolve could assign the running value, or outrank the drop-in
+/// that was resolved, so the same two claims go unearned. The silent case has
+/// treated exactly this as unknown since `7cc4f9a1`.
+#[tokio::test]
+async fn a_dropin_glob_blocks_the_disagreement_row_for_the_keys_it_could_name() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/50-x.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_file(
+                "/etc/sysctl.d/60-glob.conf",
+                "net.ipv4.conf.*.log_martians = 2\n",
+            )
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still carry a row");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "an unresolved pattern could be the whole explanation for the running value: {row:?}"
+    );
+    assert!(
+        row.divergence_detail.contains(
+            "a glob pattern in the surviving drop-in configuration could name \
+                      net.ipv4.conf.all.log_martians"
+        ),
+        "the row must say which unresolved thing blocked it: {}",
+        row.divergence_detail
+    );
+}
+
+/// Review finding B2: the accusation is false under an unread drop-in for the
+/// same reason it is false under an unread `/etc/sysctl.conf`. The unread file
+/// may assign exactly the running value, in which case the host IS running what
+/// its own files describe. There is no `/etc/sysctl.conf` on this host at all,
+/// so nothing but the drop-in side can be what blocks the row.
+#[tokio::test]
+async fn an_unreadable_dropin_blocks_the_disagreement_row_too() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/50-x.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_file("/etc/sysctl.d/60-y.conf", "irrelevant\n")
+            .with_read_permission_denied("/etc/sysctl.d/60-y.conf")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still carry a row");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "a drop-in nobody could read could name the running value: {row:?}"
+    );
+    assert!(
+        !row.divergence_detail
+            .contains("not running what its own files describe"),
+        "an unread file could describe exactly what is running, so this clause is not \
+         measured: {}",
+        row.divergence_detail
+    );
+    assert!(
+        row.divergence_detail
+            .contains("could not resolve every configuration source"),
+        "the row must say what left the question open: {}",
+        row.divergence_detail
+    );
+}
+
+/// The narrowing, for the legacy glob guard on the disagreement arm. A pattern
+/// that cannot name the key must not block it, or the guard becomes a blanket
+/// "any glob anywhere blocks everything" and `7cc4f9a1` is undone here. Without
+/// this test, swapping `glob_could_match` for a non-empty check passes.
+#[tokio::test]
+async fn a_legacy_glob_that_cannot_name_the_key_leaves_the_disagreement_row_alone() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file("/etc/sysctl.d/50-x.conf", "kernel.kptr_restrict = 2\n")
+            .with_file("/etc/sysctl.conf", "vm.* = 1\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/kernel/kptr_restrict", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "kernel.kptr_restrict")
+        .expect("a key no pattern could name must still be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Diverged,
+        "vm.* cannot name kernel.kptr_restrict, so the disagreement stands: {row:?}"
+    );
+    assert!(
+        row.divergence_detail
+            .contains("not running what its own files describe"),
+        "nothing blocks this row, so it must carry the finding it exists for: {}",
+        row.divergence_detail
+    );
+}
+
+/// The same narrowing for the drop-in glob guard added alongside it. `vm.*` in
+/// `/etc/sysctl.conf` is the legacy file's half above; this is the drop-in's.
+#[tokio::test]
+async fn a_dropin_glob_that_cannot_name_the_key_leaves_the_disagreement_row_alone() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file("/etc/sysctl.d/50-x.conf", "kernel.kptr_restrict = 2\n")
+            .with_file(
+                "/etc/sysctl.d/60-glob.conf",
+                "net.ipv4.conf.*.rp_filter = 2\n",
+            )
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/kernel/kptr_restrict", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "kernel.kptr_restrict")
+        .expect("a key no pattern could name must still be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Diverged,
+        "net.ipv4.conf.* cannot name kernel.kptr_restrict, so the disagreement stands: {row:?}"
+    );
+    assert!(
+        row.divergence_detail
+            .contains("not running what its own files describe"),
+        "nothing blocks this row, so it must carry the finding it exists for: {}",
+        row.divergence_detail
     );
 }
