@@ -423,11 +423,12 @@ pub fn restore_kind(has_content: bool) -> &'static str {
 }
 
 /// One-line rollback summary: successful restores over total files, and what
-/// the rollback left diverged.
+/// the rollback left diverged or could not check.
 ///
 /// The divergence clause is a count and not a list: the modal's own section
 /// carries the sentences. It is in the summary because that is the line an
-/// operator reads, and a divergence changes what they do next.
+/// operator reads, and a divergence changes what they do next, differently
+/// from a probe that simply could not answer.
 pub fn rollback_summary_sentence(result: &RollbackResult) -> String {
     let total = result.rollback_files.len();
     let restored = result
@@ -436,10 +437,12 @@ pub fn rollback_summary_sentence(result: &RollbackResult) -> String {
         .filter(|f| f.restore_success)
         .count();
     let files = format!("{restored} of {total} files restored.");
-    match result.rollback_divergences.len() {
-        0 => files,
-        1 => format!("{files} 1 divergence reported."),
-        n => format!("{files} {n} divergences reported."),
+    let (diverged, unverifiable) = result.divergence_counts();
+    let clause = hardener_types::rollback_divergence_note(diverged, unverifiable);
+    if clause.is_empty() {
+        files
+    } else {
+        format!("{files} {clause} reported.")
     }
 }
 

@@ -1006,6 +1006,24 @@ impl RollbackResult {
     pub fn reloads_ok(&self) -> bool {
         self.rollback_reloads.iter().all(|r| r.reload_success)
     }
+
+    /// Splits this rollback's divergence rows into how many were measured
+    /// disagreements and how many the probe could not answer at all.
+    ///
+    /// A tuple rather than two separate methods: both fleet summaries fold
+    /// this over every host in the run, and returning the pair keeps that
+    /// fold from crediting one running total with the other's rows.
+    pub fn divergence_counts(&self) -> (usize, usize) {
+        let mut diverged = 0;
+        let mut unverifiable = 0;
+        for row in &self.rollback_divergences {
+            match row.divergence_state {
+                DivergenceState::Diverged => diverged += 1,
+                DivergenceState::Unverifiable => unverifiable += 1,
+            }
+        }
+        (diverged, unverifiable)
+    }
 }
 
 // ============================================================================
@@ -1344,11 +1362,19 @@ pub enum RollbackStatus {
         failed: usize,
         #[serde(default)]
         reload_failed: usize,
-        /// How many divergences this host reported. A count only: it names no
-        /// exit code and no failure, because a divergence is something to
-        /// look at rather than something that went wrong.
+        /// How many rows in `rollback_divergences` were `Diverged`: a
+        /// measured disagreement between the running host and what the
+        /// rollback restored. A count only: it names no exit code and no
+        /// failure, because a divergence is something to look at rather
+        /// than something that went wrong.
         #[serde(default)]
         diverged: usize,
+        /// How many rows were `Unverifiable`: a probe that could not
+        /// answer, not a claim that anything is wrong. Kept apart from
+        /// `diverged` so a host whose check merely could not run is never
+        /// read the same as one that measurably disagreed.
+        #[serde(default)]
+        unverifiable: usize,
     },
     /// No matching checkpoint for the selected plugins on this host.
     NothingToDo,
@@ -1370,6 +1396,31 @@ pub fn rollback_failed_label(failed: usize, reload_failed: usize) -> String {
         0 => format!("{failed} failed"),
         _ => format!("{failed} failed ({reload_failed} due to reload)"),
     }
+}
+
+/// One clause naming how many rollback divergences were measured against
+/// how many could not be checked at all, in the shape both fleet summaries
+/// share: "2 divergences, 1 unchecked". Either half is left out entirely
+/// when its count is zero, and the clause is empty when both are, so a
+/// clean rollback earns no clause on either surface.
+///
+/// Written once for the same reason `rollback_failed_label` is: the CLI and
+/// desktop draw the same distinction, `hardener-cli` is a binary so the
+/// desktop cannot borrow from it, and this crate is the one both already
+/// depend on.
+pub fn rollback_divergence_note(diverged: usize, unverifiable: usize) -> String {
+    let mut clauses = Vec::new();
+    match diverged {
+        0 => {}
+        1 => clauses.push("1 divergence".to_string()),
+        n => clauses.push(format!("{n} divergences")),
+    }
+    match unverifiable {
+        0 => {}
+        1 => clauses.push("1 unchecked".to_string()),
+        n => clauses.push(format!("{n} unchecked")),
+    }
+    clauses.join(", ")
 }
 
 #[cfg(test)]

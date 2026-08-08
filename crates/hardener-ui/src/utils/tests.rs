@@ -801,6 +801,78 @@ fn two_divergences_pluralise_the_summary_clause() {
     );
 }
 
+fn divergence_row(state: DivergenceState) -> RollbackDivergence {
+    RollbackDivergence {
+        divergence_plugin_id: "pam-hardening".to_string(),
+        divergence_subject: "/etc/pam.d/system-auth".to_string(),
+        divergence_state: state,
+        divergence_detail: "config unreadable after restore".to_string(),
+    }
+}
+
+/// A row the probe could not answer is named apart from a measured
+/// divergence, using the doc comment's own words for it: "Not a claim that
+/// anything is wrong." A summary that folded it into "divergences" would
+/// make that claim anyway.
+///
+/// Exact match for the same reason as the diverged-only cases above.
+#[test]
+fn an_unverifiable_row_is_named_apart_from_a_divergence() {
+    let result = rollback_result_with(vec![divergence_row(DivergenceState::Unverifiable)]);
+
+    assert_eq!(
+        rollback_summary_sentence(&result),
+        "0 of 0 files restored. 1 unchecked reported."
+    );
+}
+
+/// Two unverifiable rows pluralise the same way a plural divergence count
+/// does.
+#[test]
+fn two_unverifiable_rows_pluralise_the_summary_clause() {
+    let result = rollback_result_with(vec![
+        divergence_row(DivergenceState::Unverifiable),
+        divergence_row(DivergenceState::Unverifiable),
+    ]);
+
+    assert_eq!(
+        rollback_summary_sentence(&result),
+        "0 of 0 files restored. 2 unchecked reported."
+    );
+}
+
+/// Both kinds together, plural forms of each: the divergence clause comes
+/// first, the unchecked clause second, joined by a comma, in the shape the
+/// maintainer approved for both surfaces.
+#[test]
+fn diverged_and_unverifiable_rows_both_appear_in_the_summary() {
+    let result = rollback_result_with(vec![
+        divergence_row(DivergenceState::Diverged),
+        divergence_row(DivergenceState::Diverged),
+        divergence_row(DivergenceState::Unverifiable),
+    ]);
+
+    assert_eq!(
+        rollback_summary_sentence(&result),
+        "0 of 0 files restored. 2 divergences, 1 unchecked reported."
+    );
+}
+
+/// One of each: the singular forms of both clauses, not the plural ones a
+/// careless `n == 1` check could still emit.
+#[test]
+fn one_divergence_and_one_unverifiable_row_use_singular_forms() {
+    let result = rollback_result_with(vec![
+        divergence_row(DivergenceState::Diverged),
+        divergence_row(DivergenceState::Unverifiable),
+    ]);
+
+    assert_eq!(
+        rollback_summary_sentence(&result),
+        "0 of 0 files restored. 1 divergence, 1 unchecked reported."
+    );
+}
+
 // --- Task 1: Severity grouping and label/class helpers ---
 
 fn finding(id: &str, sev: Severity) -> Finding {
@@ -1090,6 +1162,7 @@ fn rollback_cells_rolled_back_clean() {
         failed: 0,
         reload_failed: 0,
         diverged: 0,
+        unverifiable: 0,
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Ok);
     assert_eq!(v.cells, vec![("9 restored".to_string(), "score-good")]);
@@ -1102,6 +1175,7 @@ fn rollback_cells_rolled_back_with_failures() {
         failed: 2,
         reload_failed: 0,
         diverged: 0,
+        unverifiable: 0,
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Failed);
     assert_eq!(
@@ -1125,6 +1199,7 @@ fn rollback_cells_rolled_back_with_reload_failures() {
         failed: 2,
         reload_failed: 1,
         diverged: 0,
+        unverifiable: 0,
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Failed);
     assert_eq!(
@@ -1143,6 +1218,7 @@ fn rollback_cells_rolled_back_nothing_shows_muted_fallback() {
         failed: 0,
         reload_failed: 0,
         diverged: 0,
+        unverifiable: 0,
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Ok);
     assert_eq!(v.cells, vec![("Nothing restored".to_string(), "")]);

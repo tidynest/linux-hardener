@@ -1390,6 +1390,7 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                 failed,
                 reload_failed,
                 diverged,
+                unverifiable,
             } => {
                 rolled_back += 1;
                 let status = if *failed > 0 {
@@ -1407,11 +1408,14 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                 // The divergence note is a count, not a failure: it rides on
                 // the end of the same line rather than its own status, so a
                 // host worth a second look is still findable among twenty
-                // without reading as broken.
-                let note = match *diverged {
-                    0 => String::new(),
-                    1 => ", 1 divergence".to_string(),
-                    n => format!(", {n} divergences"),
+                // without reading as broken. It names a measured divergence
+                // apart from a probe that could not answer, because the two
+                // ask the operator to do different things next.
+                let clause = hardener_types::rollback_divergence_note(*diverged, *unverifiable);
+                let note = if clause.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {clause}")
                 };
                 let result = format!(
                     "{restored} restored, {}{note}",
@@ -1547,32 +1551,37 @@ fn classify_rollback_outcome(rollback_success: bool, reloads_ok: bool) -> (bool,
 /// Folds each restored checkpoint into the host's rollback status: how many
 /// came back cleanly, how many did not, how many restored but would not
 /// reload, and how many things the survivors still leave diverged from what
-/// they restore. `connect_failed` counts checkpoints whose restore call
-/// itself errored, before there was a `RollbackResult` to classify.
+/// they restore, measured and unverifiable counted apart. `connect_failed`
+/// counts checkpoints whose restore call itself errored, before there was a
+/// `RollbackResult` to classify.
 ///
 /// Pure, so a unit test drives it directly rather than staging a live SSH
 /// connection to exercise the same arithmetic. `classify_rollback_outcome`
-/// stays blind to divergence on purpose: the exit code only ever reads
-/// `failed`, and folding divergence into that function would put it one edit
-/// away from folding into the exit code too.
+/// stays blind to both divergence counts on purpose: the exit code only ever
+/// reads `failed`, and folding divergence into that function would put it
+/// one edit away from folding into the exit code too.
 fn rollback_status_for(results: &[RollbackResult], connect_failed: usize) -> RollbackStatus {
     let mut restored = 0;
     let mut failed = connect_failed;
     let mut reload_failed = 0;
     let mut diverged = 0;
+    let mut unverifiable = 0;
     for r in results {
         let (r_restored, r_failed, r_reload_failed) =
             classify_rollback_outcome(r.rollback_success, r.reloads_ok());
         restored += usize::from(r_restored);
         failed += usize::from(r_failed);
         reload_failed += usize::from(r_reload_failed);
-        diverged += r.rollback_divergences.len();
+        let (r_diverged, r_unverifiable) = r.divergence_counts();
+        diverged += r_diverged;
+        unverifiable += r_unverifiable;
     }
     RollbackStatus::RolledBack {
         restored,
         failed,
         reload_failed,
         diverged,
+        unverifiable,
     }
 }
 

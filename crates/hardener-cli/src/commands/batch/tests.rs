@@ -294,7 +294,8 @@ fn rollback_exit_code_follows_precedence() {
             restored: 2,
             failed: 0,
             reload_failed: 0,
-            diverged: 0
+            diverged: 0,
+            unverifiable: 0,
         })]),
         0
     );
@@ -303,7 +304,8 @@ fn rollback_exit_code_follows_precedence() {
             restored: 1,
             failed: 1,
             reload_failed: 0,
-            diverged: 0
+            diverged: 0,
+            unverifiable: 0,
         })]),
         1
     );
@@ -319,7 +321,8 @@ fn rollback_exit_code_follows_precedence() {
                 restored: 0,
                 failed: 1,
                 reload_failed: 0,
-                diverged: 0
+                diverged: 0,
+                unverifiable: 0,
             }),
             ro(RollbackStatus::Failed {
                 error: "x".to_string()
@@ -368,6 +371,7 @@ fn render_rollback_text_partial_and_nothing_to_do() {
             failed: 1,
             reload_failed: 0,
             diverged: 0,
+            unverifiable: 0,
         }),
         ro(RollbackStatus::NothingToDo),
     ]);
@@ -402,6 +406,7 @@ fn render_rollback_text_names_a_reload_failure_separately_from_a_file_failure() 
         failed: 1,
         reload_failed: 0,
         diverged: 0,
+        unverifiable: 0,
     })]);
     assert!(
         file_failure.contains("2 restored, 1 failed"),
@@ -417,6 +422,7 @@ fn render_rollback_text_names_a_reload_failure_separately_from_a_file_failure() 
         failed: 1,
         reload_failed: 1,
         diverged: 0,
+        unverifiable: 0,
     })]);
     assert!(
         reload_failure.contains("2 restored, 1 failed") && reload_failure.contains("reload"),
@@ -426,6 +432,90 @@ fn render_rollback_text_names_a_reload_failure_separately_from_a_file_failure() 
     assert_ne!(
         file_failure, reload_failure,
         "the two failure kinds must render distinguishably"
+    );
+}
+
+/// A measured divergence and a probe that could not answer are different
+/// news for an operator, so the fleet result line must name them apart
+/// rather than folding both into one "divergences" count the way an earlier
+/// version of this slice did.
+///
+/// Exact equality on the extracted `result:` line throughout: a `contains`
+/// check would still pass if, say, the singular "1 divergence" arm were
+/// merged into the plural one, which is the exact defect that let
+/// `"1 divergences"` (containing `"1 divergence"`) through earlier in this
+/// same slice.
+#[test]
+fn render_rollback_text_names_divergences_and_unchecked_rows_apart() {
+    colored::control::set_override(false);
+
+    fn result_line(status: RollbackStatus) -> String {
+        let text = render_rollback_text(&[ro(status)]);
+        text.lines()
+            .find(|l| l.trim_start().starts_with("result:"))
+            .unwrap_or_else(|| panic!("no result line in: {text}"))
+            .to_string()
+    }
+
+    // Only diverged rows.
+    assert_eq!(
+        result_line(RollbackStatus::RolledBack {
+            restored: 2,
+            failed: 0,
+            reload_failed: 0,
+            diverged: 2,
+            unverifiable: 0,
+        }),
+        "  result:    2 restored, 0 failed, 2 divergences"
+    );
+
+    // Only unverifiable rows.
+    assert_eq!(
+        result_line(RollbackStatus::RolledBack {
+            restored: 3,
+            failed: 0,
+            reload_failed: 0,
+            diverged: 0,
+            unverifiable: 1,
+        }),
+        "  result:    3 restored, 0 failed, 1 unchecked"
+    );
+
+    // Both kinds together.
+    assert_eq!(
+        result_line(RollbackStatus::RolledBack {
+            restored: 2,
+            failed: 0,
+            reload_failed: 0,
+            diverged: 2,
+            unverifiable: 1,
+        }),
+        "  result:    2 restored, 0 failed, 2 divergences, 1 unchecked"
+    );
+
+    // One of each: singular forms of both.
+    assert_eq!(
+        result_line(RollbackStatus::RolledBack {
+            restored: 1,
+            failed: 0,
+            reload_failed: 0,
+            diverged: 1,
+            unverifiable: 1,
+        }),
+        "  result:    1 restored, 0 failed, 1 divergence, 1 unchecked"
+    );
+
+    // Neither: a host with only divergences must not say ", 0 unchecked",
+    // and a clean host must carry no clause at all.
+    assert_eq!(
+        result_line(RollbackStatus::RolledBack {
+            restored: 4,
+            failed: 0,
+            reload_failed: 0,
+            diverged: 0,
+            unverifiable: 0,
+        }),
+        "  result:    4 restored, 0 failed"
     );
 }
 
@@ -453,6 +543,7 @@ fn render_rollback_json_tags_state() {
         failed: 0,
         reload_failed: 0,
         diverged: 0,
+        unverifiable: 0,
     })]);
     assert!(json.contains("\"state\": \"rolledback\""), "json: {json}");
 }
@@ -1724,7 +1815,48 @@ fn a_hosts_divergences_reach_the_fleet_summary() {
     let status = rollback_status_for(&[result], 0);
 
     match status {
-        RollbackStatus::RolledBack { diverged, .. } => assert_eq!(diverged, 1),
+        RollbackStatus::RolledBack {
+            diverged,
+            unverifiable,
+            ..
+        } => {
+            assert_eq!(diverged, 1);
+            assert_eq!(
+                unverifiable, 0,
+                "a measured divergence must not also count as unverifiable"
+            );
+        }
+        other => panic!("expected RolledBack, got {other:?}"),
+    }
+}
+
+/// The reverse: a probe that could not answer must land in `unverifiable`
+/// and never inflate `diverged`, or a host whose check merely could not run
+/// would read identically to one that measurably disagreed.
+#[test]
+fn an_unverifiable_row_reaches_its_own_fleet_count() {
+    let mut result = rollback_result_fixture();
+    result.rollback_divergences = vec![RollbackDivergence {
+        divergence_plugin_id: "pam-hardening".to_string(),
+        divergence_subject: "/etc/pam.d/system-auth".to_string(),
+        divergence_state: DivergenceState::Unverifiable,
+        divergence_detail: "config unreadable after restore".to_string(),
+    }];
+
+    let status = rollback_status_for(&[result], 0);
+
+    match status {
+        RollbackStatus::RolledBack {
+            diverged,
+            unverifiable,
+            ..
+        } => {
+            assert_eq!(
+                diverged, 0,
+                "a probe that could not answer must not count as a measured divergence"
+            );
+            assert_eq!(unverifiable, 1);
+        }
         other => panic!("expected RolledBack, got {other:?}"),
     }
 }
@@ -1737,12 +1869,14 @@ fn a_divergence_does_not_change_the_fleet_exit_code() {
         failed: 0,
         reload_failed: 0,
         diverged: 0,
+        unverifiable: 0,
     };
     let diverged = RollbackStatus::RolledBack {
         restored: 3,
         failed: 0,
         reload_failed: 0,
         diverged: 2,
+        unverifiable: 0,
     };
 
     assert_eq!(

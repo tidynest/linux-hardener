@@ -799,6 +799,56 @@ mod rollback_result_tests {
             "3 failed (2 due to reload)"
         );
     }
+
+    fn divergence(state: DivergenceState) -> RollbackDivergence {
+        RollbackDivergence {
+            divergence_plugin_id: "firewall-hardening".to_string(),
+            divergence_subject: "ufw".to_string(),
+            divergence_state: state,
+            divergence_detail: "detail".to_string(),
+        }
+    }
+
+    /// `divergence_counts` is what both fleet summaries fold over the whole
+    /// run, so a row landing under the wrong half here would misreport on
+    /// both surfaces at once. Diverged and Unverifiable rows must land in
+    /// their own counters, mixed together in one vector.
+    #[test]
+    fn divergence_counts_splits_diverged_from_unverifiable() {
+        let result = RollbackResult {
+            rollback_checkpoint_id: "cp_1".to_string(),
+            rollback_checkpoint_name: "before-upgrade".to_string(),
+            rollback_success: true,
+            rollback_files: Vec::new(),
+            rollback_reloads: Vec::new(),
+            rollback_divergences: vec![
+                divergence(DivergenceState::Diverged),
+                divergence(DivergenceState::Unverifiable),
+                divergence(DivergenceState::Diverged),
+            ],
+        };
+        assert_eq!(result.divergence_counts(), (2, 1));
+    }
+
+    /// Exact string equality throughout: a `contains` check here would still
+    /// pass if the singular arm were folded into the plural one, which is
+    /// the exact defect this slice exists to remove.
+    #[test]
+    fn rollback_divergence_note_names_both_counts_and_omits_zero() {
+        assert_eq!(crate::rollback_divergence_note(0, 0), "");
+        assert_eq!(crate::rollback_divergence_note(1, 0), "1 divergence");
+        assert_eq!(crate::rollback_divergence_note(2, 0), "2 divergences");
+        assert_eq!(crate::rollback_divergence_note(0, 1), "1 unchecked");
+        assert_eq!(crate::rollback_divergence_note(0, 2), "2 unchecked");
+        assert_eq!(
+            crate::rollback_divergence_note(2, 1),
+            "2 divergences, 1 unchecked"
+        );
+        assert_eq!(
+            crate::rollback_divergence_note(1, 1),
+            "1 divergence, 1 unchecked"
+        );
+    }
 }
 
 mod rollback_divergence_tests {
