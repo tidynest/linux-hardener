@@ -36,13 +36,17 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// correct and the sentence is still true.
 ///
 /// **An unresolved source turns that same case into `Unverifiable`, not
-/// `Diverged`.** [`persistence::effective_boot_values`] never inserts a
-/// glob-matched key, so a parameter no *explicit* assignment names looks
-/// identical whether nothing names it or a glob this scan could not resolve
-/// does. Claiming `Diverged` there would be exactly the confident claim this
-/// probe exists to refuse, so when any source went unresolved, that
-/// parameter's own row says the attribution could not be made, rather than
-/// stating a fact the scan does not actually have.
+/// `Diverged`, but only where it could actually be the reason.**
+/// [`persistence::effective_boot_values`] never inserts a glob-matched key, so
+/// a parameter no *explicit* assignment names looks identical whether nothing
+/// names it or a glob this scan could not resolve does. Claiming `Diverged`
+/// there would be exactly the confident claim this probe exists to refuse.
+/// A file this scan could not read or list blocks every parameter, because an
+/// unreadable file could name anything; a glob pattern this scan chose not to
+/// resolve blocks only the parameters [`persistence::glob_could_match`] says
+/// it could reach, because `net.ipv4.conf.*` cannot name `kernel.kptr_restrict`
+/// and claiming otherwise is not caution, it is a wrong answer with caution's
+/// wording.
 ///
 /// **Every unresolved source also gets a row of its own,** independent of how
 /// the parameter loop below classifies anything. Consulting `effective.unresolved`
@@ -56,7 +60,6 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
     let plugin = KernelHardeningPlugin::new();
     let effective = persistence::effective_boot_values(ctx, DropinScope::All).await;
-    let source_unresolved = !effective.unresolved.is_empty();
     let mut rows: Vec<RollbackDivergence> = effective
         .unresolved
         .iter()
@@ -96,7 +99,8 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
             }
         };
 
-        match effective.values.get(&persistence::procfs_key(name)) {
+        let key = persistence::procfs_key(name);
+        match effective.values.get(&key) {
             Some(configured) if configured != &runtime => rows.push(row(
                 name,
                 DivergenceState::Diverged,
@@ -113,12 +117,25 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                 .kernel_compare
                 .violated_by(parameter.kernel_secure_value, Some(&runtime)) =>
             {
-                let (state, detail) = if source_unresolved {
+                let matched_pattern = effective
+                    .glob_patterns
+                    .iter()
+                    .find(|pattern| persistence::glob_could_match(pattern, &key));
+                let (state, detail) = if effective.blocks_all {
                     (
                         DivergenceState::Unverifiable,
                         format!(
                             "{name} reads {runtime} in the running kernel and no explicit \
                              assignment names it{unresolved_clause}"
+                        ),
+                    )
+                } else if matched_pattern.is_some() {
+                    (
+                        DivergenceState::Unverifiable,
+                        format!(
+                            "{name} reads {runtime} in the running kernel and no explicit \
+                             assignment names it, but a glob pattern in the surviving \
+                             configuration could name it, so whether it does is unknown"
                         ),
                     )
                 } else {

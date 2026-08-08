@@ -235,6 +235,13 @@ async fn an_unresolved_sources_row_names_the_file() {
 /// Fix round 2, finding 3: the other flavour of unresolved source, a drop-in
 /// this scan could list but not read, exercised by name rather than only
 /// through the glob-file flavour above.
+///
+/// Finding 3 (final review): the sentence must be true of the caller that
+/// asked. The scan's own wording for this same failure names
+/// `SYSCTL_HARDENER_CONF` and says the file "sorts after" it, both of which
+/// describe a file a rollback has typically just deleted; asserting only that
+/// the path appears would have let that false scan sentence keep flowing
+/// through this path unnoticed.
 #[tokio::test]
 async fn an_unreadable_dropin_file_is_an_unresolved_source() {
     let ctx = ctx_with(
@@ -259,5 +266,96 @@ async fn an_unreadable_dropin_file_is_an_unresolved_source() {
             .contains("/etc/sysctl.d/50-locked.conf"),
         "the row must name the file that could not be read: {}",
         unresolved_row.divergence_detail
+    );
+    assert!(
+        !unresolved_row.divergence_detail.contains("sorts after")
+            && !unresolved_row.divergence_detail.contains("overriding"),
+        "the sentence must be true of a rollback, which has no drop-in of its own left to be \
+         sorted after or overridden by the time this runs: {}",
+        unresolved_row.divergence_detail
+    );
+}
+
+/// Finding 1: `net.ipv4.conf.*.rp_filter` is exactly the pattern systemd's own
+/// `50-default.conf` ships on every systemd host. A boolean `source_unresolved`
+/// downgraded every parameter reaching the unnamed arm, including one this
+/// pattern plainly cannot name. This is the regression that shipped: on a real
+/// host issue #138's own case reported "could not check" rather than
+/// `Diverged`.
+#[tokio::test]
+async fn a_glob_pattern_that_cannot_match_the_key_does_not_block_diverged() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/usr/lib/sysctl.d/50-default.conf",
+                "net.ipv4.conf.*.rp_filter = 2\n",
+            )
+            .with_file("/proc/sys/kernel/kptr_restrict", "2\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "kernel.kptr_restrict")
+        .expect("a parameter no glob pattern could name must still be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Diverged,
+        "net.ipv4.conf.* cannot name kernel.kptr_restrict, so attribution must not be blocked: {row:?}"
+    );
+}
+
+/// The other half of the same host: the parameter the pattern genuinely could
+/// name must stay `Unverifiable`, so the fix narrows the block rather than
+/// removing it.
+#[tokio::test]
+async fn a_glob_pattern_that_could_match_the_key_stays_unverifiable() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/usr/lib/sysctl.d/50-default.conf",
+                "net.ipv4.conf.*.rp_filter = 2\n",
+            )
+            .with_file("/proc/sys/net/ipv4/conf/all/rp_filter", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.rp_filter")
+        .expect("a parameter the glob pattern could name must still carry its own row");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "net.ipv4.conf.*.rp_filter could name net.ipv4.conf.all.rp_filter, so a Diverged claim \
+         is unearned: {row:?}"
+    );
+}
+
+/// An unreadable drop-in (not a glob) still blocks every parameter, including
+/// one no glob pattern in play could ever have named. The narrowing is only
+/// for the glob case; a file nobody could open could still say anything.
+#[tokio::test]
+async fn an_unreadable_dropin_blocks_a_parameter_no_glob_could_name() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file("/etc/sysctl.d/50-locked.conf", "irrelevant\n")
+            .with_read_permission_denied("/etc/sysctl.d/50-locked.conf")
+            .with_file("/proc/sys/kernel/kptr_restrict", "2\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "kernel.kptr_restrict")
+        .expect("an unreadable source must still produce a row for a parameter no glob names");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "an unreadable file could name anything, so attribution stays blocked even for a \
+         parameter no glob pattern could ever have named: {row:?}"
     );
 }

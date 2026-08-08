@@ -87,12 +87,16 @@ struct SysctlAssignments {
     /// Explicit assignments keyed by [`procfs_key`], a later line in the file
     /// winning over an earlier one, which is the order `sysctl` applies them.
     values: BTreeMap<String, String>,
-    /// Whether the file also assigns through a glob pattern. Those are not
-    /// resolved here: the pattern language carries exclusions and an
+    /// Glob patterns the file assigns through, keyed by [`procfs_key`] the
+    /// same way `values` is, so a pattern written with dots and a key written
+    /// with slashes compare alike. **Not resolved to a value here, and never
+    /// must be**: the pattern language carries exclusions and an
     /// explicit-key precedence rule, and a half-implemented matcher is how a
-    /// false finding gets built. Reported as unchecked instead, so a file this
-    /// reader cannot fully resolve is not mistaken for a file that agrees.
-    globbed: bool,
+    /// false finding gets built. What is kept is narrower than resolution: a
+    /// pattern text a caller can ask "could this name key X", never "what
+    /// does this assign to X". A file this reader cannot fully resolve is
+    /// still not mistaken for a file that agrees.
+    glob_patterns: Vec<String>,
 }
 
 /// Reads a file in `sysctl` syntax, whether it is a `sysctl.d` drop-in or the
@@ -113,7 +117,7 @@ fn parse_sysctl(content: &str) -> SysctlAssignments {
         // assigns.
         let key = key.trim().strip_prefix('-').unwrap_or(key.trim()).trim();
         if key.contains(['*', '?', '[']) {
-            parsed.globbed = true;
+            parsed.glob_patterns.push(procfs_key(key));
             continue;
         }
         parsed
@@ -121,6 +125,82 @@ fn parse_sysctl(content: &str) -> SysctlAssignments {
             .insert(procfs_key(key), value.trim().to_string());
     }
     parsed
+}
+
+/// Whether `pattern` could name `key`, both already spelled by [`procfs_key`].
+///
+/// `*` matches any run of characters (including none), `?` matches exactly
+/// one, and a `[...]` character class matches exactly one without checking
+/// which characters it admits. That last simplification is deliberate: this
+/// answers one narrow question, whether attribution should be blocked, and
+/// treating a character class as matching more than sysctl actually would is
+/// the safe direction there, while treating it as matching less could let a
+/// pattern that does name the key through as a false `Diverged` claim.
+///
+/// This is not the glob resolver the module's own doc comment refuses to
+/// write. It never produces a value, only a bool, and an over-broad match
+/// costs an operator an "unknown" they did not strictly need, while an
+/// under-broad one costs a false measurement. Erring toward blocked is the
+/// only direction this function is allowed to be wrong in.
+pub(super) fn glob_could_match(pattern: &str, key: &str) -> bool {
+    enum Tok {
+        Lit(char),
+        Any,
+        Star,
+    }
+
+    let mut toks = Vec::new();
+    let mut chars = pattern.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '*' => toks.push(Tok::Star),
+            '?' => toks.push(Tok::Any),
+            '[' => {
+                // The exact class is not evaluated; consuming to the closing
+                // bracket and treating the whole thing as "one character" is
+                // the deliberate over-match described above. An unterminated
+                // `[` with no closing bracket is treated the same way sysctl
+                // treats a malformed pattern: as a literal `[`.
+                if chars.clone().any(|c| c == ']') {
+                    for c in chars.by_ref() {
+                        if c == ']' {
+                            break;
+                        }
+                    }
+                    toks.push(Tok::Any);
+                } else {
+                    toks.push(Tok::Lit('['));
+                }
+            }
+            other => toks.push(Tok::Lit(other)),
+        }
+    }
+
+    let key: Vec<char> = key.chars().collect();
+    let (mut ti, mut ki) = (0usize, 0usize);
+    let (mut star_ti, mut star_ki): (Option<usize>, usize) = (None, 0);
+    while ki < key.len() {
+        let tok_matches = match toks.get(ti) {
+            Some(Tok::Lit(c)) => *c == key[ki],
+            Some(Tok::Any) => true,
+            _ => false,
+        };
+        if tok_matches {
+            ti += 1;
+            ki += 1;
+        } else if let Some(Tok::Star) = toks.get(ti) {
+            star_ti = Some(ti);
+            star_ki = ki;
+            ti += 1;
+        } else if let Some(sti) = star_ti {
+            ti = sti + 1;
+            star_ki += 1;
+            ki = star_ki;
+        } else {
+            return false;
+        }
+    }
+    toks[ti..].iter().all(|t| matches!(t, Tok::Star))
 }
 
 /// The outcome of looking for a file the boot sequence might apply.
@@ -235,14 +315,21 @@ async fn dropins(ctx: &Context, scope: DropinScope) -> (Vec<LaterFile>, Vec<Unch
         let entries = match ctx.executor().read_dir(Path::new(dir)).await {
             Ok(entries) => entries,
             Err(e) => {
-                unchecked.push(unchecked_persistence(
-                    dir,
-                    format!(
+                let reason = match scope {
+                    DropinScope::AfterOurs => format!(
                         "{dir} could not be listed, so a drop-in overriding \
                          {SYSCTL_HARDENER_CONF} cannot be ruled out: {e}"
                     ),
-                    is_permission_denied(&e),
-                ));
+                    // This tool's own drop-in is gone by the time a rollback
+                    // asks: there is nothing left here for another file to
+                    // override, only the open question of whether a surviving
+                    // file names a managed parameter at all.
+                    DropinScope::All => format!(
+                        "{dir} could not be listed, so whether a surviving file in it names a \
+                         parameter this rollback restored is unknown: {e}"
+                    ),
+                };
+                unchecked.push(unchecked_persistence(dir, reason, is_permission_denied(&e)));
                 continue;
             }
         };
@@ -285,11 +372,22 @@ async fn dropins(ctx: &Context, scope: DropinScope) -> (Vec<LaterFile>, Vec<Unch
             FileRead::Unreadable {
                 reason,
                 needs_privilege,
-            } => unchecked.push(unchecked_persistence(
-                &path,
-                format!("{reason}, and {name} sorts after {ours}"),
-                needs_privilege,
-            )),
+            } => {
+                let sentence = match scope {
+                    DropinScope::AfterOurs => format!("{reason}, and {name} sorts after {ours}"),
+                    // "sorts after ours" is a scan-only fact: the ordering it
+                    // states is against this tool's own drop-in, which a
+                    // rollback has already restored away from. What the
+                    // rollback caller actually wants to know is narrower and
+                    // still true here: whether this unread file might name a
+                    // parameter the rollback restored.
+                    DropinScope::All => format!(
+                        "{reason}, so whether it names a parameter this rollback restored is \
+                         unknown"
+                    ),
+                };
+                unchecked.push(unchecked_persistence(&path, sentence, needs_privilege));
+            }
         }
     }
     (files, unchecked)
@@ -504,7 +602,7 @@ pub(super) async fn boot_persistence(
     unchecked.extend(
         ordered
             .iter()
-            .filter(|file| file.values.globbed)
+            .filter(|file| !file.values.glob_patterns.is_empty())
             .map(unchecked_glob),
     );
     (findings, unchecked)
@@ -520,8 +618,20 @@ pub(super) struct EffectiveBoot {
     /// Assignments keyed by [`procfs_key`].
     pub(super) values: BTreeMap<String, String>,
     /// Paths whose assignments this reader could not resolve, and paths it
-    /// could not read at all, each with the reason.
+    /// could not read at all, each with the reason. Every entry here still
+    /// earns its own row: see the caller in `divergence.rs`.
     pub(super) unresolved: Vec<String>,
+    /// Glob patterns, keyed by [`procfs_key`], from files this reader COULD
+    /// read but whose glob assignments it did not resolve. A parameter's
+    /// attribution is blocked only when [`glob_could_match`] says one of
+    /// these could name it: a pattern is evidence against the specific keys
+    /// it might reach, not against every managed parameter at once.
+    pub(super) glob_patterns: Vec<String>,
+    /// True when at least one source is unresolved for a reason other than a
+    /// glob pattern: a file that could not be read, a directory that could
+    /// not be listed. Either could name anything, so this blocks attribution
+    /// for every parameter rather than only the ones a pattern could reach.
+    pub(super) blocks_all: bool,
 }
 
 pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> EffectiveBoot {
@@ -538,7 +648,7 @@ pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> 
 
     let mut unresolved: Vec<String> = ordered
         .iter()
-        .filter(|file| file.values.globbed)
+        .filter(|file| !file.values.glob_patterns.is_empty())
         .map(|file| {
             format!(
                 "{} assigns sysctls through glob patterns, which this scan does not resolve",
@@ -546,14 +656,24 @@ pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> 
             )
         })
         .collect();
+    let blocks_all = !unchecked.is_empty() || !ufw_unchecked.is_empty();
     unresolved.extend(
         unchecked
             .iter()
             .chain(ufw_unchecked.iter())
             .map(|u| u.unchecked_reason.clone()),
     );
+    let glob_patterns: Vec<String> = ordered
+        .iter()
+        .flat_map(|file| file.values.glob_patterns.iter().cloned())
+        .collect();
 
-    EffectiveBoot { values, unresolved }
+    EffectiveBoot {
+        values,
+        unresolved,
+        glob_patterns,
+        blocks_all,
+    }
 }
 
 #[cfg(test)]
