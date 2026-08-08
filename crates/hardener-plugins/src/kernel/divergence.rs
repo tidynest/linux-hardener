@@ -263,9 +263,9 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                     (
                         DivergenceState::Unverifiable,
                         format!(
-                            "{measured}, but a glob pattern in the surviving drop-in \
-                             configuration could name {name}, so whether it assigns {name} the \
-                             running value, and what the next boot leaves it at, are unknown"
+                            "{measured}, but a glob pattern in the surviving configuration could \
+                             name {name}, so whether it assigns {name} the running value, and \
+                             what the next boot leaves it at, are unknown"
                         ),
                     )
                 } else {

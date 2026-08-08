@@ -1013,7 +1013,7 @@ async fn a_dropin_glob_blocks_the_disagreement_row_for_the_keys_it_could_name() 
     );
     assert!(
         row.divergence_detail.contains(
-            "a glob pattern in the surviving drop-in configuration could name \
+            "a glob pattern in the surviving configuration could name \
                       net.ipv4.conf.all.log_martians"
         ),
         "the row must say which unresolved thing blocked it: {}",
