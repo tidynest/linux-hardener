@@ -6,6 +6,7 @@ use hardener_core::{
     ApplyResult, PluginMetadata, ScanResult, ValidationReport, plugin::UncheckedCheck,
 };
 use hardener_state::{Checkpoint, FileState, RollbackResult};
+use hardener_types::DivergenceState;
 
 use crate::cli::OutputFormat;
 
@@ -635,8 +636,37 @@ pub fn rollback_result(format: &OutputFormat, result: &RollbackResult) {
                     );
                 }
             }
+
+            for line in divergence_lines(result) {
+                println!("{line}");
+            }
         }
     }
+}
+
+/// The divergence block, one header line and two lines per row, or nothing at
+/// all when there is nothing to say.
+///
+/// Split from the printing so it can be asserted on. `diverged` is yellow and
+/// not red: nothing failed, and colouring an advisory like a failure is how an
+/// operator learns to ignore both.
+pub(crate) fn divergence_lines(result: &RollbackResult) -> Vec<String> {
+    if result.rollback_divergences.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec!["\nDivergences:".to_string()];
+    for divergence in &result.rollback_divergences {
+        let state = match divergence.divergence_state {
+            DivergenceState::Diverged => "diverged".yellow().to_string(),
+            DivergenceState::Unverifiable => "could not check".to_string(),
+        };
+        lines.push(format!(
+            "  {:<18} {:<32} {state}",
+            divergence.divergence_plugin_id, divergence.divergence_subject
+        ));
+        lines.push(format!("    {}", divergence.divergence_detail));
+    }
+    lines
 }
 
 pub fn validation_reports(format: &OutputFormat, reports: &[ValidationReport]) {

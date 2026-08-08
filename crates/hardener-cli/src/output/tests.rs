@@ -18,6 +18,7 @@
 
 use super::*;
 use hardener_core::Finding;
+use hardener_types::RollbackDivergence;
 
 #[test]
 fn test_format_severity_critical() {
@@ -590,4 +591,52 @@ fn an_unknown_plugin_offers_no_exception_path() {
         !lines.join("\n").contains("exceptions."),
         "an unmapped plugin must say nothing rather than guess a section",
     );
+}
+
+fn rollback_result_fixture(divergences: Vec<RollbackDivergence>) -> RollbackResult {
+    RollbackResult {
+        rollback_checkpoint_id: "cp-1".to_string(),
+        rollback_checkpoint_name: "before apply".to_string(),
+        rollback_success: true,
+        rollback_files: Vec::new(),
+        rollback_reloads: Vec::new(),
+        rollback_divergences: divergences,
+    }
+}
+
+/// An empty vector prints no header. A rollback with nothing to report must
+/// not look eventful.
+#[test]
+fn a_clean_rollback_prints_no_divergence_block() {
+    let result = rollback_result_fixture(Vec::new());
+
+    assert!(divergence_lines(&result).is_empty());
+}
+
+/// Both states reach the operator, and each carries its subject and its
+/// sentence. A row that printed only the state would send them nowhere.
+#[test]
+fn each_state_prints_its_subject_and_sentence() {
+    let result = rollback_result_fixture(vec![
+        RollbackDivergence {
+            divergence_plugin_id: "kernel-hardening".to_string(),
+            divergence_subject: "net.ipv4.conf.all.log_martians".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "reads 1 and no configuration file names it".to_string(),
+        },
+        RollbackDivergence {
+            divergence_plugin_id: "firewall-hardening".to_string(),
+            divergence_subject: "ufw".to_string(),
+            divergence_state: DivergenceState::Unverifiable,
+            divergence_detail: "ufw status needs root".to_string(),
+        },
+    ]);
+
+    let lines = divergence_lines(&result);
+
+    let joined = lines.join("\n");
+    assert!(joined.contains("net.ipv4.conf.all.log_martians"));
+    assert!(joined.contains("diverged"));
+    assert!(joined.contains("could not check"));
+    assert!(joined.contains("ufw status needs root"));
 }
