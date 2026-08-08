@@ -255,14 +255,14 @@ rather than as a fault.
 
 ### Test Infrastructure
 
-- **Execution:** `systemd-nspawn --pipe` by default (non-interactive, no boot or login required), or `--boot --private-network` under `--booted`
+- **Execution:** `systemd-nspawn --pipe` by default (non-interactive, no boot or login required), or `--boot --private-network` under `--booted`. The differential suite additionally gets `--private-network` on the `--pipe` path, because its kernel oracle needs the namespace and not the boot (#137); the full suite does not, since the flag also grants `CAP_NET_ADMIN` and no reading has been taken of that suite under it
 - **Binary:** Single musl-linked static binary (~13MB) deployed to all containers
 - **Safety:** 3-layer host protection:
   1. `systemd-nspawn` container isolation (filesystem, PID, network namespace)
   2. Container detection hard-exit in the hardener binary itself
   3. `--apply` flag gating for destructive operations
 - **Container awareness:** A question this host cannot answer is declared unaskable in advance and skipped. A value that turns out undeterminable at runtime is a failure, never a skip
-- **`/proc/sys` stays read-only in both execution modes**, so the `fs.*` and `kernel.*` parameters are out of reach and the kernel apply cannot touch the host. The `net.ipv4.*` parameters become writable inside the container's own namespace under `--booted`
+- **`/proc/sys` stays read-only in both execution modes**, so the `fs.*` and `kernel.*` parameters are out of reach and the kernel apply cannot touch the host. The `net.ipv4.*` parameters become writable inside the container's own namespace, which `--private-network` grants with or without `--boot`
 
 ### Expected Container Skips (9 per distro)
 

@@ -865,11 +865,13 @@ three directives and dropping the third is what rules out a file-reading
 problem: the file is read, the minimum is simply not implemented.
 
 So `PASS_MIN_DAYS` is **declared unaskable** there, the way the kernel rows are
-when `/proc/sys` is the host's, rather than failed. `SHADOW_MIN_DAYS` is the
-second mode signal and works like `KERNEL_BOOTED`: probed once before any check
+when `/proc/sys` is the host's, rather than failed. `SHADOW_MIN_DAYS` is a mode
+signal and works like `RUN_NETNS` and `RUN_BOOTED`: probed once before any check
 runs, printed in the header as `Shadow minimum password age: 0` or `1`, and the
-expected total branches on it. The two modes are independent facts, so the
-subtraction applies to both arms. Both rows are declared rather than one,
+expected total branches on it. It differs from those two in where it comes from,
+being probed by the suite rather than declared by the runner, because it is a
+fact about the host's shadow build and not about the invocation. The modes are
+independent facts, so the subtraction applies whatever the other two say. Both rows are declared rather than one,
 matching `record_unresolved`, so the totals stay comparable between a host that
 could be asked and one that could not.
 
@@ -998,28 +1000,55 @@ nothing at all, the seeds would still be standing afterwards and
 and since #47 the ten rows that used to pass on an already-compliant host
 whether or not the tool ran now cannot.
 
-**A run that is not booted asks the kernel nothing.** The signal is
-`HARDENER_DIFF_BOOTED`, exported by `run-cross-distro-tests.sh` on the
-`systemd-run --machine` invocation inside `nspawn_suite_booted` and nowhere
-else, and anything other than the literal `1` means not booted. It is never
-inferred from what the fixture happens to permit, because a mode concluded from
-a failed read is one value standing for several outcomes, which is the family of
-defect this project keeps closing. The header prints
-`Booted (kernel oracle): 0` or `Booted (kernel oracle): 1` beside the binary
-version, so a reader meeting an old log can see which arithmetic applied to it.
+**A run without its own network namespace asks the kernel nothing.** The signal
+is `HARDENER_DIFF_NETNS`, and anything other than the literal `1` means no
+namespace. It is never inferred from what the fixture happens to permit, because
+a mode concluded from a failed read is one value standing for several outcomes,
+which is the family of defect this project keeps closing.
 
-**The totals move with the mode, and both kernel tables are pinned.** A run
-records **70 checks when it is not booted and 83 when it is**, less two on a
-host whose shadow has no minimum-password-age field (see below), so **68 and 81
-on Arch**, and
-`expected_check_total` carries an arm for each: the 11 kernel rows and the
+**It is not the same signal as `HARDENER_DIFF_BOOTED`, and until #137 it was.**
+One variable gated both oracles under the name `KERNEL_BOOTED`, and the reason
+it gave for the kernel rows was wrong: booting is one way of having been given a
+namespace, not the condition itself. `systemd-nspawn --private-network --pipe`
+makes `/proc/sys/net` writable with no `--boot` anywhere, measured on
+2026-08-08. Every `--pipe` run therefore recorded all 11 kernel rows unaskable
+for the cost of one flag. The two signals now say what they mean:
+
+| Signal | What it asserts | What it gates | Set by |
+|---|---|---|---|
+| `HARDENER_DIFF_NETNS` | this run owns a network namespace, so `/proc/sys/net` is writable | the 11 kernel rows, the stricter-seeded row, the kernel plugin's pre-apply control | both paths in `run-cross-distro-tests.sh`: the `--private-network` on `nspawn_suite_pipe` for the differential suite, and the `systemd-run --machine` line in `nspawn_suite_booted` |
+| `HARDENER_DIFF_BOOTED` | systemd is PID 1, so `systemctl` can be asked | the services rows and whether the services plugin is compared at all | `nspawn_suite_booted` only |
+
+Neither is inferred from the other. A runner that declares the boot and forgets
+the namespace loses the kernel oracle and keeps the services one, which is the
+direction a mistake here should fail in, and `--self-test` asks for all four
+combinations rather than the two a runner produces. The header prints both, on
+their own lines, beside the binary version:
+
+```
+Own network namespace (kernel oracle): 1
+Booted, systemd as PID 1 (services oracle): 0
+```
+
+**The totals move with the modes, and both kernel tables are pinned.** With the
+shadow field present a run records **70 checks with neither signal, 83 with the
+namespace alone, and 89 booted** where the services unit was running, 88 where
+it was not; less two on a host whose shadow has no minimum-password-age field
+(see below), so **68, 81 and 87 or 86 on Arch**. The fourth combination, a boot
+declared without a namespace, is **76**: no runner produces it, and it is pinned
+so that a missing `--setenv` costs coverage rather than producing a total
+nothing can meet. `expected_check_total` is one expression with a term per
+signal rather than an arm per mode, because four combinations cannot each keep
+their own copy of the arithmetic in step. The 11 kernel rows and the
 stricter-seeded row are checks the tables ask for only where they can be asked
-at all. The ten looser-seeded rows move no total, because the rows they loosen
+at all; the ten looser-seeded rows move no total, because the rows they loosen
 are already counted among the 11 and what the seeds change is whether the
 control can be satisfied rather than how many assertions a run makes.
-The unaskable count runs the other way, **7 when booted and 19 when not**, the
-19 being the 11 rows the mode puts out of reach, the 7 the mount does, and the
-stricter-seeded row whose seed could not be written. `KERNEL_CHECKS_EXPECTED` and
+The unaskable count runs the other way: without the namespace it carries the 11
+rows that mode puts out of reach and the stricter-seeded row whose seed could
+not be written, on top of the 7 the mount puts out of reach in every mode, and
+without the boot it carries the services rows and their control as well.
+`KERNEL_CHECKS_EXPECTED` and
 `KERNEL_UNASKABLE_EXPECTED` are both pinned in `require_check_tables`, for one
 reason beyond the usual: the failure mode here is a red row being quietly
 "fixed" by moving it out of `KERNEL_CHECKS` and into `KERNEL_UNASKABLE`, and

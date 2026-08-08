@@ -48,41 +48,57 @@ resolve_binary() {
 }
 resolve_binary
 
-# Whether this run is inside a BOOTED container with its own network namespace,
-# which is the only configuration where /proc/sys/net is writable and the kernel
-# oracle can ask anything at all.
+# Whether this run owns a network namespace, which is what makes /proc/sys/net
+# writable and is the whole of what the kernel oracle needs.
 #
-# Declared by the runner, never inferred. Unset means not booted, which makes
-# the kernel rows unaskable rather than silently absent: failing toward "not
-# verified" is the safe direction, and a run started by hand inside a booted
-# container simply reports more unaskable rows than it needed to.
+# One variable used to answer this question and the one below it, under the name
+# KERNEL_BOOTED, and the reason it gave was wrong: booting is one way of having
+# been given a namespace and not the condition itself. Measured on 2026-08-08
+# against /var/lib/machines/hardener-test, `systemd-nspawn --private-network
+# --pipe` makes /proc/sys/net writable with no --boot anywhere, so gating the
+# kernel rows on the booted signal declared all 11 of them unaskable in every
+# --pipe run for the cost of one flag (#137).
+#
+# The two signals are independent and neither is inferred from the other. A
+# runner that boots a container and declares only the signal below leaves the
+# kernel rows unaskable, which is the safe direction: failing toward "not
+# verified" is what this file does everywhere.
 #
 # Only the literal 1 turns it on, and the signal is reduced to 0 or 1 here
 # rather than carried through as whatever arrived. A value the runner never
 # meant as a signal, "true" or "yes" or an empty string, leaves the oracle off,
 # and the header below then reports 0 rather than reprinting a word that reads
 # as enabled beside arithmetic that is not.
-KERNEL_BOOTED=0
-if [[ "${HARDENER_DIFF_BOOTED:-}" == "1" ]]; then
-    KERNEL_BOOTED=1
+RUN_NETNS=0
+if [[ "${HARDENER_DIFF_NETNS:-}" == "1" ]]; then
+    RUN_NETNS=1
 fi
 
-# Whether this run is booted, asked as a question rather than by comparing the
-# variable above at each site.
-#
-# The variable is named for the kernel oracle because that oracle was the first
-# to need it, and it now answers for the services oracle too: `systemctl mask`
-# and `systemctl is-enabled` need systemd as PID 1, which `nspawn --pipe` does
-# not provide. That is this repository's own measurement, recorded at
+# Whether systemd is PID 1 here, which is what the services oracle needs and
+# what nothing else in this file does. `systemctl mask` and `systemctl
+# is-enabled` need a running service manager, which `nspawn --pipe` does not
+# provide. That is this repository's own measurement, recorded at
 # full-test-suite.sh:993, and it is inherited here rather than re-measured.
 #
-# Renaming the variable's own uses would bury a slice's new code in a review
-# diff, so the name stays and new code asks this instead.
+# Read from the same environment variable the runner has always exported, and
+# it still means what it says. What changed in #137 is that it no longer
+# answers for the kernel oracle as well.
+RUN_BOOTED=0
+if [[ "${HARDENER_DIFF_BOOTED:-}" == "1" ]]; then
+    RUN_BOOTED=1
+fi
+
+# The two signals asked as questions rather than by comparing the variables at
+# each site.
 #
-# Defined here, above every use, because the conditional that reads it runs at
+# Defined here, above every use, because the conditional that reads them runs at
 # load time and a function exists only once its definition line has executed.
+run_has_netns() {
+    [[ "$RUN_NETNS" == "1" ]]
+}
+
 run_is_booted() {
-    [[ "$KERNEL_BOOTED" == "1" ]]
+    [[ "$RUN_BOOTED" == "1" ]]
 }
 
 # The plugins whose settings this suite compares. Applying only these keeps the
@@ -593,16 +609,16 @@ SEEDED_KERNEL_CHECKS=(
 
 seed_kernel_stricter_than_baseline() {
     local entry name seed
-    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+    if ! run_has_netns; then
         return 0
     fi
     for entry in "${SEEDED_KERNEL_CHECKS[@]}"; do
         IFS='|' read -r name seed _ <<<"$entry"
         if ! sysctl -w "$name=$seed" >/dev/null 2>&1; then
             echo "FATAL: could not seed $name=$seed." >&2
-            echo "  This run claims to be booted with its own network namespace, where" >&2
-            echo "  /proc/sys/net is writable. If that is not true the mode signal is" >&2
-            echo "  wrong, and every kernel row below would be measuring the host." >&2
+            echo "  This run claims its own network namespace, where /proc/sys/net is" >&2
+            echo "  writable. If that is not true the mode signal is wrong, and every" >&2
+            echo "  kernel row below would be measuring the host." >&2
             return 1
         fi
     done
@@ -678,16 +694,16 @@ seed_kernel_looser_than_baseline() {
         echo "  control below measures is the host that apply is about to meet." >&2
         return 1
     fi
-    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+    if ! run_has_netns; then
         return 0
     fi
     for entry in "${SEEDED_LOOSER_KERNEL_CHECKS[@]}"; do
         IFS='|' read -r name seed _ <<<"$entry"
         if ! sysctl -w "$name=$seed" >/dev/null 2>&1; then
             echo "FATAL: could not seed $name=$seed." >&2
-            echo "  This run claims to be booted with its own network namespace, where" >&2
-            echo "  /proc/sys/net is writable. If that is not true the mode signal is" >&2
-            echo "  wrong, and every kernel row below would be measuring the host." >&2
+            echo "  This run claims its own network namespace, where /proc/sys/net is" >&2
+            echo "  writable. If that is not true the mode signal is wrong, and every" >&2
+            echo "  kernel row below would be measuring the host." >&2
             return 1
         fi
         # Read back, which the stricter seed has no need to do. That one is
@@ -2574,8 +2590,8 @@ run_firewall_checks() {
                 fi
                 ;;
             boot-persistence)
-                # Deliberately NOT gated on KERNEL_BOOTED, unlike the kernel
-                # rows. Whether `systemctl is-enabled` answers inside an
+                # Deliberately NOT gated on the booted signal, unlike the
+                # services rows. Whether `systemctl is-enabled` answers inside an
                 # unbooted --pipe container is unmeasured, so a gate written for
                 # it would be written on a guess. Ungated, an unbooted run that
                 # cannot ask goes red rather than quiet, which is the direction
@@ -2652,7 +2668,7 @@ KERNEL_BEFORE=""
 preapply_kernel_init() {
     local entry name
     KERNEL_BEFORE=""
-    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+    if ! run_has_netns; then
         return 0
     fi
     for entry in "${KERNEL_CHECKS[@]}"; do
@@ -2682,8 +2698,8 @@ run_kernel_preapply_control() {
     # would pass on the rows that did arrive loosened while the one that did not
     # went into the run exactly as vacuous as it was before it was seeded.
     local seeded_at_target=""
-    if [[ "$KERNEL_BOOTED" != "1" ]]; then
-        record_unaskable "kernel-hardening pre-apply control: this run is not booted, so /proc/sys/net is the host's and read-only"
+    if ! run_has_netns; then
+        record_unaskable "kernel-hardening pre-apply control: this run has no network namespace of its own, so /proc/sys/net is the host's and read-only"
         return 0
     fi
     for entry in "${KERNEL_CHECKS[@]}"; do
@@ -2732,10 +2748,10 @@ run_kernel_preapply_control() {
 # One assertion per parameter: does the kernel enforce what the tool reported.
 run_kernel_checks() {
     local entry name target direction reading reason
-    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+    if ! run_has_netns; then
         for entry in "${KERNEL_CHECKS[@]}"; do
             IFS='|' read -r name _ _ <<<"$entry"
-            record_unaskable "kernel $name: this run is not booted, so /proc/sys/net is the host's and read-only"
+            record_unaskable "kernel $name: this run has no network namespace of its own, so /proc/sys/net is the host's and read-only"
         done
     else
         for entry in "${KERNEL_CHECKS[@]}"; do
@@ -2764,10 +2780,10 @@ run_kernel_checks() {
 # target up to what the host already runs.
 run_seeded_kernel_check() {
     local entry name seed target reading
-    if [[ "$KERNEL_BOOTED" != "1" ]]; then
+    if ! run_has_netns; then
         for entry in "${SEEDED_KERNEL_CHECKS[@]}"; do
             IFS='|' read -r name _ _ <<<"$entry"
-            record_unaskable "seeded kernel $name: this run is not booted, so /proc/sys/net is the host's and the seed could not be written"
+            record_unaskable "seeded kernel $name: this run has no network namespace of its own, so /proc/sys/net is the host's and the seed could not be written"
         done
         return 0
     fi
@@ -3141,29 +3157,27 @@ expected_check_total() {
             services_rows=$(( services_rows - 1 ))
         fi
     fi
-    if ! run_is_booted; then
-        # The 11 kernel rows are declared unaskable in this mode, so they are
-        # not checks the tables ask for either. The pre-apply control goes the
-        # same way, which is why the plugin count is discounted too, and so
-        # does the seeded kernel row, whose seed could not be written. The
-        # services plugin needs no term here at all: it is not among `plugins`
-        # in this mode and `services_rows` is 0.
-        printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
-            + PERMISSION_CHECKS_EXPECTED) \
-            + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
-            + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + plugins - 1 \
-            + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
-            + plugins + 1 \
-            + plugins + 1 \
-            + 2 - min_days_rows ))"
-        return
+    # The kernel rows and the kernel plugin's own pre-apply control, which a run
+    # without its own network namespace declares unaskable and therefore does
+    # not ask for either. The seeded kernel row goes with them, its seed having
+    # been unwritable.
+    #
+    # Gated on the namespace and not on the booted signal, which is #137: the
+    # two were one variable, so a --pipe run gave up 13 rows to a condition only
+    # the services rows have. One expression rather than an arm per mode, so
+    # that the four combinations of the two signals cannot each need their own
+    # copy of the arithmetic to be kept in step.
+    local kernel_rows=0 kernel_control=0
+    if run_has_netns; then
+        kernel_rows=$(( KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED ))
+        kernel_control=1
     fi
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
         + PERMISSION_CHECKS_EXPECTED) \
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
-        + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + plugins \
+        + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + plugins - 1 + kernel_control \
         + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
-        + KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED \
+        + kernel_rows \
         + services_rows \
         + plugins + 1 \
         + plugins + 1 \
@@ -4395,7 +4409,11 @@ self_test() {
     # exercised from either environment. Measured: without this,
     # `HARDENER_DIFF_BOOTED=1 --self-test` reported ten failures, none of
     # which was about the code under test.
-    KERNEL_BOOTED=0
+    #
+    # Both signals, since #137 split them. Pinning only one would leave the
+    # other inherited, which is the whole of what this paragraph refuses.
+    RUN_NETNS=0
+    RUN_BOOTED=0
     DIFF_PLUGINS=("${DIFF_PLUGINS_BASE[@]}")
     # The filter proofs below run jq, so --self-test depends on it as well.
     # Refusing beats skipping them: a proof that quietly did not run is worth
@@ -5298,12 +5316,13 @@ Number of days of warning before password expires	: 7"
         "and a scalar arriving with surrounding whitespace is trimmed to the value itself"
     unset -f sysctl
 
-    # Not booted is not a failure and not a pass: the fixture cannot be asked.
+    # No namespace of its own is not a failure and not a pass: the fixture
+    # cannot be asked.
     before_unaskable=$CHECKS_UNASKABLE
     before_total=$CHECKS_TOTAL
-    KERNEL_BOOTED=0 run_kernel_checks >/dev/null
+    RUN_NETNS=0 run_kernel_checks >/dev/null
     check_eq "$((CHECKS_UNASKABLE - before_unaskable))" "18" \
-        "an unbooted run declares all 18 kernel parameters unaskable, the 11 for the mode and the 7 for the mount"
+        "a run without its own network namespace declares all 18 kernel parameters unaskable, the 11 for the mode and the 7 for the mount"
     check_eq "$((CHECKS_TOTAL - before_total))" "0" \
         "and records no checks at all, so the total the tables ask for still adds up"
     CHECKS_UNASKABLE=$before_unaskable
@@ -5347,7 +5366,7 @@ Number of days of warning before password expires	: 7"
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
     kernel_stub_mode=compliant
-    KERNEL_BOOTED=1 run_kernel_checks >/dev/null
+    RUN_NETNS=1 run_kernel_checks >/dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "11/0" \
         "a booted run whose every parameter meets its target records one pass per askable row"
     check_eq "$CHECKS_UNASKABLE" "7" \
@@ -5355,7 +5374,7 @@ Number of days of warning before password expires	: 7"
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
     kernel_stub_mode=violating
-    KERNEL_BOOTED=1 run_kernel_checks >/dev/null
+    RUN_NETNS=1 run_kernel_checks >/dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/11" \
         "a parameter the kernel enforces against its own direction fails, on every row"
 
@@ -5364,7 +5383,7 @@ Number of days of warning before password expires	: 7"
     kernel_stub_mode=unreadable
     local kernel_unreadable_out
     kernel_unreadable_out="$(mktemp)"
-    KERNEL_BOOTED=1 run_kernel_checks > "$kernel_unreadable_out"
+    RUN_NETNS=1 run_kernel_checks > "$kernel_unreadable_out"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/11" \
         "a parameter that cannot be read is a failure, never an unaskable row: unaskability is declared in advance and this was discovered at runtime"
     check_status 0 "and it fails with its own message rather than the one about a value that disagrees" \
@@ -5375,10 +5394,10 @@ Number of days of warning before password expires	: 7"
     # that already met every target before the apply has to fail it.
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
     kernel_stub_mode=compliant
-    KERNEL_BOOTED=1 preapply_kernel_init
+    RUN_NETNS=1 preapply_kernel_init
     check_eq "$(grep -c '=' <<<"$KERNEL_BEFORE")" "11" \
         "the pre-apply capture holds one reading per askable parameter"
-    KERNEL_BOOTED=1 run_kernel_preapply_control >/dev/null
+    RUN_NETNS=1 run_kernel_preapply_control >/dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
         "a container already at every kernel target before apply fails the control, because the checks below would then pass without the tool having done anything"
 
@@ -5394,7 +5413,7 @@ Number of days of warning before password expires	: 7"
     KERNEL_BEFORE="${KERNEL_BEFORE/net.ipv4.tcp_syncookies=1/net.ipv4.tcp_syncookies=0}"
     local kernel_control_out
     kernel_control_out="$(mktemp)"
-    KERNEL_BOOTED=1 run_kernel_preapply_control > "$kernel_control_out"
+    RUN_NETNS=1 run_kernel_preapply_control > "$kernel_control_out"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
         "a container away only on the row this suite does not seed fails the control, because every row it does seed came back at its target"
     check_status 0 "and it fails for that reason rather than for the empty-count one, which is the older rule and would be the wrong diagnosis" \
@@ -5419,7 +5438,7 @@ Number of days of warning before password expires	: 7"
     check_eq "$(grep -c '=' <<<"$KERNEL_BEFORE")" "10" \
         "the torn capture holds every declared parameter but the one removed, so an empty capture cannot stand in for it"
     kernel_torn_out="$(mktemp)"
-    KERNEL_BOOTED=1 run_kernel_preapply_control > "$kernel_torn_out"
+    RUN_NETNS=1 run_kernel_preapply_control > "$kernel_torn_out"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
         "a pre-apply capture missing a row the kernel table declares fails the control rather than ending the run from an assignment"
     check_status 0 "and the failure names the parameter the capture had no reading for, which an abort could never have said" \
@@ -5470,14 +5489,14 @@ Number of days of warning before password expires	: 7"
     }
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
-    KERNEL_BOOTED=1 run_seeded_kernel_check >/dev/null
+    RUN_NETNS=1 run_seeded_kernel_check >/dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
         "a host still reading the seed after apply passes the seeded row"
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
     seeded_kernel_stub=target
     seeded_kernel_out="$(mktemp)"
-    KERNEL_BOOTED=1 run_seeded_kernel_check > "$seeded_kernel_out"
+    RUN_NETNS=1 run_seeded_kernel_check > "$seeded_kernel_out"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
         "a host reading the tool's own target instead fails it, which is the loosening this row exists to catch and the one an equality oracle would score green"
     check_status 0 "and it says the apply loosened the parameter, rather than reporting a value that merely disagrees" \
@@ -5486,14 +5505,14 @@ Number of days of warning before password expires	: 7"
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
     seeded_kernel_stub=unreadable
-    KERNEL_BOOTED=1 run_seeded_kernel_check >/dev/null
+    RUN_NETNS=1 run_seeded_kernel_check >/dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
         "and a reading that could not be taken at all is a failure too, never a declared gap"
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
-    KERNEL_BOOTED=0 run_seeded_kernel_check >/dev/null
+    RUN_NETNS=0 run_seeded_kernel_check >/dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/0/1" \
-        "an unbooted run declares the seeded row unaskable and records no check, so the unbooted total is unmoved by it"
+        "a run without its own network namespace declares the seeded row unaskable and records no check, so that mode's total is unmoved by it"
 
     unset -f sysctl
     CHECKS_TOTAL=$kernel_saved_total
@@ -5505,7 +5524,7 @@ Number of days of warning before password expires	: 7"
     # satisfied on a container that arrives already at every target. The RHEL
     # container is that container, and the control was correctly refusing to
     # certify checks that would have passed whether or not the tool ran.
-    local looser_saved_booted="$KERNEL_BOOTED"
+    local looser_saved_netns="$RUN_NETNS"
     local le le_name le_seed le_target le_direction
     local looser_unlisted="" looser_satisfied="" looser_collides=""
     for le in "${SEEDED_LOOSER_KERNEL_CHECKS[@]}"; do
@@ -5583,7 +5602,7 @@ Number of days of warning before password expires	: 7"
         looser_expected+="${looser_expected:+ }$le_name=$le_seed"
     done
 
-    KERNEL_BOOTED=1
+    RUN_NETNS=1
     check_status 0 "the looser seed is written on a booted run" \
         seed_kernel_looser_than_baseline
     check_eq "$looser_written" "$looser_expected" \
@@ -5600,7 +5619,7 @@ Number of days of warning before password expires	: 7"
     APPLY_GENERATION=0
 
     looser_written=""
-    KERNEL_BOOTED=0
+    RUN_NETNS=0
     check_status 0 "an unbooted run is not an error" seed_kernel_looser_than_baseline
     check_eq "$looser_written" "" \
         "and writes no seed, because /proc/sys/net is the host's and read-only there"
@@ -5621,7 +5640,7 @@ Number of days of warning before password expires	: 7"
     done
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
     looser_control_out="$(mktemp)"
-    KERNEL_BOOTED=1 run_kernel_preapply_control > "$looser_control_out"
+    RUN_NETNS=1 run_kernel_preapply_control > "$looser_control_out"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
         "a container at every target except the seeded ones passes the control, which is the run RHEL could not previously reach"
     check_status 0 "and the pass says which parameters this suite loosened, so the log cannot read as a container that arrived that way" \
@@ -5641,7 +5660,7 @@ Number of days of warning before password expires	: 7"
         "the amended capture still holds one reading per askable parameter, so a capture emptied by the edit cannot stand in for one that disagrees"
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
     looser_control_out="$(mktemp)"
-    KERNEL_BOOTED=1 run_kernel_preapply_control > "$looser_control_out"
+    RUN_NETNS=1 run_kernel_preapply_control > "$looser_control_out"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "0/1" \
         "a capture that finds a seeded parameter already at its target fails the control, because that row would then pass whether or not the tool ran"
     check_status 0 "and the failure names the row, which a count of the ones that did arrive loosened could never have said" \
@@ -5650,7 +5669,7 @@ Number of days of warning before password expires	: 7"
 
     unset -f sysctl
     KERNEL_BEFORE="$looser_saved_before"
-    KERNEL_BOOTED="$looser_saved_booted"
+    RUN_NETNS="$looser_saved_netns"
     CHECKS_TOTAL=$kernel_saved_total
     CHECKS_PASSED=$kernel_saved_passed
     CHECKS_FAILED=$kernel_saved_failed
@@ -5696,15 +5715,15 @@ Number of days of warning before password expires	: 7"
     unset -f chage
 
     # The totals move with the mode, both arms.
-    local md_saved_booted="$KERNEL_BOOTED"
+    local md_saved_booted="$RUN_BOOTED" md_saved_netns="$RUN_NETNS"
     SHADOW_MIN_DAYS=1
     local md_full_booted md_full_unbooted
-    md_full_booted="$(KERNEL_BOOTED=1 expected_check_total)"
-    md_full_unbooted="$(KERNEL_BOOTED=0 expected_check_total)"
+    md_full_booted="$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)"
+    md_full_unbooted="$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)"
     SHADOW_MIN_DAYS=0
-    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "$(( md_full_booted - 2 ))" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "$(( md_full_booted - 2 ))" \
         "a host without the shadow field asks for two fewer checks when booted"
-    check_eq "$(KERNEL_BOOTED=0 expected_check_total)" "$(( md_full_unbooted - 2 ))" \
+    check_eq "$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)" "$(( md_full_unbooted - 2 ))" \
         "and two fewer when not, because the two modes are independent facts"
 
     # The runner declares them rather than asking. Driven without a command
@@ -5738,30 +5757,48 @@ Number of days of warning before password expires	: 7"
     LOGIN_DEFS_CHAGE="$md_saved_chage"
     LOGIN_DEFS_CHAGE_GENERATION="$md_saved_gen"
     LOGIN_DEFS_PASSWD_STATUS=""
-    KERNEL_BOOTED="$md_saved_booted"
+    RUN_BOOTED="$md_saved_booted"
+    RUN_NETNS="$md_saved_netns"
     SHADOW_MIN_DAYS="$md_saved_mode"
 
     local pinned_total
-    # Asked in an explicit mode, both here and below: the totals these two
+    # Asked in an explicit mode, both here and below: the totals these
     # assertions pin are properties of the tables, and reading them in
     # whatever mode the environment happened to ask for would make the
     # self-test go red on a maintainer who exported the runner's signal.
-    pinned_total="$(KERNEL_BOOTED=0 expected_check_total)"
+    #
+    # Both signals named at every call, never one of them. A call that set only
+    # the namespace would take the boot from the environment, which is the
+    # inheritance the paragraph above refuses.
+    pinned_total="$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)"
     check_eq "$pinned_total" "70" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, one introduced-finding row per plugin and its own control, plus one pre-apply control per seeded directive, plus the rollback-reload check's own two"
+    # The kernel rows against the namespace ALONE, which is the configuration
+    # #137 exists for: `--pipe --private-network` holds no systemd and asks
+    # every kernel row regardless. Thirteen more than the bare total, and none
+    # of them a services row.
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=0 expected_check_total)" "83" \
+        "a run holding its own network namespace and no systemd is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control, and for no services row at all"
     # The services rows, and the one of them whose askability is a property of
     # the HOST rather than of the invocation. Six more in a booted run: three
     # rows, the plugin's own pre-apply control, and one row in each of the two
     # generic per-plugin blocks, which follow the plugin count.
     local svc_saved_active="$SERVICES_ACTIVE_BEFORE"
     SERVICES_ACTIVE_BEFORE="active"
-    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "89" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "89" \
         "a booted run is sized for eleven kernel rows, the seeded kernel row, the kernel plugin's own control, and the six a services plugin with a running unit brings with it"
     SERVICES_ACTIVE_BEFORE="inactive"
-    check_eq "$(KERNEL_BOOTED=1 expected_check_total)" "88" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "88" \
         "and one fewer where it was never running, because that row is declared unaskable rather than passed"
-    check_eq "$(KERNEL_BOOTED=0 expected_check_total)" "$pinned_total" \
+    check_eq "$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)" "$pinned_total" \
         "an unbooted run is unmoved by services entirely, because the plugin is not in the compared set there"
+    # The fourth combination, and the only one no runner produces: a boot
+    # declared without the namespace. It is asked because the safe direction has
+    # to be arithmetic as well as a predicate, and because a future runner that
+    # forgets one --setenv lands here rather than on a red total.
+    SERVICES_ACTIVE_BEFORE="active"
+    check_eq "$(RUN_NETNS=0 RUN_BOOTED=1 expected_check_total)" "76" \
+        "a boot declared without the namespace asks for the services rows and for no kernel row, so a missing flag costs coverage rather than producing a total nothing can meet"
     SERVICES_ACTIVE_BEFORE="$svc_saved_active"
 
     check_status 0 "require_check_tables accepts the tables as they stand" \
@@ -5791,7 +5828,7 @@ Number of days of warning before password expires	: 7"
     # Counted off ${#SSH_CHECKS[@]} it would, and print_summary would then accept
     # a run that skipped six directives as a complete one. Compared against the
     # value taken while the tables were whole, which the literal above pins.
-    check_eq "$(KERNEL_BOOTED=0 expected_check_total)" "$pinned_total" \
+    check_eq "$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)" "$pinned_total" \
         "the expected total does not move when a table is edited down"
     SSH_CHECKS=("${saved_ssh_checks[@]}")
     check_status 0 "require_check_tables accepts the table once it is restored" \
@@ -6792,19 +6829,39 @@ password required pam_unix.so"
     PERMISSION_MODES_GENERATION=""
     rm -rf "$vendor_fixture"
 
-    # --- the booted predicate ---
+    # --- the two mode predicates ---
     #
-    # Both arms, and a third for a value that is not the literal 1: the flag is
-    # a signal from the runner, and anything else arriving in it must leave the
-    # oracles off rather than half on.
-    local booted_saved="$KERNEL_BOOTED"
-    KERNEL_BOOTED=1
-    check_status 0 "a booted run answers the predicate affirmatively" run_is_booted
-    KERNEL_BOOTED=0
+    # Both arms of each, and a third for a value that is not the literal 1: the
+    # flags are signals from the runner, and anything else arriving in one must
+    # leave the oracle it gates off rather than half on.
+    #
+    # And the pair asserted against each other, which is #137: they were one
+    # variable, and a suite that reunited them would answer both questions from
+    # whichever signal it read. A run holding the namespace and not booted is
+    # exactly the `--pipe --private-network` configuration the runner now uses,
+    # so it is asked for here rather than left to the containers to discover.
+    local booted_saved="$RUN_BOOTED" netns_saved="$RUN_NETNS"
+    RUN_BOOTED=1
+    check_status 0 "a booted run answers the booted predicate affirmatively" run_is_booted
+    RUN_BOOTED=0
     check_status 1 "an unbooted run answers it negatively" run_is_booted
-    KERNEL_BOOTED=2
+    RUN_BOOTED=2
     check_status 1 "and a value that is not the literal 1 is not booted either" run_is_booted
-    KERNEL_BOOTED="$booted_saved"
+    RUN_NETNS=1
+    check_status 0 "a run with its own network namespace answers the namespace predicate affirmatively" run_has_netns
+    RUN_NETNS=0
+    check_status 1 "a run without one answers it negatively" run_has_netns
+    RUN_NETNS=2
+    check_status 1 "and a value that is not the literal 1 is not a namespace either" run_has_netns
+    RUN_NETNS=1
+    RUN_BOOTED=0
+    check_status 0 "a namespace without a boot is a namespace, which is what --pipe --private-network is" run_has_netns
+    check_status 1 "and is still not booted, so the services rows stay unaskable there" run_is_booted
+    RUN_NETNS=0
+    RUN_BOOTED=1
+    check_status 1 "a boot the runner declared without the namespace leaves the kernel rows unaskable, which is the safe direction" run_has_netns
+    RUN_BOOTED="$booted_saved"
+    RUN_NETNS="$netns_saved"
 
     # --- firewall oracle ---
     #
@@ -7300,6 +7357,16 @@ bluetooth.service    enabled"
         grep -qF "$SERVICES_PLUGIN_ID" <<<"$svc_loaded"
     check_eq "$(wc -w <<<"$svc_loaded")" "5" \
         "and compares the five that need no systemd to ask"
+    # The third load, and the one #137 created: the namespace signal must move
+    # this list not at all. The two signals were one variable, so a suite that
+    # read the wrong one here would put the services plugin into every
+    # `--pipe --private-network` run, where systemd is not PID 1 and every row
+    # it brings fails on the fixture rather than on the tool.
+    svc_loaded="$(HARDENER_DIFF_NETNS=1 HARDENER_DIFF_BOOTED=0 bash -c 'source "$1"; printf "%s" "${DIFF_PLUGINS[*]}"' _ "$svc_suite")"
+    check_status 1 "a namespace without a boot does not compare the services plugin either, because the namespace says nothing about PID 1" \
+        grep -qF "$SERVICES_PLUGIN_ID" <<<"$svc_loaded"
+    check_eq "$(wc -w <<<"$svc_loaded")" "5" \
+        "and still compares five, so the kernel oracle is bought without the services rows coming with it"
 
     # Every plugin this suite can compare must be a plugin that EXISTS. These
     # strings do two jobs: they are passed to `--plugin`, which refuses an id
@@ -7378,12 +7445,12 @@ bluetooth.service    enabled"
     svc_out="$(mktemp)"
     local svc_saved_total=$CHECKS_TOTAL svc_saved_passed=$CHECKS_PASSED
     local svc_saved_failed=$CHECKS_FAILED svc_saved_unaskable=$CHECKS_UNASKABLE
-    local svc_saved_booted="$KERNEL_BOOTED"
+    local svc_saved_booted="$RUN_BOOTED"
     local svc_saved_installed="$SERVICES_INSTALLED_BEFORE"
     local svc_saved_boot_before="$SERVICES_BOOT_BEFORE" svc_saved_boot_after="$SERVICES_BOOT_AFTER"
     local svc_saved_mask_before="$SERVICES_MASK_BEFORE" svc_saved_mask_after="$SERVICES_MASK_AFTER"
     local svc_saved_active_after="$SERVICES_ACTIVE_AFTER"
-    KERNEL_BOOTED=1
+    RUN_BOOTED=1
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     SERVICES_INSTALLED_BEFORE="yes"
@@ -7422,14 +7489,14 @@ bluetooth.service    enabled"
         "and so does an administrator's own unit file at that path, which is not the same host as an empty one"
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
-    KERNEL_BOOTED=0
+    RUN_BOOTED=0
     SERVICES_INSTALLED_BEFORE="yes"
     SERVICES_BOOT_BEFORE="enabled"
     SERVICES_MASK_BEFORE="absent|"
     run_services_preapply_control > /dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/0/1" \
         "an unbooted run declares the control unaskable rather than passing or failing it"
-    KERNEL_BOOTED=1
+    RUN_BOOTED=1
 
     # The rows. The hardened host first, which is the only shape all three pass.
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
@@ -7490,16 +7557,16 @@ bluetooth.service    enabled"
         "a unit still running after apply fails not-running"
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
-    KERNEL_BOOTED=0
+    RUN_BOOTED=0
     run_services_checks > /dev/null
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/0/3" \
         "an unbooted run declares all three rows unaskable rather than reading systemctl on a host that has no systemd to ask"
-    KERNEL_BOOTED=1
+    RUN_BOOTED=1
 
     rm -f "$svc_out"
     CHECKS_TOTAL=$svc_saved_total CHECKS_PASSED=$svc_saved_passed
     CHECKS_FAILED=$svc_saved_failed CHECKS_UNASKABLE=$svc_saved_unaskable
-    KERNEL_BOOTED="$svc_saved_booted"
+    RUN_BOOTED="$svc_saved_booted"
     SERVICES_INSTALLED_BEFORE="$svc_saved_installed"
     SERVICES_BOOT_BEFORE="$svc_saved_boot_before"
     SERVICES_BOOT_AFTER="$svc_saved_boot_after"
@@ -7843,9 +7910,12 @@ run_full_suite() {
     echo "Differential suite: $BINARY"
     echo "Binary version: $(binary_version "$BINARY")"
     echo "Plugins: ${DIFF_PLUGINS[*]}"
-    # Which arithmetic applied, printed where the reader of a log meets it. A
-    # 0 here is why 11 kernel rows below read as unaskable rather than missing.
-    echo "Booted (kernel and services oracles): $KERNEL_BOOTED"
+    # Which arithmetic applied, printed where the reader of a log meets it. Two
+    # lines rather than one, because they are two facts: a 0 on the first is why
+    # 11 kernel rows below read as unaskable rather than missing, and a 0 on the
+    # second is why the services rows do.
+    echo "Own network namespace (kernel oracle): $RUN_NETNS"
+    echo "Booted, systemd as PID 1 (services oracle): $RUN_BOOTED"
     detect_shadow_min_days || return 1
     echo "Shadow minimum password age: $SHADOW_MIN_DAYS"
 

@@ -769,6 +769,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The differential suite's kernel oracle asked nothing in any `--pipe` run,
+  on a reason that was not true.** One variable, `KERNEL_BOOTED`, gated both the
+  kernel rows and the services rows, and the comment beside it said a booted
+  container was "the only configuration where `/proc/sys/net` is writable".
+  Measured on 2026-08-08 against `/var/lib/machines/hardener-test`,
+  `systemd-nspawn --private-network --pipe` makes it writable with no `--boot`
+  anywhere: the requirement is the network namespace, and booting is one way of
+  having been given one rather than the condition itself. All 11 `net.ipv4.*`
+  rows, the stricter-seeded row and the kernel plugin's own pre-apply control
+  were therefore recorded unaskable in every unbooted run for the cost of one
+  flag. The two requirements are now two signals, `HARDENER_DIFF_NETNS` for
+  `/proc/sys/net` and `HARDENER_DIFF_BOOTED` for systemd as PID 1, which is what
+  the services rows genuinely need, and neither is inferred from the other: a
+  runner that declares one and forgets the other loses that oracle and keeps the
+  other, which is the direction a mistake here should fail in.
+  `run-cross-distro-tests.sh` passes `--private-network` on the `--pipe` path
+  **for the differential suite only**, since the flag also grants
+  `CAP_NET_ADMIN` and no reading has been taken of the full suite under it.
+  `expected_check_total` became one expression with a term per signal rather
+  than an arm per mode, because four combinations cannot each keep their own
+  copy of the arithmetic in step, and `--self-test` pins all four: 70 with
+  neither signal, 83 with the namespace alone, 89 booted with the services unit
+  running, 88 where it was not, and 76 for the boot-without-namespace
+  combination no runner produces. The run header prints the two signals on
+  their own lines. Closes #137.
 - **BREAKING (packaging): the project is one name, `linux-hardener`, written
   "Linux Hardener".** It answered to two. The repository, the AUR/deb/rpm
   package and the user-facing product were `linux-system-hardener`, while every

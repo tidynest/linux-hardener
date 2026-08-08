@@ -565,6 +565,28 @@ elif [[ "$DO_APPLY" == "true" ]]; then
     INNER_ARGS=(--apply)
 fi
 
+# The network namespace, and the signal that declares it, for the unbooted path.
+#
+# Empty for the full suite and non-empty for the differential one, which is
+# narrower than it looks: --private-network is what grants CAP_NET_ADMIN, so
+# adding it to a run changes what that run's firewall apply can do. The
+# differential suite is the one measured under it (#137); the full suite is not,
+# and giving it the flag on the strength of the other suite's reading is the
+# mistake this repository keeps making.
+#
+# What it buys the differential suite: /proc/sys/net becomes writable, which is
+# the whole of what the kernel oracle needs, so an unbooted run asks its 11
+# kernel rows instead of declaring them unaskable. Measured under --pipe on
+# 2026-08-08; booting is one way of having been given a namespace and never the
+# condition itself.
+#
+# --setenv reaches the suite here because under --pipe the payload process IS
+# the suite. The booted path below cannot do the same and says why.
+PIPE_NETNS=()
+if [[ "$DO_DIFFERENTIAL" == "true" ]]; then
+    PIPE_NETNS=(--private-network --setenv=HARDENER_DIFF_NETNS=1)
+fi
+
 # The default execution mode: systemd never runs, so anything that asks the
 # service manager a question is untestable here.
 nspawn_suite_pipe() {
@@ -572,6 +594,7 @@ nspawn_suite_pipe() {
     systemd-nspawn -D "$container_path" \
         --bind="$PROJECT_DIR:/project" \
         "${TARGET_BIND[@]}" \
+        "${PIPE_NETNS[@]}" \
         --pipe \
         /bin/bash "$INNER_SUITE" "${INNER_ARGS[@]}"
 }
@@ -645,12 +668,17 @@ nspawn_suite_booted() {
         return 1
     fi
 
-    # The mode signal the differential suite reads, and the only place it is
-    # ever set. It says "this run owns its network namespace, so /proc/sys/net
-    # is writable and the kernel oracle can ask a question"; the --pipe branch
-    # above deliberately does not set it, and the suite treats anything but the
-    # literal 1 as not booted, so the 11 net.ipv4 rows there are declared
-    # unaskable rather than measured against the host's own kernel.
+    # The two mode signals the differential suite reads. They were one signal
+    # until #137, under a name that said "booted" and a comment that claimed
+    # booting was what made /proc/sys/net writable. It is not: the namespace is,
+    # and --private-network grants one under --pipe as well, which is why the
+    # branch above now declares the namespace without any of this.
+    #
+    # Both are set here because this configuration genuinely has both: the
+    # nspawn line above passes --private-network, and the container runs its own
+    # systemd as PID 1. Neither is inferred from the other in the suite, so a
+    # runner that dropped one of these would lose that oracle and keep the
+    # other, which is the direction a mistake here should fail in.
     #
     # Set here rather than on the --setenv of the nspawn line above, because it
     # is THIS process that becomes the suite. The container's PID 1 is a
@@ -658,6 +686,7 @@ nspawn_suite_booted() {
     # depend on the manager passing it down to a transient unit.
     systemd-run --machine="$machine" --wait --pipe --quiet \
         --setenv=HARDENER_DIFF_BOOTED=1 \
+        --setenv=HARDENER_DIFF_NETNS=1 \
         /bin/bash "$INNER_SUITE" "${INNER_ARGS[@]}" || rc=$?
 
     machinectl terminate "$machine" > /dev/null 2>&1 || true
@@ -716,6 +745,11 @@ run_single_distro() {
     else
         if [[ "$DO_BOOTED" == "true" ]]; then
             echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --boot --private-network -> $(basename "$INNER_SUITE") ${INNER_ARGS[*]}"
+        elif (( ${#PIPE_NETNS[@]} > 0 )); then
+            # The flags, not the mode name: this line is what a reader compares
+            # against the suite's own two-line header, and "--pipe" alone would
+            # not account for a kernel oracle that answered.
+            echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe --private-network -> $(basename "$INNER_SUITE") ${INNER_ARGS[*]}"
         else
             echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> $(basename "$INNER_SUITE") ${INNER_ARGS[*]}"
         fi

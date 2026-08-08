@@ -215,7 +215,7 @@ container, as root, by hand.
 | `permissions-hardening` | Yes, for modes. `stat` is asked about nine paths. Ownership and ACLs are read back by nothing. |
 | `firewall-hardening` | Yes, for nftables only. Three rows against `nft list ruleset` in the fixture container from `scripts/containers/nftables-fixture.sh`. The firewalld and ufw backends have mock evidence only. |
 | `pam-hardening` | Partly. `chage` and `passwd -S` answer for password ageing, and libpwquality's own `pwscore` answers for password strength. **No probe password ever reaches the live PAM stack**, so the path from a real authentication attempt through PAM to a refusal is tested nowhere. The apply is also narrower than the name suggests: it writes `/etc/security/*.conf` and `/etc/login.defs`, and it refuses by design to edit `/etc/pam.d/*`, because a malformed edit to the authentication stack can lock every user out. Where a directive is set inline in that stack it overrides the file the apply may write, so the plugin reports the manual edit you must make and marks the run unsuccessful rather than making it for you. |
-| `kernel-hardening` | Only in a booted container holding its own network namespace, and only for 11 of the 18 parameters the plugin manages. |
+| `kernel-hardening` | Only in a container holding its own network namespace, and only for 11 of the 18 parameters the plugin manages. A boot is not part of the requirement: this cell said "a booted container" until 2026-08-09, and `--private-network` under `--pipe` was measured sufficient (#137). |
 | `service-minimisation` | Only in a booted container, because `systemctl` needs systemd as PID 1. |
 | `audit-hardening` | **No.** See below. |
 | `mac-hardening` | **No.** See below. |
