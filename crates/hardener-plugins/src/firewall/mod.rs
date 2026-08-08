@@ -6,6 +6,7 @@
 //! The plugin automatically detects which firewall backend is available on
 //! the system and uses the appropriate implementation.
 
+mod divergence;
 pub mod firewalld;
 pub mod nftables;
 pub mod ufw;
@@ -26,6 +27,9 @@ use std::cmp::Ordering;
 use std::path::Path;
 use std::time::Instant;
 use tracing::{info, warn};
+
+/// ufw's enablement flag, and the file that carries it.
+pub(crate) const UFW_CONF: &str = "/etc/ufw/ufw.conf";
 
 /// Represents a single firewall rule in a backend-agnostic format.
 #[derive(Clone, Debug, PartialEq)]
@@ -1572,6 +1576,14 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         let name = backend.backend_name();
         info!("{name} re-read its restored configuration");
         Ok(Some(format!("{name} configuration reloaded")))
+    }
+
+    async fn divergences_after_rollback(
+        &self,
+        ctx: &Context,
+        _restored: &[std::path::PathBuf],
+    ) -> Vec<hardener_types::RollbackDivergence> {
+        divergence::firewall_divergences(ctx).await
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {

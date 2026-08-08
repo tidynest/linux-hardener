@@ -93,21 +93,3 @@ fn a_glob_pattern_is_not_quietly_dropped() {
         "an exclusion line assigns nothing and a pattern is not resolved here"
     );
 }
-
-/// Shell semantics: the last assignment is the one in force, a commented
-/// line is not an assignment, and quotes are not part of the value.
-#[test]
-fn a_shell_value_is_the_last_uncommented_assignment() {
-    // Three assignments of the same name: one commented out, which is not
-    // an assignment at all, then two live ones, so "the last wins" is
-    // pinned rather than being satisfied by there only being one.
-    let content = "#IPT_SYSCTL=/etc/ufw/off.conf\nIPV6=yes\n\
-                   IPT_SYSCTL=/etc/ufw/superseded.conf\n\
-                   IPT_SYSCTL=\"/etc/ufw/sysctl.conf\"\nexport ENABLED=yes\n";
-    assert_eq!(
-        shell_value(content, "IPT_SYSCTL").as_deref(),
-        Some("/etc/ufw/sysctl.conf")
-    );
-    assert_eq!(shell_value(content, "ENABLED").as_deref(), Some("yes"));
-    assert_eq!(shell_value(content, "MISSING"), None);
-}

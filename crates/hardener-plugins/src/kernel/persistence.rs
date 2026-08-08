@@ -26,6 +26,8 @@
 //! second investigation, and the apply writes nothing new.
 
 use super::{KERNEL_PARAMS, KernelParameter, SYSCTL_HARDENER_CONF, resolved_target};
+use crate::firewall::UFW_CONF;
+use crate::shell_config::shell_value;
 use hardener_common::{error::is_permission_denied, types::FindingCategory};
 use hardener_core::{
     PluginConfig,
@@ -52,8 +54,6 @@ const SYSCTL_DROPIN_DIRS: &[&str] = &[
     "/usr/lib/sysctl.d",
 ];
 
-/// ufw's enablement flag, and the file that carries it.
-const UFW_CONF: &str = "/etc/ufw/ufw.conf";
 /// Where ufw names the sysctl file it applies.
 const UFW_DEFAULTS: &str = "/etc/default/ufw";
 
@@ -121,23 +121,6 @@ fn parse_sysctl(content: &str) -> SysctlAssignments {
             .insert(procfs_key(key), value.trim().to_string());
     }
     parsed
-}
-
-/// The last value `key` is assigned in a shell-sourced configuration file.
-///
-/// `/etc/default/ufw` and `/etc/ufw/ufw.conf` are both `.`-sourced by
-/// `ufw-init-functions`, so the last assignment wins and a commented-out line
-/// is not an assignment at all.
-fn shell_value(content: &str, key: &str) -> Option<String> {
-    content
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            let line = line.strip_prefix("export ").unwrap_or(line);
-            let (name, value) = line.split_once('=')?;
-            (name.trim() == key).then(|| value.trim().trim_matches(['"', '\'']).to_string())
-        })
-        .next_back()
 }
 
 /// The outcome of looking for a file the boot sequence might apply.

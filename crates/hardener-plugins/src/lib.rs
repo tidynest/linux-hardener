@@ -7,6 +7,7 @@ pub mod pam;
 pub mod permissions;
 pub mod scan_outcome;
 pub mod services;
+pub(crate) mod shell_config;
 pub mod ssh;
 pub(crate) mod strictness;
 
