@@ -756,6 +756,10 @@ fn a_clean_rollback_sentence_is_unchanged() {
 /// A divergence is named in the summary, because the modal's file list is
 /// where an operator's eye goes last and this is the part that changes what
 /// they do next.
+///
+/// Exact match, not `contains`: "1 divergence" is a substring of
+/// "1 divergences reported." too, so a `contains` assertion here would still
+/// pass if the singular arm were merged into the plural one.
 #[test]
 fn a_divergence_is_named_in_the_summary() {
     let result = rollback_result_with(vec![RollbackDivergence {
@@ -765,11 +769,35 @@ fn a_divergence_is_named_in_the_summary() {
         divergence_detail: "ufw is enforcing while its config says ENABLED=no".to_string(),
     }]);
 
-    let sentence = rollback_summary_sentence(&result);
+    assert_eq!(
+        rollback_summary_sentence(&result),
+        "0 of 0 files restored. 1 divergence reported."
+    );
+}
 
-    assert!(
-        sentence.contains("1 divergence"),
-        "the count must be in the sentence: {sentence}"
+/// Two or more divergences pluralise the clause. Exact match for the same
+/// reason as the singular case above: a substring check would not catch the
+/// wrong word or a dropped/miscounted digit.
+#[test]
+fn two_divergences_pluralise_the_summary_clause() {
+    let result = rollback_result_with(vec![
+        RollbackDivergence {
+            divergence_plugin_id: "firewall-hardening".to_string(),
+            divergence_subject: "ufw".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "ufw is enforcing while its config says ENABLED=no".to_string(),
+        },
+        RollbackDivergence {
+            divergence_plugin_id: "ssh-hardening".to_string(),
+            divergence_subject: "sshd".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "sshd is running with PermitRootLogin yes".to_string(),
+        },
+    ]);
+
+    assert_eq!(
+        rollback_summary_sentence(&result),
+        "0 of 0 files restored. 2 divergences reported."
     );
 }
 
