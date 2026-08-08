@@ -24,6 +24,47 @@ fn row(state: DivergenceState, detail: String) -> RollbackDivergence {
     }
 }
 
+/// What reading `ufw status` produced, classified three ways rather than two.
+///
+/// `UfwBackend::is_enabled` (`ufw.rs`) collapses "ufw says inactive" and "the
+/// status command could not be run at all" into the same `Err`, because the
+/// callers it serves, apply and scan, both want "assume not enforcing and act
+/// safely" for either case. This probe wants the opposite: it must never
+/// assert a divergence it did not measure, so a failed command and a genuine
+/// `inactive` line have to stay distinguishable here even though they are not
+/// distinguishable through the trait method.
+enum LiveEnforcement {
+    Enforcing,
+    NotEnforcing,
+    Unverifiable(String),
+}
+
+/// Reads `ufw status` directly through the executor, deliberately bypassing
+/// `UfwBackend::is_enabled`, and classifies the result.
+///
+/// **Exact matching, not `contains`.** `Status: inactive` contains the
+/// substring `active`, so a `contains("active")` check reads a stopped
+/// firewall as a running one. The line is matched only after trimming, and
+/// only against the two lines ufw actually prints; anything else, including a
+/// line ufw might print in some future version, is unverifiable rather than
+/// guessed at.
+async fn read_live_enforcement(ctx: &Context) -> LiveEnforcement {
+    match ctx.executor().execute_command("ufw", &["status"]).await {
+        Ok(output) if output.success() => match output.stdout.trim() {
+            "Status: active" => LiveEnforcement::Enforcing,
+            "Status: inactive" => LiveEnforcement::NotEnforcing,
+            other => LiveEnforcement::Unverifiable(format!(
+                "ufw status printed neither 'Status: active' nor 'Status: inactive': {other:?}"
+            )),
+        },
+        Ok(output) => LiveEnforcement::Unverifiable(format!(
+            "ufw status exited with a failure: {}",
+            output.stderr
+        )),
+        Err(e) => LiveEnforcement::Unverifiable(format!("ufw status could not be run: {e}")),
+    }
+}
+
 /// Whether the running firewall and the restored configuration agree.
 ///
 /// ufw only, and deliberately. firewalld restores a configuration directory
@@ -42,7 +83,7 @@ pub(super) async fn firewall_divergences(ctx: &Context) -> Vec<RollbackDivergenc
         return Vec::new();
     }
 
-    let live_enforcing = backend.is_enabled(ctx).await.is_ok();
+    let live = read_live_enforcement(ctx).await;
 
     let configured_enabled = match ctx.executor().read_file(Path::new(UFW_CONF)).await {
         Ok(content) => {
@@ -56,6 +97,21 @@ pub(super) async fn firewall_divergences(ctx: &Context) -> Vec<RollbackDivergenc
                 format!(
                     "{UFW_CONF} could not be read, so whether ufw's restored configuration \
                      matches what it is running is unknown: {e}"
+                ),
+            )];
+        }
+    };
+
+    let live_enforcing = match live {
+        LiveEnforcement::Enforcing => true,
+        LiveEnforcement::NotEnforcing => false,
+        LiveEnforcement::Unverifiable(detail) => {
+            return vec![row(
+                DivergenceState::Unverifiable,
+                format!(
+                    "ufw's running state could not be read, so whether it matches the \
+                     restored {UFW_CONF} (ENABLED={}) is unknown: {detail}",
+                    if configured_enabled { "yes" } else { "no" }
                 ),
             )];
         }

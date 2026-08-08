@@ -98,6 +98,53 @@ async fn an_unreadable_config_is_unverifiable() {
     assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
 }
 
+/// A probe that cannot run must not be read as "not enforcing". A host whose
+/// `ufw status` fails outright, while the restored config says ENABLED=yes,
+/// must report that the running state is unknown rather than assert a
+/// divergence it never measured.
+#[tokio::test]
+async fn a_failed_status_probe_is_unverifiable_not_diverged() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new()
+            .with_command_exists("ufw", true)
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("nft", false)
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: String::new(),
+                    stderr: "ufw: permission denied".to_string(),
+                    exit_code: 1,
+                },
+            )
+            .with_file("/etc/ufw/ufw.conf", "ENABLED=yes\n"),
+    ));
+
+    let rows = firewall_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "a failed reading is one row, not silence");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+    assert!(
+        rows.iter()
+            .all(|r| r.divergence_state != DivergenceState::Diverged),
+        "an unread running state must never be reported as a measured divergence"
+    );
+}
+
+/// Output that is neither of the two lines ufw actually prints is not
+/// evidence of anything, and must not be forced into either enforcing or
+/// not-enforcing.
+#[tokio::test]
+async fn unrecognised_status_output_is_unverifiable() {
+    let ctx = ufw_host("Status: unknown\n", "ENABLED=yes\n");
+
+    let rows = firewall_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+}
+
 /// firewalld restores a directory its daemon re-reads, so the reload
 /// converges it and this probe has nothing to add.
 #[tokio::test]
@@ -116,6 +163,21 @@ async fn a_firewalld_host_produces_no_rows() {
                     exit_code: 0,
                 },
             ),
+    ));
+
+    assert!(firewall_divergences(&ctx).await.is_empty());
+}
+
+/// No backend detected at all: `ufw`, `firewall-cmd` and `nft` are all
+/// absent. There is no configuration for the host to disagree with, so this
+/// is silence, the same as the firewalld case above, not a fourth outcome.
+#[tokio::test]
+async fn a_host_with_no_firewall_backend_produces_no_rows() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new()
+            .with_command_exists("ufw", false)
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("nft", false),
     ));
 
     assert!(firewall_divergences(&ctx).await.is_empty());
