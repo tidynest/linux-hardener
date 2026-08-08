@@ -236,6 +236,15 @@ fn finding_row(f: Finding, expanded: RwSignal<Option<String>>) -> impl IntoView 
         ExceptionOutcome::NotConfigured | ExceptionOutcome::Declined(_) => None,
     }
     .filter(|r| !r.is_empty());
+    // An exception that did not apply leaves the finding live, so the row keeps
+    // its real severity and merely gains this line, rather than the label
+    // branch above that replaces severity for an applied one. The sentence
+    // comes from the formatter the CLI renders, so the two surfaces cannot word
+    // the same outcome differently.
+    let exception_declined = match &f.finding_exception {
+        ExceptionOutcome::Declined(d) => Some(hardener_types::exception_declined_line(d)),
+        ExceptionOutcome::NotConfigured | ExceptionOutcome::Applied(_) => None,
+    };
     view! {
         <li class="finding-row" class:open=move || is_open.get()>
             <div
@@ -272,6 +281,9 @@ fn finding_row(f: Finding, expanded: RwSignal<Option<String>>) -> impl IntoView 
                             </span>
                             {reason}
                         </p>
+                    })}
+                    {exception_declined.clone().map(|line| view! {
+                        <p class="finding-exception-declined">{line}</p>
                     })}
                     <div class="finding-values">
                         <span class="value-current">{current.clone()}</span>

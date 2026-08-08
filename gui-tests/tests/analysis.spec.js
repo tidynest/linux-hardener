@@ -1,5 +1,5 @@
 // =============================================================================
-// ANALYSIS TESTS - Findings (T-FIND-01..10) + Compliance (T-COMP-01..08)
+// ANALYSIS TESTS - Findings (T-FIND-01..11) + Compliance (T-COMP-01..08)
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
@@ -135,6 +135,35 @@ test.describe('Findings', () => {
     await expect(page.getByRole('tab', { name: 'Scan History' }))
       .toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('tabpanel', { name: 'Scan History' })).toBeVisible();
+  });
+
+  // T-FIND-11: A declined exception is named on the finding it failed to cover
+  //
+  // Issue #133. The CLI has rendered this line since the three-state
+  // ExceptionOutcome landed and the GUI rendered nothing, which left the
+  // operator with no surface at all: someone editing the config file is at
+  // least near the text they wrote, someone in the GUI is not.
+  //
+  // Asserted on the wording rather than the class, because the sentence is the
+  // deliverable and it comes from `exception_declined_line` in hardener-types,
+  // the same formatter the CLI calls. Asserting the class would pass while the
+  // two surfaces said different things.
+  //
+  // The last assertion is the one that would catch the wrong fix. A declined
+  // exception is live, so the finding keeps its real severity and stays in its
+  // severity group; only an applied exception moves a finding into Policy
+  // Exceptions and replaces its severity with the label.
+  test('T-FIND-11: a declined exception says so in the finding detail', async ({ page }) => {
+    await runScan(page);
+    await page.getByRole('button', { name: /Root login via SSH enabled/ }).click();
+    const detail = page.locator('.finding-detail');
+    await expect(detail).toContainText(
+      "exception not applied: documents 'prohibit-password', host has 'yes'",
+    );
+    await expect(detail).toContainText('Break-glass access from the bastion');
+    const panel = page.getByRole('tabpanel', { name: 'Findings' });
+    await expect(panel.getByText('Policy Exceptions', { exact: true })).toHaveCount(0);
+    await expect(panel.getByText('Critical', { exact: true })).toBeVisible();
   });
 });
 

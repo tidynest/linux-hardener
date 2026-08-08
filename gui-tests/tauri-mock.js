@@ -113,7 +113,22 @@
             'Restart SSH service: sudo systemctl restart sshd',
           ],
           finding_compliance: [],
-          finding_exception: { state: 'notconfigured' },
+          // The one declined exception in the fixture. `ExceptionOutcome` is
+          // internally tagged on "state", and the Declined variant is a
+          // newtype, so `FindingExceptionDeclined`'s fields sit beside the tag
+          // rather than under it. `DeclineReason` is tagged on "cause" in turn.
+          //
+          // Declined findings keep their real severity and stay in their
+          // severity group, so this changes no count the suite asserts.
+          finding_exception: {
+            state: 'declined',
+            exception_declined_reason: {
+              cause: 'valuemismatch',
+              documented: 'prohibit-password',
+              observed: 'yes',
+            },
+            exception_reason: 'Break-glass access from the bastion',
+          },
         },
       ],
       scan_duration_us: 890,

@@ -107,6 +107,23 @@ if [[ ! -f "$PROJECT_DIR/crates/hardener-ui/dist/index.html" ]]; then
     exit 1
 fi
 
+# Refuse a dist older than the frontend it is meant to be a build of. Nothing
+# here runs trunk, so a source edit reaches the containers only if someone
+# rebuilt by hand, and a stale bundle does not announce itself: the suite runs
+# green against the previous interface, and a test written for the change fails
+# as though the change were wrong. Measured once, on the T-FIND-11 declined
+# exception line, which was absent from the page because it was absent from the
+# wasm. Same shape as the stale musl binary the cross-distro runner used to
+# serve.
+NEWER_SOURCE=$(find "$PROJECT_DIR/crates/hardener-ui/src" "$PROJECT_DIR/crates/hardener-ui/styles.css" \
+    -newer "$PROJECT_DIR/crates/hardener-ui/dist/index.html" -print -quit 2>/dev/null)
+if [[ -n "$NEWER_SOURCE" ]]; then
+    echo -e "${RED}ERROR: dist/ is older than the frontend source (${NEWER_SOURCE#"$PROJECT_DIR/"}).${NC}"
+    echo -e "${RED}       The containers would serve the previous build. Rebuild first:${NC}"
+    echo -e "${RED}       cd crates/hardener-ui && trunk build --release${NC}"
+    exit 1
+fi
+
 mkdir -p "$RESULTS_DIR/screenshots/webui"
 
 if [[ -n "$SINGLE_DISTRO" ]]; then

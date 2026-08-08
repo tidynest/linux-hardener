@@ -953,21 +953,23 @@ fleet-apply, remote and scheduler specs were added between the two.
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (9 Specs, 113 Tests)
+### Spec Inventory (9 Specs, 110 Tests)
 
-Counted off `gui-tests/tests/` on 2026-08-01: 83 tests written out, plus 30 the
-theme spec generates at collection time.
+Counted off `gui-tests/tests/` on 2026-08-08: 80 tests written out, plus 30 the
+theme spec generates at collection time (5 states x 6 themes). The 2026-08-07
+suite repair rewrote most of these, so the per-spec figures here are a fresh
+count and not the 2026-08-01 one they replace.
 
 | Spec | Test IDs | Tests | Description |
 |------|----------|-------|-------------|
 | `dashboard.spec.js` | T-DASH-01..09 | 9 | Score display, scan trigger, navigation, activity feed |
-| `analysis.spec.js` | T-FIND-01..10, T-COMP-01..08 | 18 | Findings table and detail panel, framework selection, report generation |
+| `analysis.spec.js` | T-FIND-01..11, T-COMP-01..08 | 19 | Findings grouping and detail expander, declined exceptions, framework selection, report generation |
 | `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 | 16 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, apply results |
 | `themes.spec.js` | T-THEME-01..07 | 7 + 30 | 6 of the 7 themes verified, High Contrast not yet covered. The 30 screenshot tests are generated as 5 states x 6 themes |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 | `fleet.spec.js` | - | 7 | Fleet scan view |
 | `fleet-apply.spec.js` | - | 9 | Fleet Apply mode toggle, selection, confirm modal |
-| `remote.spec.js` | - | 7 | Single-host remote connect session |
+| `remote.spec.js` | T-REMOTE-01..03 | 3 | The `/remote` redirect, the saved host list, the Add Host form |
 | `scheduler.spec.js` | - | 6 | Scheduler and notification configuration |
 
 ### Per-Distro Notes
@@ -995,6 +997,14 @@ sudo ./scripts/test/gui/run-gui-tests.sh
 # Or via the cross-distro runner with --gui flag
 sudo ./scripts/test/run-cross-distro-tests.sh --gui
 ```
+
+The first step is not advice. Nothing in the runner invokes `trunk`, so the
+containers serve whatever is already in `crates/hardener-ui/dist/`, and a stale
+bundle used to fail in the worst available way: the suite ran green against the
+previous interface, and a test written for the change failed as though the
+change were wrong. `run-gui-tests.sh` now **refuses to start** when anything
+under `crates/hardener-ui/src` or `styles.css` is newer than `dist/index.html`,
+and names the file that is ahead.
 
 ### Output Files
 

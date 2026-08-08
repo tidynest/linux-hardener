@@ -399,6 +399,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Analysis finding row now says when a policy exception did not apply**
+  (#133). `ExceptionOutcome` has carried a `Declined` state since the
+  three-state rework, meaning the operator wrote an exception that was allowed
+  and still did nothing, because its documented value does not match the host or
+  because it has expired. `hardener scan` has rendered that as a line under the
+  finding all along; the GUI rendered nothing, which put the gap where it hurts
+  most. Someone editing the configuration file is at least near the text they
+  wrote. Someone in the desktop application had no other surface to learn it
+  from. The expanded detail now carries the line, built by
+  `hardener_types::exception_declined_line`, the **same formatter the CLI
+  calls**, so the two surfaces cannot word one outcome differently. The row
+  keeps its real severity and stays in its severity group: a declined exception
+  leaves the finding live, unlike an applied one, which moves the finding into
+  Policy Exceptions and replaces its severity with the label. Covered by
+  `T-FIND-11`, with the fixture's `ssh-001` carrying a declined value mismatch,
+  which was chosen over adding a finding because a declined finding changes no
+  count the suite asserts.
+
+- **The GUI test runner refuses to run against a stale `dist/`.** Nothing in
+  `run-gui-tests.sh` invokes `trunk`, so the containers serve whatever bundle is
+  already sitting in `crates/hardener-ui/dist/`, and the script only ever
+  checked that one existed. A frontend edit therefore reached the containers
+  only if someone rebuilt by hand, and forgetting failed in the worst available
+  way: the suite ran green against the **previous** interface, and the one test
+  written for the change failed as though the change were wrong. Measured on
+  `T-FIND-11`, whose declined-exception line was missing from the page because
+  it was missing from the wasm. The script now compares `dist/index.html`
+  against everything under `crates/hardener-ui/src` and `styles.css`, refuses to
+  start when a source file is newer, and names the file that is ahead. Same
+  shape as the stale musl binary the cross-distro runner used to serve.
+
 - **A validator for the GUI mock fixtures**, which nothing read.
   `gui-tests/tauri-mock.js` is a hand-written mirror of the Rust types the
   frontend deserialises, and eight separate drifts had accumulated in it: a

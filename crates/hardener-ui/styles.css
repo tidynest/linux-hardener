@@ -3731,6 +3731,15 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   letter-spacing: 0.04em;
 }
 
+/* An exception that did not apply. Warning rather than the muted tone of an
+   applied one: this finding is still live, and the operator's own text says so
+   only because they went looking. */
+.finding-exception-declined {
+  margin: 0 0 var(--space-md);
+  color: var(--color-warning-bright);
+  font-size: var(--font-size-sm);
+}
+
 .finding-values {
   display: flex;
   align-items: center;
