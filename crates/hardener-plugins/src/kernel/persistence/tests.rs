@@ -14,6 +14,8 @@
 //! import carried across unchanged, private items included.
 
 use super::*;
+use hardener_common::executor::MockExecutor;
+use std::sync::Arc;
 
 /// The two spellings `sysctl` accepts, reduced to one. Without this the
 /// tool's dotted table and ufw's procfs paths never meet, and a comparison
@@ -186,4 +188,110 @@ fn an_unterminated_bracket_is_treated_as_a_literal() {
         "kernel/kptr[restrict",
         "kernel/kptrxrestrict"
     ));
+}
+
+/// The file this reader was built for: a real `/etc/sysctl.conf` naming a
+/// managed parameter. `sysctl --system` reads it, so a rollback's own reload
+/// applies it, which is why the rollback probe has to know it exists.
+#[tokio::test]
+async fn a_real_sysctl_conf_is_read_and_keyed_the_procfs_way() {
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new().with_file(
+        "/etc/sysctl.conf",
+        "# legacy\nnet.ipv4.conf.all.log_martians = 1\n",
+    )));
+
+    let legacy = legacy_sysctl_conf(&ctx).await;
+
+    assert_eq!(
+        legacy.values.get("net/ipv4/conf/all/log_martians"),
+        Some(&"1".to_string())
+    );
+    assert!(legacy.unreadable.is_none());
+}
+
+/// The common case across every distribution measured on 2026-08-08 except
+/// fedora: the file is simply not there, and that is an answer, not a failure.
+#[tokio::test]
+async fn an_absent_sysctl_conf_is_empty_rather_than_unreadable() {
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+
+    let legacy = legacy_sysctl_conf(&ctx).await;
+
+    assert!(legacy.values.is_empty());
+    assert!(legacy.glob_patterns.is_empty());
+    assert!(
+        legacy.unreadable.is_none(),
+        "a file that is not there was not a read that failed"
+    );
+}
+
+/// A read that failed is not an absence. The reason travels so the row the
+/// caller builds can name the file an operator has to go and look at.
+#[tokio::test]
+async fn an_unreadable_sysctl_conf_carries_its_reason() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new()
+            .with_file("/etc/sysctl.conf", "irrelevant\n")
+            .with_read_permission_denied("/etc/sysctl.conf"),
+    ));
+
+    let legacy = legacy_sysctl_conf(&ctx).await;
+
+    let reason = legacy
+        .unreadable
+        .expect("a file that exists and could not be read must say so");
+    assert!(
+        reason.contains("/etc/sysctl.conf"),
+        "the reason must name the file: {reason}"
+    );
+}
+
+/// Glob patterns travel separately, exactly as the drop-in reader keeps them,
+/// so a caller can ask whether one could name a given key without this reader
+/// resolving anything.
+#[tokio::test]
+async fn a_glob_in_sysctl_conf_is_kept_as_a_pattern_not_a_value() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_file("/etc/sysctl.conf", "net.ipv4.conf.*.log_martians = 1\n"),
+    ));
+
+    let legacy = legacy_sysctl_conf(&ctx).await;
+
+    assert!(legacy.values.is_empty());
+    assert_eq!(
+        legacy.glob_patterns,
+        vec!["net/ipv4/conf/*/log_martians".to_string()]
+    );
+}
+
+/// The capability, not the configuration: the question is whether the applier
+/// that runs at boot reads `/etc/sysctl.conf`, and systemd-sysctl does not.
+#[tokio::test]
+async fn systemd_sysctl_present_means_the_boot_applier_does_not_read_the_file() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_path_exists("/usr/lib/systemd/systemd-sysctl", true),
+    ));
+
+    assert_eq!(boot_reads_legacy_conf(&ctx).await, Reach::DoesNotRead);
+}
+
+/// No applier this probe recognises. `Unknown` is the honest answer and the
+/// caller downgrades to Unverifiable on it rather than guessing either way.
+#[tokio::test]
+async fn no_recognised_applier_is_unknown_rather_than_assumed() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_path_exists("/usr/lib/systemd/systemd-sysctl", false),
+    ));
+
+    assert_eq!(boot_reads_legacy_conf(&ctx).await, Reach::Unknown);
+}
+
+/// A probe that errored is not a probe that answered "no".
+#[tokio::test]
+async fn a_failed_applier_probe_is_unknown() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_path_exists_error("/usr/lib/systemd/systemd-sysctl"),
+    ));
+
+    assert_eq!(boot_reads_legacy_conf(&ctx).await, Reach::Unknown);
 }

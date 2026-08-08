@@ -42,10 +42,21 @@ use std::{
 /// The drop-in directories `systemd-sysctl` merges, **highest precedence
 /// first**, as `sysctl.d(5)` lists them in its SYNOPSIS. These four are also
 /// the only paths `/usr/lib/systemd/systemd-sysctl` names, read off the binary
-/// 2026-07-31; `/etc/sysctl.conf` is not among them, and a distribution that
-/// still wants it applied reaches it through a `/etc/sysctl.d/99-sysctl.conf`
-/// symlink, which is a file in one of these directories and needs no special
-/// case here.
+/// 2026-07-31 and again 2026-08-08.
+///
+/// `/etc/sysctl.conf` is deliberately not among them, and the reason is that
+/// `systemd-sysctl` does not read it: a file named only there is not applied
+/// at boot on a systemd host, so it cannot override what this tool persists,
+/// which is the only question the scan asks. An earlier version of this
+/// comment gave a different reason, that a distribution wanting the file
+/// applied reaches it through an `/etc/sysctl.d/99-sysctl.conf` symlink. No
+/// such symlink was found on any of the five distributions measured
+/// 2026-08-08 (arch, debian 13, fedora, rhel, opensuse); fedora ships the file
+/// as a real file and the rest ship nothing. The conclusion held, its stated
+/// evidence did not.
+///
+/// `procps sysctl --system` DOES read it, and that is a different question
+/// asked by a different caller: see [`legacy_sysctl_conf`].
 const SYSCTL_DROPIN_DIRS: &[&str] = &[
     // The one this tool writes into is named once, in the parent module.
     super::SYSCTL_DROPIN_DIR,
@@ -673,6 +684,101 @@ pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> 
         unresolved,
         glob_patterns,
         blocks_all,
+    }
+}
+
+/// The file `procps sysctl --system` reads that `systemd-sysctl` does not.
+// Wired into a caller by the divergence probe that lands separately on this
+// branch; unused until then.
+#[allow(dead_code)]
+const LEGACY_SYSCTL_CONF: &str = "/etc/sysctl.conf";
+
+/// The applier this probe recognises. Its presence is the capability the
+/// rollback sentence depends on, and it is probed rather than assumed from
+/// the host being a systemd one.
+// Wired into a caller by the divergence probe that lands separately on this
+// branch; unused until then.
+#[allow(dead_code)]
+const SYSTEMD_SYSCTL: &str = "/usr/lib/systemd/systemd-sysctl";
+
+/// What `/etc/sysctl.conf` assigns, for the one caller that needs it.
+///
+/// An absent file gives every field empty, which is the honest reading: the
+/// file names nothing because it is not there. A file that exists and could
+/// not be read fills `unreadable` instead, because a read that failed is not
+/// an absence and must not be folded into one.
+// Wired into a caller by the divergence probe that lands separately on this
+// branch; unused until then.
+#[allow(dead_code)]
+#[derive(Default)]
+pub(super) struct LegacyConf {
+    /// Explicit assignments keyed by [`procfs_key`].
+    pub(super) values: BTreeMap<String, String>,
+    /// Glob patterns keyed the same way, unresolved, for
+    /// [`glob_could_match`].
+    pub(super) glob_patterns: Vec<String>,
+    /// Set when the file exists and could not be read, carrying the reason.
+    pub(super) unreadable: Option<String>,
+}
+
+/// Whether the applier that runs at boot reads [`LEGACY_SYSCTL_CONF`].
+///
+/// There is deliberately no `Reads` variant. Nothing measured produces one:
+/// `procps.service` on Debian 13 is systemd's own unit under a compatibility
+/// name (`ExecStart=/usr/lib/systemd/systemd-sysctl`), and no tested
+/// distribution ships a unit that runs `sysctl --system` at boot. A variant no
+/// code path can construct would be a claim about the world with no evidence
+/// behind it. If a real second applier is ever found, it is named here the way
+/// ufw is named in [`ufw_applied_file`], never inferred.
+// Wired into a caller by the divergence probe that lands separately on this
+// branch; unused until then.
+#[allow(dead_code)]
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Reach {
+    /// The boot applier will not apply this file, so what it names does not
+    /// survive a reboot.
+    DoesNotRead,
+    /// No applier this probe recognises, so the question was not answered.
+    Unknown,
+}
+
+/// Reads `/etc/sysctl.conf`, which the rollback's own `sysctl --system` reload
+/// applies and the boot applier does not.
+///
+/// The scan must never call this. Its question is which file overrides this
+/// tool's own, and a file the boot applier does not read cannot override
+/// anything at boot.
+// Called by the divergence probe that lands separately on this branch;
+// unused until then.
+#[allow(dead_code)]
+pub(super) async fn legacy_sysctl_conf(ctx: &Context) -> LegacyConf {
+    match read_boot_file(ctx, LEGACY_SYSCTL_CONF).await {
+        FileRead::Content(content) => {
+            let parsed = parse_sysctl(&content);
+            LegacyConf {
+                values: parsed.values,
+                glob_patterns: parsed.glob_patterns,
+                unreadable: None,
+            }
+        }
+        FileRead::Absent => LegacyConf::default(),
+        FileRead::Unreadable { reason, .. } => LegacyConf {
+            unreadable: Some(reason),
+            ..LegacyConf::default()
+        },
+    }
+}
+
+/// Which applier runs at boot, as a capability rather than a host label.
+// Called by the divergence probe that lands separately on this branch;
+// unused until then.
+#[allow(dead_code)]
+pub(super) async fn boot_reads_legacy_conf(ctx: &Context) -> Reach {
+    match ctx.executor().path_exists(Path::new(SYSTEMD_SYSCTL)).await {
+        Ok(true) => Reach::DoesNotRead,
+        // A probe that answered "absent" and a probe that errored are the same
+        // answer here: no applier was identified, so nothing is claimed.
+        _ => Reach::Unknown,
     }
 }
 
