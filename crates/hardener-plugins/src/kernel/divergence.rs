@@ -65,6 +65,14 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// survive a reboot, so the row stays `Diverged` and says the second thing
 /// rather than the first. Where no applier is recognised the row is
 /// `Unverifiable` instead: see [`persistence::boot_reads_legacy_conf`].
+///
+/// **That precedence also decides a disagreement, not only a silence.**
+/// `man sysctl` reads `/etc/sysctl.conf` last, so it replaces anything a
+/// drop-in set. A host whose drop-in says one value, whose `/etc/sysctl.conf`
+/// says another, and whose kernel is running the second is running exactly
+/// what its own files describe, and must not be told otherwise. The row stays
+/// `Diverged` because the next boot hands the parameter back to the drop-in,
+/// and it says that instead.
 pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
     let plugin = KernelHardeningPlugin::new();
     let effective = persistence::effective_boot_values(ctx, DropinScope::All).await;
@@ -98,13 +106,20 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
         ));
     }
 
-    // The clause a blocked per-parameter row adds to its own sentence. With
-    // exactly one unresolved source, naming it here is more actionable than
-    // sending the operator to cross-reference the generic rows above; with
-    // several, naming just one would read as though that one were the cause,
-    // which is not known, so the sentence stays generic and the rows above
-    // remain where every path is named.
-    let unresolved_clause = match effective.unresolved.as_slice() {
+    // The clause a blocked per-parameter row adds to its own sentence. Both
+    // kinds of open question feed it, because both block the same attribution:
+    // a drop-in source this scan could not resolve, and an `/etc/sysctl.conf`
+    // nobody could read. With exactly one of them open, naming it here is more
+    // actionable than sending the operator to cross-reference the generic rows
+    // above; with several, naming just one would read as though that one were
+    // the cause, which is not known, so the sentence stays generic and the rows
+    // above remain where every path is named.
+    let open_questions: Vec<&String> = effective
+        .unresolved
+        .iter()
+        .chain(legacy.unreadable.iter())
+        .collect();
+    let unresolved_clause = match open_questions.as_slice() {
         [reason] => format!(", but {reason}, so whether it names it is unknown"),
         _ => ", but this scan could not resolve every configuration source, so whether an \
               unresolved one names it is unknown"
@@ -127,14 +142,52 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
 
         let key = persistence::procfs_key(name);
         match effective.values.get(&key) {
-            Some(configured) if configured != &runtime => rows.push(row(
-                name,
-                DivergenceState::Diverged,
-                format!(
-                    "the running kernel reads {runtime} while the restored configuration says \
-                     {configured}, so this host is not running what its own files describe"
-                ),
-            )),
+            Some(configured) if configured != &runtime => {
+                // `man sysctl`, SYSTEM FILE PRECEDENCE: `/etc/sysctl.conf` is
+                // read last and replaces whatever a drop-in set. So when that
+                // file names this parameter with the value the kernel is
+                // running, the rollback's own `sysctl --system` is exactly why
+                // the kernel is running it, and the host IS running what its
+                // own files describe. The divergence is a future one: the boot
+                // applier never reads that file, so the next boot hands the
+                // parameter back to the drop-in's value.
+                let (state, detail) = if let Some(legacy_value) = legacy.values.get(&key)
+                    && legacy_value == &runtime
+                {
+                    match reach {
+                        persistence::Reach::DoesNotRead => (
+                            DivergenceState::Diverged,
+                            format!(
+                                "the running kernel reads {runtime} because /etc/sysctl.conf \
+                                 assigns it and is read last, ahead of the restored sysctl.d \
+                                 drop-in configuration saying {configured}. The applier that \
+                                 runs at boot does not read /etc/sysctl.conf at all, so the next \
+                                 boot switches {name} to {configured}"
+                            ),
+                        ),
+                        persistence::Reach::Unknown => (
+                            DivergenceState::Unverifiable,
+                            format!(
+                                "the running kernel reads {runtime} because /etc/sysctl.conf \
+                                 assigns it and is read last, ahead of the restored sysctl.d \
+                                 drop-in configuration saying {configured}. Which applier runs \
+                                 at boot on this host was not established, so whether the next \
+                                 boot switches {name} to {configured} is unknown"
+                            ),
+                        ),
+                    }
+                } else {
+                    (
+                        DivergenceState::Diverged,
+                        format!(
+                            "the running kernel reads {runtime} while the restored configuration \
+                             says {configured}, so this host is not running what its own files \
+                             describe"
+                        ),
+                    )
+                };
+                rows.push(row(name, state, detail));
+            }
             Some(_) => {}
             // No explicit assignment names it. Reported only where the running
             // value is at least as strict as this tool's baseline, which is
@@ -148,16 +201,24 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                     .iter()
                     .chain(legacy.glob_patterns.iter())
                     .find(|pattern| persistence::glob_could_match(pattern, &key));
-                // `/etc/sysctl.conf` is consulted only here, after the two
-                // not-knowing cases above: an unresolved source could name
-                // this parameter in a file the boot applier DOES read, which
-                // would make the reboot claim below wrong.
+                // Only what `/etc/sysctl.conf` explicitly assigns is read at
+                // this statement: the same file's glob patterns went into
+                // `matched_pattern` just above, and whether it could be read at
+                // all is one of the two not-knowing cases tested below. Those
+                // two come first because an unresolved source could name this
+                // parameter in a file the boot applier DOES read, which would
+                // make the reboot claim wrong.
                 let named_by_legacy = legacy.values.get(&key);
+                // Both not-knowing sentences say "no drop-in assignment", not
+                // "no explicit assignment": `/etc/sysctl.conf` can carry an
+                // explicit assignment for this key and still be reached here,
+                // through a blocked drop-in source or a drop-in glob, and the
+                // wider claim would then be false.
                 let (state, detail) = if effective.blocks_all || legacy.unreadable.is_some() {
                     (
                         DivergenceState::Unverifiable,
                         format!(
-                            "{name} reads {runtime} in the running kernel and no explicit \
+                            "{name} reads {runtime} in the running kernel and no drop-in \
                              assignment names it{unresolved_clause}"
                         ),
                     )
@@ -165,7 +226,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                     (
                         DivergenceState::Unverifiable,
                         format!(
-                            "{name} reads {runtime} in the running kernel and no explicit \
+                            "{name} reads {runtime} in the running kernel and no drop-in \
                              assignment names it, but a glob pattern in the surviving \
                              configuration could name it, so whether it does is unknown"
                         ),

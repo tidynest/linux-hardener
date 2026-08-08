@@ -395,6 +395,11 @@ async fn a_parameter_named_only_in_sysctl_conf_is_not_reported_as_named_by_nothi
 
 /// The clause that survives. systemd-sysctl does not read the file, so the
 /// value really is lost at the next boot and the row stays Diverged.
+///
+/// The state alone is not evidence: the pre-fix code produced `Diverged` for
+/// this fixture too, through the false "no configuration file names it"
+/// sentence. The assertion on the detail is what pins the clause that survived
+/// to the row that is meant to carry it.
 #[tokio::test]
 async fn a_parameter_named_only_in_sysctl_conf_stays_diverged_because_the_reboot_drops_it() {
     let ctx = ctx_with(
@@ -415,6 +420,11 @@ async fn a_parameter_named_only_in_sysctl_conf_stays_diverged_because_the_reboot
         row.divergence_state,
         DivergenceState::Diverged,
         "the next boot drops the value, which is a real divergence: {row:?}"
+    );
+    assert!(
+        row.divergence_detail.contains("lost at the next reboot"),
+        "the surviving clause is the reboot one, and the row has to be the thing that says it: {}",
+        row.divergence_detail
     );
 }
 
@@ -534,5 +544,151 @@ async fn a_glob_in_sysctl_conf_blocks_only_the_keys_it_could_name() {
         unblocked.divergence_state,
         DivergenceState::Diverged,
         "net.ipv4.conf.* cannot name kernel.kptr_restrict: {unblocked:?}"
+    );
+}
+
+/// Review finding 1: the blocked sentence may not claim more than the drop-in
+/// directories were asked. Here a drop-in nobody could read blocks attribution
+/// while `/etc/sysctl.conf` carries an explicit assignment for the very
+/// parameter, so "no explicit assignment names it" is a false clause on a row
+/// that is otherwise correct.
+#[tokio::test]
+async fn a_blocked_row_does_not_deny_the_explicit_assignment_sysctl_conf_carries() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file("/etc/sysctl.d/50-locked.conf", "irrelevant\n")
+            .with_read_permission_denied("/etc/sysctl.d/50-locked.conf")
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 1\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still carry a row");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "a drop-in nobody could open could name this parameter: {row:?}"
+    );
+    assert!(
+        !row.divergence_detail
+            .contains("no explicit assignment names it"),
+        "/etc/sysctl.conf carries an explicit assignment for this key, so the wider clause is \
+         false: {}",
+        row.divergence_detail
+    );
+}
+
+/// Review finding 2: an unreadable `/etc/sysctl.conf` is the one open question
+/// on this host, and its name is in hand, so the row must name it rather than
+/// fall back to the wording reserved for several unresolved sources at once.
+#[tokio::test]
+async fn a_lone_unreadable_sysctl_conf_is_named_in_the_parameter_sentence() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/sysctl.conf", "irrelevant\n")
+            .with_read_permission_denied("/etc/sysctl.conf")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still carry a row");
+    assert!(
+        row.divergence_detail.contains("/etc/sysctl.conf"),
+        "exactly one source is open and its name is known, so the sentence must carry it: {}",
+        row.divergence_detail
+    );
+    assert!(
+        !row.divergence_detail
+            .contains("could not resolve every configuration source"),
+        "the generic wording is for several open sources, and here there is one: {}",
+        row.divergence_detail
+    );
+}
+
+/// Review finding 3: the precedence host this slice exists for. `man sysctl`
+/// reads `/etc/sysctl.conf` last, so the rollback's own `sysctl --system` runs
+/// the kernel to that file's value and the host IS running what its own files
+/// describe. The divergence is the next boot, where the drop-in wins instead.
+#[tokio::test]
+async fn a_running_value_sysctl_conf_explains_is_not_called_a_host_ignoring_its_files() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/50-x.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 0\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("a parameter the next boot will change must be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Diverged,
+        "the next boot switches the parameter, which is a real divergence: {row:?}"
+    );
+    assert!(
+        !row.divergence_detail
+            .contains("not running what its own files describe"),
+        "/etc/sysctl.conf is read last, so the running value is exactly what this host's files \
+         describe: {}",
+        row.divergence_detail
+    );
+    assert!(
+        row.divergence_detail.contains("/etc/sysctl.conf")
+            && row.divergence_detail.contains("sysctl.d"),
+        "an operator has two files to reconcile and the sentence must name both: {}",
+        row.divergence_detail
+    );
+    assert!(
+        row.divergence_detail.contains('0') && row.divergence_detail.contains('1'),
+        "both the running value and the one the next boot brings must appear: {}",
+        row.divergence_detail
+    );
+}
+
+/// The same host with no applier this probe recognises. The reboot half of the
+/// sentence is not established there, so the row degrades the way the
+/// named-only-in-sysctl.conf case already does rather than claiming it.
+#[tokio::test]
+async fn the_precedence_case_is_unverifiable_when_no_boot_applier_is_recognised() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/50-x.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 0\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", false)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "which applier runs at boot was not established, so the reboot claim is unearned: {row:?}"
     );
 }
