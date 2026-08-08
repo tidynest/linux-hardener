@@ -752,8 +752,11 @@ pub(super) enum Reach {
     /// `/etc/sysctl.d/99-sysctl.conf` at the same inode, and the drop-in
     /// reader then applies that content under the drop-in's name. A caller
     /// wording a sentence on this answer says what does not run at boot, or
-    /// which file decides among the ones that do; it never says the boot
-    /// applier ignores the legacy file's content.
+    /// which file decides among the ones that do, unless it has established
+    /// that a linked file could not have reached the branch it is wording:
+    /// only then may it say the boot applier ignores the legacy file's
+    /// content, and the caller in `divergence.rs` marks which of its arms has
+    /// established that and which has not.
     DoesNotRead,
     /// No applier this probe recognises, so the question was not answered.
     Unknown,

@@ -80,15 +80,23 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// non-zero on an otherwise unremarkable host, so every key the reload failed
 /// to write lands here with the value the apply left behind.
 ///
-/// **No sentence claims what the boot applier does with `/etc/sysctl.conf`.**
-/// [`persistence::Reach::DoesNotRead`] is measured from the applier on disk and
-/// settles that no `sysctl --system` runs at boot. It does not settle that the
-/// file's content stays out of the boot sequence: a host can reach the same
-/// inode through an `/etc/sysctl.d/99-sysctl.conf` symlink, and there the
-/// drop-in reader has already applied that content under the drop-in's name. So
-/// the disagreement rows predict the next boot from the file that decides among
-/// the ones the boot sequence does apply, which holds either way, rather than
-/// from a claim that the boot applier ignores the legacy file, which does not.
+/// **No DISAGREEMENT row claims what the boot applier does with
+/// `/etc/sysctl.conf`.** [`persistence::Reach::DoesNotRead`] is measured from
+/// the applier on disk and settles that no `sysctl --system` runs at boot. It
+/// does not settle that the file's content stays out of the boot sequence: a
+/// host can reach the same inode through an `/etc/sysctl.d/99-sysctl.conf`
+/// symlink, and there the drop-in reader has already applied that content under
+/// the drop-in's name. So the disagreement rows predict the next boot from the
+/// file that decides among the ones the boot sequence does apply, which holds
+/// either way, rather than from a claim that the boot applier ignores the
+/// legacy file, which does not.
+///
+/// The silence row below DOES make that stronger claim, and is entitled to:
+/// it is reached only where no drop-in names the parameter, and a symlinked
+/// `/etc/sysctl.conf` puts the key in `effective.values` under the drop-in's
+/// name, so a linked file cannot reach that arm at all. The row is true by
+/// unreachability rather than by wording, which is why the two arms are worded
+/// differently and why this paragraph names which is which.
 ///
 /// **That precedence also decides a disagreement, not only a silence.**
 /// `man sysctl` reads `/etc/sysctl.conf` last, so it replaces anything a

@@ -1116,11 +1116,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sysctl --system` (a read-only parameter under a container runtime produces
   one on an otherwise unremarkable host), so every key that reload failed to
   write lands here holding what the apply left. Two further wording corrections
-  ship with it: no row now claims what the boot applier does with
-  `/etc/sysctl.conf`, because a host can reach the same file through an
+  ship with it: no row reporting a disagreement now claims what the boot applier
+  does with `/etc/sysctl.conf`, because a host can reach the same file through an
   `/etc/sysctl.d/99-sysctl.conf` symlink and the boot applier then does apply its
-  content under the drop-in's name, so the rows predict the next boot from the
-  file that decides among the ones the boot sequence applies; and the claim that
+  content under the drop-in's name, so those rows predict the next boot from the
+  file that decides among the ones the boot sequence applies. The row reported
+  where no drop-in names the parameter still makes the stronger claim, and may:
+  a linked file lands the parameter in the drop-in reader's own results, so it
+  cannot reach that row at all. There is also the claim that
   the legacy file's value is the deciding one is now qualified to the reload,
   because `/etc/ufw/sysctl.conf` is applied after `systemd-sysctl` and
   `sysctl --system` never reads it, so on a ufw host it is ufw's value that
