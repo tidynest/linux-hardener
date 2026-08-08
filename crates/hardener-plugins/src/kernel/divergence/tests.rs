@@ -725,7 +725,7 @@ async fn the_precedence_case_is_unverifiable_when_no_boot_applier_is_recognised(
     );
     assert!(
         row.divergence_detail
-            .contains("/etc/sysctl.conf assigns it and is read last")
+            .contains("/etc/sysctl.conf assigns it and a reload reads that file last")
             && row.divergence_detail.contains("was not established")
             && row
                 .divergence_detail
@@ -1095,6 +1095,231 @@ async fn a_legacy_glob_that_cannot_name_the_key_leaves_the_disagreement_row_alon
         row.divergence_detail
             .contains("not running what its own files describe"),
         "nothing blocks this row, so it must carry the finding it exists for: {}",
+        row.divergence_detail
+    );
+}
+
+/// Final review, finding 1. The silence arm named the file at ANY value and
+/// then asserted the running value came from it. Here `/etc/sysctl.conf` is the
+/// only file naming the parameter and says 0 while the kernel reads 1, so the
+/// reload plainly did not put 1 there, and the row must say so rather than
+/// crediting the file with a value it does not carry.
+///
+/// This is a routine state, not an exotic one: `reload_after_rollback`
+/// tolerates a non-zero exit from its own `sysctl --system`, so any key that
+/// reload failed to write reaches this arm holding whatever the apply left.
+#[tokio::test]
+async fn a_legacy_value_the_kernel_is_not_running_is_not_credited_with_the_running_value() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 0\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("a host running a value its only naming file does not carry must be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Diverged,
+        "the running value came from no surviving file, which is a divergence now: {row:?}"
+    );
+    assert!(
+        !row.divergence_detail
+            .contains("The rollback's own `sysctl --system` reads that file, but"),
+        "the file says 0 and the kernel reads 1, so the reload did not leave this value: {}",
+        row.divergence_detail
+    );
+    assert!(
+        !row.divergence_detail.contains("lost at the next reboot"),
+        "a value the reload never applied is not a value a reboot takes away: {}",
+        row.divergence_detail
+    );
+    // The absence of the false clause proves nothing about what replaced it, so
+    // the measurement, both values and the conclusion are pinned here.
+    assert!(
+        row.divergence_detail
+            .contains("net.ipv4.conf.all.log_martians reads 1 in the running kernel")
+            && row
+                .divergence_detail
+                .contains("the only file naming it, /etc/sysctl.conf, says 0")
+            && row.divergence_detail.contains("the reload did not take"),
+        "the row must carry both values and say that the reload did not take: {}",
+        row.divergence_detail
+    );
+}
+
+/// The same host with no applier this probe recognises. The sentence above
+/// makes no claim about a later boot, so nothing on it depends on `Reach` and
+/// the row must not degrade: what the kernel reads now came from no surviving
+/// file whichever applier boots it next.
+#[tokio::test]
+async fn the_reload_did_not_take_row_is_the_same_when_no_boot_applier_is_recognised() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 0\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", false)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must still be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Diverged,
+        "the measurement is present tense and needs no applier to be true: {row:?}"
+    );
+    assert!(
+        row.divergence_detail.contains("the reload did not take")
+            && !row.divergence_detail.contains("reboot")
+            && !row.divergence_detail.contains("was not established"),
+        "the sentence states what is running against what the file says, and claims nothing \
+         about a boot: {}",
+        row.divergence_detail
+    );
+}
+
+/// Final review, finding 2. `/etc/sysctl.conf` can be a symlink into
+/// `sysctl.d`, and there the boot applier DOES apply its content, under the
+/// drop-in's name. This probe does not detect the link, so no row may assert
+/// what the boot applier does with that file. What it may assert is measured
+/// either way: no `sysctl --system` runs at boot, and among the files the boot
+/// sequence applies, the deciding one is named.
+#[tokio::test]
+async fn the_precedence_row_makes_no_claim_about_the_boot_applier_reading_the_legacy_file() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/50-x.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 0\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must be reported");
+    assert_eq!(row.divergence_state, DivergenceState::Diverged);
+    assert!(
+        !row.divergence_detail.contains("does not read"),
+        "a symlinked /etc/sysctl.conf is applied at boot under the drop-in's name, so no row \
+         may say the boot applier does not read it: {}",
+        row.divergence_detail
+    );
+    assert!(
+        row.divergence_detail
+            .contains("No such reload runs at boot")
+            && row.divergence_detail.contains(
+                "/etc/sysctl.d/50-x.conf is what decides net.ipv4.conf.all.log_martians among \
+                 the files the boot sequence does apply"
+            )
+            && row
+                .divergence_detail
+                .contains("the next boot switches net.ipv4.conf.all.log_martians to 1"),
+        "the row must predict the boot from the file that decides among the ones applied there: \
+         {}",
+        row.divergence_detail
+    );
+}
+
+/// Final review, finding 3. `effective_boot_values` chains
+/// `/etc/ufw/sysctl.conf` last, so the file that decides is not always a
+/// drop-in, and ufw applies it from a unit ordered AFTER systemd-sysctl while
+/// `sysctl --system` never reads it. On this host the reload leaves 2, from
+/// `/etc/sysctl.conf`, and the next boot leaves 0, from ufw's file, so an
+/// unqualified "the value that decides is the one in /etc/sysctl.conf" is false.
+#[tokio::test]
+async fn the_deciding_value_claim_is_qualified_to_the_reload_where_ufw_decides_the_boot() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/ufw/ufw.conf", "ENABLED=yes\n")
+            .with_file("/etc/default/ufw", "IPT_SYSCTL=/etc/ufw/sysctl.conf\n")
+            .with_file("/etc/ufw/sysctl.conf", "net/ipv4/conf/all/log_martians=0\n")
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 2\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("a running value no file names must be reported");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Diverged,
+        "the running value matches neither file, so the accusation is earned: {row:?}"
+    );
+    assert!(
+        !row.divergence_detail
+            .contains("the value that decides is the one in /etc/sysctl.conf"),
+        "ufw applies its file after systemd-sysctl and sysctl --system never reads it, so at \
+         the next boot ufw's value decides and this clause is false: {}",
+        row.divergence_detail
+    );
+    assert!(
+        row.divergence_detail
+            .contains("the value a reload leaves behind is the one in /etc/sysctl.conf")
+            && row.divergence_detail.contains("/etc/ufw/sysctl.conf"),
+        "the row must qualify the claim to the reload and name the file it is measured against: \
+         {}",
+        row.divergence_detail
+    );
+}
+
+/// Final review, finding 5. The glob branch dropped an explicit
+/// `/etc/sysctl.conf` assignment that had been read, which is both the most
+/// actionable fact on the row and the one `sysctl` would prefer over the
+/// pattern that blocked it. The blocked-source branch beside it has carried the
+/// clause since the first review round; this is the missing half.
+#[tokio::test]
+async fn a_glob_blocked_row_still_carries_the_assignment_sysctl_conf_was_read_to_have() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/60-glob.conf",
+                "net.ipv4.conf.*.log_martians = 1\n",
+            )
+            .with_file("/etc/sysctl.conf", "net.ipv4.conf.all.log_martians = 1\n")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("a key the pattern could name must carry a row");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "an unresolved pattern could name this key, so no confident claim is earned: {row:?}"
+    );
+    assert!(
+        row.divergence_detail
+            .contains("/etc/sysctl.conf assigns net.ipv4.conf.all.log_martians 1")
+            && row
+                .divergence_detail
+                .contains("a reload reads that file after every drop-in"),
+        "the assignment that was read is the row's most actionable fact and must appear: {}",
         row.divergence_detail
     );
 }

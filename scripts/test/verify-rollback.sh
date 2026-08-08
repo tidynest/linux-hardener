@@ -39,8 +39,11 @@
 #                      reports it rather than reporting plain success
 #   9. Legacy file:    a parameter named only in /etc/sysctl.conf, the file
 #                      procps sysctl --system reads and systemd-sysctl does
-#                      not. The fixture creates it and restores whatever was
-#                      there before; only fedora ships one (see TEST 9)
+#                      not. The fixture writes the file and puts a real file
+#                      back afterwards; only fedora ships one (see TEST 9).
+#                      Where the path is a SYMLINK it restores the link and
+#                      NOT the content it overwrote through it, which is why
+#                      this script refuses to run outside a container
 #
 # Exit status:
 #   0  every check ran and passed
@@ -907,7 +910,14 @@ else
         rm -f /tmp/legacy.json
     fi
 
-    # Put the host back the way it was found, whichever way that was.
+    # Put a file back where one was found, or leave nothing where nothing was.
+    #
+    # Not "whatever was there before", which the symlink case makes false: on a
+    # host where /etc/sysctl.conf links into sysctl.d, `cp -a` copies the link,
+    # the `printf` above writes THROUGH it and destroys the target's content,
+    # and the `mv` restores only the link. The container this runs in ships
+    # either a real file or nothing, so the case is deferred to its own issue
+    # rather than papered over here.
     if [[ "$LEGACY_EXISTED" == "true" ]]; then
         mv "$LEGACY_CONF.rollback-readback.bak" "$LEGACY_CONF"
     else

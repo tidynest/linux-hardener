@@ -441,7 +441,7 @@ and the date of the last such run is in
 [distribution-validation.md](distribution-validation.md).
 
 **A green CI run is a weaker reading than the workspace suite**, because the two
-crate exclusions above make CI's set strictly smaller than the 1810 tests
+crate exclusions above make CI's set strictly smaller than the 1815 tests
 `cargo nextest run --workspace` passed on 2026-08-08. That is the same figure
 [evidence-ledger.md](evidence-ledger.md) records for the CI ceiling; the 1693
 this paragraph used to quote was the 2026-08-07 reading of the same suite.

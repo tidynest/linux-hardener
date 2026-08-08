@@ -1106,6 +1106,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-08-08: **26 of 26, none failed and none skipped**, with TEST 9 reporting
   `net.ipv4.conf.all.log_martians` as `Diverged` off a real system.
 
+- **A parameter `/etc/sysctl.conf` names at a value the kernel is not running is
+  reported as the reload having failed, not as the file's own value.** The row
+  above was emitted whenever that file named the parameter at all, and it then
+  asserted the running value came from it. Where the two differ that was false,
+  and it buried the plainer present-tense fact: the reload ran and the host is
+  not running what its only naming file says. Nothing exotic reaches this state,
+  because a rollback deliberately tolerates a non-zero exit from its own
+  `sysctl --system` (a read-only parameter under a container runtime produces
+  one on an otherwise unremarkable host), so every key that reload failed to
+  write lands here holding what the apply left. Two further wording corrections
+  ship with it: no row now claims what the boot applier does with
+  `/etc/sysctl.conf`, because a host can reach the same file through an
+  `/etc/sysctl.d/99-sysctl.conf` symlink and the boot applier then does apply its
+  content under the drop-in's name, so the rows predict the next boot from the
+  file that decides among the ones the boot sequence applies; and the claim that
+  the legacy file's value is the deciding one is now qualified to the reload,
+  because `/etc/ufw/sysctl.conf` is applied after `systemd-sysctl` and
+  `sysctl --system` never reads it, so on a ufw host it is ufw's value that
+  decides the boot. **Stated as a ceiling in `docs/reference/configuration.md`
+  and in the plugin's own module comment:** `scan` never reports
+  `/etc/sysctl.conf`, so a loosening value there costs no compliance score; only
+  the rollback divergence probe reports it.
+
 - **The Web UI suite installed nothing on three of six distributions, and the
   run said so on only one of them.** The first cross-distribution run of the
   suite recorded a single cause, name resolution, for all three; the logs

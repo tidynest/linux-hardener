@@ -64,22 +64,47 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// **`/etc/sysctl.conf` is a third case, and it splits the sentence in two.**
 /// The rollback's reload is `procps sysctl --system`, which reads that file;
 /// the next boot is `systemd-sysctl`, which does not. A parameter named only
-/// there therefore DID come from the restored configuration and still will not
-/// survive a reboot, so the row stays `Diverged` and says the second thing
-/// rather than the first. Where no applier is recognised the row is
-/// `Unverifiable` instead: see [`persistence::boot_reads_legacy_conf`].
+/// there at the running value therefore DID come from the restored
+/// configuration and still will not survive a reboot, so the row stays
+/// `Diverged` and says the second thing rather than the first. Where no applier
+/// is recognised the row is `Unverifiable` instead: see
+/// [`persistence::boot_reads_legacy_conf`].
+///
+/// **A silence is judged on that file's value, never on the fact that it names
+/// the key.** Where `/etc/sysctl.conf` names the parameter at some OTHER value,
+/// the reload did not take: the only file naming the parameter says one thing
+/// and the kernel reads another, which is a present-tense divergence and is
+/// what the row says. Nothing exotic reaches it. `reload_after_rollback`
+/// deliberately tolerates a non-zero exit from its own `sysctl --system`,
+/// because a read-only parameter under a container runtime makes that exit
+/// non-zero on an otherwise unremarkable host, so every key the reload failed
+/// to write lands here with the value the apply left behind.
+///
+/// **No sentence claims what the boot applier does with `/etc/sysctl.conf`.**
+/// [`persistence::Reach::DoesNotRead`] is measured from the applier on disk and
+/// settles that no `sysctl --system` runs at boot. It does not settle that the
+/// file's content stays out of the boot sequence: a host can reach the same
+/// inode through an `/etc/sysctl.d/99-sysctl.conf` symlink, and there the
+/// drop-in reader has already applied that content under the drop-in's name. So
+/// the disagreement rows predict the next boot from the file that decides among
+/// the ones the boot sequence does apply, which holds either way, rather than
+/// from a claim that the boot applier ignores the legacy file, which does not.
 ///
 /// **That precedence also decides a disagreement, not only a silence.**
 /// `man sysctl` reads `/etc/sysctl.conf` last, so it replaces anything a
 /// drop-in set. A host whose drop-in says one value, whose `/etc/sysctl.conf`
 /// says another, and whose kernel is running the second is running exactly
 /// what its own files describe, and must not be told otherwise. The row stays
-/// `Diverged` because the next boot hands the parameter back to the drop-in,
-/// and it says that instead. Where the two files name a third value between
-/// them the accusation does stand, but the value a reload restores is the
-/// legacy file's, so that is the value the row reports and the file it names:
-/// an operator sent to the drop-in instead would edit it, reload, and still
-/// not get what it says.
+/// `Diverged` because the next boot hands the parameter to whichever file
+/// decides among the ones the boot sequence applies, and it says that instead.
+/// Where the two files name a third value between them the accusation does
+/// stand, but the value a reload restores is the legacy file's, so that is the
+/// value the row reports and the file it names: an operator sent to the
+/// deciding file instead would edit it, reload, and still not get what it says.
+/// That claim is qualified to the reload, because the file deciding the reload
+/// need not be the file deciding the boot: [`persistence::effective_boot_values`]
+/// chains `/etc/ufw/sysctl.conf` last, ufw applies it from a unit ordered after
+/// `systemd-sysctl`, and `sysctl --system` never reads it at all.
 ///
 /// **The same not-knowing cases block a disagreement as block a silence.**
 /// An `/etc/sysctl.conf` nobody could read, a glob in it
@@ -274,29 +299,28 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                         // rollback's own `sysctl --system` is exactly why the
                         // kernel is running it and the host IS running what
                         // its own files describe. The divergence is a future
-                        // one: the boot applier never reads that file, so the
-                        // next boot hands the parameter back to the drop-in.
+                        // one: no reload runs at boot, and among the files the
+                        // boot sequence does apply, the one named here decides.
                         Some(legacy_value) if legacy_value == &runtime => match reach {
                             persistence::Reach::DoesNotRead => (
                                 DivergenceState::Diverged,
                                 format!(
                                     "the running kernel reads {runtime} because /etc/sysctl.conf \
-                                     assigns it and is read last, ahead of {deciding_file}, \
-                                     which says {configured}. The applier that runs at boot does \
-                                     not read \
-                                     /etc/sysctl.conf at all, so the next boot switches {name} \
-                                     to {configured}"
+                                     assigns it and a reload reads that file last, ahead of \
+                                     {deciding_file}, which says {configured}. No such reload \
+                                     runs at boot, and {deciding_file} is what decides {name} \
+                                     among the files the boot sequence does apply, so the next \
+                                     boot switches {name} to {configured}"
                                 ),
                             ),
                             persistence::Reach::Unknown => (
                                 DivergenceState::Unverifiable,
                                 format!(
                                     "the running kernel reads {runtime} because /etc/sysctl.conf \
-                                     assigns it and is read last, ahead of {deciding_file}, \
-                                     which says {configured}. Which applier runs at boot on this \
-                                     host was \
-                                     not established, so whether the next boot switches {name} \
-                                     to {configured} is unknown"
+                                     assigns it and a reload reads that file last, ahead of \
+                                     {deciding_file}, which says {configured}. Which applier \
+                                     runs at boot on this host was not established, so whether \
+                                     the next boot switches {name} to {configured} is unknown"
                                 ),
                             ),
                         },
@@ -305,15 +329,19 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                         // value a reload would restore is the legacy file's
                         // and not the drop-in's: an operator who edits the
                         // drop-in reloads and still does not get what it says.
+                        // The claim is qualified to the reload, because the
+                        // boot is a different question with a different answer
+                        // where `deciding_file` is ufw's: ufw applies its file
+                        // after `systemd-sysctl`, and nothing at boot reads
+                        // /etc/sysctl.conf.
                         Some(legacy_value) => (
                             DivergenceState::Diverged,
                             format!(
                                 "the running kernel reads {runtime} while a reload restores \
-                                 {legacy_value}, which /etc/sysctl.conf assigns and is read \
-                                 last, ahead of {deciding_file}, which says {configured}. So \
-                                 this host is not running what its own files describe, and the \
-                                 value that \
-                                 decides is the one in /etc/sysctl.conf"
+                                 {legacy_value}, which /etc/sysctl.conf assigns and a reload \
+                                 reads last, ahead of {deciding_file}, which says {configured}. \
+                                 So this host is not running what its own files describe, and \
+                                 the value a reload leaves behind is the one in /etc/sysctl.conf"
                             ),
                         ),
                         None => (
@@ -354,19 +382,23 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                 // explicit assignment for this key and still be reached here,
                 // through a blocked drop-in source or a drop-in glob, and the
                 // wider claim would then be false.
+                //
+                // Blocked is also not the same as knowing nothing. Where the
+                // legacy file was read and does name the parameter, that is the
+                // most actionable fact on the row and the only one measured, so
+                // it is said rather than left for the operator to rediscover.
+                // Both blocked branches carry the clause, for the same reason: a
+                // glob that stops attribution does not stop an explicit
+                // assignment from having been read, and `sysctl` would prefer
+                // that assignment over the pattern anyway.
+                let legacy_clause = match named_by_legacy {
+                    Some(configured) => format!(
+                        ". What was read says /etc/sysctl.conf assigns {name} {configured}, and \
+                         a reload reads that file after every drop-in"
+                    ),
+                    None => String::new(),
+                };
                 let (state, detail) = if effective.blocks_all || legacy.unreadable.is_some() {
-                    // Blocked is not the same as knowing nothing. Where the
-                    // legacy file was read and does name the parameter, that
-                    // is the most actionable fact on the row and the only one
-                    // measured, so it is said rather than left for the
-                    // operator to rediscover.
-                    let legacy_clause = match named_by_legacy {
-                        Some(configured) => format!(
-                            ". What was read says /etc/sysctl.conf assigns {name} {configured}, \
-                             and a reload reads that file after every drop-in"
-                        ),
-                        None => String::new(),
-                    };
                     (
                         DivergenceState::Unverifiable,
                         format!(
@@ -380,16 +412,40 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                         format!(
                             "{name} reads {runtime} in the running kernel and no drop-in \
                              assignment names it, but a glob pattern in the surviving \
-                             configuration could name it, so whether it does is unknown"
+                             configuration could name it, so whether it does is \
+                             unknown{legacy_clause}"
+                        ),
+                    )
+                } else if let Some(configured) = named_by_legacy
+                    && configured != &runtime
+                {
+                    // The one file naming the parameter says something the
+                    // kernel is not running, so the reload did not take. The
+                    // sentence says that and makes no claim about a later boot:
+                    // what the kernel reads now did not come from any surviving
+                    // file, whichever applier runs next.
+                    (
+                        DivergenceState::Diverged,
+                        format!(
+                            "{name} reads {runtime} in the running kernel while the only file \
+                             naming it, /etc/sysctl.conf, says {configured}. A rollback reloads \
+                             with `sysctl --system`, which reads that file after every drop-in, \
+                             so the reload did not take and this host is not running what its \
+                             own files describe"
                         ),
                     )
                 } else if let Some(configured) = named_by_legacy {
                     match reach {
-                        // The file names it and the rollback's own `sysctl
-                        // --system` applied it, so the running value did come
-                        // from the restored configuration. What does not
-                        // follow is the reboot: the boot applier does not read
-                        // this file, so the value is lost at the next one.
+                        // The file names the running value and the rollback's
+                        // own `sysctl --system` applied it, so the running
+                        // value did come from the restored configuration. What
+                        // does not follow is the reboot: the boot applier does
+                        // not read this file, so the value is lost at the next
+                        // one. The symlink case the disagreement rows have to
+                        // word around cannot arise here: a legacy file reached
+                        // through `/etc/sysctl.d/99-sysctl.conf` is read by the
+                        // drop-in reader, which puts the key in
+                        // `effective.values` and this arm never runs.
                         persistence::Reach::DoesNotRead => (
                             DivergenceState::Diverged,
                             format!(

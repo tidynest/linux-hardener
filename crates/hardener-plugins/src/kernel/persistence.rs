@@ -19,6 +19,17 @@
 //!    the one instance this tool knows of, and it is named rather than
 //!    inferred; see [`ufw_applied_file`].
 //!
+//! **The scan's ceiling, stated because a reader would otherwise infer the
+//! opposite.** A third file can decide what a host runs and is deliberately not
+//! among those two: `/etc/sysctl.conf`, which `procps sysctl --system` reads
+//! last of all and so lets override [`super::SYSCTL_HARDENER_CONF`] on every
+//! reload, whether an operator runs one by hand or this tool's own rollback
+//! does. [`boot_persistence`] cannot see that file and must not learn to: its
+//! question is boot persistence, and nothing at boot applies the file. A value
+//! there that loosens what this tool persists therefore produces **no scan
+//! finding at all**. The one place it is reported is the rollback divergence
+//! probe, through [`legacy_sysctl_conf`]; see `super::divergence`.
+//!
 //! This is report-only. Editing another package's configuration file is not
 //! something this tool does, and the precedent is the vendor-layer reporting in
 //! `crate::permissions`: the finding names the file, the parameter, the value
@@ -732,8 +743,17 @@ pub(super) struct LegacyConf {
 /// ufw is named in [`ufw_applied_file`], never inferred.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Reach {
-    /// The boot applier will not apply this file, so what it names does not
-    /// survive a reboot.
+    /// The boot applier does not read this file **by that path**, and no
+    /// `sysctl --system` runs at boot, so nothing at boot applies the file
+    /// because it is `/etc/sysctl.conf`.
+    ///
+    /// What this does NOT settle is whether the file's content reaches the
+    /// boot sequence by another name: a host can link
+    /// `/etc/sysctl.d/99-sysctl.conf` at the same inode, and the drop-in
+    /// reader then applies that content under the drop-in's name. A caller
+    /// wording a sentence on this answer says what does not run at boot, or
+    /// which file decides among the ones that do; it never says the boot
+    /// applier ignores the legacy file's content.
     DoesNotRead,
     /// No applier this probe recognises, so the question was not answered.
     Unknown,

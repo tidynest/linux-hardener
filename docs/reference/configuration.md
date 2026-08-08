@@ -188,7 +188,18 @@ so an operator running `sysctl --system` by hand, or this tool's own rollback
 reload, lets that file override `99-hardener.conf`. Nothing applies it at boot on
 a systemd host, so a value that lives only there is lost at the next reboot; the
 rollback divergence report says exactly that rather than claiming no file names
-the parameter. A file that sorts after this tool's, or one applied by a
+the parameter.
+
+> **Ceiling: `scan` does not report `/etc/sysctl.conf`.** The override above is
+> reported only by the rollback divergence probe. The scan asks one question,
+> whether a file beats `99-hardener.conf` *at boot*, and nothing at boot applies
+> the legacy file, so the scan never reads it. A loosening value there therefore
+> produces no finding and costs no compliance score, even though the next
+> `sysctl --system` on that host applies it over this tool's drop-in. Run
+> `sysctl -n <parameter>` after any manual reload to see what is actually in
+> force.
+
+A file that sorts after this tool's, or one applied by a
 unit ordered after `systemd-sysctl.service` (ufw is the only such case this tool
 knows of, and it is named rather than inferred), is reported as a finding. That
 reporting is read-only: this tool does not edit another package's configuration
