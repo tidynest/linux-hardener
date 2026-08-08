@@ -2788,3 +2788,29 @@ async fn a_rollback_leaves_a_condition_guarded_unit_alone() {
         "systemd already handles a missing file here, so this must not be disabled"
     );
 }
+
+/// Finding 6 (final review): the rollback divergence probe used to treat
+/// every `detect_backend` error alike, so an executor failure mid-detection
+/// read exactly like "nothing installed" and produced silence rather than an
+/// `Unverifiable` row. The split relies on `is_no_backend_error` telling the
+/// two apart; these tests pin that predicate directly, since `MockExecutor`'s
+/// own `command_exists` never errors and so cannot drive `classify_installed`
+/// down its failure path.
+#[test]
+fn is_no_backend_error_matches_only_the_nothing_installed_case() {
+    assert!(is_no_backend_error(&no_backend_error()));
+}
+
+#[test]
+fn is_no_backend_error_rejects_any_other_plugin_error() {
+    let other = hardener_common::error::HardeningError::Plugin("ufw is not responding".to_string());
+    assert!(!is_no_backend_error(&other));
+}
+
+#[test]
+fn is_no_backend_error_rejects_a_different_error_variant() {
+    let executor_failure = hardener_common::error::HardeningError::Executor(
+        "command_exists failed: sh not found".to_string(),
+    );
+    assert!(!is_no_backend_error(&executor_failure));
+}

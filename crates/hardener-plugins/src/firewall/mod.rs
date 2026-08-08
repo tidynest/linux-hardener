@@ -1033,6 +1033,17 @@ fn no_backend_error() -> hardener_common::error::HardeningError {
     )
 }
 
+/// True when `e` is exactly the "nothing installed" case [`no_backend_error`]
+/// raises, rather than a genuine detection failure (an executor error
+/// propagated by `classify_installed`'s own `?`). Compared by `Display`
+/// rather than by matching the `Plugin` variant directly, so this predicate
+/// can never drift from the one place that message is written: any other
+/// `Plugin` error, and every other variant, reads as a real failure rather
+/// than as silence.
+pub(super) fn is_no_backend_error(e: &hardener_common::error::HardeningError) -> bool {
+    e.to_string() == no_backend_error().to_string()
+}
+
 /// Detects installed backends and classifies each one's activity in a
 /// single pass, so every backend's probe runs exactly once per scan or
 /// apply operation. Order matches the detection order below, which both

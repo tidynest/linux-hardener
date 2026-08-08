@@ -15,7 +15,7 @@
 //! and every import carried across unchanged, private items included.
 
 use super::*;
-use hardener_types::ReloadResult;
+use hardener_types::{DivergenceState, ReloadResult, RollbackDivergence};
 
 mod fleet_partial_restore {
     //! Regression for issue #67 surviving on the fleet path (`batch.rs`):
@@ -324,6 +324,40 @@ fn a_clean_rollback_has_no_failure_reason() {
         rollback_files: Vec::new(),
         rollback_reloads: Vec::new(),
         rollback_divergences: Vec::new(),
+    };
+    assert_eq!(rollback_failure_reason(&result), None);
+}
+
+/// Finding 6 (final review): the fleet path has
+/// `a_hosts_divergences_reach_the_fleet_summary` (`commands/batch/tests.rs`)
+/// proving a divergence does not turn a host into a failure. This is its
+/// local-path equivalent, on the function an operator running `hardener
+/// rollback` directly actually hits: reporting is reporting, and a `Diverged`
+/// or `Unverifiable` row must never make `rollback_failure_reason` return
+/// `Some`, or a rollback an operator ran clean would exit non-zero over
+/// something that is not a failure.
+#[test]
+fn a_clean_rollback_carrying_divergences_still_has_no_failure_reason() {
+    let result = RollbackResult {
+        rollback_checkpoint_id: "cp_1".to_string(),
+        rollback_checkpoint_name: "before-upgrade".to_string(),
+        rollback_success: true,
+        rollback_files: Vec::new(),
+        rollback_reloads: Vec::new(),
+        rollback_divergences: vec![
+            RollbackDivergence {
+                divergence_plugin_id: "kernel-hardening".to_string(),
+                divergence_subject: "kernel.kptr_restrict".to_string(),
+                divergence_state: DivergenceState::Diverged,
+                divergence_detail: "no configuration file names it".to_string(),
+            },
+            RollbackDivergence {
+                divergence_plugin_id: "firewall-hardening".to_string(),
+                divergence_subject: "ufw".to_string(),
+                divergence_state: DivergenceState::Unverifiable,
+                divergence_detail: "ufw status could not be run".to_string(),
+            },
+        ],
     };
     assert_eq!(rollback_failure_reason(&result), None);
 }

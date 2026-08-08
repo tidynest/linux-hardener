@@ -762,15 +762,28 @@ if [[ "$RUNTIME_ASKABLE" == "true" ]]; then
 
         # Read back out of a file rather than a pipe: this shell reports the last
         # command in a pipeline, which has inverted an assertion here before.
-        DIVERGE_SUBJECTS=$(python3 -c 'import json;print("\n".join(d["divergence_subject"] for d in json.load(open("/tmp/diverge.json")).get("rollback_divergences",[])))')
+        #
+        # subject:state pairs, not subject alone: the parameter appearing at
+        # all is not what #138 was about, it is appearing as Diverged.
+        # docs/reference/file-map.md and docs/reference/what-is-not-proven.md
+        # both describe this arm as requiring the state, and until this line
+        # it did not.
+        DIVERGE_ROWS=$(python3 -c 'import json;print("\n".join(d["divergence_subject"] + ":" + d["divergence_state"] for d in json.load(open("/tmp/diverge.json")).get("rollback_divergences",[])))')
 
-        if printf '%s' "$DIVERGE_SUBJECTS" | grep -qx "$KERNEL_PROBE_PARAM"; then
+        MATCHING_ROW=$(printf '%s\n' "$DIVERGE_ROWS" | grep "^$KERNEL_PROBE_PARAM:" | head -1)
+
+        if printf '%s' "$DIVERGE_ROWS" | grep -qx "$KERNEL_PROBE_PARAM:Diverged"; then
             pass "The rollback reported $KERNEL_PROBE_PARAM as diverged"
+        elif [[ -n "$MATCHING_ROW" ]]; then
+            # Reported, but not as Diverged: a different diagnosis from
+            # silence, and one worth its own message now that a row can also
+            # come back Unverifiable.
+            fail "The rollback reported $KERNEL_PROBE_PARAM, but as '${MATCHING_ROW#*:}' rather than Diverged"
         else
-            fail "The rollback left $KERNEL_PROBE_PARAM hardened but did not report it as a divergence. Subjects: ${DIVERGE_SUBJECTS:-none}"
+            fail "The rollback left $KERNEL_PROBE_PARAM hardened but did not report it as a divergence. Rows: ${DIVERGE_ROWS:-none}"
         fi
 
-        info "Rows reported: $(printf '%s' "$DIVERGE_SUBJECTS" | grep -c . || true)"
+        info "Rows reported: $(printf '%s' "$DIVERGE_ROWS" | grep -c . || true)"
 
         rm -f /tmp/diverge.json
     fi

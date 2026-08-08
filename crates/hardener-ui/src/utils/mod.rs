@@ -791,7 +791,8 @@ pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
             restored,
             failed,
             reload_failed,
-            ..
+            diverged,
+            unverifiable,
         } => {
             let mut cells = Vec::new();
             if *restored > 0 {
@@ -807,6 +808,15 @@ pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
                     hardener_types::rollback_failed_label(*failed, *reload_failed),
                     "score-critical",
                 ));
+            }
+            // The same clause the CLI and the desktop's single-host modal
+            // both render, from the one place that writes it. A neutral
+            // warning class, not the critical one used above: a divergence is
+            // something to look at, not something that failed.
+            let divergence_note =
+                hardener_types::rollback_divergence_note(*diverged, *unverifiable);
+            if !divergence_note.is_empty() {
+                cells.push((divergence_note, "score-warning"));
             }
             if cells.is_empty() {
                 cells.push(("Nothing restored".to_string(), ""));

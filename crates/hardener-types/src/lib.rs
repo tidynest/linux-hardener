@@ -1010,9 +1010,11 @@ impl RollbackResult {
     /// Splits this rollback's divergence rows into how many were measured
     /// disagreements and how many the probe could not answer at all.
     ///
-    /// A tuple rather than two separate methods: both fleet summaries fold
-    /// this over every host in the run, and returning the pair keeps that
-    /// fold from crediting one running total with the other's rows.
+    /// A tuple rather than two separate methods: the CLI's fleet summary and
+    /// the desktop's fleet table both fold this over every host in the run,
+    /// and the desktop's single-host rollback modal reads the same pair for
+    /// the one host in front of it. Returning both counts together keeps any
+    /// of the three from crediting one running total with the other's rows.
     pub fn divergence_counts(&self) -> (usize, usize) {
         let mut diverged = 0;
         let mut unverifiable = 0;
@@ -1399,10 +1401,12 @@ pub fn rollback_failed_label(failed: usize, reload_failed: usize) -> String {
 }
 
 /// One clause naming how many rollback divergences were measured against
-/// how many could not be checked at all, in the shape both fleet summaries
-/// share: "2 divergences, 1 unchecked". Either half is left out entirely
-/// when its count is zero, and the clause is empty when both are, so a
-/// clean rollback earns no clause on either surface.
+/// how many could not be checked at all, in the shape the CLI's fleet
+/// summary and the desktop's fleet table both share: "2 divergences, 1
+/// unchecked". The desktop's single-host rollback modal renders the same
+/// clause for one host rather than a fleet. Either half is left out
+/// entirely when its count is zero, and the clause is empty when both are,
+/// so a clean rollback earns no clause on any of the three surfaces.
 ///
 /// Written once for the same reason `rollback_failed_label` is: the CLI and
 /// desktop draw the same distinction, `hardener-cli` is a binary so the

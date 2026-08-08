@@ -248,6 +248,97 @@ fn registry_with_diverged() -> PluginRegistry {
     registry
 }
 
+/// A stub whose `divergences_after_rollback` reports a row only if its own
+/// `reload_after_rollback` already ran. Finding 6 (final review): nothing
+/// pinned this order despite the dispatch's own doc comment calling it
+/// load-bearing, so a future edit that swapped the two statements in
+/// `reconcile_plugins_after_rollback` would compile and pass every other test
+/// in this file. This one turns that swap into a failing assertion.
+#[derive(Default)]
+struct OrderSensitivePlugin {
+    reloaded: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait::async_trait]
+impl HardeningPlugin for OrderSensitivePlugin {
+    fn metadata(&self) -> PluginMetadata {
+        stub_metadata("order-sensitive")
+    }
+
+    fn dependencies(&self) -> Vec<PluginId> {
+        Vec::new()
+    }
+
+    async fn scan(&self, _ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
+        unreachable!("the dispatch never scans")
+    }
+
+    async fn apply(&self, _ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+        unreachable!("the dispatch never applies")
+    }
+
+    async fn validate(&self, _ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+        unreachable!("the dispatch never validates")
+    }
+
+    fn reloads_for_path(&self, path: &Path) -> bool {
+        path == Path::new("/etc/order.conf")
+    }
+
+    async fn reload_after_rollback(&self, _ctx: &Context) -> Result<Option<String>> {
+        self.reloaded
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(Some("order-sensitive reloaded".to_string()))
+    }
+
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[PathBuf],
+    ) -> Vec<RollbackDivergence> {
+        if !self.reloaded.load(std::sync::atomic::Ordering::SeqCst) {
+            return Vec::new();
+        }
+        vec![RollbackDivergence {
+            divergence_plugin_id: "order-sensitive".to_string(),
+            divergence_subject: "order proof".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "reload_after_rollback had already run when this was asked"
+                .to_string(),
+        }]
+    }
+}
+
+fn registry_with_order_sensitive() -> PluginRegistry {
+    let registry = PluginRegistry::new();
+    registry
+        .register(Box::new(OrderSensitivePlugin::default()))
+        .expect("the stub registers cleanly into an empty registry");
+    registry
+}
+
+/// **Order is fixed: reload first, probe second.** Swap the two statements
+/// in `reconcile_plugins_after_rollback` and this stub's own reload never
+/// runs before it is asked what diverged, so the row disappears and this
+/// assertion fails.
+#[tokio::test]
+async fn the_reload_runs_before_the_divergence_probe() {
+    let registry = registry_with_order_sensitive();
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+
+    let outcome =
+        reconcile_plugins_after_rollback(&ctx, &registry, &[PathBuf::from("/etc/order.conf")])
+            .await;
+
+    assert_eq!(
+        outcome.divergences.len(),
+        1,
+        "the probe must run after the reload, so it should see the reload having already \
+         happened: {:?}",
+        outcome.divergences
+    );
+}
+
 /// The two questions are independent. A plugin with nothing to reload is
 /// still asked what it left diverged.
 #[tokio::test]

@@ -660,8 +660,12 @@ pub(crate) fn divergence_lines(result: &RollbackResult) -> Vec<String> {
             DivergenceState::Diverged => "diverged".yellow().to_string(),
             DivergenceState::Unverifiable => "could not check".to_string(),
         };
+        // 41 characters wide: the longest managed parameter name this
+        // feature prints is net.ipv4.conf.default.accept_source_route. A
+        // narrower column ragged-edges the state on exactly the rows this
+        // feature exists to print.
         lines.push(format!(
-            "  {:<18} {:<32} {state}",
+            "  {:<18} {:<41} {state}",
             divergence.divergence_plugin_id, divergence.divergence_subject
         ));
         lines.push(format!("    {}", divergence.divergence_detail));

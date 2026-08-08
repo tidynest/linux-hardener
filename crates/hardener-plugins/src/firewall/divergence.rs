@@ -92,10 +92,24 @@ async fn read_live_enforcement(ctx: &Context) -> LiveEnforcement {
 /// separate thing.
 pub(super) async fn firewall_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
     let plugin = FirewallHardeningPlugin::new();
-    let Ok(backend) = plugin.detect_backend(ctx).await else {
-        // No backend detected is not a divergence: there is no configuration
-        // to disagree with.
-        return Vec::new();
+    let backend = match plugin.detect_backend(ctx).await {
+        Ok(backend) => backend,
+        // Genuinely nothing installed is not a divergence: there is no
+        // configuration to disagree with.
+        Err(e) if super::is_no_backend_error(&e) => return Vec::new(),
+        // Anything else is an executor failure mid-detection, which is not
+        // the same silence: this scan could not tell whether ufw is even in
+        // play, so it must say so rather than read identically to "nothing
+        // installed".
+        Err(e) => {
+            return vec![row(
+                DivergenceState::Unverifiable,
+                format!(
+                    "which firewall backend is installed could not be determined, so whether ufw \
+                     is still enforcing over the restored configuration is unknown: {e}"
+                ),
+            )];
+        }
     };
     if backend.backend_name() != "ufw" {
         return Vec::new();

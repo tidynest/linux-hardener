@@ -25,17 +25,19 @@ pub trait HardeningPlugin: Send + Sync {
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
     fn reloads_for_path(&self, path: &Path) -> bool { false }
     async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> { Ok(None) }
+    async fn divergences_after_rollback(&self, ctx: &Context, restored: &[PathBuf]) -> Vec<RollbackDivergence> { Vec::new() }
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
 }
 ```
 
 The lifecycle is: registration, dependency resolution (dependencies are
 topologically ordered and processed first), `scan()`, `validate()` (dry-run),
-`apply()`, and `reload_after_rollback()` when a checkpoint restore touches one
-of this plugin's paths. There is no plugin-level rollback method: restoring
-files is `CheckpointManager::rollback`'s job (see
-`docs/reference/data-flow.md`), and a plugin only re-enters the picture to
-tell the running system to pick the restored files back up.
+`apply()`, and `reload_after_rollback()` followed by `divergences_after_rollback()`
+when a checkpoint restore touches one of this plugin's paths. There is no
+plugin-level rollback method: restoring files is `CheckpointManager::rollback`'s
+job (see `docs/reference/data-flow.md`), and a plugin only re-enters the
+picture to tell the running system to pick the restored files back up, and to
+say what picking them back up did not fix.
 
 Per-method contract:
 
@@ -92,9 +94,36 @@ Per-method contract:
   Defaults to `Ok(None)`. Six plugins implement both methods (kernel, ssh,
   firewall, audit, services, mac); pam and permissions take the defaults,
   because their changes take effect immediately and there is nothing left to
-  reload. `hardener_plugins::reload_plugins_after_rollback` is the caller: it
-  maps a rollback's successfully restored paths onto plugins via
-  `reloads_for_path()` and reloads each matching plugin once.
+  reload. `hardener_plugins::reconcile_plugins_after_rollback` is the caller:
+  it maps a rollback's successfully restored paths onto plugins via
+  `reloads_for_path()`, reloads each matching plugin once, and returns a
+  `RollbackReconciliation` (`reloads`, `divergences`) the caller writes onto
+  `RollbackResult`.
+- **`divergences_after_rollback()`**: asks this plugin's own subsystem, after
+  its reload has run, what still disagrees with the configuration the
+  rollback just restored. Returns a `Vec<RollbackDivergence>`, one row per
+  subject examined, and defaults to `Vec::new()` (nothing to say, not
+  "nothing was checked": a plugin with no probe simply is never asked, which
+  is a different silence). Only kernel and firewall implement it today (#138,
+  #139); the other six plugins are asked nothing because no probe has been
+  written for them, not because nothing there could diverge. Two contract
+  rules bind an implementation:
+  - **It must not change system state.** This is reporting, not
+    reconciliation: no rollback behaviour, exit code, or `rollback_success`
+    value may depend on what this method returns, and it must not restart,
+    stop, enable or write anything itself.
+  - **A probe that cannot answer reports an `Unverifiable` row rather than
+    saying nothing.** A `RollbackDivergence` carries a `divergence_state` of
+    either `Diverged` (measured: the running system disagrees with the
+    restored configuration) or `Unverifiable` (the probe could not tell, not
+    a claim that anything is wrong). There is no third, `Converged`, variant
+    on purpose: an empty `Vec` means everything checkable came back and
+    everything uncheckable still carries its own `Unverifiable` row, so
+    silence never stands for "nobody looked". Asked only of plugins a
+    restored path matched, and asked independently of whether there was
+    anything to reload: a plugin can have nothing to reload and diverge
+    anyway (the kernel probe's whole reason to exist, since a rollback never
+    writes `/proc/sys`).
 
 ## Always go through the executor
 

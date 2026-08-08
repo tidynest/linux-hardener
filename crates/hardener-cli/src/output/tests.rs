@@ -640,3 +640,44 @@ fn each_state_prints_its_subject_and_sentence() {
     assert!(joined.contains("could not check"));
     assert!(joined.contains("ufw status needs root"));
 }
+
+/// Finding 6 (final review): the subject column used to be `{:<32}`, but
+/// `net.ipv4.conf.default.accept_source_route`, a real managed parameter
+/// name, is 41 characters, so a row carrying it printed its state at a
+/// different column from every shorter row. The state must land at the same
+/// column whichever row carries the longest name.
+#[test]
+fn the_state_column_aligns_even_for_the_longest_managed_parameter_name() {
+    let result = rollback_result_fixture(vec![
+        RollbackDivergence {
+            divergence_plugin_id: "kernel-hardening".to_string(),
+            divergence_subject: "net.ipv4.conf.default.accept_source_route".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "the longest managed parameter name".to_string(),
+        },
+        RollbackDivergence {
+            divergence_plugin_id: "kernel-hardening".to_string(),
+            divergence_subject: "kernel.kptr_restrict".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "a much shorter one".to_string(),
+        },
+    ]);
+
+    let lines = divergence_lines(&result);
+    let row_lines: Vec<&String> = lines
+        .iter()
+        .filter(|line| line.starts_with("  kernel-hardening"))
+        .collect();
+    assert_eq!(row_lines.len(), 2, "one header line per row: {lines:?}");
+
+    let state_column = |line: &str| {
+        line.find("diverged")
+            .expect("a diverged row prints 'diverged'")
+    };
+    assert_eq!(
+        state_column(row_lines[0]),
+        state_column(row_lines[1]),
+        "the state must start at the same column for every row, longest name included: \
+         {row_lines:?}"
+    );
+}

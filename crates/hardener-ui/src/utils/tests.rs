@@ -1211,6 +1211,31 @@ fn rollback_cells_rolled_back_with_reload_failures() {
     );
 }
 
+/// Finding 4 (final review): the fleet cell builder used to destructure
+/// `diverged` and `unverifiable` with `..` and drop them, so a desktop fleet
+/// rollback showed "9 restored" and nothing else while the CLI appended ", 2
+/// divergences, 1 unchecked" for the identical result. A divergence earns a
+/// neutral warning cell, not the critical class `failed` uses: it is
+/// something to look at, not something that went wrong.
+#[test]
+fn rollback_cells_rolled_back_carries_divergences() {
+    let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {
+        restored: 9,
+        failed: 0,
+        reload_failed: 0,
+        diverged: 2,
+        unverifiable: 1,
+    }));
+    assert_eq!(v.glyph, OutcomeGlyph::Ok);
+    assert_eq!(
+        v.cells,
+        vec![
+            ("9 restored".to_string(), "score-good"),
+            ("2 divergences, 1 unchecked".to_string(), "score-warning"),
+        ]
+    );
+}
+
 #[test]
 fn rollback_cells_rolled_back_nothing_shows_muted_fallback() {
     let v = fleet_rollback_cells(&rollback_out(RollbackStatus::RolledBack {
