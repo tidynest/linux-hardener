@@ -1,6 +1,6 @@
 # Evidence Ledger
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-08
 
 This release does not claim to be proven bug-free. It claims something narrower
 and checkable: every capability it advertises carries a named piece of evidence
@@ -24,7 +24,7 @@ has not been thought about hard enough.
 
 ---
 
-## Baseline, as measured on 2026-08-07
+## Baseline, as measured on 2026-08-08
 
 Numbers taken from commands rather than from prose. Re-measure before amending
 them; do not copy a figure from an older document.
@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1727 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included | `cargo test --workspace`, summing every `test result:` line | 1733 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1768 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included | `cargo test --workspace`, summing every `test result:` line | 1774 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1767 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1767 across 275 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1808 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1808 across 281 files |
 
-The gap between 1767 annotations and 1727 executions is exactly 40, and all 40
+The gap between 1808 annotations and 1768 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 1767, and they are meant to be: the check globs every `.rs`
+are the same number, 1808, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1727 + 6 = 1733 and 40 + 7 = 47.
+covers. 1768 + 6 = 1774 and 40 + 7 = 47.
 
 ---
 
@@ -168,7 +168,7 @@ These are stated once here rather than repeated in every cell below.
   `cargo test --workspace $WORKSPACE_EXCLUDE`, where `WORKSPACE_EXCLUDE` is
   `--exclude linux-hardener-desktop --exclude hardener-ui`. It executes no
   `#[ignore]`d test and no shell suite, and those two exclusions make CI's set
-  strictly smaller than the 1727 recorded above, so a green CI run is a weaker
+  strictly smaller than the 1768 recorded above, so a green CI run is a weaker
   reading than that number. Every grade-3 result in this ledger was produced by
   a person starting a root session, since 2026-08-07 through
   `scripts/test/release-readiness-root.sh`, which batches every root-only suite
@@ -241,7 +241,7 @@ These are stated once here rather than repeated in every cell below.
 
 | Claim | Evidence | Command | Ceiling |
 |---|---|---|---|
-| A checkpoint captures the files an apply is about to change, and a rollback restores the bytes and modes it captured | `crates/hardener-state/tests/checkpoint_system.rs` (14 tests), `crates/hardener-state/src/manager/tests.rs` (48 tests), `crates/hardener-state/tests/signing_tests.rs` (11 tests), `scripts/test/verify-rollback.sh`, `scripts/test/differential-suite.sh` (a rollback and reload cycle read back through `sshd -T`), `scripts/test/full-test-suite.sh` (sections 12A and 12B, which read the audit tree and the services mask link back off a real filesystem after a rollback) | `cargo nextest run -p hardener-state --test checkpoint_system` | **Checkpoints are text-only.** Restore writes content through `String::from_utf8_lossy`, so a file with non-UTF-8 bytes cannot round-trip and no test asserts that it can. Non-root remote restore degrades to content-only, because the `chmod`, `chown` and `rm` that follow the write run without sudo; the content write itself uses `sudo tee`, so the two halves have different privilege requirements. Cross-host rollback is refused outright by comparing `host_key`. Account databases are captured metadata-only on purpose, which the `ContentAbsence` discriminant distinguishes from a read that failed, so a rollback that could not read what it was asked to no longer reports success. The oracles that re-read a system after a rollback are `scripts/test/verify-rollback.sh` and sections 12A and 12B of `scripts/test/full-test-suite.sh`, and every one of them is container-and-root only. The two full-test-suite sections need that suite's `--apply` flag as well, and 12A needs a container no earlier `--apply` run has touched, or it reports its reading void. The kernel arm of `scripts/test/verify-rollback.sh` reads a runtime `sysctl` value back only where `/proc/sys/net` is writable, which needs a container holding its own network namespace. Its only runner now passes `--private-network`, which is sufficient under `--pipe` (`--boot` is not required, measured 2026-08-08), and the arm was read green that day: seeded to 0, raised to 1 by the apply, back to 0 after the rollback. Where the namespace is absent the arm still skips, and the script exits 2 rather than 0 so a skip cannot be recorded as a reading. |
+| A checkpoint captures the files an apply is about to change, and a rollback restores the bytes and modes it captured | `crates/hardener-state/tests/checkpoint_system.rs` (14 tests), `crates/hardener-state/src/manager/tests.rs` (48 tests), `crates/hardener-state/tests/signing_tests.rs` (11 tests), `scripts/test/verify-rollback.sh`, `scripts/test/differential-suite.sh` (a rollback and reload cycle read back through `sshd -T`), `scripts/test/full-test-suite.sh` (sections 12A and 12B, which read the audit tree and the services mask link back off a real filesystem after a rollback) | `cargo nextest run -p hardener-state --test checkpoint_system` | **Checkpoints are text-only.** Restore writes content through `String::from_utf8_lossy`, so a file with non-UTF-8 bytes cannot round-trip and no test asserts that it can. Non-root remote restore degrades to content-only, because the `chmod`, `chown` and `rm` that follow the write run without sudo; the content write itself uses `sudo tee`, so the two halves have different privilege requirements. Cross-host rollback is refused outright by comparing `host_key`. Account databases are captured metadata-only on purpose, which the `ContentAbsence` discriminant distinguishes from a read that failed, so a rollback that could not read what it was asked to no longer reports success. The oracles that re-read a system after a rollback are `scripts/test/verify-rollback.sh` and sections 12A and 12B of `scripts/test/full-test-suite.sh`, and every one of them is container-and-root only. The two full-test-suite sections need that suite's `--apply` flag as well, and 12A needs a container no earlier `--apply` run has touched, or it reports its reading void. The kernel arm of `scripts/test/verify-rollback.sh` reads a runtime `sysctl` value back only where `/proc/sys/net` is writable, which needs a container holding its own network namespace. Its only runner now passes `--private-network`, which is sufficient under `--pipe` (`--boot` is not required, measured 2026-08-08), and the arm was read green that day: seeded to 0, raised to 1 by the apply, back to 0 after the rollback. Where the namespace is absent the arm still skips, and the script exits 2 rather than 0 so a skip cannot be recorded as a reading. **A rollback now reports what it left diverged from the configuration it restored, for two of the eight plugins.** `RollbackResult.rollback_divergences` carries a row when kernel-hardening's sysctl or firewall-hardening's ufw still disagrees with the restored state after the reload, and a row when either probe could not answer at all; the other six plugins are asked nothing, because no probe has been written for them. This is reporting only: no rollback behaviour, exit code or `rollback_success` value changed to add it. `scripts/test/verify-rollback.sh` gained an eighth arm, TEST 8, asserting exactly this against a real container, and it has not yet run: the 21-of-21 reading above predates it, and the suite's new total is not yet known. |
 
 ### The compliance renderers
 

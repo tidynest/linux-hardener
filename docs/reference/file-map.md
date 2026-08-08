@@ -78,7 +78,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/state.rs` | Shared state initialisation (DB + signing key paths) | `get_checkpoint_manager()`, `get_audit_logger()`, `effective_user()` |
 | `src/commands/privilege.rs` | Shared privilege probe for mutating commands; asks the executor session (`id -u` / `sudo -n`) so `--ssh` targets gate correctly | `is_privileged()` |
 | `src/cli/tests.rs` | Unit tests for `src/cli.rs`, 39 tests of argument parsing | Test-only; `super` resolves to `crate::cli`, so its imports carried across unchanged |
-| `src/output/tests.rs` | Unit tests for `src/output.rs`, 28 tests of the renderers | Test-only; `super` resolves to `crate::output`, so its imports carried across unchanged |
+| `src/output/tests.rs` | Unit tests for `src/output.rs`, 30 tests of the renderers | Test-only; `super` resolves to `crate::output`, so its imports carried across unchanged |
 | `src/ssh_config/tests.rs` | Unit tests for `src/ssh_config.rs` | Test-only; `super` resolves to `crate::ssh_config`, so its imports carried across unchanged |
 | `src/commands/scan/tests.rs` | Unit tests for `src/commands/scan.rs` | Test-only; `super` resolves to `crate::commands::scan`, so its imports carried across unchanged |
 | `src/commands/plugin_filter/tests.rs` | Unit tests for `src/commands/plugin_filter.rs` | Test-only; `super` resolves to `crate::commands::plugin_filter`, so its imports carried across unchanged |
@@ -87,7 +87,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/systemd/tests.rs` | Unit tests for `src/commands/systemd.rs` | Test-only; `super` resolves to `crate::commands::systemd`. The four verbs shell out to `systemctl`, so what is covered is the decision each makes about what to report |
 | `src/commands/report_wizard/tests.rs` | Unit tests for `src/commands/report_wizard.rs` | Test-only; `super` resolves to `crate::commands::report_wizard`, so its imports carried across unchanged |
 | `src/commands/history/tests.rs` | Unit tests for `src/commands/history.rs` | Test-only; `super` resolves to `crate::commands::history`, so its imports carried across unchanged |
-| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 70 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
+| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 74 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
 | `src/commands/checkpoint/tests.rs` | Unit tests for `src/commands/checkpoint.rs` | Test-only; `super` resolves to `crate::commands::checkpoint`, so its imports carried across unchanged |
 | `src/commands/state/tests.rs` | Unit tests for `src/commands/state.rs` | Test-only; `super` resolves to `crate::commands::state`, so its imports carried across unchanged |
 | `src/commands/privilege/tests.rs` | Unit tests for `src/commands/privilege.rs` | Test-only; `super` resolves to `crate::commands::privilege`, so its imports carried across unchanged |
@@ -169,6 +169,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/macros.rs` | Plugin definition macro | `define_plugin!` |
 | `src/scan_outcome.rs` | Turns per-plugin scan results into the flat lists a compliance report consumes. A plugin that contributed no evidence gets an entry carrying its whole declared coverage, so its controls route to Manual Review instead of passing on the silence its own absence caused; a run that could not enumerate its plugins at all gets one carrying the engine's whole coverage, for the same reason at the only scope left. Shared by the CLI and the desktop, beside the coverage table it depends on | `Unassessed`, `flatten_scans()`, `flatten_persisted_scans()`, `failed_scan()`, `unassessed_check()` |
 | `src/strictness.rs` | The one definition of which direction counts as stricter for a configuration value, shared by the pam, ssh and kernel plugins. Comparing a host's value against the baseline for equality has no direction, so a stricter host reads as violating and apply writes the baseline over it; every variant here carries a direction, and there is deliberately no equality variant to give a directive added later. Also the single place an operator's directive override is clamped, so an override can tighten a target but never relax it | `Strictness` (`AtMost`, `AtLeast`, `NonZeroAtMost`, `Ranked`), `clamp_target()`, `violated_by()`, `resolved_target()` |
+| `src/shell_config.rs` | Reads the last value a key is assigned in a shell-sourced configuration file, the format ufw's own init scripts and defaults files use: `.`-sourced by `ufw-init-functions`, so the last assignment wins and a commented-out line is not an assignment at all. Shared by the firewall plugin's ufw backend and its rollback divergence probe | `shell_value()` |
 
 ### Individual Plugins
 
@@ -179,10 +180,12 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/ssh/include.rs` | Network | Resolves `Include` directives in sshd's own order, so scan reports the value sshd will actually use and names the file supplying it. sshd takes the **first** value it obtains and distributions put the Include above everything this tool writes, so a drop-in silently won while the tool reported its own write |
 | `src/kernel/mod.rs` | Kernel | ASLR, kptr_restrict, dmesg_restrict, ptrace_scope, suid_dumpable, rp_filter, tcp_syncookies |
 | `src/kernel/persistence.rs` | Kernel | Reports a managed parameter that a file applied after `99-hardener.conf` sets looser than its target, so hardening that will not survive the next reboot is named rather than assumed to hold. Report-only; the apply writes nothing for it | `procfs_key()`, `boot_persistence()` |
+| `src/kernel/divergence.rs` | Kernel | What a kernel rollback left running that its restored files do not name (#138). After the rollback's `sysctl --system`, compares each managed parameter's running value against every surviving configuration file; where nothing names it, judged by strictness against the plugin's own baseline rather than by an equality this path has no `PluginConfig` to check against. An unreadable `/proc/sys` entry and an unresolved configuration source are each reported `Unverifiable` rather than guessed at, and every unresolved source gets a row of its own naming the file. Report-only; writes nothing | `sysctl_divergences()` |
 | `src/firewall/mod.rs` | Network | Firewall enabled, baseline rules |
 | `src/firewall/nftables.rs` | Network | nftables backend |
 | `src/firewall/firewalld.rs` | Network | firewalld backend |
 | `src/firewall/ufw.rs` | Network | UFW backend |
+| `src/firewall/divergence.rs` | Network | What a firewall rollback left enforcing that its restored files do not ask for (#139). ufw only: reads `ufw status` itself after the rollback's reload and classifies on its status line exactly, against the restored `ENABLED` flag in `/etc/ufw/ufw.conf`. firewalld restores a directory its own daemon re-reads, so the reload already converges it; nftables is #97, closed by #106. Report-only; writes nothing | `firewall_divergences()` |
 | `src/pam/mod.rs` | Auth | Password complexity, aging, lockout |
 | `src/pam/login_defs.rs` | Auth | Carries a `/usr/etc` configuration file into `/etc` before the managed directives are edited into it, with the vendor file's own permissions rather than the temporary file's | `mode_for_copy_of()` |
 | `src/pam/layer_drift.rs` | Auth | Reports the keys an `/etc` file hides from its `/usr/etc` counterpart, for every layered file the plugin reads rather than for `login.defs` alone | `LAYERED_CONFS`, `masked_keys()`, `masked_keys_finding()` |
@@ -196,6 +199,9 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/firewall/tests.rs` | Tests | Unit tests for `src/firewall/mod.rs`, 54 of them | Test-only; `super` resolves to `crate::firewall` |
 | `src/kernel/tests.rs` | Tests | Unit tests for `src/kernel/mod.rs` | Test-only; `super` resolves to `crate::kernel` |
 | `src/kernel/persistence/tests.rs` | Tests | Unit tests for `src/kernel/persistence.rs` | Test-only; `super` resolves to `crate::kernel::persistence` |
+| `src/kernel/divergence/tests.rs` | Tests | Unit tests for `src/kernel/divergence.rs` | Test-only; `super` resolves to `crate::kernel::divergence` |
+| `src/firewall/divergence/tests.rs` | Tests | Unit tests for `src/firewall/divergence.rs` | Test-only; `super` resolves to `crate::firewall::divergence` |
+| `src/shell_config/tests.rs` | Tests | Unit tests for `src/shell_config.rs` | Test-only; `super` resolves to `crate::shell_config` |
 | `src/mac/tests.rs` | Tests | Unit tests for `src/mac/mod.rs` | Test-only; `super` resolves to `crate::mac` |
 | `src/pam/tests.rs` | Tests | Unit tests for `src/pam/mod.rs` | Test-only; `super` resolves to `crate::pam` |
 | `src/pam/layer_drift/tests.rs` | Tests | Unit tests for `src/pam/layer_drift.rs` | Test-only; `super` resolves to `crate::pam::layer_drift` |
@@ -817,7 +823,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/test/root-test-suite.sh` | 36 root-level privilege tests |
 | `scripts/test/manual-verification-test.sh` | Interactive verification tests |
 | `scripts/containers/create-container.sh` | systemd-nspawn test containers for all six distros (`arch`, `debian`, `ubuntu`, `fedora`, `rhel`, `opensuse`) |
-| `scripts/test/verify-rollback.sh` | Rollback verification for nspawn containers, in seven tests: `sysctl.d` config file content, `sshd_config` backup and content restoration, directory mode restoration, `rollback --format json` producing a valid `RollbackResult`, multi-plugin checkpoint ordering, where two applies leave two checkpoints and a selective rollback has to be paired with its own apply rather than with whichever checkpoint is newest, and a pam directive (`PASS_MAX_DAYS` in `/etc/login.defs`, seeded to shadow's 99999 so the plugin's `AtMost 90` has to move it) read back by value and by file hash after the rollback, and the firewall, asked of whichever backend the plugin selects (ufw, nftables or firewalld) rather than an assumed one, covering both that backend's configuration and what the host is actually enforcing. The firewall arm asserts that a rollback never leaves the host less protected than it found it, which is the plugin's documented rule, rather than that the live state returns: where it does not return, the divergence is reported and tracked as #139. The first of those also reads one runtime kernel parameter, gated on a measured write probe because `/proc/sys` is the host's and read-only without a private network namespace; its runner passes `--private-network`, which makes the arm askable, and where it is absent the arm reports a named skip rather than a pass and the script exits 2 rather than 0 |
+| `scripts/test/verify-rollback.sh` | Rollback verification for nspawn containers, in eight tests: `sysctl.d` config file content, `sshd_config` backup and content restoration, directory mode restoration, `rollback --format json` producing a valid `RollbackResult`, multi-plugin checkpoint ordering, where two applies leave two checkpoints and a selective rollback has to be paired with its own apply rather than with whichever checkpoint is newest, and a pam directive (`PASS_MAX_DAYS` in `/etc/login.defs`, seeded to shadow's 99999 so the plugin's `AtMost 90` has to move it) read back by value and by file hash after the rollback, and the firewall, asked of whichever backend the plugin selects (ufw, nftables or firewalld) rather than an assumed one, covering both that backend's configuration and what the host is actually enforcing. The firewall arm asserts that a rollback never leaves the host less protected than it found it, which is the plugin's documented rule, rather than that the live state returns: where it does not return, that is #139, and TEST 8 asserts that the rollback's own JSON now reports it as a divergence rather than staying silent. TEST 8 removes TEST 1's baseline drop-in specifically so a surviving file does not name the seeded kernel parameter, then requires `rollback_divergences` to carry it as `Diverged`; it has not yet been run against a real container. The first of those also reads one runtime kernel parameter, gated on a measured write probe because `/proc/sys` is the host's and read-only without a private network namespace; its runner passes `--private-network`, which makes the arm askable, and where it is absent the arm reports a named skip rather than a pass and the script exits 2 rather than 0 |
 | `scripts/test/release-readiness-root.sh` | One root invocation for every suite an unprivileged session cannot start: the polkit matrix, then the cross-distro, differential, packaging and Web UI suites and the rollback readback. All six containers are destroyed and rebuilt before each suite that runs inside one, and the run refuses to start unless the musl binary matches the working tree by version, commit and modification time |
 
 ---
@@ -902,14 +908,14 @@ purpose-named directories.
 Unit tests sit beside the source file they exercise, in a `#[cfg(test)]` module of their own file rather than inside it: `foo.rs` is accompanied by `foo/tests.rs`, and a `foo/mod.rs` by `foo/tests.rs` in the directory it already owns. They are still child modules, so they still read private items; only their location changed. Integration tests, which see the public API only, remain in each crate's `tests/` directory. The **Unit Tests** column below names the source files under test, not the files the tests live in.
 
 The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
-tree on **2026-08-07**, not a run total: a run also executes doctests and, for
+tree on **2026-08-08**, not a run total: a run also executes doctests and, for
 `hardener-ui`, `wasm_bindgen_test` cases that no annotation count here covers.
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 1663. The eleventh
+The table covers the ten crates under `crates/` and sums to 1704. The eleventh
 workspace member, `src-tauri`, carries 104 more, which is why the tree total the
-evidence ledger records is 1767 and not this table's sum.
+evidence ledger records is 1808 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -918,11 +924,11 @@ evidence ledger records is 1767 and not this table's sum.
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 116 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 104 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and eleven of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 233 |
-| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, and all eight plugin modules (`ssh/dropin.rs` and `ssh/include.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 693 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and eleven of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 239 |
+| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs` and `firewall/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 715 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 155 |
-| hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 56 |
-| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 101 |
+| hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 60 |
+| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 108 |
 
 ### Executor and Mock Test Files
 

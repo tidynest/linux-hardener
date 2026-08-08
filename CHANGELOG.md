@@ -435,6 +435,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still enforcing, so a reboot can change the posture with nothing having been
   asked.
 
+- **A rollback now reports what it knowingly left diverged from the
+  configuration it restored** (#138, #139). `RollbackResult` gained
+  `rollback_divergences`, one row per subject a plugin's own subsystem was
+  asked about after its reload: `DivergenceState::Diverged` for a measured
+  disagreement, `Unverifiable` for a probe that could not answer, and no third
+  state standing for "converged", because an empty vector already carries that
+  meaning. The kernel probe compares each managed `/proc/sys` value against
+  every surviving configuration file after `sysctl --system`; where nothing
+  names a parameter, it is diverged only if the running value is at least as
+  strict as the plugin's own baseline, judged by `Strictness::violated_by`
+  rather than by an equality this path has no `PluginConfig` to check against.
+  An unreadable `/proc/sys` entry and an unresolved configuration source, a
+  glob-assigning file or an unreadable drop-in, are each `Unverifiable`, and
+  every unresolved source gets a row of its own naming the file. The firewall
+  probe is ufw only: it reads `ufw status` itself and classifies on the status
+  line exactly, enforcing against `ENABLED=no` in `/etc/ufw/ufw.conf` or the
+  reverse. firewalld's restored directory is re-read by its own daemon, which
+  the reload already converges; nftables was the neighbouring #97, closed
+  separately by #106. The CLI, the GUI rollback modal and the fleet summary all
+  render the new rows, the fleet summary as two counts, `diverged` and
+  `unverifiable`, kept apart because one is a measurement and the other is its
+  absence. **This is reporting only.** No rollback behaviour, exit code or
+  `rollback_success` value changed to add it, and the other six plugins are
+  asked nothing, because no probe has been written for them, not because
+  nothing there could diverge. `scripts/test/verify-rollback.sh` gained an
+  eighth arm, TEST 8, which removes TEST 1's own baseline-drop-in workaround so
+  a surviving file does not name the seeded parameter, then requires the
+  rollback's own JSON to carry the resulting row. **That arm has not yet run
+  against a real container**, so the count this adds to the suite's previous
+  21 of 21 is not stated here, and neither issue is closed by this change.
+
 - **The mac plugin's rollback is recorded as a ceiling rather than covered.**
   Measured rather than assumed, after three "cannot" claims fell over the same
   day: the container has no AppArmor or SELinux tooling, no

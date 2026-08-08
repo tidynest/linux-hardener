@@ -123,6 +123,29 @@ readback added the same day. A third run the same day added the firewall arm and
 passed 21. **Three dated runs rather than a habit**: nothing runs this without a
 person.
 
+**A rollback can now say what it left diverged, and that capability is itself
+unproven by a container run.** Two of the eight plugins, kernel and firewall,
+ask their own subsystem after the reload whether the running host still
+disagrees with what was restored: a managed sysctl that no surviving file
+names, and a `ufw` still enforcing over a restored `/etc/ufw/ufw.conf` that says
+`ENABLED=no`, or the reverse. `RollbackResult.rollback_divergences` carries one
+row per subject a probe examined, and distinguishes a measured disagreement
+(`Diverged`) from a probe that could not answer at all (`Unverifiable`), so an
+empty vector means everything checkable came back rather than that nobody
+looked. The CLI, the GUI rollback modal and the fleet summary all render it,
+the fleet summary as two separate counts. **This is reporting, not
+reconciliation.** No rollback behaviour, exit code or `rollback_success` value
+changed to add it: nothing is restarted, stopped or re-enabled because of what
+the probe found. **The other six plugins are asked nothing**, because no probe
+has been written for them, not because nothing there could diverge.
+`scripts/test/verify-rollback.sh` gained an eighth arm, TEST 8, which removes
+TEST 1's own baseline-drop-in workaround so that a surviving file does not name
+the seeded parameter, then requires the rollback's own JSON to carry it as
+`Diverged`. **That arm has never run.** The three dated readings above, most
+recently 21 of 21 on 2026-08-08, all predate it. The suite has not been rerun
+since TEST 8 was added, so its new total is not stated here rather than
+guessed.
+
 That container must be a fresh one, and the runner rebuilds it for exactly that
 reason. Run by hand against a container an earlier run has finished with, the
 suite reports three failures that are all one artefact: the pre-apply state it
