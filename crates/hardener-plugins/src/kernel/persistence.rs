@@ -223,9 +223,19 @@ fn unchecked_persistence(path: &str, reason: String, needs_privilege: bool) -> U
     }
 }
 
-/// Every `sysctl.d` drop-in that sorts after this tool's file, in the order
-/// `systemd-sysctl` applies them.
-async fn later_dropins(ctx: &Context) -> (Vec<LaterFile>, Vec<UncheckedCheck>) {
+/// Which drop-ins a caller wants read.
+///
+/// The scan asks which files beat this tool's own, so it filters by name. A
+/// rollback probe asks whether anything at all still names a parameter, and
+/// this tool's file is gone by then, so it filters by nothing.
+pub(super) enum DropinScope {
+    AfterOurs,
+    All,
+}
+
+/// Every `sysctl.d` drop-in `scope` selects, in the order `systemd-sysctl`
+/// applies them.
+async fn dropins(ctx: &Context, scope: DropinScope) -> (Vec<LaterFile>, Vec<UncheckedCheck>) {
     // An empty name here would sort before every drop-in on the host and turn
     // the whole of `sysctl.d` into findings, so this is asserted rather than
     // defaulted: it is this tool's own constant.
@@ -257,9 +267,14 @@ async fn later_dropins(ctx: &Context) -> (Vec<LaterFile>, Vec<UncheckedCheck>) {
             let Some(name) = entry.file_name().and_then(|name| name.to_str()) else {
                 continue;
             };
-            // Only `.conf` is read, and only a name sorting strictly after this
-            // tool's own beats it.
-            if !name.ends_with(".conf") || name <= ours {
+            // Only `.conf` is read, and a scan wants only a name sorting
+            // strictly after this tool's own; a rollback probe wants every
+            // surviving name.
+            let beats_ours = match scope {
+                DropinScope::AfterOurs => name > ours,
+                DropinScope::All => true,
+            };
+            if !name.ends_with(".conf") || !beats_ours {
                 continue;
             }
             // Highest-precedence directory first, so the first spelling of a
@@ -452,6 +467,18 @@ fn unchecked_glob(file: &LaterFile) -> UncheckedCheck {
     )
 }
 
+/// The value each parameter ends up with, from a set of files already in
+/// application order, later files winning.
+fn merge_effective(ordered: &[LaterFile]) -> HashMap<String, (&LaterFile, String)> {
+    let mut effective = HashMap::new();
+    for file in ordered {
+        for (key, value) in &file.values.values {
+            effective.insert(key.clone(), (file, value.clone()));
+        }
+    }
+    effective
+}
+
 /// Every managed parameter another file decides after this tool's drop-in, and
 /// everything about that question this scan could not answer.
 ///
@@ -468,7 +495,7 @@ pub(super) async fn boot_persistence(
     ctx: &Context,
     config: &PluginConfig,
 ) -> (Vec<Finding>, Vec<UncheckedCheck>) {
-    let (dropins, mut unchecked) = later_dropins(ctx).await;
+    let (dropins_read, mut unchecked) = dropins(ctx, DropinScope::AfterOurs).await;
     let (ufw, ufw_unchecked) = ufw_applied_file(ctx).await;
     unchecked.extend(ufw_unchecked);
 
@@ -476,13 +503,8 @@ pub(super) async fn boot_persistence(
     // after every drop-in whatever those are called. Folding the two mechanisms
     // into one ordered application is what stops a drop-in being reported for a
     // value ufw then sets back, which the host would never actually run.
-    let mut effective: HashMap<String, (&LaterFile, String)> = HashMap::new();
-    let ordered: Vec<LaterFile> = dropins.into_iter().chain(ufw).collect();
-    for file in &ordered {
-        for (key, value) in &file.values.values {
-            effective.insert(key.clone(), (file, value.clone()));
-        }
-    }
+    let ordered: Vec<LaterFile> = dropins_read.into_iter().chain(ufw).collect();
+    let effective = merge_effective(&ordered);
 
     let mut findings = Vec::new();
     for parameter in KERNEL_PARAMS {
@@ -503,6 +525,52 @@ pub(super) async fn boot_persistence(
             .map(unchecked_glob),
     );
     (findings, unchecked)
+}
+
+/// What the configuration surviving a rollback assigns, and which files this
+/// reader could not fully resolve.
+///
+/// The unresolved list is not a detail: a glob-assigning file may or may not
+/// name a parameter, and reporting it as "no file names this" would turn an
+/// unanswered question into a confident claim.
+pub(super) struct EffectiveBoot {
+    /// Assignments keyed by [`procfs_key`].
+    pub(super) values: BTreeMap<String, String>,
+    /// Paths whose assignments this reader could not resolve, and paths it
+    /// could not read at all, each with the reason.
+    pub(super) unresolved: Vec<String>,
+}
+
+pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> EffectiveBoot {
+    let (dropins_read, unchecked) = dropins(ctx, scope).await;
+    let (ufw, ufw_unchecked) = ufw_applied_file(ctx).await;
+    // ufw last, for the reason `boot_persistence` gives: its unit is ordered
+    // after systemd-sysctl, so it lands after every drop-in.
+    let ordered: Vec<LaterFile> = dropins_read.into_iter().chain(ufw).collect();
+
+    let mut values = BTreeMap::new();
+    for (key, (_, value)) in merge_effective(&ordered) {
+        values.insert(key, value);
+    }
+
+    let mut unresolved: Vec<String> = ordered
+        .iter()
+        .filter(|file| file.values.globbed)
+        .map(|file| {
+            format!(
+                "{} assigns sysctls through glob patterns, which this scan does not resolve",
+                file.path
+            )
+        })
+        .collect();
+    unresolved.extend(
+        unchecked
+            .iter()
+            .chain(ufw_unchecked.iter())
+            .map(|u| u.unchecked_reason.clone()),
+    );
+
+    EffectiveBoot { values, unresolved }
 }
 
 #[cfg(test)]

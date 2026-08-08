@@ -27,6 +27,7 @@ use hardener_core::{
 use std::{path::Path, time::Instant};
 use tracing::{info, warn};
 
+mod divergence;
 mod persistence;
 
 /// Kernel hardening plugin implementing sysctl parameter management.
@@ -1302,6 +1303,14 @@ impl HardeningPlugin for KernelHardeningPlugin {
         }
 
         Ok(Some("sysctl --system".to_string()))
+    }
+
+    async fn divergences_after_rollback(
+        &self,
+        ctx: &Context,
+        _restored: &[std::path::PathBuf],
+    ) -> Vec<hardener_types::RollbackDivergence> {
+        divergence::sysctl_divergences(ctx).await
     }
 
     /// Validates that kernel parameters can be applied (dry-run).
