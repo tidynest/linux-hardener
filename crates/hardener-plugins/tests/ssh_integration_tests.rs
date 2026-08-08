@@ -899,7 +899,7 @@ async fn a_live_apply_leaves_the_administrators_ruleset_loadable() {
     // Step 6. Roll back, over the same independent connection, driving the
     // rollback exactly the way `hardener rollback` does: restore the
     // checkpointed files, then hand the restored paths to
-    // `reload_plugins_after_rollback` so the firewall plugin re-reads them
+    // `reconcile_plugins_after_rollback` so the firewall plugin re-reads them
     // (see `reload_restored_paths` in
     // `crates/hardener-cli/src/commands/checkpoint.rs`, which this mirrors
     // because that function is `pub(crate)` to the CLI crate and
@@ -933,9 +933,13 @@ async fn a_live_apply_leaves_the_administrators_ruleset_loadable() {
         .map(|file| std::path::PathBuf::from(&file.restore_path))
         .collect();
     let registry = hardener_plugins::create_plugin_registry();
-    rollback_result.rollback_reloads =
-        hardener_plugins::reload_plugins_after_rollback(&rollback_ctx, &registry, &restored_paths)
-            .await;
+    rollback_result.rollback_reloads = hardener_plugins::reconcile_plugins_after_rollback(
+        &rollback_ctx,
+        &registry,
+        &restored_paths,
+    )
+    .await
+    .reloads;
     assert!(
         rollback_result.reloads_ok(),
         "every reload a rollback attempts must succeed: {:?}",

@@ -10,11 +10,13 @@ use async_trait::async_trait;
 use hardener_common::error::Result;
 #[cfg(feature = "system")]
 use std::path::Path;
+#[cfg(feature = "system")]
+use std::path::PathBuf;
 
 // Re-export types from hardener-types for backwards compatibility
 pub use hardener_types::{
-    ApplyResult, Change, ChangeType, ExceptionOutcome, Finding, PluginMetadata, ScanResult,
-    UncheckedBlocker, UncheckedCheck, ValidationIssue, ValidationReport,
+    ApplyResult, Change, ChangeType, ExceptionOutcome, Finding, PluginMetadata, RollbackDivergence,
+    ScanResult, UncheckedBlocker, UncheckedCheck, ValidationIssue, ValidationReport,
 };
 
 // Also re-export commonly used types from hardener-common
@@ -92,6 +94,27 @@ pub trait HardeningPlugin: Send + Sync {
     /// rollback output.
     async fn reload_after_rollback(&self, _ctx: &Context) -> Result<Option<String>> {
         Ok(None)
+    }
+
+    /// What this plugin's subsystem still disagrees with, after the restore
+    /// and its own reload have both run.
+    ///
+    /// Asked only of plugins a restored path matched, and asked after the
+    /// reload, because a divergence is by definition what the reload could
+    /// not fix. Asked independently of whether there was anything to reload:
+    /// a plugin can have nothing to reload and diverge anyway, which is
+    /// exactly the sysctl case.
+    ///
+    /// **Reporting only.** An implementation must not change system state
+    /// here. It returns a `Vec` rather than a `Result` on purpose: a probe
+    /// that cannot answer says so with an `Unverifiable` row, and a fallible
+    /// signature would give it a second way to say nothing.
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[PathBuf],
+    ) -> Vec<RollbackDivergence> {
+        Vec::new()
     }
 
     /// Validates configuration without applying changes (dry-run).

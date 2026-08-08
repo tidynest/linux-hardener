@@ -226,7 +226,7 @@ pub async fn rollback(
 /// Collects the paths that actually came back (a partially restored
 /// checkpoint still offers up whatever it managed), asks their plugins to
 /// reload, and writes the outcome onto `result`. A checkpoint that restored
-/// nothing is left alone rather than dispatched: `reload_plugins_after_rollback`
+/// nothing is left alone rather than dispatched: `reconcile_plugins_after_rollback`
 /// still records a `plugin-registry` failure row when the registry cannot be
 /// listed, which would otherwise turn a clean no-op into a reported reload
 /// failure. Shared by the local and fleet rollback paths so this
@@ -245,8 +245,10 @@ pub(crate) async fn reload_restored_paths(
     if restored.is_empty() {
         return;
     }
-    result.rollback_reloads =
-        hardener_plugins::reload_plugins_after_rollback(ctx, registry, &restored).await;
+    let reconciled =
+        hardener_plugins::reconcile_plugins_after_rollback(ctx, registry, &restored).await;
+    result.rollback_reloads = reconciled.reloads;
+    result.rollback_divergences = reconciled.divergences;
 }
 
 /// Which half of a rollback failed, so the operator is told the one that

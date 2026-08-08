@@ -263,12 +263,27 @@ fn coverage_table() -> [(&'static str, Vec<hardener_common::types::ComplianceMap
     ]
 }
 
-/// Reloads every plugin whose configuration a rollback just restored.
+/// What one rollback's reconciliation produced: what came back, and what did
+/// not.
+pub struct RollbackReconciliation {
+    /// Per-plugin reload rows, in registry order.
+    pub reloads: Vec<hardener_types::ReloadResult>,
+    /// What the reloads could not fix, and what could not be checked.
+    pub divergences: Vec<hardener_types::RollbackDivergence>,
+}
+
+/// Reloads every plugin whose configuration a rollback just restored, then
+/// asks each of them what is still diverged.
 ///
 /// Each plugin is asked once, however many of its paths were restored, and a
 /// plugin matching nothing is not asked at all. A plugin that reports there
-/// was nothing to reload produces no result, so the rows an operator reads are
-/// the reloads that actually happened.
+/// was nothing to reload produces no reload row, so the rows an operator
+/// reads are the reloads that actually happened. It is still asked for
+/// divergences: the two questions are independent, and a plugin with nothing
+/// to reload can diverge anyway.
+///
+/// **Order is fixed: reload first, probe second.** Probing before the reload
+/// would report every restored setting as diverged.
 ///
 /// Failures are recorded rather than propagated: one subsystem refusing to
 /// come back must not hide what the others did. The same rule covers the
@@ -276,44 +291,58 @@ fn coverage_table() -> [(&'static str, Vec<hardener_common::types::ComplianceMap
 /// listing named but `get` could not retrieve, is recorded as a failed
 /// reload rather than silently dropped. See `plugins_or_reload_failure` and
 /// `plugin_or_reload_failure`.
-pub async fn reload_plugins_after_rollback(
+pub async fn reconcile_plugins_after_rollback(
     ctx: &hardener_core::Context,
     registry: &hardener_core::PluginRegistry,
     restored: &[std::path::PathBuf],
-) -> Vec<hardener_types::ReloadResult> {
+) -> RollbackReconciliation {
     let metadata = match plugins_or_reload_failure(registry.list()) {
         Ok(metadata) => metadata,
-        Err(failure) => return vec![failure],
+        Err(failure) => {
+            return RollbackReconciliation {
+                reloads: vec![failure],
+                divergences: Vec::new(),
+            };
+        }
     };
 
-    let mut results = Vec::new();
+    let mut reloads = Vec::new();
+    let mut divergences = Vec::new();
 
     for meta in metadata {
         let plugin = match plugin_or_reload_failure(registry.get(&meta.plugin_id), &meta.plugin_id)
         {
             Ok(plugin) => plugin,
             Err(failure) => {
-                results.push(failure);
+                reloads.push(failure);
                 continue;
             }
         };
         if !restored.iter().any(|path| plugin.reloads_for_path(path)) {
             continue;
         }
-        let (action, success, error) = match plugin.reload_after_rollback(ctx).await {
-            Ok(None) => continue,
-            Ok(Some(action)) => (action, true, None),
-            Err(e) => ("reload failed".to_string(), false, Some(e.to_string())),
-        };
-        results.push(hardener_types::ReloadResult {
-            reload_plugin_id: meta.plugin_id.as_str().to_string(),
-            reload_action: action,
-            reload_success: success,
-            reload_error: error,
-        });
+        match plugin.reload_after_rollback(ctx).await {
+            Ok(None) => {}
+            Ok(Some(action)) => reloads.push(hardener_types::ReloadResult {
+                reload_plugin_id: meta.plugin_id.as_str().to_string(),
+                reload_action: action,
+                reload_success: true,
+                reload_error: None,
+            }),
+            Err(e) => reloads.push(hardener_types::ReloadResult {
+                reload_plugin_id: meta.plugin_id.as_str().to_string(),
+                reload_action: "reload failed".to_string(),
+                reload_success: false,
+                reload_error: Some(e.to_string()),
+            }),
+        }
+        divergences.extend(plugin.divergences_after_rollback(ctx, restored).await);
     }
 
-    results
+    RollbackReconciliation {
+        reloads,
+        divergences,
+    }
 }
 
 /// The registry's plugin listing, or the dispatch's own record that it could

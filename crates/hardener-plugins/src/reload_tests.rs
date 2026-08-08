@@ -4,7 +4,7 @@
 // inner attribute changes nothing about what is compiled. See `tests.rs` for
 // why the marker is here anyway.
 
-//! Unit tests for `reload_plugins_after_rollback`.
+//! Unit tests for `reconcile_plugins_after_rollback`.
 //!
 //! Four stub plugins exercise the dispatch on its own terms, independent of
 //! any real plugin's `scan`/`apply`/`validate`, which none of these tests
@@ -18,6 +18,7 @@ use hardener_core::plugin::{
     ApplyResult, HardeningPlugin, PluginMetadata, ScanResult, ValidationReport,
 };
 use hardener_core::{Context, PluginConfig, PluginRegistry};
+use hardener_types::{DivergenceState, RollbackDivergence};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -187,13 +188,110 @@ fn registry_with_alpha_and_beta() -> PluginRegistry {
     registry
 }
 
+/// A plugin that reloads nothing and diverges anyway. This is #138's shape:
+/// `reload_after_rollback` returning `Ok(None)` is `continue`d past by the
+/// dispatch, so a divergence carried on the reload's return value would have
+/// nowhere to live.
+struct SilentButDivergedPlugin;
+
+#[async_trait::async_trait]
+impl HardeningPlugin for SilentButDivergedPlugin {
+    fn metadata(&self) -> PluginMetadata {
+        stub_metadata("diverged-plugin")
+    }
+
+    fn dependencies(&self) -> Vec<PluginId> {
+        Vec::new()
+    }
+
+    async fn scan(&self, _ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
+        unreachable!("the dispatch never scans")
+    }
+
+    async fn apply(&self, _ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+        unreachable!("the dispatch never applies")
+    }
+
+    async fn validate(&self, _ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+        unreachable!("the dispatch never validates")
+    }
+
+    fn reloads_for_path(&self, path: &Path) -> bool {
+        path == Path::new("/etc/diverged.conf")
+    }
+
+    async fn reload_after_rollback(&self, _ctx: &Context) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[PathBuf],
+    ) -> Vec<RollbackDivergence> {
+        vec![RollbackDivergence {
+            divergence_plugin_id: "diverged-plugin".to_string(),
+            divergence_subject: "a subject".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "the running system disagrees".to_string(),
+        }]
+    }
+}
+
+/// One stub, registered the way `registry_with_alpha_and_beta` registers its
+/// two.
+fn registry_with_diverged() -> PluginRegistry {
+    let registry = PluginRegistry::new();
+    registry
+        .register(Box::new(SilentButDivergedPlugin))
+        .expect("the stub registers cleanly into an empty registry");
+    registry
+}
+
+/// The two questions are independent. A plugin with nothing to reload is
+/// still asked what it left diverged.
+#[tokio::test]
+async fn a_plugin_with_nothing_to_reload_is_still_asked_what_diverged() {
+    let registry = registry_with_diverged();
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+
+    let outcome =
+        reconcile_plugins_after_rollback(&ctx, &registry, &[PathBuf::from("/etc/diverged.conf")])
+            .await;
+
+    assert!(
+        outcome.reloads.is_empty(),
+        "nothing was reloaded, so no reload row is produced"
+    );
+    assert_eq!(
+        outcome.divergences.len(),
+        1,
+        "and the divergence is still reported"
+    );
+}
+
+/// A plugin no restored path matched is asked neither question.
+#[tokio::test]
+async fn an_unmatched_plugin_is_not_probed() {
+    let registry = registry_with_diverged();
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+
+    let outcome =
+        reconcile_plugins_after_rollback(&ctx, &registry, &[PathBuf::from("/etc/other.conf")])
+            .await;
+
+    assert!(outcome.divergences.is_empty());
+}
+
 #[tokio::test]
 async fn the_plugin_owning_a_restored_path_is_reloaded() {
     let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
     let registry = registry_with_alpha_and_beta();
     let restored = vec![PathBuf::from("/etc/alpha/config")];
 
-    let results = reload_plugins_after_rollback(&ctx, &registry, &restored).await;
+    let results = reconcile_plugins_after_rollback(&ctx, &registry, &restored)
+        .await
+        .reloads;
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].reload_plugin_id, "alpha");
@@ -207,7 +305,9 @@ async fn a_plugin_owning_no_restored_path_is_not_reloaded() {
     let registry = registry_with_alpha_and_beta();
     let restored = vec![PathBuf::from("/etc/alpha/config")];
 
-    let results = reload_plugins_after_rollback(&ctx, &registry, &restored).await;
+    let results = reconcile_plugins_after_rollback(&ctx, &registry, &restored)
+        .await
+        .reloads;
 
     assert!(
         results.iter().any(|r| r.reload_plugin_id == "alpha"),
@@ -229,7 +329,9 @@ async fn a_plugin_matching_three_restored_paths_reloads_once() {
         PathBuf::from("/etc/alpha/three"),
     ];
 
-    let results = reload_plugins_after_rollback(&ctx, &registry, &restored).await;
+    let results = reconcile_plugins_after_rollback(&ctx, &registry, &restored)
+        .await
+        .reloads;
 
     assert_eq!(results.len(), 1, "one reload per plugin, not per path");
 }
@@ -243,7 +345,9 @@ async fn a_failing_reload_is_recorded_rather_than_dropped() {
         .expect("failing registers cleanly into an empty registry");
     let restored = vec![PathBuf::from("/etc/failing/config")];
 
-    let results = reload_plugins_after_rollback(&ctx, &registry, &restored).await;
+    let results = reconcile_plugins_after_rollback(&ctx, &registry, &restored)
+        .await
+        .reloads;
 
     assert_eq!(results.len(), 1);
     assert!(!results[0].reload_success);
@@ -269,7 +373,9 @@ async fn a_plugin_with_nothing_to_reload_produces_no_row() {
         .expect("silent registers cleanly into an empty registry");
     let restored = vec![PathBuf::from("/etc/silent/config")];
 
-    let results = reload_plugins_after_rollback(&ctx, &registry, &restored).await;
+    let results = reconcile_plugins_after_rollback(&ctx, &registry, &restored)
+        .await
+        .reloads;
 
     assert!(results.is_empty());
 }
