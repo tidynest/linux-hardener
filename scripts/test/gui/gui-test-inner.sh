@@ -88,9 +88,45 @@ install_deps() {
         # libraries were Chromium's own dependencies, which zypper resolves.
         run_install zypper --non-interactive install -y \
             python3 chromium nodejs-default npm-default
+        # Fonts, in a transaction of their own. Leap 16's chromium package
+        # pulls none, and a browser with no font lays every glyph out at zero
+        # width: the DOM is complete, the accessibility tree carries the text,
+        # the icons draw, and every assertion on visible text fails as
+        # "hidden". Measured at 72 of 110 failing that way, against markup that
+        # was entirely correct. Separate because zypper abandons the whole
+        # transaction on one unresolvable name, and the packages above must not
+        # be hostage to a font name; the candidates are tried in turn for the
+        # same reason.
+        for font_package in dejavu-fonts google-noto-fonts noto-sans-fonts liberation-fonts; do
+            run_install zypper --non-interactive install -y "$font_package" && break
+        done
     else
         echo -e "${RED}[deps] Unknown distro: skipping package install${NC}"
     fi
+}
+
+# Refuse to run a suite that cannot draw a letter.
+#
+# This is a total check rather than a per-distribution one, and deliberately:
+# no distribution's package list names a font, they pass because Chromium's
+# dependencies happen to drag one in, and openSUSE was the first where that
+# stopped being true. A per-distribution check would only ever have covered the
+# distributions someone had already seen fail.
+#
+# Asked of the filesystem rather than through fc-list, which is fontconfig and
+# is itself a package that may be absent. Any font at all is enough: the suite
+# asserts that text is visible, not which typeface drew it.
+require_a_font() {
+    if [[ -n $(find /usr/share/fonts /usr/local/share/fonts -type f \
+        \( -name '*.ttf' -o -name '*.otf' -o -name '*.ttc' -o -name '*.pcf.gz' \) \
+        -print -quit 2>/dev/null) ]]; then
+        return 0
+    fi
+    echo -e "${RED}[deps] No font found under /usr/share/fonts.${NC}"
+    echo -e "${RED}       Chromium would lay every glyph out at zero width: the markup${NC}"
+    echo -e "${RED}       renders, the icons draw, and every assertion on visible text${NC}"
+    echo -e "${RED}       fails as 'hidden'. Install a font package for this distribution.${NC}"
+    exit 1
 }
 
 # =============================================================================
@@ -260,6 +296,7 @@ echo "╚═══════════════════════�
 echo ""
 
 install_deps
+require_a_font
 prepare_serve_dir
 start_http_server
 

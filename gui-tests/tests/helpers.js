@@ -34,9 +34,17 @@ async function loadApp(page, path = '/', query = '') {
  * The button text changes to "Scanning..." while in progress.
  */
 async function runScan(page) {
-  const btn = page.getByRole('button', { name: /Run.*Scan/i });
+  // The name matches both states on purpose. The button's accessible name is
+  // the very thing being waited on: it reads "Scanning..." mid-scan, so a
+  // locator written only for the resting name resolves to nothing at exactly
+  // the moment the wait matters, and Playwright reports a missing element
+  // rather than a pending one. The failure is a race, so it looks like a
+  // different bug on every machine: on a host where the mock settles before
+  // the first poll the test passes, and on a slower one it fails instantly
+  // with "element(s) not found" against a button plainly present in the
+  // accessibility tree.
+  const btn = page.getByRole('button', { name: /Run.*Scan|Scanning/i });
   await btn.click();
-  // Wait for scanning to complete (button text reverts from "Scanning...")
   await expect(btn).not.toHaveText(/Scanning/i, { timeout: 10000 });
 }
 

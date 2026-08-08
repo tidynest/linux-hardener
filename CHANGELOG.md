@@ -417,6 +417,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which was chosen over adding a finding because a declined finding changes no
   count the suite asserts.
 
+- **The GUI containers are checked for a font, and openSUSE is given one.** No
+  distribution's package list ever named a font; they passed because Chromium's
+  own dependencies happened to drag one in, and Leap 16 was the first where
+  that stopped being true. A browser with no font lays every glyph out at zero
+  width, which fails in a way that reads as anything but its cause: the markup
+  is complete, the accessibility tree carries every string, the SVG icons draw,
+  and only the assertions on **visible text** fail, as `hidden` against
+  elements the log shows resolving. Measured at 72 of 110, with the 38
+  survivors being the tests that assert attributes, counts and classes.
+  `require_a_font` now refuses to start the suite, asked of `/usr/share/fonts`
+  rather than through `fc-list`, which is itself a package that may be absent.
+  It is a **total** check and not a per-distribution one, because a
+  per-distribution check would only ever cover the distributions already seen
+  to fail. openSUSE's font install is a transaction of its own, since zypper
+  abandons the whole of one on a single unresolvable name.
+
+- **`runScan` waited on a locator its own click invalidated.** The helper found
+  the scan button by the accessible name `/Run.*Scan/i` and then waited for
+  that same locator's text to stop reading "Scanning...". The name is what
+  changes, so mid-scan the locator matched nothing and Playwright reported a
+  missing element rather than a pending one. Being a race it presented
+  differently on every machine, passing wherever the mock settled before the
+  first poll. The locator now matches both states.
+
 - **The GUI test runner refuses to run against a stale `dist/`.** Nothing in
   `run-gui-tests.sh` invokes `trunk`, so the containers serve whatever bundle is
   already sitting in `crates/hardener-ui/dist/`, and the script only ever
