@@ -1344,6 +1344,11 @@ pub enum RollbackStatus {
         failed: usize,
         #[serde(default)]
         reload_failed: usize,
+        /// How many divergences this host reported. A count only: it names no
+        /// exit code and no failure, because a divergence is something to
+        /// look at rather than something that went wrong.
+        #[serde(default)]
+        diverged: usize,
     },
     /// No matching checkpoint for the selected plugins on this host.
     NothingToDo,

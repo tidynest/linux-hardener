@@ -22,7 +22,7 @@ use hardener_scheduler::db::ScanFinding;
 use hardener_state::{ActionResult, ActionType, Checkpoint, CheckpointManager};
 use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
-use hardener_types::{ApplyOutcome, ApplyStatus, RollbackOutcome, RollbackStatus};
+use hardener_types::{ApplyOutcome, ApplyStatus, RollbackOutcome, RollbackResult, RollbackStatus};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1389,6 +1389,7 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                 restored,
                 failed,
                 reload_failed,
+                diverged,
             } => {
                 rolled_back += 1;
                 let status = if *failed > 0 {
@@ -1402,8 +1403,18 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                 // but whose plugin refused to reload them, and the operator
                 // needs to know which one they are looking at. The wording is
                 // the desktop's too, so it lives in `hardener-types`.
+                //
+                // The divergence note is a count, not a failure: it rides on
+                // the end of the same line rather than its own status, so a
+                // host worth a second look is still findable among twenty
+                // without reading as broken.
+                let note = match *diverged {
+                    0 => String::new(),
+                    1 => ", 1 divergence".to_string(),
+                    n => format!(", {n} divergences"),
+                };
                 let result = format!(
-                    "{restored} restored, {}",
+                    "{restored} restored, {}{note}",
                     hardener_types::rollback_failed_label(*failed, *reload_failed)
                 );
                 push_detail(&mut out, "result", &result);
@@ -1533,6 +1544,38 @@ fn classify_rollback_outcome(rollback_success: bool, reloads_ok: bool) -> (bool,
     }
 }
 
+/// Folds each restored checkpoint into the host's rollback status: how many
+/// came back cleanly, how many did not, how many restored but would not
+/// reload, and how many things the survivors still leave diverged from what
+/// they restore. `connect_failed` counts checkpoints whose restore call
+/// itself errored, before there was a `RollbackResult` to classify.
+///
+/// Pure, so a unit test drives it directly rather than staging a live SSH
+/// connection to exercise the same arithmetic. `classify_rollback_outcome`
+/// stays blind to divergence on purpose: the exit code only ever reads
+/// `failed`, and folding divergence into that function would put it one edit
+/// away from folding into the exit code too.
+fn rollback_status_for(results: &[RollbackResult], connect_failed: usize) -> RollbackStatus {
+    let mut restored = 0;
+    let mut failed = connect_failed;
+    let mut reload_failed = 0;
+    let mut diverged = 0;
+    for r in results {
+        let (r_restored, r_failed, r_reload_failed) =
+            classify_rollback_outcome(r.rollback_success, r.reloads_ok());
+        restored += usize::from(r_restored);
+        failed += usize::from(r_failed);
+        reload_failed += usize::from(r_reload_failed);
+        diverged += r.rollback_divergences.len();
+    }
+    RollbackStatus::RolledBack {
+        restored,
+        failed,
+        reload_failed,
+        diverged,
+    }
+}
+
 /// Connects to one host, probes privilege (execute path only), selects each
 /// plugin's latest pre-apply checkpoint, and restores them (or previews).
 async fn rollback_one(
@@ -1578,9 +1621,8 @@ async fn rollback_one(
         // depends on which checkpoint is being restored.
         let ctx = Context::with_executor(Arc::clone(&exec));
         let registry = hardener_plugins::create_plugin_registry();
-        let mut restored = 0;
-        let mut failed = 0;
-        let mut reload_failed = 0;
+        let mut results = Vec::with_capacity(selected.len());
+        let mut connect_failed = 0;
         for cp in &selected {
             match mgr.rollback(exec.as_ref(), &cp.checkpoint_id).await {
                 Ok(mut r) => {
@@ -1590,20 +1632,12 @@ async fn rollback_one(
                     // a partial restore's successful files still get offered
                     // to their plugin.
                     super::checkpoint::reload_restored_paths(&ctx, &registry, &mut r).await;
-                    let (r_restored, r_failed, r_reload_failed) =
-                        classify_rollback_outcome(r.rollback_success, r.reloads_ok());
-                    restored += usize::from(r_restored);
-                    failed += usize::from(r_failed);
-                    reload_failed += usize::from(r_reload_failed);
+                    results.push(r);
                 }
-                Err(_) => failed += 1,
+                Err(_) => connect_failed += 1,
             }
         }
-        RollbackStatus::RolledBack {
-            restored,
-            failed,
-            reload_failed,
-        }
+        rollback_status_for(&results, connect_failed)
     };
 
     RollbackOutcome {

@@ -20,7 +20,7 @@ use super::*;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity};
 use hardener_compliance::Scenario;
 use hardener_core::ValidationReport;
-use hardener_types::ExceptionOutcome;
+use hardener_types::{DivergenceState, ExceptionOutcome, RollbackDivergence};
 
 /// Every `batch` subcommand accepted the global `--config` flag and threw
 /// it away, so a fleet was assessed and hardened against whatever config
@@ -293,7 +293,8 @@ fn rollback_exit_code_follows_precedence() {
         rollback_exit_code(&[ro(RollbackStatus::RolledBack {
             restored: 2,
             failed: 0,
-            reload_failed: 0
+            reload_failed: 0,
+            diverged: 0
         })]),
         0
     );
@@ -301,7 +302,8 @@ fn rollback_exit_code_follows_precedence() {
         rollback_exit_code(&[ro(RollbackStatus::RolledBack {
             restored: 1,
             failed: 1,
-            reload_failed: 0
+            reload_failed: 0,
+            diverged: 0
         })]),
         1
     );
@@ -316,7 +318,8 @@ fn rollback_exit_code_follows_precedence() {
             ro(RollbackStatus::RolledBack {
                 restored: 0,
                 failed: 1,
-                reload_failed: 0
+                reload_failed: 0,
+                diverged: 0
             }),
             ro(RollbackStatus::Failed {
                 error: "x".to_string()
@@ -364,6 +367,7 @@ fn render_rollback_text_partial_and_nothing_to_do() {
             restored: 1,
             failed: 1,
             reload_failed: 0,
+            diverged: 0,
         }),
         ro(RollbackStatus::NothingToDo),
     ]);
@@ -397,6 +401,7 @@ fn render_rollback_text_names_a_reload_failure_separately_from_a_file_failure() 
         restored: 2,
         failed: 1,
         reload_failed: 0,
+        diverged: 0,
     })]);
     assert!(
         file_failure.contains("2 restored, 1 failed"),
@@ -411,6 +416,7 @@ fn render_rollback_text_names_a_reload_failure_separately_from_a_file_failure() 
         restored: 2,
         failed: 1,
         reload_failed: 1,
+        diverged: 0,
     })]);
     assert!(
         reload_failure.contains("2 restored, 1 failed") && reload_failure.contains("reload"),
@@ -446,6 +452,7 @@ fn render_rollback_json_tags_state() {
         restored: 2,
         failed: 0,
         reload_failed: 0,
+        diverged: 0,
     })]);
     assert!(json.contains("\"state\": \"rolledback\""), "json: {json}");
 }
@@ -1687,5 +1694,59 @@ fn a_fleet_verb_judges_a_path_against_the_document_its_format_selects() {
         OutputFormat::Text,
         "and the default selects text, which is what made `--output fleet.json` \
          a contradiction rather than a preference"
+    );
+}
+
+fn rollback_result_fixture() -> RollbackResult {
+    RollbackResult {
+        rollback_checkpoint_id: "cp-1".to_string(),
+        rollback_checkpoint_name: "before apply".to_string(),
+        rollback_success: true,
+        rollback_files: Vec::new(),
+        rollback_reloads: Vec::new(),
+        rollback_divergences: Vec::new(),
+    }
+}
+
+/// A fleet rollback names the hosts worth looking at. Without the count, an
+/// operator rolling back twenty hosts has no way to find the one that is
+/// still enforcing what they undid.
+#[test]
+fn a_hosts_divergences_reach_the_fleet_summary() {
+    let mut result = rollback_result_fixture();
+    result.rollback_divergences = vec![RollbackDivergence {
+        divergence_plugin_id: "firewall-hardening".to_string(),
+        divergence_subject: "ufw".to_string(),
+        divergence_state: DivergenceState::Diverged,
+        divergence_detail: "still enforcing".to_string(),
+    }];
+
+    let status = rollback_status_for(&[result], 0);
+
+    match status {
+        RollbackStatus::RolledBack { diverged, .. } => assert_eq!(diverged, 1),
+        other => panic!("expected RolledBack, got {other:?}"),
+    }
+}
+
+/// The count is a count and nothing more: it must not move the exit code.
+#[test]
+fn a_divergence_does_not_change_the_fleet_exit_code() {
+    let clean = RollbackStatus::RolledBack {
+        restored: 3,
+        failed: 0,
+        reload_failed: 0,
+        diverged: 0,
+    };
+    let diverged = RollbackStatus::RolledBack {
+        restored: 3,
+        failed: 0,
+        reload_failed: 0,
+        diverged: 2,
+    };
+
+    assert_eq!(
+        rollback_exit_code(&[ro(clean)]),
+        rollback_exit_code(&[ro(diverged)]),
     );
 }

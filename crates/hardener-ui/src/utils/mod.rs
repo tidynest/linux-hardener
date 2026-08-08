@@ -788,6 +788,7 @@ pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
             restored,
             failed,
             reload_failed,
+            ..
         } => {
             let mut cells = Vec::new();
             if *restored > 0 {
