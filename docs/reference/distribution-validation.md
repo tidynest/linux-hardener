@@ -955,6 +955,15 @@ across five, recorded under
 comparable: the specs were rewritten in between, so the two numbers count
 different tests rather than measuring growth.
 
+**Fedora alone has been re-read since, at 121 on 2026-08-09**, the suite having
+grown by the five `T-DIVG-*` tests that #143 added over the rollback modal's
+divergence section. That is deliberately not written into the table above: it is
+one distribution, and a six-distribution row carrying a one-distribution reading
+is the error this document exists to avoid. The other five stand at their
+2026-08-08 figures and have not been asked since. The tests added are
+distribution-independent, being a mock payload and a computed layout, so there
+is no reason to expect them to differ, and no reading says they do not.
+
 ### GUI Test Suite, 2026-08-08
 
 | Distribution | Tests run | Passed | Failed | Wall clock |
