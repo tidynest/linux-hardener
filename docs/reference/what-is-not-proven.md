@@ -101,6 +101,17 @@ source answered. The cost is real and is stated here rather than hidden: this
 row now depends on the runner declaring the truth, where before it depended only
 on the kernel.
 
+**Read green on five of six fixtures 2026-08-09**, the rows asked rather than
+declared unaskable, each reporting `/etc/selinux` unchanged across the apply.
+Arch was the sixth and went unasked for a different reason, which turned out to
+be a fault in the oracle rather than in the fixture: it required a
+configuration tree to already exist, on the reasoning that an untouched absence
+compares one absence with another. It does not. A plugin that CREATES
+`/etc/selinux/config` on a host with no `/etc/selinux` moves the digest from
+empty to non-empty and fails the row, and that is the likeliest way this plugin
+could misbehave. The condition is gone, so a host with no MAC configuration at
+all is now asked whether one appeared.
+
 **The kernel reading in that script can now fail, and its runtime half is asked
 only where a container permits the question.** Both halves used to be
 unfalsifiable. The file half recorded an apply that wrote no

@@ -1344,7 +1344,7 @@ virtual machine and is issue #18, not a gap in this suite.
 It needs a container that has never been hardened, because that pre-apply
 control requires findings to exist, and it needs `jq` (the suite refuses
 loudly if it is missing). `differential-suite.sh --self-test` runs the pure
-text extractors and every refusal path with no root and no container, 581
+text extractors and every refusal path with no root and no container, 584
 assertions in all, and it reports the same result whether or not the
 environment declares the run booted.
 

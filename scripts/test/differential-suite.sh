@@ -2951,6 +2951,21 @@ mac_lsm_names_system() {
     return 1
 }
 
+# The state of the MAC configuration tree as one sentence, for the log.
+#
+# Both halves are real readings. A tree that exists must come back unchanged, and
+# a tree that does not exist must still not exist: the plugin creating one is the
+# failure this row is likeliest to meet.
+mac_config_state() {
+    local present
+    present="$(mac_config_present)"
+    if [[ -n "$present" ]]; then
+        printf '%s holds the content, mode and size it held' "$present"
+    else
+        printf 'none of %s exists, and none was created' "${MAC_CONFIG_PATHS[*]}"
+    fi
+}
+
 # The MAC configuration paths that exist here, named for the log.
 mac_config_present() {
     local path present=""
@@ -2966,16 +2981,24 @@ mac_config_present() {
 # any check runs and read by expected_check_total, exactly as SHADOW_MIN_DAYS is,
 # so the arithmetic and the rows cannot come to disagree about the size of a run.
 #
-# Three ways it cannot be asked, and each is a different fact. The registry may
-# be unreadable, which is a fixture where securityfs was never mounted. The
-# registry may NAME a MAC system, which is the host this oracle does not cover.
-# Or the configuration tree may be absent entirely, in which case an untouched
-# tree compares one absence with another and passes without asking anything,
-# which is the vacuity issue #47 exists to remove.
+# Two ways it cannot be asked, and they are different facts. The registry may be
+# unreadable by both this container and the runner, which is not the same answer
+# as "no MAC system" and is never folded into it. Or the registry may NAME a MAC
+# system, which is the host this oracle does not cover.
+#
+# An ABSENT configuration tree is deliberately NOT one of them, and this
+# condition was here and was wrong. The reasoning was that an untouched absence
+# compares one absence with another and so asks nothing. It does not: a plugin
+# that CREATES /etc/selinux/config on a host that has no /etc/selinux changes the
+# digest from empty to non-empty and fails this row. That is not a vacuous row,
+# it is the most likely way this plugin could misbehave, and requiring a tree to
+# exist first cost exactly the fixture most exposed to it. Measured 2026-08-09:
+# the arch container has none of these paths and was the only one of six whose
+# rows went unasked.
 MAC_ASKABLE=0
 MAC_UNASKABLE_REASON=""
 detect_mac_askable() {
-    local reading named path
+    local reading named
     if ! reading="$(mac_lsm_reading)"; then
         MAC_ASKABLE=0
         MAC_LSM_SOURCE=""
@@ -2995,15 +3018,8 @@ detect_mac_askable() {
         MAC_UNASKABLE_REASON="the kernel's LSM registry names $named, so this is a host the plugin is expected to ACT on and a no-op oracle would assert the opposite of the requirement (issue #18)"
         return 0
     fi
-    for path in "${MAC_CONFIG_PATHS[@]}"; do
-        if [[ -e "$path" ]]; then
-            MAC_ASKABLE=1
-            MAC_UNASKABLE_REASON=""
-            return 0
-        fi
-    done
-    MAC_ASKABLE=0
-    MAC_UNASKABLE_REASON="none of ${MAC_CONFIG_PATHS[*]} exists here, so an untouched tree would be one absence compared with another"
+    MAC_ASKABLE=1
+    MAC_UNASKABLE_REASON=""
 }
 
 # The pre-apply reading, which is half of what the check below compares.
@@ -3021,7 +3037,7 @@ run_mac_preapply_control() {
         record_unaskable "mac-hardening pre-apply control: $MAC_UNASKABLE_REASON"
         return 0
     fi
-    record_pass "mac-hardening: the kernel's LSM registry reads '$MAC_LSM_READING' from $MAC_LSM_SOURCE and names neither selinux nor apparmor, and $(mac_config_present) is present, so the row below is asking whether a host the plugin must leave alone was left alone"
+    record_pass "mac-hardening: the kernel's LSM registry reads '$MAC_LSM_READING' from $MAC_LSM_SOURCE and names neither selinux nor apparmor, and $(mac_config_state), so the row below is asking whether a host the plugin must leave alone was left alone"
 }
 
 run_mac_checks() {
@@ -3035,7 +3051,7 @@ run_mac_checks() {
             config-untouched)
                 after="$(mac_config_digest)"
                 if [[ "$after" == "$MAC_CONFIG_BEFORE" ]]; then
-                    record_pass "mac $key: everything under $(mac_config_present) holds the content, mode and size it held before apply, so the plugin wrote nothing on a kernel with no MAC system to configure"
+                    record_pass "mac $key: $(mac_config_state) after apply exactly as before it, so the plugin wrote nothing on a kernel with no MAC system to configure"
                 else
                     delta="$(diff <(printf '%s\n' "$MAC_CONFIG_BEFORE") <(printf '%s\n' "$after") | grep '^[<>]' | head -5 | tr '\n' ';' || true)"
                     record_fail "mac $key: the MAC configuration tree changed across an apply on a kernel whose LSM registry names no MAC system, so the plugin wrote a configuration nothing on this host will ever read: $delta"
@@ -8241,11 +8257,34 @@ $AUDIT_PROBE_RULE"
     check_status 0 "and names issue #18, which is what covering that host actually needs" \
         grep -q "issue #18" <<<"$MAC_UNASKABLE_REASON"
 
+    # The condition that used to be here and was wrong. An absent tree is still
+    # asked, because a tree that must STAY absent is an assertion a creation
+    # breaks, and creating a configuration for a MAC system the host does not
+    # have is the likeliest way this plugin could misbehave.
     mac_reading_out="capability,landlock,bpf"
     MAC_CONFIG_PATHS=("$mac_root/absent")
     detect_mac_askable
-    check_eq "$MAC_ASKABLE" "0" \
-        "and a configuration tree that does not exist is unaskable, because an untouched absence is one absence compared with another"
+    check_eq "$MAC_ASKABLE" "1" \
+        "a configuration tree that does not exist is still asked, because a tree that must stay absent is an assertion a creation would break"
+
+    APPLY_GENERATION=0
+    preapply_mac_init
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    run_mac_checks > "$mac_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "1/0/0" \
+        "an absent tree that stayed absent passes"
+    check_status 0 "and says so rather than naming an empty list of paths" \
+        grep -q "none was created" "$mac_out"
+
+    # The row that condition was costing: arch has none of these paths, and was
+    # the only fixture of six whose rows went unasked on 2026-08-09.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    mkdir -p "$mac_root/absent"
+    printf 'SELINUX=enforcing\n' > "$mac_root/absent/config"
+    run_mac_checks > "$mac_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/1/0" \
+        "and a tree the apply CREATED fails, which is the case an absent-tree host is most exposed to"
+    rm -rf "$mac_root/absent"
 
     MAC_CONFIG_PATHS=("$mac_root/selinux")
     detect_mac_askable
