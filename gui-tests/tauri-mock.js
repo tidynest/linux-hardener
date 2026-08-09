@@ -656,6 +656,33 @@
               restore_error: null,
             },
           ],
+          // The rollback modal's divergence section had no fixture, so it had
+          // never rendered with data and nothing could have caught #143. Both
+          // states are here, because they take different branches and are
+          // coloured and labelled apart.
+          //
+          // The sentences are the real length the kernel probe emits, 200 to
+          // 400 characters, and the subjects are the real shape: a sysctl key
+          // and an absolute path, neither of which has a space to wrap at.
+          // A shorter stand-in would make the row look fine at every width and
+          // prove nothing, which is the whole reason this section shipped
+          // unseen.
+          rollback_divergences: [
+            {
+              divergence_plugin_id: 'kernel-hardening',
+              divergence_subject: 'net.ipv4.conf.all.accept_source_route',
+              divergence_state: 'Diverged',
+              divergence_detail:
+                'The running kernel holds 1 for this parameter and no surviving configuration file names it, so the rollback restored files and reloaded them without changing /proc/sys. The value stays as it is until the next reboot, at which point nothing will set it and the kernel default takes over.',
+            },
+            {
+              divergence_plugin_id: 'kernel-hardening',
+              divergence_subject: '/usr/lib/sysctl.d/50-default.conf',
+              divergence_state: 'Unverifiable',
+              divergence_detail:
+                'This configuration source could not be read, so the parameters it may name cannot be decided either way. Nothing here is a claim that the host disagrees with what was restored; it is a probe that could not answer, and the file is named so an operator can read it themselves.',
+            },
+          ],
         };
 
       case 'generate_compliance_report': {

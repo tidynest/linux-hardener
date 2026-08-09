@@ -1965,6 +1965,45 @@ tbody tr:hover {
 .restore-icon { width: 16px; height: 16px; flex-shrink: 0; }
 .restore-ok .restore-icon { color: var(--color-good); }
 .restore-fail .restore-icon { color: var(--color-critical); }
+/* Divergence rows (#143).
+ *
+ * `.rollback-file-list li` is a single flex line with `align-items: center`,
+ * built for a restore entry: a path and a few words. A divergence row carries a
+ * sentence of 200 to 400 characters, and putting one in that row fails twice.
+ * A flex item defaults to `min-width: auto`, so it cannot shrink below its
+ * min-content width; for prose that is the longest word, which wraps, but a
+ * sysctl key like `net.ipv4.conf.all.accept_source_route` and a path like
+ * `/usr/lib/sysctl.d/50-default.conf` have nothing to break at and overflow the
+ * container instead. And a detail wrapping to several lines leaves the subject
+ * and its state centred against a tall block.
+ *
+ * So the row stops being a flex line. The subject and its state stay on one
+ * line, the sentence gets its own beneath them, and both may break inside a
+ * word, which is the only thing that can save an unbreakable token at a narrow
+ * width. */
+.rollback-file-list li.rollback-divergence {
+  display: block;
+}
+
+.rollback-divergence .divergence-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.rollback-divergence .divergence-head code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.rollback-divergence .divergence-detail {
+  display: block;
+  margin-top: var(--space-xs);
+  overflow-wrap: anywhere;
+}
+
 .restore-action { color: var(--text-secondary); font-size: var(--font-size-caption); }
 .restore-error { color: var(--color-critical); font-size: var(--font-size-caption); }
 .restore-warn .restore-error { color: var(--color-warning); }

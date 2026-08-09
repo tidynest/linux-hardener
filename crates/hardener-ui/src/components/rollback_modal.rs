@@ -282,13 +282,21 @@ fn result_view(result: RollbackResult, close: impl Fn(bool) + 'static + Copy) ->
                     let subject = d.divergence_subject.clone();
                     let detail = d.divergence_detail.clone();
                     let checked = d.divergence_state == DivergenceState::Diverged;
+                    // Two lines, not one flex row (#143). The restore rows
+                    // above carry a path and a few words of error; these carry
+                    // a sentence of 200 to 400 characters, and the shared row
+                    // was built for the first shape. `restore-warn` stays, so
+                    // the warning colour rule keyed on it still reaches the
+                    // detail.
                     view! {
-                        <li class="restore-warn">
-                            <code>{subject}</code>
-                            <span class="restore-action">
-                                {if checked { "diverged" } else { "could not check" }}
-                            </span>
-                            <span class="restore-error">{detail}</span>
+                        <li class="restore-warn rollback-divergence">
+                            <div class="divergence-head">
+                                <code>{subject}</code>
+                                <span class="restore-action">
+                                    {if checked { "diverged" } else { "could not check" }}
+                                </span>
+                            </div>
+                            <span class="restore-error divergence-detail">{detail}</span>
                         </li>
                     }
                 }).collect::<Vec<_>>()}

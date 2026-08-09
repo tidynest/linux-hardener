@@ -42,6 +42,26 @@ PROBES = [
     # is caught here for both.
     ("run_apply", {}, "[].apply_changes[]", "Change"),
     ("list_plugins", {}, "[]", "PluginMetadata"),
+    # The rollback modal's payload, which no probe reached. Its divergence
+    # section shipped unrendered (#143) and its rows were absent from this mock
+    # entirely, so the one check that could have said the fixture was short was
+    # not looking at this command at all.
+    ("run_rollback", {"checkpointId": "cp_mock_1234"}, "", "RollbackResult"),
+    (
+        "run_rollback",
+        {"checkpointId": "cp_mock_1234"},
+        "rollback_files[]",
+        "FileRestoreResult",
+    ),
+    # The enum-valued field is the reason this one matters: `divergence_state`
+    # is a bare Rust enum, so the mock has to spell a real variant and nothing
+    # else would have said so.
+    (
+        "run_rollback",
+        {"checkpointId": "cp_mock_1234"},
+        "rollback_divergences[]",
+        "RollbackDivergence",
+    ),
     ("run_fleet_scan", {"hostNames": ["web-01"], "adhoc": []}, "[]", "FleetHostScan"),
     (
         "run_fleet_scan",
@@ -69,6 +89,16 @@ ENUM_FIELDS = [
     ("list_plugins", {}, "[]", "plugin_category", "FindingCategory"),
     ("run_scan", {}, "[].scan_findings[]", "finding_category", "FindingCategory"),
     ("run_scan", {}, "[].scan_findings[]", "finding_severity", "Severity"),
+    # A probe over the struct alone does NOT reach this: the struct check reads
+    # field names, and `divergence_state: 'Divergent'` passed it. Measured
+    # 2026-08-09 by writing exactly that and watching the run stay green.
+    (
+        "run_rollback",
+        {"checkpointId": "cp_mock_1234"},
+        "rollback_divergences[]",
+        "divergence_state",
+        "DivergenceState",
+    ),
 ]
 
 DUMP_JS = """

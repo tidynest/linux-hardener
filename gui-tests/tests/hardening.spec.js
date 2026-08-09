@@ -327,3 +327,71 @@ test.describe('Apply results', () => {
     await expect(heading).not.toContainText('5 of 5');
   });
 });
+
+// ---------------------------------------------------------------------------
+// ROLLBACK MODAL: THE DIVERGENCE SECTION (#143)
+// ---------------------------------------------------------------------------
+//
+// This section shipped on reading alone. No test rendered it and the mock
+// carried no divergence rows, so it had never been drawn with data at any
+// width. The fixture is the part that decides whether any of this is testable,
+// and it now carries the real shapes: a sysctl key and an absolute path, both
+// unbreakable, beside sentences of the length the kernel probe actually emits.
+
+test.describe('Rollback modal divergences', () => {
+  test.beforeEach(async ({ page }) => {
+    await loadApp(page, '/hardening');
+    await page.getByRole('tab', { name: 'History' }).click();
+    await page.getByRole('button', { name: 'Roll back', exact: true }).first().click();
+    // The modal's own confirm button, reached by its class rather than its
+    // name: the name carries a file count, and "Roll back" as a substring also
+    // matches every button in the history list behind the modal.
+    await page.locator('.modal-actions button.btn-danger').click();
+    await expect(page.getByText('Still diverged:')).toBeVisible({ timeout: 15000 });
+  });
+
+  test('T-DIVG-01: both divergence states render, labelled apart', async ({ page }) => {
+    const rows = page.locator('.rollback-divergence');
+    await expect(rows).toHaveCount(2);
+    // The two states ask an operator to do different things, so a render that
+    // showed them identically would be a defect even with both rows present.
+    await expect(rows.nth(0)).toContainText('diverged');
+    await expect(rows.nth(1)).toContainText('could not check');
+    await expect(rows.nth(0)).toContainText('net.ipv4.conf.all.accept_source_route');
+    await expect(rows.nth(1)).toContainText('/usr/lib/sysctl.d/50-default.conf');
+  });
+
+  test('T-DIVG-02: the sentence is shown in full, not clipped away', async ({ page }) => {
+    // A row that hid its detail would pass an overflow check trivially, so the
+    // text is asserted present before the geometry below is asked about.
+    await expect(page.locator('.rollback-divergence').first()).toContainText(
+      'the rollback restored files and reloaded them without changing /proc/sys',
+    );
+  });
+
+  // The defect the issue predicted, asked as geometry rather than as
+  // appearance. A flex item's `min-width: auto` floors it at min-content, and
+  // an unbreakable 38-character key has a min-content width no container can
+  // be narrower than: the row overflows instead of wrapping.
+  for (const [label, width] of [['wide', 1280], ['narrow', 420]]) {
+    test(`T-DIVG-03-${label}: no row overflows the list at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      // Awaited so the assertion below reads a settled layout rather than one
+      // mid-resize.
+      await expect(page.locator('.rollback-divergence').first()).toBeVisible();
+
+      const overflow = await page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('.rollback-divergence'));
+        const list = rows[0].closest('.rollback-file-list');
+        return rows.map((r) => r.scrollWidth - list.clientWidth);
+      });
+
+      // Measured against the list that clips them rather than against the row
+      // itself: a row is as wide as its content, and comparing a thing to
+      // itself is the check that cannot fail.
+      for (const o of overflow) {
+        expect(o).toBeLessThanOrEqual(1);
+      }
+    });
+  }
+});
