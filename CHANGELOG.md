@@ -769,6 +769,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An unreadable drop-in no longer downgrades every parameter's verdict, only
+  the ones its name could reach.** `effective.blocks_all` was a whole-host flag,
+  so a single `0600` drop-in reported every disagreeing parameter as
+  `Unverifiable`. The narrowing comes from something other than the unread
+  file's content, which is unknowable: its NAME. Both appliers sort every
+  candidate file by filename across all four directories and let the
+  lexicographically last name win, measured on 2026-08-09 from `sysctl.d(5)`
+  ("regardless of which of the directories they reside in") and from `sysctl(8)`
+  for `--system`, which is what a rollback's own reload runs. An unread file
+  sorting BEFORE the file that decided a key therefore cannot have decided it,
+  and no longer blocks it. Three cases stay un-narrowable and still block every
+  parameter: a directory nobody could list, since the names it holds are exactly
+  what went unread; a ufw file nobody could read, since its unit is ordered
+  after `systemd-sysctl` and it is chained last whatever it is called; and the
+  silence case where no file was credited with the key at all, since there is
+  nothing for a name to sort against. Same-name masking needs no special case:
+  the reader already keeps one path per filename, highest-precedence directory
+  first, so a file shadowed by an unreadable copy in `/etc` was never read in
+  the first place. **The unread file still earns a row of its own naming it**,
+  so this narrows a verdict and hides nothing. Proved by mutation rather than by
+  a green suite: reverting the comparison to whole-host blocking turns the
+  before-sorting test red and leaves the after-sorting test green.
+  `MockExecutor` gained `with_read_dir_permission_denied`, because its `read_dir`
+  could not fail at all and every branch taken on an unlistable directory was
+  unreachable from a test. Closes #145.
+
 - **The differential suite's kernel oracle asked nothing in any `--pipe` run,
   on a reason that was not true.** One variable, `KERNEL_BOOTED`, gated both the
   kernel rows and the services rows, and the comment beside it said a booted
@@ -1122,11 +1148,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retires two claims in #140, which had it that Debian derivatives ship the file
   and that Arch ships the symlink, and the symlink justification that used to
   stand on `SYSCTL_DROPIN_DIRS`. **One behaviour change is stated rather than
-  hidden:** `effective.blocks_all` is a whole-host flag, so an unprivileged run
-  against a drop-in it cannot read now reports every disagreeing parameter as
-  unverifiable rather than diverged. That is the same fail-closed shape the
-  silence arm already had, and a probe that cannot read the files is not
-  entitled to accuse the host. `scripts/test/verify-rollback.sh` gained a ninth
+  hidden:** an unprivileged run against a drop-in it cannot read now reports the
+  disagreeing parameters that file could have decided as unverifiable rather
+  than diverged. That is the same fail-closed shape the silence arm already had,
+  and a probe that cannot read the files is not entitled to accuse the host. It
+  landed as a whole-host flag and was narrowed to the parameters an unread name
+  could actually reach before release, under #145 below. `scripts/test/verify-rollback.sh` gained a ninth
   arm, TEST 9, which names a managed parameter in `/etc/sysctl.conf` with no
   drop-in surviving and requires the row to come back `Diverged` carrying the
   true sentence; it calls the counting helper three times, which moves that

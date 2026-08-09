@@ -287,7 +287,22 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                              whether it is what assigns {name} the running value is unknown"
                         ),
                     )
-                } else if effective.blocks_all {
+                } else if effective.blocks_all
+                    || persistence::decided_after(
+                        effective.unreadable_last_name.as_deref(),
+                        effective.sources.get(&key).map(String::as_str),
+                    )
+                {
+                    // Two questions, not one, and only the second is new.
+                    // `blocks_all` is a directory nobody could list or a ufw
+                    // file nobody could read, neither of which a name can
+                    // narrow. `decided_after` is an unread drop-in FILE, and
+                    // there the name settles it: under last-one-wins an unread
+                    // file sorting before the file that decided this key
+                    // cannot have decided it, so it blocks nothing here (#145).
+                    // It still earns its own row above, so nothing is hidden;
+                    // what it stops doing is downgrading every other
+                    // parameter's verdict along with its own.
                     (
                         DivergenceState::Unverifiable,
                         format!(
@@ -414,7 +429,20 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                     ),
                     None => String::new(),
                 };
-                let (state, detail) = if effective.blocks_all || legacy.unreadable.is_some() {
+                // The same predicate the disagreement arm uses, and it answers
+                // differently here for a reason rather than by accident: this
+                // arm is reached when NO file was credited with the key, so
+                // `sources` has no entry, `decided_after` gets `None` and every
+                // unread name blocks. There is nothing for a name to sort
+                // against when nothing named the parameter (#145).
+                let unread_could_name = persistence::decided_after(
+                    effective.unreadable_last_name.as_deref(),
+                    effective.sources.get(&key).map(String::as_str),
+                );
+                let (state, detail) = if effective.blocks_all
+                    || unread_could_name
+                    || legacy.unreadable.is_some()
+                {
                     (
                         DivergenceState::Unverifiable,
                         format!(

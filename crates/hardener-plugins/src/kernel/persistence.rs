@@ -320,9 +320,39 @@ pub(super) enum DropinScope {
     All,
 }
 
+/// What a drop-in sweep found, including what it could not read.
+///
+/// The two failures are kept apart because they block different amounts. A
+/// directory nobody could list hides an unknown set of NAMES, so nothing can be
+/// reasoned about its position in the sort order. A single file nobody could
+/// read has a name in hand, and that name is enough to say which parameters it
+/// could possibly decide (#145).
+struct DropinSweep {
+    files: Vec<LaterFile>,
+    unchecked: Vec<UncheckedCheck>,
+    /// The lexicographically LAST filename this sweep could not read, if any.
+    ///
+    /// One name rather than the set, because the question every caller asks of
+    /// it is "could an unread file have decided this key", and under
+    /// last-one-wins that is true of the set exactly when it is true of its
+    /// maximum. Measured from both appliers' own documentation on 2026-08-09:
+    /// `sysctl.d(5)` says files are "sorted by their filename in lexicographic
+    /// order, regardless of which of the directories they reside in" and the
+    /// "lexicographically latest name will take precedence"; `sysctl(8)` says
+    /// the same of `--system`, which is what a rollback's own reload runs.
+    ///
+    /// Compared with the same plain string ordering `beats_ours` below already
+    /// uses, so the whole module agrees with itself about what "sorts after"
+    /// means, whatever the appliers' exact collation turns out to be.
+    unreadable_last_name: Option<String>,
+    /// True when a directory could not be listed at all, which puts every
+    /// parameter out of reach whatever any name says.
+    dir_unlisted: bool,
+}
+
 /// Every `sysctl.d` drop-in `scope` selects, in the order `systemd-sysctl`
 /// applies them.
-async fn dropins(ctx: &Context, scope: DropinScope) -> (Vec<LaterFile>, Vec<UncheckedCheck>) {
+async fn dropins(ctx: &Context, scope: DropinScope) -> DropinSweep {
     // An empty name here would sort before every drop-in on the host and turn
     // the whole of `sysctl.d` into findings, so this is asserted rather than
     // defaulted: it is this tool's own constant.
@@ -331,6 +361,8 @@ async fn dropins(ctx: &Context, scope: DropinScope) -> (Vec<LaterFile>, Vec<Unch
         .and_then(|name| name.to_str())
         .expect("this tool's own drop-in path must end in a filename");
     let mut unchecked = Vec::new();
+    let mut unreadable_last_name: Option<String> = None;
+    let mut dir_unlisted = false;
     // Keyed by filename, which is both the precedence order systemd-sysctl
     // sorts by and the identity a higher-precedence directory replaces on.
     let mut chosen: BTreeMap<String, String> = BTreeMap::new();
@@ -353,6 +385,7 @@ async fn dropins(ctx: &Context, scope: DropinScope) -> (Vec<LaterFile>, Vec<Unch
                          parameter this rollback restored is unknown: {e}"
                     ),
                 };
+                dir_unlisted = true;
                 unchecked.push(unchecked_persistence(dir, reason, is_permission_denied(&e)));
                 continue;
             }
@@ -410,11 +443,26 @@ async fn dropins(ctx: &Context, scope: DropinScope) -> (Vec<LaterFile>, Vec<Unch
                          unknown"
                     ),
                 };
+                // The name, not the path: `chosen` holds one path per name and
+                // the highest-precedence copy at that, so the name is the
+                // identity the appliers sort on and the only thing that can be
+                // compared against a deciding file.
+                if unreadable_last_name
+                    .as_deref()
+                    .is_none_or(|last| name.as_str() > last)
+                {
+                    unreadable_last_name = Some(name.clone());
+                }
                 unchecked.push(unchecked_persistence(&path, sentence, needs_privilege));
             }
         }
     }
-    (files, unchecked)
+    DropinSweep {
+        files,
+        unchecked,
+        unreadable_last_name,
+        dir_unlisted,
+    }
 }
 
 /// The sysctl file ufw applies, when ufw is in a state that applies one.
@@ -600,7 +648,14 @@ pub(super) async fn boot_persistence(
     ctx: &Context,
     config: &PluginConfig,
 ) -> (Vec<Finding>, Vec<UncheckedCheck>) {
-    let (dropins_read, mut unchecked) = dropins(ctx, DropinScope::AfterOurs).await;
+    // The scan path wants the findings and the unchecked list only. The name
+    // narrowing is a rollback-probe concern: this caller is asking which files
+    // beat this tool's own drop-in, not which file decided a running value.
+    let DropinSweep {
+        files: dropins_read,
+        mut unchecked,
+        ..
+    } = dropins(ctx, DropinScope::AfterOurs).await;
     let (ufw, ufw_unchecked) = ufw_applied_file(ctx).await;
     unchecked.extend(ufw_unchecked);
 
@@ -657,15 +712,59 @@ pub(super) struct EffectiveBoot {
     /// these could name it: a pattern is evidence against the specific keys
     /// it might reach, not against every managed parameter at once.
     pub(super) glob_patterns: Vec<String>,
-    /// True when at least one source is unresolved for a reason other than a
-    /// glob pattern: a file that could not be read, a directory that could
-    /// not be listed. Either could name anything, so this blocks attribution
-    /// for every parameter rather than only the ones a pattern could reach.
+    /// True when a source is unresolved in a way no name can narrow: a
+    /// directory that could not be listed, or a ufw file that could not be
+    /// read. The first hides an unknown set of names; the second is chained
+    /// last whatever it is called. Either could name anything, so this blocks
+    /// attribution for every parameter.
     pub(super) blocks_all: bool,
+    /// The lexicographically last drop-in FILE this reader could not read.
+    ///
+    /// Kept apart from `blocks_all` because a name is evidence (#145). Under
+    /// last-one-wins, an unread file whose name sorts before the file that
+    /// decided a key cannot have decided that key, so it need not block it.
+    /// See [`decided_after`], which is the only place that comparison is made.
+    pub(super) unreadable_last_name: Option<String>,
 }
 
+/// Whether an unread drop-in could have decided a key the deciding file
+/// `source` was credited with.
+///
+/// The comparison is on FILENAMES, because that is what both appliers sort on
+/// (`sysctl.d(5)` and `sysctl(8) --system`, both read on 2026-08-09), and it is
+/// `>=` rather than `>` on purpose: equality cannot arise today, since
+/// `chosen` holds exactly one path per name and that path is either read or
+/// unreadable, never both. Should that invariant ever break, `>=` blocks and
+/// `>` would not, and blocking is the direction this module fails in.
+///
+/// `None` for `source` is the silence case, where no file was credited at all
+/// and any unread name could be the one naming it.
+pub(super) fn decided_after(unreadable_last_name: Option<&str>, source: Option<&str>) -> bool {
+    let Some(unread) = unreadable_last_name else {
+        return false;
+    };
+    let Some(source) = source else {
+        return true;
+    };
+    let deciding = Path::new(source)
+        .file_name()
+        .and_then(|name| name.to_str())
+        // A credited source with no filename is not something this module
+        // produces, and guessing which way it sorts would be inventing the
+        // answer. Blocked, like every other question it cannot settle.
+        .unwrap_or("");
+    unread >= deciding
+}
+
+/// What the boot sequence leaves each managed key at, and what stopped this
+/// reader from saying so where it could not.
 pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> EffectiveBoot {
-    let (dropins_read, unchecked) = dropins(ctx, scope).await;
+    let DropinSweep {
+        files: dropins_read,
+        unchecked,
+        unreadable_last_name,
+        dir_unlisted,
+    } = dropins(ctx, scope).await;
     let (ufw, ufw_unchecked) = ufw_applied_file(ctx).await;
     // ufw last, for the reason `boot_persistence` gives: its unit is ordered
     // after systemd-sysctl, so it lands after every drop-in.
@@ -688,7 +787,12 @@ pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> 
             )
         })
         .collect();
-    let blocks_all = !unchecked.is_empty() || !ufw_unchecked.is_empty();
+    // A directory nobody could list, or a ufw file nobody could read, blocks
+    // every parameter: the first hides an unknown set of names, and the second
+    // is chained last whatever it is called, because ufw's unit is ordered
+    // after systemd-sysctl. An unreadable drop-in FILE is no longer in here,
+    // because its name says which keys it could reach (#145).
+    let blocks_all = dir_unlisted || !ufw_unchecked.is_empty();
     unresolved.extend(
         unchecked
             .iter()
@@ -706,6 +810,7 @@ pub(super) async fn effective_boot_values(ctx: &Context, scope: DropinScope) -> 
         unresolved,
         glob_patterns,
         blocks_all,
+        unreadable_last_name,
     }
 }
 

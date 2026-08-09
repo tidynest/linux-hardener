@@ -62,6 +62,7 @@ pub struct MockExecutor {
     command_sequences: CommandSequenceStore,
     command_exists: CommandExistsStore,
     read_permission_denied: PermissionDeniedStore,
+    read_dir_denied: PermissionDeniedStore,
     metadata_error: PermissionDeniedStore,
     path_exists_error: PermissionDeniedStore,
     path_exists_override: PathExistsStore,
@@ -89,6 +90,7 @@ impl MockExecutor {
             command_sequences: Arc::new(Mutex::new(HashMap::new())),
             command_exists: Arc::new(Mutex::new(HashMap::new())),
             read_permission_denied: Arc::new(Mutex::new(HashSet::new())),
+            read_dir_denied: Arc::new(Mutex::new(HashSet::new())),
             metadata_error: Arc::new(Mutex::new(HashSet::new())),
             path_exists_error: Arc::new(Mutex::new(HashSet::new())),
             path_exists_override: Arc::new(Mutex::new(HashMap::new())),
@@ -252,6 +254,21 @@ impl MockExecutor {
                     gid: 0,
                 },
             );
+        self
+    }
+
+    /// Makes listing `path` fail with a permission error.
+    ///
+    /// Without this the mock's `read_dir` could not fail at all, so every
+    /// branch a caller takes on an unlistable directory was unreachable from a
+    /// test. The kernel probe has one, and it is the branch no filename can
+    /// narrow: an unlisted directory hides the very names a comparison would
+    /// need (#145).
+    pub fn with_read_dir_permission_denied(self, path: &str) -> Self {
+        self.read_dir_denied
+            .lock()
+            .expect("read_dir_denied mutex poisoned")
+            .insert(PathBuf::from(path));
         self
     }
 
@@ -648,6 +665,20 @@ impl SystemExecutor for MockExecutor {
     }
 
     async fn read_dir(&self, path: &Path) -> Result<Vec<PathBuf>> {
+        if self
+            .read_dir_denied
+            .lock()
+            .expect("read_dir_denied mutex poisoned")
+            .contains(path)
+        {
+            // A real io::Error rather than a message, so `is_permission_denied`
+            // finds it by downcast the way it would on a host, and not only by
+            // matching prose.
+            return Err(anyhow::Error::new(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                format!("Permission denied (os error 13): {}", path.display()),
+            )));
+        }
         let meta = self.file_metadata.lock().expect("metadata mutex poisoned");
         Ok(meta
             .keys()

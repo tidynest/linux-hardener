@@ -1357,3 +1357,106 @@ async fn a_dropin_glob_that_cannot_name_the_key_leaves_the_disagreement_row_alon
         row.divergence_detail
     );
 }
+
+/// #145, the narrowing itself. An unreadable drop-in whose name sorts BEFORE
+/// the file that decided the key cannot have decided it: both appliers let the
+/// lexicographically last filename win, measured from `sysctl.d(5)` and
+/// `sysctl(8)` on 2026-08-09. The row it earns of its own is unaffected; what
+/// it no longer does is take this parameter's verdict down with it.
+#[tokio::test]
+async fn an_unreadable_dropin_sorting_before_the_deciding_file_does_not_block_it() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/etc/sysctl.d/10-locked.conf", "irrelevant\n")
+            .with_read_permission_denied("/etc/sysctl.d/10-locked.conf")
+            .with_file(
+                "/etc/sysctl.d/60-decides.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must carry a row");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Diverged,
+        "10-locked.conf sorts before 60-decides.conf, so it cannot be what assigned the running \
+         value and must not downgrade this verdict: {row:?}"
+    );
+    // The unread file is still reported, which is what makes the narrowing a
+    // narrowing rather than a silencing.
+    assert!(
+        rows.iter()
+            .any(|r| r.divergence_detail.contains("10-locked.conf")),
+        "the unread file must still earn a row of its own naming it: {rows:?}"
+    );
+}
+
+/// The other side of the same rule, and the one that must not be lost: an
+/// unreadable drop-in sorting AFTER the deciding file could have overridden it,
+/// so the verdict stays blocked.
+#[tokio::test]
+async fn an_unreadable_dropin_sorting_after_the_deciding_file_still_blocks_it() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file(
+                "/etc/sysctl.d/60-decides.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_file("/etc/sysctl.d/70-locked.conf", "irrelevant\n")
+            .with_read_permission_denied("/etc/sysctl.d/70-locked.conf")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must carry a row");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "70-locked.conf sorts after 60-decides.conf and could have assigned the running value, \
+         so accusing the host would be a claim on the strength of every file but that one: \
+         {row:?}"
+    );
+}
+
+/// A directory nobody could list is not narrowable by any name, because the
+/// names it holds are exactly what was not read. It blocks whatever the
+/// deciding file is called.
+#[tokio::test]
+async fn a_directory_that_could_not_be_listed_still_blocks_a_decided_parameter() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/60-decides.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_read_dir_permission_denied("/run/sysctl.d")
+            .with_path_exists("/usr/lib/systemd/systemd-sysctl", true)
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let row = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("the parameter must carry a row");
+    assert_eq!(
+        row.divergence_state,
+        DivergenceState::Unverifiable,
+        "an unlisted directory hides the very names a comparison would need: {row:?}"
+    );
+}
