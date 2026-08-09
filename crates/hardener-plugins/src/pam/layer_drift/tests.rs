@@ -103,9 +103,8 @@ fn the_key_is_the_first_token_in_either_syntax() {
 #[test]
 fn every_table_entry_has_a_vendor_counterpart() {
     assert!(
-        !LAYERED_CONFS.is_empty(),
-        "an emptied table would leave the loop below proving nothing, and the \
-         drift check covering no file at all"
+        LAYERED_CONFS.len() >= 4,
+        "the table has fallen below the 4 rows the loop below was written against, so the drift check covers fewer files than it was built to; an emptiness guard would pass on a table cut to one"
     );
     for conf in LAYERED_CONFS {
         assert!(

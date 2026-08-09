@@ -61,8 +61,8 @@ fn every_registered_plugin_declares_its_coverage() {
     // declares its coverage" by having none, which is the reassuring answer a
     // check that cannot reach the question always gives.
     assert!(
-        !registered.is_empty(),
-        "the registry listed no plugins, so the loop below proves nothing"
+        registered.len() >= 8,
+        "the registry listed fewer than the 8 plugins this workspace registers, so the loop below covers less than it was written to; an emptiness guard would pass on a registry down to one"
     );
     for metadata in registered {
         assert!(
@@ -97,8 +97,8 @@ fn every_registered_plugin_routes_to_its_own_config_section() {
         .list()
         .expect("the registry lists its plugins");
     assert!(
-        !registered.is_empty(),
-        "the registry listed no plugins, so the loop below proves nothing"
+        registered.len() >= 8,
+        "the registry listed fewer than the 8 plugins this workspace registers, so the loop below covers less than it was written to; an emptiness guard would pass on a registry down to one"
     );
     for metadata in registered {
         let id = metadata.plugin_id.as_str();

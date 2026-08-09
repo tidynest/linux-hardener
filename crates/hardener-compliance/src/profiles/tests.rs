@@ -252,8 +252,8 @@ fn every_plugin_stig_or_cis_mapping_translates_or_is_a_documented_drop() {
 #[test]
 fn stig_rows_are_well_formed() {
     assert!(
-        !RHEL10_STIG.is_empty(),
-        "an emptied table would leave the loop below proving nothing"
+        RHEL10_STIG.len() >= 25,
+        "the STIG table has fallen below the 25 rows the loop below was written against; a table cut to one proves proportionally less and an emptiness guard would pass on it"
     );
     for (canonical, target, title, _) in RHEL10_STIG {
         let digits = target
@@ -271,8 +271,8 @@ fn stig_rows_are_well_formed() {
 #[test]
 fn cis_rows_are_well_formed() {
     assert!(
-        !RHEL10_CIS.is_empty(),
-        "an emptied table would leave the loop below proving nothing"
+        RHEL10_CIS.len() >= 51,
+        "the CIS table has fallen below the 51 rows the loop below was written against; a table cut to one proves proportionally less and an emptiness guard would pass on it"
     );
     for (canonical, target, title, _) in RHEL10_CIS {
         let parts: Vec<&str> = target.split('.').collect();

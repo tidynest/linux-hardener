@@ -346,8 +346,8 @@ fn selinux_enforcing_has_privacy_and_iso_mappings() {
 #[test]
 fn mac_findings_map_soc2_unauthorised_software() {
     assert!(
-        !MAC_FINDING_TYPES.is_empty(),
-        "an emptied finding-type table would leave the loop below proving nothing"
+        MAC_FINDING_TYPES.len() >= 4,
+        "the finding-type table has fallen below the 4 rows the loop below was written against; a table cut to one proves proportionally less and an emptiness guard would pass on it"
     );
     for finding_type in MAC_FINDING_TYPES {
         let soc2 = get_mac_compliance_mappings(finding_type)
@@ -367,8 +367,8 @@ fn mac_findings_map_soc2_unauthorised_software() {
 #[test]
 fn mac_findings_map_nist_800_171_access_enforcement() {
     assert!(
-        !MAC_FINDING_TYPES.is_empty(),
-        "an emptied finding-type table would leave the loop below proving nothing"
+        MAC_FINDING_TYPES.len() >= 4,
+        "the finding-type table has fallen below the 4 rows the loop below was written against; a table cut to one proves proportionally less and an emptiness guard would pass on it"
     );
     for finding_type in MAC_FINDING_TYPES {
         let mapping = get_mac_compliance_mappings(finding_type)
@@ -389,8 +389,8 @@ fn mac_findings_map_nist_800_171_access_enforcement() {
 #[test]
 fn mac_findings_map_fedramp_access_enforcement() {
     assert!(
-        !MAC_FINDING_TYPES.is_empty(),
-        "an emptied finding-type table would leave the loop below proving nothing"
+        MAC_FINDING_TYPES.len() >= 4,
+        "the finding-type table has fallen below the 4 rows the loop below was written against; a table cut to one proves proportionally less and an emptiness guard would pass on it"
     );
     for finding_type in MAC_FINDING_TYPES {
         let mapping = get_mac_compliance_mappings(finding_type)

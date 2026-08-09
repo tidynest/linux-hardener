@@ -28,8 +28,8 @@ fn theme_ids_are_unique() {
 #[test]
 fn every_theme_has_a_name() {
     assert!(
-        !THEMES.is_empty(),
-        "an emptied theme table would leave the loop below proving nothing"
+        THEMES.len() >= 7,
+        "the theme table has fallen below the 7 rows the loop below was written against; a table cut to one proves proportionally less and an emptiness guard would pass on it"
     );
     for (id, name) in THEMES {
         assert!(!name.is_empty(), "theme {id} has an empty display name");

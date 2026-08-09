@@ -298,8 +298,8 @@ fn critical_paths_map_fedramp_moderate_controls() {
 #[tokio::test]
 async fn validate_predicts_what_apply_does_for_an_unverified_mode() {
     assert!(
-        !CRITICAL_PERMISSIONS.is_empty(),
-        "an emptied directive table would leave the loop below proving nothing"
+        CRITICAL_PERMISSIONS.len() >= 9,
+        "the directive table has fallen below the 9 rows the loop below was written against; a table cut to one proves proportionally less and an emptiness guard would pass on it"
     );
     for directive in CRITICAL_PERMISSIONS {
         // `path_exists` must read true; the current mode is supplied
@@ -401,8 +401,8 @@ fn every_critical_path_is_protected_from_rollback_deletion() {
     // protect paths this plugin does not harden, so the reverse is not
     // asserted here.
     assert!(
-        !CRITICAL_PERMISSIONS.is_empty(),
-        "an emptied directive table would leave the loop below proving nothing"
+        CRITICAL_PERMISSIONS.len() >= 9,
+        "the directive table has fallen below the 9 rows the loop below was written against; a table cut to one proves proportionally less and an emptiness guard would pass on it"
     );
     for directive in CRITICAL_PERMISSIONS {
         assert!(

@@ -1352,8 +1352,8 @@ fn effective_cron_empty_when_neither_resolves() {
 #[test]
 fn preset_round_trips() {
     assert!(
-        !SCHEDULE_PRESETS.is_empty(),
-        "an emptied preset table would leave the round trip below proving nothing"
+        SCHEDULE_PRESETS.len() >= 4,
+        "the preset table has fallen below the 4 rows the round trip below was written against; a table cut to one proves proportionally less and an emptiness guard would pass on it"
     );
     for (label, _) in SCHEDULE_PRESETS {
         assert_eq!(
