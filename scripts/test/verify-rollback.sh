@@ -39,11 +39,9 @@
 #                      reports it rather than reporting plain success
 #   9. Legacy file:    a parameter named only in /etc/sysctl.conf, the file
 #                      procps sysctl --system reads and systemd-sysctl does
-#                      not. The fixture writes the file and puts a real file
-#                      back afterwards; only fedora ships one (see TEST 9).
-#                      Where the path is a SYMLINK it restores the link and
-#                      NOT the content it overwrote through it, which is why
-#                      this script refuses to run outside a container
+#                      not. The fixture unlinks the path, writes a real file
+#                      and puts back whatever it found, link or file; only
+#                      fedora ships one (see TEST 9)
 #
 # Exit status:
 #   0  every check ran and passed
@@ -837,6 +835,14 @@ elif [[ ! -e /usr/lib/systemd/systemd-sysctl ]]; then
     # which applier runs at boot and answers Unknown, which makes the row
     # Unverifiable. That is the code behaving as designed, so asserting
     # Diverged here would report a correct answer as a regression.
+    #
+    # This test reads the machine THIS SHELL runs on, while the probe reads the
+    # machine the BINARY targets (#147). They are the same machine only because
+    # no arm of this script passes `--ssh`, so every invocation runs under a
+    # LocalExecutor inside this container. A remote arm would have to ask the
+    # target host instead, and would find the rest of the file equally local:
+    # every other arm writes /proc/sys, /etc/sysctl.d and /etc/login.defs
+    # directly and hashes local files.
     skip "Legacy sysctl.conf reporting: /usr/lib/systemd/systemd-sysctl is absent, so the probe cannot say which applier runs at boot and the row is Unverifiable by design rather than by fault"
 else
     rm -rf /var/lib/linux-hardener
@@ -850,6 +856,23 @@ else
         LEGACY_EXISTED=true
         cp -a "$LEGACY_CONF" "$LEGACY_CONF.rollback-readback.bak"
     fi
+    # Removed rather than overwritten, and the redirect below is why (#144).
+    # `printf >` follows a symlink and writes to its TARGET. On a host where
+    # /etc/sysctl.conf links into /etc/sysctl.d, that would destroy a drop-in's
+    # content while `cp -a` had backed up only the link, so the restore below
+    # would put the link back over a target it had emptied.
+    #
+    # The worse consequence is to the test rather than to the host: with the
+    # parameter landing in a directory the boot applier DOES read, the drop-in
+    # reader finds it under the drop-in's name, `effective.values` carries it,
+    # and the row asserted on comes from a different branch of
+    # `sysctl_divergences` entirely. All three assertions still pass, so the arm
+    # would report success while exercising something other than what it is for.
+    #
+    # Unlinking first makes the redirect create a real file on every
+    # distribution, so the branch under test is the intended one and the restore
+    # puts back whatever was found, link or file.
+    rm -f "$LEGACY_CONF"
     printf '%s = %s\n' "$KERNEL_PROBE_PARAM" "$KERNEL_PROBE_TARGET" > "$LEGACY_CONF"
 
     printf '%s\n' "$KERNEL_PROBE_BASELINE" > "$KERNEL_PROBE_PROC"
@@ -910,14 +933,14 @@ else
         rm -f /tmp/legacy.json
     fi
 
-    # Put a file back where one was found, or leave nothing where nothing was.
+    # Put back whatever was found, or leave nothing where nothing was.
     #
-    # Not "whatever was there before", which the symlink case makes false: on a
-    # host where /etc/sysctl.conf links into sysctl.d, `cp -a` copies the link,
-    # the `printf` above writes THROUGH it and destroys the target's content,
-    # and the `mv` restores only the link. The container this runs in ships
-    # either a real file or nothing, so the case is deferred to its own issue
-    # rather than papered over here.
+    # "Whatever was found" is accurate again as of #144, and was not before it:
+    # `cp -a` backs up a symlink as a symlink, and while the fixture above
+    # overwrote the path in place, the link's TARGET was destroyed and this `mv`
+    # restored only the link. The `rm -f` above is what makes the pair whole,
+    # since a real file created at an unlinked path restores by the same `mv`
+    # that a link does.
     if [[ "$LEGACY_EXISTED" == "true" ]]; then
         mv "$LEGACY_CONF.rollback-readback.bak" "$LEGACY_CONF"
     else

@@ -199,7 +199,15 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
         .chain(legacy_glob_reason.iter())
         .collect();
     let unresolved_clause = match open_questions.as_slice() {
-        [reason] => format!(", but {reason}, so whether it names it is unknown"),
+        // "an unresolved source names this parameter" rather than "it names
+        // it": the reason may end in a DIRECTORY, as `/etc/sysctl.d could not
+        // be listed` does, and a directory names no parameter. Neither pronoun
+        // had an antecedent the sentence supplied, which is #146. The parameter
+        // cannot be named here because one clause serves every row, and the
+        // sentence this is appended to has already named it.
+        [reason] => format!(
+            ", but {reason}, so whether an unresolved source names this parameter is unknown"
+        ),
         _ => ", but this scan could not resolve every configuration source, so whether an \
               unresolved one names it is unknown"
             .to_string(),
