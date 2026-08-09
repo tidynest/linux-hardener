@@ -246,8 +246,21 @@ fn user_config_rejects_proc() {
 
 #[test]
 fn user_config_rejects_ssh_dir() {
-    let path = format!("{}/.ssh/id_rsa", test_home().display());
-    assert!(validate_user_config_path(&path).is_err());
+    // `.toml`, deliberately. The old input was `~/.ssh/id_rsa`, which this
+    // function rejects for having the wrong extension and never asks the
+    // dangerous-path guard about at all: a mutation dropping ".ssh" from
+    // DANGEROUS_DOTFILES left the test green (#132). A config file that is
+    // genuinely named like one reaches the guard, which is what the test's
+    // name claims it covers.
+    let path = format!("{}/.ssh/config.toml", test_home().display());
+    assert!(
+        validate_user_config_path(&path).is_err(),
+        "a .toml inside ~/.ssh must be refused by the dangerous-path guard rather than accepted \
+         for having the right extension"
+    );
+    // And the guard itself, named directly, because the end-to-end call above
+    // has more than one reason to fail and only one of them is this one.
+    assert!(is_dangerous_path(Path::new(&path)));
 }
 
 // --- Output path tests ---
@@ -278,6 +291,16 @@ fn output_path_rejects_etc() {
 fn output_path_rejects_ssh_authorized_keys() {
     let path = format!("{}/.ssh/authorized_keys", test_home().display());
     assert!(validate_output_path(&path).is_err());
+    // The end-to-end refusal above comes from the output allow-list, which
+    // ~/.ssh is not on, so it would stand whatever DANGEROUS_DOTFILES held: a
+    // mutation dropping ".ssh" left it green (#132). The guard this test is
+    // named for is asserted directly, because no output path can both satisfy
+    // the allow-list and be a dangerous dotfile, and a test that cannot reach
+    // its subject end to end should say so rather than imply it did.
+    assert!(
+        is_dangerous_path(Path::new(&path)),
+        "~/.ssh must be a dangerous path in its own right, not merely off the output allow-list"
+    );
 }
 
 // --- SSH key path tests ---

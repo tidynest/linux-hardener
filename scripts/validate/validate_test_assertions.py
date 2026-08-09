@@ -142,12 +142,27 @@ LITERAL_LOOP = re.compile(r"^\s*for\b.*\bin\s*&?(\[|vec!\[)")
 #
 # The binding must not be `mut`: a `let mut` can be drained or filtered between
 # its literal and the loop, and then the count at the site is not the count that
-# runs. A subject that is a path rather than a bare name (`ComplianceFramework::
-# ALL`, `CRITICAL_PERMISSIONS`) does not match either, deliberately. Those tables
-# live in another file, this script cannot see whether they are empty, and an
-# emptied table is precisely the silent vacuity it exists to catch.
+# runs. A subject spelled as a PATH rather than a bare name, `ComplianceFramework
+# ::ALL`, does not match this regex at all, because `::` is not in `\w`.
+#
+# `CRITICAL_PERMISSIONS` is a different case and the comment here used to give
+# the wrong reason for it (#132). It DOES match the regex, being a bare name; it
+# is rejected one step later, by the binding lookup finding no local literal that
+# defines it. Both outcomes are right and only one of them is the regex's doing,
+# which matters because the next person to edit this reasons from what is
+# written here. Those tables live in another file, this script cannot see whether
+# they are empty, and an emptied table is precisely the silent vacuity it exists
+# to catch.
 NAMED_LOOP = re.compile(r"^\s*for\b.*\bin\s+&?([A-Za-z_]\w*)\s*\{")
-EMPTY_LITERAL = re.compile(r"=\s*&?(\[\s*\]|vec!\[\s*\])")
+
+# An empty list, wherever it appears. Written once and anchored differently by
+# the two callers: a binding says `= []` and a loop header says `in []`. The
+# literal-loop path had no emptiness guard at all until #132, so `for x in [] {`
+# counted as a subject the reader can count, which is true and useless: the
+# reader counts zero.
+EMPTY_LIST = r"&?(\[\s*\]|vec!\[\s*\])"
+EMPTY_LITERAL = re.compile(rf"=\s*{EMPTY_LIST}")
+EMPTY_LOOP_SUBJECT = re.compile(rf"\bin\s*{EMPTY_LIST}")
 
 # The openers `blank_literals` needs. A character literal is matched whole, so
 # that the `'` of a lifetime is never read as an opening quote.
@@ -158,16 +173,42 @@ CHAR_LITERAL = re.compile(r"'(\\.|[^'\\])'")
 def loop_runs_a_countable_number_of_times(body: list[str], index: int, stripped: str) -> bool:
     """Whether this `for`'s subject is written out where the reader can count it."""
     if LITERAL_LOOP.match(stripped):
-        return True
+        return not EMPTY_LOOP_SUBJECT.search(stripped)
 
     named = NAMED_LOOP.match(stripped)
     if not named:
         return False
 
-    binding = re.compile(rf"^\s*(let|const)\s+{re.escape(named.group(1))}\b[^=]*=\s*&?(\[|vec!\[)")
-    return any(
-        binding.match(line) and not EMPTY_LITERAL.search(line) for line in body[:index]
-    )
+    name = re.escape(named.group(1))
+    binding = re.compile(rf"^\s*(let|const)\s+{name}\b[^=]*=\s*&?(\[|vec!\[)")
+    # Every binding of the name, `mut` and shadowing rebinds included, because
+    # the one that decides what the loop runs over is the LAST one (#132).
+    # Asking `any()` instead accepted
+    # `let cases = [1, 2, 3]; let cases: Vec<u8> = cases.into_iter().filter(..)`
+    # on the strength of the first line, which the second had already replaced.
+    # A `let mut` rebind lands here too and fails `binding` below, which is the
+    # same answer the docstring's reasoning about drainable bindings gives.
+    rebind = re.compile(rf"^\s*(let|const)\s+(mut\s+)?{name}\b[^=]*=")
+    deciding = None
+    for offset, line in enumerate(body[:index]):
+        if rebind.match(line):
+            deciding = (offset, line)
+    if deciding is None:
+        return False
+
+    offset, line = deciding
+    if not binding.match(line) or EMPTY_LITERAL.search(line):
+        return False
+    # `let cases = [` with the `]` on its own line is an empty literal spread
+    # over two, which `EMPTY_LITERAL` cannot see. rustfmt does not produce it,
+    # so this is a guard against a hand-written shape rather than a common one.
+    if line.rstrip().endswith(("[", "vec![")):
+        following = next(
+            (nxt.strip() for nxt in body[offset + 1 : index] if nxt.strip()), ""
+        )
+        if following.startswith("]"):
+            return False
+    return True
 
 
 def find_project_root() -> Path:
@@ -483,10 +524,180 @@ def check_file(path: Path) -> tuple[list[tuple[int, str]], int]:
     return offenders, total
 
 
+
+# Every shape this check is meant to reject, and the near-misses it must keep
+# accepting, written out because the tree contains none of them.
+#
+# That is the whole reason #132 existed. The guards were only ever exercised
+# against the repository, so a shape nobody had written was a shape nobody had
+# tested, and four of them were accepted in silence. A fixture decides which
+# bugs a check is capable of detecting.
+#
+# Each case is a whole file: the walk starts at `#[test]`, so a fragment would
+# be read as nothing at all and pass by being invisible.
+SELF_TEST_CASES: list[tuple[str, bool, str]] = [
+    (
+        """
+#[test]
+fn empty_literal_loop() {
+    for value in [] {
+        assert_eq!(value, 1);
+    }
+}
+""",
+        True,
+        "a loop over an empty literal runs zero times, so its assertion never runs",
+    ),
+    (
+        """
+#[test]
+fn literal_loop() {
+    for value in [1, 2] {
+        assert_eq!(value, value);
+    }
+}
+""",
+        False,
+        "a loop over a written-out list is the good form of the shape",
+    ),
+    (
+        """
+#[test]
+fn named_loop() {
+    let cases = [1, 2, 3];
+    for value in cases {
+        assert_eq!(value, value);
+    }
+}
+""",
+        False,
+        "the same table one line further away is just as countable",
+    ),
+    (
+        """
+#[test]
+fn shadowed_rebind() {
+    let cases = [1, 2, 3];
+    let cases: Vec<u8> = cases.into_iter().filter(|_| false).collect();
+    for value in cases {
+        assert_eq!(value, value);
+    }
+}
+""",
+        True,
+        "the last binding decides what the loop runs over, and it can be empty",
+    ),
+    (
+        """
+#[test]
+fn mutable_binding() {
+    let mut cases = vec![1, 2, 3];
+    cases.clear();
+    for value in cases {
+        assert_eq!(value, value);
+    }
+}
+""",
+        True,
+        "a mut binding can be drained between its literal and the loop",
+    ),
+    (
+        """
+#[test]
+fn multiline_empty_literal() {
+    let cases: [u8; 0] = [
+    ];
+    for value in cases {
+        assert_eq!(value, value);
+    }
+}
+""",
+        True,
+        "an empty literal spread over two lines is still empty",
+    ),
+    (
+        """
+#[test]
+fn table_from_another_file() {
+    for value in CRITICAL_PERMISSIONS {
+        assert_eq!(value, value);
+    }
+}
+""",
+        True,
+        "a table this script cannot see could be empty, which is the vacuity it hunts",
+    ),
+    (
+        """
+#[test]
+fn asserts_at_the_top_level() {
+    assert!(true);
+    for value in [] {
+        assert_eq!(value, 1);
+    }
+}
+""",
+        False,
+        "an unconditional assertion elsewhere in the test is what this check asks for",
+    ),
+]
+
+
+def self_test(root: Path, quiet: bool = False) -> int:
+    """Runs the checker against shapes the tree does not contain."""
+    import tempfile
+
+    if not quiet:
+        print(f"{BLUE}Self-test: shapes this check must reject, and ones it must not...{NC}\n")
+    # Doing nothing must never exit 0, the same rule `main` states for an empty
+    # walk. An emptied table here would otherwise report a clean self-test.
+    if len(SELF_TEST_CASES) < 8:
+        print(f"{RED}The self-test table holds {len(SELF_TEST_CASES)} cases, fewer than the 8 written.{NC}")
+        return 1
+
+    failures = 0
+    with tempfile.TemporaryDirectory() as directory:
+        for index, (source, should_offend, why) in enumerate(SELF_TEST_CASES):
+            path = Path(directory) / f"case_{index}_tests.rs"
+            path.write_text(source, encoding="utf-8")
+            offenders, total = check_file(path)
+            if total != 1:
+                print(f"  {RED}x{NC} case {index}: read {total} test(s), expected exactly 1")
+                failures += 1
+                continue
+            if bool(offenders) != should_offend:
+                verdict = "flagged" if offenders else "accepted"
+                wanted = "flagged" if should_offend else "accepted"
+                print(f"  {RED}x{NC} case {index}: {verdict}, expected {wanted}: {why}")
+                failures += 1
+                continue
+            if not quiet:
+                print(f"  {GREEN}v{NC} {why}")
+
+    if failures:
+        print(f"\n{RED}{failures} of {len(SELF_TEST_CASES)} self-test case(s) failed{NC}")
+        return 1
+    if not quiet:
+        print(f"\n{GREEN}All {len(SELF_TEST_CASES)} self-test cases behave as written{NC}")
+    return 0
+
+
 def main() -> int:
+    root = find_project_root()
+    if "--self-test" in sys.argv:
+        return self_test(root)
     everything = "--all" in sys.argv
     print(f"{BLUE}Validating that every test asserts something unconditionally...{NC}\n")
-    root = find_project_root()
+
+    # The self-test runs on every invocation, quietly, before any verdict about
+    # the tree is printed. A checker whose own guards are unproven is a checker
+    # whose green line means only that nothing in the tree happens to use the
+    # shapes it misses, which is exactly what #132 was. Run it alone with
+    # `--self-test` to see the cases named.
+    if self_test(root, quiet=True) != 0:
+        print(f"{RED}The checker's own self-test failed, so its verdict on the tree is worthless.{NC}")
+        print(f"{YELLOW}Run: python3 scripts/validate/validate_test_assertions.py --self-test{NC}")
+        return 1
 
     files = test_files(root, everything)
     if not files:
