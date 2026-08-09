@@ -3288,9 +3288,9 @@ expected_check_total() {
         min_days_rows=2
     fi
     # How many plugins this run compares, and therefore how many pre-apply
-    # controls, preview-agreement rows and introduced-finding rows it makes. Six
-    # in a booted run and five otherwise, because the services plugin is only in
-    # the compared set where systemctl can be asked anything.
+    # controls, preview-agreement rows and introduced-finding rows it makes.
+    # Seven in a booted run and six otherwise, because the services plugin is
+    # only in the compared set where systemctl can be asked anything.
     local plugins
     plugins="$(diff_plugin_count)"
     # The services `not-running` row is unaskable on a host where the unit was
@@ -4304,8 +4304,9 @@ retain_first_apply_output() {
 # already hardened and agree with itself.
 #
 # Its exit status is deliberately not a refusal, unlike capture_scan_json's.
-# Measured against this tree's binary at 420a52b: `--format json apply
-# --dry-run` over the five compared plugins exits 1 on an ordinary host,
+# Measured against this tree's binary at 420a52b, when the compared set held
+# five plugins rather than today's six: `--format json apply
+# --dry-run` over that set exits 1 on an ordinary host,
 # because the pam plugin reports a blocking validation issue, and the document
 # is printed all the same (output::validation_reports runs ahead of the bail).
 # A capture that refused on non-zero would refuse most runs.
@@ -7751,6 +7752,99 @@ bluetooth.service    enabled"
     SERVICES_MASK_AFTER="$svc_saved_mask_after"
     SERVICES_ACTIVE_AFTER="$svc_saved_active_after"
 
+    # === The audit oracle ===
+    #
+    # Its three rows read absolute paths on the live host, so those belong to a
+    # container run and not to this. What is driven here is everything the rows
+    # are read THROUGH: the three constants, which are copies of values the
+    # plugin owns, and the pre-apply control, which is the only thing standing
+    # between the compiled-file row and a container that shipped the rule.
+    #
+    # The constants were pinned in prose alone. AUDIT_PROBE_RULE's comment said
+    # the self-test read it back out of audit/mod.rs "so the two cannot drift",
+    # and no such check had been written: a rule the plugin renamed would have
+    # left the row asking whether the tool wrote what this suite imagined, which
+    # is a question about this suite. No validator reads prose.
+    local au_source="$DIFF_PROJECT_DIR/crates/hardener-plugins/src/audit/mod.rs"
+    check_status 0 "the audit plugin's source is readable, so the constants below are compared against something" \
+        test -r "$au_source"
+    check_eq "$(grep -cF -- "\"$AUDIT_PROBE_RULE\"" "$au_source" || true)" "1" \
+        "the probe rule is one of the plugin's own, read back out of its AUDIT_RULES table rather than restated here"
+    check_eq "$(grep -cF -- "\"$AUDIT_RULES_FILE\"" "$au_source" || true)" "1" \
+        "and the rules file this suite stats is the path the plugin declares it writes"
+    # The plugin does name the compiled file, at AUDIT_COMPILED_RULES, and this
+    # assertion was written expecting it not to. It names it to capture it into
+    # the checkpoint, and nothing writes it: augenrules produces the content.
+    # The independence this oracle rests on is over who WRITES that file, not
+    # over who knows its path, and asserting the stronger thing would have made
+    # a correct rollback capture fail a test about the oracle.
+    check_eq "$(grep -cF -- "\"$AUDIT_COMPILED_FILE\"" "$au_source" || true)" "1" \
+        "and the compiled file both read is one path, though what this suite reads there is augenrules' output and the plugin only captures it for rollback"
+
+    local au_saved_before="$AUDIT_COMPILED_BEFORE" au_saved_generation=$APPLY_GENERATION
+    local au_saved_total=$CHECKS_TOTAL au_saved_passed=$CHECKS_PASSED
+    local au_saved_failed=$CHECKS_FAILED au_saved_unaskable=$CHECKS_UNASKABLE
+    local au_out
+    au_out="$(mktemp)"
+
+    APPLY_GENERATION=1
+    check_status 1 "the pre-apply capture refuses to run after an apply, because a reading taken then describes the host the apply produced" \
+        preapply_audit_init
+    APPLY_GENERATION=0
+
+    # augenrules is a container property and this runs on the host, so the
+    # answer is injected exactly as the services words are. Both sides of it
+    # matter: the unaskable branch is what a fixture without the audit package
+    # gets, and reading it as a pass would be the whole oracle bought for free.
+    audit_askable() { return "$au_askable_rc"; }
+    local au_askable_rc=1
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    AUDIT_COMPILED_BEFORE="absent"
+    run_audit_preapply_control > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/0/1" \
+        "a fixture without augenrules declares the control unaskable rather than passing it, because a tool that cannot be asked has agreed with nothing"
+
+    au_askable_rc=0
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    run_audit_preapply_control > "$au_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "1/0/0" \
+        "a compiled file that did not exist before apply is the state the rows below ask a real question against"
+    check_status 0 "and the control says which state it read, so the log carries the evidence rather than the verdict" \
+        grep -q "was absent before apply" "$au_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    AUDIT_COMPILED_BEFORE="-w /etc/passwd -p wa -k identity"
+    run_audit_preapply_control > "$au_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "1/0/0" \
+        "a compiled file already naming OTHER rules passes, because the row below asks about one rule and not about an empty file"
+
+    # The one this control exists for, and the shape a second differential run
+    # on an unrecreated container produces.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    AUDIT_COMPILED_BEFORE="-w /etc/passwd -p wa -k identity
+$AUDIT_PROBE_RULE"
+    run_audit_preapply_control > "$au_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/1/0" \
+        "a compiled file that already named the probe rule fails the control, because the row below would then pass whether or not the apply wrote anything"
+    check_status 0 "and says to recreate the container, which is the fix rather than a rerun" \
+        grep -q "recreate the container first" "$au_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    AUDIT_COMPILED_BEFORE="unreadable"
+    run_audit_preapply_control > "$au_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/1/0" \
+        "and a compiled file that existed and could not be read fails too, rather than being read as the absence that passes"
+
+    unset -f audit_askable
+    audit_askable() {
+        command -v augenrules >/dev/null 2>&1
+    }
+    rm -f "$au_out"
+    AUDIT_COMPILED_BEFORE="$au_saved_before"
+    APPLY_GENERATION=$au_saved_generation
+    CHECKS_TOTAL=$au_saved_total CHECKS_PASSED=$au_saved_passed
+    CHECKS_FAILED=$au_saved_failed CHECKS_UNASKABLE=$au_saved_unaskable
+
     # The preview an operator approves, held against the apply that followed.
     # Both sides are injected here exactly as the firewall boot readings are: a
     # check that shells out live cannot be driven, and an assertion nothing
@@ -7770,7 +7864,8 @@ bluetooth.service    enabled"
 pam-hardening|PAM Authentication Hardening
 permissions-hardening|File Permissions Hardening
 firewall-hardening|Firewall Hardening
-kernel-hardening|Kernel Hardening"
+kernel-hardening|Kernel Hardening
+audit-hardening|Audit Rules Hardening"
 
     # The shape `--format json apply --dry-run` prints, reduced to the keys the
     # rows read. Taken from a live run of this tree's binary at 420a52b, where
@@ -7816,6 +7911,20 @@ $pa_tick Audit Rules Hardening - no changes needed"
     check_status 1 "and an id the tool's listing does not name is refused, because an empty name would match the space in every line" \
         apply_plugin_display_name no-such-plugin
 
+    # The fixture above stands in for the tool's live listing, and a live run is
+    # guarded: capture_plugin_names refuses outright when the listing does not
+    # name a compared plugin. Nothing guarded the fixture, and its drift was not
+    # quiet. When audit joined DIFF_PLUGINS the name was not added here, so three
+    # assertions below went red on their counts, which reads as the rows being
+    # wrong rather than as the fixture being short one line.
+    local pa_missing="" pa_plugin
+    for pa_plugin in "${DIFF_PLUGINS[@]}"; do
+        apply_plugin_display_name "$pa_plugin" >/dev/null \
+            || pa_missing+="${pa_missing:+, }$pa_plugin"
+    done
+    check_eq "$pa_missing" "" \
+        "the stand-in listing names every compared plugin, so a plugin added to DIFF_PLUGINS is refused here by name rather than three rows below by arithmetic"
+
     check_eq "$(apply_applied_count firewall-hardening)" "3" \
         "the applied count comes off the plugin's own result line, colour escapes and all"
     check_eq "$(apply_applied_count ssh-hardening)" "0" \
@@ -7838,7 +7947,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     FIRST_APPLY_OUTPUT="$pa_apply_fixture"
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     run_preview_agreement_checks > "$pa_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "4/1" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/1" \
         "the one plugin the preview was silent about and the apply then applied changes for is the one row that fails"
     check_status 0 "and the failure carries both numbers, so a reader is not sent back to the tool to find out how far apart they were" \
         grep -q "preview agreement firewall-hardening: the preview named no estimated change and no issue, and the apply then reported 3 applied change(s)" "$pa_out"
@@ -7848,12 +7957,12 @@ $pa_tick Audit Rules Hardening - no changes needed"
         grep -q "preview agreement pam-hardening: the preview named 0 estimated change(s) and 1 issue(s)" "$pa_out"
 
     # The direction this deliberately does not fail. Every preview now names a
-    # change and two of the five applies report none, which is what a plugin
+    # change and three of the six applies report none, which is what a plugin
     # that failed partway on a container looks like from here.
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     PRE_APPLY_DRY_RUN_JSON="$(jq 'map(.validation_report_estimated_changes = ["a change the apply may not reach"])' <<<"$pa_dry_fixture")"
     run_preview_agreement_checks > /dev/null
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/0" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "6/0" \
         "a preview that named work the apply then did not do passes, because plugins fail partway on containers and making that red would fail correct runs"
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
@@ -7970,7 +8079,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     # counter these functions increment would be discarded.
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     run_introduced_finding_checks > "$if_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/0" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "6/0" \
         "every row passes when the only findings the apply introduced are declared ones"
     check_status 0 "and the declared row carries the reason the entry gives, so a reader meets it in the log rather than being sent to the table" \
         grep -q "introduced findings kernel-hardening: every finding the apply introduced is declared: kernel_boot_override_net_ipv4_conf_all_log_martians (ufw's sysctl file sets this to 0" "$if_out"
@@ -7983,7 +8092,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     INTRODUCED_FINDING_ALLOWANCES=("${if_saved_allowances[0]}")
     run_introduced_finding_checks > "$if_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "4/1" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/1" \
         "an introduced finding no entry declares fails its plugin's row, and only that plugin's"
     check_status 0 "and the row names the id, because the maintainer's next move is to decide what that one finding is" \
         grep -q "no INTRODUCED_FINDING_ALLOWANCES entry declares: kernel_boot_override_net_ipv4_conf_default_log_martians" "$if_out"
@@ -7992,7 +8101,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     SCAN_JSON="$(jq 'map(select(.plugin_id != "firewall-hardening"))' <<<"$if_after")"
     run_introduced_finding_checks > "$if_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "4/1" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/1" \
         "a plugin the post-apply document never covered fails its own row rather than reading as one that introduced nothing"
     check_status 0 "named against the document it was missing from" \
         grep -q "introduced findings firewall-hardening: the post-apply scan document holds no readable findings array" "$if_out"
@@ -8001,7 +8110,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     SCAN_JSON="$if_after"
     PRE_APPLY_SCAN_JSON="$(jq 'map(select(.plugin_id != "pam-hardening"))' <<<"$if_before")"
     run_introduced_finding_checks > "$if_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "4/1" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/1" \
         "and a plugin the pre-apply document never covered fails too, on the other side of the same comparison"
     check_status 0 "named against that side, because the two absences are fixed in different places" \
         grep -q "introduced findings pam-hardening: the pre-apply scan document holds no readable findings array" "$if_out"
@@ -8012,9 +8121,13 @@ $pa_tick Audit Rules Hardening - no changes needed"
     check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "1/0" \
         "the control passes when the apply resolved at least one finding"
     check_status 0 "and names which plugin resolved what, so the log shows the comparison ran rather than asserting that it did" \
-        grep -q "introduced findings control: the apply resolved 5 finding(s)" "$if_out"
+        grep -q "introduced findings control: the apply resolved 6 finding(s)" "$if_out"
     check_status 0 "including the plugin that resolved one finding and introduced two in the same apply" \
         grep -q "kernel-hardening resolved kernel_net_ipv4_conf_all_rp_filter" "$if_out"
+    # The newest compared plugin named on the same line, so the count above is
+    # not the only thing that would notice audit dropping back out of the set.
+    check_status 0 "and the plugin this oracle was added for, so the count above is not the only reading that covers it" \
+        grep -q "audit-hardening resolved audit_rules_missing" "$if_out"
 
     # The vacuity every row above passes on, and the reason this control is not
     # optional: nothing introduced is the pass condition, and a document nobody
