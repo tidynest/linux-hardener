@@ -1,6 +1,6 @@
 # Getting started
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-10
 
 A task-oriented tour of the hardener for new users: scan a system, read the
 findings, preview and apply hardening, roll it back, and produce a first
@@ -48,10 +48,14 @@ Each finding shows:
   where automatic changes are not safe.
 
 If a finding is an accepted risk in your environment, do not just ignore it:
-record a policy exception in the config file so the deviation carries a
-reason, an approver, and an expiry date. See the
-[configuration reference](../reference/configuration.md) for the exception
-format, then use the scan modes to check your policy:
+record a policy exception so the deviation carries a reason, an approver, and
+an expiry date. `hardener exception add <plugin-id> <key> --reason <text>`
+writes it for you, pinning the value the finding reports right now (the key
+is printed beside the finding); on the desktop, open the finding's detail
+and click **Accept This Finding**. Hand-editing `config.toml` still works if
+you prefer it; see the [configuration reference](../reference/configuration.md)
+for the exception format either way, then use the scan modes to check your
+policy:
 
 ```bash
 hardener scan --audit         # Ignore config entirely: the raw security truth
@@ -176,7 +180,9 @@ The desktop app (`linux-hardener-desktop`) wraps the same engine:
 
 1. Launch the app and click **Run Security Scan** on the Dashboard.
 2. Review findings by severity on the **Analysis** page; click a finding for
-   its detail panel.
+   its detail panel. A finding you want to accept as a documented deviation
+   has an **Accept This Finding** button there; a reason is required, and the
+   row relabels immediately as a Policy Exception, no second scan needed.
 3. On the **Hardening** page (Configure tab) pick a profile and plugins, click
    **Preview Changes**, then the Apply button (labelled "Apply N Changes"); a
    polkit dialog asks for your password (root work runs through `pkexec`, see
