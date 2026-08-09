@@ -1024,11 +1024,17 @@ the namespace loses the kernel oracle and keeps the services one, which is the
 direction a mistake here should fail in, and `--self-test` asks for all four
 combinations rather than the two a runner produces.
 
-**Read against a freshly created arch container on 2026-08-09**, with
-`run-cross-distro-tests.sh --differential --distro arch` and therefore no
-`--boot` anywhere: **81 of 81 passed, 13 unaskable**, the 13 being the 7
+**Both paths were read on 2026-08-09**, against containers created immediately
+beforehand. Unbooted, `run-cross-distro-tests.sh --differential --distro arch`
+with no `--boot` anywhere: **81 of 81 passed, 13 unaskable**, the 13 being the 7
 parameters outside `/proc/sys/net`, the 3 services rows with their pre-apply
-control, and the 2 `PASS_MIN_DAYS` rows. The same invocation before the split
+control, and the 2 `PASS_MIN_DAYS` rows. Booted, across all six distributions
+via `release-readiness-root.sh --only differential`: **86 of 86 on arch and 88
+of 88 on each of the other five**, with 10 unaskable on arch and 8 elsewhere,
+and the header reading `1` on both signals. The 88 rather than 89 is the
+`services not-running` row, unaskable on all six because bluez was installed and
+enabled but not running; the arch 86 is that 88 less its two `PASS_MIN_DAYS`
+rows. **Not one kernel row was unaskable in either path.** The same invocation before the split
 was sized at 68 by the arithmetic above, the difference being the 11 kernel
 rows, the stricter-seeded row and the kernel plugin's pre-apply control, all
 three declared unaskable there; that is what `expected_check_total` says of the
