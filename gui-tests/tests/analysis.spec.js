@@ -185,6 +185,15 @@ test.describe('Findings', () => {
     ).toBeVisible();
   });
 
+  // The row-head locators below (here and in T-FIND-11 above) match on the
+  // finding title alone, deliberately without `exact: true`. The row head's
+  // accessible name is not the title on its own: it concatenates the title
+  // with its category tag in the same element (`.finding-row-head` in
+  // findings_tab.rs renders both spans as siblings inside the button), so an
+  // exact match against the bare title would fail on a correct build. A
+  // reviewer has already flagged the missing `exact: true` once as an
+  // oversight; it is not one.
+  //
   // T-EXC-01: A keyed finding with no exception offers the accept control
   //
   // 'Bluetooth service enabled' is the mock's own finding_title (services-002)
