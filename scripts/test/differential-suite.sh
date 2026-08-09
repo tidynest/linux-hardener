@@ -106,7 +106,7 @@ run_is_booted() {
 #
 # Defined below the booted flag rather than at the top of the file, because its
 # sixth member depends on it.
-DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardening kernel-hardening)
+DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardening kernel-hardening audit-hardening)
 
 # The services plugin joins the compared set only in a booted run, and this is
 # the only place that decision is made.
@@ -2662,6 +2662,152 @@ run_firewall_checks() {
     done
 }
 
+# === Audit rules the audit package's own tool compiled ===
+#
+# The oracle is `augenrules`, which ships with the audit package and merges
+# /etc/audit/rules.d/*.rules into /etc/audit/audit.rules. It is a different
+# program from the one under test, and it needs no running auditd, which is what
+# makes an audit oracle possible in a container at all: the apply's reload FAILS
+# here by design, because the kernel's netlink audit socket cannot be opened, and
+# the merge still happens before that failure.
+#
+# Measured in the arch container 2026-08-09, with the reload failing exactly as
+# expected: /etc/audit/audit.rules did not exist before the apply, and afterwards
+# it held the tool's rules, `ls` reported /etc/audit/rules.d/hardening.rules at
+# 0640, and `augenrules --check` printed "No change" and exited 0 while writing
+# "Cannot open netlink audit socket" to stderr.
+#
+# WHAT THIS ORACLE CANNOT SEE, which is the rule issue #47 states for every new
+# oracle. `augenrules` reads the same directory this tool writes into, so a tool
+# writing correct rules to the WRONG directory is agreed with by both and both
+# are wrong. It is the same limit the permissions oracle carries and states.
+# Closing it needs a second source for the directory, not a second reader of it.
+#
+# And it says nothing about enforcement. No auditd runs, no rule reaches the
+# kernel, and `auditctl -l` cannot be asked. A rule the kernel would REFUSE is
+# indistinguishable here from one it would accept, so every row below is about
+# what the next boot would load rather than what is being audited now.
+AUDIT_CHECKS=(
+    "rules-file-mode"
+    "compiled-names-rule"
+    "compiled-is-current"
+)
+
+# The rule the compiled-file row looks for, and it is one of the plugin's own
+# rather than a guess: `audit/mod.rs`'s AUDIT_RULES table declares it, and the
+# self-test reads it back out of that source so the two cannot drift. A rule this
+# suite invented would be a row asking whether the tool wrote what this suite
+# imagined, which is a question about this suite.
+#
+# A watch rule rather than a syscall rule, because the syscall rules carry an
+# `arch=` that differs between the container's architecture and the reader's
+# expectations, and this row is about whether the merge happened rather than
+# about which architecture it happened for.
+AUDIT_PROBE_RULE="-w /etc/shadow -p wa -k identity"
+
+# The file the tool writes, and the file augenrules compiles.
+AUDIT_RULES_FILE="/etc/audit/rules.d/hardening.rules"
+AUDIT_COMPILED_FILE="/etc/audit/audit.rules"
+
+AUDIT_COMPILED_BEFORE=""
+
+# Whether this fixture has the audit package's merge tool at all. Without it
+# nothing here can be asked, and saying so is better than a row that passes
+# because a grep found nothing to disagree with.
+audit_askable() {
+    command -v augenrules >/dev/null 2>&1
+}
+
+# The pre-apply reading. Its only job is to establish that the compiled file did
+# NOT already name the probe rule, which is what stops the row below passing
+# against a container that shipped it.
+preapply_audit_init() {
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the pre-apply audit capture was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        return 1
+    fi
+    AUDIT_COMPILED_BEFORE="absent"
+    if [[ -f "$AUDIT_COMPILED_FILE" ]]; then
+        AUDIT_COMPILED_BEFORE="$(cat "$AUDIT_COMPILED_FILE" 2>/dev/null || printf 'unreadable')"
+    fi
+}
+
+run_audit_preapply_control() {
+    if ! audit_askable; then
+        record_unaskable "audit-hardening pre-apply control: augenrules is not installed here, so the audit package's own merge tool cannot be asked what it compiled"
+        return 0
+    fi
+    if [[ "$AUDIT_COMPILED_BEFORE" == "unreadable" ]]; then
+        record_fail "audit-hardening: $AUDIT_COMPILED_FILE exists and could not be read before apply, so this control cannot say whether the rule below was already there"
+        return 0
+    fi
+    if [[ "$AUDIT_COMPILED_BEFORE" != "absent" ]] \
+        && grep -qF -- "$AUDIT_PROBE_RULE" <<<"$AUDIT_COMPILED_BEFORE"; then
+        record_fail "audit-hardening: $AUDIT_COMPILED_FILE already named '$AUDIT_PROBE_RULE' before apply, so the row below would pass whether or not the tool wrote anything; recreate the container first"
+        return 0
+    fi
+    local state="present and naming other rules"
+    [[ "$AUDIT_COMPILED_BEFORE" == "absent" ]] && state="absent"
+    record_pass "audit-hardening: $AUDIT_COMPILED_FILE was $state before apply and did not name '$AUDIT_PROBE_RULE', so the checks below are asking a real question"
+}
+
+run_audit_checks() {
+    local key mode compiled
+    for key in "${AUDIT_CHECKS[@]}"; do
+        if ! audit_askable; then
+            record_unaskable "audit $key: augenrules is not installed here, so the audit package's own merge tool cannot be asked what it compiled"
+            continue
+        fi
+        case "$key" in
+            rules-file-mode)
+                # The same limit the permissions oracle states: `stat` is asked
+                # about the path the tool chose, so a tool writing the right
+                # mode to the wrong file is agreed with here.
+                if [[ ! -f "$AUDIT_RULES_FILE" ]]; then
+                    record_fail "audit $key: the apply reported writing rules and $AUDIT_RULES_FILE does not exist, so nothing was left for auditd to load"
+                elif ! mode="$(stat -c %a "$AUDIT_RULES_FILE" 2>/dev/null)"; then
+                    record_fail "audit $key: $AUDIT_RULES_FILE could not be stat'd, so its mode is unproven"
+                elif [[ "$mode" == "640" ]]; then
+                    record_pass "audit $key: $AUDIT_RULES_FILE is mode $mode, which is what STIG asks of a rules drop-in"
+                else
+                    record_fail "audit $key: $AUDIT_RULES_FILE is mode $mode rather than 640, so a rules file the tool reported writing is readable by accounts that should not see it"
+                fi
+                ;;
+            compiled-names-rule)
+                # The row this oracle exists for. The file is augenrules'
+                # output, not this tool's, so a tool that wrote a rules file
+                # augenrules refuses to merge fails here while every check that
+                # reads its own output would pass.
+                if [[ ! -f "$AUDIT_COMPILED_FILE" ]]; then
+                    record_fail "audit $key: $AUDIT_COMPILED_FILE does not exist after apply, so augenrules never merged the rules the tool wrote and the next boot loads none of them"
+                elif ! compiled="$(cat "$AUDIT_COMPILED_FILE" 2>/dev/null)"; then
+                    record_fail "audit $key: $AUDIT_COMPILED_FILE could not be read after apply, so what augenrules compiled is unproven"
+                elif grep -qF -- "$AUDIT_PROBE_RULE" <<<"$compiled"; then
+                    record_pass "audit $key: augenrules compiled '$AUDIT_PROBE_RULE' into $AUDIT_COMPILED_FILE, which is the audit package's own reading of what this tool wrote"
+                else
+                    record_fail "audit $key: $AUDIT_COMPILED_FILE does not name '$AUDIT_PROBE_RULE' after apply, so the rules the tool reported writing are not what the next boot would load"
+                fi
+                ;;
+            compiled-is-current)
+                # `augenrules --check` compares the compiled file against the
+                # drop-in directory and says whether a merge is outstanding. It
+                # writes "Cannot open netlink audit socket" to stderr in a
+                # container and still exits 0, measured 2026-08-09, so stderr is
+                # discarded and the status is what is read.
+                if augenrules --check >/dev/null 2>&1; then
+                    record_pass "audit $key: augenrules reports $AUDIT_COMPILED_FILE current against $(dirname "$AUDIT_RULES_FILE"), so no merge is outstanding after the apply"
+                else
+                    record_fail "audit $key: augenrules reports a merge outstanding after the apply, so what the next boot loads is not what the rules directory now says"
+                fi
+                ;;
+            *)
+                record_fail "audit $key: no probe is defined for this key, so the table and the checks have come apart"
+                ;;
+        esac
+    done
+}
+
 KERNEL_BEFORE=""
 
 # The pre-apply reading, which is half of what the checks below compare.
@@ -3025,10 +3171,11 @@ IDEMPOTENCE_CHECKS_EXPECTED=4
 # The plugins compared in EVERY run. Services is the sixth and joins only a
 # booted one, which is why this stays a literal and the count below is a
 # function.
-DIFF_PLUGINS_EXPECTED=5
+DIFF_PLUGINS_EXPECTED=6
 PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 PERMISSION_CHECKS_EXPECTED=9
 FIREWALL_CHECKS_EXPECTED=3
+AUDIT_CHECKS_EXPECTED=3
 SERVICES_CHECKS_EXPECTED=3
 KERNEL_CHECKS_EXPECTED=11
 # Pinned for the same reason as every table above, and one more that is specific
@@ -3060,6 +3207,7 @@ require_check_tables() {
         "PWQUALITY_ENFORCEMENT_CHECKS ${#PWQUALITY_ENFORCEMENT_CHECKS[@]} $PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED" \
         "PERMISSION_CHECKS ${#PERMISSION_CHECKS[@]} $PERMISSION_CHECKS_EXPECTED" \
         "FIREWALL_CHECKS ${#FIREWALL_CHECKS[@]} $FIREWALL_CHECKS_EXPECTED" \
+        "AUDIT_CHECKS ${#AUDIT_CHECKS[@]} $AUDIT_CHECKS_EXPECTED" \
         "SERVICES_CHECKS ${#SERVICES_CHECKS[@]} $SERVICES_CHECKS_EXPECTED" \
         "KERNEL_CHECKS ${#KERNEL_CHECKS[@]} $KERNEL_CHECKS_EXPECTED" \
         "KERNEL_UNASKABLE ${#KERNEL_UNASKABLE[@]} $KERNEL_UNASKABLE_EXPECTED" \
@@ -3177,6 +3325,7 @@ expected_check_total() {
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
         + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + plugins - 1 + kernel_control \
         + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
+        + AUDIT_CHECKS_EXPECTED \
         + kernel_rows \
         + services_rows \
         + plugins + 1 \
@@ -5265,7 +5414,7 @@ Number of days of warning before password expires	: 7"
     check_eq "${#IDEMPOTENCE_CHECKS[@]}" "4" "the idempotency table holds four readings"
     check_eq "${IDEMPOTENCE_CHECKS[0]}" "permission-modes" \
         "the permission reading is taken first, ahead of the probe account login-defs creates"
-    check_eq "${#DIFF_PLUGINS[@]}" "5" "five plugins are compared"
+    check_eq "${#DIFF_PLUGINS[@]}" "6" "six plugins are compared"
     check_eq "${#SEEDED_SSH_CHECKS[@]}" "2" "the seeded table holds two directives"
     check_eq "${#PERMISSION_CHECKS[@]}" "9" "the permissions table holds nine paths"
     check_eq "${#KERNEL_CHECKS[@]}" "11" \
@@ -5771,13 +5920,13 @@ Number of days of warning before password expires	: 7"
     # the namespace would take the boot from the environment, which is the
     # inheritance the paragraph above refuses.
     pinned_total="$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)"
-    check_eq "$pinned_total" "70" \
+    check_eq "$pinned_total" "76" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, one introduced-finding row per plugin and its own control, plus one pre-apply control per seeded directive, plus the rollback-reload check's own two"
     # The kernel rows against the namespace ALONE, which is the configuration
     # #137 exists for: `--pipe --private-network` holds no systemd and asks
     # every kernel row regardless. Thirteen more than the bare total, and none
     # of them a services row.
-    check_eq "$(RUN_NETNS=1 RUN_BOOTED=0 expected_check_total)" "83" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=0 expected_check_total)" "89" \
         "a run holding its own network namespace and no systemd is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control, and for no services row at all"
     # The services rows, and the one of them whose askability is a property of
     # the HOST rather than of the invocation. Six more in a booted run: three
@@ -5785,10 +5934,10 @@ Number of days of warning before password expires	: 7"
     # generic per-plugin blocks, which follow the plugin count.
     local svc_saved_active="$SERVICES_ACTIVE_BEFORE"
     SERVICES_ACTIVE_BEFORE="active"
-    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "89" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "95" \
         "a booted run is sized for eleven kernel rows, the seeded kernel row, the kernel plugin's own control, and the six a services plugin with a running unit brings with it"
     SERVICES_ACTIVE_BEFORE="inactive"
-    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "88" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "94" \
         "and one fewer where it was never running, because that row is declared unaskable rather than passed"
     check_eq "$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)" "$pinned_total" \
         "an unbooted run is unmoved by services entirely, because the plugin is not in the compared set there"
@@ -5797,7 +5946,7 @@ Number of days of warning before password expires	: 7"
     # to be arithmetic as well as a predicate, and because a future runner that
     # forgets one --setenv lands here rather than on a red total.
     SERVICES_ACTIVE_BEFORE="active"
-    check_eq "$(RUN_NETNS=0 RUN_BOOTED=1 expected_check_total)" "76" \
+    check_eq "$(RUN_NETNS=0 RUN_BOOTED=1 expected_check_total)" "82" \
         "a boot declared without the namespace asks for the services rows and for no kernel row, so a missing flag costs coverage rather than producing a total nothing can meet"
     SERVICES_ACTIVE_BEFORE="$svc_saved_active"
 
@@ -6003,6 +6152,17 @@ Number of days of warning before password expires	: 7"
     "unchecked": [],
     "scan_success": true,
     "scan_error": null
+
+  },
+  {
+    "plugin_id": "audit-hardening",
+    "plugin_name": "Audit Rules Hardening",
+    "findings": [
+      { "finding_id": "audit_rules_missing", "finding_current_value": "absent" }
+    ],
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   }
 ]'
 
@@ -6183,6 +6343,17 @@ Number of days of warning before password expires	: 7"
     "plugin_id": "kernel-hardening",
     "plugin_name": "Kernel Hardening",
     "findings": [],
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
+
+  },
+  {
+    "plugin_id": "audit-hardening",
+    "plugin_name": "Audit Rules Hardening",
+    "findings": [
+      { "finding_id": "audit_rules_missing", "finding_current_value": "absent" }
+    ],
     "unchecked": [],
     "scan_success": true,
     "scan_error": null
@@ -7350,13 +7521,13 @@ bluetooth.service    enabled"
     svc_loaded="$(HARDENER_DIFF_BOOTED=1 bash -c 'source "$1"; printf "%s" "${DIFF_PLUGINS[*]}"' _ "$svc_suite")"
     check_eq "${svc_loaded##* }" "$SERVICES_PLUGIN_ID" \
         "a booted load appends the services plugin, last, so it is applied after the plugins that were already compared"
-    check_eq "$(wc -w <<<"$svc_loaded")" "6" \
-        "and compares six plugins in that mode"
+    check_eq "$(wc -w <<<"$svc_loaded")" "7" \
+        "and compares seven plugins in that mode"
     svc_loaded="$(HARDENER_DIFF_BOOTED=0 bash -c 'source "$1"; printf "%s" "${DIFF_PLUGINS[*]}"' _ "$svc_suite")"
     check_status 1 "an unbooted load does not compare the services plugin at all" \
         grep -qF "$SERVICES_PLUGIN_ID" <<<"$svc_loaded"
-    check_eq "$(wc -w <<<"$svc_loaded")" "5" \
-        "and compares the five that need no systemd to ask"
+    check_eq "$(wc -w <<<"$svc_loaded")" "6" \
+        "and compares the six that need no systemd to ask"
     # The third load, and the one #137 created: the namespace signal must move
     # this list not at all. The two signals were one variable, so a suite that
     # read the wrong one here would put the services plugin into every
@@ -7365,8 +7536,8 @@ bluetooth.service    enabled"
     svc_loaded="$(HARDENER_DIFF_NETNS=1 HARDENER_DIFF_BOOTED=0 bash -c 'source "$1"; printf "%s" "${DIFF_PLUGINS[*]}"' _ "$svc_suite")"
     check_status 1 "a namespace without a boot does not compare the services plugin either, because the namespace says nothing about PID 1" \
         grep -qF "$SERVICES_PLUGIN_ID" <<<"$svc_loaded"
-    check_eq "$(wc -w <<<"$svc_loaded")" "5" \
-        "and still compares five, so the kernel oracle is bought without the services rows coming with it"
+    check_eq "$(wc -w <<<"$svc_loaded")" "6" \
+        "and still compares six, so the kernel oracle is bought without the services rows coming with it"
 
     # Every plugin this suite can compare must be a plugin that EXISTS. These
     # strings do two jobs: they are passed to `--plugin`, which refuses an id
@@ -7605,7 +7776,8 @@ kernel-hardening|Kernel Hardening"
   {"validation_report_plugin_id":"pam-hardening","validation_report_issues":[{"validation_issue_severity":"High"}],"validation_report_estimated_changes":[]},
   {"validation_report_plugin_id":"permissions-hardening","validation_report_issues":[],"validation_report_estimated_changes":["chmod 0600 /etc/shadow"]},
   {"validation_report_plugin_id":"firewall-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]},
-  {"validation_report_plugin_id":"kernel-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]}
+  {"validation_report_plugin_id":"kernel-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]},
+  {"validation_report_plugin_id":"audit-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]}
 ]'
     # And the shape apply_results prints, with every summary wording in it. The
     # firewall line carries the colour escapes, so the assertions below run over
@@ -7616,7 +7788,8 @@ $pa_tick SSH Hardening - no changes needed
 $pa_cross PAM Authentication Hardening - 1 of 3 change(s) applied, 2 failed
 $pa_tick File Permissions Hardening - 2 change(s) applied, 1 skipped
 $pa_green$pa_tick$pa_plain Firewall Hardening - 3 change(s) applied
-$pa_tick Kernel Hardening - no changes needed"
+$pa_tick Kernel Hardening - no changes needed
+$pa_tick Audit Rules Hardening - no changes needed"
 
     pa_out="$(mktemp)"
     PRE_APPLY_DRY_RUN_JSON="$pa_dry_fixture"
@@ -7950,6 +8123,7 @@ run_full_suite() {
     preapply_firewall_init || return 1
     preapply_services_init || return 1
     preapply_kernel_init || return 1
+    preapply_audit_init || return 1
     # Last of the pre-apply captures, deliberately. It previews the host the
     # apply below is about to meet, so every seed written above has to be in
     # place first or the preview and the run describe different hosts.
@@ -7985,6 +8159,7 @@ run_full_suite() {
     run_firewall_preapply_control
     run_services_preapply_control
     run_kernel_preapply_control
+    run_audit_preapply_control
     run_seeded_checks
     run_ssh_checks
     run_login_defs_checks
@@ -7993,6 +8168,7 @@ run_full_suite() {
     run_idempotence_checks
     run_pwquality_enforcement_checks
     run_firewall_checks
+    run_audit_checks
     run_services_checks
     run_kernel_checks
     run_seeded_kernel_check
