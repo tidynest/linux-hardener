@@ -361,6 +361,20 @@ test.describe('Rollback modal divergences', () => {
     await expect(rows.nth(1)).toContainText('/usr/lib/sysctl.d/50-default.conf');
   });
 
+  // A measured disagreement and a probe that could not answer ask an operator
+  // to do different things, and the first render coloured them identically.
+  // Computed colour rather than class name: the class could be present with the
+  // rule missing, which is what a stylesheet regression looks like.
+  test('T-DIVG-04: the two states are not coloured the same', async ({ page }) => {
+    const colours = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.rollback-divergence .divergence-detail')).map(
+        (el) => getComputedStyle(el).color,
+      ),
+    );
+    expect(colours).toHaveLength(2);
+    expect(colours[0]).not.toBe(colours[1]);
+  });
+
   test('T-DIVG-02: the sentence is shown in full, not clipped away', async ({ page }) => {
     // A row that hid its detail would pass an overflow check trivially, so the
     // text is asserted present before the geometry below is asked about.
@@ -392,6 +406,19 @@ test.describe('Rollback modal divergences', () => {
       for (const o of overflow) {
         expect(o).toBeLessThanOrEqual(1);
       }
+
+      // The fault the horizontal check missed, and the reason #143 asked for a
+      // render rather than an assertion. The first pass proved no row was
+      // WIDER than the list and would have called the layout fine; the
+      // screenshot showed the last sentence cut mid-word, because the shared
+      // list caps at 14rem and two sentences exceed it. Asked as "is this list
+      // scrollable at all": nothing may be hidden inside a box inside a box,
+      // the modal does the scrolling.
+      const clipped = await page.evaluate(() => {
+        const list = document.querySelector('.rollback-divergence-list');
+        return list.scrollHeight - list.clientHeight;
+      });
+      expect(clipped).toBeLessThanOrEqual(1);
 
       // The artefact #143 actually asked for. The assertion above answers the
       // overflow question objectively and answers nothing about hierarchy or

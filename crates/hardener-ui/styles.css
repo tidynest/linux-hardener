@@ -2004,6 +2004,30 @@ tbody tr:hover {
   overflow-wrap: anywhere;
 }
 
+/* Sentences, not a column of filenames. The shared list caps at 14rem, which
+ * two divergence rows exceed: the first render cut the second sentence
+ * mid-word, with no visible scrollbar to say the rest was there. The modal
+ * takes the scrolling instead, below, so nothing is hidden inside a box
+ * inside a box. */
+.rollback-divergence-list {
+  max-height: none;
+  overflow-y: visible;
+}
+
+/* Two rows ran together as one block of orange. A rule between them is enough
+ * to say where one ends. */
+.rollback-divergence + .rollback-divergence {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-sm);
+}
+
+/* A probe that could not answer accuses the host of nothing, so it must not
+ * wear the same warning colour as a measured disagreement. The two ask the
+ * operator to do different things next, which the first render did not show. */
+.rollback-divergence-unchecked .divergence-detail {
+  color: var(--text-secondary);
+}
+
 .restore-action { color: var(--text-secondary); font-size: var(--font-size-caption); }
 .restore-error { color: var(--color-critical); font-size: var(--font-size-caption); }
 .restore-warn .restore-error { color: var(--color-warning); }
@@ -3365,6 +3389,11 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   padding: var(--space-lg);
   border-radius: 8px;
   max-width: 40rem;
+  /* The modal scrolls, rather than a list inside it. With the inner cap gone a
+   * rollback reporting many divergences would otherwise grow past the viewport
+   * and take its Done button with it. */
+  max-height: 85vh;
+  overflow-y: auto;
 }
 
 /* Per-host outcome row - dry-run preview and executed results share it. */

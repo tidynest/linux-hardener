@@ -277,7 +277,11 @@ fn result_view(result: RollbackResult, close: impl Fn(bool) + 'static + Copy) ->
         })}
         {(!divergences.is_empty()).then(|| view! {
             <p class="rollback-body">"Still diverged:"</p>
-            <ul class="rollback-file-list">
+            // Its own class beside the shared one. The shared list caps itself
+            // at 14rem, which was sized for a column of filenames; two
+            // divergence sentences exceed it and the first render cut the
+            // second one mid-word (#143).
+            <ul class="rollback-file-list rollback-divergence-list">
                 {divergences.iter().map(|d| {
                     let subject = d.divergence_subject.clone();
                     let detail = d.divergence_detail.clone();
@@ -288,8 +292,16 @@ fn result_view(result: RollbackResult, close: impl Fn(bool) + 'static + Copy) ->
                     // was built for the first shape. `restore-warn` stays, so
                     // the warning colour rule keyed on it still reaches the
                     // detail.
+                    // A measurement and a probe that could not answer are not
+                    // the same news, and the first render gave them the same
+                    // warning colour. The unchecked one is muted instead: it
+                    // accuses the host of nothing.
                     view! {
-                        <li class="restore-warn rollback-divergence">
+                        <li class=if checked {
+                            "restore-warn rollback-divergence"
+                        } else {
+                            "restore-warn rollback-divergence rollback-divergence-unchecked"
+                        }>
                             <div class="divergence-head">
                                 <code>{subject}</code>
                                 <span class="restore-action">
