@@ -149,10 +149,19 @@ test.describe('Findings', () => {
   // the same formatter the CLI calls. Asserting the class would pass while the
   // two surfaces said different things.
   //
-  // The last assertion is the one that would catch the wrong fix. A declined
-  // exception is live, so the finding keeps its real severity and stays in its
-  // severity group; only an applied exception moves a finding into Policy
-  // Exceptions and replaces its severity with the label.
+  // The last two assertions are the ones that would catch the wrong fix. A
+  // declined exception is live, so the finding keeps its real severity and
+  // stays in its severity group; only an applied exception moves a finding
+  // into Policy Exceptions and replaces its severity with the label.
+  //
+  // The fixture now also carries services-001 as a keyed, Applied finding
+  // (added for T-EXC-04), so a 'Policy Exceptions' group is always present on
+  // this fixture: asserting its absence from the whole panel no longer says
+  // anything about ssh-001 in particular, since that group would exist
+  // regardless of what happens to the declined finding under test. The
+  // property this test proves is scoped to the group instead: the declined
+  // finding is absent from the Policy Exceptions group specifically, and
+  // present in its own severity group (Critical) instead.
   test('T-FIND-11: a declined exception says so in the finding detail', async ({ page }) => {
     await runScan(page);
     await page.getByRole('button', { name: /Root login via SSH enabled/ }).click();
@@ -162,8 +171,18 @@ test.describe('Findings', () => {
     );
     await expect(detail).toContainText('Break-glass access from the bastion');
     const panel = page.getByRole('tabpanel', { name: 'Findings' });
-    await expect(panel.getByText('Policy Exceptions', { exact: true })).toHaveCount(0);
-    await expect(panel.getByText('Critical', { exact: true })).toBeVisible();
+    const policyExceptionsGroup = panel.locator('.finding-group', {
+      has: panel.getByText('Policy Exceptions', { exact: true }),
+    });
+    await expect(
+      policyExceptionsGroup.getByRole('button', { name: 'Root login via SSH enabled' }),
+    ).toHaveCount(0);
+    const criticalGroup = panel.locator('.finding-group', {
+      has: panel.getByText('Critical', { exact: true }),
+    });
+    await expect(
+      criticalGroup.getByRole('button', { name: 'Root login via SSH enabled' }),
+    ).toBeVisible();
   });
 
   // T-EXC-01: A keyed finding with no exception offers the accept control
@@ -192,14 +211,24 @@ test.describe('Findings', () => {
   });
 
   // T-EXC-03: Submitting patches the row in place, with no second scan.
+  //
+  // Scoped to the expanded row's own `.finding-detail`, and matched exactly.
+  // Unscoped and substring-matched, 'POLICY EXCEPTION' also matches the
+  // 'Policy Exceptions' group heading that renders once the fixture carries
+  // any Applied exception (services-001, added for T-EXC-04): Playwright's
+  // default text match is a case-insensitive substring, so the locator would
+  // resolve to two elements and `toBeVisible()` would throw a strict-mode
+  // violation instead of proving the accepted row now carries the label and
+  // the typed reason.
   test('T-EXC-03: accepting a finding shows it as a policy exception', async ({ page }) => {
     await runScan(page);
     await page.getByRole('button', { name: 'Bluetooth service enabled' }).click();
     await page.getByRole('button', { name: 'Accept This Finding', exact: true }).click();
     await page.getByLabel('Reason').fill('laptop needs it');
     await page.getByRole('button', { name: 'Accept Finding', exact: true }).click();
-    await expect(page.getByText('POLICY EXCEPTION')).toBeVisible();
-    await expect(page.getByText('laptop needs it')).toBeVisible();
+    const detail = page.locator('.finding-detail');
+    await expect(detail.getByText('POLICY EXCEPTION', { exact: true })).toBeVisible();
+    await expect(detail).toContainText('laptop needs it');
   });
 
   // T-EXC-04: An already-excepted finding offers removal instead.
