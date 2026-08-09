@@ -3910,8 +3910,14 @@ run_preapply_control() {
         # run_services_preapply_control: this loop would count zero compared
         # directives for it and read that emptiness as a broken filter, failing
         # a plugin that had behaved correctly.
+        #
+        # audit is the fourth of exactly the same kind and was missed when it
+        # joined the compared set: its rows are scored against what augenrules
+        # compiled rather than against a reported finding, so this loop finds
+        # nothing to count and fails a plugin that behaved correctly. Its own
+        # control is run_audit_preapply_control.
         case "$plugin" in
-            firewall-hardening|kernel-hardening|"$SERVICES_PLUGIN_ID") continue ;;
+            firewall-hardening|kernel-hardening|audit-hardening|"$SERVICES_PLUGIN_ID") continue ;;
         esac
         matched=0
         total=0
@@ -7797,8 +7803,13 @@ $pa_tick Audit Rules Hardening - no changes needed"
 
     check_eq "$(dry_run_preview_reading pam-hardening)" "0|1" \
         "a preview reading keeps its changes and its issues apart, so a plugin that previewed a limitation is not read as silent"
+    # mac-hardening, which this suite does not compare and no fixture holds.
+    # This assertion used audit-hardening until audit joined the compared set,
+    # at which point the fixture gained an audit object and the absence the
+    # assertion was built on quietly ceased to exist. A test whose subject is an
+    # ABSENCE has to name something the fixtures will not start carrying.
     check_status 1 "a plugin the document does not cover is refused rather than answered as silent" \
-        dry_run_preview_reading audit-hardening
+        dry_run_preview_reading mac-hardening
 
     check_eq "$(apply_plugin_display_name permissions-hardening)" "File Permissions Hardening" \
         "the apply's output is joined to a plugin id by the name the tool itself prints"
@@ -7937,8 +7948,10 @@ $pa_tick Audit Rules Hardening - no changes needed"
     # what a compliant plugin correctly reads as.
     check_eq "$(scan_finding_ids "$if_after" ssh-hardening || echo REFUSED)" "" \
         "a plugin that reported no finding reads as an empty set rather than as a refusal, because that is what a hardened host looks like"
+    # mac-hardening for the reason given at the preview refusal above: audit is
+    # in every fixture now, so it can no longer stand for a plugin that is not.
     check_status 1 "and a plugin the document holds no object for is refused, because an empty set introduces nothing and nothing introduced is the pass condition below" \
-        scan_finding_ids "$if_before" audit-hardening
+        scan_finding_ids "$if_before" mac-hardening
     check_eq "$(scan_finding_ids "$(jq 'map(.findings = (.findings | map({id: .finding_id})))' <<<"$if_before")" ssh-hardening || echo REFUSED)" "" \
         "an entry carrying no string finding_id contributes no id rather than jq's 'null', which the registry could then be made to declare"
 
