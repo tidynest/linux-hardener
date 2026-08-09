@@ -12,7 +12,7 @@ pub use hardener_types::{
     DivergenceState, ExceptionOutcome, FileRestoreAction, FileRestoreResult, Finding,
     FindingCategory, FindingPolicyException, FleetFrameworkPosture, FleetHostScan, FleetHostStatus,
     PluginId, PluginMetadata, RollbackDivergence, RollbackOutcome, RollbackResult, ScanResult,
-    Severity, SeverityTallies, ValidationIssue, ValidationReport,
+    Severity, SeverityTallies, ValidationIssue, ValidationReport, WrittenException,
 };
 
 /// Checkpoint information for UI display.

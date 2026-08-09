@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-add-policy-exception"
+description = "Enables the add_policy_exception command without any pre-configured scope."
+commands.allow = ["add_policy_exception"]
+
+[[permission]]
+identifier = "deny-add-policy-exception"
+description = "Denies the add_policy_exception command without any pre-configured scope."
+commands.deny = ["add_policy_exception"]

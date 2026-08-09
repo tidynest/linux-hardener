@@ -177,6 +177,12 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the add_policy_exception command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-policy-exception",
+          "markdownDescription": "Enables the add_policy_exception command without any pre-configured scope."
+        },
+        {
           "description": "Enables the connect_remote command without any pre-configured scope.",
           "type": "string",
           "const": "allow-connect-remote",
@@ -279,6 +285,12 @@
           "markdownDescription": "Enables the pick_config_file command without any pre-configured scope."
         },
         {
+          "description": "Enables the remove_policy_exception command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-remove-policy-exception",
+          "markdownDescription": "Enables the remove_policy_exception command without any pre-configured scope."
+        },
+        {
           "description": "Enables the run_apply command without any pre-configured scope.",
           "type": "string",
           "const": "allow-run-apply",
@@ -355,6 +367,12 @@
           "type": "string",
           "const": "allow-validate-config",
           "markdownDescription": "Enables the validate_config command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the add_policy_exception command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-policy-exception",
+          "markdownDescription": "Denies the add_policy_exception command without any pre-configured scope."
         },
         {
           "description": "Denies the connect_remote command without any pre-configured scope.",
@@ -457,6 +475,12 @@
           "type": "string",
           "const": "deny-pick-config-file",
           "markdownDescription": "Denies the pick_config_file command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the remove_policy_exception command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-remove-policy-exception",
+          "markdownDescription": "Denies the remove_policy_exception command without any pre-configured scope."
         },
         {
           "description": "Denies the run_apply command without any pre-configured scope.",

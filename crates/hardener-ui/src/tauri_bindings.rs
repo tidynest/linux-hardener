@@ -6,7 +6,7 @@
 use crate::types::{
     ApplyOutcome, ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary,
     FleetHostScan, PluginMetadata, RollbackOutcome, RollbackResult, ScanResult, ScanSessionInfo,
-    SchedulerUiConfig, TestNotificationResult,
+    SchedulerUiConfig, TestNotificationResult, WrittenException,
 };
 use hardener_types::ValidationReport;
 use hardener_types::remote::{HostSessionInfo, RemoteConnectionStatus, RemoteHostProfile};
@@ -544,4 +544,56 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String> {
 
     serde_wasm_bindgen::from_value(result)
         .map_err(|e| format!("Failed to deserialise file path: {}", e))
+}
+
+// === Policy Exception Bindings ===
+
+/// Invokes add_policy_exception: writes a documented deviation for one finding.
+///
+/// Sends no value. The CLI behind this re-reads the host and pins what it
+/// observes, so a row that has been open for days cannot write a stale pin.
+///
+/// `tauri_bindings` is a private module, so `dead_code` judges these two
+/// bindings by internal callers only; the desktop control that calls them is
+/// a separate slice of this feature and has not landed yet.
+#[allow(dead_code)]
+pub async fn invoke_add_policy_exception(
+    plugin_id: String,
+    exception_key: String,
+    reason: String,
+    approved_by: Option<String>,
+    ticket: Option<String>,
+    expires: Option<String>,
+) -> Result<WrittenException, String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "pluginId": plugin_id,
+        "exceptionKey": exception_key,
+        "reason": reason,
+        "approvedBy": approved_by,
+        "ticket": ticket,
+        "expires": expires,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    let result = invoke_command("add_policy_exception", args).await?;
+
+    serde_wasm_bindgen::from_value(result)
+        .map_err(|e| format!("Failed to deserialise written exception: {}", e))
+}
+
+/// Invokes remove_policy_exception.
+#[allow(dead_code)]
+pub async fn invoke_remove_policy_exception(
+    plugin_id: String,
+    exception_key: String,
+) -> Result<(), String> {
+    let args = serde_wasm_bindgen::to_value(&serde_json::json!({
+        "pluginId": plugin_id,
+        "exceptionKey": exception_key,
+    }))
+    .map_err(|e| format!("Failed to serialise arguments: {}", e))?;
+
+    invoke_command("remove_policy_exception", args)
+        .await
+        .map(|_| ())
 }

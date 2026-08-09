@@ -421,6 +421,23 @@ pub fn exception_declined_line(declined: &FindingExceptionDeclined) -> String {
     )
 }
 
+/// What `hardener exception add` wrote, as the desktop needs it back.
+///
+/// The desktop supplies no value: the CLI re-reads the host and pins what it
+/// observes, so `value` here is the host's answer rather than an echo of
+/// anything the interface held. One definition, shared by the Tauri command and
+/// the Leptos front end, because a second copy is a second thing to drift.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WrittenException {
+    pub section: String,
+    pub key: String,
+    pub value: String,
+    pub reason: String,
+    pub approved_by: Option<String>,
+    pub ticket: Option<String>,
+    pub expires: Option<String>,
+}
+
 // ============================================================================
 // Plugin Types (from hardener-core)
 // ============================================================================

@@ -512,9 +512,9 @@ pub struct ScanRunner {
 | `index.html` | Entry HTML with font links | `#app` mount point |
 | `styles.css` | Base styles plus the 7-theme system (`[data-theme="..."]` overrides, incl. light Daywatch and WCAG AAA High Contrast) | CSS Variables, utility classes (.truncate, .sr-only, .skip-link), tabs, sidebar, score gauge, buttons, tables, forms |
 | `src/lib.rs` | Main App component and WASM entry point; defines seven routes (Dashboard, Analysis, Hardening, Hosts at `/fleet`, Fleet Apply, Scheduler, Settings) plus a `/remote` -> `/fleet` redirect, mounts the grouped `Sidebar`, and owns the sole theme apply/persist `Effect` | `App`, `#[wasm_bindgen(start)] main()` |
-| `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity, UncheckedCheck, ValidationIssue, ValidationReport), scheduler re-exports (SchedulerUiConfig, NotificationUiConfig, EmailUiConfig, WebhookUiConfig, TestNotificationResult), `CheckpointInfo`, `ScanSessionInfo`, `CheckpointDetail`, `CheckpointFileInfo` |
+| `src/types.rs` | Re-exports from hardener-types | `pub use hardener_types::*` (ApplyResult, Change, ChangeType, ComplianceFramework, ComplianceMapping, ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, FindingPolicyException, PluginId, PluginMetadata, RollbackResult, ScanResult, Severity, UncheckedCheck, ValidationIssue, ValidationReport, WrittenException), scheduler re-exports (SchedulerUiConfig, NotificationUiConfig, EmailUiConfig, WebhookUiConfig, TestNotificationResult), `CheckpointInfo`, `ScanSessionInfo`, `CheckpointDetail`, `CheckpointFileInfo` |
 | `src/state/mod.rs` | Reactive state | `AppState`, `unchecked_tally()` |
-| `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_deep_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_get_host_history`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file` |
+| `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_deep_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_get_host_history`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file`, `invoke_add_policy_exception`, `invoke_remove_policy_exception` (both `#[allow(dead_code)]` until the desktop control in the next slice of this feature calls them) |
 | `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav (`/`, `/analysis`, `/hardening`, `/fleet`, `/scheduler`; Ctrl+4 navigates straight to `/fleet`, not through the retained `/remote` redirect - Fleet Apply and Settings have no shortcut yet), Ctrl+Shift+S scan from anywhere, Alt+T theme cycle, Escape priority chain, F11 fullscreen |
 | `src/navigation.rs` | Navigation signal helpers | Page routing helpers for keyboard and UI nav |
 | `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`, `unchecked_honesty_line()`; `mock_data` mod, `theme` mod |
@@ -661,7 +661,7 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `src/main.rs` | Tauri app entry | `main()` |
-| `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_deep_scan` (pkexec-elevated sibling of run_scan), `run_apply`, `run_apply_dry_run`, `run_rollback`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `get_checkpoint_detail`, `generate_compliance_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `get_host_history`, `list_plugins`, `get_latest_scan`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `scan_with_executor` (shared scan helper), `scan_fleet` (bounded-concurrent orchestrator), `run_fleet_scan`/`run_fleet_apply`/`run_fleet_rollback` (#[tauri::command]), `run_fleet_mutation`/`build_batch_args`/`parse_outcomes` (fleet-mutation helpers), `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `validate_config`, `pick_config_file` |
+| `src/commands.rs` | Tauri invoke handlers | `run_scan`, `run_deep_scan` (pkexec-elevated sibling of run_scan), `run_apply`, `run_apply_dry_run`, `run_rollback`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `get_checkpoint_detail`, `generate_compliance_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `get_host_history`, `list_plugins`, `get_latest_scan`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `scan_with_executor` (shared scan helper), `scan_fleet` (bounded-concurrent orchestrator), `run_fleet_scan`/`run_fleet_apply`/`run_fleet_rollback` (#[tauri::command]), `run_fleet_mutation`/`build_batch_args`/`parse_outcomes` (fleet-mutation helpers), `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `validate_config`, `pick_config_file`, `exception_add_args` (flag-construction helper), `add_policy_exception`, `remove_policy_exception` |
 | `src/validation.rs` | IPC input validation layer | `validate_ipc_string()`, `validate_plugin_ids()`, `validate_checkpoint_id()`, `validate_checkpoint_name()`, `validate_privileged_config_path()`, `validate_user_config_path()`, `validate_output_path()`, `validate_ssh_key_path()` |
 | `src/acl_tests.rs` | Tests for per-command Tauri ACL scoping (SAM-039) | `#[cfg(test)]` ACL coverage |
 | `src/decoration_tests.rs` | Unit tests for `desktop_is_tiling()` in `src/main.rs` | Test-only; `main.rs` is the crate root, so this sits beside it exactly as `acl_tests.rs` does |
@@ -671,9 +671,16 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | `src/commands/fail_session_on_err_tests.rs` | Tests for `fail_session_on_err`, the helper that marks an aborted scan's history row Failed rather than orphaning it as running | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/compliance_source_tests.rs` | Tests for the compliance report's source selection | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/webhook_shape_tests.rs` | Tests that what the desktop writes to `[scheduler.notifications.webhooks]` is what `hardener-scheduler` reads back | Test-only; `super` resolves to `crate::commands`. This crate depends on both, so it is the only place the two shapes meet |
+| `src/commands/exception_args_tests.rs` | Tests for `exception_add_args`, the flag-construction helper behind `add_policy_exception`: an absent optional field must add no flag, not an empty one | Test-only; `super` resolves to `crate::commands` |
 
 ### Tauri Commands
 ```rust
+pub async fn add_policy_exception(plugin_id: String,
+    exception_key: String,
+    reason: String,
+    approved_by: Option<String>,
+    ticket: Option<String>,
+    expires: Option<String>,) -> Result<hardener_types::WrittenException, String>
 pub async fn connect_remote(name: String,
     state: tauri::State<'_, RemoteState>,) -> Result<RemoteConnectionStatus, String>
 pub async fn create_checkpoint(name: String) -> Result<String, String>
@@ -695,6 +702,8 @@ pub async fn get_scheduler_config() -> Result<hardener_types::scheduler::Schedul
 pub async fn list_plugins() -> Result<Vec<PluginMetadata>, String>
 pub async fn list_remote_hosts() -> Result<Vec<RemoteHostProfile>, String>
 pub async fn pick_config_file(app: tauri::AppHandle) -> Result<Option<String>, String>
+pub async fn remove_policy_exception(plugin_id: String,
+    exception_key: String,) -> Result<(), String>
 pub async fn run_apply(plugin_ids: Vec<String>,
     config_path: Option<String>,) -> Result<Vec<ApplyResult>, String>
 pub async fn run_apply_dry_run(plugin_ids: Vec<String>,
@@ -917,9 +926,9 @@ tree on **2026-08-10**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 1761. The eleventh
-workspace member, `src-tauri`, carries 104 more, which is why the tree total the
-evidence ledger records is 1865 and not this table's sum.
+The table covers the ten crates under `crates/` and sums to 1773. The eleventh
+workspace member, `src-tauri`, carries 106 more, which is why the tree total the
+evidence ledger records is 1879 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|

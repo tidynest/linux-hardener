@@ -3,6 +3,7 @@
 /// capability file (`capabilities/default.json`) must grant each one explicitly
 /// (SAM-039). Keep in sync with the `generate_handler!` block in `src/main.rs`.
 const COMMANDS: &[&str] = &[
+    "add_policy_exception",
     "connect_remote",
     "create_checkpoint",
     "delete_checkpoint",
@@ -20,6 +21,7 @@ const COMMANDS: &[&str] = &[
     "list_plugins",
     "list_remote_hosts",
     "pick_config_file",
+    "remove_policy_exception",
     "run_apply",
     "run_apply_dry_run",
     "run_deep_scan",
