@@ -51,6 +51,16 @@ pub struct RemoveOptions<'a> {
 /// Separated from `add` so the match rule is testable without a host: it is the
 /// step that decides both what value is pinned and whether a key reaching this
 /// binary over IPC is one the host itself produced.
+///
+/// Takes the first match, which is not always the only one: the kernel plugin
+/// emits two findings under one exception key for a parameter overridden after
+/// boot, the runtime value (`kernel/mod.rs`) and the boot-override value
+/// (`kernel/persistence.rs`), and the two can disagree. The runtime finding is
+/// built first and wins here, which is right for apply, since apply reads the
+/// runtime value too. It is not right for an operator who clicked Accept on the
+/// boot-override row: the exception pins the runtime value instead of the one
+/// they were looking at, and the next scan can report that row as
+/// `ValueMismatch` even though the operator accepted what they saw.
 pub fn pin_from_findings<'a>(findings: &'a [Finding], key: &str) -> Result<&'a Finding> {
     findings
         .iter()
@@ -63,7 +73,12 @@ pub fn pin_from_findings<'a>(findings: &'a [Finding], key: &str) -> Result<&'a F
         })
 }
 
+/// Refuses a malformed `--expires`, scans `plugin_id` to pin the value the
+/// host has right now, and writes the exception.
 pub async fn add(opts: AddOptions<'_>) -> Result<()> {
+    if let Some(expires) = opts.expires {
+        parse_expiry(expires)?;
+    }
     let section = section_for(opts.plugin_id)?;
     let config = super::config_loader(opts.config_path)
         .load()
@@ -95,7 +110,16 @@ pub async fn add(opts: AddOptions<'_>) -> Result<()> {
     let written = document::upsert_exception(&existing, section, opts.key, &exception)?;
     write_atomically(&path, &written)?;
 
-    report_add(&opts, section, &exception, &path);
+    let written_exception = hardener_types::WrittenException {
+        section: section.to_string(),
+        key: opts.key.to_string(),
+        value: exception.value.clone(),
+        reason: exception.reason.clone(),
+        approved_by: exception.approved_by.clone(),
+        ticket: exception.ticket.clone(),
+        expires: exception.expires.clone(),
+    };
+    report_add(opts.format, opts.quiet, &written_exception, &path);
     Ok(())
 }
 
@@ -107,6 +131,22 @@ pub async fn remove(opts: RemoveOptions<'_>) -> Result<()> {
     write_atomically(&path, &written)?;
 
     report_remove(&opts, section, &path);
+    Ok(())
+}
+
+/// Refuses an `--expires` value [`PolicyException::is_expired`] cannot parse.
+///
+/// That method treats an unparseable date as "never expires"
+/// (`crates/hardener-core/src/config.rs:344`), so writing one silently fails
+/// open in the one field whose purpose is to bound a deviation in time. Parsed
+/// here, before anything is written, using the same `%Y-%m-%d` format so a
+/// value that passes here is one `is_expired` can also read.
+fn parse_expiry(expires: &str) -> Result<()> {
+    chrono::NaiveDate::parse_from_str(expires, "%Y-%m-%d").map_err(|_| {
+        anyhow!(
+            "--expires '{expires}' is not a valid date. Use YYYY-MM-DD, for example 2027-01-31."
+        )
+    })?;
     Ok(())
 }
 
@@ -149,29 +189,57 @@ fn write_atomically(path: &Path, contents: &str) -> Result<()> {
     let temporary = path.with_extension("toml.new");
     std::fs::write(&temporary, contents)
         .map_err(|e| anyhow!("Cannot write {}: {e}", temporary.display()))?;
-    std::fs::rename(&temporary, path).map_err(|e| anyhow!("Cannot replace {}: {e}", path.display()))
+
+    // A rename over an existing file carries the temporary file's own mode,
+    // not the target's: without this, whatever mode the operator set on
+    // config.toml is silently replaced by root's umask default the moment an
+    // exception is written. A target that does not exist yet has no mode to
+    // preserve, so a fresh file keeps the default.
+    if let Ok(existing) = std::fs::metadata(path) {
+        let _ = std::fs::set_permissions(&temporary, existing.permissions());
+    }
+
+    std::fs::rename(&temporary, path).map_err(|e| {
+        // The rename failed, so the temporary file is not the config: leaving
+        // it behind would litter root's config directory with a `.toml.new`
+        // for every failed write. Best-effort, since the write itself already
+        // failed and this is cleanup rather than the operation the caller asked for.
+        let _ = std::fs::remove_file(&temporary);
+        anyhow!("Cannot replace {}: {e}", path.display())
+    })
 }
 
-fn report_add(opts: &AddOptions<'_>, section: &str, exception: &PolicyException, path: &Path) {
-    if matches!(opts.format, OutputFormat::Json) {
-        let payload = serde_json::json!({
-            "section": section,
-            "key": opts.key,
-            "value": exception.value,
-            "reason": exception.reason,
-            "approved_by": exception.approved_by,
-            "ticket": exception.ticket,
-            "expires": exception.expires,
-            "path": path.display().to_string(),
-        });
+/// Reports what `add` wrote, deserialising from the same [`hardener_types::WrittenException`]
+/// the Tauri command and the Leptos front end use, so a renamed field fails to
+/// compile here rather than silently stopping arriving in the GUI.
+///
+/// `path` is not part of that shared struct: it names where the write landed,
+/// not what was written, so it is appended to the serialised object rather than
+/// carried on the type.
+fn report_add(
+    format: OutputFormat,
+    quiet: bool,
+    written: &hardener_types::WrittenException,
+    path: &Path,
+) {
+    if matches!(format, OutputFormat::Json) {
+        let mut payload =
+            serde_json::to_value(written).expect("WrittenException always serialises");
+        if let serde_json::Value::Object(ref mut map) = payload {
+            map.insert(
+                "path".to_string(),
+                serde_json::Value::String(path.display().to_string()),
+            );
+        }
         println!("{payload}");
         return;
     }
-    if !opts.quiet {
+    if !quiet {
         println!(
-            "Accepted '{}' in [{section}.exceptions] at value '{}'. Written to {}.",
-            opts.key,
-            exception.value,
+            "Accepted '{}' in [{}.exceptions] at value '{}'. Written to {}.",
+            written.key,
+            written.section,
+            written.value,
             path.display()
         );
     }

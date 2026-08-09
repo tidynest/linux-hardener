@@ -164,6 +164,16 @@ enabled = true
 /// Refusing beats guessing. A file this cannot parse is a file whose keys this
 /// cannot preserve, and a partial write loses settings the operator never saw
 /// this touch.
+///
+/// This message is exercised here at the `upsert_exception` layer, below
+/// where `add` and `remove` diverge. In the CLI itself it is reachable only
+/// through `remove`: `add` calls `ConfigLoader::load` first
+/// (`commands/exception.rs`), which parses the same file and fails earlier
+/// with `Config error: ...`, so `add` never reaches this refusal on its
+/// default path. `remove` reads the file directly and calls
+/// `document::remove_exception` without going through the loader, so this is
+/// the message an operator running `remove` against an unparseable file
+/// actually sees.
 #[test]
 fn a_parse_error_refuses_the_write() {
     let err = upsert_exception("this is not = = toml", "ssh", "k", &exception("v", "r"))
