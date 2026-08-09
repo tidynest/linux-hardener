@@ -976,7 +976,7 @@ counts measured the same way and on the same date as the table above.
 | `gui-tests/debug-tabs.mjs` | Tab system debugging helper |
 | `gui-tests/tests/helpers.js` | Shared test helpers and utilities |
 | `gui-tests/tests/dashboard.spec.js` | T-DASH-01..09 (9 tests): score, scan trigger, navigation, activity |
-| `gui-tests/tests/analysis.spec.js` | T-FIND-01..11, T-COMP-01..08 (19 tests): findings + compliance |
+| `gui-tests/tests/analysis.spec.js` | T-FIND-01..11, T-COMP-01..08, T-EXC-01..05 (24 tests): findings, compliance and finding-row exception authoring |
 | `gui-tests/tests/hardening.spec.js` | T-CONF-01..10, T-HIST-01..06, T-APPLY-01..04 (20 tests): configure, history, and what an executed apply produces |
 | `gui-tests/tests/themes.spec.js` | T-THEME-01..07 (7 tests + 30 screenshots): 6 of the 7 themes (default/Midnight Teal, fortress, sentinel, command, guardian, daywatch; High Contrast has no coverage yet). The 30 are generated at collection time from 5 states x 6 themes |
 | `gui-tests/tests/errors.spec.js` | T-ERR-01..04 (4 tests): error handling and dismiss |

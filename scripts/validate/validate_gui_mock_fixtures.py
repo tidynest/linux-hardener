@@ -81,6 +81,33 @@ PROBES = [
         "[]",
         "ComplianceReport",
     ),
+    # `WrittenException` is the CLI's own observed value coming back, echoed
+    # by the desktop command untouched, so a field the CLI adds or renames
+    # there has to show up here too.
+    (
+        "add_policy_exception",
+        {
+            "pluginId": "service-minimisation",
+            "exceptionKey": "bluetooth-service",
+            "reason": "probe",
+            "approvedBy": None,
+            "ticket": None,
+            "expires": None,
+        },
+        "",
+        "WrittenException",
+    ),
+]
+
+# Invoked purely so a missing or renamed mock case throws where a stale one
+# currently would not. `remove_policy_exception` returns Rust `()`, which
+# serialises to `null` and carries no fields for a PROBES entry to diff, so
+# this is the only check it can meaningfully get.
+SMOKE_COMMANDS = [
+    (
+        "remove_policy_exception",
+        {"pluginId": "service-minimisation", "exceptionKey": "bluetooth-service"},
+    ),
 ]
 
 # (path, field, enum) for fields whose value has to name a real variant. serde
@@ -194,7 +221,11 @@ def mock_payloads(commands) -> list:
 
 
 def main() -> int:
-    commands = [[c, a] for c, a, _, _ in PROBES] + [[c, a] for c, a, _, _, _ in ENUM_FIELDS]
+    commands = (
+        [[c, a] for c, a, _, _ in PROBES]
+        + [[c, a] for c, a, _, _, _ in ENUM_FIELDS]
+        + [[c, a] for c, a in SMOKE_COMMANDS]
+    )
     payloads = mock_payloads(commands)
     problems: list[str] = []
 
@@ -233,7 +264,11 @@ def main() -> int:
         return 1
 
     checked = len(PROBES) + len(ENUM_FIELDS)
-    print(f"\033[0;32mGUI mock fixtures match the Rust types ({checked} probes)\033[0m")
+    smoked = len(SMOKE_COMMANDS)
+    print(
+        f"\033[0;32mGUI mock fixtures match the Rust types "
+        f"({checked} probes, {smoked} smoke-invoked)\033[0m"
+    )
     return 0
 
 

@@ -184,6 +184,9 @@
             'Configure /etc/security/pwquality.conf',
           ],
           finding_compliance: [],
+          // Deliberately keyless (finding_exception_key omitted, so it
+          // deserialises to None): T-EXC-05 needs a real finding that offers
+          // no accept/remove control at all.
           finding_exception: { state: 'notconfigured' },
         },
       ],
@@ -209,7 +212,20 @@
             'Disable with: sudo systemctl disable --now <service>',
           ],
           finding_compliance: [],
-          finding_exception: { state: 'notconfigured' },
+          // The one Applied exception in the fixture: T-EXC-04 needs a keyed,
+          // already-accepted finding so the row offers Remove Exception rather
+          // than Accept This Finding on first render.
+          finding_exception: {
+            state: 'applied',
+            exception_allowed_value: 'active',
+            exception_reason: 'Shared print server needs cups; approved by change management',
+            exception_approved_by: 'ops-lead',
+            exception_approved_date: '2026-06-01',
+            exception_ticket: null,
+            exception_expires: null,
+            exception_is_expired: false,
+          },
+          finding_exception_key: 'unnecessary-services',
         },
         {
           finding_id: 'services-002',
@@ -225,7 +241,11 @@
             'Disable with: sudo systemctl disable --now bluetooth.service',
           ],
           finding_compliance: [],
+          // The one keyed-but-NotConfigured finding in the fixture: T-EXC-01,
+          // T-EXC-02 and T-EXC-03 need a row that still offers Accept This
+          // Finding so the modal and its submit path have something to drive.
           finding_exception: { state: 'notconfigured' },
+          finding_exception_key: 'bluetooth-service',
         },
       ],
       scan_duration_us: 580,
@@ -773,6 +793,28 @@
         if (cfg) schedulerConfig = cfg;
         return '/home/user/.config/hardener/config.toml';
       }
+
+      // ---- Policy Exception Commands ----
+      // `WrittenException` is the CLI's own observed value coming back, not an
+      // echo of anything the modal held, so this mock does not need the
+      // finding's real section to answer correctly: nothing in the frontend
+      // reads `written.section` or `written.key`, only `value`, `reason`,
+      // `approved_by`, `ticket` and `expires`, which is why a fixed section
+      // here is honest rather than a shortcut.
+      case 'add_policy_exception': {
+        const written = {
+          section: 'services',
+          key: args.exceptionKey,
+          value: 'active',
+          reason: args.reason,
+          approved_by: args.approvedBy ?? null,
+          ticket: args.ticket ?? null,
+          expires: args.expires ?? null,
+        };
+        return written;
+      }
+      case 'remove_policy_exception':
+        return null;
 
       case 'test_notification':
         return { success: true, message: 'Test notification sent successfully' };

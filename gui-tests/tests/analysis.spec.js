@@ -165,6 +165,72 @@ test.describe('Findings', () => {
     await expect(panel.getByText('Policy Exceptions', { exact: true })).toHaveCount(0);
     await expect(panel.getByText('Critical', { exact: true })).toBeVisible();
   });
+
+  // T-EXC-01: A keyed finding with no exception offers the accept control
+  //
+  // 'Bluetooth service enabled' is the mock's own finding_title (services-002)
+  // carrying finding_exception_key: 'bluetooth-service' with finding_exception
+  // still NotConfigured, read from gui-tests/tauri-mock.js rather than assumed.
+  test('T-EXC-01: a keyed finding offers Accept This Finding', async ({ page }) => {
+    await runScan(page);
+    await page.getByRole('button', { name: 'Bluetooth service enabled' }).click();
+    await expect(page.getByRole('button', { name: 'Accept This Finding', exact: true })).toBeVisible();
+  });
+
+  // T-EXC-02: The submit button stays disabled until a reason is typed.
+  //
+  // Reason is the evidence that makes this a documented deviation rather than
+  // an unexplained gap, so an empty one cannot be submitted.
+  test('T-EXC-02: Accept Finding is disabled without a reason', async ({ page }) => {
+    await runScan(page);
+    await page.getByRole('button', { name: 'Bluetooth service enabled' }).click();
+    await page.getByRole('button', { name: 'Accept This Finding', exact: true }).click();
+    const submit = page.getByRole('button', { name: 'Accept Finding', exact: true });
+    await expect(submit).toBeDisabled();
+    await page.getByLabel('Reason').fill('laptop needs it');
+    await expect(submit).toBeEnabled();
+  });
+
+  // T-EXC-03: Submitting patches the row in place, with no second scan.
+  test('T-EXC-03: accepting a finding shows it as a policy exception', async ({ page }) => {
+    await runScan(page);
+    await page.getByRole('button', { name: 'Bluetooth service enabled' }).click();
+    await page.getByRole('button', { name: 'Accept This Finding', exact: true }).click();
+    await page.getByLabel('Reason').fill('laptop needs it');
+    await page.getByRole('button', { name: 'Accept Finding', exact: true }).click();
+    await expect(page.getByText('POLICY EXCEPTION')).toBeVisible();
+    await expect(page.getByText('laptop needs it')).toBeVisible();
+  });
+
+  // T-EXC-04: An already-excepted finding offers removal instead.
+  //
+  // 'Unnecessary services running' is the mock's finding_title (services-001)
+  // carrying finding_exception_key: 'unnecessary-services' with
+  // finding_exception Applied, so the row starts already accepted.
+  //
+  // `exact: true` matters: without it a 'Remove Exception' locator also matches
+  // a longer accessible name that happens to contain it.
+  test('T-EXC-04: an excepted finding offers Remove Exception', async ({ page }) => {
+    await runScan(page);
+    await page.getByRole('button', { name: 'Unnecessary services running' }).click();
+    await expect(page.getByRole('button', { name: 'Remove Exception', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Accept This Finding', exact: true })).toHaveCount(0);
+  });
+
+  // T-EXC-05: A finding with no exception key offers no control at all.
+  //
+  // 'Password complexity not enforced' (pam-001) carries no
+  // finding_exception_key at all in the mock, which deserialises to None.
+  //
+  // Asserted on the count rather than on visibility: a control that is present
+  // and hidden is a different defect from one that was never rendered, and only
+  // the second is correct here.
+  test('T-EXC-05: a keyless finding offers no exception control', async ({ page }) => {
+    await runScan(page);
+    await page.getByRole('button', { name: 'Password complexity not enforced' }).click();
+    await expect(page.getByRole('button', { name: 'Accept This Finding', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Remove Exception', exact: true })).toHaveCount(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
