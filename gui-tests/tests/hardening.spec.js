@@ -3,7 +3,7 @@
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
-const { loadApp, runScan } = require('./helpers');
+const { loadApp, runScan, takeScreenshot } = require('./helpers');
 
 // ---------------------------------------------------------------------------
 // CONFIGURE SECTION
@@ -392,6 +392,13 @@ test.describe('Rollback modal divergences', () => {
       for (const o of overflow) {
         expect(o).toBeLessThanOrEqual(1);
       }
+
+      // The artefact #143 actually asked for. The assertion above answers the
+      // overflow question objectively and answers nothing about hierarchy or
+      // spacing, which is the half of "whatever the render shows" that only a
+      // person looking at it can judge. Captured at both sizes, because a row
+      // can read well at one width and badly at the other.
+      await takeScreenshot(page, `rollback-divergences_${label}`);
     });
   }
 });
