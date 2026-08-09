@@ -28,8 +28,14 @@ These flags can be placed before or after any subcommand.
 
 **Where `-C`, `--config` takes effect.** clap accepts it anywhere, but only the
 commands that read a `config.toml` act on it: `scan`, `apply`, `report`, `batch
-scan`, `batch report`, `batch apply`, `daemon`, `history`, and `systemd
-generate`/`install`, which embed the path in the unit they write.
+scan`, `batch report`, `batch apply`, `daemon`, `history`, `exception add`, and
+`systemd generate`/`install`, which embed the path in the unit they write.
+
+`exception` is also the one place this flag names a file to **write**, not only
+read. Both `exception add` and `exception remove` edit the file at this path (or
+`/etc/linux-hardener/config.toml` when it is not given), and `add` additionally
+loads it as policy first, to build the plugin config the scan that supplies the
+pinned value runs against.
 
 `daemon` and `history` read only the `[scheduler]` section, and they read it
 from the named file when there is one. A single file carrying both a `[global]`
@@ -91,6 +97,9 @@ and names itself in the refusal:
   the target's key, and `create` captures the target's files.
 - `plugins`, which lists what is compiled into this binary and asks no host
   anything.
+- `exception add` and `exception remove`, which edit this host's own
+  configuration file, the one this host's apply reads. An exception for a
+  remote host is written on that host.
 
 Every release up to and including 1.5.1 accepted the flag on all of those,
 opened the connection, announced it unless `--quiet` had silenced that line,
@@ -461,6 +470,84 @@ hardener plugins
 ```
 
 No flags. Displays the 8 built-in plugins with their IDs, names, versions, and descriptions.
+
+---
+
+## exception
+
+Accept a single finding as a documented deviation, without hand-editing
+`config.toml`. Writes or removes one `[<section>.exceptions.<key>]` table; every
+other line of the file is left exactly as it was.
+
+**Not host-scoped, and it refuses `--ssh`**: it edits this host's own
+configuration file, which is the file this host's apply reads. An exception for
+a remote host is written on that host.
+
+### exception add
+
+```
+hardener exception add <PLUGIN_ID> <KEY> --reason <REASON> [OPTIONS]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `PLUGIN_ID` | Plugin the finding came from, as `hardener plugins` lists it |
+| `KEY` | Exception key, as `hardener scan` prints beside the finding |
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--reason <TEXT>` | Why this deviation is accepted. Required: an undocumented deviation is what an exception exists to prevent | |
+| `--approved-by <NAME>` | Who approved it | none |
+| `--ticket <REF>` | Approval ticket or issue reference | none |
+| `--expires <DATE>` | Date the exception stops applying (ISO 8601, e.g. `2027-01-31`) | none |
+
+The value pinned into the exception is not typed on the command line: it is
+read from the current scan of `PLUGIN_ID`, from the finding whose exception key
+matches `KEY`. A key the scan did not produce is refused by name, which is also
+the input validation for a caller reaching this over IPC rather than a
+terminal - a crafted key can never match a live finding.
+
+Worked example, a host with no SELinux or AppArmor installed:
+
+```
+$ hardener scan --plugin mac-hardening
+  • [MED ] No MAC System Found
+    No MAC system detected on this system
+    accept as a documented deviation: [mac.exceptions."mac-present"]
+
+$ hardener exception add mac-hardening mac-present --reason "no MAC system on this image"
+Accepted 'mac-present' in [mac.exceptions] at value 'None'. Written to /etc/linux-hardener/config.toml.
+
+$ hardener scan --plugin mac-hardening
+  • [POLICY EXCEPTION] No MAC System Found
+```
+
+Under `--format json`, `add` prints the written row rather than a sentence:
+
+```json
+{"section":"mac","key":"mac-present","value":"None","reason":"no MAC system on this image","approved_by":null,"ticket":null,"expires":null,"path":"/etc/linux-hardener/config.toml"}
+```
+
+### exception remove
+
+```
+hardener exception remove <PLUGIN_ID> <KEY>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `PLUGIN_ID` | Plugin the finding came from |
+| `KEY` | Exception key |
+
+Removes `[<section>.exceptions.<key>]`, and the tables above it when they are
+left empty, so that `add` followed by `remove` is a round trip rather than a
+file gaining an empty table each time it is used. Removing a key that is not
+there is an error, exit 1: a typo against a hand-edited file would otherwise
+report success and change nothing.
+
+No `exception list`: `hardener scan` already prints the exact table beside
+every keyed finding, and the config file itself is readable, so a read verb
+would be a third code path restating both.
 
 ---
 

@@ -6,12 +6,6 @@
 //! does not model, along with the operator's comments and section order. This
 //! writes one table and leaves the rest of the bytes alone.
 //!
-//! `upsert_exception` and `remove_exception` have no caller yet: the CLI verb
-//! that wires them in is a later task in this plan. Dead code is allowed only
-//! outside test builds, where `document/tests.rs` already exercises both, so
-//! the lint still guards against a genuinely unused item once the verb lands.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use anyhow::{Context as _, Result, anyhow};
 use hardener_core::PolicyException;
 use toml_edit::{DocumentMut, Item, Table, value};
@@ -94,10 +88,19 @@ fn section_table<'a>(document: &'a mut DocumentMut, section: &str) -> Result<&'a
         .ok_or_else(|| anyhow!("[{section}] is not a table in this configuration file"))
 }
 
+/// The `exceptions` table itself never carries a value directly, only the
+/// per-key tables beneath it, so a freshly created one is marked implicit: it
+/// then contributes no `[<section>.exceptions]` header line of its own, and
+/// the first write to an empty section shows only the table that actually
+/// holds data.
 fn exceptions_table<'a>(document: &'a mut DocumentMut, section: &str) -> Result<&'a mut Table> {
     section_table(document, section)?
         .entry("exceptions")
-        .or_insert(Item::Table(Table::new()))
+        .or_insert_with(|| {
+            let mut table = Table::new();
+            table.set_implicit(true);
+            Item::Table(table)
+        })
         .as_table_mut()
         .ok_or_else(|| anyhow!("[{section}.exceptions] is not a table in this configuration file"))
 }

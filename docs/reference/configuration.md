@@ -504,6 +504,20 @@ absent from the stack is reported as unenforced, but its value is already
 correct and simply reaches nothing, so there is no deviating value for an
 exception to document.
 
+### Writing an exception without hand-editing the file
+
+`hardener exception add <plugin-id> <key> --reason <text>` writes the same
+`[<section>.exceptions.<key>]` table shown above, so this file need not be
+edited by hand at all. `value` is not typed on the command line: the verb runs
+its own scan of `<plugin-id>` and pins whatever value the finding matching
+`<key>` reports right now, which is the host's actual current value rather than
+one the operator might mistype or copy stale. `--approved-by`, `--ticket` and
+`--expires` fill the matching optional fields; `approved_date` is not settable
+this way; the file only gains that field if it was hand-written or edited
+later. `hardener exception remove <plugin-id> <key>` deletes the table again,
+and the parent tables above it too if that leaves them empty. Full flag
+reference: [CLI: exception](cli.md#exception).
+
 ### Where `value` is checked
 
 On every path, `scan`, `report`, `apply` and `apply --dry-run`, for `[ssh]`,

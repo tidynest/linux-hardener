@@ -239,6 +239,10 @@ hardener history trends --host web-01
 hardener history regressions            # Exit 1 when any host got worse
 hardener --quiet history regressions    # Script-friendly quiet output
 
+# Policy exceptions: accept a single finding as a documented deviation
+sudo hardener exception add mac-hardening mac-present --reason "no MAC system on this image"
+sudo hardener exception remove mac-hardening mac-present
+
 # Scheduled scanning: daemon and systemd timer
 hardener daemon start                   # Blocks; run-once and status also available
 hardener daemon run-once

@@ -8,8 +8,8 @@ mod ssh_config;
 use anyhow::Result;
 use clap::Parser;
 use cli::{
-    BatchAction, CheckpointAction, Cli, Command, DaemonAction, HistoryAction, OutputFormat,
-    SystemdAction,
+    BatchAction, CheckpointAction, Cli, Command, DaemonAction, ExceptionAction, HistoryAction,
+    OutputFormat, SystemdAction,
 };
 use commands::scan::ScanOptions;
 use hardener_core::{LocalExecutor, SshExecutor, executor::SystemExecutor};
@@ -140,6 +140,40 @@ async fn main() -> Result<()> {
             }
         },
         Command::Plugins => commands::plugins::run(format, cli.quiet).await,
+        Command::Exception { action } => match action {
+            ExceptionAction::Add {
+                plugin_id,
+                key,
+                reason,
+                approved_by,
+                ticket,
+                expires,
+            } => {
+                commands::exception::add(commands::exception::AddOptions {
+                    plugin_id: &plugin_id,
+                    key: &key,
+                    reason: &reason,
+                    approved_by: approved_by.as_deref(),
+                    ticket: ticket.as_deref(),
+                    expires: expires.as_deref(),
+                    config_path: cli.config.as_ref(),
+                    format,
+                    quiet: cli.quiet,
+                    executor: executor.clone(),
+                })
+                .await
+            }
+            ExceptionAction::Remove { plugin_id, key } => {
+                commands::exception::remove(commands::exception::RemoveOptions {
+                    plugin_id: &plugin_id,
+                    key: &key,
+                    config_path: cli.config.as_ref(),
+                    format,
+                    quiet: cli.quiet,
+                })
+                .await
+            }
+        },
         Command::Report {
             scenario,
             framework,

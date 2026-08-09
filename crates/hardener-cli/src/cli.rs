@@ -139,6 +139,12 @@ pub enum Command {
     /// List available security plugins.
     Plugins,
 
+    /// Accept a single finding as a documented deviation.
+    Exception {
+        #[command(subcommand)]
+        action: ExceptionAction,
+    },
+
     /// Generate compliance reports.
     Report {
         /// Use case scenario (server, workstation, government, healthcare, financial, gdpr, all).
@@ -407,6 +413,12 @@ impl Command {
                 "it lists the plugins compiled into this binary and asks no host \
                  anything",
             ),
+            Command::Exception { .. } => refuse(
+                "exception",
+                "it edits this host's own configuration file, which is the file \
+                 this host's apply reads; an exception for a remote host is \
+                 written on that host",
+            ),
             Command::Daemon { action } => match action {
                 DaemonAction::Start => refuse(
                     "daemon start",
@@ -498,6 +510,42 @@ pub enum CheckpointAction {
         /// Remove the rows instead of only reporting them.
         #[arg(long)]
         execute: bool,
+    },
+}
+
+/// What `hardener exception` does to one entry.
+///
+/// No `list`: `hardener scan` already prints the exact table beside every
+/// keyed finding, and the config file is readable, so a read verb would be a
+/// third code path restating both.
+#[derive(Subcommand)]
+pub enum ExceptionAction {
+    /// Write an exception for a finding, pinning the value observed now.
+    Add {
+        /// Plugin the finding came from, as `hardener plugins` lists it.
+        plugin_id: String,
+        /// Exception key, as `hardener scan` prints beside the finding.
+        key: String,
+        /// Why this deviation is accepted. Required: an undocumented deviation
+        /// is what an exception exists to prevent.
+        #[arg(long)]
+        reason: String,
+        /// Who approved it.
+        #[arg(long, value_name = "NAME")]
+        approved_by: Option<String>,
+        /// Approval ticket or issue reference.
+        #[arg(long, value_name = "REF")]
+        ticket: Option<String>,
+        /// Date the exception stops applying (ISO 8601, e.g. 2027-01-31).
+        #[arg(long, value_name = "DATE")]
+        expires: Option<String>,
+    },
+    /// Remove an exception.
+    Remove {
+        /// Plugin the finding came from.
+        plugin_id: String,
+        /// Exception key.
+        key: String,
     },
 }
 

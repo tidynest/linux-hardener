@@ -399,6 +399,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`hardener exception add` and `hardener exception remove`** write a policy
+  exception without hand-editing `config.toml`. `add <plugin-id> <key> --reason
+  <text>` (plus optional `--approved-by`, `--ticket`, `--expires`) runs the
+  named plugin's own scan and pins the value the finding matching `<key>`
+  reports right now, so the documented value is always the host's actual
+  current one rather than one typed by hand and liable to drift from it. A key
+  the scan did not produce is refused by name. `remove <plugin-id> <key>`
+  deletes the table again, and the parent tables above it too when that leaves
+  them empty, so add followed by remove is a round trip. Both edit only the one
+  `[<section>.exceptions.<key>]` table; every other line of the file, including
+  comments and section order, is left alone. Details: [CLI:
+  exception](docs/reference/cli.md#exception).
+
 - **The Analysis finding row now says when a policy exception did not apply**
   (#133). `ExceptionOutcome` has carried a `Declined` state since the
   three-state rework, meaning the operator wrote an exception that was allowed

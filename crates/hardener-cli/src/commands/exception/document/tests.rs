@@ -187,3 +187,21 @@ fn removing_an_absent_key_is_an_error() {
         "the error names the key: {err}"
     );
 }
+
+/// A freshly created `exceptions` table holds only the keyed table beneath
+/// it, so it should contribute no header line of its own: the file should
+/// read as one table naming the exception, not two.
+#[test]
+fn a_new_exceptions_table_has_no_empty_header_of_its_own() {
+    let written = upsert_exception("", "services", "bluetooth", &exception("enabled", "laptop"))
+        .expect("write must succeed");
+
+    assert!(
+        !written.contains("[services.exceptions]\n"),
+        "the intermediate table must not print its own header: {written}"
+    );
+    assert!(
+        written.contains("[services.exceptions.bluetooth]"),
+        "the keyed table is still written: {written}"
+    );
+}
