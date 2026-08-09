@@ -1163,6 +1163,7 @@ fn rollback_cells_rolled_back_clean() {
         reload_failed: 0,
         diverged: 0,
         unverifiable: 0,
+        divergences: Vec::new(),
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Ok);
     assert_eq!(v.cells, vec![("9 restored".to_string(), "score-good")]);
@@ -1176,6 +1177,7 @@ fn rollback_cells_rolled_back_with_failures() {
         reload_failed: 0,
         diverged: 0,
         unverifiable: 0,
+        divergences: Vec::new(),
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Failed);
     assert_eq!(
@@ -1200,6 +1202,7 @@ fn rollback_cells_rolled_back_with_reload_failures() {
         reload_failed: 1,
         diverged: 0,
         unverifiable: 0,
+        divergences: Vec::new(),
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Failed);
     assert_eq!(
@@ -1225,6 +1228,7 @@ fn rollback_cells_rolled_back_carries_divergences() {
         reload_failed: 0,
         diverged: 2,
         unverifiable: 1,
+        divergences: Vec::new(),
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Ok);
     assert_eq!(
@@ -1244,6 +1248,7 @@ fn rollback_cells_rolled_back_nothing_shows_muted_fallback() {
         reload_failed: 0,
         diverged: 0,
         unverifiable: 0,
+        divergences: Vec::new(),
     }));
     assert_eq!(v.glyph, OutcomeGlyph::Ok);
     assert_eq!(v.cells, vec![("Nothing restored".to_string(), "")]);

@@ -22,7 +22,9 @@ use hardener_scheduler::db::ScanFinding;
 use hardener_state::{ActionResult, ActionType, Checkpoint, CheckpointManager};
 use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
-use hardener_types::{ApplyOutcome, ApplyStatus, RollbackOutcome, RollbackResult, RollbackStatus};
+use hardener_types::{
+    ApplyOutcome, ApplyStatus, DivergenceState, RollbackOutcome, RollbackResult, RollbackStatus,
+};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1391,6 +1393,7 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                 reload_failed,
                 diverged,
                 unverifiable,
+                divergences,
             } => {
                 rolled_back += 1;
                 let status = if *failed > 0 {
@@ -1422,6 +1425,31 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                     hardener_types::rollback_failed_label(*failed, *reload_failed)
                 );
                 push_detail(&mut out, "result", &result);
+                // The rows behind that count (#141). Printed under the host
+                // they belong to rather than gathered into a section of their
+                // own, because the operator's question is "which host do I
+                // open", and an answer filed away from the host's own block
+                // makes them join the two up by name.
+                //
+                // Every row, with no cap. The single-host path prints them all
+                // and this is the same information for the same reader; a
+                // truncated list would read as the whole one, and only hosts
+                // that HAVE rows print any. The counts on the line above are
+                // the short form for anyone who wants it.
+                for d in divergences {
+                    let label = match d.divergence_state {
+                        DivergenceState::Diverged => "diverged".yellow(),
+                        DivergenceState::Unverifiable => "unverifiable".dimmed(),
+                    };
+                    push_detail(
+                        &mut out,
+                        &format!("  {label}"),
+                        &format!(
+                            "{} ({}): {}",
+                            d.divergence_subject, d.divergence_plugin_id, d.divergence_detail
+                        ),
+                    );
+                }
             }
             RollbackStatus::NothingToDo => {
                 nothing += 1;
@@ -1566,6 +1594,7 @@ fn rollback_status_for(results: &[RollbackResult], connect_failed: usize) -> Rol
     let mut reload_failed = 0;
     let mut diverged = 0;
     let mut unverifiable = 0;
+    let mut divergences = Vec::new();
     for r in results {
         let (r_restored, r_failed, r_reload_failed) =
             classify_rollback_outcome(r.rollback_success, r.reloads_ok());
@@ -1575,6 +1604,11 @@ fn rollback_status_for(results: &[RollbackResult], connect_failed: usize) -> Rol
         let (r_diverged, r_unverifiable) = r.divergence_counts();
         diverged += r_diverged;
         unverifiable += r_unverifiable;
+        // The rows themselves, carried rather than dropped at the fleet
+        // boundary (#141). Counted and collected in ONE pass over the same
+        // vector, so the counts cannot come to describe a different set of
+        // rows than the ones an operator is shown.
+        divergences.extend(r.rollback_divergences.iter().cloned());
     }
     RollbackStatus::RolledBack {
         restored,
@@ -1582,6 +1616,7 @@ fn rollback_status_for(results: &[RollbackResult], connect_failed: usize) -> Rol
         reload_failed,
         diverged,
         unverifiable,
+        divergences,
     }
 }
 

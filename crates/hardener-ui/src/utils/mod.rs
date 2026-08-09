@@ -787,12 +787,17 @@ pub fn fleet_rollback_cells(o: &FleetRollbackOutcome) -> OutcomeView {
             cells: vec![("Nothing to roll back".to_string(), "")],
             error: None,
         },
+        // `divergences` is deliberately not read here. The fleet table shows
+        // counts and the drill-down that would show the rows is its own piece
+        // of work; matching it away keeps this arm honest about that rather
+        // than silently ignoring a field it looks like it handles.
         RollbackStatus::RolledBack {
             restored,
             failed,
             reload_failed,
             diverged,
             unverifiable,
+            divergences: _,
         } => {
             let mut cells = Vec::new();
             if *restored > 0 {

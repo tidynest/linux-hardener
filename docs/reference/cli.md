@@ -783,6 +783,21 @@ rollback task that did not finish. `2` also covers the selection refusals, which
 happen before any connection: no hosts selected, an unknown `--host` name, and a
 selection whose hosts would file their checkpoints under one host key.
 
+**What a rollback left diverged is reported per host, in full.** Where a
+plugin's probe finds the running system still disagreeing with the
+configuration the rollback restored, or cannot answer at all, the host's block
+carries one line per row beneath its result line: the subject, the plugin that
+took the reading, and the sentence. `diverged` is a measurement and
+`unverifiable` is a probe that could not answer, and they are labelled apart
+because they ask for different things next. The result line keeps the counts,
+so the short form is still there for anyone reading twenty hosts at once.
+
+None of this touches the exit code. A divergence is something to look at, not
+something that went wrong, and the tiered codes above read only the failures.
+Hosts with nothing to report print no such lines. `--format json` carries the
+same rows under `divergences`; a payload from a release older than this field
+parses with none, which is not the same as a host having none.
+
 **Examples:**
 
 ```bash

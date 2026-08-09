@@ -1377,6 +1377,29 @@ pub enum RollbackStatus {
         /// read the same as one that measurably disagreed.
         #[serde(default)]
         unverifiable: usize,
+        /// The rows the two counts above are counts OF.
+        ///
+        /// A count tells an operator that something is there and gives them
+        /// no way to see it short of a second rollback per host, which is not
+        /// a thing anyone should run to read a report (#141). The single-host
+        /// path has always printed these sentences, and the fleet path is
+        /// where they matter most, because that is where the operator is
+        /// looking at twenty hosts and has to decide which one to open.
+        ///
+        /// Inside this variant rather than on `RollbackOutcome`, so that an
+        /// empty vector keeps the defined meaning `RollbackDivergence`
+        /// documents: everything checkable came back. On the outcome it would
+        /// also be empty for a host that failed to connect, and silence
+        /// standing for "nobody looked" is the conflation that type exists to
+        /// prevent.
+        ///
+        /// `diverged` and `unverifiable` stay, rather than being derived at
+        /// every read: the exit code and both renderers already take them, and
+        /// a payload written by a release older than this field still carries
+        /// them. `rollback_status_for` builds all three from one pass and a
+        /// test holds the counts to the rows, so the two cannot drift.
+        #[serde(default)]
+        divergences: Vec<RollbackDivergence>,
     },
     /// No matching checkpoint for the selected plugins on this host.
     NothingToDo,

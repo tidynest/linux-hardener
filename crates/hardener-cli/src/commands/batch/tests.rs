@@ -296,6 +296,7 @@ fn rollback_exit_code_follows_precedence() {
             reload_failed: 0,
             diverged: 0,
             unverifiable: 0,
+            divergences: Vec::new(),
         })]),
         0
     );
@@ -306,6 +307,7 @@ fn rollback_exit_code_follows_precedence() {
             reload_failed: 0,
             diverged: 0,
             unverifiable: 0,
+            divergences: Vec::new(),
         })]),
         1
     );
@@ -323,6 +325,7 @@ fn rollback_exit_code_follows_precedence() {
                 reload_failed: 0,
                 diverged: 0,
                 unverifiable: 0,
+                divergences: Vec::new(),
             }),
             ro(RollbackStatus::Failed {
                 error: "x".to_string()
@@ -372,6 +375,7 @@ fn render_rollback_text_partial_and_nothing_to_do() {
             reload_failed: 0,
             diverged: 0,
             unverifiable: 0,
+            divergences: Vec::new(),
         }),
         ro(RollbackStatus::NothingToDo),
     ]);
@@ -407,6 +411,7 @@ fn render_rollback_text_names_a_reload_failure_separately_from_a_file_failure() 
         reload_failed: 0,
         diverged: 0,
         unverifiable: 0,
+        divergences: Vec::new(),
     })]);
     assert!(
         file_failure.contains("2 restored, 1 failed"),
@@ -423,6 +428,7 @@ fn render_rollback_text_names_a_reload_failure_separately_from_a_file_failure() 
         reload_failed: 1,
         diverged: 0,
         unverifiable: 0,
+        divergences: Vec::new(),
     })]);
     assert!(
         reload_failure.contains("2 restored, 1 failed") && reload_failure.contains("reload"),
@@ -465,6 +471,7 @@ fn render_rollback_text_names_divergences_and_unchecked_rows_apart() {
             reload_failed: 0,
             diverged: 2,
             unverifiable: 0,
+            divergences: Vec::new(),
         }),
         "  result:    2 restored, 0 failed, 2 divergences"
     );
@@ -477,6 +484,7 @@ fn render_rollback_text_names_divergences_and_unchecked_rows_apart() {
             reload_failed: 0,
             diverged: 0,
             unverifiable: 1,
+            divergences: Vec::new(),
         }),
         "  result:    3 restored, 0 failed, 1 unchecked"
     );
@@ -489,6 +497,7 @@ fn render_rollback_text_names_divergences_and_unchecked_rows_apart() {
             reload_failed: 0,
             diverged: 2,
             unverifiable: 1,
+            divergences: Vec::new(),
         }),
         "  result:    2 restored, 0 failed, 2 divergences, 1 unchecked"
     );
@@ -501,6 +510,7 @@ fn render_rollback_text_names_divergences_and_unchecked_rows_apart() {
             reload_failed: 0,
             diverged: 1,
             unverifiable: 1,
+            divergences: Vec::new(),
         }),
         "  result:    1 restored, 0 failed, 1 divergence, 1 unchecked"
     );
@@ -514,6 +524,7 @@ fn render_rollback_text_names_divergences_and_unchecked_rows_apart() {
             reload_failed: 0,
             diverged: 0,
             unverifiable: 0,
+            divergences: Vec::new(),
         }),
         "  result:    4 restored, 0 failed"
     );
@@ -544,6 +555,7 @@ fn render_rollback_json_tags_state() {
         reload_failed: 0,
         diverged: 0,
         unverifiable: 0,
+        divergences: Vec::new(),
     })]);
     assert!(json.contains("\"state\": \"rolledback\""), "json: {json}");
 }
@@ -1870,6 +1882,7 @@ fn a_divergence_does_not_change_the_fleet_exit_code() {
         reload_failed: 0,
         diverged: 0,
         unverifiable: 0,
+        divergences: Vec::new(),
     };
     let diverged = RollbackStatus::RolledBack {
         restored: 3,
@@ -1877,10 +1890,158 @@ fn a_divergence_does_not_change_the_fleet_exit_code() {
         reload_failed: 0,
         diverged: 2,
         unverifiable: 0,
+        divergences: Vec::new(),
     };
 
     assert_eq!(
         rollback_exit_code(&[ro(clean)]),
         rollback_exit_code(&[ro(diverged)]),
     );
+}
+
+/// #141: the counts were all that crossed the fleet boundary. An operator
+/// reading a fleet report could see that two things were left diverged and had
+/// no way to learn which, short of a second rollback per host.
+#[test]
+fn the_rows_behind_the_counts_cross_the_fleet_boundary() {
+    let mut first = rollback_result_fixture();
+    first.rollback_divergences = vec![RollbackDivergence {
+        divergence_plugin_id: "kernel-hardening".to_string(),
+        divergence_subject: "net.ipv4.conf.all.log_martians".to_string(),
+        divergence_state: DivergenceState::Diverged,
+        divergence_detail: "running value 0, restored file says 1".to_string(),
+    }];
+    let mut second = rollback_result_fixture();
+    second.rollback_divergences = vec![RollbackDivergence {
+        divergence_plugin_id: "firewall-hardening".to_string(),
+        divergence_subject: "ufw".to_string(),
+        divergence_state: DivergenceState::Unverifiable,
+        divergence_detail: "ufw not installed, nothing to read".to_string(),
+    }];
+
+    let status = rollback_status_for(&[first, second], 0);
+
+    match status {
+        RollbackStatus::RolledBack {
+            diverged,
+            unverifiable,
+            divergences,
+            ..
+        } => {
+            // From BOTH checkpoints, not the first one that had any.
+            assert_eq!(divergences.len(), 2);
+            assert_eq!(
+                divergences[0].divergence_subject,
+                "net.ipv4.conf.all.log_martians"
+            );
+            assert_eq!(divergences[1].divergence_subject, "ufw");
+            // The counts are held to the rows rather than to literals. A
+            // collector carrying a different set than it counted would satisfy
+            // a literal check on either side and fail this one, which is the
+            // drift the two fields together could otherwise develop.
+            let measured = divergences
+                .iter()
+                .filter(|d| matches!(d.divergence_state, DivergenceState::Diverged))
+                .count();
+            assert_eq!(diverged, measured);
+            assert_eq!(unverifiable, divergences.len() - measured);
+        }
+        other => panic!("expected RolledBack, got {other:?}"),
+    }
+}
+
+/// And the operator can read them. The count says something is there; these
+/// lines say what, under the host they belong to.
+#[test]
+fn render_rollback_text_prints_each_divergence_row() {
+    colored::control::set_override(false);
+
+    let text = render_rollback_text(&[ro(RollbackStatus::RolledBack {
+        restored: 2,
+        failed: 0,
+        reload_failed: 0,
+        diverged: 1,
+        unverifiable: 1,
+        divergences: vec![
+            RollbackDivergence {
+                divergence_plugin_id: "kernel-hardening".to_string(),
+                divergence_subject: "net.ipv4.conf.all.log_martians".to_string(),
+                divergence_state: DivergenceState::Diverged,
+                divergence_detail: "running value 0, restored file says 1".to_string(),
+            },
+            RollbackDivergence {
+                divergence_plugin_id: "firewall-hardening".to_string(),
+                divergence_subject: "ufw".to_string(),
+                divergence_state: DivergenceState::Unverifiable,
+                divergence_detail: "ufw not installed, nothing to read".to_string(),
+            },
+        ],
+    })]);
+
+    // The subject, the plugin that took the reading, and the sentence. An
+    // operator needs all three: which setting, who measured it, and what it
+    // said.
+    assert!(
+        text.contains(
+            "net.ipv4.conf.all.log_martians (kernel-hardening): running value 0, restored file says 1"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("ufw (firewall-hardening): ufw not installed, nothing to read"),
+        "{text}"
+    );
+    // Labelled apart, because they ask for different things next: one is a
+    // measurement, the other is a probe that could not answer.
+    assert!(text.contains("diverged"), "{text}");
+    assert!(text.contains("unverifiable"), "{text}");
+    // The summary line still sits above them for anyone who wants the count.
+    assert!(
+        text.contains("2 restored, 0 failed, 1 divergence, 1 unchecked"),
+        "{text}"
+    );
+}
+
+/// A host with nothing to report prints no rows, so the common case does not
+/// grow a section that says nothing.
+#[test]
+fn render_rollback_text_prints_no_rows_where_there_are_none() {
+    colored::control::set_override(false);
+
+    let text = render_rollback_text(&[ro(RollbackStatus::RolledBack {
+        restored: 2,
+        failed: 0,
+        reload_failed: 0,
+        diverged: 0,
+        unverifiable: 0,
+        divergences: Vec::new(),
+    })]);
+
+    assert!(!text.contains("diverged"), "{text}");
+    assert!(!text.contains("unverifiable"), "{text}");
+}
+
+/// A payload written by a release older than this field still parses, which is
+/// what the `serde(default)` is for: a fleet running mixed versions must not
+/// fail to read one of its own hosts.
+#[test]
+fn a_payload_without_the_rows_still_parses() {
+    let json = r#"{"state":"rolledback","restored":2,"failed":0,"reload_failed":0,"diverged":2,"unverifiable":0}"#;
+
+    let status: RollbackStatus = serde_json::from_str(json).expect("an older payload must parse");
+
+    match status {
+        RollbackStatus::RolledBack {
+            diverged,
+            divergences,
+            ..
+        } => {
+            assert_eq!(diverged, 2);
+            assert!(
+                divergences.is_empty(),
+                "an older payload carries no rows, which is not the same as a host having none"
+            );
+        }
+        other => panic!("expected RolledBack, got {other:?}"),
+    }
 }
