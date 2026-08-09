@@ -620,6 +620,32 @@ fn the_commands_that_never_reach_a_host_refuse_ssh() {
             vec!["hardener", "--ssh", "web-01", "checkpoint", "repair"],
             "checkpoint repair",
         ),
+        (
+            vec![
+                "hardener",
+                "--ssh",
+                "web-01",
+                "exception",
+                "add",
+                "kernel-hardening",
+                "KEG1",
+                "--reason",
+                "acceptable deviation",
+            ],
+            "exception",
+        ),
+        (
+            vec![
+                "hardener",
+                "--ssh",
+                "web-01",
+                "exception",
+                "remove",
+                "kernel-hardening",
+                "KEG1",
+            ],
+            "exception",
+        ),
     ];
 
     for (argv, name) in refused {
