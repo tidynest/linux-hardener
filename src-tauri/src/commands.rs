@@ -1041,7 +1041,11 @@ fn exception_add_args<'a>(
         ("--ticket", ticket),
         ("--expires", expires),
     ] {
-        if let Some(supplied) = field {
+        // Blank counts as absent, not as a flag paired with an empty string:
+        // `Some("")` reaches here whenever the caller trims a field and hands
+        // back an empty string rather than `None`, and `--ticket ""` would
+        // write an empty ticket into the operator's config.
+        if let Some(supplied) = field.filter(|s| !s.trim().is_empty()) {
             args.push(flag);
             args.push(supplied);
         }
@@ -1065,7 +1069,7 @@ pub async fn add_policy_exception(
     expires: Option<String>,
 ) -> Result<hardener_types::WrittenException, String> {
     let _guard = PrivilegedOpGuard::acquire()?;
-    validate_ipc_string(&plugin_id, "plugin_id")?;
+    validate_plugin_ids(std::slice::from_ref(&plugin_id))?;
     validate_ipc_string(&exception_key, "exception_key")?;
     validate_ipc_string(&reason, "reason")?;
     for (field, name) in [
@@ -1105,7 +1109,7 @@ pub async fn remove_policy_exception(
     exception_key: String,
 ) -> Result<(), String> {
     let _guard = PrivilegedOpGuard::acquire()?;
-    validate_ipc_string(&plugin_id, "plugin_id")?;
+    validate_plugin_ids(std::slice::from_ref(&plugin_id))?;
     validate_ipc_string(&exception_key, "exception_key")?;
 
     run_privileged_command(&[

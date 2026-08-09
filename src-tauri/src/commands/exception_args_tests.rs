@@ -37,6 +37,35 @@ fn absent_optional_fields_add_no_flags() {
     );
 }
 
+/// `Some("")`, which a caller can hand back after trimming a field, must add
+/// no flag either: `--ticket ""` would write an empty ticket, contradicting
+/// this function's own doc comment.
+#[test]
+fn blank_optional_fields_add_no_flags() {
+    let args = exception_add_args(
+        "service-minimisation",
+        "bluetooth",
+        "laptop needs it",
+        Some(""),
+        Some("   "),
+        Some(""),
+    );
+
+    assert_eq!(
+        args,
+        vec![
+            "--format",
+            "json",
+            "exception",
+            "add",
+            "service-minimisation",
+            "bluetooth",
+            "--reason",
+            "laptop needs it",
+        ]
+    );
+}
+
 /// A supplied field becomes exactly one flag and one value.
 #[test]
 fn supplied_optional_fields_become_flags() {
