@@ -296,8 +296,11 @@ A `--differential` run reports a fifth number instead. Its checks reconcile by
 construction, since a check it cannot determine is recorded as a failure rather
 than as a skip, so the split above is nothing but zeroes; what moves between
 fixtures is the count of rows declared unaskable and never asked, and the line
-now names it: `81 declared, 81 passed, 0 failed, 0 skipped, 9 unaskable and
-never asked`. Both summary tables carry it as their `Unask` column beside
+now names it. The arch reading of 2026-08-09, under `--pipe --private-network`:
+`81 declared, 81 passed, 0 failed, 0 skipped, 13 unaskable and never asked`,
+the 13 being the 7 parameters outside `/proc/sys/net`, the 3 services rows and
+their pre-apply control on a fixture with no systemd, and the 2 `PASS_MIN_DAYS`
+rows arch's shadow cannot carry. Both summary tables carry it as their `Unask` column beside
 `NoVdt`, the checks a run declared without giving a verdict to.
 
 `run-cross-distro-tests.sh --self-test` asserts the arithmetic, both the clean

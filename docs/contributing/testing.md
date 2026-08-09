@@ -1022,7 +1022,21 @@ for the cost of one flag. The two signals now say what they mean:
 Neither is inferred from the other. A runner that declares the boot and forgets
 the namespace loses the kernel oracle and keeps the services one, which is the
 direction a mistake here should fail in, and `--self-test` asks for all four
-combinations rather than the two a runner produces. The header prints both, on
+combinations rather than the two a runner produces.
+
+**Read against a freshly created arch container on 2026-08-09**, with
+`run-cross-distro-tests.sh --differential --distro arch` and therefore no
+`--boot` anywhere: **81 of 81 passed, 13 unaskable**, the 13 being the 7
+parameters outside `/proc/sys/net`, the 3 services rows with their pre-apply
+control, and the 2 `PASS_MIN_DAYS` rows. The same invocation before the split
+was sized at 68 by the arithmetic above, the difference being the 11 kernel
+rows, the stricter-seeded row and the kernel plugin's pre-apply control, all
+three declared unaskable there; that is what `expected_check_total` says of the
+two configurations and not a second container reading. What makes this one a
+reading of the namespace rather
+than of the flag is the pre-apply control, which found 10 of the 11 parameters
+away from target: the looser-than-baseline seeds were written into
+`/proc/sys/net` and were still standing when the capture was taken. The header prints both, on
 their own lines, beside the binary version:
 
 ```
