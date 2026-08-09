@@ -7,12 +7,17 @@
 //! hidden: the documented deviation is itself the evidence.
 
 use super::icons::IconChevron;
+use super::{ExceptionDraft, ExceptionModal};
 use crate::state::{AppState, unchecked_tally};
-use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report};
+use crate::tauri_bindings::{
+    invoke_add_policy_exception, invoke_deep_scan, invoke_generate_report,
+    invoke_remove_policy_exception,
+};
 use crate::types::{ExceptionOutcome, Finding, Severity};
 use crate::utils::{
-    group_findings_by_severity, is_auth_cancelled, severity_class, severity_label,
-    split_policy_excepted, unchecked_honesty_line,
+    PluginFinding, apply_written_exception, clear_exception, group_findings_by_severity,
+    is_auth_cancelled, severity_class, severity_label, split_policy_excepted,
+    unchecked_honesty_line,
 };
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -50,13 +55,22 @@ fn parse_severity(value: &str) -> Option<Severity> {
 pub fn FindingsTab() -> impl IntoView {
     let app_state = expect_context::<AppState>();
 
-    // All findings flattened from scan results
+    // All findings flattened from scan results, paired with the plugin that
+    // produced each one: the exception a row writes is keyed per plugin, and
+    // this is the only place that still has both on hand once the results are
+    // flattened.
     let all_findings = move || {
         app_state
             .scan_results
             .get()
             .iter()
-            .flat_map(|r| r.scan_findings.clone())
+            .flat_map(|r| {
+                let plugin_id = r.scan_plugin_id.as_str().to_string();
+                r.scan_findings
+                    .clone()
+                    .into_iter()
+                    .map(move |f| (plugin_id.clone(), f))
+            })
             .collect::<Vec<_>>()
     };
 
@@ -68,7 +82,7 @@ pub fn FindingsTab() -> impl IntoView {
 
         if let Some(min) = app_state.severity_filter.get() {
             let threshold = severity_rank(min);
-            findings.retain(|f| severity_rank(f.finding_severity) >= threshold);
+            findings.retain(|(_, f)| severity_rank(f.finding_severity) >= threshold);
         }
 
         findings
@@ -197,7 +211,7 @@ pub fn FindingsTab() -> impl IntoView {
 fn finding_group(
     dot_class: &'static str,
     name: &'static str,
-    findings: Vec<Finding>,
+    findings: Vec<PluginFinding>,
     expanded: RwSignal<Option<String>>,
 ) -> impl IntoView {
     let count = findings.len();
@@ -209,14 +223,20 @@ fn finding_group(
                 <span class="finding-group-count">{count}</span>
             </div>
             <ul class="finding-rows">
-                {findings.into_iter().map(|f| finding_row(f, expanded)).collect::<Vec<_>>()}
+                {findings.into_iter().map(|(plugin_id, f)| finding_row(plugin_id, f, expanded)).collect::<Vec<_>>()}
             </ul>
         </li>
     }
 }
 
 /// One finding row: a head that toggles the detail open in place.
-fn finding_row(f: Finding, expanded: RwSignal<Option<String>>) -> impl IntoView {
+///
+/// `plugin_id` names the plugin the finding came from. It is not part of the
+/// `Finding` itself: an exception is keyed per plugin (two plugins can key on
+/// the same word), so accepting or removing one needs both `plugin_id` and
+/// `finding_exception_key` to name the right row.
+fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>) -> impl IntoView {
+    let app_state = expect_context::<AppState>();
     let id = f.finding_id.clone();
     let id_for_toggle = id.clone();
     let id_for_key = id.clone();
@@ -227,6 +247,10 @@ fn finding_row(f: Finding, expanded: RwSignal<Option<String>>) -> impl IntoView 
     let current = f.finding_current_value.clone();
     let recommended = f.finding_recommended_value.clone();
     let steps = f.finding_remediation_steps.clone();
+    let title = f.finding_title.clone();
+    // A finding with no exception key renders no accept/remove control at all,
+    // rather than one that fails the moment it is pressed.
+    let key = f.finding_exception_key.clone();
     // The reason the deviation was accepted is the evidence that makes this a
     // documented exception rather than an unexplained gap, so the detail
     // carries it. The rest of the approval metadata stays out until someone
@@ -245,6 +269,87 @@ fn finding_row(f: Finding, expanded: RwSignal<Option<String>>) -> impl IntoView 
         ExceptionOutcome::Declined(d) => Some(hardener_types::exception_declined_line(d)),
         ExceptionOutcome::NotConfigured | ExceptionOutcome::Applied(_) => None,
     };
+
+    // Local mirror of this finding's outcome, so the Accept/Remove control
+    // flips as soon as a write returns rather than waiting on the whole
+    // severity-grouped list to rebuild from `AppState`.
+    let outcome_now = RwSignal::new(f.finding_exception.clone());
+    let modal_open = RwSignal::new(false);
+
+    let submit_plugin_id = plugin_id.clone();
+    let submit_key = key.clone();
+    let on_submit = Callback::new(move |draft: ExceptionDraft| {
+        let Some(exception_key) = submit_key.clone() else {
+            return;
+        };
+        let plugin_id = submit_plugin_id.clone();
+        modal_open.set(false);
+        leptos::task::spawn_local(async move {
+            match invoke_add_policy_exception(
+                plugin_id.clone(),
+                exception_key.clone(),
+                draft.reason,
+                draft.approved_by,
+                draft.ticket,
+                draft.expires,
+            )
+            .await
+            {
+                Ok(written) => {
+                    app_state.scan_results.update(|results| {
+                        apply_written_exception(results, &plugin_id, &exception_key, &written);
+                    });
+                    // Read the outcome back from what the patch produced,
+                    // rather than a second, possibly drifting construction of
+                    // the same `Applied` variant here.
+                    let patched = app_state.scan_results.with_untracked(|results| {
+                        results
+                            .iter()
+                            .find(|r| r.scan_plugin_id.as_str() == plugin_id)
+                            .and_then(|r| {
+                                r.scan_findings.iter().find(|f| {
+                                    f.finding_exception_key.as_deref()
+                                        == Some(exception_key.as_str())
+                                })
+                            })
+                            .map(|f| f.finding_exception.clone())
+                    });
+                    if let Some(outcome) = patched {
+                        outcome_now.set(outcome);
+                    }
+                }
+                // A cancelled pkexec prompt is not a failure to report.
+                Err(e) if is_auth_cancelled(&e) => {}
+                Err(e) => app_state
+                    .error_message
+                    .set(Some(format!("Accept finding failed: {e}"))),
+            }
+        });
+    });
+
+    let remove_plugin_id = plugin_id.clone();
+    let remove_key = key.clone();
+    let remove_now = Callback::new(move |()| {
+        let Some(exception_key) = remove_key.clone() else {
+            return;
+        };
+        let plugin_id = remove_plugin_id.clone();
+        leptos::task::spawn_local(async move {
+            match invoke_remove_policy_exception(plugin_id.clone(), exception_key.clone()).await {
+                Ok(()) => {
+                    app_state.scan_results.update(|results| {
+                        clear_exception(results, &plugin_id, &exception_key);
+                    });
+                    outcome_now.set(ExceptionOutcome::NotConfigured);
+                }
+                Err(e) if is_auth_cancelled(&e) => {}
+                Err(e) => app_state
+                    .error_message
+                    .set(Some(format!("Remove exception failed: {e}"))),
+            }
+        });
+    });
+
     view! {
         <li class="finding-row" class:open=move || is_open.get()>
             <div
@@ -285,6 +390,24 @@ fn finding_row(f: Finding, expanded: RwSignal<Option<String>>) -> impl IntoView 
                     {exception_declined.clone().map(|line| view! {
                         <p class="finding-exception-declined">{line}</p>
                     })}
+                    {key.clone().map(|_k| view! {
+                        <div class="finding-exception-actions">
+                            <Show
+                                when=move || matches!(outcome_now.get(), ExceptionOutcome::NotConfigured)
+                                fallback=move || view! {
+                                    <button
+                                        class="btn btn-secondary finding-exception-remove"
+                                        on:click=move |_| remove_now.run(())
+                                    >"Remove Exception"</button>
+                                }
+                            >
+                                <button
+                                    class="btn btn-secondary finding-exception-accept"
+                                    on:click=move |_| modal_open.set(true)
+                                >"Accept This Finding"</button>
+                            </Show>
+                        </div>
+                    })}
                     <div class="finding-values">
                         <span class="value-current">{current.clone()}</span>
                         <span class="value-arrow" aria-hidden="true">"->"</span>
@@ -298,6 +421,13 @@ fn finding_row(f: Finding, expanded: RwSignal<Option<String>>) -> impl IntoView 
                     })}
                     <A href="/hardening" attr:class="finding-bridge">"Configure Fix in Hardening"</A>
                 </div>
+            </Show>
+            <Show when=move || modal_open.get()>
+                <ExceptionModal
+                    finding_title=title.clone()
+                    on_submit=on_submit
+                    on_dismiss=Callback::new(move |()| modal_open.set(false))
+                />
             </Show>
         </li>
     }

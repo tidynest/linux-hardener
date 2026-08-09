@@ -3404,6 +3404,59 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   overflow-y: auto;
 }
 
+/* The exception-authoring form (ExceptionModal): title, subtitle and the four
+   fields. Declared after .modal, at equal specificity, so its narrower
+   max-width wins the cascade instead of losing silently to .modal's 40rem.
+   Scoped under .exception-modal so a field-label/field-input pair introduced
+   here cannot leak onto some other modal that later reuses the generic
+   names. */
+.exception-modal {
+  max-width: 26rem;
+}
+
+.exception-modal .modal-title {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--font-size-sub);
+  color: var(--text-primary);
+}
+
+.exception-modal .modal-subtitle {
+  margin: 0 0 var(--space-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.exception-modal .field-label {
+  display: block;
+  margin: var(--space-sm) 0 var(--space-xs);
+  font-size: var(--font-size-body);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.exception-modal .field-input {
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  font-family: inherit;
+  font-size: var(--font-size-body);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.exception-modal .field-input:focus {
+  border-color: var(--color-accent);
+}
+
+.exception-modal textarea.field-input {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
 /* Per-host outcome row - dry-run preview and executed results share it. */
 .fleet-outcome {
   border: 1px solid var(--border);
@@ -3851,6 +3904,18 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   text-decoration: none;
 }
 .finding-bridge:hover { text-decoration: underline; }
+
+/* Accept/Remove-exception control, one finding at a time. Sits above the
+   current/recommended pair: whether a deviation is documented matters more
+   than what the values are. */
+.finding-exception-actions {
+  margin: 0 0 var(--space-md);
+}
+
+.finding-exception-accept,
+.finding-exception-remove {
+  font-size: var(--font-size-sm);
+}
 
 .findings-unchecked {
   margin: var(--space-md) 0 0;

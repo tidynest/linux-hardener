@@ -17,7 +17,7 @@ use super::*;
 use crate::types::{
     Change, ChangeType, CheckpointInfo, ComplianceSummary, ControlStatus, DivergenceState,
     ExceptionOutcome, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, PluginId,
-    RollbackDivergence, RollbackResult, ScanSessionInfo, Severity,
+    RollbackDivergence, RollbackResult, ScanResult, ScanSessionInfo, Severity, WrittenException,
 };
 
 #[test]
@@ -893,12 +893,19 @@ fn finding(id: &str, sev: Severity) -> Finding {
     }
 }
 
+/// `finding` paired with a plugin id, which `group_findings_by_severity` and
+/// `split_policy_excepted` now carry alongside every finding so a caller
+/// downstream (the row control) can key an exception to the right plugin.
+fn findingp(id: &str, sev: Severity) -> (String, Finding) {
+    ("p".to_string(), finding(id, sev))
+}
+
 #[test]
 fn groups_by_severity_critical_first_skipping_empty() {
     let fs = vec![
-        finding("1", Severity::Low),
-        finding("2", Severity::Critical),
-        finding("3", Severity::Low),
+        findingp("1", Severity::Low),
+        findingp("2", Severity::Critical),
+        findingp("3", Severity::Low),
     ];
     let groups = group_findings_by_severity(&fs);
     assert_eq!(groups.len(), 2);
@@ -916,17 +923,17 @@ fn a_documented_deviation_survives_the_split_instead_of_vanishing() {
     let mut excepted = finding("2", Severity::Critical);
     excepted.finding_exception =
         ExceptionOutcome::Applied(crate::types::FindingPolicyException::default());
-    let fs = vec![finding("1", Severity::High), excepted];
+    let fs = vec![findingp("1", Severity::High), ("p".to_string(), excepted)];
 
     let (live, deviations) = split_policy_excepted(&fs);
     assert_eq!(live.len(), 1, "live violations: {live:?}");
-    assert_eq!(live[0].finding_id, "1");
+    assert_eq!(live[0].1.finding_id, "1");
     assert_eq!(
         deviations.len(),
         1,
         "a documented deviation must not vanish: {deviations:?}"
     );
-    assert_eq!(deviations[0].finding_id, "2");
+    assert_eq!(deviations[0].1.finding_id, "2");
 }
 
 /// The input class that blanks a section if a caller gates rendering on
@@ -943,7 +950,7 @@ fn an_all_excepted_host_still_has_evidence_to_render() {
     b.finding_exception =
         ExceptionOutcome::Applied(crate::types::FindingPolicyException::default());
 
-    let (live, deviations) = split_policy_excepted(&[a, b]);
+    let (live, deviations) = split_policy_excepted(&[("p".to_string(), a), ("p".to_string(), b)]);
     assert!(live.is_empty(), "no live violations: {live:?}");
     assert_eq!(
         deviations.len(),
@@ -1399,4 +1406,146 @@ fn a_control_verdict_maps_to_its_own_colour_and_manual_review_is_never_red() {
     ];
     let unique: std::collections::HashSet<_> = classes.iter().collect();
     assert_eq!(unique.len(), 4, "each verdict needs its own class");
+}
+
+// --- Task 4: The written-exception row patch ---
+
+fn finding_keyed(key: &str, current: &str) -> Finding {
+    Finding {
+        finding_category: crate::types::FindingCategory::Services,
+        finding_current_value: current.to_string(),
+        finding_description: "d".to_string(),
+        finding_explanation: "e".to_string(),
+        finding_id: key.to_string(),
+        finding_impact: "i".to_string(),
+        finding_recommended_value: "b".to_string(),
+        finding_remediation_steps: vec![],
+        finding_severity: Severity::Medium,
+        finding_title: "t".to_string(),
+        finding_compliance: vec![],
+        finding_exception: ExceptionOutcome::NotConfigured,
+        finding_exception_key: Some(key.to_string()),
+    }
+}
+
+fn scan_result_with(findings: Vec<Finding>) -> ScanResult {
+    scan_result_for("service-minimisation", findings)
+}
+
+fn scan_result_for(plugin_id: &str, findings: Vec<Finding>) -> ScanResult {
+    ScanResult {
+        scan_plugin_id: PluginId::new(plugin_id.to_string()),
+        scan_success: true,
+        scan_findings: findings,
+        scan_unchecked: vec![],
+        scan_duration_us: 0,
+        scan_error: None,
+    }
+}
+
+/// The row is a view, not the record. After a write the row shows the exception
+/// without a second privileged scan, so this patch is what the operator sees
+/// until the next scan replaces it.
+#[test]
+fn a_written_exception_patches_only_its_own_finding() {
+    let mut results = vec![scan_result_with(vec![
+        finding_keyed("bluetooth", "active"),
+        finding_keyed("cups", "enabled"),
+    ])];
+    let written = WrittenException {
+        section: "services".to_string(),
+        key: "bluetooth".to_string(),
+        value: "active".to_string(),
+        reason: "laptop needs it".to_string(),
+        approved_by: None,
+        ticket: None,
+        expires: None,
+    };
+
+    apply_written_exception(&mut results, "service-minimisation", "bluetooth", &written);
+
+    let patched = &results[0].scan_findings[0];
+    let untouched = &results[0].scan_findings[1];
+    assert!(matches!(
+        patched.finding_exception,
+        ExceptionOutcome::Applied(_)
+    ));
+    assert!(matches!(
+        untouched.finding_exception,
+        ExceptionOutcome::NotConfigured
+    ));
+}
+
+/// The reason is the evidence that makes this a documented deviation rather
+/// than an unexplained gap, so it is what the patched row carries.
+#[test]
+fn the_patched_row_carries_the_reason_that_was_written() {
+    let mut results = vec![scan_result_with(vec![finding_keyed("bluetooth", "active")])];
+    let written = WrittenException {
+        section: "services".to_string(),
+        key: "bluetooth".to_string(),
+        value: "active".to_string(),
+        reason: "laptop needs it".to_string(),
+        approved_by: None,
+        ticket: None,
+        expires: None,
+    };
+
+    apply_written_exception(&mut results, "service-minimisation", "bluetooth", &written);
+
+    match &results[0].scan_findings[0].finding_exception {
+        ExceptionOutcome::Applied(e) => assert_eq!(e.exception_reason, "laptop needs it"),
+        other => panic!("expected an applied exception, got {other:?}"),
+    }
+}
+
+/// A removal returns the row to NotConfigured, which is what the next scan will
+/// independently report. Leaving it Applied would show a deviation the file no
+/// longer documents.
+#[test]
+fn clearing_returns_the_row_to_not_configured() {
+    let mut results = vec![scan_result_with(vec![finding_keyed("bluetooth", "active")])];
+    let written = WrittenException {
+        section: "services".to_string(),
+        key: "bluetooth".to_string(),
+        value: "active".to_string(),
+        reason: "laptop needs it".to_string(),
+        approved_by: None,
+        ticket: None,
+        expires: None,
+    };
+    apply_written_exception(&mut results, "service-minimisation", "bluetooth", &written);
+
+    clear_exception(&mut results, "service-minimisation", "bluetooth");
+
+    assert!(matches!(
+        results[0].scan_findings[0].finding_exception,
+        ExceptionOutcome::NotConfigured
+    ));
+}
+
+/// A key matching in one plugin must not patch a same-named key in another. Two
+/// plugins can key on the same word.
+#[test]
+fn the_patch_is_scoped_to_its_plugin() {
+    let mut results = vec![
+        scan_result_for("service-minimisation", vec![finding_keyed("shared", "a")]),
+        scan_result_for("audit-hardening", vec![finding_keyed("shared", "b")]),
+    ];
+    let written = WrittenException {
+        section: "services".to_string(),
+        key: "shared".to_string(),
+        value: "a".to_string(),
+        reason: "r".to_string(),
+        approved_by: None,
+        ticket: None,
+        expires: None,
+    };
+
+    apply_written_exception(&mut results, "service-minimisation", "shared", &written);
+
+    assert!(matches!(
+        results[1].scan_findings[0].finding_exception,
+        ExceptionOutcome::NotConfigured
+    ));
 }

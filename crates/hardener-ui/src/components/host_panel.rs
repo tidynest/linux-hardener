@@ -256,8 +256,14 @@ pub fn HostPanel(
 
             // --- Findings (collapsible, severity subgroups collapsible) ---
             {move || {
+                // Paired with the plugin that produced each finding, as the
+                // shared split/group helpers now require; this panel does not
+                // itself need the id; it renders no accept/remove control.
                 let findings = scan.get().map(|s| {
-                    s.scan_results.iter().flat_map(|r| r.scan_findings.iter().cloned()).collect::<Vec<_>>()
+                    s.scan_results.iter().flat_map(|r| {
+                        let plugin_id = r.scan_plugin_id.as_str().to_string();
+                        r.scan_findings.iter().cloned().map(move |f| (plugin_id.clone(), f))
+                    }).collect::<Vec<_>>()
                 }).unwrap_or_default();
                 // Documented deviations are separated, never dropped: the
                 // severity subgroups then count real problems only, and a host
@@ -265,12 +271,14 @@ pub fn HostPanel(
                 // rather than reading as a host with nothing wrong.
                 let (live, excepted) = split_policy_excepted(&findings);
                 let groups = group_findings_by_severity(&live);
+                let excepted: Vec<Finding> = excepted.into_iter().map(|(_, f)| f).collect();
                 (!groups.is_empty() || !excepted.is_empty()).then(|| {
                     let mut rendered: Vec<_> = groups
                         .into_iter()
                         .enumerate()
                         // Lead severity (first group) open; the rest collapsed.
                         .map(|(i, (sev, group))| {
+                            let group: Vec<Finding> = group.into_iter().map(|(_, f)| f).collect();
                             host_finding_subgroup(
                                 severity_class(sev),
                                 severity_label(sev),

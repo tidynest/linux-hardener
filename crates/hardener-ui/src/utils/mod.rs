@@ -5,9 +5,9 @@ pub mod theme;
 
 use crate::types::{ApplyOutcome as FleetApplyOutcome, RollbackOutcome as FleetRollbackOutcome};
 use crate::types::{
-    ApplyResult, Change, CheckpointInfo, ComplianceFramework, ControlStatus, FileRestoreAction,
-    Finding, FleetFrameworkPosture, RollbackResult, ScanResult, ScanSessionInfo, Severity,
-    ValidationIssue, ValidationReport,
+    ApplyResult, Change, CheckpointInfo, ComplianceFramework, ControlStatus, ExceptionOutcome,
+    FileRestoreAction, Finding, FindingPolicyException, FleetFrameworkPosture, RollbackResult,
+    ScanResult, ScanSessionInfo, Severity, ValidationIssue, ValidationReport, WrittenException,
 };
 use hardener_types::{ApplyStatus, RollbackStatus, UncheckedTally};
 
@@ -561,9 +561,21 @@ pub fn last_scanned_label(sessions: &[ScanSessionInfo]) -> String {
     }
 }
 
+/// A finding paired with the id of the plugin that produced it.
+///
+/// An exception is keyed per plugin, and two plugins can key on the same
+/// word, so a caller several frames from the scan results still needs both to
+/// write or clear the right one. `findings_tab` threads this from
+/// `all_findings` down to `finding_row`; `host_panel` strips the id back off
+/// before rendering, since its findings list carries no accept/remove
+/// control.
+pub type PluginFinding = (String, Finding);
+
 /// Groups findings by severity in Critical -> Info order, dropping empty
 /// buckets. Mirrors `group_checkpoints_by_date`: presentation grouping only.
-pub fn group_findings_by_severity(findings: &[Finding]) -> Vec<(Severity, Vec<Finding>)> {
+pub fn group_findings_by_severity(
+    findings: &[PluginFinding],
+) -> Vec<(Severity, Vec<PluginFinding>)> {
     [
         Severity::Critical,
         Severity::High,
@@ -573,9 +585,9 @@ pub fn group_findings_by_severity(findings: &[Finding]) -> Vec<(Severity, Vec<Fi
     ]
     .into_iter()
     .filter_map(|sev| {
-        let group: Vec<Finding> = findings
+        let group: Vec<PluginFinding> = findings
             .iter()
-            .filter(|f| f.finding_severity == sev)
+            .filter(|(_, f)| f.finding_severity == sev)
             .cloned()
             .collect();
         (!group.is_empty()).then_some((sev, group))
@@ -619,11 +631,69 @@ pub fn unchecked_honesty_line(tally: UncheckedTally) -> String {
 /// violations makes a severity count read higher than the number of real
 /// problems. `hardener report` resolves this the same way: an excepted finding
 /// is listed under its control rather than removed from it.
-pub fn split_policy_excepted(findings: &[Finding]) -> (Vec<Finding>, Vec<Finding>) {
+///
+/// See [`PluginFinding`] for why the plugin id rides along.
+pub fn split_policy_excepted(
+    findings: &[PluginFinding],
+) -> (Vec<PluginFinding>, Vec<PluginFinding>) {
     findings
         .iter()
         .cloned()
-        .partition(|f| !f.is_policy_excepted())
+        .partition(|(_, f)| !f.is_policy_excepted())
+}
+
+/// Marks the finding this exception was written for as an applied deviation,
+/// without re-scanning.
+///
+/// A full privileged scan to refresh one row would cost a second authentication
+/// prompt for information the write already returned. The persisted history row
+/// keeps what was scanned, and the next scan reports the host's own answer: this
+/// patch is the view, not the record.
+pub fn apply_written_exception(
+    results: &mut [ScanResult],
+    plugin_id: &str,
+    key: &str,
+    written: &WrittenException,
+) {
+    for finding in matching_findings(results, plugin_id, key) {
+        finding.finding_exception = ExceptionOutcome::Applied(FindingPolicyException {
+            exception_allowed_value: written.value.clone(),
+            exception_reason: written.reason.clone(),
+            exception_approved_by: written.approved_by.clone(),
+            exception_approved_date: None,
+            exception_ticket: written.ticket.clone(),
+            exception_expires: written.expires.clone(),
+            // An exception written a moment ago has not expired. Computing it
+            // here from `expires` would be a second implementation of
+            // `PolicyException::is_expired`, and the next scan reports the
+            // host's own answer regardless.
+            exception_is_expired: false,
+        });
+    }
+}
+
+/// Returns the finding to `NotConfigured` after its exception is removed, which
+/// is what the next scan reports independently.
+pub fn clear_exception(results: &mut [ScanResult], plugin_id: &str, key: &str) {
+    for finding in matching_findings(results, plugin_id, key) {
+        finding.finding_exception = ExceptionOutcome::NotConfigured;
+    }
+}
+
+/// Findings carrying `key`, in the named plugin only. Two plugins may key on
+/// the same word, and an exception written for one says nothing about the other.
+fn matching_findings<'a>(
+    results: &'a mut [ScanResult],
+    plugin_id: &str,
+    key: &str,
+) -> impl Iterator<Item = &'a mut Finding> {
+    let plugin_id = plugin_id.to_string();
+    let key = key.to_string();
+    results
+        .iter_mut()
+        .filter(move |r| r.scan_plugin_id.as_str() == plugin_id)
+        .flat_map(|r| r.scan_findings.iter_mut())
+        .filter(move |f| f.finding_exception_key.as_deref() == Some(key.as_str()))
 }
 
 /// Display label for a severity group header.

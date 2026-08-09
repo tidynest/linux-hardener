@@ -552,11 +552,6 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String> {
 ///
 /// Sends no value. The CLI behind this re-reads the host and pins what it
 /// observes, so a row that has been open for days cannot write a stale pin.
-///
-/// `tauri_bindings` is a private module, so `dead_code` judges these two
-/// bindings by internal callers only; the desktop control that calls them is
-/// a separate slice of this feature and has not landed yet.
-#[allow(dead_code)]
 pub async fn invoke_add_policy_exception(
     plugin_id: String,
     exception_key: String,
@@ -582,7 +577,6 @@ pub async fn invoke_add_policy_exception(
 }
 
 /// Invokes remove_policy_exception.
-#[allow(dead_code)]
 pub async fn invoke_remove_policy_exception(
     plugin_id: String,
     exception_key: String,
