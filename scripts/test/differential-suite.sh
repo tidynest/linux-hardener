@@ -2951,6 +2951,18 @@ mac_lsm_names_system() {
     return 1
 }
 
+# What the tree holds now, for the control, which speaks BEFORE the apply and so
+# cannot use the past-tense sentence below it.
+mac_config_present_or_none() {
+    local present
+    present="$(mac_config_present)"
+    if [[ -n "$present" ]]; then
+        printf '%s is present, so the row below is asking whether a host the plugin must leave alone was left alone' "$present"
+    else
+        printf 'none of %s exists, so what the row below watches for is one appearing' "${MAC_CONFIG_PATHS[*]}"
+    fi
+}
+
 # The state of the MAC configuration tree as one sentence, for the log.
 #
 # Both halves are real readings. A tree that exists must come back unchanged, and
@@ -2960,9 +2972,9 @@ mac_config_state() {
     local present
     present="$(mac_config_present)"
     if [[ -n "$present" ]]; then
-        printf '%s holds the content, mode and size it held' "$present"
+        printf '%s holds the content, mode and size it held before apply' "$present"
     else
-        printf 'none of %s exists, and none was created' "${MAC_CONFIG_PATHS[*]}"
+        printf 'none of %s existed before apply and none was created' "${MAC_CONFIG_PATHS[*]}"
     fi
 }
 
@@ -3037,7 +3049,7 @@ run_mac_preapply_control() {
         record_unaskable "mac-hardening pre-apply control: $MAC_UNASKABLE_REASON"
         return 0
     fi
-    record_pass "mac-hardening: the kernel's LSM registry reads '$MAC_LSM_READING' from $MAC_LSM_SOURCE and names neither selinux nor apparmor, and $(mac_config_state), so the row below is asking whether a host the plugin must leave alone was left alone"
+    record_pass "mac-hardening: the kernel's LSM registry reads '$MAC_LSM_READING' from $MAC_LSM_SOURCE and names neither selinux nor apparmor, and $(mac_config_present_or_none)"
 }
 
 run_mac_checks() {
@@ -3051,7 +3063,7 @@ run_mac_checks() {
             config-untouched)
                 after="$(mac_config_digest)"
                 if [[ "$after" == "$MAC_CONFIG_BEFORE" ]]; then
-                    record_pass "mac $key: $(mac_config_state) after apply exactly as before it, so the plugin wrote nothing on a kernel with no MAC system to configure"
+                    record_pass "mac $key: $(mac_config_state), so the plugin wrote nothing on a kernel with no MAC system to configure"
                 else
                     delta="$(diff <(printf '%s\n' "$MAC_CONFIG_BEFORE") <(printf '%s\n' "$after") | grep '^[<>]' | head -5 | tr '\n' ';' || true)"
                     record_fail "mac $key: the MAC configuration tree changed across an apply on a kernel whose LSM registry names no MAC system, so the plugin wrote a configuration nothing on this host will ever read: $delta"
