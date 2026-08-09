@@ -270,10 +270,13 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
         ExceptionOutcome::NotConfigured | ExceptionOutcome::Applied(_) => None,
     };
 
-    // Local mirror of this finding's outcome, so the Accept/Remove control
-    // flips as soon as a write returns rather than waiting on the whole
-    // severity-grouped list to rebuild from `AppState`.
-    let outcome_now = RwSignal::new(f.finding_exception.clone());
+    // Construction-time snapshot, same as `exception_reason` and
+    // `exception_declined` above: the row is rebuilt fresh whenever
+    // `AppState::scan_results` changes (the unkeyed list in `FindingsTab`
+    // reconstructs every row from the patched `Finding` on that same
+    // update), so this is the one source of truth for the Accept/Remove
+    // control rather than a second signal that shadows it.
+    let is_not_configured = matches!(f.finding_exception, ExceptionOutcome::NotConfigured);
     let modal_open = RwSignal::new(false);
 
     let submit_plugin_id = plugin_id.clone();
@@ -283,7 +286,6 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
             return;
         };
         let plugin_id = submit_plugin_id.clone();
-        modal_open.set(false);
         leptos::task::spawn_local(async move {
             match invoke_add_policy_exception(
                 plugin_id.clone(),
@@ -299,27 +301,16 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
                     app_state.scan_results.update(|results| {
                         apply_written_exception(results, &plugin_id, &exception_key, &written);
                     });
-                    // Read the outcome back from what the patch produced,
-                    // rather than a second, possibly drifting construction of
-                    // the same `Applied` variant here.
-                    let patched = app_state.scan_results.with_untracked(|results| {
-                        results
-                            .iter()
-                            .find(|r| r.scan_plugin_id.as_str() == plugin_id)
-                            .and_then(|r| {
-                                r.scan_findings.iter().find(|f| {
-                                    f.finding_exception_key.as_deref()
-                                        == Some(exception_key.as_str())
-                                })
-                            })
-                            .map(|f| f.finding_exception.clone())
-                    });
-                    if let Some(outcome) = patched {
-                        outcome_now.set(outcome);
-                    }
+                    modal_open.set(false);
                 }
-                // A cancelled pkexec prompt is not a failure to report.
-                Err(e) if is_auth_cancelled(&e) => {}
+                // A cancelled pkexec prompt is not a failure to report, and
+                // leaves nothing typed that is worth preserving, so the modal
+                // still closes exactly as before.
+                Err(e) if is_auth_cancelled(&e) => {
+                    modal_open.set(false);
+                }
+                // A real failure leaves the modal open so the typed reason,
+                // approver, ticket and expiry survive for a retry.
                 Err(e) => app_state
                     .error_message
                     .set(Some(format!("Accept finding failed: {e}"))),
@@ -340,7 +331,6 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
                     app_state.scan_results.update(|results| {
                         clear_exception(results, &plugin_id, &exception_key);
                     });
-                    outcome_now.set(ExceptionOutcome::NotConfigured);
                 }
                 Err(e) if is_auth_cancelled(&e) => {}
                 Err(e) => app_state
@@ -393,7 +383,7 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
                     {key.clone().map(|_k| view! {
                         <div class="finding-exception-actions">
                             <Show
-                                when=move || matches!(outcome_now.get(), ExceptionOutcome::NotConfigured)
+                                when=move || is_not_configured
                                 fallback=move || view! {
                                     <button
                                         class="btn btn-secondary finding-exception-remove"
