@@ -2024,7 +2024,15 @@ tbody tr:hover {
 /* A probe that could not answer accuses the host of nothing, so it must not
  * wear the same warning colour as a measured disagreement. The two ask the
  * operator to do different things next, which the first render did not show. */
-.rollback-divergence-unchecked .divergence-detail {
+/* `.restore-error` is named in the selector on purpose, and it is what makes
+ * this rule apply at all. `.restore-warn .restore-error` below is (0,2,0), the
+ * same weight this rule had as `.rollback-divergence-unchecked
+ * .divergence-detail`, and it is declared LATER in the file, so it won on
+ * source order alone and both states rendered the same orange. Measured:
+ * T-DIVG-04 read rgb(245, 158, 11) from both. Naming both classes on the
+ * element takes this to (0,3,0), which does not depend on where either rule
+ * sits. */
+.rollback-divergence-unchecked .restore-error.divergence-detail {
   color: var(--text-secondary);
 }
 
