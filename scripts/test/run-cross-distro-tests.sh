@@ -587,6 +587,27 @@ if [[ "$DO_DIFFERENTIAL" == "true" ]]; then
     PIPE_NETNS=(--private-network --setenv=HARDENER_DIFF_NETNS=1)
 fi
 
+# The host kernel's LSM registry, handed to the differential suite because no
+# container here mounts securityfs.
+#
+# Measured on all six booted containers 2026-08-09: /sys/kernel/security is
+# absent in every one, so the MAC oracle read nothing and declared all of its
+# rows unaskable. A container shares this kernel, so the registry read here is
+# the same fact the container would read if it could, which is what makes
+# declaring it legitimate rather than a fixture inventing an answer.
+#
+# Empty when the host has no securityfs either. The suite then declares the
+# rows unaskable exactly as it did before, which is the direction a missing
+# reading must fail in.
+HOST_LSM=""
+if [[ -r /sys/kernel/security/lsm ]]; then
+    HOST_LSM="$(tr -d '\n' < /sys/kernel/security/lsm)"
+fi
+LSM_ENV=()
+if [[ -n "$HOST_LSM" ]]; then
+    LSM_ENV=("--setenv=HARDENER_DIFF_LSM=$HOST_LSM")
+fi
+
 # The default execution mode: systemd never runs, so anything that asks the
 # service manager a question is untestable here.
 nspawn_suite_pipe() {
@@ -595,6 +616,7 @@ nspawn_suite_pipe() {
         --bind="$PROJECT_DIR:/project" \
         "${TARGET_BIND[@]}" \
         "${PIPE_NETNS[@]}" \
+        "${LSM_ENV[@]}" \
         --pipe \
         /bin/bash "$INNER_SUITE" "${INNER_ARGS[@]}"
 }
@@ -687,6 +709,7 @@ nspawn_suite_booted() {
     systemd-run --machine="$machine" --wait --pipe --quiet \
         --setenv=HARDENER_DIFF_BOOTED=1 \
         --setenv=HARDENER_DIFF_NETNS=1 \
+        "${LSM_ENV[@]}" \
         /bin/bash "$INNER_SUITE" "${INNER_ARGS[@]}" || rc=$?
 
     machinectl terminate "$machine" > /dev/null 2>&1 || true

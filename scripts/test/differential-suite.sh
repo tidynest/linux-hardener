@@ -2895,12 +2895,42 @@ mac_config_digest() {
     done
 }
 
-# What the kernel says about its own LSMs. Non-zero when the registry cannot be
-# read at all, which is not the same answer as "no MAC system" and is never
-# folded into it.
+# The registry as the RUNNER read it on the host, for the fixtures that do not
+# mount securityfs.
+#
+# Measured on all six booted containers 2026-08-09: /sys/kernel/security is not
+# mounted in any of them, so the first container run of this oracle asked
+# nothing at all and declared every row unaskable. That is the oracle behaving
+# correctly and it is also the oracle proving nothing, which is not a state to
+# leave it in.
+#
+# A container shares the host's kernel, so the host's registry and the
+# container's would be the same file if the container had one. The runner's
+# reading is therefore the same fact rather than a second one, and it is the
+# same shape as HARDENER_DIFF_BOOTED and HARDENER_DIFF_NETNS: something the
+# runner knows and the payload cannot see.
+#
+# What it costs. This row now depends on the runner declaring the truth, where
+# before it depended only on the kernel. A runner that declared a wrong value
+# would mislead it, which is why the value and its source are both printed in
+# the header rather than merely used.
+RUN_LSM="${HARDENER_DIFF_LSM:-}"
+
+# Where the reading above came from, for the log. Set by detect_mac_askable and
+# NOT by the reader below, because the reader is called in a command
+# substitution and an assignment made there happens in a subshell and is lost.
+MAC_LSM_SOURCE=""
+
+# What the kernel says about its own LSMs, read here if securityfs is mounted
+# and taken from the runner if it is not. Non-zero when neither can answer,
+# which is not the same as "no MAC system" and is never folded into it.
 mac_lsm_reading() {
-    [[ -r "$MAC_LSM_REGISTRY" ]] || return 1
-    tr -d '\n' < "$MAC_LSM_REGISTRY"
+    if [[ -r "$MAC_LSM_REGISTRY" ]]; then
+        tr -d '\n' < "$MAC_LSM_REGISTRY"
+        return 0
+    fi
+    [[ -n "$RUN_LSM" ]] || return 1
+    printf '%s' "$RUN_LSM"
 }
 
 # Which MAC system the registry names, or nothing.
@@ -2948,8 +2978,16 @@ detect_mac_askable() {
     local reading named path
     if ! reading="$(mac_lsm_reading)"; then
         MAC_ASKABLE=0
-        MAC_UNASKABLE_REASON="$MAC_LSM_REGISTRY cannot be read here, so nothing independent of the tool can say whether this kernel has a MAC system"
+        MAC_LSM_SOURCE=""
+        MAC_UNASKABLE_REASON="$MAC_LSM_REGISTRY cannot be read here and the runner declared no reading of the host's, so nothing independent of the tool can say whether this kernel has a MAC system"
         return 0
+    fi
+    # Decided here rather than in the reader, which runs in a command
+    # substitution and could not report it back.
+    if [[ -r "$MAC_LSM_REGISTRY" ]]; then
+        MAC_LSM_SOURCE="$MAC_LSM_REGISTRY, read in this container"
+    else
+        MAC_LSM_SOURCE="the runner's reading of the host's $MAC_LSM_REGISTRY, because securityfs is not mounted here"
     fi
     MAC_LSM_READING="$reading"
     if named="$(mac_lsm_names_system "$reading")"; then
@@ -2983,7 +3021,7 @@ run_mac_preapply_control() {
         record_unaskable "mac-hardening pre-apply control: $MAC_UNASKABLE_REASON"
         return 0
     fi
-    record_pass "mac-hardening: the kernel's LSM registry reads '$MAC_LSM_READING' and names neither selinux nor apparmor, and $(mac_config_present) is present, so the row below is asking whether a host the plugin must leave alone was left alone"
+    record_pass "mac-hardening: the kernel's LSM registry reads '$MAC_LSM_READING' from $MAC_LSM_SOURCE and names neither selinux nor apparmor, and $(mac_config_present) is present, so the row below is asking whether a host the plugin must leave alone was left alone"
 }
 
 run_mac_checks() {
@@ -8130,6 +8168,37 @@ $AUDIT_PROBE_RULE"
     check_eq "$(mac_lsm_names_system "capability,selinuxfs-shim,bpf" || echo NONE)" "NONE" \
         "an LSM whose name merely CONTAINS 'selinux' is not selinux"
 
+    # The reader itself, before it is stubbed below. Three states, because the
+    # runner fallback exists to rescue exactly one of them and must not quietly
+    # take over the other two.
+    local mac_saved_registry="$MAC_LSM_REGISTRY" mac_saved_run_lsm="$RUN_LSM"
+    local mac_reg_file
+    mac_reg_file="$(mktemp)"
+    printf 'capability,yama\n' > "$mac_reg_file"
+    MAC_LSM_REGISTRY="$mac_reg_file"
+    RUN_LSM="capability,selinux"
+    check_eq "$(mac_lsm_reading)" "capability,yama" \
+        "a registry readable in the container is read there, and the runner's declaration does not override it"
+    MAC_LSM_REGISTRY="$mac_reg_file.absent"
+    check_eq "$(mac_lsm_reading)" "capability,selinux" \
+        "a registry that is not mounted falls back to the runner's reading of the host's, which is the same kernel"
+    RUN_LSM=""
+    check_status 1 "and with neither, the reader refuses rather than answering 'no MAC system', because those are different facts" \
+        mac_lsm_reading
+    # The fallback's provenance reaches the log, which is what the cost of
+    # depending on the runner is paid with.
+    RUN_LSM="capability,yama"
+    detect_mac_askable
+    check_status 0 "the control names the runner as the source when the fallback answered" \
+        grep -q "runner's reading of the host's" <<<"$MAC_LSM_SOURCE"
+    MAC_LSM_REGISTRY="$mac_reg_file"
+    detect_mac_askable
+    check_status 0 "and names the container's own registry when that answered" \
+        grep -q "read in this container" <<<"$MAC_LSM_SOURCE"
+    rm -f "$mac_reg_file"
+    MAC_LSM_REGISTRY="$mac_saved_registry"
+    RUN_LSM="$mac_saved_run_lsm"
+
     local mac_saved_paths=("${MAC_CONFIG_PATHS[@]}")
     local mac_saved_askable="$MAC_ASKABLE" mac_saved_reason="$MAC_UNASKABLE_REASON"
     local mac_saved_before="$MAC_CONFIG_BEFORE" mac_saved_reading="$MAC_LSM_READING"
@@ -8660,7 +8729,7 @@ run_full_suite() {
     # has a MAC system and the oracle deliberately does not cover it.
     detect_mac_askable
     if (( MAC_ASKABLE == 1 )); then
-        echo "MAC no-op oracle (kernel LSM registry): 1 ($MAC_LSM_READING)"
+        echo "MAC no-op oracle (kernel LSM registry): 1 ($MAC_LSM_READING, from $MAC_LSM_SOURCE)"
     else
         echo "MAC no-op oracle (kernel LSM registry): 0, $MAC_UNASKABLE_REASON"
     fi

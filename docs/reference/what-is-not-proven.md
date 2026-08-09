@@ -86,11 +86,20 @@ question: this is not a missing nspawn flag, the way the kernel arm's private
 network namespace turned out to be. Where the LSM registry does name a MAC
 system, the suite declares these rows unaskable rather than passing them,
 because a no-op oracle asserted against a host the plugin is supposed to act on
-would be asserting the opposite of the requirement. It does the same where
-securityfs is not mounted, which is what was measured in the arch container on
-2026-08-08 under `--pipe`: no AppArmor or SELinux tooling, no
-`/sys/kernel/security/lsm`, no securityfs at all. Which of those two states each
-booted fixture is in has not yet been measured.
+would be asserting the opposite of the requirement. It does the same where the registry cannot be read
+at all.
+
+**No container mounts securityfs, measured on all six booted fixtures
+2026-08-09**, which is the same thing the arch container showed under `--pipe`
+on 2026-08-08: no AppArmor or SELinux tooling, no `/sys/kernel/security/lsm`, no
+securityfs. The first container run of this oracle therefore asked nothing and
+declared every row unaskable, correctly and uselessly. So the runner reads the
+host's registry and declares it into the container the way it already declares
+`HARDENER_DIFF_BOOTED` and `HARDENER_DIFF_NETNS`. The container shares that
+kernel, so it is the same fact rather than a second one, and the log names which
+source answered. The cost is real and is stated here rather than hidden: this
+row now depends on the runner declaring the truth, where before it depended only
+on the kernel.
 
 **The kernel reading in that script can now fail, and its runtime half is asked
 only where a container permits the question.** Both halves used to be
