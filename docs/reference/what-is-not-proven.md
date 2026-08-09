@@ -65,13 +65,32 @@ back byte for byte. TEST 7 does the same for the firewall, against whichever
 backend the plugin selects rather than an assumed one, and asks both the
 backend's own configuration and **what the host is actually enforcing**.
 
-**Only the mac plugin now has no such reading, and it cannot have one here.**
-Measured in the arch container on 2026-08-08: no AppArmor or SELinux tooling,
-no `/sys/kernel/security/lsm`, and no securityfs mounted at all. This is not a
-missing nspawn flag, the way the kernel arm's private network namespace turned
-out to be. Loading an LSM policy is host-global, so a container cannot be given
-the question. Reading mac enforcement back needs a virtual machine, which is
-issue #18.
+**The mac plugin now has one reading, and it is the inverse of every other one
+here.** Measured on the development host 2026-08-09, `/sys/kernel/security/lsm`
+reads `capability,landlock,lockdown,yama,bpf`: this kernel carries neither
+SELinux nor AppArmor, and a container shares the host's kernel. So the
+differential suite asks the only question that exists on this machine, which is
+whether the apply leaves `/etc/selinux`, `/etc/apparmor` and `/etc/apparmor.d`
+exactly as it found them on a host with no MAC system to configure. The oracle
+is the kernel's own LSM registry read beside a content, mode and size digest of
+that tree, and the registry is a different source from the two securityfs paths
+the plugin probes, which is what keeps it from being an echo of the tool.
+
+What that catches is a plugin writing an SELinux configuration onto a host that
+has no SELinux. It catches nothing else, and in particular it says nothing
+whatever about enforcement.
+
+**Reading mac enforcement back still needs a virtual machine, which is issue
+#18.** Loading an LSM policy is host-global, so a container cannot be given the
+question: this is not a missing nspawn flag, the way the kernel arm's private
+network namespace turned out to be. Where the LSM registry does name a MAC
+system, the suite declares these rows unaskable rather than passing them,
+because a no-op oracle asserted against a host the plugin is supposed to act on
+would be asserting the opposite of the requirement. It does the same where
+securityfs is not mounted, which is what was measured in the arch container on
+2026-08-08 under `--pipe`: no AppArmor or SELinux tooling, no
+`/sys/kernel/security/lsm`, no securityfs at all. Which of those two states each
+booted fixture is in has not yet been measured.
 
 **The kernel reading in that script can now fail, and its runtime half is asked
 only where a container permits the question.** Both halves used to be
@@ -199,8 +218,9 @@ comparing the stored host key.
 
 ## When it says it changed something, did it?
 
-For six plugins of eight there is an answer that does not come from this tool.
-For two there is none.
+For seven plugins of eight there is an answer that does not come from this tool.
+For the eighth, mac, the only answer available on this machine is that it
+changed nothing, which is what that host requires of it.
 
 A **live oracle** is the only grade of evidence that can catch a reader and a
 writer which agree with each other and disagree with Linux, because it asks the
@@ -218,7 +238,7 @@ container, as root, by hand.
 | `kernel-hardening` | Only in a container holding its own network namespace, and only for 11 of the 18 parameters the plugin manages. A boot is not part of the requirement: this cell said "a booted container" until 2026-08-09, and `--private-network` under `--pipe` was measured sufficient (#137). |
 | `service-minimisation` | Only in a booted container, because `systemctl` needs systemd as PID 1. |
 | `audit-hardening` | **No.** See below. |
-| `mac-hardening` | **No.** See below. |
+| `mac-hardening` | **Only for what it must not do.** The kernel's LSM registry says this host has no MAC system, and the suite reads the configuration tree back to prove the apply left it alone. Nothing here reads enforcement. See below. |
 
 **The kernel plugin's ceiling is a property of containers, not of the tests.**
 Under `systemd-nspawn`, `/proc/sys` is the host's and mounted read-only, so a
@@ -247,7 +267,10 @@ apply also fails by design, because there is no auditd for `augenrules --load`
 and `systemctl restart auditd` to reach, which is why that section judges the
 filesystem and not the exit status.
 
-**`mac-hardening` has no oracle at all, and there is a safety point here.** Live
+**`mac-hardening` has an oracle for its no-op case only, and the safety point
+below is unchanged by it.** The differential suite proves the apply writes
+nothing where the kernel carries no MAC system. Nothing proves what it does
+where one exists, which is the whole of its enforcing behaviour. Live
 runs of this plugin do exist, and `getenforce` and `aa-status` are reached
 through the real executor on any host carrying them, but every one of those runs
 judges an exit status, a plugin id or a non-zero duration. None holds what those
@@ -274,8 +297,8 @@ in the configuration is how you decline it.
 [issue #47](https://github.com/tidynest/linux-hardener/issues/47).** Read it for
 its reasoning about what each plugin's oracle would need, which is still
 accurate. Do not read its counts: its body predates the current suite and says
-two plugins are covered, where the compared set is now five under `--pipe` and
-six in a booted run.
+two plugins are covered, where the compared set is now seven under `--pipe` and
+eight in a booted run.
 
 ---
 

@@ -105,8 +105,14 @@ run_is_booted() {
 # run to what is actually asserted.
 #
 # Defined below the booted flag rather than at the top of the file, because its
-# sixth member depends on it.
-DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardening kernel-hardening audit-hardening)
+# last member depends on it.
+#
+# mac-hardening is compared for what it must NOT do. On a kernel exposing
+# neither selinux nor apparmor its apply is required to be a no-op, and the MAC
+# oracle reads the configuration tree rather than the tool to say whether it was
+# one. What that cannot see is stated at the oracle, and it is most of the
+# plugin.
+DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardening kernel-hardening audit-hardening mac-hardening)
 
 # The services plugin joins the compared set only in a booted run, and this is
 # the only place that decision is made.
@@ -130,8 +136,24 @@ DIFF_PLUGINS=(ssh-hardening pam-hardening permissions-hardening firewall-hardeni
 SERVICES_PLUGIN_ID="service-minimisation"
 
 # The list before that append, kept because --self-test drives fixtures rather
-# than a host and every scan fixture in it describes a five-plugin run.
+# than a host, and every scan fixture in it describes a run of exactly the
+# plugins compared in every mode.
 DIFF_PLUGINS_BASE=("${DIFF_PLUGINS[@]}")
+
+# An id no plugin has and no fixture will ever carry.
+#
+# Several self-test assertions have an ABSENCE as their subject: that a reader
+# refuses a plugin the document does not cover, rather than answering an empty
+# reading, which is every such reader's pass condition. Those assertions named a
+# real but uncompared plugin, and each time one joined the compared set the
+# fixtures gained it and the absence quietly ceased to exist. That happened to
+# audit-hardening in 24b5c03a, and it would have happened to mac-hardening here,
+# which was the last uncompared plugin there was.
+#
+# So the absence is made structural instead of borrowed. The self-test asserts
+# this id is in neither the compared set nor the tool's own listing, which is
+# what stops the same drift a third time.
+NEVER_COMPARED_PLUGIN="no-such-plugin"
 
 if run_is_booted; then
     DIFF_PLUGINS+=("$SERVICES_PLUGIN_ID")
@@ -2808,6 +2830,186 @@ run_audit_checks() {
     done
 }
 
+# === MAC configuration on a kernel that has no MAC system ===
+#
+# The oracle is the kernel's own LSM registry, /sys/kernel/security/lsm, read
+# beside the MAC configuration tree as it stands either side of the apply.
+# Neither is the tool's reading of anything.
+#
+# This is the inverse of every other oracle in this file. The others ask whether
+# the tool did what it reported. This one asks whether it did NOTHING, on a host
+# where nothing is the only correct answer, and that is worth asking on its own:
+# writing an SELinux configuration onto a host with no SELinux is a change no
+# operator asked for and no boot would honour.
+#
+# Measured on the development host 2026-08-09. /sys/kernel/security/lsm reads
+# "capability,landlock,lockdown,yama,bpf", while mac/mod.rs:118 probes
+# /sys/fs/selinux and /sys/kernel/security/apparmor, neither of which exists.
+# The plugin therefore reports MacDetection::Absent, and its apply pushes one
+# Skipped change and writes nothing. A container shares the host's kernel, so
+# this holds in every fixture this suite can be run in.
+#
+# The registry is a DIFFERENT source from the two paths the tool probes, and
+# that is what makes the control an oracle rather than an echo of the tool. A
+# tool looking for SELinux in the wrong place on a host that has it is caught by
+# the disagreement between the registry and the tool's verdict.
+#
+# WHAT THIS ORACLE CANNOT SEE, which is the rule issue #47 states for every new
+# oracle. It cannot see whether the tool does the RIGHT thing where a MAC system
+# EXISTS, which is the whole of the plugin's enforcing behaviour. That needs a
+# kernel carrying selinux or apparmor and this machine's carries neither, so it
+# is #18 rather than something a fixture can arrange. Where the registry DOES
+# name one, every row here is declared unaskable rather than passed: a no-op
+# oracle asserted against a host that should not be a no-op would be a row
+# asserting the opposite of the requirement.
+#
+# And both readings come from one kernel. A kernel misreporting its own LSM
+# registry and its own securityfs together is indistinguishable here from a
+# kernel that genuinely has no MAC system.
+MAC_CHECKS=(
+    "config-untouched"
+)
+
+MAC_LSM_REGISTRY="/sys/kernel/security/lsm"
+
+# The paths the plugin checkpoints, which are the paths it could write
+# (mac/mod.rs:858-862). A correct run on this host reads them and writes none.
+MAC_CONFIG_PATHS=(/etc/selinux /etc/apparmor /etc/apparmor.d)
+
+MAC_CONFIG_BEFORE=""
+MAC_LSM_READING=""
+
+# A digest of the MAC configuration tree: every path with its mode and size,
+# and the content hash of every file under it.
+#
+# mtime is deliberately absent. The apply checkpoints these paths, which READS
+# them, and a digest carrying timestamps would then have to tell a read from a
+# write. Content, mode and size answer the question actually being asked, which
+# is whether anything a boot would read has changed.
+mac_config_digest() {
+    local path
+    for path in "${MAC_CONFIG_PATHS[@]}"; do
+        [[ -e "$path" ]] || continue
+        find "$path" -printf '%p %m %s\n' 2>/dev/null | LC_ALL=C sort
+        find "$path" -type f -exec sha256sum {} + 2>/dev/null | LC_ALL=C sort
+    done
+}
+
+# What the kernel says about its own LSMs. Non-zero when the registry cannot be
+# read at all, which is not the same answer as "no MAC system" and is never
+# folded into it.
+mac_lsm_reading() {
+    [[ -r "$MAC_LSM_REGISTRY" ]] || return 1
+    tr -d '\n' < "$MAC_LSM_REGISTRY"
+}
+
+# Which MAC system the registry names, or nothing.
+#
+# Matched between commas rather than as a substring. The registry is a
+# comma-separated list and a bare match would let a future LSM whose name
+# CONTAINS one of these read as that one.
+mac_lsm_names_system() {
+    local reading="$1" name
+    for name in selinux apparmor; do
+        case ",$reading," in
+            *",$name,"*)
+                printf '%s' "$name"
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+# The MAC configuration paths that exist here, named for the log.
+mac_config_present() {
+    local path present=""
+    for path in "${MAC_CONFIG_PATHS[@]}"; do
+        if [[ -e "$path" ]]; then
+            present+="${present:+, }$path"
+        fi
+    done
+    printf '%s' "$present"
+}
+
+# Whether this fixture can be asked the no-op question at all. Decided before
+# any check runs and read by expected_check_total, exactly as SHADOW_MIN_DAYS is,
+# so the arithmetic and the rows cannot come to disagree about the size of a run.
+#
+# Three ways it cannot be asked, and each is a different fact. The registry may
+# be unreadable, which is a fixture where securityfs was never mounted. The
+# registry may NAME a MAC system, which is the host this oracle does not cover.
+# Or the configuration tree may be absent entirely, in which case an untouched
+# tree compares one absence with another and passes without asking anything,
+# which is the vacuity issue #47 exists to remove.
+MAC_ASKABLE=0
+MAC_UNASKABLE_REASON=""
+detect_mac_askable() {
+    local reading named path
+    if ! reading="$(mac_lsm_reading)"; then
+        MAC_ASKABLE=0
+        MAC_UNASKABLE_REASON="$MAC_LSM_REGISTRY cannot be read here, so nothing independent of the tool can say whether this kernel has a MAC system"
+        return 0
+    fi
+    MAC_LSM_READING="$reading"
+    if named="$(mac_lsm_names_system "$reading")"; then
+        MAC_ASKABLE=0
+        MAC_UNASKABLE_REASON="the kernel's LSM registry names $named, so this is a host the plugin is expected to ACT on and a no-op oracle would assert the opposite of the requirement (issue #18)"
+        return 0
+    fi
+    for path in "${MAC_CONFIG_PATHS[@]}"; do
+        if [[ -e "$path" ]]; then
+            MAC_ASKABLE=1
+            MAC_UNASKABLE_REASON=""
+            return 0
+        fi
+    done
+    MAC_ASKABLE=0
+    MAC_UNASKABLE_REASON="none of ${MAC_CONFIG_PATHS[*]} exists here, so an untouched tree would be one absence compared with another"
+}
+
+# The pre-apply reading, which is half of what the check below compares.
+preapply_mac_init() {
+    if (( APPLY_GENERATION != 0 )); then
+        echo "FATAL: the pre-apply MAC capture was asked for at generation" \
+            "$APPLY_GENERATION, after apply had run." >&2
+        return 1
+    fi
+    MAC_CONFIG_BEFORE="$(mac_config_digest)"
+}
+
+run_mac_preapply_control() {
+    if (( MAC_ASKABLE != 1 )); then
+        record_unaskable "mac-hardening pre-apply control: $MAC_UNASKABLE_REASON"
+        return 0
+    fi
+    record_pass "mac-hardening: the kernel's LSM registry reads '$MAC_LSM_READING' and names neither selinux nor apparmor, and $(mac_config_present) is present, so the row below is asking whether a host the plugin must leave alone was left alone"
+}
+
+run_mac_checks() {
+    local key after delta
+    for key in "${MAC_CHECKS[@]}"; do
+        if (( MAC_ASKABLE != 1 )); then
+            record_unaskable "mac $key: $MAC_UNASKABLE_REASON"
+            continue
+        fi
+        case "$key" in
+            config-untouched)
+                after="$(mac_config_digest)"
+                if [[ "$after" == "$MAC_CONFIG_BEFORE" ]]; then
+                    record_pass "mac $key: everything under $(mac_config_present) holds the content, mode and size it held before apply, so the plugin wrote nothing on a kernel with no MAC system to configure"
+                else
+                    delta="$(diff <(printf '%s\n' "$MAC_CONFIG_BEFORE") <(printf '%s\n' "$after") | grep '^[<>]' | head -5 | tr '\n' ';' || true)"
+                    record_fail "mac $key: the MAC configuration tree changed across an apply on a kernel whose LSM registry names no MAC system, so the plugin wrote a configuration nothing on this host will ever read: $delta"
+                fi
+                ;;
+            *)
+                record_fail "mac $key: no probe is defined for this key, so the table and the checks have come apart"
+                ;;
+        esac
+    done
+}
+
 KERNEL_BEFORE=""
 
 # The pre-apply reading, which is half of what the checks below compare.
@@ -3168,14 +3370,19 @@ SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
 IDEMPOTENCE_CHECKS_EXPECTED=4
-# The plugins compared in EVERY run. Services is the sixth and joins only a
+# The plugins compared in EVERY run. Services is the eighth and joins only a
 # booted one, which is why this stays a literal and the count below is a
 # function.
-DIFF_PLUGINS_EXPECTED=6
+DIFF_PLUGINS_EXPECTED=7
 PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED=2
 PERMISSION_CHECKS_EXPECTED=9
 FIREWALL_CHECKS_EXPECTED=3
 AUDIT_CHECKS_EXPECTED=3
+# One row, and it stays a table for the reason every other table here is one:
+# the guard below refuses a length that moved without this number moving with
+# it, and a second MAC row added on a machine that grows an LSM must meet a
+# reviewer in the diff rather than arrive silently.
+MAC_CHECKS_EXPECTED=1
 SERVICES_CHECKS_EXPECTED=3
 KERNEL_CHECKS_EXPECTED=11
 # Pinned for the same reason as every table above, and one more that is specific
@@ -3208,6 +3415,7 @@ require_check_tables() {
         "PERMISSION_CHECKS ${#PERMISSION_CHECKS[@]} $PERMISSION_CHECKS_EXPECTED" \
         "FIREWALL_CHECKS ${#FIREWALL_CHECKS[@]} $FIREWALL_CHECKS_EXPECTED" \
         "AUDIT_CHECKS ${#AUDIT_CHECKS[@]} $AUDIT_CHECKS_EXPECTED" \
+        "MAC_CHECKS ${#MAC_CHECKS[@]} $MAC_CHECKS_EXPECTED" \
         "SERVICES_CHECKS ${#SERVICES_CHECKS[@]} $SERVICES_CHECKS_EXPECTED" \
         "KERNEL_CHECKS ${#KERNEL_CHECKS[@]} $KERNEL_CHECKS_EXPECTED" \
         "KERNEL_UNASKABLE ${#KERNEL_UNASKABLE[@]} $KERNEL_UNASKABLE_EXPECTED" \
@@ -3320,17 +3528,27 @@ expected_check_total() {
         kernel_rows=$(( KERNEL_CHECKS_EXPECTED + SEEDED_KERNEL_CHECKS_EXPECTED ))
         kernel_control=1
     fi
+    # The MAC rows and the MAC plugin's own pre-apply control, which go together
+    # because they are unaskable for one reason and it disqualifies both. This is
+    # a fact about the KERNEL rather than about the invocation, so it is
+    # subtracted the way SHADOW_MIN_DAYS is and not gated on a mode signal: a
+    # host carrying selinux or apparmor is one this oracle does not cover, and it
+    # can be booted or not, with a namespace or without.
+    local mac_rows=0
+    if (( MAC_ASKABLE != 1 )); then
+        mac_rows=$(( MAC_CHECKS_EXPECTED + 1 ))
+    fi
     printf '%s' "$(( 2 * (SSH_CHECKS_EXPECTED + LOGIN_DEFS_CHECKS_EXPECTED \
         + PERMISSION_CHECKS_EXPECTED) \
         + VENDOR_SURVIVAL_CHECKS_EXPECTED + IDEMPOTENCE_CHECKS_EXPECTED \
         + PWQUALITY_ENFORCEMENT_CHECKS_EXPECTED + plugins - 1 + kernel_control \
         + SEEDED_SSH_CHECKS_EXPECTED + FIREWALL_CHECKS_EXPECTED \
-        + AUDIT_CHECKS_EXPECTED \
+        + AUDIT_CHECKS_EXPECTED + MAC_CHECKS_EXPECTED \
         + kernel_rows \
         + services_rows \
         + plugins + 1 \
         + plugins + 1 \
-        + 2 - min_days_rows ))"
+        + 2 - min_days_rows - mac_rows ))"
 }
 
 # The three plugins spell their finding ids differently, and a filter written for
@@ -3916,8 +4134,14 @@ run_preapply_control() {
         # compiled rather than against a reported finding, so this loop finds
         # nothing to count and fails a plugin that behaved correctly. Its own
         # control is run_audit_preapply_control.
+        #
+        # mac is the fifth, and it is the clearest case of all: on a kernel with
+        # no MAC system the plugin correctly reports NOTHING, so a control built
+        # on counting its findings would fail it for behaving exactly as
+        # required. Its own control is run_mac_preapply_control, which asks the
+        # kernel rather than the tool.
         case "$plugin" in
-            firewall-hardening|kernel-hardening|audit-hardening|"$SERVICES_PLUGIN_ID") continue ;;
+            firewall-hardening|kernel-hardening|audit-hardening|mac-hardening|"$SERVICES_PLUGIN_ID") continue ;;
         esac
         matched=0
         total=0
@@ -5429,7 +5653,7 @@ Number of days of warning before password expires	: 7"
     check_eq "${#IDEMPOTENCE_CHECKS[@]}" "4" "the idempotency table holds four readings"
     check_eq "${IDEMPOTENCE_CHECKS[0]}" "permission-modes" \
         "the permission reading is taken first, ahead of the probe account login-defs creates"
-    check_eq "${#DIFF_PLUGINS[@]}" "6" "six plugins are compared"
+    check_eq "${#DIFF_PLUGINS[@]}" "7" "seven plugins are compared"
     check_eq "${#SEEDED_SSH_CHECKS[@]}" "2" "the seeded table holds two directives"
     check_eq "${#PERMISSION_CHECKS[@]}" "9" "the permissions table holds nine paths"
     check_eq "${#KERNEL_CHECKS[@]}" "11" \
@@ -5880,7 +6104,9 @@ Number of days of warning before password expires	: 7"
 
     # The totals move with the mode, both arms.
     local md_saved_booted="$RUN_BOOTED" md_saved_netns="$RUN_NETNS"
+    local md_saved_mac="$MAC_ASKABLE"
     SHADOW_MIN_DAYS=1
+    MAC_ASKABLE=1
     local md_full_booted md_full_unbooted
     md_full_booted="$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)"
     md_full_unbooted="$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)"
@@ -5889,6 +6115,17 @@ Number of days of warning before password expires	: 7"
         "a host without the shadow field asks for two fewer checks when booted"
     check_eq "$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)" "$(( md_full_unbooted - 2 ))" \
         "and two fewer when not, because the two modes are independent facts"
+    # The third signal, subtracted on top of the second rather than instead of
+    # it, which is the property worth asserting: three independent facts about a
+    # host, each costing its own rows. A kernel carrying a MAC system gives up
+    # the MAC row and the MAC plugin's own pre-apply control together, because
+    # one reason disqualifies both.
+    MAC_ASKABLE=0
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "$(( md_full_booted - 4 ))" \
+        "a kernel this no-op oracle does not cover gives up two more, and the shadow subtraction still stands beside it"
+    check_eq "$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)" "$(( md_full_unbooted - 4 ))" \
+        "and the same two when unbooted, because whether a kernel has a MAC system is a fact about the kernel and not about the invocation"
+    MAC_ASKABLE="$md_saved_mac"
 
     # The runner declares them rather than asking. Driven without a command
     # substitution, so the counters it moves are the ones read here.
@@ -5934,14 +6171,20 @@ Number of days of warning before password expires	: 7"
     # Both signals named at every call, never one of them. A call that set only
     # the namespace would take the boot from the environment, which is the
     # inheritance the paragraph above refuses.
+    #
+    # The MAC signal is set here for the same reason, and it is not inherited
+    # either: the totals below are properties of the tables, and a maintainer
+    # running this on a Fedora laptop whose kernel carries selinux would
+    # otherwise read four different numbers than one running it here.
+    MAC_ASKABLE=1
     pinned_total="$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)"
-    check_eq "$pinned_total" "76" \
+    check_eq "$pinned_total" "80" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, one introduced-finding row per plugin and its own control, plus one pre-apply control per seeded directive, plus the rollback-reload check's own two"
     # The kernel rows against the namespace ALONE, which is the configuration
     # #137 exists for: `--pipe --private-network` holds no systemd and asks
     # every kernel row regardless. Thirteen more than the bare total, and none
     # of them a services row.
-    check_eq "$(RUN_NETNS=1 RUN_BOOTED=0 expected_check_total)" "89" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=0 expected_check_total)" "93" \
         "a run holding its own network namespace and no systemd is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control, and for no services row at all"
     # The services rows, and the one of them whose askability is a property of
     # the HOST rather than of the invocation. Six more in a booted run: three
@@ -5949,10 +6192,10 @@ Number of days of warning before password expires	: 7"
     # generic per-plugin blocks, which follow the plugin count.
     local svc_saved_active="$SERVICES_ACTIVE_BEFORE"
     SERVICES_ACTIVE_BEFORE="active"
-    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "95" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "99" \
         "a booted run is sized for eleven kernel rows, the seeded kernel row, the kernel plugin's own control, and the six a services plugin with a running unit brings with it"
     SERVICES_ACTIVE_BEFORE="inactive"
-    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "94" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "98" \
         "and one fewer where it was never running, because that row is declared unaskable rather than passed"
     check_eq "$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)" "$pinned_total" \
         "an unbooted run is unmoved by services entirely, because the plugin is not in the compared set there"
@@ -5961,7 +6204,7 @@ Number of days of warning before password expires	: 7"
     # to be arithmetic as well as a predicate, and because a future runner that
     # forgets one --setenv lands here rather than on a red total.
     SERVICES_ACTIVE_BEFORE="active"
-    check_eq "$(RUN_NETNS=0 RUN_BOOTED=1 expected_check_total)" "82" \
+    check_eq "$(RUN_NETNS=0 RUN_BOOTED=1 expected_check_total)" "86" \
         "a boot declared without the namespace asks for the services rows and for no kernel row, so a missing flag costs coverage rather than producing a total nothing can meet"
     SERVICES_ACTIVE_BEFORE="$svc_saved_active"
 
@@ -6178,6 +6421,14 @@ Number of days of warning before password expires	: 7"
     "unchecked": [],
     "scan_success": true,
     "scan_error": null
+  },
+  {
+    "plugin_id": "mac-hardening",
+    "plugin_name": "MAC System Hardening",
+    "findings": [],
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
   }
 ]'
 
@@ -6369,6 +6620,14 @@ Number of days of warning before password expires	: 7"
     "findings": [
       { "finding_id": "audit_rules_missing", "finding_current_value": "absent" }
     ],
+    "unchecked": [],
+    "scan_success": true,
+    "scan_error": null
+  },
+  {
+    "plugin_id": "mac-hardening",
+    "plugin_name": "MAC System Hardening",
+    "findings": [],
     "unchecked": [],
     "scan_success": true,
     "scan_error": null
@@ -7536,13 +7795,13 @@ bluetooth.service    enabled"
     svc_loaded="$(HARDENER_DIFF_BOOTED=1 bash -c 'source "$1"; printf "%s" "${DIFF_PLUGINS[*]}"' _ "$svc_suite")"
     check_eq "${svc_loaded##* }" "$SERVICES_PLUGIN_ID" \
         "a booted load appends the services plugin, last, so it is applied after the plugins that were already compared"
-    check_eq "$(wc -w <<<"$svc_loaded")" "7" \
-        "and compares seven plugins in that mode"
+    check_eq "$(wc -w <<<"$svc_loaded")" "8" \
+        "and compares eight plugins in that mode"
     svc_loaded="$(HARDENER_DIFF_BOOTED=0 bash -c 'source "$1"; printf "%s" "${DIFF_PLUGINS[*]}"' _ "$svc_suite")"
     check_status 1 "an unbooted load does not compare the services plugin at all" \
         grep -qF "$SERVICES_PLUGIN_ID" <<<"$svc_loaded"
-    check_eq "$(wc -w <<<"$svc_loaded")" "6" \
-        "and compares the six that need no systemd to ask"
+    check_eq "$(wc -w <<<"$svc_loaded")" "7" \
+        "and compares the seven that need no systemd to ask"
     # The third load, and the one #137 created: the namespace signal must move
     # this list not at all. The two signals were one variable, so a suite that
     # read the wrong one here would put the services plugin into every
@@ -7551,8 +7810,8 @@ bluetooth.service    enabled"
     svc_loaded="$(HARDENER_DIFF_NETNS=1 HARDENER_DIFF_BOOTED=0 bash -c 'source "$1"; printf "%s" "${DIFF_PLUGINS[*]}"' _ "$svc_suite")"
     check_status 1 "a namespace without a boot does not compare the services plugin either, because the namespace says nothing about PID 1" \
         grep -qF "$SERVICES_PLUGIN_ID" <<<"$svc_loaded"
-    check_eq "$(wc -w <<<"$svc_loaded")" "6" \
-        "and still compares six, so the kernel oracle is bought without the services rows coming with it"
+    check_eq "$(wc -w <<<"$svc_loaded")" "7" \
+        "and still compares seven, so the kernel oracle is bought without the services rows coming with it"
 
     # Every plugin this suite can compare must be a plugin that EXISTS. These
     # strings do two jobs: they are passed to `--plugin`, which refuses an id
@@ -7853,6 +8112,156 @@ $AUDIT_PROBE_RULE"
     CHECKS_TOTAL=$au_saved_total CHECKS_PASSED=$au_saved_passed
     CHECKS_FAILED=$au_saved_failed CHECKS_UNASKABLE=$au_saved_unaskable
 
+    # === The MAC no-op oracle ===
+    #
+    # Every input here is injected. The kernel's LSM registry is a property of
+    # the machine this runs on and the configuration tree is a property of the
+    # container, so neither is read live, and every state that declares a row
+    # unaskable is driven: an unaskable branch nobody exercises is the whole
+    # oracle bought for free.
+    check_eq "$(mac_lsm_names_system "capability,landlock,lockdown,yama,bpf" || echo NONE)" "NONE" \
+        "a registry naming no MAC system names none, which is the host this oracle covers"
+    check_eq "$(mac_lsm_names_system "capability,selinux,bpf")" "selinux" \
+        "and one that names selinux says so"
+    check_eq "$(mac_lsm_names_system "apparmor,capability")" "apparmor" \
+        "and apparmor at the head of the list is found, because the match is between commas rather than anchored to the start"
+    # Why the match is between commas rather than a substring. This suite has
+    # been bitten by substring matching in two languages already.
+    check_eq "$(mac_lsm_names_system "capability,selinuxfs-shim,bpf" || echo NONE)" "NONE" \
+        "an LSM whose name merely CONTAINS 'selinux' is not selinux"
+
+    local mac_saved_paths=("${MAC_CONFIG_PATHS[@]}")
+    local mac_saved_askable="$MAC_ASKABLE" mac_saved_reason="$MAC_UNASKABLE_REASON"
+    local mac_saved_before="$MAC_CONFIG_BEFORE" mac_saved_reading="$MAC_LSM_READING"
+    local mac_saved_generation=$APPLY_GENERATION
+    local mac_saved_total=$CHECKS_TOTAL mac_saved_passed=$CHECKS_PASSED
+    local mac_saved_failed=$CHECKS_FAILED mac_saved_unaskable=$CHECKS_UNASKABLE
+    local mac_root mac_out
+    mac_root="$(mktemp -d)"
+    mac_out="$(mktemp)"
+    mkdir -p "$mac_root/selinux"
+    printf 'SELINUX=disabled\n' > "$mac_root/selinux/config"
+    # Set rather than inherited from the umask, because a mode row below
+    # restores this file to it and an inherited value would make that assertion
+    # depend on the environment the self-test was started from.
+    chmod 644 "$mac_root/selinux/config"
+    MAC_CONFIG_PATHS=("$mac_root/selinux")
+
+    local mac_reading_rc=0 mac_reading_out="capability,landlock,bpf"
+    mac_lsm_reading() {
+        (( mac_reading_rc == 0 )) || return "$mac_reading_rc"
+        printf '%s' "$mac_reading_out"
+    }
+
+    detect_mac_askable
+    check_eq "$MAC_ASKABLE" "1" \
+        "a kernel naming no MAC system, with a configuration tree present, is a host this oracle can ask about"
+
+    mac_reading_rc=1
+    detect_mac_askable
+    check_eq "$MAC_ASKABLE" "0" \
+        "a registry that cannot be read is unaskable rather than folded into 'this kernel has no MAC system'"
+    check_status 0 "and says which of the two it was, because they are different facts and are fixed in different places" \
+        grep -q "cannot be read here" <<<"$MAC_UNASKABLE_REASON"
+
+    mac_reading_rc=0
+    mac_reading_out="capability,selinux,bpf"
+    detect_mac_askable
+    check_eq "$MAC_ASKABLE" "0" \
+        "a kernel that DOES carry a MAC system is unaskable, because a no-op oracle asserted there would assert the opposite of what that host requires"
+    check_status 0 "and names issue #18, which is what covering that host actually needs" \
+        grep -q "issue #18" <<<"$MAC_UNASKABLE_REASON"
+
+    mac_reading_out="capability,landlock,bpf"
+    MAC_CONFIG_PATHS=("$mac_root/absent")
+    detect_mac_askable
+    check_eq "$MAC_ASKABLE" "0" \
+        "and a configuration tree that does not exist is unaskable, because an untouched absence is one absence compared with another"
+
+    MAC_CONFIG_PATHS=("$mac_root/selinux")
+    detect_mac_askable
+
+    APPLY_GENERATION=1
+    check_status 1 "the pre-apply capture refuses to run after an apply, because a tree read then is the one the apply produced" \
+        preapply_mac_init
+    APPLY_GENERATION=0
+    preapply_mac_init
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    run_mac_preapply_control > "$mac_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "1/0/0" \
+        "the control passes on a kernel with no MAC system and a tree there to compare"
+    check_status 0 "and puts the registry's own words on the log, so a reader meets the evidence and not the verdict" \
+        grep -q "capability,landlock,bpf" "$mac_out"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    run_mac_checks > "$mac_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "1/0/0" \
+        "an untouched tree passes the row this oracle exists for"
+
+    # The row going red, which is the case the oracle is FOR: a plugin writing
+    # an SELinux configuration onto a host that has no SELinux.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    printf 'SELINUX=enforcing\n' > "$mac_root/selinux/config"
+    run_mac_checks > "$mac_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/1/0" \
+        "a tree the apply rewrote fails, which is the whole of what this oracle is for"
+
+    # Content is not the only way to write to a file. A mode change moves no
+    # bytes and is still the plugin having touched something it must not.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    printf 'SELINUX=disabled\n' > "$mac_root/selinux/config"
+    chmod 600 "$mac_root/selinux/config"
+    run_mac_checks > "$mac_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/1/0" \
+        "and a mode changed with the content put back fails too, because the digest carries the mode"
+
+    # A file ADDED under the tree, which no comparison of the files that were
+    # already there could see.
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    chmod 644 "$mac_root/selinux/config"
+    printf 'x\n' > "$mac_root/selinux/added.conf"
+    run_mac_checks > "$mac_out"
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/1/0" \
+        "and a file the apply added fails, because the digest names every path under the tree rather than the ones it started with"
+    rm -f "$mac_root/selinux/added.conf"
+
+    CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0 CHECKS_UNASKABLE=0
+    MAC_ASKABLE=0
+    MAC_UNASKABLE_REASON="driven from the self-test"
+    run_mac_preapply_control > /dev/null
+    run_mac_checks > /dev/null
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED/$CHECKS_UNASKABLE" "0/0/2" \
+        "an unaskable kernel declares the control and the row unaskable together, which is the pair expected_check_total subtracts as one"
+
+    unset -f mac_lsm_reading
+    mac_lsm_reading() {
+        [[ -r "$MAC_LSM_REGISTRY" ]] || return 1
+        tr -d '\n' < "$MAC_LSM_REGISTRY"
+    }
+    rm -rf "$mac_root"
+    rm -f "$mac_out"
+    MAC_CONFIG_PATHS=("${mac_saved_paths[@]}")
+    MAC_ASKABLE="$mac_saved_askable"
+    MAC_UNASKABLE_REASON="$mac_saved_reason"
+    MAC_CONFIG_BEFORE="$mac_saved_before"
+    MAC_LSM_READING="$mac_saved_reading"
+    APPLY_GENERATION=$mac_saved_generation
+    CHECKS_TOTAL=$mac_saved_total CHECKS_PASSED=$mac_saved_passed
+    CHECKS_FAILED=$mac_saved_failed CHECKS_UNASKABLE=$mac_saved_unaskable
+
+    # The absence several assertions above have as their SUBJECT, made
+    # structural rather than borrowed from whichever plugin happened to be
+    # uncompared that month. Twice now that borrowing has quietly expired.
+    local ncp_hit=0 ncp_plugin
+    for ncp_plugin in "${DIFF_PLUGINS[@]}"; do
+        if [[ "$ncp_plugin" == "$NEVER_COMPARED_PLUGIN" ]]; then
+            ncp_hit=1
+        fi
+    done
+    check_eq "$ncp_hit" "0" \
+        "the never-compared id is in no compared set, which is what stops a third absence assertion losing its subject to a plugin that joined"
+
     # The preview an operator approves, held against the apply that followed.
     # Both sides are injected here exactly as the firewall boot readings are: a
     # check that shells out live cannot be driven, and an assertion nothing
@@ -7873,7 +8282,8 @@ pam-hardening|PAM Authentication Hardening
 permissions-hardening|File Permissions Hardening
 firewall-hardening|Firewall Hardening
 kernel-hardening|Kernel Hardening
-audit-hardening|Audit Rules Hardening"
+audit-hardening|Audit Rules Hardening
+mac-hardening|MAC System Hardening"
 
     # The shape `--format json apply --dry-run` prints, reduced to the keys the
     # rows read. Taken from a live run of this tree's binary at 420a52b, where
@@ -7886,7 +8296,8 @@ audit-hardening|Audit Rules Hardening"
   {"validation_report_plugin_id":"permissions-hardening","validation_report_issues":[],"validation_report_estimated_changes":["chmod 0600 /etc/shadow"]},
   {"validation_report_plugin_id":"firewall-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]},
   {"validation_report_plugin_id":"kernel-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]},
-  {"validation_report_plugin_id":"audit-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]}
+  {"validation_report_plugin_id":"audit-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]},
+  {"validation_report_plugin_id":"mac-hardening","validation_report_issues":[],"validation_report_estimated_changes":[]}
 ]'
     # And the shape apply_results prints, with every summary wording in it. The
     # firewall line carries the colour escapes, so the assertions below run over
@@ -7898,7 +8309,8 @@ $pa_cross PAM Authentication Hardening - 1 of 3 change(s) applied, 2 failed
 $pa_tick File Permissions Hardening - 2 change(s) applied, 1 skipped
 $pa_green$pa_tick$pa_plain Firewall Hardening - 3 change(s) applied
 $pa_tick Kernel Hardening - no changes needed
-$pa_tick Audit Rules Hardening - no changes needed"
+$pa_tick Audit Rules Hardening - no changes needed
+$pa_tick MAC System Hardening - no changes needed"
 
     pa_out="$(mktemp)"
     PRE_APPLY_DRY_RUN_JSON="$pa_dry_fixture"
@@ -7906,18 +8318,20 @@ $pa_tick Audit Rules Hardening - no changes needed"
 
     check_eq "$(dry_run_preview_reading pam-hardening)" "0|1" \
         "a preview reading keeps its changes and its issues apart, so a plugin that previewed a limitation is not read as silent"
-    # mac-hardening, which this suite does not compare and no fixture holds.
-    # This assertion used audit-hardening until audit joined the compared set,
-    # at which point the fixture gained an audit object and the absence the
-    # assertion was built on quietly ceased to exist. A test whose subject is an
-    # ABSENCE has to name something the fixtures will not start carrying.
+    # NEVER_COMPARED_PLUGIN, whose absence is structural rather than borrowed.
+    # This assertion named audit-hardening until audit joined the compared set,
+    # then mac-hardening until mac joined it here. Each time, the fixture gained
+    # the plugin and the absence the assertion was built on quietly ceased to
+    # exist. A test whose subject is an ABSENCE has to name something the
+    # fixtures cannot start carrying, and the guard below is what makes that
+    # true of this id rather than merely true today.
     check_status 1 "a plugin the document does not cover is refused rather than answered as silent" \
-        dry_run_preview_reading mac-hardening
+        dry_run_preview_reading "$NEVER_COMPARED_PLUGIN"
 
     check_eq "$(apply_plugin_display_name permissions-hardening)" "File Permissions Hardening" \
         "the apply's output is joined to a plugin id by the name the tool itself prints"
     check_status 1 "and an id the tool's listing does not name is refused, because an empty name would match the space in every line" \
-        apply_plugin_display_name no-such-plugin
+        apply_plugin_display_name "$NEVER_COMPARED_PLUGIN"
 
     # The fixture above stands in for the tool's live listing, and a live run is
     # guarded: capture_plugin_names refuses outright when the listing does not
@@ -7967,7 +8381,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     FIRST_APPLY_OUTPUT="$pa_apply_fixture"
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     run_preview_agreement_checks > "$pa_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/1" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "6/1" \
         "the one plugin the preview was silent about and the apply then applied changes for is the one row that fails"
     check_status 0 "and the failure carries both numbers, so a reader is not sent back to the tool to find out how far apart they were" \
         grep -q "preview agreement firewall-hardening: the preview named no estimated change and no issue, and the apply then reported 3 applied change(s)" "$pa_out"
@@ -7982,7 +8396,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     PRE_APPLY_DRY_RUN_JSON="$(jq 'map(.validation_report_estimated_changes = ["a change the apply may not reach"])' <<<"$pa_dry_fixture")"
     run_preview_agreement_checks > /dev/null
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "6/0" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "7/0" \
         "a preview that named work the apply then did not do passes, because plugins fail partway on containers and making that red would fail correct runs"
 
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
@@ -8077,10 +8491,11 @@ $pa_tick Audit Rules Hardening - no changes needed"
     # what a compliant plugin correctly reads as.
     check_eq "$(scan_finding_ids "$if_after" ssh-hardening || echo REFUSED)" "" \
         "a plugin that reported no finding reads as an empty set rather than as a refusal, because that is what a hardened host looks like"
-    # mac-hardening for the reason given at the preview refusal above: audit is
-    # in every fixture now, so it can no longer stand for a plugin that is not.
+    # NEVER_COMPARED_PLUGIN for the reason given at the preview refusal above:
+    # every real plugin is now in every fixture, so none of them can stand for
+    # one that is not.
     check_status 1 "and a plugin the document holds no object for is refused, because an empty set introduces nothing and nothing introduced is the pass condition below" \
-        scan_finding_ids "$if_before" mac-hardening
+        scan_finding_ids "$if_before" "$NEVER_COMPARED_PLUGIN"
     check_eq "$(scan_finding_ids "$(jq 'map(.findings = (.findings | map({id: .finding_id})))' <<<"$if_before")" ssh-hardening || echo REFUSED)" "" \
         "an entry carrying no string finding_id contributes no id rather than jq's 'null', which the registry could then be made to declare"
 
@@ -8099,7 +8514,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     # counter these functions increment would be discarded.
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     run_introduced_finding_checks > "$if_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "6/0" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "7/0" \
         "every row passes when the only findings the apply introduced are declared ones"
     check_status 0 "and the declared row carries the reason the entry gives, so a reader meets it in the log rather than being sent to the table" \
         grep -q "introduced findings kernel-hardening: every finding the apply introduced is declared: kernel_boot_override_net_ipv4_conf_all_log_martians (ufw's sysctl file sets this to 0" "$if_out"
@@ -8112,7 +8527,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     INTRODUCED_FINDING_ALLOWANCES=("${if_saved_allowances[0]}")
     run_introduced_finding_checks > "$if_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/1" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "6/1" \
         "an introduced finding no entry declares fails its plugin's row, and only that plugin's"
     check_status 0 "and the row names the id, because the maintainer's next move is to decide what that one finding is" \
         grep -q "no INTRODUCED_FINDING_ALLOWANCES entry declares: kernel_boot_override_net_ipv4_conf_default_log_martians" "$if_out"
@@ -8121,7 +8536,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     CHECKS_TOTAL=0 CHECKS_PASSED=0 CHECKS_FAILED=0
     SCAN_JSON="$(jq 'map(select(.plugin_id != "firewall-hardening"))' <<<"$if_after")"
     run_introduced_finding_checks > "$if_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/1" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "6/1" \
         "a plugin the post-apply document never covered fails its own row rather than reading as one that introduced nothing"
     check_status 0 "named against the document it was missing from" \
         grep -q "introduced findings firewall-hardening: the post-apply scan document holds no readable findings array" "$if_out"
@@ -8130,7 +8545,7 @@ $pa_tick Audit Rules Hardening - no changes needed"
     SCAN_JSON="$if_after"
     PRE_APPLY_SCAN_JSON="$(jq 'map(select(.plugin_id != "pam-hardening"))' <<<"$if_before")"
     run_introduced_finding_checks > "$if_out"
-    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "5/1" \
+    check_eq "$CHECKS_PASSED/$CHECKS_FAILED" "6/1" \
         "and a plugin the pre-apply document never covered fails too, on the other side of the same comparison"
     check_status 0 "named against that side, because the two absences are fixed in different places" \
         grep -q "introduced findings pam-hardening: the pre-apply scan document holds no readable findings array" "$if_out"
@@ -8237,6 +8652,18 @@ run_full_suite() {
     echo "Booted, systemd as PID 1 (services oracle): $RUN_BOOTED"
     detect_shadow_min_days || return 1
     echo "Shadow minimum password age: $SHADOW_MIN_DAYS"
+    # The third mode signal, and it works like the two above: probed before any
+    # check runs, printed where a reader of the log meets it, and subtracted from
+    # the arithmetic rather than left to a row to discover. Printed with its
+    # reason when it is 0, because "MAC oracle: 0" alone would send a reader
+    # looking for a broken probe on a host where the answer is that this kernel
+    # has a MAC system and the oracle deliberately does not cover it.
+    detect_mac_askable
+    if (( MAC_ASKABLE == 1 )); then
+        echo "MAC no-op oracle (kernel LSM registry): 1 ($MAC_LSM_READING)"
+    else
+        echo "MAC no-op oracle (kernel LSM registry): 0, $MAC_UNASKABLE_REASON"
+    fi
 
     # Task 7's acceptance criterion, and it runs first, above every seed and
     # every capture below: its own baseline is "whatever this container
@@ -8270,6 +8697,7 @@ run_full_suite() {
     preapply_services_init || return 1
     preapply_kernel_init || return 1
     preapply_audit_init || return 1
+    preapply_mac_init || return 1
     # Last of the pre-apply captures, deliberately. It previews the host the
     # apply below is about to meet, so every seed written above has to be in
     # place first or the preview and the run describe different hosts.
@@ -8306,6 +8734,7 @@ run_full_suite() {
     run_services_preapply_control
     run_kernel_preapply_control
     run_audit_preapply_control
+    run_mac_preapply_control
     run_seeded_checks
     run_ssh_checks
     run_login_defs_checks
@@ -8315,6 +8744,7 @@ run_full_suite() {
     run_pwquality_enforcement_checks
     run_firewall_checks
     run_audit_checks
+    run_mac_checks
     run_services_checks
     run_kernel_checks
     run_seeded_kernel_check

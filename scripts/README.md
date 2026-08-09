@@ -1329,16 +1329,22 @@ having stopped anything proves nothing.
 a finding only for a unit that is enabled or active, and every image shipped
 with none of the five units it assesses.
 
-**Two plugins still have no differential coverage**, both for reasons that have
-not changed (issue #47). `auditd` cannot load rules inside an nspawn container,
-so the audit apply fails there by design and an oracle over it would be reading
-a failure rather than a result. The MAC plugin is unbuildable on the current
-development machine. Neither is blocked on the suite.
+**All eight plugins now have differential coverage, and two of them have it
+with a stated ceiling** (issue #47). The audit oracle is `augenrules`, the audit
+package's own merge tool, which needs no running auditd: the apply's reload
+fails inside a container by design and the merge happens before that failure, so
+what the rows read is what the next boot would load rather than what is being
+audited now. The MAC oracle is the inverse of every other one here. This
+machine's kernel carries neither SELinux nor AppArmor, so the suite proves the
+apply leaves `/etc/selinux`, `/etc/apparmor` and `/etc/apparmor.d` untouched,
+which catches the plugin writing a configuration onto a host that can never read
+it and catches nothing about enforcement. Reading enforcement back needs a
+virtual machine and is issue #18, not a gap in this suite.
 
 It needs a container that has never been hardened, because that pre-apply
 control requires findings to exist, and it needs `jq` (the suite refuses
 loudly if it is missing). `differential-suite.sh --self-test` runs the pure
-text extractors and every refusal path with no root and no container, 528
+text extractors and every refusal path with no root and no container, 576
 assertions in all, and it reports the same result whether or not the
 environment declares the run booted.
 

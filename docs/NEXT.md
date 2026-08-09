@@ -45,7 +45,9 @@ v1.5.0 and described below) grew alongside it and keeps growing. It now pins how
 many checks each block records, so an emptied table cannot shrink a run into a
 pass. Do not quote a check total from this file: `expected_check_total` in that
 script is the live count, and the comment above it traces how each block arrived
-at its size. Issue #47 tracks extending the oracle to the remaining six plugins.
+at its size. Issue #47 tracked extending the oracle to the remaining six
+plugins; all eight are now in the compared set, two of them with a ceiling
+stated in the oracle.
 
 **Everything below this line shipped in v1.5.0 or earlier.** v1.5.1 followed on
 the same day, 2026-07-27, and is the current release: it made `scan --exit-code`
