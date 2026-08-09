@@ -501,7 +501,8 @@ fn every_canonical_framework_id_parses() {
     assert_eq!(
         ComplianceFramework::ALL.len(),
         10,
-        "the canonical framework list changed size; confirm every id still parses here"
+        "the canonical framework list changed size; confirm the fleet command's parse_frameworks \
+         still accepts every id"
     );
     for framework in ComplianceFramework::ALL {
         let parsed = parse_frameworks(&[framework.id().to_string()]);

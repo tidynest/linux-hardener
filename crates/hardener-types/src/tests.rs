@@ -32,7 +32,8 @@ mod compliance_framework_tests {
         assert_eq!(
             ComplianceFramework::ALL.len(),
             10,
-            "the canonical framework list changed size; confirm every id still parses here"
+            "the canonical framework list changed size; confirm ComplianceFramework::from_id \
+             still accepts every id"
         );
         for framework in ComplianceFramework::ALL {
             assert_eq!(
