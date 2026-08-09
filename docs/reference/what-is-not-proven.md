@@ -112,6 +112,12 @@ empty to non-empty and fails the row, and that is the likeliest way this plugin
 could misbehave. The condition is gone, so a host with no MAC configuration at
 all is now asked whether one appeared.
 
+**Re-read on all six 2026-08-09, and every fixture now asks the row.** Arch
+moved from 94 declared and 12 unaskable to 96 and 10, and the other five did not
+move at all, which is what says the change reached the one fixture it was for
+and nothing else. Arch's row reports that none of the three paths existed before
+the apply and none was created; the other five report `/etc/selinux` unchanged.
+
 **The kernel reading in that script can now fail, and its runtime half is asked
 only where a container permits the question.** Both halves used to be
 unfalsifiable. The file half recorded an apply that wrote no
