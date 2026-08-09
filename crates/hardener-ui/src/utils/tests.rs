@@ -1549,3 +1549,30 @@ fn the_patch_is_scoped_to_its_plugin() {
         ExceptionOutcome::NotConfigured
     ));
 }
+
+/// A date before today is refused. This is what keeps
+/// `apply_written_exception`'s hardcoded `exception_is_expired: false` honest:
+/// without this check the modal could hand it an exception that is already
+/// expired.
+#[test]
+fn a_past_expiry_date_is_in_the_past() {
+    assert!(is_expiry_in_the_past("2020-01-01", "2026-08-10"));
+}
+
+/// Today itself has not lapsed yet.
+#[test]
+fn todays_date_is_not_in_the_past() {
+    assert!(!is_expiry_in_the_past("2026-08-10", "2026-08-10"));
+}
+
+/// A future date is not in the past.
+#[test]
+fn a_future_expiry_date_is_not_in_the_past() {
+    assert!(!is_expiry_in_the_past("2027-01-01", "2026-08-10"));
+}
+
+/// No expiry chosen at all is never refused: a permanent exception is valid.
+#[test]
+fn an_absent_expiry_is_not_in_the_past() {
+    assert!(!is_expiry_in_the_past("", "2026-08-10"));
+}

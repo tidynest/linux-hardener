@@ -3452,9 +3452,24 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   border-color: var(--color-accent);
 }
 
-.exception-modal textarea.field-input {
-  min-height: 4.5rem;
-  resize: vertical;
+/* A rejected field value (past expiry) - beside the field it names. */
+.exception-modal .field-error {
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-critical-bright, #dc3545);
+}
+
+/* A failed write, rendered inside the dialog rather than the global banner:
+   the banner sits behind the modal backdrop's z-index and would be
+   half-dimmed with an unreachable dismiss button. */
+.exception-modal .modal-error {
+  margin: var(--space-sm) 0 0;
+  padding: var(--space-xs) var(--space-sm);
+  background-color: var(--color-critical-bg);
+  border: 1px solid var(--color-critical-bright, #dc3545);
+  border-radius: var(--radius-sm);
+  color: var(--color-critical-bright, #dc3545);
+  font-size: var(--font-size-sm);
 }
 
 /* Per-host outcome row - dry-run preview and executed results share it. */

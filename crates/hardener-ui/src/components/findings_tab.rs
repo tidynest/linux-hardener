@@ -278,6 +278,14 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
     // control rather than a second signal that shadows it.
     let is_not_configured = matches!(f.finding_exception, ExceptionOutcome::NotConfigured);
     let modal_open = RwSignal::new(false);
+    // A write failure renders inside the modal (see `ExceptionModal`'s `error`
+    // prop) rather than through `app_state.error_message`: that banner sits in
+    // normal document flow behind the modal backdrop's `z-index: 50`, so it
+    // would render half-dimmed with an unreachable dismiss button, and a click
+    // aimed at it would land on the backdrop and discard the reason the
+    // operator just typed. Cleared whenever the modal (re)opens, so a stale
+    // failure from a previous attempt cannot outlive it.
+    let modal_error = RwSignal::new(Option::<String>::None);
 
     let submit_plugin_id = plugin_id.clone();
     let submit_key = key.clone();
@@ -311,9 +319,7 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
                 }
                 // A real failure leaves the modal open so the typed reason,
                 // approver, ticket and expiry survive for a retry.
-                Err(e) => app_state
-                    .error_message
-                    .set(Some(format!("Accept finding failed: {e}"))),
+                Err(e) => modal_error.set(Some(format!("Accept finding failed: {e}"))),
             }
         });
     });
@@ -393,7 +399,10 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
                             >
                                 <button
                                     class="btn btn-secondary finding-exception-accept"
-                                    on:click=move |_| modal_open.set(true)
+                                    on:click=move |_| {
+                                        modal_error.set(None);
+                                        modal_open.set(true);
+                                    }
                                 >"Accept This Finding"</button>
                             </Show>
                         </div>
@@ -417,6 +426,7 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
                     finding_title=title.clone()
                     on_submit=on_submit
                     on_dismiss=Callback::new(move |()| modal_open.set(false))
+                    error=Signal::derive(move || modal_error.get())
                 />
             </Show>
         </li>

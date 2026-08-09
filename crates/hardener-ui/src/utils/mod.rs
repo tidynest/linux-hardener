@@ -642,6 +642,23 @@ pub fn split_policy_excepted(
         .partition(|(_, f)| !f.is_policy_excepted())
 }
 
+/// Whether an ISO `YYYY-MM-DD` expiry date names a day before `today`, also
+/// `YYYY-MM-DD`.
+///
+/// `expires` empty (no expiry chosen) is never in the past. Lexicographic
+/// comparison is correct for this one format: zero-padded ISO dates sort in
+/// calendar order as plain strings, so no date parsing is needed to answer a
+/// yes/no question.
+///
+/// This is what keeps [`apply_written_exception`]'s hardcoded
+/// `exception_is_expired: false` honest: that patch cannot recompute expiry
+/// without duplicating `PolicyException::is_expired`, so the modal that
+/// collects the date is the only place left to refuse one that is already in
+/// the past.
+pub fn is_expiry_in_the_past(expires: &str, today: &str) -> bool {
+    !expires.is_empty() && expires < today
+}
+
 /// Marks the finding this exception was written for as an applied deviation,
 /// without re-scanning.
 ///
