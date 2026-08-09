@@ -57,7 +57,13 @@ pub fn HostRow(
                 />
                 <button
                     class="host-row-expand"
-                    aria-label="Expand host"
+                    // Named for the host, matching the checkbox above it. A
+                    // constant "Expand host" announced the same thing on every
+                    // row, so a screen reader user could not tell which host
+                    // they were opening and a test could reach a row only by
+                    // index (#135). The state is on aria-expanded rather than
+                    // in the verb, so the name stays stable while it toggles.
+                    aria-label=format!("Expand {label}")
                     aria-expanded=move || expanded.get().to_string()
                     on:click=move |_| on_toggle_expand.run(())
                 >
