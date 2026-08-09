@@ -4394,10 +4394,18 @@ apply_plugin_display_name() {
 # the plugin and a line carrying an error message where the summary would be.
 #
 # Fail-closed on that second shape rather than reading it as 0: output.rs
-# prints `{icon} {name} - {err}` for a plugin whose ApplyResult carries an
-# apply_error, and that branch prints no count whatever, so the changes it did
-# apply are simply not in the text. Calling it 0 would guess in the one
-# direction that passes the row below.
+# prints `{icon} {name} - {err}` for a plugin that carries an apply_error AND
+# recorded no change at all, and that branch prints no count whatever, so
+# calling it 0 would guess in the one direction that passes the row below. The
+# firewall plugin's "No firewall backend" is that shape.
+#
+# A plugin that failed part way now prints `{summary}: {err}`, which the
+# counting pattern below reads as any other summary. It did not always: the
+# error alone replaced the whole phrase, and the first container run of the
+# audit oracle failed on all six distributions because the audit plugin writes
+# its rules file, fails the reload under nspawn, and had its count discarded.
+# That was an operator-facing loss before it was an oracle's, and the fix is in
+# output.rs rather than in a wider pattern here.
 apply_applied_count() {
     local plugin="$1" name line summary
     name="$(apply_plugin_display_name "$plugin")" || return 1
@@ -7937,6 +7945,18 @@ $pa_tick Audit Rules Hardening - no changes needed"
     FIRST_APPLY_OUTPUT="$pa_cross Firewall Hardening - No firewall backend: nothing installed"
     check_status 1 "a result line carrying an error where the summary would be is refused: that branch prints no count, so reading it as 0 would guess in the direction that passes" \
         apply_applied_count firewall-hardening
+
+    # The shape the first container run of the audit oracle actually produced,
+    # taken verbatim from the arch log of 2026-08-09 with its counts. The audit
+    # plugin writes its rules file and fails the reload under nspawn, so its
+    # result line carries an error AND a summary. output.rs printed the error
+    # alone until that run, which is why this reads as a regression test rather
+    # than as a shape somebody imagined: two of the six distributions could not
+    # have been told apart from a plugin that applied nothing.
+    FIRST_APPLY_OUTPUT="$pa_cross Audit Rules Hardening - 2 of 4 change(s) applied, 2 failed: Some changes failed"
+    check_eq "$(apply_applied_count audit-hardening)" "2" \
+        "a plugin that failed part way still yields the successes it did apply, because the error follows the summary rather than replacing it"
+
     FIRST_APPLY_OUTPUT="$(grep -v "Firewall Hardening - " <<<"$pa_apply_fixture")"
     check_status 1 "and a plugin the output holds no result line for is refused" \
         apply_applied_count firewall-hardening

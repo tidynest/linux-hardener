@@ -326,16 +326,12 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
                     "✗".red()
                 };
 
-                if let Some(err) = &result.apply_error {
-                    println!("{} {} - {}", icon, metadata.plugin_name, err);
-                } else {
-                    println!(
-                        "{} {} - {}",
-                        icon,
-                        metadata.plugin_name,
-                        apply_summary(result)
-                    );
-                }
+                println!(
+                    "{} {} - {}",
+                    icon,
+                    metadata.plugin_name,
+                    apply_result_line(result)
+                );
 
                 for change in &result.apply_changes {
                     let status = if change.is_skipped() {
@@ -355,6 +351,28 @@ pub fn apply_results(format: &OutputFormat, results: &[(PluginMetadata, ApplyRes
                 }
             }
         }
+    }
+}
+
+/// The phrase printed after a plugin's name in apply output.
+///
+/// A plugin can fail and still have applied most of what it set out to, and
+/// [`apply_summary`] has already counted that. Printing the error on its own
+/// discarded it: the audit plugin in a container writes its rules file and
+/// fails only the reload, so an operator was told "Some changes failed" with no
+/// indication that anything had been written at all. Found by the differential
+/// suite's first container run, whose preview-agreement row could not read a
+/// count that was never printed.
+///
+/// The error stands alone again when the plugin recorded no change whatever,
+/// where [`apply_summary`] reads "no changes needed" and would contradict the
+/// error beside it. That is the firewall plugin's "No firewall backend" shape,
+/// which returns an empty change list.
+fn apply_result_line(result: &ApplyResult) -> String {
+    match &result.apply_error {
+        Some(err) if result.apply_changes.is_empty() => err.clone(),
+        Some(err) => format!("{}: {err}", apply_summary(result)),
+        None => apply_summary(result),
     }
 }
 

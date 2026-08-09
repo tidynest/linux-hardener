@@ -681,3 +681,40 @@ fn the_state_column_aligns_even_for_the_longest_managed_parameter_name() {
          {row_lines:?}"
     );
 }
+
+/// The three arms of the result line, and the middle one is a regression test.
+///
+/// Until the differential suite's first container run of the audit oracle, a
+/// plugin carrying an apply_error had its whole summary replaced by that error,
+/// so an operator was told nothing about what HAD been applied. The audit
+/// plugin under nspawn writes its rules file and fails the reload, and read as
+/// indistinguishable from a plugin that applied nothing.
+#[test]
+fn apply_result_line_keeps_the_count_beside_a_partial_failure() {
+    let mut partial = apply_result(vec![
+        change(ChangeType::ConfigFile, true),
+        change(ChangeType::Service, false),
+    ]);
+    partial.apply_error = Some("Some changes failed".to_string());
+    assert_eq!(
+        apply_result_line(&partial),
+        "1 of 2 change(s) applied, 1 failed: Some changes failed"
+    );
+}
+
+#[test]
+fn apply_result_line_leaves_an_error_alone_when_nothing_was_attempted() {
+    let mut nothing = apply_result(vec![]);
+    nothing.apply_error = Some("No firewall backend: nothing installed".to_string());
+    assert_eq!(
+        apply_result_line(&nothing),
+        "No firewall backend: nothing installed",
+        "'no changes needed' beside an error would contradict it"
+    );
+}
+
+#[test]
+fn apply_result_line_is_the_plain_summary_without_an_error() {
+    let clean = apply_result(vec![change(ChangeType::KernelParameter, true)]);
+    assert_eq!(apply_result_line(&clean), "1 change(s) applied");
+}
