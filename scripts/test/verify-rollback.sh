@@ -1198,6 +1198,8 @@ else
                 else
                     fail "ssh-hardening did not report sshd Diverged although sshd stayed active before and after the rollback behind a mask (rows: ${SSH_ROWS:-none})"
                 fi
+            else
+                skip "ssh-hardening Diverged assertion: sshd was not active both before and after the rollback (before=${SSH_ACTIVE_BEFORE:-unknown} after=${SSH_ACTIVE_AFTER:-unknown}), so whether ssh-hardening reports sshd Diverged correctly cannot be asked"
             fi
 
             rm -f /tmp/diverge-ssh.json
@@ -1472,13 +1474,21 @@ header "TEST 13: WHAT permissions-hardening REPORTS AFTER A ROLLBACK"
 if ! command -v python3 &>/dev/null; then
     skip "permissions divergence measurement: python3 is not available to parse the rollback's JSON"
 else
+    # Read BEFORE the apply, not after: the checkpoint the apply creates
+    # snapshots the state it found /etc/shadow in, which is this mode, not
+    # whatever the apply itself changes it to. Reading it afterwards held the
+    # POST-apply mode while the rollback restores the PRE-apply one, so the
+    # gate below only ever held on a host where the apply happened not to
+    # touch /etc/shadow's mode, which is why it passed on arch and would
+    # silently stop asserting anything on a host where it did not.
+    PERMS_ORIG_MODE=$(stat -c '%a' /etc/shadow 2>/dev/null || echo "")
+
     "$BINARY" apply --plugin permissions-hardening > /dev/null 2>&1 || true
 
     # The hypothesis is that this plugin cannot diverge: a mode lives in the
     # file, so restoring the file IS the whole revert, with no runtime state
     # anywhere else. The scenario still tries, because a hypothesis that is
     # never tested is the thing this issue was filed about.
-    PERMS_ORIG_MODE=$(stat -c '%a' /etc/shadow 2>/dev/null || echo "")
     chmod 0666 /etc/shadow > /dev/null 2>&1 || true
     PERMS_FORCED="/etc/shadow chmod 0666 live, out of step with the mode the checkpoint holds"
     PERMS_MODE_BEFORE_ROLLBACK=$(stat -c '%a' /etc/shadow 2>/dev/null || echo unreadable)
@@ -1515,7 +1525,7 @@ else
                 pass "permissions-hardening reports no row once the rollback verifiably restored /etc/shadow's mode from a forced 666"
             fi
         else
-            info "  permissions divergence measurement: forcing not confirmed by the readback (before=$PERMS_MODE_BEFORE_ROLLBACK orig=${PERMS_ORIG_MODE:-unknown} after=$PERMS_MODE_AFTER_ROLLBACK), no assertion made"
+            skip "permissions divergence measurement: forcing not confirmed by the readback (before=$PERMS_MODE_BEFORE_ROLLBACK orig=${PERMS_ORIG_MODE:-unknown} after=$PERMS_MODE_AFTER_ROLLBACK), so whether permissions-hardening reports a row correctly cannot be asked"
         fi
 
         rm -f /tmp/diverge-perms.json
@@ -1608,7 +1618,7 @@ else
                 pass "pam-hardening reports no row once the rollback verifiably removed a forced faillock.conf append"
             fi
         else
-            info "  pam divergence measurement: forcing not confirmed by the readback (before=${PAM_PROBE_COUNT_BEFORE_ROLLBACK:-unreadable} after=${PAM_PROBE_COUNT:-unreadable}), no assertion made"
+            skip "pam divergence measurement: forcing not confirmed by the readback (before=${PAM_PROBE_COUNT_BEFORE_ROLLBACK:-unreadable} after=${PAM_PROBE_COUNT:-unreadable}), so whether pam-hardening reports a row correctly cannot be asked"
         fi
 
         rm -f /tmp/diverge-pam.json
