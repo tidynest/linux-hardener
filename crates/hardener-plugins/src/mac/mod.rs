@@ -7,6 +7,8 @@
 //! - SELinux (RHEL, Fedora, CentOS, Rocky Linux, AlmaLinux)
 //! - AppArmor (Ubuntu, Debian, openSUSE)
 
+mod divergence;
+
 use async_trait::async_trait;
 use hardener_common::types::PluginId;
 use hardener_common::{
@@ -981,6 +983,21 @@ impl HardeningPlugin for MacHardeningPlugin {
         path.starts_with("/etc/selinux")
             || path.starts_with("/etc/apparmor")
             || path.starts_with("/etc/apparmor.d")
+    }
+
+    /// One `Unverifiable` row, always, on every host the suite can build.
+    ///
+    /// Deliberately not gated on `restored`: the two plugins this probe most
+    /// resembles gate themselves because they would otherwise raise a false
+    /// alarm, and a row that claims nothing cannot raise one. A rollback that
+    /// restored nothing MAC-related still leaves an operator unable to say
+    /// what the kernel is enforcing, which is the thing being reported.
+    async fn divergences_after_rollback(
+        &self,
+        ctx: &Context,
+        _restored: &[std::path::PathBuf],
+    ) -> Vec<hardener_types::RollbackDivergence> {
+        divergence::mac_divergences(self, ctx).await
     }
 
     async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
