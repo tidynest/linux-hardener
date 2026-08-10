@@ -1173,12 +1173,33 @@ else
             SSH_ACTIVE_AFTER=$(systemctl is-active "$SSH_UNIT" 2>/dev/null || true)
             info "  $SSH_UNIT active state after the rollback: ${SSH_ACTIVE_AFTER:-unknown}"
             if [[ "$SSH_ACTIVE_BEFORE" == "active" && "$SSH_ACTIVE_AFTER" == "active" ]]; then
+                SSH_DIVERGENCE_AVAILABLE=true
                 info "  DIVERGENCE WAS AVAILABLE: $SSH_UNIT is still running and could not be restarted onto the restored configuration, so silence from ssh-hardening is a gap"
             else
+                SSH_DIVERGENCE_AVAILABLE=false
                 info "  NO DIVERGENCE WAS AVAILABLE: $SSH_UNIT is not running (before=${SSH_ACTIVE_BEFORE:-unknown} after=${SSH_ACTIVE_AFTER:-unknown}), so the restored configuration is in force nowhere and silence from ssh-hardening is correct"
             fi
 
             report_measurement "ssh-hardening" "$SSH_FORCED" "$SSH_ROWS"
+
+            # Earned by the 2026-08-10 measurement (Task 3/3c/3d in the SDD
+            # log): with the divergence forced, ssh-hardening reported
+            # nothing until ssh/divergence.rs was written, and that row is
+            # what this asserts now. Gated on SSH_DIVERGENCE_AVAILABLE rather
+            # than asked unconditionally, because on the other path sshd
+            # really is not running and a Diverged row there would be the
+            # probe lying, not a defect this check should catch. The subject
+            # is the probe's own constant, "sshd" (ssh/divergence.rs
+            # SSHD_UNIT), not $SSH_UNIT: the probe queries that literal name
+            # regardless of which systemd unit this arm resolved.
+            if [[ "$SSH_DIVERGENCE_AVAILABLE" == "true" ]]; then
+                if printf '%s\n' "$SSH_ROWS" | grep -Fxq "ssh-hardening/sshd:Diverged"; then
+                    pass "ssh-hardening reports sshd Diverged when it stayed active behind a mask the rollback's restart could not lift"
+                else
+                    fail "ssh-hardening did not report sshd Diverged although sshd stayed active before and after the rollback behind a mask (rows: ${SSH_ROWS:-none})"
+                fi
+            fi
+
             rm -f /tmp/diverge-ssh.json
         fi
 
@@ -1314,6 +1335,23 @@ else
     else
         SERVICES_ROWS=$(divergence_rows_for "$SERVICES_CP" /tmp/diverge-services.json)
         report_measurement "service-minimisation" "$SERVICES_FORCED" "$SERVICES_ROWS"
+
+        # No assertion follows, deliberately. bluetooth.service is the only
+        # known-safe candidate this scenario can force (see the block
+        # comment above), and it cannot start in any container this project
+        # builds: SERVICES_FORCED above reads "attempted ... but it did not
+        # take" on every run measured 2026-08-10, never "started". The
+        # divergence service-minimisation's probe exists to catch was
+        # therefore never forced here, and asserting a row (or its absence)
+        # for THIS candidate would assert an outcome nobody produced.
+        # services/divergence.rs may still emit Diverged rows of its own in
+        # SERVICES_ROWS for OTHER units this rollback's reload touched
+        # (`UNNECESSARY_SERVICES` left enabled-but-stopped or
+        # disabled-but-running by an earlier apply): that is ordinary,
+        # unforced behaviour, not this scenario's measurement, so its count
+        # is not asserted either way. A host where bluetooth.service can
+        # actually start (a real VM, not a container: see #18) is what would
+        # measure the forced case and earn an assertion here.
         rm -f /tmp/diverge-services.json
     fi
 
@@ -1394,6 +1432,35 @@ else
     else
         AUDIT_ROWS=$(divergence_rows_for "$AUDIT_CP" /tmp/diverge-audit.json)
         report_measurement "audit-hardening" "$AUDIT_FORCED" "$AUDIT_ROWS"
+
+        # audit-hardening's own forcing never lands in any container (see
+        # AUDIT_FORCED above), so no assertion follows about a forced
+        # divergence: there is nothing to assert. audit/divergence.rs
+        # (audit_divergences) returns exactly one Unverifiable row on EVERY
+        # call regardless of forcing, because auditctl cannot be read back
+        # here at all; that is asserted below.
+        #
+        # reconcile_plugins_after_rollback (hardener-plugins/src/lib.rs)
+        # asks every registered plugin's divergences_after_rollback on every
+        # rollback, not only the plugin whose apply created the checkpoint
+        # (create_plugin_registry registers all eight unconditionally), so
+        # this rollback's AUDIT_ROWS also carries mac-hardening's row.
+        # mac/divergence.rs (mac_divergences) is the same shape as audit's:
+        # exactly one Unverifiable row on every call, because no container
+        # here can be given MAC enforcement to read back either. Both are
+        # asserted from this one rollback rather than duplicated across
+        # every scenario in this file that also triggers them.
+        if printf '%s\n' "$AUDIT_ROWS" | grep -Fxq "audit-hardening/audit-rules:Unverifiable"; then
+            pass "audit-hardening reports an Unverifiable row for audit-rules, as it does on every call"
+        else
+            fail "audit-hardening did not report an Unverifiable row for audit-rules (rows: ${AUDIT_ROWS:-none})"
+        fi
+        if printf '%s\n' "$AUDIT_ROWS" | grep -Eq '^mac-hardening/[^:]+:Unverifiable$'; then
+            pass "mac-hardening reports an Unverifiable row, as it does on every call"
+        else
+            fail "mac-hardening did not report an Unverifiable row (rows: ${AUDIT_ROWS:-none})"
+        fi
+
         rm -f /tmp/diverge-audit.json
     fi
 
@@ -1414,15 +1481,43 @@ else
     PERMS_ORIG_MODE=$(stat -c '%a' /etc/shadow 2>/dev/null || echo "")
     chmod 0666 /etc/shadow > /dev/null 2>&1 || true
     PERMS_FORCED="/etc/shadow chmod 0666 live, out of step with the mode the checkpoint holds"
-    info "  /etc/shadow mode before rollback: $(stat -c '%a' /etc/shadow 2>/dev/null || echo unreadable)"
+    PERMS_MODE_BEFORE_ROLLBACK=$(stat -c '%a' /etc/shadow 2>/dev/null || echo unreadable)
+    info "  /etc/shadow mode before rollback: $PERMS_MODE_BEFORE_ROLLBACK"
 
     PERMS_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
     if [[ -z "$PERMS_CP" ]]; then
         fail "No checkpoint created during the permissions divergence measurement"
     else
         PERMS_ROWS=$(divergence_rows_for "$PERMS_CP" /tmp/diverge-perms.json)
-        info "  /etc/shadow mode after rollback: $(stat -c '%a' /etc/shadow 2>/dev/null || echo unreadable)"
+        PERMS_MODE_AFTER_ROLLBACK=$(stat -c '%a' /etc/shadow 2>/dev/null || echo unreadable)
+        info "  /etc/shadow mode after rollback: $PERMS_MODE_AFTER_ROLLBACK"
         report_measurement "permissions-hardening" "$PERMS_FORCED" "$PERMS_ROWS"
+
+        # Earned by three reproductions (2026-08-10, unbooted and booted):
+        # forced to 666, rollback restored it to the checkpoint's mode,
+        # permissions-hardening reported nothing (permissions/mod.rs
+        # divergences_after_rollback is an unconditional Vec::new()). Gated
+        # on the readback confirming BOTH halves of the round trip, not
+        # assumed: the forcing must have actually taken (mode was 666 right
+        # before the rollback) AND the rollback must have actually restored
+        # it (mode is back to the original afterwards). Without that gate,
+        # an empty PERMS_ROWS could mean "nothing to report" or "the
+        # rollback silently restored nothing", and the two must not be
+        # asserted as the same thing (the vacuity trap this project has hit
+        # before): a rollback that restored nothing calls
+        # reconcile_plugins_after_rollback on an empty path list, which
+        # returns before any plugin, including this one, is even asked.
+        if [[ "$PERMS_MODE_BEFORE_ROLLBACK" == "666" && -n "$PERMS_ORIG_MODE" \
+            && "$PERMS_MODE_AFTER_ROLLBACK" == "$PERMS_ORIG_MODE" ]]; then
+            if printf '%s\n' "$PERMS_ROWS" | grep -q '^permissions-hardening/'; then
+                fail "permissions-hardening reported a row after a rollback that verifiably restored /etc/shadow's mode from a forced 666 (rows: ${PERMS_ROWS})"
+            else
+                pass "permissions-hardening reports no row once the rollback verifiably restored /etc/shadow's mode from a forced 666"
+            fi
+        else
+            info "  permissions divergence measurement: forcing not confirmed by the readback (before=$PERMS_MODE_BEFORE_ROLLBACK orig=${PERMS_ORIG_MODE:-unknown} after=$PERMS_MODE_AFTER_ROLLBACK), no assertion made"
+        fi
+
         rm -f /tmp/diverge-perms.json
     fi
 
@@ -1470,6 +1565,15 @@ else
         PAM_FORCED="a line appended to /etc/security/faillock.conf after the checkpoint was taken"
     fi
 
+    # Same `grep -c` idiom as the after-rollback readback below, and for the
+    # same reason: capturing the count on its own, with the fallback
+    # covering only "grep produced nothing" (an unreadable file), never a
+    # genuine zero. Read before the rollback so the assertion below has a
+    # readback that the append actually landed, not just PAM_FORCED's word
+    # for it.
+    PAM_PROBE_COUNT_BEFORE_ROLLBACK=$(grep -c 'hardener divergence probe' /etc/security/faillock.conf 2>/dev/null || true)
+    info "  faillock.conf names the probe before rollback: ${PAM_PROBE_COUNT_BEFORE_ROLLBACK:-unreadable}"
+
     PAM_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
     if [[ -z "$PAM_CP" ]]; then
         fail "No checkpoint created during the pam divergence measurement"
@@ -1485,6 +1589,28 @@ else
         PAM_PROBE_COUNT=$(grep -c 'hardener divergence probe' /etc/security/faillock.conf 2>/dev/null || true)
         info "  faillock.conf still names the probe after rollback: ${PAM_PROBE_COUNT:-unreadable}"
         report_measurement "pam-hardening" "$PAM_FORCED" "$PAM_ROWS"
+
+        # Earned by three reproductions (2026-08-10, unbooted and booted):
+        # append landed, rollback removed it (count 0), pam-hardening
+        # reported nothing (pam/mod.rs divergences_after_rollback is an
+        # unconditional Vec::new()). Gated on both readbacks, same reasoning
+        # as TEST 13: the append must have verifiably landed before the
+        # rollback (PAM_PROBE_COUNT_BEFORE_ROLLBACK a positive count, not
+        # "unreadable" or zero) AND the rollback must have verifiably
+        # removed it (PAM_PROBE_COUNT back to 0) before an empty PAM_ROWS is
+        # asserted to mean anything: a rollback that restored nothing never
+        # reaches this plugin at all, and that silence must not be read as
+        # this plugin's own answer.
+        if [[ "$PAM_PROBE_COUNT_BEFORE_ROLLBACK" =~ ^[1-9][0-9]*$ && "$PAM_PROBE_COUNT" == "0" ]]; then
+            if printf '%s\n' "$PAM_ROWS" | grep -q '^pam-hardening/'; then
+                fail "pam-hardening reported a row after a rollback that verifiably removed the appended faillock.conf probe line (rows: ${PAM_ROWS})"
+            else
+                pass "pam-hardening reports no row once the rollback verifiably removed a forced faillock.conf append"
+            fi
+        else
+            info "  pam divergence measurement: forcing not confirmed by the readback (before=${PAM_PROBE_COUNT_BEFORE_ROLLBACK:-unreadable} after=${PAM_PROBE_COUNT:-unreadable}), no assertion made"
+        fi
+
         rm -f /tmp/diverge-pam.json
     fi
 
