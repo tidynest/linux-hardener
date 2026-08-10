@@ -674,6 +674,28 @@ Contains the checkpoint database and audit logs created during privileged operat
 .I ~/.local/share/linux-hardener/
 Per-user state directory.
 Contains scan history and checkpoints for unprivileged operations.
+.TP
+.I /usr/etc/
+Vendor configuration layer on layering distributions, openSUSE today and Fedora
+moving the same way, where
+.I /etc
+is reserved for administrator overrides.
+Where a critical path is absent from
+.I /etc
+the scan assesses the
+.I /usr/etc
+copy rather than reporting nothing, so a violating mode on a file that is
+actually in force is named.
+.B apply
+never writes a package-owned file, because the next package update would revert
+it, so such a finding is remediated by hand and the finding prints the
+.BR install (1)
+command that creates the
+.I /etc
+copy at the required mode.
+An
+.B apply
+that appears idle on such a path is the designed outcome, not a failure.
 .
 .SH EXIT STATUS
 .TP
