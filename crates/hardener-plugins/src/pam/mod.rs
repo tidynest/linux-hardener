@@ -1129,6 +1129,39 @@ impl HardeningPlugin for PamHardeningPlugin {
     // immediately for new authentication attempts, so a rollback that
     // restored /etc/pam.d has nothing to reload.
 
+    /// Measured on the same runs as the permissions plugin, on 2026-08-10: a
+    /// line naming a probe was appended to `/etc/security/faillock.conf`
+    /// after a checkpoint was taken, forced live, then rolled back.
+    /// Readback: the appended line was gone after the rollback, and there
+    /// was nothing left to report.
+    ///
+    /// This plugin checkpoints two different classes of file
+    /// (`/etc/security/pwquality.conf`, `/etc/login.defs`, `/etc/pam.d`,
+    /// `/etc/security/faillock.conf`, `/etc/security/pwhistory.conf`), and
+    /// `apply` does not treat them the same: the `SecurityConf` arm above
+    /// writes `/etc/security/*.conf` directly via `backup_and_write`, but
+    /// `apply` never writes `/etc/pam.d/*` itself, an inline override found
+    /// there is only ever reported as a manual action
+    /// (`all_success = false`, "edit the PAM stack manually"). What both
+    /// classes share, and what actually answers this method, is that
+    /// neither has runtime state anywhere but the file: `pam_faillock`,
+    /// `pam_pwquality`, `pam_pwhistory` and the stack itself are all read
+    /// fresh on every authentication attempt, the same reasoning the
+    /// missing reload methods above already give. Restoring the files is
+    /// therefore the entire revert for either class.
+    ///
+    /// **No self-scoping guard.** This plugin takes `reloads_for_path`'s
+    /// default, which returns `false` for every path. Gating this method on
+    /// `reloads_for_path`, the way SSH's does, would refuse every path and
+    /// leave it dead code.
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[std::path::PathBuf],
+    ) -> Vec<hardener_types::RollbackDivergence> {
+        Vec::new()
+    }
+
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         info!("Validating PAM configuration files");
 
