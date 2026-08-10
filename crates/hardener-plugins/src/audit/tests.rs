@@ -587,3 +587,130 @@ async fn an_unlocked_audit_config_still_fails_a_refused_reload() {
         "the error must name the reload as the thing that failed, got: {error}"
     );
 }
+
+/// A backup taken on every apply and never removed is unbounded growth in
+/// `/etc`, and the growth is not confined to `/etc`: the checkpoint captures
+/// the whole rules directory, so each apply copies every backup that has ever
+/// been taken into another checkpoint, and every rollback restores the lot.
+/// Seventeen had accumulated on the development host, fourteen of them from a
+/// single afternoon, and a rollback of one apply reported 24 files of which 17
+/// were dead backups (#154).
+///
+/// Retention counts what is on disk after the copy, so the file this apply
+/// just wrote is one of the survivors. The mock's `cp` writes nothing, so the
+/// six seeded here stand for the state a real host reaches immediately after
+/// its own copy.
+///
+/// Asserted on which paths `rm` was given rather than on how many, because
+/// "three were removed" is also true of a prune that removed the three newest.
+#[tokio::test]
+async fn writing_the_rules_file_prunes_all_but_the_newest_backups() {
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let oldest: Vec<String> = ["20260718_090000.00000001", "20260718_091500.00000002"]
+        .iter()
+        .map(|stamp| format!("{AUDIT_RULES_PATH}.backup.{stamp}"))
+        .collect();
+    let newest: Vec<String> = [
+        "20260718_093000.00000003",
+        "20260810_120000.00000004",
+        "20260810_120001.00000005",
+    ]
+    .iter()
+    .map(|stamp| format!("{AUDIT_RULES_PATH}.backup.{stamp}"))
+    .collect();
+
+    let mut executor = MockExecutor::new()
+        .with_file(AUDIT_RULES_PATH, "-w /etc/passwd -p wa -k identity\n")
+        .with_path_exists(AUDIT_RULES_PATH, true)
+        .with_command_program("cp", ok.clone())
+        .with_command_program("rm", ok);
+    // Seeded in an order that is neither oldest-first nor newest-first, so a
+    // prune that trusted the directory's iteration order rather than sorting
+    // cannot pass by luck.
+    for backup in newest.iter().chain(oldest.iter()) {
+        executor = executor.with_file(backup, "-w /etc/passwd -p wa -k identity\n");
+    }
+    let executor = Arc::new(executor);
+    let ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+
+    write_audit_rules_file(&ctx, "-w /etc/new -p wa -k new")
+        .await
+        .expect("a mock that answers any cp must let the write through")
+        .expect("an existing rules file must be backed up");
+
+    let log = executor.log();
+    let (_, args) = log
+        .commands_executed
+        .iter()
+        .find(|(program, _)| program == "rm")
+        .expect("a directory over the retention limit must be pruned");
+    for backup in &oldest {
+        assert!(
+            args.iter().any(|argument| argument == backup),
+            "the prune must remove the older backup {backup}, got: {args:?}"
+        );
+    }
+    for backup in &newest {
+        assert!(
+            !args.iter().any(|argument| argument == backup),
+            "the prune must keep the newest {AUDIT_RULES_BACKUPS_KEPT} backups, \
+             but it removed {backup}: {args:?}"
+        );
+    }
+}
+
+/// The rules file itself, and any other file the audit package ships in that
+/// directory, are not backups and must survive a prune. Only the names this
+/// plugin generates are its to remove.
+///
+/// The same fixture proves the count guard: five files sit in the directory
+/// and only two of them are backups, so a prune that counted entries rather
+/// than backups would be over its limit and delete something.
+#[tokio::test]
+async fn the_prune_removes_only_this_plugin_s_own_backups() {
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_file(AUDIT_RULES_PATH, "-w /etc/passwd -p wa -k identity\n")
+            .with_path_exists(AUDIT_RULES_PATH, true)
+            .with_file(
+                &format!("{AUDIT_RULES_PATH}.backup.20260718_090000.00000001"),
+                "old\n",
+            )
+            .with_file(
+                &format!("{AUDIT_RULES_PATH}.backup.20260718_091500.00000002"),
+                "older\n",
+            )
+            .with_file(&format!("{AUDIT_RULES_DIR}/audit.rules"), "-D\n")
+            .with_file(
+                &format!("{AUDIT_RULES_DIR}/30-ospp-v42.rules"),
+                "-a never\n",
+            )
+            .with_command_program("cp", ok.clone())
+            .with_command_program("rm", ok),
+    );
+    let ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+
+    write_audit_rules_file(&ctx, "-w /etc/new -p wa -k new")
+        .await
+        .expect("a mock that answers any cp must let the write through")
+        .expect("an existing rules file must be backed up");
+
+    let log = executor.log();
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(program, _)| program == "rm"),
+        "a directory holding fewer backups than the retention limit must not be \
+         pruned at all, but rm ran: {:?}",
+        log.commands_executed
+    );
+}

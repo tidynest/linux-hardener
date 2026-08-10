@@ -1209,6 +1209,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`audit-hardening` no longer leaves a backup of its rules file behind on
+  every apply for ever** (#154). Each apply copies
+  `/etc/audit/rules.d/hardening.rules` to a timestamped name before overwriting
+  it, and nothing removed one; seventeen had accumulated on the development
+  host, fourteen from a single afternoon. The cost is not the disk: the
+  checkpoint captures the whole rules directory, so every copy was written into
+  every later checkpoint and restored by every rollback, and a rollback of one
+  apply reported 24 files of which 17 were dead backups. **The newest three
+  survive, counting the copy the running apply just took**, which leaves the
+  last apply and the two before it; the checkpoint, not the copies, is the
+  recovery path. The prune sits beside the copy in `write_audit_rules_file` so
+  the two cannot drift, matches on the full `<rules file>.backup.` prefix so the
+  rules file and the `*.rules` a distribution ships are never candidates, and
+  sorts the names as text, which is chronological because the timestamp leads
+  and is fixed width. **A prune that fails does not fail the apply**: the rules
+  are written either way and the operator keeps every copy they had. Nothing
+  stale was ever loaded into the kernel, because `augenrules` compiles `*.rules`
+  and these names end in the timestamp.
+
 - **Rollback divergence reporting no longer claims that nothing names a kernel
   parameter that `/etc/sysctl.conf` names** (#140). The row stays a divergence,
   because the applier that runs at boot does not read that file and the value is
