@@ -27,20 +27,25 @@ The desktop application additionally requires:
 
 ## Install from Package (Recommended)
 
-> **The package was named `linux-system-hardener` until 1.5.1.** If you have that
-> one installed, upgrade normally: the new package carries `replaces=` so your
-> package manager swaps it, and nothing on your host moves. See
+> **The project renamed to `linux-hardener`, but on the AUR the package is still
+> `linux-system-hardener`.** The rename needs a fresh AUR submission rather than
+> a push, because the AUR does not redirect the way the git remotes do, and that
+> submission happens at the next release. Until then `linux-system-hardener` is
+> the package that exists, and the commands below name it. Installing it now is
+> carried across when the new one lands, because that package carries
+> `provides`/`conflicts`/`replaces`. See
 > [upgrading](upgrading.md#151-and-earlier-the-package-and-the-project-are-renamed).
+> The RPM and deb packages are named `linux-hardener` already.
 
 ### Arch Linux / Manjaro / EndeavourOS
 
 ```bash
 # From AUR (using your preferred AUR helper)
-yay -S linux-hardener
+yay -S linux-system-hardener
 
 # Or manually
-git clone https://aur.archlinux.org/linux-hardener.git
-cd linux-hardener
+git clone https://aur.archlinux.org/linux-system-hardener.git
+cd linux-system-hardener
 makepkg -si
 ```
 
@@ -325,7 +330,7 @@ Use your distribution's standard upgrade mechanism:
 
 ```bash
 # Arch
-yay -Syu linux-hardener
+yay -Syu linux-system-hardener
 
 # Fedora/RHEL
 sudo dnf upgrade linux-hardener
@@ -358,7 +363,7 @@ Upgrades preserve your configuration at `/etc/linux-hardener/config.toml`. New c
 
 ```bash
 # Arch
-sudo pacman -Rns linux-hardener
+sudo pacman -Rns linux-system-hardener
 
 # Fedora/RHEL
 sudo dnf remove linux-hardener
