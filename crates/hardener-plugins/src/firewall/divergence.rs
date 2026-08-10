@@ -162,7 +162,11 @@ pub(super) async fn firewall_divergences(ctx: &Context) -> Vec<RollbackDivergenc
                  a running firewall, because stopping one would leave the host less protected \
                  than the rollback found it"
             ),
-            None,
+            Some(
+                "a rollback restores configuration and never stops a running firewall, because \
+                 stopping one would leave the host less protected than it was found"
+                    .to_string(),
+            ),
         )],
         (false, true) => vec![row(
             DivergenceState::Diverged,

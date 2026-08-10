@@ -257,3 +257,41 @@ async fn a_host_with_no_firewall_backend_produces_no_rows() {
 
     assert!(firewall_divergences(&ctx).await.is_empty());
 }
+
+/// Enforcing while the restored configuration says ENABLED=no. The row's own
+/// sentence already says why this is designed: a rollback restores
+/// configuration and never stops a running firewall, because stopping one
+/// would leave the host less protected than the rollback found it.
+#[tokio::test]
+async fn enforcing_over_a_disabled_config_is_expected() {
+    let ctx = ufw_host(UFW_STATUS_ACTIVE_WITH_RULES, "ENABLED=no\n");
+
+    let rows = firewall_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row");
+    let reason = rows[0]
+        .divergence_expected
+        .as_ref()
+        .expect("a rollback never stops a running firewall");
+    assert!(
+        reason.contains("never stops"),
+        "the reason has to say what makes it designed: {reason}"
+    );
+}
+
+/// Not enforcing while the restored configuration says ENABLED=yes. The host
+/// is weaker than its own configuration describes, and no rollback can
+/// produce that: a rollback never stops a firewall. Something else did.
+#[tokio::test]
+async fn not_enforcing_under_an_enabled_config_is_not_expected() {
+    let ctx = ufw_host("Status: inactive\n", "ENABLED=yes\n");
+
+    let rows = firewall_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row");
+    assert!(
+        rows[0].divergence_expected.is_none(),
+        "a host weaker than its own configuration is never routine: {:?}",
+        rows[0].divergence_expected
+    );
+}
