@@ -522,10 +522,12 @@ $ hardener scan --plugin mac-hardening
   • [POLICY EXCEPTION] No MAC System Found
 ```
 
-Under `--format json`, `add` prints the written row rather than a sentence:
+Under `--format json`, `add` prints the written row rather than a sentence.
+The field order is alphabetical, not insertion order: `serde_json::to_value`
+is backed by a `BTreeMap` without the `preserve_order` feature.
 
 ```json
-{"section":"mac","key":"mac-present","value":"None","reason":"no MAC system on this image","approved_by":null,"ticket":null,"expires":null,"path":"/etc/linux-hardener/config.toml"}
+{"approved_by":null,"expires":null,"key":"mac-present","path":"/etc/linux-hardener/config.toml","reason":"no MAC system on this image","section":"mac","ticket":null,"value":"None"}
 ```
 
 ### exception remove
