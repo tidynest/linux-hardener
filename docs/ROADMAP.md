@@ -527,8 +527,10 @@ across all eight plugins, honest unchecked reporting, remote privilege probing),
 fixes), and **v1.5.1** (`scan --exit-code` fails on an incomplete scan,
 `scan --compliance` removed, and the openSUSE vendor-configuration fix).
 
-**v1.5.1 is the current release and `main` is 189 commits past it, 178
-excluding merges, unreleased.**
+**v1.5.1 is the current release, and a substantial body of work on `main` is
+unreleased.** No count is given here on purpose: it changes with every commit,
+and the two figures that used to stand in this sentence were both stale within
+days. Read it live with `git rev-list --count v1.5.1..main`.
 Tagging that work is issue #53. `CHANGELOG.md` `[Unreleased]` describes it.
 
 ### GUI/UX Redesign (Desktop) ✅ (shipped in v1.5.0)
