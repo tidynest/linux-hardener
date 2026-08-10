@@ -7,6 +7,8 @@
 //! The plugin uses systemctl to manage services on all supported distributions
 //! (all target distributions use systemd)
 
+mod divergence;
+
 use async_trait::async_trait;
 use hardener_common::{
     error::{HardeningError, Result},
@@ -935,6 +937,20 @@ impl HardeningPlugin for ServicesHardeningPlugin {
         }
 
         Ok(Some("systemd daemon reloaded".to_string()))
+    }
+
+    async fn divergences_after_rollback(
+        &self,
+        ctx: &Context,
+        restored: &[std::path::PathBuf],
+    ) -> Vec<hardener_types::RollbackDivergence> {
+        // Same predicate reload_after_rollback is gated on via
+        // reloads_for_path (#142): asking without anything restored under
+        // ADMIN_UNIT_DIR would measure units this rollback never touched.
+        if !restored.iter().any(|path| self.reloads_for_path(path)) {
+            return Vec::new();
+        }
+        divergence::service_divergences(ctx).await
     }
 
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
