@@ -159,3 +159,57 @@ async fn empty_enablement_output_is_unverifiable() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
 }
+
+/// `masked-runtime` is `masked` for this boot: the unit cannot be started
+/// until the next one. It is therefore the same proof as `masked` that the
+/// restart `reload_after_rollback` attempted could not have taken, and it
+/// reached this probe as an ordinary unrecognised word, fell to the
+/// catch-all, and was read as NOT masked.
+///
+/// That made it worse than the `service-minimisation` case in #149, which
+/// deferred its two `-runtime` words to `Unverifiable`. `Unverifiable` claims
+/// nothing. Here the catch-all returns an EMPTY vector, which this codebase
+/// reads as "everything checkable came back", so the probe positively
+/// asserted that nothing had diverged in exactly the state it exists to
+/// catch. A masked-runtime sshd left running is the #142 finding with one
+/// word changed.
+#[tokio::test]
+async fn a_masked_runtime_and_running_sshd_is_diverged() {
+    let ctx = sshd_host("active\n", 0, "masked-runtime\n", 1);
+
+    let rows = sshd_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert_eq!(rows[0].divergence_subject, "sshd");
+    assert_eq!(
+        rows[0].divergence_state,
+        DivergenceState::Diverged,
+        "masked-runtime refuses starts for this boot exactly as masked does, \
+         so a unit still running under it proves the restart could not have \
+         taken: {}",
+        rows[0].divergence_detail
+    );
+    assert!(
+        rows[0].divergence_detail.contains("masked"),
+        "the reason has to name what proved the restart could not take: {}",
+        rows[0].divergence_detail
+    );
+}
+
+/// The other half of the same change, and the reason it is two tests rather
+/// than one: a masked-runtime unit that is NOT running must still report
+/// nothing. `Activity::NotRunning` short-circuits before the enablement is
+/// ever read, so this holds for the same reason `a_masked_and_stopped_sshd`
+/// does, and pinning it means widening the Masked arm cannot start reporting
+/// a divergence for a stopped unit.
+#[tokio::test]
+async fn a_masked_runtime_and_stopped_sshd_reports_nothing() {
+    let ctx = sshd_host("inactive\n", 3, "masked-runtime\n", 1);
+
+    let rows = sshd_divergences(&ctx).await;
+
+    assert!(
+        rows.is_empty(),
+        "a stopped unit is not a divergence whatever its masking: {rows:?}"
+    );
+}

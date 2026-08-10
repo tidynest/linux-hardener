@@ -90,6 +90,25 @@ async fn read_activity(ctx: &Context) -> Activity {
 /// unit and for a merely disabled one, so the exit code alone cannot tell
 /// them apart; the printed word is what carries the answer, and printing
 /// nothing is evidence of neither state.
+///
+/// Two words mean masked, `masked` and `masked-runtime`, the second holding
+/// for this boot only. That is the same proof as the first for what this
+/// probe asks, because a unit that cannot be started until the next boot
+/// cannot have been restarted during this one.
+///
+/// Every remaining word falls to `NotMasked`, which is the opposite default
+/// from `services/divergence.rs`'s reader and is deliberate. That one has to
+/// place a word on a three-valued scale, so an uninterpreted word cannot be
+/// assigned and becomes `Unverifiable`. This one asks a single yes-or-no
+/// question, and every other word `systemctl is-enabled` prints, `enabled`,
+/// `disabled`, `static`, `indirect`, `alias`, `generated`, `transient` and
+/// the `-runtime` variants of the enabled ones, genuinely answers it: not
+/// masked. The catch-all is an answer here rather than a guess.
+///
+/// The narrow risk it carries is output that is not a state word at all, and
+/// the empty-string arm above covers the shape that actually occurs, an
+/// absent or unloadable unit, which prints its diagnosis to stderr and leaves
+/// stdout empty.
 enum Enablement {
     Masked,
     NotMasked,
@@ -104,7 +123,7 @@ async fn read_enablement(ctx: &Context) -> Enablement {
         .await
     {
         Ok(output) => match output.stdout.trim() {
-            "masked" => Enablement::Masked,
+            "masked" | "masked-runtime" => Enablement::Masked,
             "" => Enablement::Unverifiable(format!(
                 "systemctl is-enabled {SSHD_UNIT} printed no output"
             )),
