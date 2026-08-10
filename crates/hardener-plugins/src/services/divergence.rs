@@ -92,6 +92,20 @@ enum Activity {
 
 /// Reads `systemctl is-active` for `service_name` and classifies the printed
 /// word, never the exit status.
+///
+/// Every word other than `active`, `inactive` and `failed` falls to
+/// `Unverifiable`, which includes the transitional `reloading`, `activating`
+/// and `deactivating`. That is deliberate, and it deliberately disagrees with
+/// [`ServiceStates::active`](super::ServiceStates::active), in this same
+/// plugin, which counts `reloading` as active.
+///
+/// The two answer different questions. That one asks whether an unnecessary
+/// service is running, where a unit mid-reload is running and dropping the
+/// finding would hide a real one. This one asks whether a rollback restored a
+/// settled state, and a unit mid-reload has not settled, so there is no
+/// answer to compare against the checkpoint. Calling it `NotActive` would
+/// claim the rollback took when nothing was read; calling it `Active` would
+/// claim it did not. `Unverifiable` is the only one of the three that is true.
 async fn read_activity(ctx: &Context, service_name: &str) -> Activity {
     match ctx
         .executor()

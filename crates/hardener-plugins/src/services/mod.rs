@@ -503,6 +503,26 @@ impl ServiceStates {
     }
 
     /// Mirrors the exit-code semantics of `systemctl is-active`.
+    ///
+    /// `reloading` counts as active here and is deliberately classified the
+    /// other way by this same plugin's rollback divergence probe. The two are
+    /// not in conflict because they are answering different questions.
+    ///
+    /// This one asks whether an unnecessary service is running right now, so
+    /// that a finding is raised for it. A unit mid-reload is running, and
+    /// staying silent about it because it happened to be reloading when the
+    /// scan looked would drop a finding for a reason that has nothing to do
+    /// with the host's configuration.
+    ///
+    /// `divergence::read_activity` asks whether a rollback restored a unit to
+    /// a settled state, and a unit mid-reload has no settled value yet, so it
+    /// reports `Unverifiable` rather than guess which side of the reload the
+    /// answer belongs to. Reporting `Unverifiable` there costs a row;
+    /// reporting it here would cost a finding.
+    ///
+    /// Named rather than linked because it is private to that child module,
+    /// which a parent cannot name. The link resolves in the other direction
+    /// and is written there.
     fn active(&self, service_name: &str) -> bool {
         self.active_units
             .get(&unit_name(service_name))
