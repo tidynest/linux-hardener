@@ -1460,3 +1460,61 @@ async fn a_directory_that_could_not_be_listed_still_blocks_a_decided_parameter()
         "an unlisted directory hides the very names a comparison would need: {row:?}"
     );
 }
+
+/// #138 exactly: the running kernel holds a value the apply set, the rollback
+/// removed the file that named it, and `sysctl --system` does not reset a
+/// parameter no surviving file names. The value stays until the next reboot.
+/// This is the designed consequence and appears on every rollback that removed
+/// a drop-in.
+#[tokio::test]
+async fn a_runtime_value_no_file_names_is_expected() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_directory("/etc/sysctl.d")
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "1\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let named = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("one diverged row");
+    assert_eq!(named.divergence_state, DivergenceState::Diverged);
+    let reason = named
+        .divergence_expected
+        .as_ref()
+        .expect("a rollback does not write /proc/sys");
+    assert!(
+        reason.contains("/proc/sys"),
+        "the reason has to name the mechanism: {reason}"
+    );
+}
+
+/// A file names the parameter and the running kernel still disagrees with it.
+/// `sysctl --system` ran over that file during the rollback and should have
+/// applied it, so this is not designed and must stay unexpected.
+#[tokio::test]
+async fn a_runtime_value_contradicting_a_naming_file_is_not_expected() {
+    let ctx = ctx_with(
+        MockExecutor::new()
+            .with_file(
+                "/etc/sysctl.d/00-baseline.conf",
+                "net.ipv4.conf.all.log_martians = 1\n",
+            )
+            .with_file("/proc/sys/net/ipv4/conf/all/log_martians", "0\n"),
+    );
+
+    let rows = sysctl_divergences(&ctx).await;
+
+    let named = rows
+        .iter()
+        .find(|r| r.divergence_subject == "net.ipv4.conf.all.log_martians")
+        .expect("one diverged row");
+    assert_eq!(named.divergence_state, DivergenceState::Diverged);
+    assert!(
+        named.divergence_expected.is_none(),
+        "a reload that should have applied the file and did not is never routine: {:?}",
+        named.divergence_expected
+    );
+}

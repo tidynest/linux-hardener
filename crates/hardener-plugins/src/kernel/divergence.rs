@@ -448,7 +448,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                     effective.unreadable_last_name.as_deref(),
                     effective.sources.get(&key).map(String::as_str),
                 );
-                let (state, detail) = if effective.blocks_all
+                let (state, detail, expected) = if effective.blocks_all
                     || unread_could_name
                     || legacy.unreadable.is_some()
                 {
@@ -458,6 +458,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                             "{name} reads {runtime} in the running kernel and no drop-in \
                              assignment names it{unresolved_clause}{legacy_clause}"
                         ),
+                        None,
                     )
                 } else if matched_pattern.is_some() {
                     (
@@ -468,6 +469,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                              configuration could name it, so whether it does is \
                              unknown{legacy_clause}"
                         ),
+                        None,
                     )
                 } else if let Some(configured) = named_by_legacy
                     && configured != &runtime
@@ -486,6 +488,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                              so the reload did not take and this host is not running what its \
                              own files describe"
                         ),
+                        None,
                     )
                 } else if let Some(configured) = named_by_legacy {
                     match reach {
@@ -508,6 +511,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                                  applier that runs at boot does not, so this value is lost at \
                                  the next reboot unless the kernel default matches it"
                             ),
+                            None,
                         ),
                         persistence::Reach::Unknown => (
                             DivergenceState::Unverifiable,
@@ -517,6 +521,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                                  applier runs at boot on this host was not established, so \
                                  whether the value survives a reboot is unknown"
                             ),
+                            None,
                         ),
                     }
                 } else {
@@ -529,9 +534,15 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                              configuration and will not survive a reboot unless the kernel \
                              default matches it"
                         ),
+                        Some(
+                            "a rollback restores files and reloads them and never writes \
+                             /proc/sys, so a parameter no surviving file names keeps whatever \
+                             the apply gave it until the next reboot"
+                                .to_string(),
+                        ),
                     )
                 };
-                rows.push(row(name, state, detail, None));
+                rows.push(row(name, state, detail, expected));
             }
             None => {}
         }
