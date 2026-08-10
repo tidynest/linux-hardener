@@ -135,3 +135,50 @@ async fn an_unrunnable_probe_carries_its_own_cause_into_the_detail() {
         rows[0].divergence_detail
     );
 }
+
+/// `auditctl -l` running and exiting non-zero for a reason that is neither a
+/// recognised permission refusal (no "Permission denied", "must be root" and
+/// so on in stderr) nor an unspawnable binary. Scan and apply fold this back
+/// to `Rules(Vec::new())`; this probe must not, because "auditctl read 0
+/// loaded audit rule(s) from the kernel" is a positive claim about the
+/// kernel that a failed, unrecognised command never earned.
+#[tokio::test]
+async fn an_unrecognised_failure_does_not_claim_zero_loaded_rules() {
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new().with_command(
+        "auditctl",
+        &["-l"],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: "auditctl: Error - netlink socket bind failed".to_string(),
+            exit_code: 1,
+        },
+    )));
+
+    let rows = audit_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row, not silence");
+    assert_eq!(rows[0].divergence_subject, "audit-rules");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+    assert!(
+        !rows[0].divergence_detail.contains("0 loaded audit rule"),
+        "a failed, unrecognised command must never be read as a clean 0-rule kernel: {}",
+        rows[0].divergence_detail
+    );
+    assert!(
+        !rows[0].divergence_detail.contains("privilege"),
+        "an unrecognised failure is not the same failure as a privilege refusal: {}",
+        rows[0].divergence_detail
+    );
+    assert!(
+        rows[0]
+            .divergence_detail
+            .contains("netlink socket bind failed"),
+        "the probe's own cause must survive into the sentence, not be dropped: {}",
+        rows[0].divergence_detail
+    );
+    assert!(
+        rows[0].divergence_detail.contains("#18"),
+        "the sentence points at the issue that can answer it: {}",
+        rows[0].divergence_detail
+    );
+}

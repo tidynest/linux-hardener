@@ -335,6 +335,14 @@ enum AuditRulesResult {
     /// `auditctl` could not be run at all, carrying the reason. The common case
     /// is that the audit package is not installed, which no privilege fixes.
     ProbeFailed(String),
+    /// `auditctl -l` ran and exited non-zero for a reason that is neither a
+    /// recognised permission refusal nor an unspawnable binary, carrying
+    /// that reason. Scan and apply treat this exactly as `Rules(Vec::new())`,
+    /// which is what it collapsed into before this variant existed; kept
+    /// apart so a caller that can say more, like the divergence probe, is
+    /// not forced to repeat "0 loaded audit rule(s)" as if the kernel had
+    /// been asked and answered cleanly.
+    UnrecognisedFailure(String),
 }
 
 /// Reads current audit rules from the system using auditctl.
@@ -358,8 +366,16 @@ async fn read_current_audit_rules(ctx: &Context) -> AuditRulesResult {
         if hardener_common::error::message_indicates_permission_denied(&output.stderr) {
             return AuditRulesResult::PermissionDenied;
         }
-        // Other failure - treat as empty rules (conservative).
-        return AuditRulesResult::Rules(Vec::new());
+        // Neither a recognised refusal nor an unspawnable binary: `auditctl`
+        // ran and answered something this project does not recognise.
+        // Callers that only decide whether to enable a rule, not report on
+        // one, fold this back to Rules(Vec::new()) themselves; this
+        // producer no longer makes that call for them.
+        return AuditRulesResult::UnrecognisedFailure(format!(
+            "auditctl -l exited {} with stderr {:?}",
+            output.exit_code,
+            output.stderr.trim()
+        ));
     }
 
     let rules = output
@@ -972,7 +988,19 @@ impl HardeningPlugin for AuditHardeningPlugin {
 
         // Check current audit rules.
         // Handle permission denied separately to avoid false positives.
-        match read_current_audit_rules(ctx).await {
+        //
+        // UnrecognisedFailure is folded back into Rules(Vec::new()) here,
+        // which is what it collapsed into before that variant existed: this
+        // scan decides whether to add a missing rule, and an operator losing
+        // every audit-rule finding to a transient auditctl hiccup is not a
+        // decision this function makes any differently than it did before.
+        // The divergence probe (audit/divergence.rs) is the caller that
+        // wants the distinction, and reads the un-normalised result itself.
+        let rules_result = match read_current_audit_rules(ctx).await {
+            AuditRulesResult::UnrecognisedFailure(_) => AuditRulesResult::Rules(Vec::new()),
+            other => other,
+        };
+        match rules_result {
             AuditRulesResult::Rules(current_rules) => {
                 // Successfully read rules - check each required rule.
                 for rule in AUDIT_RULES {
@@ -1061,6 +1089,11 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     });
                 }
             }
+            // Normalised away above: this arm exists only so the match stays
+            // exhaustive against the type, not because it can run.
+            AuditRulesResult::UnrecognisedFailure(_) => unreachable!(
+                "UnrecognisedFailure is folded into Rules(Vec::new()) before this match"
+            ),
         }
         Ok(ScanResult {
             scan_duration_us: start.elapsed().as_micros() as u64,
