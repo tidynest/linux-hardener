@@ -118,7 +118,23 @@ VERSION_LINE = re.compile(r"^\s*\*\*Version:?\*\*:?\s*\d+\.\d+\.\d+", re.MULTILI
 # Directories whose contents are not maintained against the current release.
 # An archived audit or a shipped dependency is supposed to name the version it
 # was written for, and rewriting it would be the wrong kind of correct.
-UNMAINTAINED = ("archive", "node_modules", "target", ".git", "superpowers")
+#
+# `.claude` is there for a different reason, and it is the one that bites: this
+# walk is over the filesystem rather than over what git tracks, and a git
+# worktree created under `.claude/worktrees/` is another checkout of this same
+# repository. Every documentation file then appears twice, and the second copy
+# is judged an undeclared target because its path is not the declared one. That
+# is a fact about where the worktree sits and not about the documentation, and
+# it failed this validator on `main` while the identical tree passed inside the
+# worktree. Gitignored either way, so nothing under it is a release's to update.
+UNMAINTAINED = (
+    "archive",
+    "node_modules",
+    "target",
+    ".git",
+    ".claude",
+    "superpowers",
+)
 
 
 def check_undeclared_version_lines(root: Path) -> list[str]:
