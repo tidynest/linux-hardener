@@ -694,6 +694,8 @@
               divergence_state: 'Diverged',
               divergence_detail:
                 'The running kernel holds 1 for this parameter and no surviving configuration file names it, so the rollback restored files and reloaded them without changing /proc/sys. The value stays as it is until the next reboot, at which point nothing will set it and the kernel default takes over.',
+              divergence_expected:
+                'a rollback restores files and reloads them and never writes /proc/sys, so a parameter no surviving file names keeps whatever the apply gave it until the next reboot',
             },
             {
               divergence_plugin_id: 'kernel-hardening',
@@ -701,6 +703,7 @@
               divergence_state: 'Unverifiable',
               divergence_detail:
                 'This configuration source could not be read, so the parameters it may name cannot be decided either way. Nothing here is a claim that the host disagrees with what was restored; it is a probe that could not answer, and the file is named so an operator can read it themselves.',
+              divergence_expected: null,
             },
           ],
         };

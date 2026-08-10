@@ -2036,6 +2036,20 @@ tbody tr:hover {
   color: var(--text-secondary);
 }
 
+/* Expected rows (#152): muted so the eye lands on the unexpected ones first,
+ * but never hidden. Opacity and colour only: no `display: none`, no
+ * `max-height` that could clip a sentence, which is the defect #143 fixed in
+ * this same list. */
+.rollback-divergence-expected .divergence-detail {
+  opacity: 0.72;
+}
+
+.divergence-reason {
+  display: block;
+  font-size: 0.85em;
+  opacity: 0.6;
+}
+
 .restore-action { color: var(--text-secondary); font-size: var(--font-size-caption); }
 .restore-error { color: var(--color-critical); font-size: var(--font-size-caption); }
 .restore-warn .restore-error { color: var(--color-warning); }
