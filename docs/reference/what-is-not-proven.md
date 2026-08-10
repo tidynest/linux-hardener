@@ -216,6 +216,17 @@ same file's patterns block those two parameters and leave the other seventeen
 attributable, where an earlier draft let one glob anywhere make every parameter
 on every systemd host unverifiable.
 
+**Those 12 rows are exactly the case #152 later marked `divergence_expected`.**
+A rollback restores files and reloads them; it never writes `/proc/sys`, so a
+parameter no surviving file names keeps whatever the apply gave it until the
+next reboot, which is stronger than the restored configuration asks for rather
+than weaker. The reverse case, a running value contradicting a file that DOES
+name it, stays unmarked: the reload did not take, and that is not a design
+outcome. The same split applies to the ufw case above: enforcing over a
+restored `ENABLED=no` is marked, because a rollback never stops a running
+firewall; a restored `ENABLED=yes` left not enforcing is not, because nothing
+in the design explains that either.
+
 That container must be a fresh one, and the runner rebuilds it for exactly that
 reason. Run by hand against a container an earlier run has finished with, the
 suite reports three failures that are all one artefact: the pre-apply state it
@@ -235,6 +246,26 @@ checkable came back": six plugins were inheriting that claim without a probe
 ever having looked, and the default is now deleted so a ninth plugin cannot
 inherit the same silence.
 
+**A row can now also say whether it was expected (#152), and expected does not
+mean lesser.** `RollbackDivergence.divergence_expected: Option<String>` carries
+`Some(reason)` when the row is the designed consequence of a plugin's own
+apply plus a rollback that never starts, stops or writes anything live, and
+`None` otherwise. The field has no default, so every construction site,
+including a ninth plugin's, has to answer rather than inherit a claim nobody
+made. The test is direction, not frequency: expected means the rollback left
+the host STRONGER than the configuration it just restored asks for; unexpected
+means WEAKER, or means the rollback did not reach what it should have. Two
+kernel rows fire on every rollback of a host with a legacy
+`/etc/sysctl.conf` and stay unmarked anyway, because they leave the host
+weaker at the next reboot, and marking them expected would teach an operator
+to skip a row saying their host silently loses a hardening setting. An
+expected row can still be `Diverged`; the field says the row was predictable,
+not that it is unimportant, and none of the three reporting surfaces hides or
+drops it. The CLI and the desktop rollback modal print the rows nothing in the
+design produces first, then the rest under an "Expected, by design:" heading
+carrying the reason; the fleet `batch rollback` summary changes only the
+order, keeping its existing counts.
+
 **`audit-hardening` reports a single `Unverifiable` row naming #18, and that is
 a statement about this project's containers, not about the plugin.**
 `auditctl` cannot run in any container this project builds at all, measured
@@ -250,8 +281,10 @@ A container that could be handed a detected-but-unreadable MAC system would
 still get `mac-hardening`'s `Unverifiable` row naming #18; none of this
 project's containers can produce that state either, measured the same way as
 `audit-hardening`. Neither row, where either appears, is ever `Diverged`,
-because nothing here has been compared against anything. **Read neither the
-`Unverifiable` row nor the silence as "this plugin cannot diverge after a
+because nothing here has been compared against anything. Both plugins mark
+their #18 row `divergence_expected`: it is a stated ceiling rather than a
+probe that failed, and #18 is what turns it into a measurement. **Read neither
+the `Unverifiable` row nor the silence as "this plugin cannot diverge after a
 rollback."** That claim was never earned; the only claim earned is that no
 container this machine can build lets it be asked, and #18, a real virtual
 machine, is what changes that.
@@ -266,7 +299,13 @@ judged safe to force, was measured 2026-08-10 to go `failed` rather than
 branch is written but has never been exercised against a real one. That is a
 narrower gap than mac or audit's, and a real one rather than a formality: the
 probe could be silently wrong about a case nothing has ever put in front of
-it.
+it. Only one of its two `Diverged` arms is marked expected: enabled-but-stopped
+is, because `reload_after_rollback` runs `daemon-reload` only and never starts
+anything, so a unit `apply` had stopped stays stopped and that is the design
+working. Not-enabled-but-running is the reverse case, the host running a unit
+its own restored files say should be disabled, and it is not marked: nothing
+here explains why the unit would still be running, so it stays in the
+unexpected group that sorts first.
 
 **`permissions-hardening` and `pam-hardening` earned their empty vectors
 rather than inheriting them, on the strength of a forcing exercise repeated
@@ -287,7 +326,10 @@ divergence row, so the two paths could disagree with each other with nothing
 to say so. Measured 2026-08-10 in a booted arch container: masking
 `sshd.service` before a rollback left it reporting `active` both before the
 mask and after the rollback's restart attempt, which the probe now reports as
-`Diverged`, and a second run confirmed it fires.
+`Diverged`, and a second run confirmed it fires. **This probe has no expected
+rows at all**, pinned by a test rather than left as an absence: every row it
+can emit is a reload that did not take, which is never the designed outcome of
+a rollback, so every row it prints is worth an operator's attention.
 
 **`scripts/test/verify-rollback.sh` now runs as two passes, and only TEST 10
 and TEST 11 are work the booted one adds.** The default invocation (unbooted,

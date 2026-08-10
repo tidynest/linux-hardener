@@ -881,6 +881,17 @@ took the reading, and the sentence. `diverged` is a measurement and
 because they ask for different things next. The result line keeps the counts,
 so the short form is still there for anyone reading twenty hosts at once.
 
+Each row also carries whether it is the designed consequence of the plugin's
+own apply (`divergence_expected`, #152): a row a rollback is expected to leave
+behind, such as a service `apply` stopped staying stopped until it is started
+by hand, versus one nothing in the design explains. Fleet rows nothing in the
+design produces print first within each host's block, routine ones after;
+unlike the single-host CLI and the desktop rollback modal, this surface adds
+no "Expected, by design:" heading and no new counts, only the reorder, so a
+script already parsing `--format json`'s `divergences` array is unaffected.
+Expected is not a lesser severity: a row can be marked and still be `diverged`,
+and nothing here is hidden or dropped either way.
+
 None of this touches the exit code. A divergence is something to look at, not
 something that went wrong, and the tiered codes above read only the failures.
 Hosts with nothing to report print no such lines. `--format json` carries the
@@ -1121,4 +1132,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path. JSON is the only document this command produces, so a path ending in one of the report formats this tool renders elsewhere (`.csv`, `.htm`, `.html`, `.pdf`, `.txt`) is refused rather than filled with JSON. Any other path is written as given, including one with no extension and one whose name merely contains dots, such as `backups.2026.08.03` | `session-<first 8 chars of id>.json` |
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-10

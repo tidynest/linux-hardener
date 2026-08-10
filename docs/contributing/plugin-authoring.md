@@ -150,6 +150,25 @@ Per-method contract:
     gated this on `reloads_for_path()` until #142, which meant the two
     plugins that override that predicate for no path could never be asked at
     all.
+  - **Every row also says whether it was expected** (`divergence_expected:
+    Option<String>`, #152). `Some(reason)` means the row is the designed
+    consequence of this plugin's own `apply()` plus a `reload_after_rollback()`
+    that never starts, stops or writes anything live; `None` is the loud
+    default, and an unmarked row sorts to the top of every surface that renders
+    this list. The field carries no `Default`, so a new plugin's own
+    construction site must supply one or the other explicitly rather than
+    inherit an answer nobody gave. The test is direction, not frequency:
+    expected means the rollback left the host stronger than the configuration
+    it just restored asks for; unexpected means weaker, or means the rollback
+    did not reach what it should have. A row that fires on every rollback of a
+    particular host is not thereby expected, and one that fires rarely is not
+    thereby unexpected. **Expected is not a lesser severity.** An expected row
+    can still be `Diverged`; the field says the row was predictable, not that
+    it is unimportant, and no renderer hides or drops it because of this
+    field. The CLI and the desktop rollback modal print the rows nothing in
+    the design produces first, then the rest under an "Expected, by design:"
+    heading carrying the reason; the fleet `batch rollback` summary changes
+    only the order.
 
 ## Always go through the executor
 

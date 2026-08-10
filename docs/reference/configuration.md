@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-08-06
+**Last Updated**: 2026-08-10
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -191,7 +191,13 @@ so an operator running `sysctl --system` by hand, or this tool's own rollback
 reload, lets that file override `99-hardener.conf`. Nothing applies it at boot on
 a systemd host, so a value that lives only there is lost at the next reboot; the
 rollback divergence report says exactly that rather than claiming no file names
-the parameter.
+the parameter. That row is never marked `divergence_expected`, even though it
+fires on every rollback of a host carrying such a file: the criterion is
+whether the rollback leaves the host stronger or weaker than the configuration
+it just restored, not how often the row appears, and this one leaves the host
+weaker once the next reboot runs `systemd-sysctl`. Marking it expected would
+teach an operator to skip the one row telling them their host is about to
+silently lose a hardening setting.
 
 > **Ceiling: `scan` does not report `/etc/sysctl.conf`.** The override above is
 > reported only by the rollback divergence probe. The scan asks one question,

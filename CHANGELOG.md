@@ -843,6 +843,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Rollback divergence rows now say whether they are the designed consequence of
+  a plugin's own apply. The CLI, desktop and fleet surfaces print the rows
+  nothing in the design produces first, and routine ones under an "Expected, by
+  design:" heading with the reason they are routine. No row is hidden, no row is
+  dropped and no flag was added. Every plugin's arms were classified by
+  measurement rather than by assumption, and `ssh-hardening` has no routine rows
+  at all (#152).
+
 - **An unreadable drop-in no longer downgrades every parameter's verdict, only
   the ones its name could reach.** `effective.blocks_all` was a whole-host flag,
   so a single `0600` drop-in reported every disagreeing parameter as
