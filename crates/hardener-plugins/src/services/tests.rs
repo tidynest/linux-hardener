@@ -226,3 +226,34 @@ fn every_path_services_checkpoints_is_one_it_reloads_for() {
         "services checkpoints {ADMIN_UNIT_DIR} but would not reload for it"
     );
 }
+
+/// The guard at the top of `divergences_after_rollback` is deletable in
+/// silence unless something exercises it directly: with the guard removed by
+/// hand, `cargo test -p hardener-plugins` still passed, because the generic
+/// self-scoping probe in `reload_tests.rs` exercises only a stub, never this
+/// plugin's own predicate. Both halves are asserted, because the empty-result
+/// half alone would also pass against a probe that can never report anything.
+/// No `systemctl` command is registered on the mock, so `is_service_exists`
+/// fails outright for the first managed unit, which is the cheapest reliable
+/// way to make the owned-path half produce a row.
+#[tokio::test]
+async fn services_divergences_after_rollback_is_scoped_to_restored_unit_paths() {
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+    let plugin = ServicesHardeningPlugin::new();
+
+    let unrelated = plugin
+        .divergences_after_rollback(&ctx, &[PathBuf::from("/etc/ssh/sshd_config")])
+        .await;
+    assert!(
+        unrelated.is_empty(),
+        "no restored path was under {ADMIN_UNIT_DIR}, so the probe must not have run"
+    );
+
+    let owned = plugin
+        .divergences_after_rollback(&ctx, &[PathBuf::from(ADMIN_UNIT_DIR)])
+        .await;
+    assert!(
+        !owned.is_empty(),
+        "a restored path under {ADMIN_UNIT_DIR} must let the probe run"
+    );
+}

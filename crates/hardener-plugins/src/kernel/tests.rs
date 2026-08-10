@@ -14,6 +14,8 @@
 //! import carried across unchanged, private items included.
 
 use super::*;
+use hardener_core::MockExecutor;
+use std::sync::Arc;
 
 /// Confirms a representative kernel check now carries multi-framework
 /// mappings: CIS (existing) plus STIG and NIST sourced from SSG.
@@ -226,4 +228,36 @@ fn every_path_kernel_checkpoints_is_one_it_reloads_for() {
             "kernel checkpoints {path} but would not reload for it"
         );
     }
+}
+
+/// The guard at the top of `divergences_after_rollback` is deletable in
+/// silence unless something exercises it directly: with the guard removed by
+/// hand, `cargo test -p hardener-plugins` still passed, because the generic
+/// self-scoping probe in `reload_tests.rs` exercises only a stub, never this
+/// plugin's own predicate. Both halves are asserted, because the empty-result
+/// half alone would also pass against a probe that can never report anything.
+/// No file or command is registered on the mock, so `read_sysctl` fails for
+/// every managed parameter, which is the cheapest reliable way to make the
+/// owned-path half produce a row.
+#[tokio::test]
+async fn kernel_divergences_after_rollback_is_scoped_to_restored_sysctl_paths() {
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+    let plugin = KernelHardeningPlugin::new();
+
+    let unrelated = plugin
+        .divergences_after_rollback(&ctx, &[std::path::PathBuf::from("/etc/ssh/sshd_config")])
+        .await;
+    assert!(
+        unrelated.is_empty(),
+        "no restored path was under /etc/sysctl.conf or /etc/sysctl.d, so the probe must not \
+         have run"
+    );
+
+    let owned = plugin
+        .divergences_after_rollback(&ctx, &[std::path::PathBuf::from(SYSCTL_HARDENER_CONF)])
+        .await;
+    assert!(
+        !owned.is_empty(),
+        "a restored path under /etc/sysctl.d must let the probe run"
+    );
 }

@@ -14,6 +14,39 @@
 //! unchanged, private items included.
 
 use super::*;
+use hardener_core::MockExecutor;
+use std::sync::Arc;
+
+/// The guard at the top of `divergences_after_rollback` is deletable in
+/// silence unless something exercises it directly: with the guard removed by
+/// hand, `cargo test -p hardener-plugins` still passed, because the generic
+/// self-scoping probe in `reload_tests.rs` exercises only a stub, never this
+/// plugin's own predicate. Both halves are asserted, because the empty-result
+/// half alone would also pass against a probe that can never report anything.
+/// No `systemctl` command is registered on the mock, so `is-active sshd`
+/// fails outright, which is the cheapest reliable way to make the owned-path
+/// half produce a row.
+#[tokio::test]
+async fn ssh_divergences_after_rollback_is_scoped_to_restored_ssh_paths() {
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+    let plugin = SshHardeningPlugin::new();
+
+    let unrelated = plugin
+        .divergences_after_rollback(&ctx, &[std::path::PathBuf::from("/etc/audit/audit.rules")])
+        .await;
+    assert!(
+        unrelated.is_empty(),
+        "no restored path was under /etc/ssh, so the probe must not have run"
+    );
+
+    let owned = plugin
+        .divergences_after_rollback(&ctx, &[std::path::PathBuf::from(SSHD_ADMIN_CONFIG_PATH)])
+        .await;
+    assert!(
+        !owned.is_empty(),
+        "a restored path under /etc/ssh must let the probe run"
+    );
+}
 
 /// Ties the predicate to the constants `apply` actually checkpoints, so the
 /// two cannot drift apart unnoticed. Asserted against the constants

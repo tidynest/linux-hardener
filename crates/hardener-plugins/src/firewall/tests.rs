@@ -1486,6 +1486,56 @@ fn firewall_reloads_for_its_own_paths_and_no_others() {
     assert!(!plugin.reloads_for_path(Path::new("/etc/sysctl.conf")));
 }
 
+/// The guard at the top of `divergences_after_rollback` is deletable in
+/// silence unless something exercises it directly: with the guard removed by
+/// hand, `cargo test -p hardener-plugins` still passed, because the generic
+/// self-scoping probe in `reload_tests.rs` exercises only a stub, never this
+/// plugin's own predicate. Both halves are asserted, because the empty-result
+/// half alone would also pass against a probe that can never report anything.
+///
+/// The owned-path half needs ufw detected as the installed backend (unlike
+/// kernel/ssh/services, an executor with nothing registered detects no
+/// backend at all and the probe returns early for an unrelated reason), so
+/// this reuses `firewall/divergence/tests.rs`'s
+/// `an_unreadable_config_is_unverifiable` shape: `ufw.conf` unreadable is the
+/// cheapest reliable way to make the probe emit a row.
+#[tokio::test]
+async fn firewall_divergences_after_rollback_is_scoped_to_restored_firewall_paths() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new()
+            .with_command_exists("ufw", true)
+            .with_command_exists("firewall-cmd", false)
+            .with_command_exists("nft", false)
+            .with_command(
+                "ufw",
+                &["status"],
+                CommandOutput {
+                    stdout: "Status: active\n".to_string(),
+                    stderr: String::new(),
+                    exit_code: 0,
+                },
+            )
+            .with_read_permission_denied(UFW_CONF),
+    ));
+    let plugin = FirewallHardeningPlugin::new();
+
+    let unrelated = plugin
+        .divergences_after_rollback(&ctx, &[std::path::PathBuf::from("/etc/ssh/sshd_config")])
+        .await;
+    assert!(
+        unrelated.is_empty(),
+        "no restored path was one of firewall's own, so the probe must not have run"
+    );
+
+    let owned = plugin
+        .divergences_after_rollback(&ctx, &[std::path::PathBuf::from(UFW_CONF)])
+        .await;
+    assert!(
+        !owned.is_empty(),
+        "a restored path under /etc/ufw must let the probe run"
+    );
+}
+
 /// Ties the predicate to the literals `apply` actually checkpoints, so the
 /// two cannot drift apart unnoticed.
 #[test]
