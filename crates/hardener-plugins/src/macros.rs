@@ -69,6 +69,16 @@ macro_rules! define_plugin {
             ) -> $crate::hardener_common::error::Result<$crate::hardener_core::plugin::ValidationReport> {
                 todo!("Implement validate() for {}", stringify!($plugin_name))
             }
+
+            async fn divergences_after_rollback(
+                &self,
+                _ctx: &$crate::hardener_core::Context,
+                _restored: &[std::path::PathBuf],
+            ) -> Vec<$crate::hardener_core::plugin::RollbackDivergence> {
+                // Macro-generated test scaffolding (see hardener-plugins/src/tests.rs);
+                // models nothing about a real subsystem.
+                Vec::new()
+            }
         }
     };
 }

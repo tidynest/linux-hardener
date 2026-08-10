@@ -66,6 +66,15 @@ impl HardeningPlugin for AlphaPlugin {
     async fn reload_after_rollback(&self, _ctx: &Context) -> Result<Option<String>> {
         Ok(Some("alpha reloaded".to_string()))
     }
+
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[PathBuf],
+    ) -> Vec<RollbackDivergence> {
+        // Test stub: models nothing about a real subsystem.
+        Vec::new()
+    }
 }
 
 /// Claims `/etc/beta`. Present so the dispatch has a second plugin to prove
@@ -103,6 +112,15 @@ impl HardeningPlugin for BetaPlugin {
     async fn reload_after_rollback(&self, _ctx: &Context) -> Result<Option<String>> {
         unimplemented!("beta owns nothing restored in these tests, so this must never run")
     }
+
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[PathBuf],
+    ) -> Vec<RollbackDivergence> {
+        // Test stub: models nothing about a real subsystem.
+        Vec::new()
+    }
 }
 
 /// Claims `/etc/failing` and always refuses to reload.
@@ -138,6 +156,15 @@ impl HardeningPlugin for FailingPlugin {
     async fn reload_after_rollback(&self, _ctx: &Context) -> Result<Option<String>> {
         Err(HardeningError::Plugin("reload refused".to_string()))
     }
+
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[PathBuf],
+    ) -> Vec<RollbackDivergence> {
+        // Test stub: models nothing about a real subsystem.
+        Vec::new()
+    }
 }
 
 /// Claims `/etc/silent` and reports there was nothing to do.
@@ -172,6 +199,15 @@ impl HardeningPlugin for SilentPlugin {
 
     async fn reload_after_rollback(&self, _ctx: &Context) -> Result<Option<String>> {
         Ok(None)
+    }
+
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[PathBuf],
+    ) -> Vec<RollbackDivergence> {
+        // Test stub: models nothing about a real subsystem.
+        Vec::new()
     }
 }
 

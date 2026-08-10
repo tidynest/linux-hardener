@@ -115,13 +115,18 @@ pub trait HardeningPlugin: Send + Sync {
     /// here. It returns a `Vec` rather than a `Result` on purpose: a probe
     /// that cannot answer says so with an `Unverifiable` row, and a fallible
     /// signature would give it a second way to say nothing.
+    ///
+    /// **No default.** A trait default returning an empty vector is
+    /// indistinguishable at every renderer from a plugin that looked and
+    /// found everything in order, and that is the meaning `DivergenceState`
+    /// gives an empty vector. Six plugins took such a default until #142. A
+    /// plugin whose subsystem genuinely cannot diverge writes `Vec::new()`
+    /// with a doc comment recording the measurement that established it.
     async fn divergences_after_rollback(
         &self,
-        _ctx: &Context,
-        _restored: &[PathBuf],
-    ) -> Vec<RollbackDivergence> {
-        Vec::new()
-    }
+        ctx: &Context,
+        restored: &[PathBuf],
+    ) -> Vec<RollbackDivergence>;
 
     /// Validates configuration without applying changes (dry-run).
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;

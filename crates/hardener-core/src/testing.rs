@@ -178,4 +178,13 @@ impl HardeningPlugin for MockPlugin {
             validation_report_exceptions: vec![],
         })
     }
+
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[std::path::PathBuf],
+    ) -> Vec<hardener_types::RollbackDivergence> {
+        // Test stub: models nothing about a real subsystem.
+        Vec::new()
+    }
 }

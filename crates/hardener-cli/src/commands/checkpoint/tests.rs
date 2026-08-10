@@ -106,6 +106,15 @@ mod fleet_partial_restore {
         ) -> hardener_common::error::Result<Option<String>> {
             Ok(Some("stub reloaded".to_string()))
         }
+
+        async fn divergences_after_rollback(
+            &self,
+            _ctx: &Context,
+            _restored: &[std::path::PathBuf],
+        ) -> Vec<RollbackDivergence> {
+            // Test stub: models nothing about a real subsystem.
+            Vec::new()
+        }
     }
 
     fn restored(path: &str) -> FileRestoreResult {
@@ -243,6 +252,15 @@ mod nothing_restored_never_lists_the_registry {
             _config: &PluginConfig,
         ) -> hardener_common::error::Result<ValidationReport> {
             unimplemented!("not exercised by this test")
+        }
+
+        async fn divergences_after_rollback(
+            &self,
+            _ctx: &Context,
+            _restored: &[std::path::PathBuf],
+        ) -> Vec<RollbackDivergence> {
+            // Test stub: models nothing about a real subsystem.
+            Vec::new()
         }
     }
 
