@@ -1423,7 +1423,15 @@ else
         fail "No checkpoint created during the pam divergence measurement"
     else
         PAM_ROWS=$(divergence_rows_for "$PAM_CP" /tmp/diverge-pam.json)
-        info "  faillock.conf still names the probe after rollback: $(grep -c 'hardener divergence probe' /etc/security/faillock.conf 2>/dev/null || echo 0)"
+        # `grep -c` prints its count AND exits non-zero when the count is
+        # zero, so an `|| echo 0` fallback fires alongside the count it was
+        # meant to replace and both land in the substitution: the transcript
+        # read "0" followed by a bare "0" on its own line, on both runs. The
+        # count is captured on its own, and the fallback covers only the case
+        # where grep produced nothing at all, which is an unreadable file
+        # rather than an absent match.
+        PAM_PROBE_COUNT=$(grep -c 'hardener divergence probe' /etc/security/faillock.conf 2>/dev/null || true)
+        info "  faillock.conf still names the probe after rollback: ${PAM_PROBE_COUNT:-unreadable}"
         report_measurement "pam-hardening" "$PAM_FORCED" "$PAM_ROWS"
         rm -f /tmp/diverge-pam.json
     fi
