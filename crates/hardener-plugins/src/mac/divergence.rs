@@ -82,7 +82,12 @@ pub(super) async fn mac_divergences(
         subject,
         DivergenceState::Unverifiable,
         format!("{reason}. See #18."),
-        None,
+        Some(
+            "a stated ceiling rather than a probe that failed: loading an LSM policy is \
+             host-global, so no container this project can build can be given MAC \
+             enforcement to disagree about. #18 turns this into a measurement"
+                .to_string(),
+        ),
     )]
 }
 

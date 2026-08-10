@@ -108,3 +108,28 @@ async fn an_indeterminate_probe_carries_its_own_reason_into_the_detail() {
         rows[0].divergence_detail
     );
 }
+
+/// The ceiling row, not a failure. It appears on every rollback on every host
+/// this project can build, because loading an LSM policy is host-global and no
+/// container can be given MAC enforcement. Expected and Unverifiable at once:
+/// the row still prints "could not check", it just stops crowding a genuine
+/// finding.
+#[tokio::test]
+async fn the_ceiling_row_is_expected_and_names_the_issue() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_path_exists("/sys/fs/selinux", true),
+    ));
+
+    let rows = mac_divergences(&MacHardeningPlugin::new(), &ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+    let reason = rows[0]
+        .divergence_expected
+        .as_ref()
+        .expect("a stated ceiling, not a probe that failed");
+    assert!(
+        reason.contains("#18"),
+        "the demotion is only safe while it names the issue that ends it: {reason}"
+    );
+}

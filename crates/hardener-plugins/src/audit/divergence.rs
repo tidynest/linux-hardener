@@ -91,7 +91,12 @@ pub(super) async fn audit_divergences(ctx: &Context) -> Vec<RollbackDivergence> 
     vec![row(
         DivergenceState::Unverifiable,
         format!("{reason}. See #18."),
-        None,
+        Some(
+            "a stated ceiling rather than a probe that failed: auditctl cannot run in any \
+             container this project builds, measured booted and unbooted. #18 turns this \
+             into a measurement"
+                .to_string(),
+        ),
     )]
 }
 
