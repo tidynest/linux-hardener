@@ -20,7 +20,20 @@
 # The second bind is harmless when the target directory is already inside the
 # tree: it then mounts the same directory onto itself. scripts/test/
 # release-readiness-root.sh adds it only when it differs, and is the only
-# runner that calls this script.
+# runner that calls this script -- twice, an unbooted pass and a booted one
+# (see Environment below).
+#
+# Environment:
+#   VERIFY_ROLLBACK_DIVERGENCE_ONLY   Unset/empty (default): run TESTs 1-14,
+#                                      exactly as before this existed. Any
+#                                      non-empty value: run only the
+#                                      divergence-measurement arms, TEST 10
+#                                      onward, skipping TESTs 1-9. Used by
+#                                      release-readiness-root.sh's second,
+#                                      booted invocation so it does not repeat
+#                                      the TESTs 1-9 the unbooted pass already
+#                                      covered; TEST 10-12 need systemd as
+#                                      PID 1, which only that booted pass has.
 #
 # Tests:
 #   1. Kernel plugin:  persistent config file written by the apply, then
@@ -73,6 +86,24 @@ if [[ -z "${BINARY:-}" ]]; then
     BINARY="$TARGET_DIR/x86_64-unknown-linux-musl/release/hardener"
     [[ -x "$BINARY" ]] || BINARY="$TARGET_DIR/release/hardener"
 fi
+
+# TESTs 1-9 run whenever this variable is unset or empty, which is every
+# invocation before this existed: that is the default this had to preserve
+# exactly. Set to any non-empty value, only the divergence-measurement arms
+# (TEST 10 onward) run. release-readiness-root.sh sets it for the second,
+# booted pass it adds specifically to give TESTs 10-12 the systemd PID 1 they
+# need and TESTs 1-9 do not, so that pass does not pay to repeat them.
+#
+# TESTs 10-14 do not depend on state TESTs 1-9 leave behind: each applies its
+# own plugin, checkpoints and rolls back independently, using variable names
+# (SSH_*, SERVICES_*, AUDIT_*, PERMS_*, PAM_*) namespaced away from TEST 1-9's
+# KERNEL_*/PAM_PROBE_* variables, and the helper functions they call
+# (divergence_rows_for, report_measurement, host_is_booted) are defined in
+# this file below TEST 9 regardless of which branch runs above them. The
+# preflight cleanup above (rm -rf /var/lib/linux-hardener) runs unconditionally
+# before this point either way, so TEST 10 always starts against a clean
+# checkpoint database whether or not TESTs 1-9 ran first.
+DIVERGENCE_ONLY="${VERIFY_ROLLBACK_DIVERGENCE_ONLY:-}"
 
 TESTS_TOTAL=0
 TESTS_PASSED=0
@@ -188,6 +219,13 @@ info "Binary: $BINARY"
 # Clean slate: remove any leftover checkpoints/database
 rm -rf /var/lib/linux-hardener
 info "Cleaned /var/lib/linux-hardener"
+
+if [[ -n "$DIVERGENCE_ONLY" ]]; then
+    header "TESTS 1-9 SKIPPED (VERIFY_ROLLBACK_DIVERGENCE_ONLY is set)"
+    info "Running only the divergence-measurement arms (TEST 10 onward)."
+fi
+
+if [[ -z "$DIVERGENCE_ONLY" ]]; then
 
 # =============================================================================
 # TEST 1: KERNEL PLUGIN: persistent config file + runtime sysctl value
@@ -948,6 +986,8 @@ else
     fi
 fi
 
+fi # DIVERGENCE_ONLY: end of TESTs 1-9
+
 # =============================================================================
 # DIVERGENCE MEASUREMENT (#142): five plugins asked what they report
 # =============================================================================
@@ -1193,10 +1233,35 @@ else
     # The divergence this aims at: a rule loaded in the kernel that no
     # restored file names. auditctl loads it directly, touching no file, which
     # is exactly the state a rollback cannot reach by restoring files.
-    auditctl -w /etc/hardener-divergence-probe -p wa -k hardener_probe > /dev/null 2>&1 || true
-    AUDIT_FORCED="kernel rule -w /etc/hardener-divergence-probe -k hardener_probe loaded, named in no file"
+    #
+    # The forced: line is derived from the AUDIT_LOADED readback below, never
+    # from having issued the load command: `auditctl -w ... || true` swallows
+    # failure, so a container where the audit netlink socket is unreachable
+    # (measured 2026-08-08 under --pipe: the -w call runs and exits, the rule
+    # never lands) used to print "loaded" regardless. Same defect class and
+    # same fix shape as TESTs 10 and 11 above (Finding 1), scoped out of that
+    # pass by mistake.
+    #
+    # Three cases, kept distinguishable in the wording rather than collapsed
+    # to a boolean: the rule loaded; auditctl -w ran and exited cleanly but
+    # the rule did not land (attempted, did not take); and auditctl -w itself
+    # failed to run at all, so the scenario never got as far as attempting the
+    # load in the first place.
+    if auditctl -w /etc/hardener-divergence-probe -p wa -k hardener_probe > /dev/null 2>&1; then
+        AUDIT_LOAD_RAN=true
+    else
+        AUDIT_LOAD_RAN=false
+    fi
     AUDIT_LOADED=$(auditctl -l 2>/dev/null | grep -c 'hardener_probe' || true)
     info "  kernel rules naming hardener_probe before rollback: $AUDIT_LOADED"
+
+    if [[ "$AUDIT_LOAD_RAN" != "true" ]]; then
+        AUDIT_FORCED="nothing: auditctl -w /etc/hardener-divergence-probe -k hardener_probe failed to run, so this scenario never got as far as attempting to load the kernel rule (kernel rules naming hardener_probe before rollback: $AUDIT_LOADED)"
+    elif [[ "$AUDIT_LOADED" -gt 0 ]]; then
+        AUDIT_FORCED="kernel rule -w /etc/hardener-divergence-probe -k hardener_probe loaded, named in no file"
+    else
+        AUDIT_FORCED="attempted to load kernel rule -w /etc/hardener-divergence-probe -k hardener_probe but it did not take (kernel rules naming hardener_probe before rollback: $AUDIT_LOADED)"
+    fi
 
     AUDIT_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
     if [[ -z "$AUDIT_CP" ]]; then

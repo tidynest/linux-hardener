@@ -144,6 +144,18 @@ done
 SELECTED_SUITES=("${SUITE_ORDER[@]}")
 [[ -n "$ONLY_SUITE" ]] && SELECTED_SUITES=("$ONLY_SUITE")
 
+# suite_rollback runs a second, booted pass (TESTs 10-12 in verify-rollback.sh
+# need systemd as PID 1, which the unbooted pass cannot give them) and records
+# it under its own key, "rollback-booted", so a failure there is never
+# swallowed by the unbooted pass's own PASS. It shares "rollback"'s container
+# and is not independently selectable via --only, so it is not a SUITE_ORDER
+# entry; it needs a line in the summary table regardless, which is what this
+# is for.
+DISPLAY_SUITES=("${SELECTED_SUITES[@]}")
+if [[ " ${SELECTED_SUITES[*]} " == *" rollback "* ]]; then
+    DISPLAY_SUITES+=(rollback-booted)
+fi
+
 # =============================================================================
 # Result bookkeeping
 # =============================================================================
@@ -389,7 +401,7 @@ describe_suite() {
         differential) echo "run-cross-distro-tests.sh --differential --booted, $all" ;;
         package)      echo "run-package-tests.sh --apply, $all" ;;
         gui)          echo "gui/run-gui-tests.sh, $all" ;;
-        rollback)     echo "verify-rollback.sh inside the arch container" ;;
+        rollback)     echo "verify-rollback.sh inside the arch container, unbooted then booted (TEST 10-12 need systemd as PID 1)" ;;
     esac
 }
 
@@ -847,10 +859,12 @@ suite_gui() {
 # log before drawing a conclusion from it.
 suite_rollback() {
     local logfile="$RR_DIR/rollback.log" exit_code=0
-    local container_path="/var/lib/machines/${CONTAINERS[arch]}"
+    local container="${CONTAINERS[arch]}"
+    local container_path="/var/lib/machines/$container"
 
     recreate_containers "$RR_DIR/rollback-containers.log" arch || {
         record_result rollback NOTRUN "container rebuild failed, see rollback-containers.log"
+        record_result rollback-booted NOTRUN "container rebuild failed, see rollback-containers.log"
         return
     }
 
@@ -892,6 +906,114 @@ suite_rollback() {
         *) record_result rollback FAIL \
             "exit $exit_code, see $logfile (first ever run: baseline, not a regression)" ;;
     esac
+
+    suite_rollback_booted "$container" "$container_path"
+}
+
+# The booted rollback pass. verify-rollback.sh's TEST 10 (ssh-hardening) and
+# TEST 11 (service-minimisation) force their divergence through systemctl,
+# and TEST 12 (audit-hardening) forces it through auditctl reaching the kernel
+# audit subsystem; all three need a service manager as PID 1, which the
+# unbooted --pipe pass above cannot give them (measured 2026-08-08: TESTs 10
+# and 11 skip outright under --pipe, and TEST 12 used to misreport rather than
+# skip -- see the forced: derivation fix in verify-rollback.sh). Booting is the
+# only way to give them one, so this is a second pass against the SAME
+# container the unbooted pass just used, not a flag on that pass: each
+# verify-rollback.sh invocation starts by cleaning /var/lib/linux-hardener and
+# TESTs 10-14 do not depend on anything TESTs 1-9 left behind (see the
+# VERIFY_ROLLBACK_DIVERGENCE_ONLY comment in that file), so reusing the
+# container the unbooted pass already rebuilt costs nothing here and avoids
+# rebuilding it twice.
+#
+# The boot mechanism is copied from
+# scripts/containers/boot-ssh-test-container.sh, per instruction not to invent
+# a different one: the transient unit + --console=passive shape at :42-44 (a
+# backgrounded `nspawn --boot` gets SIGTTIN on its first tty read, which a
+# transient unit with a passive console avoids), and the
+# `systemd-run --machine --wait --pipe --quiet` shape at :81 and :107 for
+# running a command inside the booted machine. Networking (--network-veth) is
+# NOT reused: nothing this pass runs needs host reachability, only a
+# functioning init inside the container, and --private-network alone (the
+# same flag the unbooted pass already uses) keeps it isolated from the host
+# without standing up a veth pair this pass has no use for.
+suite_rollback_booted() {
+    local container="$1" container_path="$2"
+    local logfile="$RR_DIR/rollback-booted.log" exit_code=0
+    local unit="rollback-booted-$container"
+
+    # systemd-run and machinectl are already required by check_host_commands
+    # in pre-flight, so this host reaching here without them on PATH cannot
+    # happen; checked again anyway alongside the more meaningful question
+    # those binaries alone cannot answer -- whether this HOST is itself
+    # running systemd as PID 1, which systemd-run and machinectl both need to
+    # talk to. Same predicate verify-rollback.sh's own host_is_booted() uses,
+    # asked here of the host rather than the container. Reported as NOTRUN,
+    # never FAIL: a host that cannot boot a container is not a defect in the
+    # code under test.
+    if [[ ! -d /run/systemd/system ]] || ! command -v systemd-run &>/dev/null \
+        || ! command -v machinectl &>/dev/null; then
+        record_result rollback-booted NOTRUN \
+            "this host is not running systemd (no /run/systemd/system) or lacks systemd-run/machinectl, so a booted pass cannot be started"
+        return
+    fi
+
+    log_step "Rollback readback, booted (TEST 10-12 only)"
+    : > "$logfile"
+
+    # Stopped on every path below, success or failure: a leaked booted machine
+    # survives this run and poisons the next one, exactly the scar
+    # recreate_containers exists to prevent for the per-suite containers.
+    # trap RETURN fires on every return from this function, including the
+    # early ones on the failure paths below.
+    # shellcheck disable=SC2064  # container/unit must expand now. not at trap time
+    trap "machinectl terminate '$container' > /dev/null 2>&1 || true; systemctl reset-failed '$unit' > /dev/null 2>&1 || true" RETURN
+
+    systemctl reset-failed "$unit" > /dev/null 2>&1 || true
+    if ! systemd-run --unit="$unit" \
+        systemd-nspawn --machine="$container" --directory="$container_path" \
+        --bind="$PROJECT_DIR:/project" "${TARGET_BIND[@]}" \
+        --private-network --boot --console=passive \
+        >> "$logfile" 2>&1; then
+        record_result rollback-booted NOTRUN "could not start the booted container, see $logfile"
+        return
+    fi
+
+    # Readiness is probed with the exact mechanism used to run the real
+    # command below, rather than with `machinectl status`: a container can
+    # register with machined before its own init is far enough along to
+    # service `systemd-run --machine --wait --pipe`, and a probe that asks
+    # anything else can pass while the real invocation right after it still
+    # fails. 60s window, matching boot-ssh-test-container.sh's own (a
+    # cold-cache first boot can take over 30s to register).
+    local ready=""
+    for _ in $(seq 1 30); do
+        if systemd-run --machine="$container" --wait --pipe --quiet \
+            /usr/bin/true >> "$logfile" 2>&1; then
+            ready=1
+            break
+        fi
+        sleep 2
+    done
+    if [[ -z "$ready" ]]; then
+        record_result rollback-booted NOTRUN "container never became ready for systemd-run --machine, see $logfile"
+        return
+    fi
+
+    # VERIFY_ROLLBACK_DIVERGENCE_ONLY=1 is what keeps this pass from repeating
+    # TESTs 1-9, which this suite's unbooted pass just ran and which do not
+    # need booting.
+    systemd-run --machine="$container" --wait --pipe --quiet /bin/bash -c \
+        'VERIFY_ROLLBACK_DIVERGENCE_ONLY=1 /bin/bash /project/scripts/test/verify-rollback.sh' \
+        >> "$logfile" 2>&1 || exit_code=$?
+
+    case $exit_code in
+        0) record_result rollback-booted PASS \
+            "ssh, service-minimisation and audit divergence arms measured under a booted service manager" ;;
+        2) record_result rollback-booted PASS \
+            "passed, but at least one arm was not asked, see $logfile" ;;
+        *) record_result rollback-booted FAIL \
+            "exit $exit_code, see $logfile" ;;
+    esac
 }
 
 run_suite() {
@@ -925,7 +1047,7 @@ write_summary() {
         echo ""
         printf "%-14s %-8s %s\n" "Suite" "Status" "Detail"
         printf "%-14s %-8s %s\n" "-----" "------" "------"
-        for suite in "${SELECTED_SUITES[@]}"; do
+        for suite in "${DISPLAY_SUITES[@]}"; do
             printf "%-14s %-8s %s\n" "$suite" \
                 "${SUITE_STATUS[$suite]:-NOTRUN}" \
                 "${SUITE_DETAIL[$suite]:-never reached}"
@@ -943,7 +1065,7 @@ write_summary() {
     printf "  ${BOLD}%-14s %-8s${NC} %s\n" "Suite" "Status" "Detail"
     printf "  %-14s %-8s %s\n" "-----" "------" "------"
 
-    for suite in "${SELECTED_SUITES[@]}"; do
+    for suite in "${DISPLAY_SUITES[@]}"; do
         local status="${SUITE_STATUS[$suite]:-NOTRUN}"
         local detail="${SUITE_DETAIL[$suite]:-never reached}"
         local colour="$GREEN"
