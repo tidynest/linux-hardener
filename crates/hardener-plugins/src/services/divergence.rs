@@ -21,7 +21,7 @@
 //! booted host, which is why a probe is worth writing rather than an
 //! always-Unverifiable row.
 
-use super::{UNNECESSARY_SERVICES, is_service_active, is_service_enabled, is_service_exists};
+use super::{UNNECESSARY_SERVICES, is_service_exists};
 use hardener_core::Context;
 use hardener_types::{DivergenceState, RollbackDivergence};
 
@@ -38,21 +38,40 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 }
 
 /// Whether the restored unit files leave a unit enabled, classified three
-/// ways rather than two. `systemctl is-enabled` exits non-zero both for a
-/// unit that is genuinely disabled (or masked) and for an invocation that
-/// could not run at all, and this probe must never turn the second case into
-/// a claim about the first: that is the `.unwrap_or(false)` every existing
-/// caller in `services/mod.rs` takes, and the one this probe must not repeat.
+/// ways rather than two. `systemctl is-enabled` exits zero for `enabled` but
+/// also for `static`, `indirect`, `enabled-runtime`, `generated` and `alias`
+/// (`ENABLED_STATES` in `services/mod.rs` spells out all seven), and it exits
+/// non-zero both for a unit that is genuinely `disabled`/`masked` and for an
+/// invocation that could not run at all. The exit status therefore cannot
+/// carry this probe's answer, unlike [`is_service_enabled`](super::is_service_enabled),
+/// whose exit-status reading is deliberately correct for the apply path that
+/// calls it. This probe reads the printed word directly through the
+/// executor instead, the way `ssh/divergence.rs`'s `read_enablement` does:
+/// only the literal word `enabled` counts as enabled, only `disabled` and
+/// `masked` count as not enabled, and every other word, including the five
+/// exit-zero states above, is unverifiable rather than guessed.
 enum Enablement {
     Enabled,
     NotEnabled,
     Unverifiable(String),
 }
 
+/// Reads `systemctl is-enabled` for `service_name` and classifies the printed
+/// word, never the exit status.
 async fn read_enablement(ctx: &Context, service_name: &str) -> Enablement {
-    match is_service_enabled(ctx, service_name).await {
-        Ok(true) => Enablement::Enabled,
-        Ok(false) => Enablement::NotEnabled,
+    match ctx
+        .executor()
+        .execute_command("systemctl", &["is-enabled", service_name])
+        .await
+    {
+        Ok(output) => match output.stdout.trim() {
+            "enabled" => Enablement::Enabled,
+            "disabled" | "masked" => Enablement::NotEnabled,
+            other => Enablement::Unverifiable(format!(
+                "systemctl is-enabled {service_name} printed neither 'enabled', 'disabled' \
+                 nor 'masked': {other:?}"
+            )),
+        },
         Err(e) => Enablement::Unverifiable(format!(
             "systemctl is-enabled {service_name} could not be run: {e}"
         )),
@@ -60,19 +79,33 @@ async fn read_enablement(ctx: &Context, service_name: &str) -> Enablement {
 }
 
 /// Whether the unit is currently running, classified the same three ways as
-/// [`Enablement`], for the same reason: `systemctl is-active` exits non-zero
-/// both for a unit that is genuinely not running and for an invocation that
-/// could not run at all.
+/// [`Enablement`] and read the same way: the printed word, not
+/// [`is_service_active`](super::is_service_active)'s exit status. `systemctl
+/// is-active` exits non-zero both for a unit that is genuinely not running
+/// and for an invocation that could not run at all, so only the word tells
+/// the two apart.
 enum Activity {
     Active,
     NotActive,
     Unverifiable(String),
 }
 
+/// Reads `systemctl is-active` for `service_name` and classifies the printed
+/// word, never the exit status.
 async fn read_activity(ctx: &Context, service_name: &str) -> Activity {
-    match is_service_active(ctx, service_name).await {
-        Ok(true) => Activity::Active,
-        Ok(false) => Activity::NotActive,
+    match ctx
+        .executor()
+        .execute_command("systemctl", &["is-active", service_name])
+        .await
+    {
+        Ok(output) => match output.stdout.trim() {
+            "active" => Activity::Active,
+            "inactive" | "failed" => Activity::NotActive,
+            other => Activity::Unverifiable(format!(
+                "systemctl is-active {service_name} printed neither 'active', 'inactive' \
+                 nor 'failed': {other:?}"
+            )),
+        },
         Err(e) => Activity::Unverifiable(format!(
             "systemctl is-active {service_name} could not be run: {e}"
         )),

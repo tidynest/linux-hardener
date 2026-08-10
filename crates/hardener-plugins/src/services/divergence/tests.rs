@@ -32,8 +32,11 @@ fn absent() -> CommandOutput {
 /// under construction has no opinion about. `active`/`enabled` are the
 /// trimmed stdout `systemctl is-active`/`is-enabled` would print for `name`;
 /// their exit codes are set the way the real commands set them, non-zero for
-/// "inactive"/"disabled" alike, because the probe must read the printed word
-/// rather than lean on the exit code.
+/// "inactive"/"disabled" alike. The probe reads the printed word and ignores
+/// the exit code entirely, so a caller here is free to pass an exit code that
+/// disagrees with the word: `garbage_words_with_diverged_shaped_exit_codes_are_unverifiable`
+/// below does exactly that, to prove the exit code is not what decides the
+/// answer.
 fn service_host(
     name: &str,
     active: &str,
@@ -370,4 +373,72 @@ async fn two_diverging_units_are_two_rows() {
     assert_eq!(rows[0].divergence_state, DivergenceState::Diverged);
     assert_eq!(rows[1].divergence_subject, "cups");
     assert_eq!(rows[1].divergence_state, DivergenceState::Diverged);
+}
+
+/// `systemctl is-enabled` exits 0 for `static`, `indirect`, `enabled-runtime`,
+/// `generated` and `alias`, not only for `enabled` (`ENABLED_STATES` in
+/// `services/mod.rs` spells out all seven). A probe that reads the exit
+/// status rather than the word turns a `static` unit into `Enablement::Enabled`,
+/// and a static unit that is not running then reads as the enabled-but-stopped
+/// divergence, which is false: a unit with no `[Install]` section was never
+/// claiming to run, so nothing here disagrees with the restored files. The
+/// probe must say it cannot tell, not assert a divergence that is not there.
+#[tokio::test]
+async fn a_static_unit_that_is_not_running_is_unverifiable_not_diverged() {
+    let ctx = service_host("bluetooth", "inactive\n", 3, "static\n", 0);
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert_eq!(rows[0].divergence_subject, "bluetooth");
+    assert_eq!(
+        rows[0].divergence_state,
+        DivergenceState::Unverifiable,
+        "a static unit's enablement cannot be read as enabled or not enabled \
+         from the word alone, so it must not be asserted as diverged: {}",
+        rows[0].divergence_detail
+    );
+}
+
+/// The conflation the whole branch exists to close: two reads that fail for a
+/// non-spawn reason (empty stdout, non-zero exit, no error returned) must not
+/// silently agree with each other. Reading the exit status turns this into
+/// `NotEnabled` and `NotActive`, which agree and produce an EMPTY vector,
+/// claiming the rollback left everything checked out when nothing was
+/// actually readable.
+#[tokio::test]
+async fn unreadable_words_with_agreeing_exit_codes_are_not_silent_agreement() {
+    let ctx = service_host("bluetooth", "", 3, "", 1);
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "two unreadable words must produce a row, not silent agreement"
+    );
+    assert_eq!(rows[0].divergence_subject, "bluetooth");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+}
+
+/// Proof the probe reads the printed word and not the exit code: every mocked
+/// stdout word replaced with `GARBAGE`, exit codes left exactly as a genuine
+/// diverged pair would set them (0 for is-active, non-zero for is-enabled,
+/// the shape `an_enabled_but_stopped_unit_is_diverged` uses). A probe reading
+/// the exit status alone would still call this diverged; this probe must
+/// refuse to, because neither printed word says what state the unit is in.
+#[tokio::test]
+async fn garbage_words_with_diverged_shaped_exit_codes_are_unverifiable() {
+    let ctx = service_host("cups", "GARBAGE\n", 0, "GARBAGE\n", 0);
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert_eq!(rows[0].divergence_subject, "cups");
+    assert_eq!(
+        rows[0].divergence_state,
+        DivergenceState::Unverifiable,
+        "GARBAGE is neither a recognised activity nor enablement word: {}",
+        rows[0].divergence_detail
+    );
 }

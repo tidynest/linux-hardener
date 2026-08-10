@@ -103,7 +103,7 @@ CRATES = Path("crates")
 
 # The number of production `systemctl is-enabled` call sites, pinned rather than
 # counted off the registry, which would follow the registry down.
-EXPECTED_SITE_COUNT = 4
+EXPECTED_SITE_COUNT = 5
 
 # The literal every site passes today. A call that builds this string any other
 # way is invisible here, which the docstring says rather than hides.
@@ -157,6 +157,17 @@ REGISTRY = {
         "never reads the exit status; the divergence this probe reports "
         "depends on the unit being masked specifically, which only the word "
         "distinguishes from every other reason the command could exit non-zero",
+    ),
+    ("hardener-plugins/src/services/divergence.rs", "read_enablement"): (
+        "word",
+        "classifies enabled against not-enabled from the printed word alone; "
+        "the exit status is zero for enabled but also for static, indirect, "
+        "enabled-runtime, generated and alias (services/mod.rs's "
+        "ENABLED_STATES lists all seven), and treating any of those five as "
+        "enabled produced a false diverged row for a unit that was never "
+        "claiming to run. Only the literal word enabled counts as enabled, "
+        "disabled and masked count as not enabled, everything else is "
+        "unverifiable",
     ),
 }
 
