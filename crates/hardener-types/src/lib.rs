@@ -999,8 +999,11 @@ pub struct RollbackDivergence {
     /// applied to the trait default it deleted.
     ///
     /// Orthogonal to `divergence_state`. An `Unverifiable` row can be
-    /// expected: `mac-hardening` and `audit-hardening` each emit one on every
-    /// rollback on every host this project can build, and both name #18.
+    /// expected: `audit-hardening` emits one on every rollback on every
+    /// host this project can build, and names #18. `mac-hardening` does the
+    /// same only where a MAC system is detected at all; on a host with none,
+    /// which is every container this project builds, it emits no row rather
+    /// than an unverifiable one.
     pub divergence_expected: Option<String>,
 }
 
