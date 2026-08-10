@@ -213,3 +213,32 @@ async fn a_masked_runtime_and_stopped_sshd_reports_nothing() {
         "a stopped unit is not a divergence whatever its masking: {rows:?}"
     );
 }
+
+/// Deliberate, and pinned because an absence with no test reads as an
+/// oversight. Every row this plugin emits is worth an operator's attention:
+/// running-and-masked is the #142 finding itself, and the two Unverifiable
+/// rows are reads that failed rather than ceilings. Nothing here is routine,
+/// so nothing here is demoted.
+#[tokio::test]
+async fn no_ssh_row_is_ever_expected() {
+    let test_cases = [
+        ("active\n", 0, "masked\n", 1),
+        ("active\n", 0, "masked-runtime\n", 1),
+        ("active\n", 0, "", 1),
+        ("GARBAGE\n", 0, "enabled\n", 0),
+    ];
+    assert!(!test_cases.is_empty(), "test cases are non-empty");
+
+    for (active, active_exit, enabled, enabled_exit) in test_cases {
+        let ctx = sshd_host(active, active_exit, enabled, enabled_exit);
+
+        for divergence in sshd_divergences(&ctx).await {
+            assert!(
+                divergence.divergence_expected.is_none(),
+                "ssh rows are never routine, but {:?} was marked expected: {:?}",
+                divergence.divergence_detail,
+                divergence.divergence_expected
+            );
+        }
+    }
+}

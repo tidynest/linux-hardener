@@ -37,10 +37,10 @@ them; do not copy a figure from an older document.
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1945 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1945 across 295 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1946 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1946 across 295 files |
 
-The gap between 1945 annotations and 1905 executions is exactly 40, and all 40
+The gap between 1946 annotations and 1905 executions is exactly 41, and all 41
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,7 +48,7 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 1945, and they are meant to be: the check globs every `.rs`
+are the same number, 1946, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
