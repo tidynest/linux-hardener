@@ -1592,8 +1592,13 @@ impl HardeningPlugin for FirewallHardeningPlugin {
     async fn divergences_after_rollback(
         &self,
         ctx: &Context,
-        _restored: &[std::path::PathBuf],
+        restored: &[std::path::PathBuf],
     ) -> Vec<hardener_types::RollbackDivergence> {
+        // The gate this replaces used to live in the dispatch (#142). Same
+        // predicate, one level down, so behaviour is unchanged.
+        if !restored.iter().any(|path| self.reloads_for_path(path)) {
+            return Vec::new();
+        }
         divergence::firewall_divergences(ctx).await
     }
 

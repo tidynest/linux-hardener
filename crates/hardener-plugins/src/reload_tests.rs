@@ -317,6 +317,68 @@ fn registry_with_order_sensitive() -> PluginRegistry {
     registry
 }
 
+/// A stub that scopes itself the way every real probe must: it reports only
+/// when a restored path is its own. This is the other half of
+/// `an_unmatched_plugin_is_still_asked_what_diverged`, which on its own is
+/// satisfied by a dispatch that asks everyone and a probe that answers
+/// regardless of what was restored.
+struct SelfScopingPlugin;
+
+#[async_trait::async_trait]
+impl HardeningPlugin for SelfScopingPlugin {
+    fn metadata(&self) -> PluginMetadata {
+        stub_metadata("self-scoping")
+    }
+
+    fn dependencies(&self) -> Vec<PluginId> {
+        Vec::new()
+    }
+
+    async fn scan(&self, _ctx: &Context, _config: &PluginConfig) -> Result<ScanResult> {
+        unreachable!("the dispatch never scans")
+    }
+
+    async fn apply(&self, _ctx: &mut Context, _config: &PluginConfig) -> Result<ApplyResult> {
+        unreachable!("the dispatch never applies")
+    }
+
+    async fn validate(&self, _ctx: &Context, _config: &PluginConfig) -> Result<ValidationReport> {
+        unreachable!("the dispatch never validates")
+    }
+
+    fn reloads_for_path(&self, path: &Path) -> bool {
+        path == Path::new("/etc/scoped.conf")
+    }
+
+    async fn reload_after_rollback(&self, _ctx: &Context) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        restored: &[PathBuf],
+    ) -> Vec<RollbackDivergence> {
+        if !restored.iter().any(|path| self.reloads_for_path(path)) {
+            return Vec::new();
+        }
+        vec![RollbackDivergence {
+            divergence_plugin_id: "self-scoping".to_string(),
+            divergence_subject: "a scoped subject".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "a restored path was this plugin's own".to_string(),
+        }]
+    }
+}
+
+fn registry_with_self_scoping() -> PluginRegistry {
+    let registry = PluginRegistry::new();
+    registry
+        .register(Box::new(SelfScopingPlugin))
+        .expect("the stub registers cleanly into an empty registry");
+    registry
+}
+
 /// **Order is fixed: reload first, probe second.** Swap the two statements
 /// in `reconcile_plugins_after_rollback` and this stub's own reload never
 /// runs before it is asked what diverged, so the row disappears and this
@@ -361,9 +423,17 @@ async fn a_plugin_with_nothing_to_reload_is_still_asked_what_diverged() {
     );
 }
 
-/// A plugin no restored path matched is asked neither question.
+/// A plugin no restored path matched is asked what diverged anyway.
+///
+/// The reload predicate answers "does restoring this path oblige me to
+/// reload?". The divergence question needs "is this path my business?", and
+/// the two come apart for exactly the plugins that have no reload:
+/// `permissions-hardening` and `pam-hardening` override neither, so under the
+/// old gate they could never be asked and their answer could never be
+/// measured. Scoping now belongs to the probe, which already receives
+/// `restored` for the purpose.
 #[tokio::test]
-async fn an_unmatched_plugin_is_not_probed() {
+async fn an_unmatched_plugin_is_still_asked_what_diverged() {
     let registry = registry_with_diverged();
     let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
 
@@ -371,7 +441,46 @@ async fn an_unmatched_plugin_is_not_probed() {
         reconcile_plugins_after_rollback(&ctx, &registry, &[PathBuf::from("/etc/other.conf")])
             .await;
 
-    assert!(outcome.divergences.is_empty());
+    assert!(
+        outcome.reloads.is_empty(),
+        "no restored path matched, so nothing is reloaded"
+    );
+    assert_eq!(
+        outcome.divergences.len(),
+        1,
+        "but the probe is asked, and this stub reports without consulting `restored`"
+    );
+}
+
+/// The probe declines when nothing restored was its own, and reports when
+/// something was. Both halves, because the empty half alone is satisfied by a
+/// probe that can never report anything at all.
+#[tokio::test]
+async fn a_self_scoping_probe_declines_paths_that_are_not_its_own() {
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
+
+    let unrelated = reconcile_plugins_after_rollback(
+        &ctx,
+        &registry_with_self_scoping(),
+        &[PathBuf::from("/etc/other.conf")],
+    )
+    .await;
+    assert!(
+        unrelated.divergences.is_empty(),
+        "no restored path was this plugin's own"
+    );
+
+    let owned = reconcile_plugins_after_rollback(
+        &ctx,
+        &registry_with_self_scoping(),
+        &[PathBuf::from("/etc/scoped.conf")],
+    )
+    .await;
+    assert_eq!(
+        owned.divergences.len(),
+        1,
+        "and the same probe reports when a restored path was its own"
+    );
 }
 
 #[tokio::test]

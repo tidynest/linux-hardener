@@ -99,11 +99,17 @@ pub trait HardeningPlugin: Send + Sync {
     /// What this plugin's subsystem still disagrees with, after the restore
     /// and its own reload have both run.
     ///
-    /// Asked only of plugins a restored path matched, and asked after the
-    /// reload, because a divergence is by definition what the reload could
-    /// not fix. Asked independently of whether there was anything to reload:
-    /// a plugin can have nothing to reload and diverge anyway, which is
-    /// exactly the sysctl case.
+    /// Asked of every plugin, and asked after the reload, because a
+    /// divergence is by definition what the reload could not fix. Asked
+    /// independently of whether there was anything to reload: a plugin can
+    /// have nothing to reload and diverge anyway, which is exactly the sysctl
+    /// case.
+    ///
+    /// **Scoping belongs here, not to the caller.** `restored` is the list of
+    /// paths the rollback put back, and an implementation returns an empty
+    /// vector when none of them are its business. The dispatch gated this on
+    /// `reloads_for_path` until #142, which meant the two plugins that
+    /// override that predicate for no path could never be asked.
     ///
     /// **Reporting only.** An implementation must not change system state
     /// here. It returns a `Vec` rather than a `Result` on purpose: a probe

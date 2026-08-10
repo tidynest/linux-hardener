@@ -319,23 +319,29 @@ pub async fn reconcile_plugins_after_rollback(
                 continue;
             }
         };
-        if !restored.iter().any(|path| plugin.reloads_for_path(path)) {
-            continue;
-        }
-        match plugin.reload_after_rollback(ctx).await {
-            Ok(None) => {}
-            Ok(Some(action)) => reloads.push(hardener_types::ReloadResult {
-                reload_plugin_id: meta.plugin_id.as_str().to_string(),
-                reload_action: action,
-                reload_success: true,
-                reload_error: None,
-            }),
-            Err(e) => reloads.push(hardener_types::ReloadResult {
-                reload_plugin_id: meta.plugin_id.as_str().to_string(),
-                reload_action: "reload failed".to_string(),
-                reload_success: false,
-                reload_error: Some(e.to_string()),
-            }),
+        // The reload is gated on the path predicate, because a reload is work
+        // and doing it for a subsystem nothing restored touched is wasted at
+        // best. The divergence question is not gated, because the predicate
+        // answers a different question: `permissions-hardening` and
+        // `pam-hardening` override it for no path, so a gated probe could
+        // never ask them and their answer could never be measured (#142).
+        // Scoping belongs to the probe, which receives `restored` for it.
+        if restored.iter().any(|path| plugin.reloads_for_path(path)) {
+            match plugin.reload_after_rollback(ctx).await {
+                Ok(None) => {}
+                Ok(Some(action)) => reloads.push(hardener_types::ReloadResult {
+                    reload_plugin_id: meta.plugin_id.as_str().to_string(),
+                    reload_action: action,
+                    reload_success: true,
+                    reload_error: None,
+                }),
+                Err(e) => reloads.push(hardener_types::ReloadResult {
+                    reload_plugin_id: meta.plugin_id.as_str().to_string(),
+                    reload_action: "reload failed".to_string(),
+                    reload_success: false,
+                    reload_error: Some(e.to_string()),
+                }),
+            }
         }
         divergences.extend(plugin.divergences_after_rollback(ctx, restored).await);
     }
