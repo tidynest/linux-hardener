@@ -1,6 +1,6 @@
 # Linux Hardener - File Map
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-10
 
 This document lists all source files with their purpose and key exports.
 
@@ -182,6 +182,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/ssh/mod.rs` | Network | PermitRootLogin, PasswordAuthentication, PermitEmptyPasswords, MaxAuthTries, X11Forwarding, ClientAliveInterval, ClientAliveCountMax |
 | `src/ssh/dropin.rs` | Network | Writes SSH hardening to `/etc/ssh/sshd_config.d/00-hardener.conf`, which sorts before the fragments distributions ship, so sshd takes this file's values first. Precedence is verified after writing by re-resolving, never assumed from the filename, and an empty directive set removes the file rather than leaving an empty one | `DROPIN_PATH`, `Directive`, `render()`, `write_dropin()` |
 | `src/ssh/include.rs` | Network | Resolves `Include` directives in sshd's own order, so scan reports the value sshd will actually use and names the file supplying it. sshd takes the **first** value it obtains and distributions put the Include above everything this tool writes, so a drop-in silently won while the tool reported its own write |
+| `src/ssh/divergence.rs` | Network | What an sshd rollback left running against a configuration it could not reload onto (#142). `reload_after_rollback` restarts sshd unconditionally and reports a failed restart only as its own `Err`, never through this probe, so a restart that could not take otherwise leaves nothing here to read. Classifies `systemctl is-active`/`is-enabled` for the unit three ways rather than two, so an unrunnable systemctl call is never read as a clean state, and reports `Diverged` only where the unit is both running and masked, the one state proving the restart was refused outright. Measured 2026-08-10 in a booted arch container: masking sshd before a rollback left it reporting active before and after the restart attempt, previously unreported; this probe now reports that state and a second run confirmed it fires. Report-only; writes nothing | `sshd_divergences()` |
 | `src/kernel/mod.rs` | Kernel | ASLR, kptr_restrict, dmesg_restrict, ptrace_scope, suid_dumpable, rp_filter, tcp_syncookies |
 | `src/kernel/persistence.rs` | Kernel | Reports a managed parameter that a file applied after `99-hardener.conf` sets looser than its target, so hardening that will not survive the next reboot is named rather than assumed to hold. Report-only; the apply writes nothing for it | `procfs_key()`, `boot_persistence()` |
 | `src/kernel/divergence.rs` | Kernel | What a kernel rollback left running that its restored files do not name (#138). After the rollback's `sysctl --system`, compares each managed parameter's running value against every surviving configuration file; where nothing names it, judged by strictness against the plugin's own baseline rather than by an equality this path has no `PluginConfig` to check against. An unreadable `/proc/sys` entry and an unresolved configuration source are each reported `Unverifiable` rather than guessed at, and every unresolved source gets a row of its own naming the file. Report-only; writes nothing | `sysctl_divergences()` |
@@ -194,12 +195,16 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/pam/login_defs.rs` | Auth | Carries a `/usr/etc` configuration file into `/etc` before the managed directives are edited into it, with the vendor file's own permissions rather than the temporary file's | `mode_for_copy_of()` |
 | `src/pam/layer_drift.rs` | Auth | Reports the keys an `/etc` file hides from its `/usr/etc` counterpart, for every layered file the plugin reads rather than for `login.defs` alone | `LAYERED_CONFS`, `masked_keys()`, `masked_keys_finding()` |
 | `src/services/mod.rs` | Services | Unnecessary services (xinetd, cups, avahi, etc.) |
+| `src/services/divergence.rs` | Services | What a service-minimisation rollback left running that its restored unit files do not name (#142). `reload_after_rollback` only runs `systemctl daemon-reload`; it never starts, stops or restarts anything, so a unit `apply` had stopped stays stopped once its files are put back. For each managed unit still installed, compares the restored files' enablement against the service manager's own enabled/active reading, three-ways classified so an unrunnable systemctl call is never read as a clean state. The reading is available on any booted host, but no container this project can build could force a real divergence: `bluetooth.service`, the one safe candidate, was measured 2026-08-10 to go `failed` rather than `active` when a forced start was attempted, so this probe has never fired against a real one. Report-only; writes nothing | `service_divergences()` |
 | `src/permissions/mod.rs` | FileSystem | Critical paths, SUID/SGID, world-writable. Where `/etc` holds nothing at all, `scan` reads the `/usr/etc` copy through `vendor_path_for()` and reports a violating vendor mode as a finding keyed on the `/etc` path, so the id stays `perm--etc-sudoers` while the title names the file in force. The vendor file is never written, so that finding's remediation is an install into `/etc`; `apply` is unchanged and still leaves a path absent from `/etc` alone | `PermissionCheck::VendorOnly`, `check_vendor_layer_permissions()`, `effective_directive()` |
 | `src/audit/mod.rs` | Audit | auditd rules for time, users, permissions |
+| `src/audit/divergence.rs` | Audit | What an audit rollback left the kernel's loaded rule set disagreeing with, on a host where that can be read at all (#142). Loading a kernel audit rule set is host-global, like an LSM policy, and `auditctl` cannot run in any container this project builds, measured twice (booted and unbooted) on 2026-08-10; even where it could, the comparison against a restored rules file is not implemented. Always reports one `Unverifiable` row naming #18, never `Diverged` and never an empty vector. Reporting only: shells out to `auditctl -l`, which lists the loaded rule set; nothing here loads, deletes or alters a rule | `audit_divergences()` |
 | `src/mac/mod.rs` | MAC | SELinux/AppArmor status |
+| `src/mac/divergence.rs` | MAC | What a MAC rollback left enforcing that its restored files do not ask for, on a host where that can be read at all (#142). Loading an LSM policy is host-global, so no container on the development machine can be given MAC enforcement. Always reports one `Unverifiable` row naming #18, never `Diverged`: an empty vector means "everything checkable came back" in this codebase, and this probe has not earned that claim | `mac_divergences()` |
 | `src/tests.rs` | Tests | Unit tests for the crate root | Test-only; reached the crate through `crate::` already, so no import changed |
 | `src/reload_tests.rs` | Tests | Unit tests for `reconcile_plugins_after_rollback()` in `src/lib.rs`, against four stub plugins rather than any real plugin's `scan`/`apply`/`validate` | Test-only; reached the crate through `crate::` already, so no import changed |
 | `src/audit/tests.rs` | Tests | Unit tests for `src/audit/mod.rs` | Test-only; `super` resolves to `crate::audit` |
+| `src/audit/divergence/tests.rs` | Tests | Unit tests for `src/audit/divergence.rs` | Test-only; `super` resolves to `crate::audit::divergence` |
 | `src/firewall/tests.rs` | Tests | Unit tests for `src/firewall/mod.rs`, 54 of them | Test-only; `super` resolves to `crate::firewall` |
 | `src/kernel/tests.rs` | Tests | Unit tests for `src/kernel/mod.rs` | Test-only; `super` resolves to `crate::kernel` |
 | `src/kernel/persistence/tests.rs` | Tests | Unit tests for `src/kernel/persistence.rs` | Test-only; `super` resolves to `crate::kernel::persistence` |
@@ -207,15 +212,18 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/firewall/divergence/tests.rs` | Tests | Unit tests for `src/firewall/divergence.rs` | Test-only; `super` resolves to `crate::firewall::divergence` |
 | `src/shell_config/tests.rs` | Tests | Unit tests for `src/shell_config.rs` | Test-only; `super` resolves to `crate::shell_config` |
 | `src/mac/tests.rs` | Tests | Unit tests for `src/mac/mod.rs` | Test-only; `super` resolves to `crate::mac` |
+| `src/mac/divergence/tests.rs` | Tests | Unit tests for `src/mac/divergence.rs` | Test-only; `super` resolves to `crate::mac::divergence` |
 | `src/pam/tests.rs` | Tests | Unit tests for `src/pam/mod.rs` | Test-only; `super` resolves to `crate::pam` |
 | `src/pam/layer_drift/tests.rs` | Tests | Unit tests for `src/pam/layer_drift.rs` | Test-only; `super` resolves to `crate::pam::layer_drift` |
 | `src/pam/login_defs/tests.rs` | Tests | Unit tests for `src/pam/login_defs.rs` | Test-only; `super` resolves to `crate::pam::login_defs` |
 | `src/permissions/tests.rs` | Tests | Unit tests for `src/permissions/mod.rs` | Test-only; `super` resolves to `crate::permissions` |
 | `src/services/tests.rs` | Tests | Unit tests for `src/services/mod.rs` | Test-only; `super` resolves to `crate::services` |
+| `src/services/divergence/tests.rs` | Tests | Unit tests for `src/services/divergence.rs` | Test-only; `super` resolves to `crate::services::divergence` |
 | `src/scan_outcome/tests.rs` | Tests | Unit tests for `src/scan_outcome.rs` | Test-only; `super` resolves to `crate::scan_outcome` |
 | `src/ssh/tests.rs` | Tests | Unit tests for `src/ssh/mod.rs` | Test-only; `super` resolves to `crate::ssh` |
 | `src/ssh/dropin/tests.rs` | Tests | Unit tests for `src/ssh/dropin.rs` | Test-only; `super` resolves to `crate::ssh::dropin` |
 | `src/ssh/include/tests.rs` | Tests | Unit tests for `src/ssh/include.rs` | Test-only; `super` resolves to `crate::ssh::include` |
+| `src/ssh/divergence/tests.rs` | Tests | Unit tests for `src/ssh/divergence.rs` | Test-only; `super` resolves to `crate::ssh::divergence` |
 | `src/strictness/tests.rs` | Tests | Unit tests for `src/strictness.rs` | Test-only; `super` resolves to `crate::strictness` |
 
 ### Plugin Constants (Examples)
@@ -927,9 +935,9 @@ tree on **2026-08-10**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 1789. The eleventh
+The table covers the ten crates under `crates/` and sums to 1819. The eleventh
 workspace member, `src-tauri`, carries 107 more, which is why the tree total the
-evidence ledger records is 1896 and not this table's sum.
+evidence ledger records is 1926 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -939,7 +947,7 @@ evidence ledger records is 1896 and not this table's sum.
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 104 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 268 |
-| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs` and `firewall/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 762 |
+| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 792 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 155 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 60 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 117 |

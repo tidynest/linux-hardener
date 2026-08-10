@@ -1,6 +1,6 @@
 # What This Release Does Not Prove
 
-**Last Updated**: 2026-08-08
+**Last Updated**: 2026-08-10
 
 This release does not claim to be proven bug-free, and no release of anything
 ever has been. It claims something narrower and checkable: every capability it
@@ -227,6 +227,62 @@ Sections 12A and 12B need `scripts/test/full-test-suite.sh` started as root
 inside a container with its `--apply` flag; 12B additionally needs that
 container booted under systemd, and 12A needs a container no earlier `--apply`
 run has touched, or it reports its own reading void rather than passing it.
+
+**All eight plugins now answer what a rollback left diverged (#142), not two,
+and three of the answers are a ceiling rather than a reading.** The trait's
+default was an empty vector, which this codebase treats as "everything
+checkable came back": six plugins were inheriting that claim without a probe
+ever having looked, and the default is now deleted so a ninth plugin cannot
+inherit the same silence.
+
+**`mac-hardening` and `audit-hardening` report a single `Unverifiable` row,
+each naming #18, and that is a statement about this project's containers, not
+about either plugin.** Loading an LSM policy is host-global, so no container
+this machine can build can be handed MAC enforcement to disagree about, and
+`auditctl` cannot run in any container this project builds at all, measured
+twice on 2026-08-10, booted and unbooted. Neither row is ever `Diverged`,
+because nothing here has been compared against anything. **Read neither row as
+"this plugin cannot diverge after a rollback."** That claim was never earned;
+the only claim earned is that no container this machine can build lets it be
+asked, and #18, a real virtual machine, is what changes that.
+
+**`service-minimisation`'s probe is readable on any booted host and has never
+fired against a real divergence.** Unlike mac and audit, its state genuinely
+can be read in a container: `systemctl is-enabled`/`is-active` work wherever
+systemd is PID 1. What no container this project builds can do is force the
+divergence the probe exists to catch. `bluetooth.service`, the one candidate
+judged safe to force, was measured 2026-08-10 to go `failed` rather than
+`active` when a start was attempted against it, so the probe's `Diverged`
+branch is written but has never been exercised against a real one. That is a
+narrower gap than mac or audit's, and a real one rather than a formality: the
+probe could be silently wrong about a case nothing has ever put in front of
+it.
+
+**`permissions-hardening` and `pam-hardening` earned their empty vectors
+rather than inheriting them, on the strength of a forcing exercise repeated
+three times against one distribution in one container.** `/etc/shadow` was
+forced to `666` and read back at `600` after the rollback; a line appended to
+`/etc/security/faillock.conf` was forced in and read back gone. Both reverted
+cleanly on every reproduction. That is strong evidence for the host it was
+measured on, and not a proof that covers every distribution or every path
+either plugin manages.
+
+**`ssh-hardening`'s probe closes a gap the other seven never had: a reload
+that silently fails to take.** `reload_after_rollback` restarts sshd
+unconditionally and reports a failed restart only through its own `Err`,
+never through the divergence row, so the two paths could disagree with each
+other with nothing to say so. Measured 2026-08-10 in a booted arch container:
+masking `sshd.service` before a rollback left it reporting `active` both
+before the mask and after the rollback's restart attempt, which the probe now
+reports as `Diverged`, and a second run confirmed it fires.
+
+**`scripts/test/verify-rollback.sh` now runs as two passes, and the booted one
+is new rather than a re-reading of anything asserted above.** The unbooted
+pass (TESTs 1-9) is unchanged and is the 26-of-26 reading already described.
+A second, booted pass adds TESTs 10-14, since `ssh-hardening`'s and
+`service-minimisation`'s probes need systemd as PID 1 to be askable at all.
+Both passes were read green on 2026-08-10: **32 of 32 on the unbooted pass and
+5 of 5 on the booted pass.**
 
 **On a remote host without root, a restore degrades to content only.** The
 content write goes through `sudo tee`, but the `chmod`, `chown` and `rm` that

@@ -498,6 +498,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `net.ipv4.conf.all.accept_source_route`. The 23-of-23 run had read the same
   15/12/3 before the `/etc/sysctl.conf` work, so that work moved no row in it.
 
+- **All eight plugins now answer what a rollback left diverged, not two, and
+  `Plugin::divergences_after_rollback`'s trait default is deleted so a ninth
+  plugin cannot inherit silence the way six of these did** (#142). The default
+  returned an empty vector, and an empty vector means "everything checkable
+  came back" in this codebase; `mac-hardening`, `ssh-hardening`,
+  `service-minimisation`, `audit-hardening`, `permissions-hardening` and
+  `pam-hardening` were all making that claim with no probe behind it.
+  **`ssh-hardening`** closes a gap the other seven never had: its reload
+  restarts sshd unconditionally and reports a failed restart only through its
+  own `Err`, never through the divergence row, so the two could disagree with
+  nothing to say so. Measured 2026-08-10 in a booted arch container: masking
+  `sshd.service` before a rollback left it reporting `active` both before the
+  mask and after the rollback's restart attempt, previously unreported; the
+  probe now reports `Diverged` for exactly that state, and a second run
+  confirmed it fires.
+  **`permissions-hardening` and `pam-hardening`** earned an empty vector
+  rather than inherited one: `/etc/shadow` forced to `666` came back `600`,
+  and an appended `faillock.conf` line came back gone, across three
+  reproductions of one distribution in one container.
+  **`mac-hardening` and `audit-hardening`** each report a single
+  `Unverifiable` row naming #18: no container this project can build can be
+  handed MAC enforcement, and `auditctl` cannot run in any container this
+  project builds at all, measured twice on 2026-08-10, booted and unbooted.
+  Neither row is ever `Diverged`, and neither says the plugin cannot diverge,
+  only that nothing here could ask.
+  **`service-minimisation`**'s probe is readable on any booted host but has
+  never fired against a real divergence: `bluetooth.service`, the one
+  candidate judged safe to force, was measured 2026-08-10 to go `failed`
+  rather than `active` when a container attempted to start it, so no
+  container this project builds could put a real divergence in front of it.
+  Dispatch changed from gating the question on `reloads_for_path` to asking
+  every plugin unconditionally: `permissions-hardening` and `pam-hardening`
+  override that predicate for no path and could never have been asked under
+  the old gate, and scoping moves into the probes that need it, which already
+  receive the restored slice; the two probes that existed before this keep
+  the identical predicate one level down, so their own behaviour is
+  unchanged. `scripts/test/verify-rollback.sh` now runs as two passes: the
+  unbooted one (TESTs 1-9, unchanged, 26 of 26) and a new booted one adding
+  TESTs 10-14, which need systemd as PID 1 for the ssh and service-minimisation
+  arms to be askable at all. Both read green on 2026-08-10: **32 of 32 on the
+  unbooted pass and 5 of 5 on the booted pass**, the booted pass being new
+  work rather than a re-reading of anything asserted above.
+
 - **The mac plugin's rollback is recorded as a ceiling rather than covered.**
   Measured rather than assumed, after three "cannot" claims fell over the same
   day: the container has no AppArmor or SELinux tooling, no

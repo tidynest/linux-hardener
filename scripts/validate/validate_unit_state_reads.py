@@ -103,7 +103,7 @@ CRATES = Path("crates")
 
 # The number of production `systemctl is-enabled` call sites, pinned rather than
 # counted off the registry, which would follow the registry down.
-EXPECTED_SITE_COUNT = 3
+EXPECTED_SITE_COUNT = 4
 
 # The literal every site passes today. A call that builds this string any other
 # way is invisible here, which the docstring says rather than hides.
@@ -150,6 +150,13 @@ REGISTRY = {
         "can pull in unmasked, which is the loosening direction. ENABLED_STATES "
         "in the same file spells the seven exit-zero states out for the batched "
         "scan path, so both of its paths agree",
+    ),
+    ("hardener-plugins/src/ssh/divergence.rs", "read_enablement"): (
+        "word",
+        "classifies masked against not-masked from the printed word alone and "
+        "never reads the exit status; the divergence this probe reports "
+        "depends on the unit being masked specifically, which only the word "
+        "distinguishes from every other reason the command could exit non-zero",
     ),
 }
 
