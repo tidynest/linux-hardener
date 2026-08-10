@@ -505,24 +505,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   came back" in this codebase; `mac-hardening`, `ssh-hardening`,
   `service-minimisation`, `audit-hardening`, `permissions-hardening` and
   `pam-hardening` were all making that claim with no probe behind it.
-  **`ssh-hardening`** closes a gap the other seven never had: its reload
-  restarts sshd unconditionally and reports a failed restart only through its
-  own `Err`, never through the divergence row, so the two could disagree with
-  nothing to say so. Measured 2026-08-10 in a booted arch container: masking
-  `sshd.service` before a rollback left it reporting `active` both before the
-  mask and after the rollback's restart attempt, previously unreported; the
-  probe now reports `Diverged` for exactly that state, and a second run
-  confirmed it fires.
+  **`ssh-hardening`** closes a gap for sshd specifically, not one the other
+  seven plugins all shared: kernel's sysctl probe and firewall's ufw probe
+  already exist to catch a reload that did not take. sshd had none of its
+  own: its reload restarts it unconditionally and reports a failed restart
+  only through its own `Err`, never through the divergence row, so the two
+  could disagree with nothing to say so. Measured 2026-08-10 in a booted arch
+  container: masking `sshd.service` before a rollback left it reporting
+  `active` both before the mask and after the rollback's restart attempt,
+  previously unreported; the probe now reports `Diverged` for exactly that
+  state, and a second run confirmed it fires.
   **`permissions-hardening` and `pam-hardening`** earned an empty vector
   rather than inherited one: `/etc/shadow` forced to `666` came back `600`,
   and an appended `faillock.conf` line came back gone, across three
   reproductions of one distribution in one container.
-  **`mac-hardening` and `audit-hardening`** each report a single
-  `Unverifiable` row naming #18: no container this project can build can be
-  handed MAC enforcement, and `auditctl` cannot run in any container this
-  project builds at all, measured twice on 2026-08-10, booted and unbooted.
-  Neither row is ever `Diverged`, and neither says the plugin cannot diverge,
-  only that nothing here could ask.
+  **`audit-hardening`** reports a single `Unverifiable` row naming #18:
+  `auditctl` cannot run in any container this project builds at all,
+  measured twice on 2026-08-10, booted and unbooted. **`mac-hardening`**
+  reports nothing at all in the same containers, not an `Unverifiable` row:
+  none of them expose SELinux or AppArmor, so a host with no MAC system
+  installed has no restored configuration and no enforced policy for either
+  to disagree with, the same reasoning firewall-hardening's probe already
+  applies to no firewall backend installed. Neither audit-hardening's row nor
+  mac-hardening's silence is ever `Diverged`, and neither says the plugin
+  cannot diverge, only that nothing here could ask.
   **`service-minimisation`**'s probe is readable on any booted host but has
   never fired against a real divergence: `bluetooth.service`, the one
   candidate judged safe to force, was measured 2026-08-10 to go `failed`
@@ -534,12 +540,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the old gate, and scoping moves into the probes that need it, which already
   receive the restored slice; the two probes that existed before this keep
   the identical predicate one level down, so their own behaviour is
-  unchanged. `scripts/test/verify-rollback.sh` now runs as two passes: the
-  unbooted one (TESTs 1-9, unchanged, 26 of 26) and a new booted one adding
-  TESTs 10-14, which need systemd as PID 1 for the ssh and service-minimisation
-  arms to be askable at all. Both read green on 2026-08-10: **32 of 32 on the
-  unbooted pass and 5 of 5 on the booted pass**, the booted pass being new
-  work rather than a re-reading of anything asserted above.
+  unchanged. `scripts/test/verify-rollback.sh` now runs as two passes: an
+  unbooted one (TESTs 1-14, where TEST 10 and TEST 11 gate on
+  `host_is_booted` and skip) and a booted one added specifically for TEST 10
+  and TEST 11, which need systemd as PID 1 for the ssh and
+  service-minimisation arms to be askable at all; TESTs 12 to 14 carry no
+  such gate and run in both passes. Both read green on 2026-08-10: **30
+  passed and 2 skipped on the unbooted pass, exiting 2 rather than 0 because
+  a skip must never be recorded as a clean pass, and 5 of 5 on the booted
+  pass**, where TEST 10 and TEST 11 are the only new work and TESTs 12 to 14
+  repeat assertions the unbooted pass already made.
 
 - **The mac plugin's rollback is recorded as a ceiling rather than covered.**
   Measured rather than assumed, after three "cannot" claims fell over the same

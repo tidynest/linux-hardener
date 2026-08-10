@@ -277,22 +277,34 @@ cleanly on every reproduction. That is strong evidence for the host it was
 measured on, and not a proof that covers every distribution or every path
 either plugin manages.
 
-**`ssh-hardening`'s probe closes a gap the other seven never had: a reload
-that silently fails to take.** `reload_after_rollback` restarts sshd
-unconditionally and reports a failed restart only through its own `Err`,
-never through the divergence row, so the two paths could disagree with each
-other with nothing to say so. Measured 2026-08-10 in a booted arch container:
-masking `sshd.service` before a rollback left it reporting `active` both
-before the mask and after the rollback's restart attempt, which the probe now
-reports as `Diverged`, and a second run confirmed it fires.
+**`ssh-hardening`'s probe closes a gap for sshd specifically: a reload that
+silently fails to take.** It is not a gap the other seven plugins all shared:
+kernel's sysctl probe and firewall's ufw probe already exist for the same
+reason, catching a reload that did not take on the running system. sshd had
+none of its own, because `reload_after_rollback` restarts it unconditionally
+and reports a failed restart only through its own `Err`, never through the
+divergence row, so the two paths could disagree with each other with nothing
+to say so. Measured 2026-08-10 in a booted arch container: masking
+`sshd.service` before a rollback left it reporting `active` both before the
+mask and after the rollback's restart attempt, which the probe now reports as
+`Diverged`, and a second run confirmed it fires.
 
-**`scripts/test/verify-rollback.sh` now runs as two passes, and the booted one
-is new rather than a re-reading of anything asserted above.** The unbooted
-pass (TESTs 1-9) is unchanged and is the 26-of-26 reading already described.
-A second, booted pass adds TESTs 10-14, since `ssh-hardening`'s and
-`service-minimisation`'s probes need systemd as PID 1 to be askable at all.
-Both passes were read green on 2026-08-10: **32 of 32 on the unbooted pass and
-5 of 5 on the booted pass.**
+**`scripts/test/verify-rollback.sh` now runs as two passes, and only TEST 10
+and TEST 11 are work the booted one adds.** The default invocation (unbooted,
+under `--pipe`) runs TESTs 1-14, not the nine the 26-of-26 reading above
+measured: that reading predates TESTs 10-14 existing at all, back when TESTs
+1-9 were the whole suite. TEST 10 and TEST 11 gate on `host_is_booted` and
+SKIP in the unbooted pass, because `ssh-hardening`'s and
+`service-minimisation`'s probes need systemd as PID 1 to be askable at all,
+but TESTs 12, 13 and 14 carry no such gate and run to completion there the
+same as TESTs 1-9. A second invocation, with
+`VERIFY_ROLLBACK_DIVERGENCE_ONLY` set, runs under `--boot` and covers TEST 10
+onward: TEST 10 and TEST 11 are what it makes askable for the first time,
+while TESTs 12, 13 and 14 run a second time and their assertions are counted
+twice rather than added once. Both were read green on 2026-08-10: **30 passed
+and 2 skipped on the unbooted pass (TEST 10 and TEST 11, exactly the two
+`host_is_booted` gates above), exiting 2 rather than 0 because a skip must
+never be recorded as a clean pass, and 5 of 5 on the booted invocation.**
 
 **On a remote host without root, a restore degrades to content only.** The
 content write goes through `sudo tee`, but the `chmod`, `chown` and `rm` that
