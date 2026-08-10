@@ -113,6 +113,40 @@ fn write_atomically_succeeds_for_a_new_file() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "new = 1\n");
 }
 
+/// Re-scans `plugin_id` against the config `add` just wrote, using the same
+/// executor `add` scanned with, and returns the finding keyed `key`.
+///
+/// Writing the exception and reading the file back, which both composition
+/// tests below also do, proves only that some bytes landed in the right
+/// table. It does not prove that the plugin's own comparison then treats what
+/// was written as an applied exception. This is the step that closes that
+/// loop: loading the config exactly as `add` loaded it, scanning exactly as
+/// `add` scanned, and reading the outcome back off the live finding.
+async fn rescan_finding(
+    config_path: &PathBuf,
+    plugin_id: &str,
+    key: &str,
+    executor: Arc<dyn hardener_core::executor::SystemExecutor>,
+) -> Finding {
+    let config = crate::commands::config_loader(Some(config_path))
+        .load()
+        .expect("the config add just wrote loads cleanly");
+    let registry = hardener_plugins::create_plugin_registry();
+    let plugin = registry
+        .get(&PluginId::new(plugin_id))
+        .expect("a known plugin id resolves")
+        .expect("the plugin is registered");
+    let ctx = Context::with_executor(executor);
+    let scan = plugin
+        .scan(&ctx, config.get_plugin_config(plugin_id))
+        .await
+        .expect("the rescan succeeds against the same mock executor");
+    scan.scan_findings
+        .into_iter()
+        .find(|f| f.finding_exception_key.as_deref() == Some(key))
+        .unwrap_or_else(|| panic!("the rescan still reports a finding keyed '{key}'"))
+}
+
 /// `add` then `remove`, driven end to end through a temporary config and a
 /// [`MockExecutor`] scan, for a value-comparing plugin.
 ///
@@ -122,8 +156,19 @@ fn write_atomically_succeeds_for_a_new_file() {
 /// the composition itself, that `add` loads the named config, scans the named
 /// plugin, finds the finding the scan produced, pins the value the scan read,
 /// and writes it to the path it was given, all correctly wired together. SSH
-/// is the value-comparing plugin here: `PermitRootLogin` is refused unless the
-/// exception's documented value equals the value SSH's own scan reads.
+/// is the value-comparing plugin here: `PasswordAuthentication` is refused
+/// unless the exception's documented value equals the value SSH's own scan
+/// reads.
+///
+/// `PasswordAuthentication` is deliberate, not `PermitRootLogin`
+/// (`SSH_DIRECTIVES[0]`, `crates/hardener-plugins/src/ssh/mod.rs:86`): the
+/// mock's `sshd_config` sets only `PermitRootLogin`, which is enough on its
+/// own to make it the first finding the scan pushes, so a build that ignored
+/// `key` entirely and pinned `findings[0]` would still pass a test that used
+/// it. `PasswordAuthentication` is absent from the mock config, which is its
+/// own kind of insecure (`crates/hardener-plugins/src/ssh/mod.rs` treats a
+/// missing directive as violating every direction), and is pushed second, so
+/// only a build that actually matches on `key` finds it.
 #[tokio::test]
 async fn add_then_remove_pins_the_scanned_value_for_a_value_comparing_plugin() {
     let dir = tempfile::tempdir().unwrap();
@@ -135,7 +180,7 @@ async fn add_then_remove_pins_the_scanned_value_for_a_value_comparing_plugin() {
 
     add(AddOptions {
         plugin_id: "ssh-hardening",
-        key: "PermitRootLogin",
+        key: "PasswordAuthentication",
         reason: "break-glass access from the bastion",
         approved_by: None,
         ticket: None,
@@ -143,25 +188,40 @@ async fn add_then_remove_pins_the_scanned_value_for_a_value_comparing_plugin() {
         config_path: Some(&config_path),
         format: OutputFormat::Json,
         quiet: true,
-        executor,
+        executor: executor.clone(),
     })
     .await
     .expect("add must succeed against a temporary config and a mock scan");
 
     let written = std::fs::read_to_string(&config_path).expect("the write landed");
     assert!(
-        written.contains("[ssh.exceptions.PermitRootLogin]"),
+        written.contains("[ssh.exceptions.PasswordAuthentication]"),
         "the exception table is written under the plugin's config section: {written}"
     );
     assert!(
-        written.contains("value = \"yes\""),
-        "the value pinned is the one the scan read from sshd_config, not a \
-         placeholder or the recommended value: {written}"
+        written.contains("value = \"not set\""),
+        "the value pinned is the one the scan read, not a placeholder or the \
+         recommended value: {written}"
+    );
+
+    let rescanned = rescan_finding(
+        &config_path,
+        "ssh-hardening",
+        "PasswordAuthentication",
+        executor,
+    )
+    .await;
+    assert!(
+        matches!(rescanned.finding_exception, ExceptionOutcome::Applied(_)),
+        "the value add pinned must be the one the plugin's own comparison then \
+         accepts as an applied exception, not merely a string sitting in the \
+         file: {:?}",
+        rescanned.finding_exception
     );
 
     remove(RemoveOptions {
         plugin_id: "ssh-hardening",
-        key: "PermitRootLogin",
+        key: "PasswordAuthentication",
         config_path: Some(&config_path),
         format: OutputFormat::Json,
         quiet: true,
@@ -171,7 +231,7 @@ async fn add_then_remove_pins_the_scanned_value_for_a_value_comparing_plugin() {
 
     let restored = std::fs::read_to_string(&config_path).expect("the file is still there");
     assert!(
-        !restored.contains("PermitRootLogin"),
+        !restored.contains("PasswordAuthentication"),
         "remove takes the written exception back out: {restored}"
     );
 }
@@ -183,7 +243,11 @@ async fn add_then_remove_pins_the_scanned_value_for_a_value_comparing_plugin() {
 /// value comparison for it, so this is what would have stayed unverified had
 /// only SSH been covered. `MockExecutor::with_command_exists("auditd", false)`
 /// is enough on its own; the audit plugin returns its finding before reading
-/// or executing anything else once `auditd` is confirmed absent.
+/// or executing anything else once `auditd` is confirmed absent. The rescan
+/// below is what actually reaches
+/// [`hardener_plugins::audit::exception_outcome_for_presence`] (called from
+/// `crates/hardener-plugins/src/audit/mod.rs:916`): without it, this test
+/// asserted nothing the value-comparing test above did not already cover.
 #[tokio::test]
 async fn add_then_remove_pins_the_scanned_value_for_a_presence_plugin() {
     let dir = tempfile::tempdir().unwrap();
@@ -203,7 +267,7 @@ async fn add_then_remove_pins_the_scanned_value_for_a_presence_plugin() {
         config_path: Some(&config_path),
         format: OutputFormat::Json,
         quiet: true,
-        executor,
+        executor: executor.clone(),
     })
     .await
     .expect("add must succeed for a presence plugin too");
@@ -216,6 +280,14 @@ async fn add_then_remove_pins_the_scanned_value_for_a_presence_plugin() {
     assert!(
         written.contains("value = \"not installed\""),
         "the pinned value is what the scan observed, not a placeholder: {written}"
+    );
+
+    let rescanned =
+        rescan_finding(&config_path, "audit-hardening", "auditd-present", executor).await;
+    assert!(
+        matches!(rescanned.finding_exception, ExceptionOutcome::Applied(_)),
+        "the presence plugin's own lookup must accept what add pinned: {:?}",
+        rescanned.finding_exception
     );
 
     remove(RemoveOptions {
@@ -232,5 +304,48 @@ async fn add_then_remove_pins_the_scanned_value_for_a_presence_plugin() {
     assert!(
         !restored.contains("auditd-present"),
         "remove takes the written exception back out: {restored}"
+    );
+}
+
+/// `add` refuses a malformed `--expires` before it ever scans a plugin or
+/// writes anything, which is not proved by the direct `parse_expiry` tests
+/// above: all three call the function directly, and both composition tests
+/// above pass `expires: None`, so deleting the check at the top of `add`
+/// (`crates/hardener-cli/src/commands/exception.rs:79-81`) would leave the
+/// whole suite green while silently restoring a fail-open in the one field
+/// whose purpose is to bound a deviation in time.
+#[tokio::test]
+async fn add_refuses_a_malformed_expiry_before_writing_anything() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+    std::fs::write(&config_path, "").expect("an empty starting config");
+
+    let executor: Arc<dyn hardener_core::executor::SystemExecutor> =
+        Arc::new(MockExecutor::new().with_file("/etc/ssh/sshd_config", "PermitRootLogin yes\n"));
+
+    let err = add(AddOptions {
+        plugin_id: "ssh-hardening",
+        key: "PermitRootLogin",
+        reason: "break-glass access from the bastion",
+        approved_by: None,
+        ticket: None,
+        expires: Some("31/01/2027"),
+        config_path: Some(&config_path),
+        format: OutputFormat::Json,
+        quiet: true,
+        executor,
+    })
+    .await
+    .expect_err("a day/month/year expiry must be refused");
+
+    assert!(
+        err.to_string().contains("YYYY-MM-DD"),
+        "the refusal names the expected format: {err}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&config_path).expect("the file is still there"),
+        "",
+        "a refused expiry must be caught before any scan or write happens, not \
+         merely refused after the fact"
     );
 }
