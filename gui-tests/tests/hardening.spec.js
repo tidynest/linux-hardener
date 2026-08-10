@@ -355,10 +355,16 @@ test.describe('Rollback modal divergences', () => {
     await expect(rows).toHaveCount(2);
     // The two states ask an operator to do different things, so a render that
     // showed them identically would be a defect even with both rows present.
-    await expect(rows.nth(0)).toContainText('diverged');
-    await expect(rows.nth(1)).toContainText('could not check');
-    await expect(rows.nth(0)).toContainText('net.ipv4.conf.all.accept_source_route');
-    await expect(rows.nth(1)).toContainText('/usr/lib/sysctl.d/50-default.conf');
+    //
+    // The fixture's accept_source_route row is Diverged AND expected (#152),
+    // so it renders second, under "Expected, by design:". The sysctl.d row
+    // is Unverifiable and unmarked, so it renders first, under "Still
+    // diverged:". Order follows the fixture's classification, not the array
+    // index the mock lists them in.
+    await expect(rows.nth(0)).toContainText('could not check');
+    await expect(rows.nth(1)).toContainText('diverged');
+    await expect(rows.nth(0)).toContainText('/usr/lib/sysctl.d/50-default.conf');
+    await expect(rows.nth(1)).toContainText('net.ipv4.conf.all.accept_source_route');
   });
 
   // A measured disagreement and a probe that could not answer ask an operator
@@ -378,8 +384,25 @@ test.describe('Rollback modal divergences', () => {
   test('T-DIVG-02: the sentence is shown in full, not clipped away', async ({ page }) => {
     // A row that hid its detail would pass an overflow check trivially, so the
     // text is asserted present before the geometry below is asked about.
-    await expect(page.locator('.rollback-divergence').first()).toContainText(
+    //
+    // Scoped to .rollback-divergence-expected rather than
+    // .rollback-divergence: this sentence belongs to the accept_source_route
+    // row, which is the expected one (#152), and .rollback-divergence alone
+    // would match whichever row the sort put first, not this one by name.
+    await expect(page.locator('.rollback-divergence-expected').first()).toContainText(
       'the rollback restored files and reloaded them without changing /proc/sys',
+    );
+  });
+
+  // #152: the reason a plugin gave for an expected row is the one thing the
+  // desktop surface adds over the CLI's own text, and nothing pinned it
+  // before this. Both headings are asserted too, since a render that dropped
+  // either one would still pass every other test in this file.
+  test('T-DIVG-05: both headings render and the expected reason is shown', async ({ page }) => {
+    await expect(page.getByText('Still diverged:')).toBeVisible();
+    await expect(page.getByText('Expected, by design:')).toBeVisible();
+    await expect(page.locator('.divergence-reason')).toContainText(
+      'a rollback restores files and reloads them and never writes /proc/sys',
     );
   });
 
