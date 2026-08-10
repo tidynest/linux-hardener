@@ -1015,7 +1015,6 @@ else
         SSH_UNIT="ssh.service"
         systemctl mask ssh.service > /dev/null 2>&1 || true
     fi
-    SSH_FORCED="sshd.service masked, so reload_after_rollback cannot restart it"
 
     # An independently checkable signal that the forcing step actually took,
     # read back rather than assumed. TESTs 12 to 14 each print one; TEST 10
@@ -1024,6 +1023,20 @@ else
     # scenario that just proved most able to lie (Finding 1).
     SSH_MASK_STATE=$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null || true)
     info "  $SSH_UNIT state after masking: ${SSH_MASK_STATE:-unknown}"
+
+    # The forced: line is derived from that readback, never from the mask
+    # call's exit status: `systemctl mask ... || true` swallows failure, so
+    # the "masked" claim used to be printed whether or not the mask actually
+    # took, on a host where the unit does not exist, is already masked in a
+    # way that refuses re-masking, or the mask is refused for any other
+    # reason. `systemctl is-enabled` prints the literal word "masked" for a
+    # masked unit and something else, or nothing at all, for anything short
+    # of that (Review Finding 1).
+    if [[ "$SSH_MASK_STATE" == "masked" ]]; then
+        SSH_FORCED="$SSH_UNIT masked, so reload_after_rollback cannot restart it"
+    else
+        SSH_FORCED="attempted to mask $SSH_UNIT but it did not take (state after masking: ${SSH_MASK_STATE:-unknown}); reload_after_rollback may still be able to restart it"
+    fi
 
     SSH_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
     if [[ -z "$SSH_CP" ]]; then
@@ -1046,44 +1059,88 @@ elif ! command -v systemctl &>/dev/null; then
 elif ! host_is_booted; then
     skip "services divergence measurement: systemd is not PID 1 here, because release-readiness-root.sh runs this script under --pipe rather than --boot; systemctl start has no service manager to talk to, so this scenario cannot force its divergence"
 else
-    "$BINARY" apply --plugin service-minimisation > /dev/null 2>&1 || true
-
-    # The divergence this aims at: a unit the restored files enable but which
-    # is not running. Starting a unit the apply disabled, then rolling back,
-    # leaves the files saying one thing and the running system another.
+    # The divergence this aims at: a unit the restored files say should not
+    # be running, which is running anyway.
     #
-    # The candidate is a deliberately chosen known-safe unit, not whatever
-    # `--state=disabled` sorts first: starting an arbitrary unit can hang,
-    # time out, or change what TESTs 12 to 14 measure afterwards in the same
-    # container (Finding 2). bluetooth.service is the same unit
-    # full-test-suite.sh's test_services_rollback_restores uses for the
-    # equivalent services reading, for the same reason: create-container.sh
-    # installs and enables it on every image specifically so this plugin
-    # always has something to act on. The state filter stays in the query so
-    # this only fires when the candidate is genuinely startable; a unit the
-    # apply above has already masked (as it masks everything it manages)
-    # would not appear here and is correctly treated as absent rather than
-    # forced through anyway.
+    # The previous shape picked its candidate with `--state=disabled` AFTER
+    # the apply below had already run. That apply (services/mod.rs:816-907)
+    # unconditionally masks any directive unit that is enabled or active, and
+    # bluetooth.service -- the one known-safe candidate, chosen because
+    # create-container.sh installs and enables it on every image -- starts out
+    # enabled. By the time the old code looked, the apply had almost always
+    # already masked it, and `--state=disabled` correctly does not match a
+    # masked unit: "forced: nothing" on essentially every run (Finding 2).
+    #
+    # The candidate is now selected and neutralised BEFORE this apply call
+    # instead: stopped and disabled, never masked. That keeps it inside the
+    # apply's own skip gate (`!is_enabled && !is_active`, services/mod.rs:824)
+    # so the apply leaves it alone, which is what the readback just below the
+    # apply call confirms rather than assumes. Its checkpoint -- taken before
+    # that gate is even reached -- therefore captures "disabled, unmasked" as
+    # the state a rollback restores, and a plain `systemctl start` afterwards
+    # is what then disagrees with it: a masked unit would refuse that start
+    # outright and leave this scenario as structurally dead as before.
     SERVICES_KNOWN_SAFE_UNIT="bluetooth.service"
     SERVICES_UNIT=""
-    if systemctl list-unit-files --type=service --state=disabled --no-legend \
-        "$SERVICES_KNOWN_SAFE_UNIT" 2>/dev/null | grep -q .; then
+    SERVICES_PRESENT=false
+    SERVICES_ORIG_ENABLED=""
+    SERVICES_ORIG_ACTIVE=""
+    if systemctl list-unit-files --type=service --no-legend "$SERVICES_KNOWN_SAFE_UNIT" 2>/dev/null | grep -q .; then
         SERVICES_UNIT="$SERVICES_KNOWN_SAFE_UNIT"
+        SERVICES_PRESENT=true
+        # Recorded before anything below touches the unit, so the teardown at
+        # the end of this scenario has the host's true original to restore,
+        # not the disabled state this scenario is about to put there instead.
+        SERVICES_ORIG_ENABLED=$(systemctl is-enabled "$SERVICES_UNIT" 2>/dev/null || true)
+        SERVICES_ORIG_ACTIVE=$(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || true)
     fi
 
-    SERVICES_WAS_ACTIVE=""
-    if [[ -z "$SERVICES_UNIT" ]]; then
-        SERVICES_FORCED="nothing: $SERVICES_KNOWN_SAFE_UNIT is not present in a disabled, unmasked state here, and no other unit is trusted to start safely"
-    else
-        SERVICES_WAS_ACTIVE=$(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || true)
-        systemctl start "$SERVICES_UNIT" > /dev/null 2>&1 || true
-        SERVICES_FORCED="$SERVICES_UNIT started while its unit files say disabled"
+    SERVICES_NEUTRALISED=false
+    SERVICES_PRE_APPLY_ENABLED=""
+    SERVICES_PRE_APPLY_ACTIVE=""
+    if [[ "$SERVICES_PRESENT" == "true" ]]; then
+        systemctl stop "$SERVICES_UNIT" > /dev/null 2>&1 || true
+        systemctl disable "$SERVICES_UNIT" > /dev/null 2>&1 || true
+        SERVICES_PRE_APPLY_ENABLED=$(systemctl is-enabled "$SERVICES_UNIT" 2>/dev/null || true)
+        SERVICES_PRE_APPLY_ACTIVE=$(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || true)
+        info "  $SERVICES_UNIT state before the apply: enabled=${SERVICES_PRE_APPLY_ENABLED:-unknown} active=${SERVICES_PRE_APPLY_ACTIVE:-unknown}"
+        if [[ "$SERVICES_PRE_APPLY_ENABLED" == "disabled" && "$SERVICES_PRE_APPLY_ACTIVE" != "active" ]]; then
+            SERVICES_NEUTRALISED=true
+        fi
+    fi
 
-        # An independently checkable signal that the forcing step actually
-        # took, read back rather than assumed (Finding 3): a masked unit
-        # refuses to start outright, so this line is what tells "started" and
-        # "start silently refused" apart.
-        info "  $SERVICES_UNIT active state after the forcing step: $(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || echo unknown)"
+    "$BINARY" apply --plugin service-minimisation > /dev/null 2>&1 || true
+
+    # The forced: line is derived from readbacks at every step, never from an
+    # intent or an exit status swallowed by `|| true` (Finding 1's rule,
+    # applied here on top of Finding 2's restructure).
+    if [[ "$SERVICES_PRESENT" != "true" ]]; then
+        SERVICES_FORCED="nothing: $SERVICES_KNOWN_SAFE_UNIT is not installed on this host, so this scenario cannot force its divergence"
+    elif [[ "$SERVICES_NEUTRALISED" != "true" ]]; then
+        SERVICES_FORCED="nothing: $SERVICES_KNOWN_SAFE_UNIT could not be stopped and disabled before the apply ran (state: enabled=${SERVICES_PRE_APPLY_ENABLED:-unknown} active=${SERVICES_PRE_APPLY_ACTIVE:-unknown}), so this scenario cannot force its divergence safely"
+    else
+        # Confirms the apply's skip gate actually held, rather than assuming
+        # it: a masked unit refuses to start outright, and attempting that
+        # start anyway would report a forcing that did not happen.
+        SERVICES_POST_APPLY_ENABLED=$(systemctl is-enabled "$SERVICES_UNIT" 2>/dev/null || true)
+        if [[ "$SERVICES_POST_APPLY_ENABLED" == "masked" ]]; then
+            SERVICES_FORCED="nothing: $SERVICES_UNIT was masked by the apply despite being stopped and disabled beforehand, so starting it would not be safe here"
+        else
+            systemctl start "$SERVICES_UNIT" > /dev/null 2>&1 || true
+
+            # An independently checkable signal that the forcing step
+            # actually took, read back rather than assumed (Finding 3): a
+            # masked unit refuses to start outright, so this line is what
+            # tells "started" and "start silently refused" apart.
+            SERVICES_START_STATE=$(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || echo unknown)
+            info "  $SERVICES_UNIT active state after the forcing step: $SERVICES_START_STATE"
+
+            if [[ "$SERVICES_START_STATE" == "active" ]]; then
+                SERVICES_FORCED="$SERVICES_UNIT started while its unit files say disabled"
+            else
+                SERVICES_FORCED="attempted to start $SERVICES_UNIT while its unit files say disabled, but it did not take (state after starting: ${SERVICES_START_STATE:-unknown})"
+            fi
+        fi
     fi
 
     SERVICES_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
@@ -1095,13 +1152,32 @@ else
         rm -f /tmp/diverge-services.json
     fi
 
-    # Teardown, independent of whether the checkpoint above was found: a
-    # rollback restores files, not a unit's running state, so nothing above
-    # this line puts a started unit back to not-running on its own. Only
-    # stopped if this scenario is what started it, so a unit that was already
-    # active before this scenario ran is left exactly as found.
-    if [[ -n "$SERVICES_UNIT" && "$SERVICES_WAS_ACTIVE" != "active" ]]; then
-        systemctl stop "$SERVICES_UNIT" > /dev/null 2>&1 || true
+    # Teardown, independent of whether the checkpoint above was found and of
+    # which branch above ran: this scenario's own pre-apply stop and disable
+    # is what the apply's checkpoint captured, so a rollback restores THAT
+    # state, not the host's true original recorded before this scenario
+    # touched anything. Putting the true original back -- both enablement and
+    # running state -- is this scenario's own responsibility on every path,
+    # including the one where an earlier step in this scenario failed.
+    if [[ "$SERVICES_PRESENT" == "true" ]]; then
+        SERVICES_TEARDOWN_ENABLED=$(systemctl is-enabled "$SERVICES_UNIT" 2>/dev/null || true)
+        if [[ "$SERVICES_TEARDOWN_ENABLED" == "masked" && "$SERVICES_ORIG_ENABLED" != "masked" ]]; then
+            systemctl unmask "$SERVICES_UNIT" > /dev/null 2>&1 || true
+        fi
+        if [[ "$SERVICES_ORIG_ENABLED" == "enabled" ]]; then
+            systemctl enable "$SERVICES_UNIT" > /dev/null 2>&1 || true
+        elif [[ "$SERVICES_ORIG_ENABLED" == "masked" ]]; then
+            systemctl mask "$SERVICES_UNIT" > /dev/null 2>&1 || true
+        fi
+
+        SERVICES_TEARDOWN_ACTIVE=$(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || true)
+        if [[ "$SERVICES_TEARDOWN_ACTIVE" != "$SERVICES_ORIG_ACTIVE" ]]; then
+            if [[ "$SERVICES_ORIG_ACTIVE" == "active" ]]; then
+                systemctl start "$SERVICES_UNIT" > /dev/null 2>&1 || true
+            else
+                systemctl stop "$SERVICES_UNIT" > /dev/null 2>&1 || true
+            fi
+        fi
     fi
 fi
 
