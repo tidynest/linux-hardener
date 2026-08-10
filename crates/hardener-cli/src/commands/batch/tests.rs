@@ -1822,6 +1822,7 @@ fn a_hosts_divergences_reach_the_fleet_summary() {
         divergence_subject: "ufw".to_string(),
         divergence_state: DivergenceState::Diverged,
         divergence_detail: "still enforcing".to_string(),
+        divergence_expected: None,
     }];
 
     let status = rollback_status_for(&[result], 0);
@@ -1853,6 +1854,7 @@ fn an_unverifiable_row_reaches_its_own_fleet_count() {
         divergence_subject: "/etc/pam.d/system-auth".to_string(),
         divergence_state: DivergenceState::Unverifiable,
         divergence_detail: "config unreadable after restore".to_string(),
+        divergence_expected: None,
     }];
 
     let status = rollback_status_for(&[result], 0);
@@ -1910,6 +1912,7 @@ fn the_rows_behind_the_counts_cross_the_fleet_boundary() {
         divergence_subject: "net.ipv4.conf.all.log_martians".to_string(),
         divergence_state: DivergenceState::Diverged,
         divergence_detail: "running value 0, restored file says 1".to_string(),
+        divergence_expected: None,
     }];
     let mut second = rollback_result_fixture();
     second.rollback_divergences = vec![RollbackDivergence {
@@ -1917,6 +1920,7 @@ fn the_rows_behind_the_counts_cross_the_fleet_boundary() {
         divergence_subject: "ufw".to_string(),
         divergence_state: DivergenceState::Unverifiable,
         divergence_detail: "ufw not installed, nothing to read".to_string(),
+        divergence_expected: None,
     }];
 
     let status = rollback_status_for(&[first, second], 0);
@@ -1968,12 +1972,14 @@ fn render_rollback_text_prints_each_divergence_row() {
                 divergence_subject: "net.ipv4.conf.all.log_martians".to_string(),
                 divergence_state: DivergenceState::Diverged,
                 divergence_detail: "running value 0, restored file says 1".to_string(),
+                divergence_expected: None,
             },
             RollbackDivergence {
                 divergence_plugin_id: "firewall-hardening".to_string(),
                 divergence_subject: "ufw".to_string(),
                 divergence_state: DivergenceState::Unverifiable,
                 divergence_detail: "ufw not installed, nothing to read".to_string(),
+                divergence_expected: None,
             },
         ],
     })]);

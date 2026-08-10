@@ -23,12 +23,13 @@ const PLUGIN_ID: &str = "audit-hardening";
 /// loaded rule set as a whole, never on one rule at a time.
 const SUBJECT: &str = "audit-rules";
 
-fn row(state: DivergenceState, detail: String) -> RollbackDivergence {
+fn row(state: DivergenceState, detail: String, expected: Option<String>) -> RollbackDivergence {
     RollbackDivergence {
         divergence_plugin_id: PLUGIN_ID.to_string(),
         divergence_subject: SUBJECT.to_string(),
         divergence_state: state,
         divergence_detail: detail,
+        divergence_expected: expected,
     }
 }
 
@@ -90,6 +91,7 @@ pub(super) async fn audit_divergences(ctx: &Context) -> Vec<RollbackDivergence> 
     vec![row(
         DivergenceState::Unverifiable,
         format!("{reason}. See #18."),
+        None,
     )]
 }
 

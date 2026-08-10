@@ -270,6 +270,7 @@ impl HardeningPlugin for SilentButDivergedPlugin {
             divergence_subject: "a subject".to_string(),
             divergence_state: DivergenceState::Diverged,
             divergence_detail: "the running system disagrees".to_string(),
+            divergence_expected: None,
         }]
     }
 }
@@ -341,6 +342,7 @@ impl HardeningPlugin for OrderSensitivePlugin {
             divergence_state: DivergenceState::Diverged,
             divergence_detail: "reload_after_rollback had already run when this was asked"
                 .to_string(),
+            divergence_expected: None,
         }]
     }
 }
@@ -403,6 +405,7 @@ impl HardeningPlugin for SelfScopingPlugin {
             divergence_subject: "a scoped subject".to_string(),
             divergence_state: DivergenceState::Diverged,
             divergence_detail: "a restored path was this plugin's own".to_string(),
+            divergence_expected: None,
         }]
     }
 }

@@ -22,12 +22,18 @@ use hardener_types::{DivergenceState, RollbackDivergence};
 /// The plugin id every row here carries.
 const PLUGIN_ID: &str = "mac-hardening";
 
-fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDivergence {
+fn row(
+    subject: &str,
+    state: DivergenceState,
+    detail: String,
+    expected: Option<String>,
+) -> RollbackDivergence {
     RollbackDivergence {
         divergence_plugin_id: PLUGIN_ID.to_string(),
         divergence_subject: subject.to_string(),
         divergence_state: state,
         divergence_detail: detail,
+        divergence_expected: expected,
     }
 }
 
@@ -76,6 +82,7 @@ pub(super) async fn mac_divergences(
         subject,
         DivergenceState::Unverifiable,
         format!("{reason}. See #18."),
+        None,
     )]
 }
 

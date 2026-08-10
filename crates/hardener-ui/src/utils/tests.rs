@@ -767,6 +767,7 @@ fn a_divergence_is_named_in_the_summary() {
         divergence_subject: "ufw".to_string(),
         divergence_state: DivergenceState::Diverged,
         divergence_detail: "ufw is enforcing while its config says ENABLED=no".to_string(),
+        divergence_expected: None,
     }]);
 
     assert_eq!(
@@ -786,12 +787,14 @@ fn two_divergences_pluralise_the_summary_clause() {
             divergence_subject: "ufw".to_string(),
             divergence_state: DivergenceState::Diverged,
             divergence_detail: "ufw is enforcing while its config says ENABLED=no".to_string(),
+            divergence_expected: None,
         },
         RollbackDivergence {
             divergence_plugin_id: "ssh-hardening".to_string(),
             divergence_subject: "sshd".to_string(),
             divergence_state: DivergenceState::Diverged,
             divergence_detail: "sshd is running with PermitRootLogin yes".to_string(),
+            divergence_expected: None,
         },
     ]);
 
@@ -807,6 +810,7 @@ fn divergence_row(state: DivergenceState) -> RollbackDivergence {
         divergence_subject: "/etc/pam.d/system-auth".to_string(),
         divergence_state: state,
         divergence_detail: "config unreadable after restore".to_string(),
+        divergence_expected: None,
     }
 }
 

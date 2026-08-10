@@ -368,12 +368,14 @@ fn a_clean_rollback_carrying_divergences_still_has_no_failure_reason() {
                 divergence_subject: "kernel.kptr_restrict".to_string(),
                 divergence_state: DivergenceState::Diverged,
                 divergence_detail: "no configuration file names it".to_string(),
+                divergence_expected: None,
             },
             RollbackDivergence {
                 divergence_plugin_id: "firewall-hardening".to_string(),
                 divergence_subject: "ufw".to_string(),
                 divergence_state: DivergenceState::Unverifiable,
                 divergence_detail: "ufw status could not be run".to_string(),
+                divergence_expected: None,
             },
         ],
     };

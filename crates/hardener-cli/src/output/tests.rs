@@ -623,12 +623,14 @@ fn each_state_prints_its_subject_and_sentence() {
             divergence_subject: "net.ipv4.conf.all.log_martians".to_string(),
             divergence_state: DivergenceState::Diverged,
             divergence_detail: "reads 1 and no configuration file names it".to_string(),
+            divergence_expected: None,
         },
         RollbackDivergence {
             divergence_plugin_id: "firewall-hardening".to_string(),
             divergence_subject: "ufw".to_string(),
             divergence_state: DivergenceState::Unverifiable,
             divergence_detail: "ufw status needs root".to_string(),
+            divergence_expected: None,
         },
     ]);
 
@@ -654,12 +656,14 @@ fn the_state_column_aligns_even_for_the_longest_managed_parameter_name() {
             divergence_subject: "net.ipv4.conf.default.accept_source_route".to_string(),
             divergence_state: DivergenceState::Diverged,
             divergence_detail: "the longest managed parameter name".to_string(),
+            divergence_expected: None,
         },
         RollbackDivergence {
             divergence_plugin_id: "kernel-hardening".to_string(),
             divergence_subject: "kernel.kptr_restrict".to_string(),
             divergence_state: DivergenceState::Diverged,
             divergence_detail: "a much shorter one".to_string(),
+            divergence_expected: None,
         },
     ]);
 

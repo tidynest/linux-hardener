@@ -39,12 +39,13 @@ const PLUGIN_ID: &str = "ssh-hardening";
 /// name would measure a unit the reload never tried to touch.
 const SSHD_UNIT: &str = "sshd";
 
-fn row(state: DivergenceState, detail: String) -> RollbackDivergence {
+fn row(state: DivergenceState, detail: String, expected: Option<String>) -> RollbackDivergence {
     RollbackDivergence {
         divergence_plugin_id: PLUGIN_ID.to_string(),
         divergence_subject: SSHD_UNIT.to_string(),
         divergence_state: state,
         divergence_detail: detail,
+        divergence_expected: expected,
     }
 }
 
@@ -152,6 +153,7 @@ pub(super) async fn sshd_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
                 "whether {SSHD_UNIT} is running could not be read, so whether it is serving \
                  the restored configuration is unknown: {detail}"
             ),
+            None,
         )],
         Activity::Running => match read_enablement(ctx).await {
             // Running and masked: the restart reload_after_rollback attempted
@@ -164,6 +166,7 @@ pub(super) async fn sshd_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
                      attempted could not have applied the restored configuration; masking \
                      refuses future starts but does not stop a unit already running"
                 ),
+                None,
             )],
             // Running and not masked: nothing here contradicts a restart
             // having succeeded, so this probe makes no claim.
@@ -175,6 +178,7 @@ pub(super) async fn sshd_divergences(ctx: &Context) -> Vec<RollbackDivergence> {
                      restart onto the restored configuration could have taken, could not be \
                      read: {detail}"
                 ),
+                None,
             )],
         },
     }

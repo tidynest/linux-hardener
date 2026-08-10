@@ -28,12 +28,18 @@ use hardener_types::{DivergenceState, RollbackDivergence};
 /// The plugin id every row here carries.
 const PLUGIN_ID: &str = "service-minimisation";
 
-fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDivergence {
+fn row(
+    subject: &str,
+    state: DivergenceState,
+    detail: String,
+    expected: Option<String>,
+) -> RollbackDivergence {
     RollbackDivergence {
         divergence_plugin_id: PLUGIN_ID.to_string(),
         divergence_subject: subject.to_string(),
         divergence_state: state,
         divergence_detail: detail,
+        divergence_expected: expected,
     }
 }
 
@@ -174,6 +180,7 @@ pub(super) async fn service_divergences(ctx: &Context) -> Vec<RollbackDivergence
                         "whether {name} is installed could not be read, so whether its \
                          restored unit files disagree with the running service is unknown: {e}"
                     ),
+                    None,
                 ));
                 continue;
             }
@@ -190,6 +197,7 @@ pub(super) async fn service_divergences(ctx: &Context) -> Vec<RollbackDivergence
                     "whether {name}'s restored unit files leave it enabled could not be read, \
                      so whether it disagrees with the running service is unknown: {detail}"
                 ),
+                None,
             )),
             (_, Activity::Unverifiable(detail)) => rows.push(row(
                 name,
@@ -198,6 +206,7 @@ pub(super) async fn service_divergences(ctx: &Context) -> Vec<RollbackDivergence
                     "whether {name} is currently running could not be read, so whether it \
                      disagrees with its restored unit files is unknown: {detail}"
                 ),
+                None,
             )),
             // Not enabled, but the service manager reports it running anyway:
             // whatever the rollback undid on disk, it did not reach the
@@ -216,6 +225,7 @@ pub(super) async fn service_divergences(ctx: &Context) -> Vec<RollbackDivergence
                     "{name} reads {word} after the rollback, but the service manager reports \
                      it running"
                 ),
+                None,
             )),
             // Enabled, but the service manager reports it stopped:
             // reload_after_rollback only reloads the unit files, it never
@@ -228,6 +238,7 @@ pub(super) async fn service_divergences(ctx: &Context) -> Vec<RollbackDivergence
                     "{name} reads {word} after the rollback, but the service manager reports \
                      it not running"
                 ),
+                None,
             )),
             // Enabled and running, or not enabled and stopped: the enablement
             // and the service manager agree, and this probe makes no claim.

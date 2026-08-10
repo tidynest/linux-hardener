@@ -15,12 +15,13 @@ use std::path::Path;
 /// The plugin id every row here carries.
 const PLUGIN_ID: &str = "firewall-hardening";
 
-fn row(state: DivergenceState, detail: String) -> RollbackDivergence {
+fn row(state: DivergenceState, detail: String, expected: Option<String>) -> RollbackDivergence {
     RollbackDivergence {
         divergence_plugin_id: PLUGIN_ID.to_string(),
         divergence_subject: "ufw".to_string(),
         divergence_state: state,
         divergence_detail: detail,
+        divergence_expected: expected,
     }
 }
 
@@ -108,6 +109,7 @@ pub(super) async fn firewall_divergences(ctx: &Context) -> Vec<RollbackDivergenc
                     "which firewall backend is installed could not be determined, so whether ufw \
                      is still enforcing over the restored configuration is unknown: {e}"
                 ),
+                None,
             )];
         }
     };
@@ -130,6 +132,7 @@ pub(super) async fn firewall_divergences(ctx: &Context) -> Vec<RollbackDivergenc
                     "{UFW_CONF} could not be read, so whether ufw's restored configuration \
                      matches what it is running is unknown: {e}"
                 ),
+                None,
             )];
         }
     };
@@ -145,6 +148,7 @@ pub(super) async fn firewall_divergences(ctx: &Context) -> Vec<RollbackDivergenc
                      restored {UFW_CONF} (ENABLED={}) is unknown: {detail}",
                     if configured_enabled { "yes" } else { "no" }
                 ),
+                None,
             )];
         }
     };
@@ -158,6 +162,7 @@ pub(super) async fn firewall_divergences(ctx: &Context) -> Vec<RollbackDivergenc
                  a running firewall, because stopping one would leave the host less protected \
                  than the rollback found it"
             ),
+            None,
         )],
         (false, true) => vec![row(
             DivergenceState::Diverged,
@@ -165,6 +170,7 @@ pub(super) async fn firewall_divergences(ctx: &Context) -> Vec<RollbackDivergenc
                 "ufw is not enforcing while {UFW_CONF} says ENABLED=yes, so this host is weaker \
                  than its own configuration describes and the next reboot changes its posture"
             ),
+            None,
         )],
         _ => Vec::new(),
     }

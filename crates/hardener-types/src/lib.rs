@@ -989,6 +989,19 @@ pub struct RollbackDivergence {
     pub divergence_state: DivergenceState,
     /// The operator's sentence, carrying both values where the probe has them.
     pub divergence_detail: String,
+    /// Why this row is the designed consequence of the plugin's own apply plus
+    /// a rollback that never starts, stops or writes anything live. `None`
+    /// when it is not, which is the loud default: an unmarked row sorts to the
+    /// top of every surface.
+    ///
+    /// Deliberately not defaulted. A ninth plugin must answer this question
+    /// rather than inherit an answer nobody gave, which is the remedy #142
+    /// applied to the trait default it deleted.
+    ///
+    /// Orthogonal to `divergence_state`. An `Unverifiable` row can be
+    /// expected: `mac-hardening` and `audit-hardening` each emit one on every
+    /// rollback on every host this project can build, and both name #18.
+    pub divergence_expected: Option<String>,
 }
 
 /// Results of a full rollback operation.

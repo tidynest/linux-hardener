@@ -807,6 +807,7 @@ mod rollback_result_tests {
             divergence_subject: "ufw".to_string(),
             divergence_state: state,
             divergence_detail: "detail".to_string(),
+            divergence_expected: None,
         }
     }
 
@@ -886,6 +887,7 @@ mod rollback_divergence_tests {
                 divergence_subject: "net.ipv4.conf.all.log_martians".to_string(),
                 divergence_state: state,
                 divergence_detail: "reads 1 and no file names it".to_string(),
+                divergence_expected: None,
             };
 
             let json = serde_json::to_string(&row).expect("a divergence row serialises");

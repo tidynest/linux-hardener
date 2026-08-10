@@ -12,12 +12,18 @@ use hardener_types::{DivergenceState, RollbackDivergence};
 /// The plugin id every row here carries.
 const PLUGIN_ID: &str = "kernel-hardening";
 
-fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDivergence {
+fn row(
+    subject: &str,
+    state: DivergenceState,
+    detail: String,
+    expected: Option<String>,
+) -> RollbackDivergence {
     RollbackDivergence {
         divergence_plugin_id: PLUGIN_ID.to_string(),
         divergence_subject: subject.to_string(),
         divergence_state: state,
         divergence_detail: detail,
+        divergence_expected: expected,
     }
 }
 
@@ -145,6 +151,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                 "kernel parameters",
                 DivergenceState::Unverifiable,
                 format!("{reason}, so whether the restored configuration names them is unknown"),
+                None,
             )
         })
         .collect();
@@ -179,6 +186,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                         "{reason}, so whether it names a parameter this rollback restored is \
                          unknown"
                     ),
+                    None,
                 )
             }),
     );
@@ -222,6 +230,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                     name,
                     DivergenceState::Unverifiable,
                     format!("/proc/sys could not be read for {name}, so whether it came back is unknown: {e}"),
+                    None,
                 ));
                 continue;
             }
@@ -385,7 +394,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                         ),
                     }
                 };
-                rows.push(row(name, state, detail));
+                rows.push(row(name, state, detail, None));
             }
             Some(_) => {}
             // No explicit assignment names it. Reported only where the running
@@ -522,7 +531,7 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                         ),
                     )
                 };
-                rows.push(row(name, state, detail));
+                rows.push(row(name, state, detail, None));
             }
             None => {}
         }
