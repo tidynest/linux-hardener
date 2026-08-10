@@ -2,6 +2,15 @@ pub mod audit;
 pub mod firewall;
 pub mod kernel;
 pub mod mac;
+// Gated, because `define_plugin!` carries `#[macro_export]` and an ungated
+// `pub mod` puts it at the crate root for every downstream build. Its
+// generated `divergences_after_rollback` returns an empty vector, which means
+// "everything checkable came back": a plugin written through this macro would
+// take that answer with nothing but a comment to warn its author, which is the
+// #142 defect the trait default was just deleted to remove. `cfg(test)` is not
+// propagated to dependents, so the macro stays available to this crate's own
+// tests, its only caller, and exists nowhere else.
+#[cfg(test)]
 pub mod macros;
 pub mod pam;
 pub mod permissions;
