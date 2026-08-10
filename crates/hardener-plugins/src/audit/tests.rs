@@ -368,6 +368,67 @@ async fn scan_reports_rules_unchecked_when_auditctl_needs_root() {
     );
 }
 
+/// `validate` must fold `AuditRulesResult::UnrecognisedFailure` back to
+/// `Rules(Vec::new())`, exactly as scan does at its own `read_current_audit_rules`
+/// call, and exactly as this collapsed before that variant existed (#142).
+///
+/// Before commit 9f31ea46 introduced the variant, an `auditctl -l` failure
+/// that was neither a recognised permission refusal nor an unspawnable binary
+/// read as `Rules(Vec::new())` here too, so validate reported every one of the
+/// 25 `AUDIT_RULES` entries as missing. The `if let AuditRulesResult::Rules(_)`
+/// pattern added by that commit only matches the `Rules` arm, so an
+/// unrecognised failure now falls through the whole rule-estimation block
+/// silently: a dry-run preview on a host in this state shows no pending rule
+/// changes while `apply` (which never calls this function at all) would still
+/// write all 25. Asserted against the exact count so a regression that drops
+/// only some rules would also fail here.
+#[tokio::test]
+async fn validate_folds_unrecognised_auditctl_failure_to_empty_rules() {
+    let mock = MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "auditd"],
+            CommandOutput {
+                stdout: "enabled\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &["is-active", "auditd"],
+            CommandOutput {
+                stdout: "active\n".to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        )
+        .with_command(
+            "auditctl",
+            &["-l"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "unexpected internal error".to_string(),
+                exit_code: 2,
+            },
+        );
+    let ctx = Context::with_executor(Arc::new(mock));
+
+    let report = AuditHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("validate must not error on an unrecognised auditctl failure");
+
+    assert_eq!(
+        report.validation_report_estimated_changes,
+        vec![format!("Add {} audit-rules", AUDIT_RULES.len())],
+        "an unrecognised auditctl failure must be folded to Rules(Vec::new()), \
+         reporting every configured audit rule as a pending change, got: {:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
 /// Names only audit's own paths, so a failure here cannot come from another
 /// plugin's entry in a shared list.
 #[test]

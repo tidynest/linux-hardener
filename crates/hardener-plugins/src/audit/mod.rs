@@ -337,11 +337,12 @@ enum AuditRulesResult {
     ProbeFailed(String),
     /// `auditctl -l` ran and exited non-zero for a reason that is neither a
     /// recognised permission refusal nor an unspawnable binary, carrying
-    /// that reason. Scan and apply treat this exactly as `Rules(Vec::new())`,
-    /// which is what it collapsed into before this variant existed; kept
-    /// apart so a caller that can say more, like the divergence probe, is
-    /// not forced to repeat "0 loaded audit rule(s)" as if the kernel had
-    /// been asked and answered cleanly.
+    /// that reason. Scan and validate both fold this back to
+    /// `Rules(Vec::new())`, which is what it collapsed into before this
+    /// variant existed; `apply` never calls this function at all, so it is
+    /// unaffected either way. Kept apart so a caller that can say more, like
+    /// the divergence probe, is not forced to repeat "0 loaded audit
+    /// rule(s)" as if the kernel had been asked and answered cleanly.
     UnrecognisedFailure(String),
 }
 
@@ -1547,9 +1548,18 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     estimated_changes.push("Start auditd service".to_string());
                 }
 
-                // Estimate rule changes
-                if let AuditRulesResult::Rules(current_rules) = read_current_audit_rules(ctx).await
-                {
+                // Estimate rule changes. UnrecognisedFailure is folded back
+                // into Rules(Vec::new()) here, matching the fold scan applies
+                // at its own read_current_audit_rules call (#142): this is
+                // the same "add a missing rule" decision scan makes, and an
+                // operator should not see a preview go silent, nor lose every
+                // rule finding, to a transient auditctl hiccup that apply
+                // itself does not consult before writing.
+                let rules_result = match read_current_audit_rules(ctx).await {
+                    AuditRulesResult::UnrecognisedFailure(_) => AuditRulesResult::Rules(Vec::new()),
+                    other => other,
+                };
+                if let AuditRulesResult::Rules(current_rules) = rules_result {
                     // A category left out because it is excepted is recorded
                     // rather than merely subtracted from the count: a smaller
                     // number with no explanation is how a deliberate deviation

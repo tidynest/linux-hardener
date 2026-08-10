@@ -75,11 +75,12 @@ pub(super) async fn audit_divergences(ctx: &Context) -> Vec<RollbackDivergence> 
         ),
         // `auditctl -l` ran and exited non-zero for a reason that is neither
         // a recognised permission refusal nor an unspawnable binary. Scan
-        // and apply fold this back to Rules(Vec::new()), the conservative
-        // choice this used to collapse into silently; this probe does not,
-        // because "auditctl read 0 loaded audit rule(s) from the kernel" is
-        // a positive claim about the kernel that a failed, unrecognised
-        // command answered nothing to support.
+        // and validate fold this back to Rules(Vec::new()), the conservative
+        // choice this used to collapse into silently; apply never calls
+        // read_current_audit_rules at all, so it is untouched either way.
+        // This probe folds neither, because "auditctl read 0 loaded audit
+        // rule(s) from the kernel" is a positive claim about the kernel that
+        // a failed, unrecognised command answered nothing to support.
         AuditRulesResult::UnrecognisedFailure(cause) => format!(
             "auditctl failed for a reason this project does not recognise as a permission \
              refusal, so the kernel's loaded audit rules cannot be read back here: {cause}"
