@@ -547,3 +547,43 @@ async fn an_enabled_runtime_unit_is_named_enabled_runtime() {
         rows[0].divergence_detail
     );
 }
+
+/// The routine arm. `apply` runs stop, disable and mask;
+/// `reload_after_rollback` runs daemon-reload only and never starts anything,
+/// because undoing a hardening run must not leave a host less protected. So a
+/// rollback restores enablement on disk without starting the unit, and this
+/// row appears for every unit that was running before hardening, on every
+/// rollback.
+#[tokio::test]
+async fn the_enabled_but_stopped_arm_is_expected() {
+    let ctx = service_host("bluetooth", "inactive\n", 3, "enabled\n", 0);
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    let reason = rows[0]
+        .divergence_expected
+        .as_ref()
+        .expect("the designed consequence of this plugin's own apply");
+    assert!(
+        reason.contains("never starts"),
+        "the reason has to say what makes it designed, not merely that it is: {reason}"
+    );
+}
+
+/// The alarming arm, and the reason expectedness is per-arm rather than per
+/// plugin. Marking the plugin would have buried this behind the row above.
+#[tokio::test]
+async fn the_not_enabled_but_running_arm_is_not_expected() {
+    let ctx = service_host("bluetooth", "active\n", 0, "disabled\n", 1);
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert!(
+        rows[0].divergence_expected.is_none(),
+        "the rollback did not reach the running process, which nothing in the \
+         design produces: {:?}",
+        rows[0].divergence_expected
+    );
+}

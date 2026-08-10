@@ -238,7 +238,11 @@ pub(super) async fn service_divergences(ctx: &Context) -> Vec<RollbackDivergence
                     "{name} reads {word} after the rollback, but the service manager reports \
                      it not running"
                 ),
-                None,
+                Some(
+                    "a rollback restores enablement and never starts a unit, because undoing \
+                     a hardening run must not leave a host less protected than it was found"
+                        .to_string(),
+                ),
             )),
             // Enabled and running, or not enabled and stopped: the enablement
             // and the service manager agree, and this probe makes no claim.
