@@ -170,15 +170,28 @@ test.describe('Findings', () => {
       "exception not applied: documents 'prohibit-password', host has 'yes'",
     );
     await expect(detail).toContainText('Break-glass access from the bastion');
+    // The `has:` locators below are built from `page`, not from `panel`. A
+    // panel-rooted inner locator carries the tabpanel role at the head of its
+    // selector chain, and that chain is matched relative to each
+    // `.finding-group` candidate, which contains no tabpanel: the filter then
+    // matches no group at all. That is not a theoretical hazard. Written the
+    // panel-rooted way, the Critical assertion failed against a build the
+    // accessibility tree showed to be correct, and the Policy Exceptions
+    // assertion beside it passed vacuously, because `toHaveCount(0)` is
+    // satisfied by a filter that resolves to nothing.
     const panel = page.getByRole('tabpanel', { name: 'Findings' });
     const policyExceptionsGroup = panel.locator('.finding-group', {
-      has: panel.getByText('Policy Exceptions', { exact: true }),
+      has: page.getByText('Policy Exceptions', { exact: true }),
     });
+    // The absence assertion below can only mean something if the group it
+    // searches exists. Without this line it passes whether the group is empty,
+    // missing, or never matched.
+    await expect(policyExceptionsGroup).toHaveCount(1);
     await expect(
       policyExceptionsGroup.getByRole('button', { name: 'Root login via SSH enabled' }),
     ).toHaveCount(0);
     const criticalGroup = panel.locator('.finding-group', {
-      has: panel.getByText('Critical', { exact: true }),
+      has: page.getByText('Critical', { exact: true }),
     });
     await expect(
       criticalGroup.getByRole('button', { name: 'Root login via SSH enabled' }),
