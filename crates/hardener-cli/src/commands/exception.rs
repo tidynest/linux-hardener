@@ -137,7 +137,7 @@ pub async fn remove(opts: RemoveOptions<'_>) -> Result<()> {
 /// Refuses an `--expires` value [`PolicyException::is_expired`] cannot parse.
 ///
 /// That method treats an unparseable date as "never expires"
-/// (`crates/hardener-core/src/config.rs:344`), so writing one silently fails
+/// (`crates/hardener-core/src/config.rs:346`), so writing one silently fails
 /// open in the one field whose purpose is to bound a deviation in time. Parsed
 /// here, before anything is written, using the same `%Y-%m-%d` format so a
 /// value that passes here is one `is_expired` can also read.
@@ -209,7 +209,7 @@ fn write_atomically(path: &Path, contents: &str) -> Result<()> {
     })
 }
 
-/// Reports what `add` wrote, deserialising from the same [`hardener_types::WrittenException`]
+/// Reports what `add` wrote, serialising from the same [`hardener_types::WrittenException`]
 /// the Tauri command and the Leptos front end use, so a renamed field fails to
 /// compile here rather than silently stopping arriving in the GUI.
 ///
