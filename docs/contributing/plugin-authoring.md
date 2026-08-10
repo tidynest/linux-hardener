@@ -162,9 +162,14 @@ Per-method contract:
     it just restored asks for; unexpected means weaker, or means the rollback
     did not reach what it should have. A row that fires on every rollback of a
     particular host is not thereby expected, and one that fires rarely is not
-    thereby unexpected. **Expected is not a lesser severity.** An expected row
-    can still be `Diverged`; the field says the row was predictable, not that
-    it is unimportant, and no renderer hides or drops it because of this
+    thereby unexpected. The comparison carries a time dimension as well as a
+    present-tense one: a row correct right now and weaker only from the next
+    boot onward is still unexpected, which is why the kernel plugin's
+    `/etc/sysctl.conf` rows stay unexpected rather than joining the
+    `/proc/sys` rows beside them. **Expected is not a lesser severity.** An
+    expected row can still be `Diverged`; the field says the row was
+    predictable, not that it is unimportant, and no renderer hides or drops
+    it because of this
     field. The CLI and the desktop rollback modal print the rows nothing in
     the design produces first, then the rest under an "Expected, by design:"
     heading carrying the reason; the fleet `batch rollback` summary changes
