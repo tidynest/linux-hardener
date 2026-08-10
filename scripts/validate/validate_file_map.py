@@ -14,6 +14,7 @@ Options:
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -56,6 +57,34 @@ CLAIMED_TEST_COUNT = re.compile(r"\b(\d+) tests\b")
 CRATE_ANNOTATION_ROW = re.compile(
     r"^\|\s*(hardener-\w+|src-tauri)\s*\|.*\|\s*(\d+)\s*\|\s*$"
 )
+
+# The three numbers the prose above that table asserts, and the two the evidence
+# ledger asserts about the same measurement:
+#
+#     The table covers the ten crates under `crates/` and sums to 1789. The
+#     eleventh workspace member, `src-tauri`, carries 107 more, which is why the
+#     tree total the evidence ledger records is 1896 and not this table's sum.
+#
+# The per-crate rule above cannot see any of these. It checks each row against
+# its own crate, so a sum sentence stays green while being arithmetically wrong,
+# and a cross-file total stays green while naming a number the other file does
+# not carry. Both happened: the sum sentence read 1746 against rows totalling
+# 1773, and correcting it in file-map alone left the ledger contradicting it in
+# the same session.
+#
+# Every one of these matches across newlines, because the prose is hard-wrapped
+# and a sentence gains a line break whenever a number's width changes. Written
+# with literal spaces, this validator reported the sentence as deleted the first
+# time a wrap moved, which is a false alarm that teaches the reader to ignore it.
+CRATE_TABLE_SUM = re.compile(r"\bsums\s+to\s+(\d+)\b")
+TAURI_EXTRA_COUNT = re.compile(r"`src-tauri`,\s+carries\s+(\d+)\s+more\b")
+TREE_TOTAL = re.compile(r"the\s+evidence\s+ledger\s+records\s+is\s+(\d+)\b")
+LEDGER_ANNOTATION_ROW = re.compile(r"Test\s+annotations\s+in\s+the\s+tree.*?\|\s*(\d+)\s*\|")
+LEDGER_ASSERTION_ROW = re.compile(r"\b(\d+)\s+across\s+(\d+)\s+files?\b")
+
+EVIDENCE_LEDGER_PATH = "docs/reference/evidence-ledger.md"
+TEST_ASSERTION_VALIDATOR = "scripts/validate/validate_test_assertions.py"
+TEST_ASSERTION_SUMMARY = re.compile(r"All (\d+) test\(s\) across (\d+) file\(s\)")
 
 # ANSI colour codes
 RED = "\033[0;31m"
@@ -149,6 +178,123 @@ def count_crate_test_attributes(crate_dir: Path) -> int:
     the tree, not a run total.
     """
     return sum(count_test_attributes(source) for source in crate_dir.rglob("*.rs"))
+
+
+def sole_claim(pattern: re.Pattern, text: str, what: str, where: str,
+               errors: list[str]) -> tuple[str, ...] | None:
+    """The one match `pattern` has in `text`, or None with an error recorded.
+
+    A sentence that has been deleted or reworded past recognition is drift too,
+    and the failure it causes is worse than a wrong number: nothing is checked
+    and nothing says so. So a missing claim fails rather than passing quietly.
+    """
+    matches = pattern.findall(text)
+    if len(matches) == 1:
+        found = matches[0]
+        return found if isinstance(found, tuple) else (found,)
+
+    errors.append(
+        f"{where}: expected exactly one {what}, found {len(matches)}. "
+        f"Restore the sentence or update this validator to match its new wording"
+    )
+    return None
+
+
+def measured_assertion_summary(root: Path, errors: list[str]) -> tuple[int, int] | None:
+    """What `validate_test_assertions.py --all` measures: (tests, files).
+
+    Asked of that script rather than recomputed here, because its file count is
+    its own definition of which files it reads, and a second implementation of
+    that rule would be one more thing to drift.
+    """
+    validator = root / TEST_ASSERTION_VALIDATOR
+    if not validator.is_file():
+        errors.append(f"{TEST_ASSERTION_VALIDATOR} not found, so its totals cannot be checked")
+        return None
+
+    result = subprocess.run(
+        [sys.executable, str(validator), "--all"],
+        capture_output=True, text=True, cwd=root,
+    )
+    summary = TEST_ASSERTION_SUMMARY.search(result.stdout)
+    if not summary:
+        errors.append(
+            f"{TEST_ASSERTION_VALIDATOR} --all printed no 'All N test(s) across M file(s)' "
+            f"line, so the ledger's figure cannot be checked (exit {result.returncode})"
+        )
+        return None
+
+    return int(summary.group(1)), int(summary.group(2))
+
+
+def check_declared_totals(root: Path, file_map_content: str) -> list[str]:
+    """Check every total the two documents assert against the tree and each other.
+
+    Three claims in file-map's prose (the table's sum, src-tauri's count, the
+    tree total) and two in the evidence ledger (the annotation row, the
+    assertion validator's figures). All five describe one measurement, so all
+    five are derived here from the same count the per-crate rule uses.
+    """
+    errors: list[str] = []
+
+    crates_total = sum(
+        count_crate_test_attributes(crate_dir)
+        for crate_dir in sorted((root / "crates").iterdir())
+        if crate_dir.is_dir()
+    )
+    tauri_total = count_crate_test_attributes(root / "src-tauri")
+    tree_total = crates_total + tauri_total
+
+    claimed = sole_claim(CRATE_TABLE_SUM, file_map_content, "'sums to N' claim",
+                         FILE_MAP_PATH, errors)
+    if claimed and int(claimed[0]) != crates_total:
+        errors.append(
+            f"{FILE_MAP_PATH}: the table is said to sum to {claimed[0]}, "
+            f"the crates declare {crates_total}"
+        )
+
+    claimed = sole_claim(TAURI_EXTRA_COUNT, file_map_content, "'src-tauri carries N more' claim",
+                         FILE_MAP_PATH, errors)
+    if claimed and int(claimed[0]) != tauri_total:
+        errors.append(
+            f"{FILE_MAP_PATH}: src-tauri is said to carry {claimed[0]} more, "
+            f"it declares {tauri_total}"
+        )
+
+    claimed = sole_claim(TREE_TOTAL, file_map_content, "tree-total claim",
+                         FILE_MAP_PATH, errors)
+    if claimed and int(claimed[0]) != tree_total:
+        errors.append(
+            f"{FILE_MAP_PATH}: the tree total is said to be {claimed[0]}, "
+            f"the tree declares {tree_total}"
+        )
+
+    ledger_path = root / EVIDENCE_LEDGER_PATH
+    if not ledger_path.is_file():
+        errors.append(f"{EVIDENCE_LEDGER_PATH} not found, so its totals cannot be checked")
+        return errors
+
+    ledger = ledger_path.read_text(encoding="utf-8")
+
+    claimed = sole_claim(LEDGER_ANNOTATION_ROW, ledger, "'Test annotations in the tree' row",
+                         EVIDENCE_LEDGER_PATH, errors)
+    if claimed and int(claimed[0]) != tree_total:
+        errors.append(
+            f"{EVIDENCE_LEDGER_PATH}: the annotation row records {claimed[0]}, "
+            f"the tree declares {tree_total}"
+        )
+
+    claimed = sole_claim(LEDGER_ASSERTION_ROW, ledger, "'N across M files' figure",
+                         EVIDENCE_LEDGER_PATH, errors)
+    measured = measured_assertion_summary(root, errors)
+    if claimed and measured and (int(claimed[0]), int(claimed[1])) != measured:
+        errors.append(
+            f"{EVIDENCE_LEDGER_PATH}: the assertion check is recorded as "
+            f"{claimed[0]} across {claimed[1]} files, it reports "
+            f"{measured[0]} across {measured[1]} files"
+        )
+
+    return errors
 
 
 def generate_stub_entry(file_path: str) -> str:
@@ -289,6 +435,19 @@ def main():
             print(f"  - {crate}: the table says {claimed}, the crate declares {actual}")
         print()
         print(f"  {YELLOW}Take the count after the last test in the branch, not before it{NC}\n")
+
+    # And the totals both documents assert about the same measurement, which no
+    # per-row rule can see.
+    total_errors = check_declared_totals(root, file_map_content)
+    if total_errors:
+        has_errors = True
+        print(f"{RED}Declared totals that the tree does not support "
+              f"({len(total_errors)}):{NC}\n")
+        for error in total_errors:
+            print(f"  - {error}")
+        print()
+        print(f"  {YELLOW}Correct every document that names the measurement, not "
+              f"only the one that failed{NC}\n")
 
     if miscounted:
         has_errors = True
