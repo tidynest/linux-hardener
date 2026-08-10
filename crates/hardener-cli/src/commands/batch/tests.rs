@@ -2027,6 +2027,44 @@ fn render_rollback_text_prints_no_rows_where_there_are_none() {
     assert!(!text.contains("unverifiable"), "{text}");
 }
 
+/// Same ranking as the single-host path, for the same reader. A fleet operator
+/// scanning many host blocks has more rows in front of them, not fewer, so the
+/// surprising row has to come first here too.
+#[test]
+fn batch_prints_unexpected_divergences_before_expected_ones() {
+    colored::control::set_override(false);
+
+    let divergences = vec![
+        RollbackDivergence {
+            divergence_plugin_id: "service-minimisation".to_string(),
+            divergence_subject: "bluetooth".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "reads enabled but is not running".to_string(),
+            divergence_expected: Some("a rollback never starts a unit".to_string()),
+        },
+        RollbackDivergence {
+            divergence_plugin_id: "ssh-hardening".to_string(),
+            divergence_subject: "sshd".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "running and masked".to_string(),
+            divergence_expected: None,
+        },
+    ];
+
+    let out = render_rollback_text(&[ro(RollbackStatus::RolledBack {
+        restored: 2,
+        failed: 0,
+        reload_failed: 0,
+        diverged: 2,
+        unverifiable: 0,
+        divergences,
+    })]);
+
+    let unexpected_at = out.find("sshd").expect("the unexpected row prints");
+    let expected_at = out.find("bluetooth").expect("the expected row prints");
+    assert!(unexpected_at < expected_at, "{out}");
+}
+
 /// A payload written by a release older than this field still parses, which is
 /// what the `serde(default)` is for: a fleet running mixed versions must not
 /// fail to read one of its own hosts.

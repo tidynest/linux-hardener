@@ -1436,7 +1436,16 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                 // truncated list would read as the whole one, and only hosts
                 // that HAVE rows print any. The counts on the line above are
                 // the short form for anyone who wants it.
-                for d in divergences {
+                //
+                // Same ranking as the single-host path (#152). A fleet
+                // operator has more rows in front of them, not fewer, so the
+                // rows nothing in the design produces come first. Every row
+                // still prints, uncapped, for the reason the comment above
+                // gives.
+                let (expected, unexpected): (Vec<_>, Vec<_>) = divergences
+                    .iter()
+                    .partition(|d| d.divergence_expected.is_some());
+                for d in unexpected.into_iter().chain(expected) {
                     let label = match d.divergence_state {
                         DivergenceState::Diverged => "diverged".yellow(),
                         DivergenceState::Unverifiable => "unverifiable".dimmed(),
