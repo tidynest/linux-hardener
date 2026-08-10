@@ -255,6 +255,34 @@ async fn a_unit_not_installed_reports_nothing() {
     assert!(service_divergences(&ctx).await.is_empty());
 }
 
+/// `systemctl list-unit-files` failing to run at all must not be read as
+/// "not installed": the same trap as the enablement and activity readings,
+/// one probe earlier. `is_service_exists` never inspects stderr or exit
+/// code, so the same technique used above reaches the `Err` arm: leave the
+/// command unregistered on the mock.
+#[tokio::test]
+async fn a_unit_with_unreadable_existence_is_unverifiable() {
+    let name = "bluetooth";
+    let mut executor = MockExecutor::new().with_command_exists("systemctl", true);
+    // No `list-unit-files` registration for `name`'s unit: execute_command
+    // fails outright for that call, distinct from succeeding with a non-zero
+    // exit. `is-active`/`is-enabled` are never reached, so neither is mocked.
+    for directive in super::super::UNNECESSARY_SERVICES {
+        if directive.service_name != name {
+            let other_unit = super::super::unit_name(directive.service_name);
+            executor =
+                executor.with_command("systemctl", &["list-unit-files", &other_unit], absent());
+        }
+    }
+    let ctx = Context::with_executor(Arc::new(executor));
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "an unrunnable probe is one row, not silence");
+    assert_eq!(rows[0].divergence_subject, "bluetooth");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+}
+
 /// Two units diverging at once are two rows, not one merged row and not a
 /// short-circuit after the first: `kernel/divergence.rs` emits one row per
 /// parameter, and this probe emits one row per unit the same way.
