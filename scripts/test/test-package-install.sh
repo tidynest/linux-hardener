@@ -227,7 +227,10 @@ else
 fi
 
 # Plugins (expect 8)
-plugin_count=$(hardener plugins 2>&1 | grep -cE '^\s*(audit|firewall|kernel|mac|pam|permissions|service|ssh)' || echo "0")
+# `grep -c` prints its count AND exits non-zero at zero, so an `|| echo "0"`
+# fallback appends to the count instead of replacing it and the variable holds
+# "0\n0", which the arithmetic comparison below rejects outright. See #153.
+plugin_count=$(hardener plugins 2>&1 | grep -cE '^\s*(audit|firewall|kernel|mac|pam|permissions|service|ssh)' || true)
 if [[ "$plugin_count" -ge 8 ]]; then
     log_pass "hardener plugins (found $plugin_count)"
 else

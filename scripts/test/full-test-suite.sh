@@ -1529,7 +1529,10 @@ test_post_scan_verify() {
     run_test_output "Final full scan" "\"$BINARY\" scan" "Scan Results"
 
     local finding_count
-    finding_count=$("$BINARY" --format json scan 2>&1 | grep -c '"finding_id"' || echo "0")
+    # `grep -c` prints its count AND exits non-zero at zero, so an
+    # `|| echo "0"` fallback appends to the count instead of replacing it and
+    # the variable holds "0\n0". See #153.
+    finding_count=$("$BINARY" --format json scan 2>&1 | grep -c '"finding_id"' || true)
     log_info "Total findings after hardening: $finding_count"
 
     run_test "Final CIS report" "\"$BINARY\" report --framework cis --report-format pdf --output \"$REPORT_DIR/final-cis-report.pdf\""
@@ -1561,12 +1564,19 @@ test_scan_history_persistence() {
 
     # Count sessions before daemon run-once
     local count_before
-    count_before=$(echo "$history_output" | grep -cE '[a-f0-9]{8}-[a-f0-9]{4}' || echo "0")
+    # Both counts use `|| true` rather than `|| echo "0"`: `grep -c` prints its
+    # count AND exits non-zero at zero, so the fallback appends rather than
+    # replaces and the variable holds "0\n0". These two are compared
+    # arithmetically below, where bash rejects that value outright
+    # ("arithmetic syntax error") and takes the FALSE branch, so a host with no
+    # sessions before the run reported `daemon run-once` broken when it was
+    # not. See #153.
+    count_before=$(echo "$history_output" | grep -cE '[a-f0-9]{8}-[a-f0-9]{4}' || true)
 
     log_test "daemon run-once increases session count"
     "$BINARY" daemon run-once &>/dev/null || true
     local count_after
-    count_after=$("$BINARY" history list 2>&1 | grep -cE '[a-f0-9]{8}-[a-f0-9]{4}' || echo "0")
+    count_after=$("$BINARY" history list 2>&1 | grep -cE '[a-f0-9]{8}-[a-f0-9]{4}' || true)
     if [[ "$count_after" -ge "$count_before" ]]; then
         log_pass "daemon run-once increases session count ($count_before -> $count_after)"
     else

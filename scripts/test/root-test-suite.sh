@@ -104,7 +104,10 @@ test_scan_as_root() {
     log_test "Full scan with root privileges"
     SCAN_OUTPUT=$("$BINARY" scan 2>&1)
     if [[ $? -eq 0 ]] || echo "$SCAN_OUTPUT" | grep -q "finding_id"; then
-        FINDING_COUNT=$(echo "$SCAN_OUTPUT" | grep -c "finding_id" || echo "0")
+        # `grep -c` prints its count AND exits non-zero at zero, so an
+        # `|| echo "0"` fallback appends to the count instead of replacing it
+        # and the variable holds "0\n0". See #153.
+        FINDING_COUNT=$(echo "$SCAN_OUTPUT" | grep -c "finding_id" || true)
         log_pass "Full scan completed: $FINDING_COUNT findings"
     else
         log_fail "Full scan failed"
@@ -182,7 +185,7 @@ test_dry_run() {
     DRY_OUTPUT=$("$BINARY" apply --all --dry-run 2>&1)
     if echo "$DRY_OUTPUT" | grep -q "validation_report"; then
         # Count estimated changes
-        CHANGES=$(echo "$DRY_OUTPUT" | grep -c "estimated_changes" || echo "0")
+        CHANGES=$(echo "$DRY_OUTPUT" | grep -c "estimated_changes" || true)
         log_pass "Dry-run completed, $CHANGES plugin reports"
     else
         log_fail "Dry-run failed"

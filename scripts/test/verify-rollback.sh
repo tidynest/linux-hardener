@@ -506,8 +506,26 @@ info "Applying kernel-hardening..."
 info "Applying ssh-hardening..."
 "$BINARY" apply --plugin ssh-hardening > /dev/null 2>&1 || true
 
-# List checkpoints: should have at least 2
-CP_COUNT=$("$BINARY" checkpoint list 2>&1 | grep -cE 'cp_[0-9]+_[a-f0-9]+' || echo "0")
+# List checkpoints: should have at least 2.
+#
+# `grep -c` prints its count AND exits non-zero when the count is zero, so an
+# `|| echo "0"` fallback fires alongside the count it was meant to replace and
+# both land in the substitution: CP_COUNT held "0\n0" and the info line below
+# printed it over two lines. Same defect as TEST 11's and TEST 14's readbacks,
+# fixed there during #142; this one predates that work.
+#
+# `set -o pipefail` is not what makes this happen and removing it would not
+# help: grep is the LAST command in the pipeline, so its status is the
+# pipeline's status either way. The measurement is the same under `set -u`
+# alone.
+#
+# Unlike those two, there is no `:-unreadable` fallback to pair with the
+# capture. They run `grep -c PATTERN FILE` under `2>/dev/null`, where an
+# unreadable file produces no output at all and empty is therefore meaningful.
+# Here grep reads a pipe and always prints a count, including when the command
+# feeding it failed, so "0" covers both an empty list and a failed one and an
+# empty-string branch could never be taken.
+CP_COUNT=$("$BINARY" checkpoint list 2>&1 | grep -cE 'cp_[0-9]+_[a-f0-9]+' || true)
 info "Checkpoint count: $CP_COUNT"
 
 if [[ "$CP_COUNT" -ge 2 ]]; then
