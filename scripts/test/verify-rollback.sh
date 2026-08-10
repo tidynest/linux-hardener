@@ -1037,57 +1037,119 @@ elif ! command -v sshd &>/dev/null; then
 elif ! host_is_booted; then
     skip "ssh divergence measurement: systemd is not PID 1 here, because release-readiness-root.sh runs this script under --pipe rather than --boot; systemctl mask has no service manager to talk to, so this scenario cannot force its divergence"
 else
-    "$BINARY" apply --plugin ssh-hardening > /dev/null 2>&1 || true
-
-    # The divergence this aims at: sshd still serving the pre-rollback
-    # configuration because the restart could not run. Making the restart fail
-    # is the forcing step, and masking the unit is the least violent way to do
-    # it that a container permits.
+    # TESTs 1-9 of the unbooted pass already ran `apply --plugin
+    # ssh-hardening` (lines 386 and 507). This script runs a second time
+    # against the SAME container for the booted pass, so by the time the
+    # apply below would run, sshd_config is already fully compliant: an apply
+    # with nothing to change creates no checkpoint, and this scenario used to
+    # fail right there. The block below loosens a directive first,
+    # unconditionally, so the apply always has something to tighten
+    # regardless of what ran before it.
     #
-    # The unit name that actually masked is tracked rather than assumed, so
-    # the readback below asks the unit that was really touched instead of
-    # chaining on exit status: `systemctl is-enabled` exits 1 for a masked
-    # unit same as for a missing one, so `mask sshd.service || mask
-    # ssh.service` and then querying both the same way would query the wrong
-    # unit whenever the first one succeeded.
-    SSH_UNIT="sshd.service"
-    if ! systemctl mask sshd.service > /dev/null 2>&1; then
-        SSH_UNIT="ssh.service"
-        systemctl mask ssh.service > /dev/null 2>&1 || true
-    fi
+    # MaxAuthTries is the directive chosen. Raising it is a real loosening
+    # (fewer retries is stricter: ssh/mod.rs:107-114, Strictness::AtMost
+    # against a "3" baseline), it takes any non-negative integer so `sshd -t`
+    # has no fixed token list to reject it against the way it could reject a
+    # typo'd yes/no value, and unlike PermitRootLogin it never changes
+    # whether the session running this script can log back in
+    # (ssh/mod.rs:365-366 warns about PermitRootLogin specifically, not this
+    # one). `sshd -t` is still asked to confirm rather than assumed, because
+    # that is the same check the plugin's own apply runs before it writes
+    # anything (ssh/mod.rs:2086), and this scenario must not fail differently
+    # than the thing it is testing.
+    #
+    # sshd keeps the first value it finds for a repeated directive, and this
+    # tool's own parser agrees (file_utils.rs:189 global_scope, :224
+    # parse_config_value), so prepending the loosened line is enough to make
+    # it authoritative: no search for an existing line is needed, and
+    # prepending ahead of every line keeps it ahead of any `Match` block too.
+    SSH_CONFIG_PATH="/etc/ssh/sshd_config"
+    SSH_BACKUP_PATH="${SSH_CONFIG_PATH}.rollback-readback.bak"
+    SSH_BACKED_UP=false
+    SSH_PERTURBED=false
+    SSH_PERTURB_REASON=""
 
-    # An independently checkable signal that the forcing step actually took,
-    # read back rather than assumed. TESTs 12 to 14 each print one; TEST 10
-    # previously did not, which made "forced and the plugin stayed silent"
-    # and "never forced" indistinguishable in the transcript for exactly the
-    # scenario that just proved most able to lie (Finding 1).
-    SSH_MASK_STATE=$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null || true)
-    info "  $SSH_UNIT state after masking: ${SSH_MASK_STATE:-unknown}"
-
-    # The forced: line is derived from that readback, never from the mask
-    # call's exit status: `systemctl mask ... || true` swallows failure, so
-    # the "masked" claim used to be printed whether or not the mask actually
-    # took, on a host where the unit does not exist, is already masked in a
-    # way that refuses re-masking, or the mask is refused for any other
-    # reason. `systemctl is-enabled` prints the literal word "masked" for a
-    # masked unit and something else, or nothing at all, for anything short
-    # of that (Review Finding 1).
-    if [[ "$SSH_MASK_STATE" == "masked" ]]; then
-        SSH_FORCED="$SSH_UNIT masked, so reload_after_rollback cannot restart it"
+    if [[ ! -e "$SSH_CONFIG_PATH" ]]; then
+        SSH_PERTURB_REASON="$SSH_CONFIG_PATH does not exist, so no directive can be loosened"
+    elif [[ ! -r "$SSH_CONFIG_PATH" || ! -w "$SSH_CONFIG_PATH" ]]; then
+        SSH_PERTURB_REASON="$SSH_CONFIG_PATH is not both readable and writable"
+    elif ! cp -a "$SSH_CONFIG_PATH" "$SSH_BACKUP_PATH" 2>/dev/null; then
+        SSH_PERTURB_REASON="$SSH_CONFIG_PATH could not be backed up, so loosening it would leave no safe way to undo"
     else
-        SSH_FORCED="attempted to mask $SSH_UNIT but it did not take (state after masking: ${SSH_MASK_STATE:-unknown}); reload_after_rollback may still be able to restart it"
+        SSH_BACKED_UP=true
+        if { printf 'MaxAuthTries 6\n'; cat "$SSH_BACKUP_PATH"; } > "$SSH_CONFIG_PATH" 2>/dev/null \
+            && sshd -t > /dev/null 2>&1; then
+            SSH_PERTURBED=true
+        else
+            SSH_PERTURB_REASON="sshd -t rejected sshd_config with MaxAuthTries loosened to 6"
+        fi
     fi
 
-    SSH_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
-    if [[ -z "$SSH_CP" ]]; then
-        fail "No checkpoint created during the ssh divergence measurement"
+    if [[ "$SSH_PERTURBED" != "true" ]]; then
+        skip "ssh divergence measurement: not forced: ${SSH_PERTURB_REASON:-sshd_config could not be perturbed}"
     else
-        SSH_ROWS=$(divergence_rows_for "$SSH_CP" /tmp/diverge-ssh.json)
-        report_measurement "ssh-hardening" "$SSH_FORCED" "$SSH_ROWS"
-        rm -f /tmp/diverge-ssh.json
+        "$BINARY" apply --plugin ssh-hardening > /dev/null 2>&1 || true
+
+        # The divergence this aims at: sshd still serving the pre-rollback
+        # configuration because the restart could not run. Making the restart fail
+        # is the forcing step, and masking the unit is the least violent way to do
+        # it that a container permits.
+        #
+        # The unit name that actually masked is tracked rather than assumed, so
+        # the readback below asks the unit that was really touched instead of
+        # chaining on exit status: `systemctl is-enabled` exits 1 for a masked
+        # unit same as for a missing one, so `mask sshd.service || mask
+        # ssh.service` and then querying both the same way would query the wrong
+        # unit whenever the first one succeeded.
+        SSH_UNIT="sshd.service"
+        if ! systemctl mask sshd.service > /dev/null 2>&1; then
+            SSH_UNIT="ssh.service"
+            systemctl mask ssh.service > /dev/null 2>&1 || true
+        fi
+
+        # An independently checkable signal that the forcing step actually took,
+        # read back rather than assumed. TESTs 12 to 14 each print one; TEST 10
+        # previously did not, which made "forced and the plugin stayed silent"
+        # and "never forced" indistinguishable in the transcript for exactly the
+        # scenario that just proved most able to lie (Finding 1).
+        SSH_MASK_STATE=$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null || true)
+        info "  $SSH_UNIT state after masking: ${SSH_MASK_STATE:-unknown}"
+
+        # The forced: line is derived from that readback, never from the mask
+        # call's exit status: `systemctl mask ... || true` swallows failure, so
+        # the "masked" claim used to be printed whether or not the mask actually
+        # took, on a host where the unit does not exist, is already masked in a
+        # way that refuses re-masking, or the mask is refused for any other
+        # reason. `systemctl is-enabled` prints the literal word "masked" for a
+        # masked unit and something else, or nothing at all, for anything short
+        # of that (Review Finding 1).
+        if [[ "$SSH_MASK_STATE" == "masked" ]]; then
+            SSH_FORCED="$SSH_UNIT masked, so reload_after_rollback cannot restart it"
+        else
+            SSH_FORCED="attempted to mask $SSH_UNIT but it did not take (state after masking: ${SSH_MASK_STATE:-unknown}); reload_after_rollback may still be able to restart it"
+        fi
+
+        SSH_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+        if [[ -z "$SSH_CP" ]]; then
+            fail "No checkpoint created during the ssh divergence measurement"
+        else
+            SSH_ROWS=$(divergence_rows_for "$SSH_CP" /tmp/diverge-ssh.json)
+            report_measurement "ssh-hardening" "$SSH_FORCED" "$SSH_ROWS"
+            rm -f /tmp/diverge-ssh.json
+        fi
+
+        systemctl unmask sshd.service > /dev/null 2>&1 || systemctl unmask ssh.service > /dev/null 2>&1 || true
     fi
 
-    systemctl unmask sshd.service > /dev/null 2>&1 || systemctl unmask ssh.service > /dev/null 2>&1 || true
+    # Teardown, independent of which branch above ran: whatever this scenario
+    # backed up before touching the file is put back exactly, restoring the
+    # loosened content to what was there before the perturbation whether the
+    # apply-and-rollback measurement ran or `sshd -t` refused the perturbed
+    # file outright. Nothing runs here when the file never existed or was
+    # never backed up in the first place -- there is nothing to restore.
+    if [[ "$SSH_BACKED_UP" == "true" ]]; then
+        mv "$SSH_BACKUP_PATH" "$SSH_CONFIG_PATH"
+    fi
 fi
 
 header "TEST 11: WHAT service-minimisation REPORTS AFTER A ROLLBACK"
@@ -1172,7 +1234,18 @@ else
             # actually took, read back rather than assumed (Finding 3): a
             # masked unit refuses to start outright, so this line is what
             # tells "started" and "start silently refused" apart.
-            SERVICES_START_STATE=$(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || echo unknown)
+            #
+            # Captured and defaulted in two steps rather than `cmd || echo
+            # unknown`: `systemctl is-active` prints a real word (e.g.
+            # "failed") to stdout AND exits non-zero for every state short of
+            # "active", so the `|| echo` branch used to fire on top of output
+            # that was already there, landing both in the variable as two
+            # lines ("failed\nunknown"). Reading the command's own output
+            # first and only substituting when it is genuinely empty keeps a
+            # real value and "the command produced nothing" distinguishable
+            # without ever concatenating the two.
+            SERVICES_START_STATE=$(systemctl is-active "$SERVICES_UNIT" 2>/dev/null)
+            SERVICES_START_STATE="${SERVICES_START_STATE:-unknown}"
             info "  $SERVICES_UNIT active state after the forcing step: $SERVICES_START_STATE"
 
             if [[ "$SERVICES_START_STATE" == "active" ]]; then
