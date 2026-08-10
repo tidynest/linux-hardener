@@ -642,6 +642,7 @@ async fn writing_the_rules_file_prunes_all_but_the_newest_backups() {
         .expect("a mock that answers any cp must let the write through")
         .expect("an existing rules file must be backed up");
 
+    let kept_count = crate::BACKUPS_KEPT;
     let log = executor.log();
     let (_, args) = log
         .commands_executed
@@ -657,7 +658,7 @@ async fn writing_the_rules_file_prunes_all_but_the_newest_backups() {
     for backup in &newest {
         assert!(
             !args.iter().any(|argument| argument == backup),
-            "the prune must keep the newest {AUDIT_RULES_BACKUPS_KEPT} backups, \
+            "the prune must keep the newest {kept_count} backups, \
              but it removed {backup}: {args:?}"
         );
     }

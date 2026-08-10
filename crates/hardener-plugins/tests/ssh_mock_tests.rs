@@ -3443,3 +3443,54 @@ async fn an_ssh_directive_finding_names_the_exception_key_that_silences_it() {
 async fn an_ssh_crypto_finding_names_the_exception_key_that_silences_it() {
     assert_key_silences("ssh-ciphers", "Ciphers").await;
 }
+
+/// The apply leaves a timestamped copy of `sshd_config` beside it and nothing
+/// removed one: 17 had accumulated in `/etc/ssh` on the development host by
+/// 2026-08-11, two naming shapes deep, and the checkpoint captures the
+/// directory so each is restored by every rollback (#154, found in
+/// `audit-hardening` and the same defect here).
+///
+/// Asserted on which paths `rm` was given rather than on how many, because "the
+/// surplus was removed" is equally true of a prune that removed the newest.
+#[tokio::test]
+async fn ssh_apply_prunes_the_backups_that_came_before_it() {
+    let doomed = ["1763680168", "20251209_012340"];
+    let kept = ["20260718_112302", "20260810_120000", "20260810_120001"];
+
+    let mut executor = apply_ready_executor_any_backup("# minimal config\n")
+        .with_command_program("rm", ok_output(""));
+    for stamp in kept.iter().chain(doomed.iter()) {
+        executor = executor.with_file(&format!("/etc/ssh/sshd_config.backup.{stamp}"), "Port 22\n");
+    }
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result.apply_success,
+        "a drifting apply must succeed: {result:?}"
+    );
+    // Every `rm` the apply ran, not the first one: it removes its own sshd -t
+    // temporary file too, and a lookup taking the first match would assert
+    // against that one and never see the prune.
+    let log = executor.log();
+    let removed: Vec<&String> = log
+        .commands_executed
+        .iter()
+        .filter(|(program, _)| program == "rm")
+        .flat_map(|(_, args)| args.iter())
+        .collect();
+    for stamp in doomed {
+        let backup = format!("/etc/ssh/sshd_config.backup.{stamp}");
+        assert!(
+            removed.iter().any(|argument| **argument == backup),
+            "the older backup {backup} must be removed, rm was given: {removed:?}"
+        );
+    }
+    for stamp in kept {
+        let backup = format!("/etc/ssh/sshd_config.backup.{stamp}");
+        assert!(
+            !removed.iter().any(|argument| **argument == backup),
+            "the newest backups must be kept, but {backup} was removed: {removed:?}"
+        );
+    }
+}

@@ -2016,11 +2016,13 @@ impl HardeningPlugin for SshHardeningPlugin {
         // because the vendor file is never edited.
         let main_write_needed = writing_main && config_content != original_content;
         if main_write_needed {
-            let backup_path = format!(
-                "{}.backup.{}",
-                config_path,
-                Utc::now().format("%Y%m%d_%H%M%S")
-            );
+            // One binding for the copy and for the prune below, so the two
+            // cannot come to disagree about which files are backups: a prune
+            // whose prefix had drifted from the writer's would silently match
+            // nothing and the copies would accumulate again with nothing
+            // failing.
+            let backup_prefix = format!("{config_path}.backup.");
+            let backup_path = format!("{backup_prefix}{}", Utc::now().format("%Y%m%d_%H%M%S"));
             // `-p` was here from the start and `--no-dereference` was not, the
             // reverse of the audit plugin's copy; the two flags answer separate
             // questions and a backup needs both. `-p` preserves mode, ownership
@@ -2047,6 +2049,13 @@ impl HardeningPlugin for SshHardeningPlugin {
                         change_error: None,
                     });
                     info!("SSH config backup created: {}", backup_path);
+                    // The copy exists, so the directory holds one more backup
+                    // than it did. Pruned here rather than at the end of apply
+                    // so the creation and the retention sit together, and only
+                    // on the path that made one: a compliant host takes no
+                    // backup and has nothing to prune.
+                    crate::prune_timestamped_backups(ctx, &backup_prefix, crate::BACKUPS_KEPT)
+                        .await;
                 }
                 Ok(output) => {
                     return Ok(ApplyResult {

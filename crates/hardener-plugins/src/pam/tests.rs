@@ -608,3 +608,66 @@ fn the_unenforceable_finding_says_the_value_reaches_no_account() {
         "a finding the operator cannot fix still has to say what to do about it"
     );
 }
+
+/// Every PAM file this plugin rewrites gets a timestamped copy beside it and
+/// nothing removed one: 16 had accumulated across `/etc/security` and
+/// `/etc/pam.d` on the development host by 2026-08-11. The checkpoint captures
+/// those directories, so each copy is written into every later checkpoint and
+/// restored by every rollback (#154, found in `audit-hardening` and the same
+/// defect here).
+///
+/// Asserted on which paths `rm` was given rather than on how many: "the surplus
+/// went" is equally true of a prune that removed the newest.
+#[tokio::test]
+async fn a_backup_prunes_the_copies_that_came_before_it() {
+    use hardener_common::executor::{CommandOutput, MockExecutor};
+    use std::sync::Arc;
+
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let path = "/etc/security/faillock.conf";
+    // Below the newest kept, so this fixture's own copies are the surplus. The
+    // one the call under test takes is not among them: the mock's `cp` writes
+    // no file, where a host's does.
+    let doomed = ["1784373783", "1784373999"];
+    let kept = ["1784374759", "1784374800", "1784374900"];
+
+    let mut executor = MockExecutor::new()
+        .with_file(path, "deny = 5\n")
+        .with_command_program("cp", ok.clone())
+        .with_command_program("rm", ok);
+    for stamp in kept.iter().chain(doomed.iter()) {
+        executor = executor.with_file(&format!("{path}.backup-{stamp}"), "deny = 5\n");
+    }
+    let executor = Arc::new(executor);
+    let ctx = Context::with_executor(executor.clone());
+
+    create_config_backup(&ctx, path)
+        .await
+        .expect("a mock that answers any cp must let the backup through");
+
+    let log = executor.log();
+    let (_, args) = log
+        .commands_executed
+        .iter()
+        .find(|(program, _)| program == "rm")
+        .expect("a directory over the retention limit must be pruned");
+    for stamp in doomed {
+        let backup = format!("{path}.backup-{stamp}");
+        assert!(
+            args.contains(&backup),
+            "the older backup {backup} must be removed, got: {args:?}"
+        );
+    }
+    for stamp in kept {
+        let backup = format!("{path}.backup-{stamp}");
+        assert!(
+            !args.contains(&backup),
+            "the newest {} backups must be kept, but {backup} was removed: {args:?}",
+            crate::BACKUPS_KEPT
+        );
+    }
+}

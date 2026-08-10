@@ -174,6 +174,98 @@ pub(crate) async fn ensure_directory(ctx: &hardener_core::Context, dir: &str) ->
     }
 }
 
+/// How many timestamped copies of a configuration file survive an apply,
+/// counting the one that apply just took.
+///
+/// Three, and the number is a judgement rather than a measurement. A backup
+/// exists so an operator can undo a bad apply by hand, which argues for keeping
+/// several; the checkpoint already holds the pre-apply state and is the actual
+/// recovery path, which argues for keeping very few. Three leaves the last
+/// apply and the two before it.
+///
+/// Nothing pruned any of them until #154, and the accumulation was measured on
+/// the development host on 2026-08-11: 17 in `/etc/audit/rules.d`, 17 in
+/// `/etc/ssh`, 16 across `/etc/security` and `/etc/pam.d`. The cost is not the
+/// disk. Each plugin's checkpoint captures the directory its backups sit in, so
+/// every copy is written into every later checkpoint and restored by every
+/// rollback: a rollback of one `audit-hardening` apply reported 24 files of
+/// which 17 were dead backups.
+pub(crate) const BACKUPS_KEPT: usize = 3;
+
+/// Removes every backup carrying `prefix` beyond the newest [`BACKUPS_KEPT`].
+///
+/// `prefix` is the whole of what makes a path a candidate, and it is a full
+/// path rather than a directory and a pattern: the directory to read is the
+/// prefix's own parent. The file being backed up never matches its own backups'
+/// prefix, so the three call sites cannot delete the thing they just copied,
+/// and nor can they touch a neighbour some other tool owns.
+///
+/// The names sort chronologically as text because the timestamp is the last
+/// component of each. That holds across the two shapes `/etc/ssh` still carries
+/// side by side, unix seconds and `%Y%m%d_%H%M%S`, for as long as the seconds
+/// are ten digits beginning with a 1, which is until 2033; the plugins generate
+/// neither shape any more and both are still on disk to be removed.
+///
+/// Never fails an apply, and returns nothing to record. The configuration is
+/// written either way, the operator keeps every copy they already had, and the
+/// next apply prunes again; refusing an apply, or reporting a failure the
+/// operator cannot act on, would be a larger harm than the disk the copies
+/// occupy.
+pub(crate) async fn prune_timestamped_backups(
+    ctx: &hardener_core::Context,
+    prefix: &str,
+    keep: usize,
+) {
+    use std::path::Path;
+    use tracing::{info, warn};
+
+    let Some(directory) = Path::new(prefix).parent() else {
+        warn!("Not pruning backups of {prefix}: it names no directory to read");
+        return;
+    };
+    let entries = match ctx.executor().read_dir(directory).await {
+        Ok(entries) => entries,
+        Err(e) => {
+            warn!(
+                "Could not list {} to prune old backups of {prefix}: {e}",
+                directory.display()
+            );
+            return;
+        }
+    };
+
+    let mut backups: Vec<String> = entries
+        .iter()
+        .filter_map(|path| path.to_str())
+        .filter(|path| path.starts_with(prefix))
+        .map(str::to_string)
+        .collect();
+    if backups.len() <= keep {
+        return;
+    }
+    backups.sort_unstable();
+    backups.truncate(backups.len() - keep);
+
+    // `--` because `rm` reads a leading dash as a flag. Every path here is
+    // absolute and cannot begin with one, but the guard costs a word and the
+    // argument list is built from directory contents.
+    let mut args = vec!["-f", "--"];
+    args.extend(backups.iter().map(String::as_str));
+    match ctx.executor().execute_command("rm", &args).await {
+        // execute_command returns Ok for a command that ran and failed.
+        Ok(output) if output.success() => info!(
+            "Pruned {} old backup(s) of {prefix}, keeping the newest {keep}",
+            backups.len()
+        ),
+        Ok(output) => warn!(
+            "Could not prune old backups of {prefix}: rm exited {} ({})",
+            output.exit_code,
+            output.stderr.trim()
+        ),
+        Err(e) => warn!("Could not prune old backups of {prefix}: {e}"),
+    }
+}
+
 pub use audit::AuditHardeningPlugin;
 pub use firewall::FirewallHardeningPlugin;
 

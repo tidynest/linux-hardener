@@ -1209,6 +1209,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`ssh-hardening` and `pam-hardening` prune their own backups too** (#154).
+  The issue was found in `audit-hardening` and asked whether any other plugin
+  wrote timestamped backups the same way. Two do, and counted on the
+  development host on 2026-08-11 they had accumulated at the same rate: **17 in
+  `/etc/ssh`, 16 across `/etc/security` and `/etc/pam.d`, 17 in
+  `/etc/audit/rules.d`**. Each plugin's checkpoint captures the directory its
+  copies sit in, so the bloat and the long rollback file list are the same in
+  all three. One helper now serves them, `prune_timestamped_backups`, taking the
+  prefix the writing site itself builds so the two cannot drift apart; the
+  retention is per file rather than per directory, so the three configuration
+  files under `/etc/security` each keep their own newest three. **The two
+  plugins differ from `audit-hardening` in when they write at all**: both copy
+  only a file they are about to rewrite, so a compliant host adds nothing and
+  has nothing to prune. `/etc/ssh` also holds two naming shapes side by side,
+  unix seconds from an older version and `%Y%m%d_%H%M%S` from this one, and a
+  text sort orders them correctly until 2033; both are removed as surplus.
+
 - **`audit-hardening` no longer leaves a backup of its rules file behind on
   every apply for ever** (#154). Each apply copies
   `/etc/audit/rules.d/hardening.rules` to a timestamped name before overwriting

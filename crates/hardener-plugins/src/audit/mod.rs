@@ -27,7 +27,7 @@ use hardener_core::{
     },
 };
 use std::{path::Path, time::Instant};
-use tracing::{info, warn};
+use tracing::info;
 
 /// Audit Hardening Plugin
 ///
@@ -270,22 +270,6 @@ const AUDIT_COMPILED_RULES_PREV: &str = "/etc/audit/audit.rules.prev";
 /// `auditctl`, both of which run as root, so nothing needs the world bit.
 const AUDIT_RULES_MODE: &str = "0640";
 
-/// How many timestamped copies of the rules file survive an apply, counting the
-/// one that apply just took.
-///
-/// Three, and the number is a judgement rather than a measurement. A backup
-/// exists so an operator can undo a bad apply by hand, which argues for keeping
-/// several; the checkpoint already holds the pre-apply state and is the actual
-/// recovery path, which argues for keeping very few. Three leaves the last apply
-/// and the two before it.
-///
-/// Nothing pruned them until #154. An afternoon of applies left seventeen on the
-/// development host, and because the checkpoint captures the whole rules
-/// directory, every one of them was copied into every later checkpoint and
-/// restored by every rollback: a rollback of a single apply reported 24 files
-/// of which 17 were dead backups.
-const AUDIT_RULES_BACKUPS_KEPT: usize = 3;
-
 /// ============================================================================
 /// AUDITD HELPER FUNCTIONS
 /// ============================================================================
@@ -426,7 +410,12 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<S
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos();
-    let backup_path = format!("{}.backup.{}.{:08x}", AUDIT_RULES_PATH, timestamp, nonce);
+    // One binding for the copy and for the prune that keeps the newest few, so
+    // the two cannot come to disagree about which files are backups: a prune
+    // whose prefix had drifted from the writer's would silently match nothing
+    // and the copies would accumulate again with nothing failing.
+    let backup_prefix = format!("{AUDIT_RULES_PATH}.backup.");
+    let backup_path = format!("{backup_prefix}{timestamp}.{nonce:08x}");
 
     // Back up whatever is there. Only a confirmed `Ok(false)` means "nothing to
     // copy": an existence probe that errored is not evidence of absence, and
@@ -473,7 +462,7 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<S
         // The copy exists, so the directory has one more backup than it did.
         // Pruned here rather than at the call site so the creation and the
         // retention cannot drift apart.
-        prune_audit_rules_backups(ctx).await;
+        crate::prune_timestamped_backups(ctx, &backup_prefix, crate::BACKUPS_KEPT).await;
         Some(backup_path)
     };
 
@@ -483,64 +472,6 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<S
         .await?;
 
     Ok(backup)
-}
-
-/// Removes every backup of the rules file beyond the newest
-/// [`AUDIT_RULES_BACKUPS_KEPT`].
-///
-/// The names sort chronologically as text, because the timestamp leads and is
-/// fixed width: `%Y%m%d_%H%M%S` then a nonce. No date is parsed back out, and a
-/// name this plugin did not generate cannot sort into the set, because the match
-/// is on the full `<rules file>.backup.` prefix rather than on the directory's
-/// other contents. The rules file itself and the `*.rules` the distributions
-/// ship are therefore never candidates.
-///
-/// Never fails the apply, and returns nothing to record. The rules are written
-/// either way, the operator keeps every copy they already had, and the next
-/// apply prunes again; refusing an apply, or reporting a failure the operator
-/// cannot act on, would be a larger harm than the disk the copies occupy.
-async fn prune_audit_rules_backups(ctx: &Context) {
-    let prefix = format!("{AUDIT_RULES_PATH}.backup.");
-    let entries = match ctx.executor().read_dir(Path::new(AUDIT_RULES_DIR)).await {
-        Ok(entries) => entries,
-        Err(e) => {
-            warn!("Could not list {AUDIT_RULES_DIR} to prune old rules backups: {e}");
-            return;
-        }
-    };
-
-    let mut backups: Vec<String> = entries
-        .iter()
-        .filter_map(|path| path.to_str())
-        .filter(|path| path.starts_with(&prefix))
-        .map(str::to_string)
-        .collect();
-    if backups.len() <= AUDIT_RULES_BACKUPS_KEPT {
-        return;
-    }
-    backups.sort_unstable();
-    backups.truncate(backups.len() - AUDIT_RULES_BACKUPS_KEPT);
-
-    // `--` because `rm` reads a leading dash as a flag. Every path here is
-    // absolute and cannot begin with one, but the guard costs a word and the
-    // argument list is built from directory contents.
-    let mut args = vec!["-f", "--"];
-    args.extend(backups.iter().map(String::as_str));
-    match ctx.executor().execute_command("rm", &args).await {
-        // execute_command returns Ok for a command that ran and failed.
-        Ok(output) if output.success() => {
-            info!(
-                "Pruned {} old {AUDIT_RULES_PATH} backup(s), keeping the newest {AUDIT_RULES_BACKUPS_KEPT}",
-                backups.len()
-            );
-        }
-        Ok(output) => warn!(
-            "Could not prune old {AUDIT_RULES_PATH} backups: rm exited {} ({})",
-            output.exit_code,
-            output.stderr.trim()
-        ),
-        Err(e) => warn!("Could not prune old {AUDIT_RULES_PATH} backups: {e}"),
-    }
 }
 
 /// Gives the rules file the mode it should have, reporting the failure rather

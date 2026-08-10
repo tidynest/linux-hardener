@@ -2771,7 +2771,12 @@ async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> 
         .map_err(|e| HardeningError::Plugin(format!("Failed to get system time: {}", e)))?
         .as_secs();
 
-    let backup_path = format!("{}.backup-{}", file_path, timestamp);
+    // One binding for the copy and for the prune below, so the two cannot come
+    // to disagree about which files are backups: a prune whose prefix had
+    // drifted from the writer's would silently match nothing and the copies
+    // would accumulate again with nothing failing.
+    let backup_prefix = format!("{file_path}.backup-");
+    let backup_path = format!("{backup_prefix}{timestamp}");
 
     let output = ctx
         .executor()
@@ -2786,6 +2791,13 @@ async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> 
             output.stderr.trim(),
         )));
     }
+
+    // The copy exists, so this file's directory holds one more backup than it
+    // did. This function is the only place the plugin makes one, and it is
+    // called once per file actually being rewritten, so the retention is per
+    // file rather than per directory: /etc/security holds copies of three
+    // different configuration files and each keeps its own newest few.
+    crate::prune_timestamped_backups(ctx, &backup_prefix, crate::BACKUPS_KEPT).await;
 
     Ok(backup_path)
 }

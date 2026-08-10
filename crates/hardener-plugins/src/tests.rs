@@ -161,3 +161,104 @@ fn newly_wired_cis_controls_are_all_covered() {
         );
     }
 }
+
+mod backup_pruning {
+    use std::sync::Arc;
+
+    use hardener_common::executor::SystemExecutor;
+    use hardener_core::{CommandOutput, Context, MockExecutor};
+
+    use crate::{BACKUPS_KEPT, prune_timestamped_backups};
+
+    fn succeeding() -> CommandOutput {
+        CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        }
+    }
+
+    /// The oldest go and the newest stay, and the sort that decides which is
+    /// which is a text sort over the whole name.
+    ///
+    /// Asserted on which paths `rm` was given rather than on how many, because
+    /// "the surplus was removed" is equally true of a prune that removed the
+    /// newest ones.
+    ///
+    /// The two shapes in the fixture are both real. `/etc/ssh` on the
+    /// development host holds `sshd_config.backup.1763680168` beside
+    /// `sshd_config.backup.20251209_012340`: the plugin wrote unix seconds
+    /// before it wrote a formatted stamp, and both are still there. A text sort
+    /// orders those correctly for as long as unix seconds are ten digits
+    /// beginning with a 1 and formatted stamps begin with a 2, which is until
+    /// the year 2033. Neither shape is generated any more; both are still on
+    /// disk to be removed.
+    #[tokio::test]
+    async fn the_newest_backups_are_kept_and_the_rest_removed() {
+        let prefix = "/etc/ssh/sshd_config.backup.";
+        let doomed = ["1763680168", "20251209_012340"];
+        let kept = ["20260718_112302", "20260810_120000", "20260810_120001"];
+
+        let mut executor = MockExecutor::new().with_command_program("rm", succeeding());
+        for stamp in kept.iter().chain(doomed.iter()) {
+            executor = executor.with_file(&format!("{prefix}{stamp}"), "Port 22\n");
+        }
+        let executor = Arc::new(executor);
+        let ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+
+        prune_timestamped_backups(&ctx, prefix, BACKUPS_KEPT).await;
+
+        let log = executor.log();
+        let (_, args) = log
+            .commands_executed
+            .iter()
+            .find(|(program, _)| program == "rm")
+            .expect("a directory over the retention limit must be pruned");
+        for stamp in doomed {
+            let path = format!("{prefix}{stamp}");
+            assert!(
+                args.contains(&path),
+                "the older backup {path} must be removed, got: {args:?}"
+            );
+        }
+        for stamp in kept {
+            let path = format!("{prefix}{stamp}");
+            assert!(
+                !args.contains(&path),
+                "the newest {BACKUPS_KEPT} backups must be kept, but {path} was removed: {args:?}"
+            );
+        }
+    }
+
+    /// The file being backed up, and anything else sharing the directory, is
+    /// not a backup. The prefix is the whole of what makes a path a candidate.
+    ///
+    /// The same fixture proves the count guard: five files sit in the
+    /// directory and two of them are backups, so a prune counting entries
+    /// rather than backups would be over its limit and delete something.
+    #[tokio::test]
+    async fn only_paths_carrying_the_prefix_are_candidates() {
+        let executor = Arc::new(
+            MockExecutor::new()
+                .with_command_program("rm", succeeding())
+                .with_file("/etc/ssh/sshd_config.backup.20260718_112302", "Port 22\n")
+                .with_file("/etc/ssh/sshd_config.backup.20260810_120000", "Port 22\n")
+                .with_file("/etc/ssh/sshd_config", "Port 22\n")
+                .with_file("/etc/ssh/ssh_config", "Host *\n")
+                .with_file("/etc/ssh/sshd_config.d/10-hardening.conf", "Port 22\n"),
+        );
+        let ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+
+        prune_timestamped_backups(&ctx, "/etc/ssh/sshd_config.backup.", BACKUPS_KEPT).await;
+
+        let log = executor.log();
+        assert!(
+            !log.commands_executed
+                .iter()
+                .any(|(program, _)| program == "rm"),
+            "a directory holding fewer backups than the retention limit must not be \
+             pruned at all, but rm ran: {:?}",
+            log.commands_executed
+        );
+    }
+}
