@@ -342,6 +342,11 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                         // one: no reload runs at boot, and among the files the
                         // boot sequence does apply, the one named here decides.
                         Some(legacy_value) if legacy_value == &runtime => match reach {
+                            // Stays divergence_expected: None. The criterion is not that the
+                            // rollback always applies this, but whether it leaves the host
+                            // stronger than its restored configuration asks. Here the host is
+                            // correct now (the rollback applied it) but weaker after the next
+                            // reboot, since the boot applier does not read /etc/sysctl.conf.
                             persistence::Reach::DoesNotRead => (
                                 DivergenceState::Diverged,
                                 format!(
@@ -502,6 +507,8 @@ pub(super) async fn sysctl_divergences(ctx: &Context) -> Vec<RollbackDivergence>
                         // through `/etc/sysctl.d/99-sysctl.conf` is read by the
                         // drop-in reader, which puts the key in
                         // `effective.values` and this arm never runs.
+                        // Stays divergence_expected: None. Same principle: the host will be
+                        // weaker after the next reboot, not stronger, so it must not be demoted.
                         persistence::Reach::DoesNotRead => (
                             DivergenceState::Diverged,
                             format!(
