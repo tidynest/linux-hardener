@@ -294,6 +294,11 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
             return;
         };
         let plugin_id = submit_plugin_id.clone();
+        // Cleared here, not only on modal open: a retry dispatches through this
+        // same callback while the modal stays open, and without this a failure
+        // from the attempt before last stays on screen for the whole of the
+        // in-flight retry, read as still current when it is not.
+        modal_error.set(None);
         leptos::task::spawn_local(async move {
             match invoke_add_policy_exception(
                 plugin_id.clone(),
@@ -319,6 +324,16 @@ fn finding_row(plugin_id: String, f: Finding, expanded: RwSignal<Option<String>>
                 }
                 // A real failure leaves the modal open so the typed reason,
                 // approver, ticket and expiry survive for a retry.
+                //
+                // This keeps the message out of `app_state.error_message`, which
+                // is deliberate (see `modal_error`'s own comment above), but it
+                // has a consequence worth naming: `arm_rate_limit_auto_dismiss`
+                // (`crates/hardener-ui/src/lib.rs:185`) only watches
+                // `app_state.error_message`, so a rate-limit message raised by
+                // Accept is never auto-cleared. The operator must dismiss or
+                // retry manually; that is acceptable because the modal already
+                // owns this message and is the surface the operator is looking
+                // at when it appears.
                 Err(e) => modal_error.set(Some(format!("Accept finding failed: {e}"))),
             }
         });
