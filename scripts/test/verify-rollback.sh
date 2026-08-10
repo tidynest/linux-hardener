@@ -949,6 +949,215 @@ else
 fi
 
 # =============================================================================
+# DIVERGENCE MEASUREMENT (#142): five plugins asked what they report
+# =============================================================================
+# These five scenarios MEASURE. None of them asserts what a plugin reports,
+# because an assertion written before the measurement is the reasoning this
+# work exists to replace. Each forces live state out of step with the files it
+# will restore, rolls back, and prints two things: what it forced, and what
+# came back. Printing both is the point. A plugin that reports nothing and a
+# scenario that failed to force anything produce identical JSON, and telling
+# them apart is the whole value of this run.
+
+# Rolls back $1 and prints every divergence row, one "subject:state" per line.
+# Reads out of a file rather than a pipe: this shell reports the last command
+# in a pipeline, which has inverted an assertion in this script before.
+divergence_rows_for() {
+    local checkpoint="$1" outfile="$2"
+    "$BINARY" --format json rollback "$checkpoint" > "$outfile" 2>/dev/null || true
+    python3 -c 'import json,sys;print("\n".join(d["divergence_plugin_id"] + "/" + d["divergence_subject"] + ":" + d["divergence_state"] for d in json.load(open(sys.argv[1])).get("rollback_divergences",[])))' "$outfile"
+}
+
+# Prints what a scenario measured, in the one format Run 2 will be written
+# from. "none" is printed explicitly rather than left as an empty line, so a
+# plugin that reported nothing is legible in the transcript.
+report_measurement() {
+    local plugin="$1" forced="$2" rows="$3"
+    info "MEASURED $plugin"
+    info "  forced:   $forced"
+    info "  reported: $(printf '%s' "$rows" | grep "^$plugin/" | tr '\n' ' ' || true)"
+    info "  all rows: ${rows:-none}"
+}
+
+header "TEST 10: WHAT ssh-hardening REPORTS AFTER A ROLLBACK"
+
+if ! command -v python3 &>/dev/null; then
+    skip "ssh divergence measurement: python3 is not available to parse the rollback's JSON"
+elif ! command -v sshd &>/dev/null; then
+    skip "ssh divergence measurement: no sshd on this host, so nothing can serve a stale configuration"
+else
+    "$BINARY" apply --plugin ssh-hardening > /dev/null 2>&1 || true
+
+    # The divergence this aims at: sshd still serving the pre-rollback
+    # configuration because the restart could not run. Making the restart fail
+    # is the forcing step, and masking the unit is the least violent way to do
+    # it that a container permits.
+    systemctl mask sshd.service > /dev/null 2>&1 || systemctl mask ssh.service > /dev/null 2>&1 || true
+    SSH_FORCED="sshd.service masked, so reload_after_rollback cannot restart it"
+
+    SSH_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+    if [[ -z "$SSH_CP" ]]; then
+        fail "No checkpoint created during the ssh divergence measurement"
+    else
+        SSH_ROWS=$(divergence_rows_for "$SSH_CP" /tmp/diverge-ssh.json)
+        report_measurement "ssh-hardening" "$SSH_FORCED" "$SSH_ROWS"
+        rm -f /tmp/diverge-ssh.json
+    fi
+
+    systemctl unmask sshd.service > /dev/null 2>&1 || systemctl unmask ssh.service > /dev/null 2>&1 || true
+fi
+
+header "TEST 11: WHAT service-minimisation REPORTS AFTER A ROLLBACK"
+
+if ! command -v python3 &>/dev/null; then
+    skip "services divergence measurement: python3 is not available to parse the rollback's JSON"
+elif ! command -v systemctl &>/dev/null; then
+    skip "services divergence measurement: no systemctl on this host"
+else
+    "$BINARY" apply --plugin service-minimisation > /dev/null 2>&1 || true
+
+    # The divergence this aims at: a unit the restored files enable but which
+    # is not running. Starting a unit the apply disabled, then rolling back,
+    # leaves the files saying one thing and the running system another.
+    SERVICES_UNIT=$(systemctl list-unit-files --type=service --state=disabled --no-legend 2>/dev/null | awk 'NR==1{print $1}')
+    SERVICES_WAS_ACTIVE=""
+    if [[ -z "$SERVICES_UNIT" ]]; then
+        SERVICES_FORCED="nothing: no disabled unit was available to start"
+    else
+        SERVICES_WAS_ACTIVE=$(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || true)
+        systemctl start "$SERVICES_UNIT" > /dev/null 2>&1 || true
+        SERVICES_FORCED="$SERVICES_UNIT started while its unit files say disabled"
+    fi
+
+    SERVICES_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+    if [[ -z "$SERVICES_CP" ]]; then
+        fail "No checkpoint created during the services divergence measurement"
+    else
+        SERVICES_ROWS=$(divergence_rows_for "$SERVICES_CP" /tmp/diverge-services.json)
+        report_measurement "service-minimisation" "$SERVICES_FORCED" "$SERVICES_ROWS"
+        rm -f /tmp/diverge-services.json
+    fi
+
+    # Teardown, independent of whether the checkpoint above was found: a
+    # rollback restores files, not a unit's running state, so nothing above
+    # this line puts a started unit back to not-running on its own. Only
+    # stopped if this scenario is what started it, so a unit that was already
+    # active before this scenario ran is left exactly as found.
+    if [[ -n "$SERVICES_UNIT" && "$SERVICES_WAS_ACTIVE" != "active" ]]; then
+        systemctl stop "$SERVICES_UNIT" > /dev/null 2>&1 || true
+    fi
+fi
+
+header "TEST 12: WHAT audit-hardening REPORTS AFTER A ROLLBACK"
+
+if ! command -v python3 &>/dev/null; then
+    skip "audit divergence measurement: python3 is not available to parse the rollback's JSON"
+elif ! command -v auditctl &>/dev/null; then
+    skip "audit divergence measurement: no auditctl on this host, so no kernel rule set can be read"
+else
+    "$BINARY" apply --plugin audit-hardening > /dev/null 2>&1 || true
+
+    # The divergence this aims at: a rule loaded in the kernel that no
+    # restored file names. auditctl loads it directly, touching no file, which
+    # is exactly the state a rollback cannot reach by restoring files.
+    auditctl -w /etc/hardener-divergence-probe -p wa -k hardener_probe > /dev/null 2>&1 || true
+    AUDIT_FORCED="kernel rule -w /etc/hardener-divergence-probe -k hardener_probe loaded, named in no file"
+    AUDIT_LOADED=$(auditctl -l 2>/dev/null | grep -c 'hardener_probe' || true)
+    info "  kernel rules naming hardener_probe before rollback: $AUDIT_LOADED"
+
+    AUDIT_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+    if [[ -z "$AUDIT_CP" ]]; then
+        fail "No checkpoint created during the audit divergence measurement"
+    else
+        AUDIT_ROWS=$(divergence_rows_for "$AUDIT_CP" /tmp/diverge-audit.json)
+        report_measurement "audit-hardening" "$AUDIT_FORCED" "$AUDIT_ROWS"
+        rm -f /tmp/diverge-audit.json
+    fi
+
+    auditctl -W /etc/hardener-divergence-probe -p wa -k hardener_probe > /dev/null 2>&1 || true
+fi
+
+header "TEST 13: WHAT permissions-hardening REPORTS AFTER A ROLLBACK"
+
+if ! command -v python3 &>/dev/null; then
+    skip "permissions divergence measurement: python3 is not available to parse the rollback's JSON"
+else
+    "$BINARY" apply --plugin permissions-hardening > /dev/null 2>&1 || true
+
+    # The hypothesis is that this plugin cannot diverge: a mode lives in the
+    # file, so restoring the file IS the whole revert, with no runtime state
+    # anywhere else. The scenario still tries, because a hypothesis that is
+    # never tested is the thing this issue was filed about.
+    PERMS_ORIG_MODE=$(stat -c '%a' /etc/shadow 2>/dev/null || echo "")
+    chmod 0666 /etc/shadow > /dev/null 2>&1 || true
+    PERMS_FORCED="/etc/shadow chmod 0666 live, out of step with the mode the checkpoint holds"
+    info "  /etc/shadow mode before rollback: $(stat -c '%a' /etc/shadow 2>/dev/null || echo unreadable)"
+
+    PERMS_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+    if [[ -z "$PERMS_CP" ]]; then
+        fail "No checkpoint created during the permissions divergence measurement"
+    else
+        PERMS_ROWS=$(divergence_rows_for "$PERMS_CP" /tmp/diverge-perms.json)
+        info "  /etc/shadow mode after rollback: $(stat -c '%a' /etc/shadow 2>/dev/null || echo unreadable)"
+        report_measurement "permissions-hardening" "$PERMS_FORCED" "$PERMS_ROWS"
+        rm -f /tmp/diverge-perms.json
+    fi
+
+    # Teardown, independent of whether the checkpoint above was found: a
+    # rollback that restores the correct mode makes this line a no-op, and a
+    # rollback that never ran (no checkpoint, or an unparsable JSON document)
+    # would otherwise leave /etc/shadow world-writable for the rest of the run.
+    if [[ -n "$PERMS_ORIG_MODE" ]]; then
+        chmod "$PERMS_ORIG_MODE" /etc/shadow > /dev/null 2>&1 || true
+    fi
+fi
+
+header "TEST 14: WHAT pam-hardening REPORTS AFTER A ROLLBACK"
+
+if ! command -v python3 &>/dev/null; then
+    skip "pam divergence measurement: python3 is not available to parse the rollback's JSON"
+elif [[ ! -d /etc/pam.d ]]; then
+    skip "pam divergence measurement: no /etc/pam.d on this host"
+else
+    "$BINARY" apply --plugin pam-hardening > /dev/null 2>&1 || true
+
+    # Same shape as TEST 13, same hypothesis: PAM's state is its files, apply
+    # refuses to edit /etc/pam.d/* at all, and a restore is therefore the whole
+    # revert. Forced anyway.
+    # Backed up before the append, same idiom as TEST 9's LEGACY_CONF: this is
+    # the safety net for the path where the checkpoint below is never found
+    # and the rollback that would otherwise undo the append never runs.
+    PAM_BACKED_UP=false
+    PAM_EXISTED_BEFORE=false
+    if [[ -e /etc/security/faillock.conf ]]; then
+        PAM_EXISTED_BEFORE=true
+        cp -a /etc/security/faillock.conf /etc/security/faillock.conf.rollback-readback.bak 2>/dev/null && PAM_BACKED_UP=true
+    fi
+    printf '\n# hardener divergence probe\n' >> /etc/security/faillock.conf 2>/dev/null || true
+    PAM_FORCED="a line appended to /etc/security/faillock.conf after the checkpoint was taken"
+
+    PAM_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
+    if [[ -z "$PAM_CP" ]]; then
+        fail "No checkpoint created during the pam divergence measurement"
+    else
+        PAM_ROWS=$(divergence_rows_for "$PAM_CP" /tmp/diverge-pam.json)
+        info "  faillock.conf still names the probe after rollback: $(grep -c 'hardener divergence probe' /etc/security/faillock.conf 2>/dev/null || echo 0)"
+        report_measurement "pam-hardening" "$PAM_FORCED" "$PAM_ROWS"
+        rm -f /tmp/diverge-pam.json
+    fi
+
+    # Teardown, independent of whether the checkpoint above was found: put
+    # back whatever was found, or leave nothing where nothing was, matching
+    # TEST 9's own restore. A rollback that already restored the file makes
+    # this overwrite with identical content, a no-op in substance.
+    if [[ "$PAM_BACKED_UP" == "true" ]]; then
+        mv /etc/security/faillock.conf.rollback-readback.bak /etc/security/faillock.conf
+    elif [[ "$PAM_EXISTED_BEFORE" == "false" ]]; then
+        rm -f /etc/security/faillock.conf
+    fi
+fi
+
+# =============================================================================
 # SUMMARY
 # =============================================================================
 header "SUMMARY"
