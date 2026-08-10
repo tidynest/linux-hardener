@@ -13,32 +13,26 @@ use super::*;
 use hardener_common::executor::MockExecutor;
 use std::sync::Arc;
 
-/// A host with no readable LSM produces exactly one row, and it is
-/// Unverifiable rather than empty. An empty vector here would mean "looked,
-/// everything came back", which is a claim this probe cannot make on a host
-/// whose kernel exposes no MAC at all (#18).
+/// A host with neither SELinux nor AppArmor detected reports nothing:
+/// genuinely nothing installed leaves no restored configuration and no
+/// enforced policy for either to disagree with, the same reasoning
+/// `firewall/divergence.rs` applies to a host with no firewall backend.
+/// An empty vector here is the correct answer, not a dodge; `MockExecutor`
+/// with neither LSM path registered is exactly `MacDetection::Absent`.
 #[tokio::test]
-async fn an_unreadable_lsm_is_one_unverifiable_row() {
+async fn a_host_with_no_mac_system_reports_nothing() {
     let ctx = Context::with_executor(Arc::new(MockExecutor::new()));
 
     let rows = mac_divergences(&MacHardeningPlugin::new(), &ctx).await;
 
-    assert_eq!(rows.len(), 1, "one row, not silence");
-    assert_eq!(rows[0].divergence_plugin_id, "mac-hardening");
-    assert_eq!(
-        rows[0].divergence_state,
-        DivergenceState::Unverifiable,
-        "the probe could not read a policy back, which is not a claim that anything is wrong"
-    );
     assert!(
-        rows[0].divergence_detail.contains("#18"),
-        "the sentence points at the issue that can answer it: {}",
-        rows[0].divergence_detail
+        rows.is_empty(),
+        "no MAC system installed is not a divergence: {rows:?}"
     );
 }
 
 /// A host that detects SELinux gets a row naming SELinux, not the generic
-/// `mac` subject the two arms below share.
+/// `mac` subject the `Indeterminate` arm below uses.
 #[tokio::test]
 async fn a_detected_selinux_system_names_selinux_as_the_subject() {
     let ctx = Context::with_executor(Arc::new(
@@ -60,7 +54,8 @@ async fn a_detected_selinux_system_names_selinux_as_the_subject() {
 }
 
 /// The AppArmor arm names `apparmor`, distinct from the SELinux arm above and
-/// from the generic `mac` subject the `Absent` and `Indeterminate` arms share.
+/// from the generic `mac` subject the `Indeterminate` arm below uses.
+/// `Absent` no longer shares that subject: it reports nothing at all.
 #[tokio::test]
 async fn a_detected_apparmor_system_names_apparmor_as_the_subject() {
     let ctx = Context::with_executor(Arc::new(
@@ -81,11 +76,12 @@ async fn a_detected_apparmor_system_names_apparmor_as_the_subject() {
     );
 }
 
-/// `Indeterminate` shares its subject, `mac`, with `Absent`, so subject alone
-/// cannot prove the row came from this arm. What can: the detection's own
-/// reason string, which this arm is the only one that interpolates into the
-/// sentence. A distinctive reason is used deliberately, so the assertion
-/// cannot pass by coincidence with either neighbour's fixed wording.
+/// `Indeterminate` uses the generic `mac` subject, since it names no specific
+/// LSM. The detection's own reason string is what proves the row came from
+/// this arm rather than some other one: it is the only arm that interpolates
+/// its detection reason into the sentence, so a distinctive reason is used
+/// deliberately, and the assertion cannot pass by coincidence with any
+/// neighbour's fixed wording.
 #[tokio::test]
 async fn an_indeterminate_probe_carries_its_own_reason_into_the_detail() {
     let ctx = Context::with_executor(Arc::new(
@@ -97,7 +93,7 @@ async fn an_indeterminate_probe_carries_its_own_reason_into_the_detail() {
     assert_eq!(rows.len(), 1, "one row, not silence");
     assert_eq!(
         rows[0].divergence_subject, "mac",
-        "Indeterminate shares its subject with Absent"
+        "Indeterminate uses the generic mac subject"
     );
     assert_eq!(
         rows[0].divergence_state,

@@ -235,16 +235,26 @@ checkable came back": six plugins were inheriting that claim without a probe
 ever having looked, and the default is now deleted so a ninth plugin cannot
 inherit the same silence.
 
-**`mac-hardening` and `audit-hardening` report a single `Unverifiable` row,
-each naming #18, and that is a statement about this project's containers, not
-about either plugin.** Loading an LSM policy is host-global, so no container
-this machine can build can be handed MAC enforcement to disagree about, and
+**`audit-hardening` reports a single `Unverifiable` row naming #18, and that is
+a statement about this project's containers, not about the plugin.**
 `auditctl` cannot run in any container this project builds at all, measured
-twice on 2026-08-10, booted and unbooted. Neither row is ever `Diverged`,
-because nothing here has been compared against anything. **Read neither row as
-"this plugin cannot diverge after a rollback."** That claim was never earned;
-the only claim earned is that no container this machine can build lets it be
-asked, and #18, a real virtual machine, is what changes that.
+twice on 2026-08-10, booted and unbooted. **`mac-hardening` reports nothing at
+all in the same containers**, not an `Unverifiable` row: none of them expose
+SELinux or AppArmor, so `MacDetection::Absent` is what this probe reads there,
+and a host with no MAC system installed has no restored configuration and no
+enforced policy for either to disagree with. That is a correct empty answer,
+the same one `firewall/divergence.rs` gives for a host with no firewall
+backend, not the "everything checkable came back" claim an empty vector
+means everywhere else in this file: nothing here was checkable to begin with.
+A container that could be handed a detected-but-unreadable MAC system would
+still get `mac-hardening`'s `Unverifiable` row naming #18; none of this
+project's containers can produce that state either, measured the same way as
+`audit-hardening`. Neither row, where either appears, is ever `Diverged`,
+because nothing here has been compared against anything. **Read neither the
+`Unverifiable` row nor the silence as "this plugin cannot diverge after a
+rollback."** That claim was never earned; the only claim earned is that no
+container this machine can build lets it be asked, and #18, a real virtual
+machine, is what changes that.
 
 **`service-minimisation`'s probe is readable on any booted host and has never
 fired against a real divergence.** Unlike mac and audit, its state genuinely

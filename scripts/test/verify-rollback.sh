@@ -1446,21 +1446,23 @@ else
         # asks every registered plugin's divergences_after_rollback on every
         # rollback, not only the plugin whose apply created the checkpoint
         # (create_plugin_registry registers all eight unconditionally), so
-        # this rollback's AUDIT_ROWS also carries mac-hardening's row.
-        # mac/divergence.rs (mac_divergences) is the same shape as audit's:
-        # exactly one Unverifiable row on every call, because no container
-        # here can be given MAC enforcement to read back either. Both are
-        # asserted from this one rollback rather than duplicated across
-        # every scenario in this file that also triggers them.
+        # this rollback's AUDIT_ROWS also carries mac-hardening's answer.
+        # mac/divergence.rs (mac_divergences) is NOT the same shape as
+        # audit's here: none of this project's containers expose SELinux or
+        # AppArmor, so MacDetection::Absent is what it reads, and Absent
+        # reports nothing at all, the same way firewall/divergence.rs treats
+        # no firewall backend installed. Both are asserted from this one
+        # rollback rather than duplicated across every scenario in this file
+        # that also triggers them.
         if printf '%s\n' "$AUDIT_ROWS" | grep -Fxq "audit-hardening/audit-rules:Unverifiable"; then
             pass "audit-hardening reports an Unverifiable row for audit-rules, as it does on every call"
         else
             fail "audit-hardening did not report an Unverifiable row for audit-rules (rows: ${AUDIT_ROWS:-none})"
         fi
-        if printf '%s\n' "$AUDIT_ROWS" | grep -Eq '^mac-hardening/[^:]+:Unverifiable$'; then
-            pass "mac-hardening reports an Unverifiable row, as it does on every call"
+        if printf '%s\n' "$AUDIT_ROWS" | grep -q '^mac-hardening/'; then
+            fail "mac-hardening reported a row although no MAC system is installed in this container (rows: ${AUDIT_ROWS:-none})"
         else
-            fail "mac-hardening did not report an Unverifiable row (rows: ${AUDIT_ROWS:-none})"
+            pass "mac-hardening reports nothing, as it does on every host with no MAC system detected"
         fi
 
         rm -f /tmp/diverge-audit.json

@@ -7,6 +7,13 @@
 //! therefore written to be honest about what it cannot read rather than to
 //! measure something unreachable, and it is #18 that turns it into a
 //! measurement on a real VM.
+//!
+//! A host with no MAC system detected at all is a different case from either
+//! of those, and reported differently: there is no restored MAC configuration
+//! and no policy the kernel could be enforcing instead, so there is nothing
+//! for a divergence to be between. `firewall/divergence.rs` treats the
+//! matching situation, no backend installed, the same way and for the same
+//! reason: genuinely nothing installed is not a divergence.
 
 use super::{MacDetection, MacHardeningPlugin, MacSystem};
 use hardener_core::Context;
@@ -24,13 +31,17 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
     }
 }
 
-/// One row, always. A restored MAC configuration and the policy the kernel is
-/// actually enforcing are separate things, and this probe can currently
-/// establish the second on no host the suite can build.
+/// One row for a detected MAC system whose enforcement cannot be read back,
+/// none for a host with no MAC system at all.
 ///
-/// **`Unverifiable`, never an empty vector.** An empty vector has a defined
-/// meaning here: everything checkable came back. That is a claim about the
-/// running system, and this probe has not earned it.
+/// **`Unverifiable`, never an empty vector, for `Found` and `Indeterminate`.**
+/// An empty vector has a defined meaning here: everything checkable came
+/// back. That is a claim about the running system, and this probe has not
+/// earned it on those two arms. `Absent` is the exception: a host with
+/// nothing installed has no restored configuration and no enforced policy
+/// for either to disagree with, so an empty vector there is not a dodge, it
+/// is the correct answer, the same one `firewall/divergence.rs` gives for a
+/// host with no firewall backend installed.
 pub(super) async fn mac_divergences(
     plugin: &MacHardeningPlugin,
     ctx: &Context,
@@ -48,12 +59,10 @@ pub(super) async fn mac_divergences(
              configuration: reading it back needs a host where a profile can be loaded"
                 .to_string(),
         ),
-        MacDetection::Absent => (
-            "mac",
-            "no MAC system was detected, so nothing can be read back to compare against the \
-             restored configuration"
-                .to_string(),
-        ),
+        // Genuinely nothing installed is not a divergence: there is no
+        // configuration to disagree with, and no policy enforcing anything
+        // else either.
+        MacDetection::Absent => return Vec::new(),
         // Kept apart from `Absent` on purpose. "No MAC here" and "the probe
         // could not tell" are different sentences, and the detection carries
         // its own reason precisely so the second one can be passed on.
