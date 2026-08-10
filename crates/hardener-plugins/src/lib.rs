@@ -211,6 +211,14 @@ pub(crate) const BACKUPS_KEPT: usize = 3;
 /// next apply prunes again; refusing an apply, or reporting a failure the
 /// operator cannot act on, would be a larger harm than the disk the copies
 /// occupy.
+///
+/// **A rollback of the apply that pruned brings the pruned copies back**, and
+/// that is correct rather than a hole. Every caller runs below its plugin's
+/// pre-apply checkpoint, which captured the directory as it was, so a rollback
+/// restores the state before the prune along with everything else it restores.
+/// The count converges anyway: the next apply prunes what the rollback put
+/// back. Moving the prune above the checkpoint would fix the count and break
+/// the rollback's contract, which is to return the host to what it was.
 pub(crate) async fn prune_timestamped_backups(
     ctx: &hardener_core::Context,
     prefix: &str,
