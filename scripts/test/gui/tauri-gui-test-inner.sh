@@ -326,7 +326,7 @@ run_tests() {
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  TAURI DESKTOP GUI TEST RUNNER (Xvfb + xdotool)            ║"
+echo "║  TAURI DESKTOP GUI TEST RUNNER (Xvfb + xdotool)              ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 

@@ -291,7 +291,7 @@ trap cleanup EXIT
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  GUI TEST RUNNER (Web UI: Playwright)                       ║"
+echo "║  GUI TEST RUNNER (Web UI: Playwright)                        ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
