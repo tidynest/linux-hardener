@@ -159,6 +159,34 @@ async fn the_ceiling_row_is_expected_and_names_the_issue() {
     );
 }
 
+/// Finding 3 (final review): `UnrecognisedFailure`'s reason used to sit
+/// outside the `match` with the "auditctl cannot run in any container this
+/// project builds" sentence attached regardless, demoting exactly the case
+/// the design's risk section says must not inherit that demotion: an
+/// auditctl failure this project explicitly does not recognise.
+#[tokio::test]
+async fn the_unrecognised_failure_arm_is_not_expected() {
+    let ctx = Context::with_executor(Arc::new(MockExecutor::new().with_command(
+        "auditctl",
+        &["-l"],
+        CommandOutput {
+            stdout: String::new(),
+            stderr: "auditctl: Error - netlink socket bind failed".to_string(),
+            exit_code: 1,
+        },
+    )));
+
+    let rows = audit_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+    assert!(
+        rows[0].divergence_expected.is_none(),
+        "an unrecognised failure is not the measured ceiling the runnable arms are: {:?}",
+        rows[0].divergence_expected
+    );
+}
+
 /// `auditctl -l` running and exiting non-zero for a reason that is neither a
 /// recognised permission refusal (no "Permission denied", "must be root" and
 /// so on in stderr) nor an unspawnable binary. Scan and apply fold this back

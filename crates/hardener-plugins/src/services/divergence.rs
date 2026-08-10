@@ -239,8 +239,9 @@ pub(super) async fn service_divergences(ctx: &Context) -> Vec<RollbackDivergence
                      it not running"
                 ),
                 Some(
-                    "a rollback restores enablement and never starts a unit, because undoing \
-                     a hardening run must not leave a host less protected than it was found"
+                    "a rollback never starts a unit, so a unit that reads enabled by any means \
+                     and is not running is this shape, because undoing a hardening run must \
+                     not leave a host less protected than it was found"
                         .to_string(),
                 ),
             )),

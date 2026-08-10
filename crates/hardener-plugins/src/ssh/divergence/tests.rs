@@ -227,12 +227,20 @@ async fn no_ssh_row_is_ever_expected() {
         ("active\n", 0, "", 1),
         ("GARBAGE\n", 0, "enabled\n", 0),
     ];
-    assert!(!test_cases.is_empty(), "test cases are non-empty");
 
-    for (active, active_exit, enabled, enabled_exit) in test_cases {
+    for case in test_cases {
+        let (active, active_exit, enabled, enabled_exit) = case;
         let ctx = sshd_host(active, active_exit, enabled, enabled_exit);
 
-        for divergence in sshd_divergences(&ctx).await {
+        let rows = sshd_divergences(&ctx).await;
+        // The real vacuity risk: an empty vector here would make the loop
+        // below assert nothing at all, for every case, and still read green.
+        assert_eq!(
+            rows.len(),
+            1,
+            "each case must produce a row to judge: {case:?}"
+        );
+        for divergence in rows {
             assert!(
                 divergence.divergence_expected.is_none(),
                 "ssh rows are never routine, but {:?} was marked expected: {:?}",

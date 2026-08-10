@@ -52,18 +52,28 @@ pub(super) async fn mac_divergences(
     plugin: &MacHardeningPlugin,
     ctx: &Context,
 ) -> Vec<RollbackDivergence> {
-    let (subject, reason) = match plugin.detect_mac_system(ctx).await {
+    // The ceiling reason lives on the arms that are actually a stated
+    // ceiling. `Indeterminate` is a probe that failed to run, not a ceiling
+    // this project has already measured and named an issue for, so it must
+    // not inherit a sentence written for `Found`.
+    const CEILING_REASON: &str = "a stated ceiling rather than a probe that failed: loading an LSM policy is \
+         host-global, so no container this project can build can be given MAC \
+         enforcement to disagree about. #18 turns this into a measurement";
+
+    let (subject, reason, expected) = match plugin.detect_mac_system(ctx).await {
         MacDetection::Found(MacSystem::SELinux) => (
             "selinux",
             "the policy the kernel is enforcing cannot be compared against the restored \
              configuration: reading it back needs a host where a policy can be loaded"
                 .to_string(),
+            Some(CEILING_REASON.to_string()),
         ),
         MacDetection::Found(MacSystem::AppArmor) => (
             "apparmor",
             "the profile set the kernel is enforcing cannot be compared against the restored \
              configuration: reading it back needs a host where a profile can be loaded"
                 .to_string(),
+            Some(CEILING_REASON.to_string()),
         ),
         // Genuinely nothing installed is not a divergence: there is no
         // configuration to disagree with, and no policy enforcing anything
@@ -71,10 +81,14 @@ pub(super) async fn mac_divergences(
         MacDetection::Absent => return Vec::new(),
         // Kept apart from `Absent` on purpose. "No MAC here" and "the probe
         // could not tell" are different sentences, and the detection carries
-        // its own reason precisely so the second one can be passed on.
+        // its own reason precisely so the second one can be passed on. Not
+        // expected: a probe that could not tell whether a MAC system is
+        // present is not the stated, measured ceiling the `Found` arms
+        // report, so it must not borrow that sentence.
         MacDetection::Indeterminate(reason) => (
             "mac",
             format!("the host could not be probed for a MAC system: {reason}"),
+            None,
         ),
     };
 
@@ -82,12 +96,7 @@ pub(super) async fn mac_divergences(
         subject,
         DivergenceState::Unverifiable,
         format!("{reason}. See #18."),
-        Some(
-            "a stated ceiling rather than a probe that failed: loading an LSM policy is \
-             host-global, so no container this project can build can be given MAC \
-             enforcement to disagree about. #18 turns this into a measurement"
-                .to_string(),
-        ),
+        expected,
     )]
 }
 

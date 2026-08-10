@@ -755,6 +755,45 @@ fn unexpected_rows_print_before_expected_ones() {
     );
 }
 
+/// Finding 5 (final review, maintainer approved): within the unexpected group,
+/// a `Diverged` row prints before an `Unverifiable` one, whatever order the
+/// plugin handed them over in. On every systemd host the glob-source
+/// `Unverifiable` row from `/usr/lib/sysctl.d/50-default.conf` is a constant,
+/// and burying a genuine `Diverged` finding behind it teaches the operator to
+/// skip the block. The input here is deliberately `Unverifiable`-first so a
+/// renderer that kept input order fails.
+#[test]
+fn unexpected_diverged_rows_print_before_unexpected_unverifiable_ones() {
+    let result = rollback_result_fixture(vec![
+        RollbackDivergence {
+            divergence_plugin_id: "kernel-hardening".to_string(),
+            divergence_subject: "/usr/lib/sysctl.d/50-default.conf".to_string(),
+            divergence_state: DivergenceState::Unverifiable,
+            divergence_detail: "this configuration source could not be read".to_string(),
+            divergence_expected: None,
+        },
+        RollbackDivergence {
+            divergence_plugin_id: "ssh-hardening".to_string(),
+            divergence_subject: "sshd".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "running and masked".to_string(),
+            divergence_expected: None,
+        },
+    ]);
+
+    let joined = divergence_lines(&result).join("\n");
+
+    let diverged_at = joined.find("sshd").expect("the diverged row prints");
+    let unverifiable_at = joined
+        .find("50-default.conf")
+        .expect("the unverifiable row prints");
+    assert!(
+        diverged_at < unverifiable_at,
+        "a measured disagreement has to come before a constant probe ceiling, whatever \
+         order the plugins gave: {joined}"
+    );
+}
+
 /// The heading prints whenever any expected row does, including when every row
 /// is expected. An operator must never have to infer that an unlabelled block
 /// is the alarming kind.

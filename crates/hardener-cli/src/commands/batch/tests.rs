@@ -2065,6 +2065,59 @@ fn batch_prints_unexpected_divergences_before_expected_ones() {
     assert!(unexpected_at < expected_at, "{out}");
 }
 
+/// Finding 4 (final review, maintainer approved): the reorder above carries no
+/// heading, no reason and no per-row marker of its own, so it is invisible to
+/// a reader who does not already know which rows are which. The "(expected)"
+/// suffix is that signal.
+#[test]
+fn batch_marks_expected_rows_and_leaves_unexpected_ones_unmarked() {
+    colored::control::set_override(false);
+
+    let divergences = vec![
+        RollbackDivergence {
+            divergence_plugin_id: "service-minimisation".to_string(),
+            divergence_subject: "bluetooth".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "reads enabled but is not running".to_string(),
+            divergence_expected: Some("a rollback never starts a unit".to_string()),
+        },
+        RollbackDivergence {
+            divergence_plugin_id: "ssh-hardening".to_string(),
+            divergence_subject: "sshd".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "running and masked".to_string(),
+            divergence_expected: None,
+        },
+    ];
+
+    let out = render_rollback_text(&[ro(RollbackStatus::RolledBack {
+        restored: 2,
+        failed: 0,
+        reload_failed: 0,
+        diverged: 2,
+        unverifiable: 0,
+        divergences,
+    })]);
+
+    let unexpected_line = out
+        .lines()
+        .find(|l| l.contains("sshd"))
+        .expect("the unexpected row prints");
+    let expected_line = out
+        .lines()
+        .find(|l| l.contains("bluetooth"))
+        .expect("the expected row prints");
+    assert!(
+        !unexpected_line.contains("(expected)"),
+        "an unmarked row must not carry the marker: {unexpected_line}"
+    );
+    assert!(
+        expected_line.contains("(expected)"),
+        "an expected row must carry the marker, or the reorder above it is invisible: \
+         {expected_line}"
+    );
+}
+
 /// A payload written by a release older than this field still parses, which is
 /// what the `serde(default)` is for: a fleet running mixed versions must not
 /// fail to read one of its own hosts.

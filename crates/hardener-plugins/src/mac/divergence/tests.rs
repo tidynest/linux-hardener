@@ -113,7 +113,8 @@ async fn an_indeterminate_probe_carries_its_own_reason_into_the_detail() {
 /// this project can build, because loading an LSM policy is host-global and no
 /// container can be given MAC enforcement. Expected and Unverifiable at once:
 /// the row still prints "could not check", it just stops crowding a genuine
-/// finding.
+/// finding. Both `Found` arms reach here (SELinux and AppArmor read the same
+/// reason from the same constant), so one is enough to prove the wiring.
 #[tokio::test]
 async fn the_ceiling_row_is_expected_and_names_the_issue() {
     let ctx = Context::with_executor(Arc::new(
@@ -131,5 +132,28 @@ async fn the_ceiling_row_is_expected_and_names_the_issue() {
     assert!(
         reason.contains("#18"),
         "the demotion is only safe while it names the issue that ends it: {reason}"
+    );
+}
+
+/// Finding 3 (final review): `Indeterminate` used to sit outside the `match`
+/// with the `Found` arms' ceiling reason attached to it regardless, which was
+/// self-contradictory (the detail says the probe could not tell, the reason
+/// said "a stated ceiling rather than a probe that failed"). A probe that
+/// could not tell whether a MAC system is even present has not measured the
+/// stated ceiling the `Found` arms report, so this arm must be `None`.
+#[tokio::test]
+async fn the_indeterminate_arm_is_not_expected() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_path_exists_error("/sys/fs/selinux"),
+    ));
+
+    let rows = mac_divergences(&MacHardeningPlugin::new(), &ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Unverifiable);
+    assert!(
+        rows[0].divergence_expected.is_none(),
+        "a probe that could not tell is not a ceiling: {:?}",
+        rows[0].divergence_expected
     );
 }

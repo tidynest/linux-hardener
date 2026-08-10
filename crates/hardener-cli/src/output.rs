@@ -671,14 +671,24 @@ pub fn rollback_result(format: &OutputFormat, result: &RollbackResult) {
 /// (#152): a routine row printed beside a surprising one teaches the operator
 /// to skip the block that carries both. Unexpected rows print first, expected
 /// ones follow under their own heading, and nothing is hidden or dropped.
+///
+/// Within the unexpected group, `Diverged` prints before `Unverifiable`
+/// (#152 follow-up): on every systemd host, `/usr/lib/sysctl.d/50-default.conf`
+/// names managed parameters through a glob this scan does not resolve, which
+/// puts one glob-source `Unverifiable` row and the per-parameter rows it
+/// blocks in front of every genuine finding unless the surprising state is
+/// sorted forward. The sort is stable and touches only ordering within the
+/// unexpected group: the expected group and every classification are
+/// unchanged.
 pub(crate) fn divergence_lines(result: &RollbackResult) -> Vec<String> {
     if result.rollback_divergences.is_empty() {
         return Vec::new();
     }
-    let (expected, unexpected): (Vec<_>, Vec<_>) = result
+    let (expected, mut unexpected): (Vec<_>, Vec<_>) = result
         .rollback_divergences
         .iter()
         .partition(|divergence| divergence.divergence_expected.is_some());
+    unexpected.sort_by_key(|d| d.divergence_state != DivergenceState::Diverged);
 
     let mut lines = vec!["\nDivergences:".to_string()];
     lines.extend(unexpected.iter().flat_map(|d| divergence_row_lines(d)));

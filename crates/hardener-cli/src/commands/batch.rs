@@ -1441,14 +1441,26 @@ fn render_rollback_text(outcomes: &[RollbackOutcome]) -> String {
                 // operator has more rows in front of them, not fewer, so the
                 // rows nothing in the design produces come first. Every row
                 // still prints, uncapped, for the reason the comment above
-                // gives.
-                let (expected, unexpected): (Vec<_>, Vec<_>) = divergences
+                // gives. Within the unexpected group, `Diverged` sorts before
+                // `Unverifiable` for the same reason `output.rs` does it: the
+                // glob-source `Unverifiable` row is a constant on every
+                // systemd host and must not stand in front of a genuine
+                // finding.
+                let (expected, mut unexpected): (Vec<_>, Vec<_>) = divergences
                     .iter()
                     .partition(|d| d.divergence_expected.is_some());
+                unexpected.sort_by_key(|d| d.divergence_state != DivergenceState::Diverged);
                 for d in unexpected.into_iter().chain(expected) {
-                    let label = match d.divergence_state {
-                        DivergenceState::Diverged => "diverged".yellow(),
-                        DivergenceState::Unverifiable => "unverifiable".dimmed(),
+                    // This reorder was invisible on its own: no heading, no
+                    // reason, no per-row marker, so a reader who does not
+                    // already know the classification gains nothing from it.
+                    // The "(expected)" suffix is the signal, deliberately
+                    // kept to the one-line-per-row shape with no counts added.
+                    let label = match (d.divergence_state, d.divergence_expected.is_some()) {
+                        (DivergenceState::Diverged, false) => "diverged".yellow(),
+                        (DivergenceState::Unverifiable, false) => "unverifiable".dimmed(),
+                        (DivergenceState::Diverged, true) => "diverged (expected)".dimmed(),
+                        (DivergenceState::Unverifiable, true) => "unverifiable (expected)".dimmed(),
                     };
                     push_detail(
                         &mut out,

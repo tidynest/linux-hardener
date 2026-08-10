@@ -219,18 +219,28 @@ fn result_view(result: RollbackResult, close: impl Fn(bool) + 'static + Copy) ->
     let summary = rollback_summary_sentence(&result);
     let files = result.rollback_files.clone();
     let reloads = result.rollback_reloads.clone();
-    let divergences = result.rollback_divergences.clone();
     // Ranking is the same argument the CLI's `divergence_lines` makes (#152):
     // a routine row printed beside a surprising one teaches the operator to
     // skip the block that carries both. Unexpected rows keep "Still
     // diverged:"; expected ones move under their own heading with the reason
-    // the plugin gave, muted by opacity and colour in styles.css rather than
-    // hidden, because clipping or dropping a row here is the defect #143
-    // fixed.
-    let (expected, unexpected): (Vec<_>, Vec<_>) = divergences
-        .iter()
-        .cloned()
+    // the plugin gave, muted by opacity in styles.css and, for an
+    // `Unverifiable` row, by the same colour rule the unexpected branch below
+    // applies, rather than hidden, because clipping or dropping a row here is
+    // the defect #143 fixed. `result` is owned by this function, so the
+    // divergence rows move out of it directly rather than through an
+    // intermediate clone that `.iter().cloned()` would then clone a second
+    // time, element by element.
+    let (expected, mut unexpected): (Vec<_>, Vec<_>) = result
+        .rollback_divergences
+        .into_iter()
         .partition(|d| d.divergence_expected.is_some());
+    // Within the unexpected group only (#152 follow-up): a `Diverged` row is
+    // the surprise this block exists to surface, and on every systemd host
+    // it lands behind the constant glob-source `Unverifiable` rows unless it
+    // is sorted forward. The expected group keeps registry order untouched,
+    // and no row changes classification. `sort_by_key` is stable, so rows
+    // that share a state keep the order they arrived in.
+    unexpected.sort_by_key(|d| d.divergence_state != DivergenceState::Diverged);
     view! {
         <div class=move || if success { "rollback-outcome ok" } else { "rollback-outcome fail" }>
             {if success {
@@ -334,7 +344,12 @@ fn result_view(result: RollbackResult, close: impl Fn(bool) + 'static + Copy) ->
                     let reason = d.divergence_expected.clone().unwrap_or_default();
                     let checked = d.divergence_state == DivergenceState::Diverged;
                     view! {
-                        <li class="restore-warn rollback-divergence rollback-divergence-expected">
+                        <li class=if checked {
+                            "restore-warn rollback-divergence rollback-divergence-expected"
+                        } else {
+                            "restore-warn rollback-divergence rollback-divergence-unchecked \
+                             rollback-divergence-expected"
+                        }>
                             <div class="divergence-head">
                                 <code>{subject}</code>
                                 <span class="restore-action">
