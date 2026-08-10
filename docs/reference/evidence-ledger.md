@@ -33,7 +33,7 @@ them; do not copy a figure from an older document.
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
 | Tests the default suite runs | `cargo nextest run --workspace` | 1901 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included | `cargo test --workspace`, summing every `test result:` line | 1901 passed, 0 failed, 47 ignored |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1907 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
