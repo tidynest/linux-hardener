@@ -722,3 +722,94 @@ fn apply_result_line_is_the_plain_summary_without_an_error() {
     let clean = apply_result(vec![change(ChangeType::KernelParameter, true)]);
     assert_eq!(apply_result_line(&clean), "1 change(s) applied");
 }
+
+/// An unmarked row is unexpected and prints above every marked one, whatever
+/// order the plugins handed them over in. The input here is deliberately
+/// expected-first so a renderer that preserved input order fails.
+#[test]
+fn unexpected_rows_print_before_expected_ones() {
+    let result = rollback_result_fixture(vec![
+        RollbackDivergence {
+            divergence_plugin_id: "service-minimisation".to_string(),
+            divergence_subject: "bluetooth".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "reads enabled but is not running".to_string(),
+            divergence_expected: Some("a rollback never starts a unit".to_string()),
+        },
+        RollbackDivergence {
+            divergence_plugin_id: "ssh-hardening".to_string(),
+            divergence_subject: "sshd".to_string(),
+            divergence_state: DivergenceState::Diverged,
+            divergence_detail: "running and masked".to_string(),
+            divergence_expected: None,
+        },
+    ]);
+
+    let joined = divergence_lines(&result).join("\n");
+
+    let unexpected_at = joined.find("sshd").expect("the unexpected row prints");
+    let expected_at = joined.find("bluetooth").expect("the expected row prints");
+    assert!(
+        unexpected_at < expected_at,
+        "the surprising row has to come first, whatever order the plugins gave: {joined}"
+    );
+}
+
+/// The heading prints whenever any expected row does, including when every row
+/// is expected. An operator must never have to infer that an unlabelled block
+/// is the alarming kind.
+#[test]
+fn the_expected_heading_prints_even_when_every_row_is_expected() {
+    let result = rollback_result_fixture(vec![RollbackDivergence {
+        divergence_plugin_id: "mac-hardening".to_string(),
+        divergence_subject: "mac".to_string(),
+        divergence_state: DivergenceState::Unverifiable,
+        divergence_detail: "no MAC system can be read here. See #18.".to_string(),
+        divergence_expected: Some("a stated ceiling. #18".to_string()),
+    }]);
+
+    let joined = divergence_lines(&result).join("\n");
+
+    assert!(
+        joined.contains("Expected, by design:"),
+        "an unlabelled block must always mean the alarming kind: {joined}"
+    );
+}
+
+/// No expected rows, no heading. A rollback with nothing routine to report
+/// must not print an empty section.
+#[test]
+fn no_expected_rows_prints_no_expected_heading() {
+    let result = rollback_result_fixture(vec![RollbackDivergence {
+        divergence_plugin_id: "ssh-hardening".to_string(),
+        divergence_subject: "sshd".to_string(),
+        divergence_state: DivergenceState::Diverged,
+        divergence_detail: "running and masked".to_string(),
+        divergence_expected: None,
+    }]);
+
+    let joined = divergence_lines(&result).join("\n");
+
+    assert!(!joined.contains("Expected, by design:"), "{joined}");
+}
+
+/// The reason prints under its row. A demoted row that did not say why it was
+/// demoted would be worse than one that was never demoted: the operator would
+/// see a quieter row and no account of the quiet.
+#[test]
+fn an_expected_row_prints_its_reason() {
+    let result = rollback_result_fixture(vec![RollbackDivergence {
+        divergence_plugin_id: "service-minimisation".to_string(),
+        divergence_subject: "bluetooth".to_string(),
+        divergence_state: DivergenceState::Diverged,
+        divergence_detail: "reads enabled but is not running".to_string(),
+        divergence_expected: Some("a rollback never starts a unit".to_string()),
+    }]);
+
+    let joined = divergence_lines(&result).join("\n");
+
+    assert!(
+        joined.contains("a rollback never starts a unit"),
+        "{joined}"
+    );
+}

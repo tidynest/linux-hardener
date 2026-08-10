@@ -6,7 +6,7 @@ use hardener_core::{
     ApplyResult, PluginMetadata, ScanResult, ValidationReport, plugin::UncheckedCheck,
 };
 use hardener_state::{Checkpoint, FileState, RollbackResult};
-use hardener_types::DivergenceState;
+use hardener_types::{DivergenceState, RollbackDivergence};
 
 use crate::cli::OutputFormat;
 
@@ -662,31 +662,51 @@ pub fn rollback_result(format: &OutputFormat, result: &RollbackResult) {
     }
 }
 
-/// The divergence block, one header line and two lines per row, or nothing at
-/// all when there is nothing to say.
+/// The divergence block, one header line and two or three lines per row, or
+/// nothing at all when there is nothing to say.
 ///
 /// Split from the printing so it can be asserted on. `diverged` is yellow and
 /// not red: nothing failed, and colouring an advisory like a failure is how an
-/// operator learns to ignore both.
+/// operator learns to ignore both. Ranking is the same argument one step on
+/// (#152): a routine row printed beside a surprising one teaches the operator
+/// to skip the block that carries both. Unexpected rows print first, expected
+/// ones follow under their own heading, and nothing is hidden or dropped.
 pub(crate) fn divergence_lines(result: &RollbackResult) -> Vec<String> {
     if result.rollback_divergences.is_empty() {
         return Vec::new();
     }
+    let (expected, unexpected): (Vec<_>, Vec<_>) = result
+        .rollback_divergences
+        .iter()
+        .partition(|divergence| divergence.divergence_expected.is_some());
+
     let mut lines = vec!["\nDivergences:".to_string()];
-    for divergence in &result.rollback_divergences {
-        let state = match divergence.divergence_state {
-            DivergenceState::Diverged => "diverged".yellow().to_string(),
-            DivergenceState::Unverifiable => "could not check".to_string(),
-        };
-        // 41 characters wide: the longest managed parameter name this
-        // feature prints is net.ipv4.conf.default.accept_source_route. A
-        // narrower column ragged-edges the state on exactly the rows this
-        // feature exists to print.
-        lines.push(format!(
+    lines.extend(unexpected.iter().flat_map(|d| divergence_row_lines(d)));
+    if !expected.is_empty() {
+        lines.push("\n  Expected, by design:".to_string());
+        lines.extend(expected.iter().flat_map(|d| divergence_row_lines(d)));
+    }
+    lines
+}
+
+/// One row: its state line, its sentence, and its reason where it has one.
+fn divergence_row_lines(divergence: &RollbackDivergence) -> Vec<String> {
+    let state = match divergence.divergence_state {
+        DivergenceState::Diverged => "diverged".yellow().to_string(),
+        DivergenceState::Unverifiable => "could not check".to_string(),
+    };
+    // 41 characters wide: the longest managed parameter name this feature
+    // prints is net.ipv4.conf.default.accept_source_route. A narrower column
+    // ragged-edges the state on exactly the rows this feature exists to print.
+    let mut lines = vec![
+        format!(
             "  {:<18} {:<41} {state}",
             divergence.divergence_plugin_id, divergence.divergence_subject
-        ));
-        lines.push(format!("    {}", divergence.divergence_detail));
+        ),
+        format!("    {}", divergence.divergence_detail),
+    ];
+    if let Some(reason) = &divergence.divergence_expected {
+        lines.push(format!("    ({reason})"));
     }
     lines
 }

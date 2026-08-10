@@ -80,7 +80,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/exception.rs` | `hardener exception add`/`remove`: pins the value a live scan reports for a keyed finding, then writes or removes the exception table for it via `document`. `add` refuses a key the scan did not itself produce (`pin_from_findings`), so a crafted key over IPC can never reach the file | `AddOptions`, `RemoveOptions`, `pin_from_findings()`, `add()`, `remove()` |
 | `src/commands/exception/document.rs` | Pure TOML-text edits of one `[<section>.exceptions."<key>"]` table, `toml_edit`-based so an operator's comments, formatting and unrelated sections survive the write untouched (the reason `save_scheduler_config` at `src-tauri/src/commands.rs:1978` already gives). No file IO, no scanning, no clap: those live in `exception.rs`. A freshly created `exceptions` table is marked implicit, so it contributes no empty `[<section>.exceptions]` header of its own | `upsert_exception()`, `remove_exception()` |
 | `src/cli/tests.rs` | Unit tests for `src/cli.rs`, 39 tests of argument parsing | Test-only; `super` resolves to `crate::cli`, so its imports carried across unchanged |
-| `src/output/tests.rs` | Unit tests for `src/output.rs`, 34 tests of the renderers | Test-only; `super` resolves to `crate::output`, so its imports carried across unchanged |
+| `src/output/tests.rs` | Unit tests for `src/output.rs`, 38 tests of the renderers | Test-only; `super` resolves to `crate::output`, so its imports carried across unchanged |
 | `src/ssh_config/tests.rs` | Unit tests for `src/ssh_config.rs` | Test-only; `super` resolves to `crate::ssh_config`, so its imports carried across unchanged |
 | `src/commands/scan/tests.rs` | Unit tests for `src/commands/scan.rs` | Test-only; `super` resolves to `crate::commands::scan`, so its imports carried across unchanged |
 | `src/commands/plugin_filter/tests.rs` | Unit tests for `src/commands/plugin_filter.rs` | Test-only; `super` resolves to `crate::commands::plugin_filter`, so its imports carried across unchanged |
@@ -935,9 +935,9 @@ tree on **2026-08-10**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 1839. The eleventh
+The table covers the ten crates under `crates/` and sums to 1843. The eleventh
 workspace member, `src-tauri`, carries 107 more, which is why the tree total the
-evidence ledger records is 1946 and not this table's sum.
+evidence ledger records is 1950 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -946,7 +946,7 @@ evidence ledger records is 1946 and not this table's sum.
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 116 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 104 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 268 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 272 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 812 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 155 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 60 |
