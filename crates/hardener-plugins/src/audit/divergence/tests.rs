@@ -63,6 +63,44 @@ async fn a_readable_rule_set_names_the_count_and_defers_the_comparison() {
     );
 }
 
+/// The successful read arm must carry an expected reason describing the
+/// ceiling (comparison not implemented), not the "auditctl cannot run"
+/// reason the error arms share. Finding 3 caught this regression once; this
+/// test prevents it happening again.
+#[tokio::test]
+async fn a_successful_rule_read_carries_the_comparison_ceiling_reason() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_command(
+            "auditctl",
+            &["-l"],
+            CommandOutput {
+                stdout: "-w /etc/passwd -p wa -k identity\n\
+                     -w /etc/group -p wa -k identity\n\
+                     -w /etc/shadow -p wa -k identity\n"
+                    .to_string(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        ),
+    ));
+
+    let rows = audit_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row");
+    let reason = rows[0]
+        .divergence_expected
+        .as_ref()
+        .expect("the successful read arm carries an expected reason, not None");
+    assert!(
+        reason.contains("#18"),
+        "the reason must name the issue: {reason}"
+    );
+    assert!(
+        !reason.contains("cannot run"),
+        "the comparison-ceiling reason must not inherit the unrunnable-binary wording: {reason}"
+    );
+}
+
 /// `auditctl -l` refusing for lack of privilege is a different limitation
 /// from the binary being unrunnable, and needs different words: "privilege"
 /// is planted here and must be absent from the ProbeFailed arm's sentence
