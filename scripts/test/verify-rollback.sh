@@ -979,12 +979,23 @@ report_measurement() {
     info "  all rows: ${rows:-none}"
 }
 
+# Whether systemd is running as PID 1 here. Only TEST 10 and TEST 11 need it:
+# both force their divergence through systemctl (mask, start), which needs a
+# service manager to talk to and has none under a --pipe container. Same
+# predicate and the same reasoning as full-test-suite.sh:223-230 ("cheaper and
+# more honest than asking systemctl a question and reading its failure"), kept
+# identical on purpose so the two files can never disagree about what "booted"
+# means for the same question.
+host_is_booted() { [[ -d /run/systemd/system ]]; }
+
 header "TEST 10: WHAT ssh-hardening REPORTS AFTER A ROLLBACK"
 
 if ! command -v python3 &>/dev/null; then
     skip "ssh divergence measurement: python3 is not available to parse the rollback's JSON"
 elif ! command -v sshd &>/dev/null; then
     skip "ssh divergence measurement: no sshd on this host, so nothing can serve a stale configuration"
+elif ! host_is_booted; then
+    skip "ssh divergence measurement: systemd is not PID 1 here, because release-readiness-root.sh runs this script under --pipe rather than --boot; systemctl mask has no service manager to talk to, so this scenario cannot force its divergence"
 else
     "$BINARY" apply --plugin ssh-hardening > /dev/null 2>&1 || true
 
@@ -992,8 +1003,27 @@ else
     # configuration because the restart could not run. Making the restart fail
     # is the forcing step, and masking the unit is the least violent way to do
     # it that a container permits.
-    systemctl mask sshd.service > /dev/null 2>&1 || systemctl mask ssh.service > /dev/null 2>&1 || true
+    #
+    # The unit name that actually masked is tracked rather than assumed, so
+    # the readback below asks the unit that was really touched instead of
+    # chaining on exit status: `systemctl is-enabled` exits 1 for a masked
+    # unit same as for a missing one, so `mask sshd.service || mask
+    # ssh.service` and then querying both the same way would query the wrong
+    # unit whenever the first one succeeded.
+    SSH_UNIT="sshd.service"
+    if ! systemctl mask sshd.service > /dev/null 2>&1; then
+        SSH_UNIT="ssh.service"
+        systemctl mask ssh.service > /dev/null 2>&1 || true
+    fi
     SSH_FORCED="sshd.service masked, so reload_after_rollback cannot restart it"
+
+    # An independently checkable signal that the forcing step actually took,
+    # read back rather than assumed. TESTs 12 to 14 each print one; TEST 10
+    # previously did not, which made "forced and the plugin stayed silent"
+    # and "never forced" indistinguishable in the transcript for exactly the
+    # scenario that just proved most able to lie (Finding 1).
+    SSH_MASK_STATE=$(systemctl is-enabled "$SSH_UNIT" 2>/dev/null || true)
+    info "  $SSH_UNIT state after masking: ${SSH_MASK_STATE:-unknown}"
 
     SSH_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
     if [[ -z "$SSH_CP" ]]; then
@@ -1013,20 +1043,47 @@ if ! command -v python3 &>/dev/null; then
     skip "services divergence measurement: python3 is not available to parse the rollback's JSON"
 elif ! command -v systemctl &>/dev/null; then
     skip "services divergence measurement: no systemctl on this host"
+elif ! host_is_booted; then
+    skip "services divergence measurement: systemd is not PID 1 here, because release-readiness-root.sh runs this script under --pipe rather than --boot; systemctl start has no service manager to talk to, so this scenario cannot force its divergence"
 else
     "$BINARY" apply --plugin service-minimisation > /dev/null 2>&1 || true
 
     # The divergence this aims at: a unit the restored files enable but which
     # is not running. Starting a unit the apply disabled, then rolling back,
     # leaves the files saying one thing and the running system another.
-    SERVICES_UNIT=$(systemctl list-unit-files --type=service --state=disabled --no-legend 2>/dev/null | awk 'NR==1{print $1}')
+    #
+    # The candidate is a deliberately chosen known-safe unit, not whatever
+    # `--state=disabled` sorts first: starting an arbitrary unit can hang,
+    # time out, or change what TESTs 12 to 14 measure afterwards in the same
+    # container (Finding 2). bluetooth.service is the same unit
+    # full-test-suite.sh's test_services_rollback_restores uses for the
+    # equivalent services reading, for the same reason: create-container.sh
+    # installs and enables it on every image specifically so this plugin
+    # always has something to act on. The state filter stays in the query so
+    # this only fires when the candidate is genuinely startable; a unit the
+    # apply above has already masked (as it masks everything it manages)
+    # would not appear here and is correctly treated as absent rather than
+    # forced through anyway.
+    SERVICES_KNOWN_SAFE_UNIT="bluetooth.service"
+    SERVICES_UNIT=""
+    if systemctl list-unit-files --type=service --state=disabled --no-legend \
+        "$SERVICES_KNOWN_SAFE_UNIT" 2>/dev/null | grep -q .; then
+        SERVICES_UNIT="$SERVICES_KNOWN_SAFE_UNIT"
+    fi
+
     SERVICES_WAS_ACTIVE=""
     if [[ -z "$SERVICES_UNIT" ]]; then
-        SERVICES_FORCED="nothing: no disabled unit was available to start"
+        SERVICES_FORCED="nothing: $SERVICES_KNOWN_SAFE_UNIT is not present in a disabled, unmasked state here, and no other unit is trusted to start safely"
     else
         SERVICES_WAS_ACTIVE=$(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || true)
         systemctl start "$SERVICES_UNIT" > /dev/null 2>&1 || true
         SERVICES_FORCED="$SERVICES_UNIT started while its unit files say disabled"
+
+        # An independently checkable signal that the forcing step actually
+        # took, read back rather than assumed (Finding 3): a masked unit
+        # refuses to start outright, so this line is what tells "started" and
+        # "start silently refused" apart.
+        info "  $SERVICES_UNIT active state after the forcing step: $(systemctl is-active "$SERVICES_UNIT" 2>/dev/null || echo unknown)"
     fi
 
     SERVICES_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
@@ -1133,8 +1190,19 @@ else
         PAM_EXISTED_BEFORE=true
         cp -a /etc/security/faillock.conf /etc/security/faillock.conf.rollback-readback.bak 2>/dev/null && PAM_BACKED_UP=true
     fi
-    printf '\n# hardener divergence probe\n' >> /etc/security/faillock.conf 2>/dev/null || true
-    PAM_FORCED="a line appended to /etc/security/faillock.conf after the checkpoint was taken"
+
+    # The append only runs where its teardown is guaranteed (Finding 4). A
+    # file that did not exist before is undone by removing it again; a file
+    # that did exist is only appended to once its backup is confirmed on
+    # disk. Without this gate, a `cp -a` failure on an existing file left
+    # `PAM_BACKED_UP` false while the append still ran, and neither branch of
+    # the teardown below would put anything back.
+    if [[ "$PAM_EXISTED_BEFORE" == "true" && "$PAM_BACKED_UP" != "true" ]]; then
+        PAM_FORCED="nothing: /etc/security/faillock.conf exists but could not be backed up, so appending to it would leave no safe way to undo"
+    else
+        printf '\n# hardener divergence probe\n' >> /etc/security/faillock.conf 2>/dev/null || true
+        PAM_FORCED="a line appended to /etc/security/faillock.conf after the checkpoint was taken"
+    fi
 
     PAM_CP=$("$BINARY" checkpoint list 2>&1 | grep -oE 'cp_[0-9]+_[a-f0-9]+' | head -1 || echo "")
     if [[ -z "$PAM_CP" ]]; then
