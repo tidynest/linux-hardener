@@ -394,19 +394,72 @@ git push origin main --tags
 
 ---
 
-## Pre-release Checklist
+## Release Checklist
 
-Before any release:
+Three phases, in order. The first is the one that used to be the whole list,
+and a release that stops there ships correct crates with stale packaging.
+
+Every item after the tag exists because nothing automates it: `release.sh` does
+not write the packaging files or the prose markers, and `--verify` does not read
+them, so they drift until somebody installs the package or reads the wrong
+number. The rows are the "No, manual" half of [Version
+Locations](#version-locations), which is the table to consult rather than this
+list when you want to know what holds a version string.
+
+### Before the tag
 
 - [ ] All tests pass (`cargo test --workspace`)
 - [ ] No clippy warnings (`cargo clippy --workspace`)
 - [ ] Code is formatted (`cargo fmt --check`)
-- [ ] CHANGELOG.md is updated
+- [ ] Validators pass (`python3 scripts/validate/validate_all.py`)
+- [ ] CHANGELOG.md is updated, and the `[Unreleased]` section is the size of
+      the release rather than the size of the last one. Measure it:
+      `git rev-list --count --no-merges <last tag>..main`
 - [ ] Documentation is current
 - [ ] Security audit passes (`cargo audit`)
 - [ ] Dependency policy passes (`cargo deny check`: licenses, advisories, bans)
 - [ ] Working directory is clean
 - [ ] On `main` branch
+
+### At the tag
+
+- [ ] `./scripts/release/release.sh <major|minor|patch>` (dry run first), which
+      writes every "Yes" row of [Version Locations](#version-locations)
+- [ ] **The release-readiness gates G1 through G8 all pass at the tagged
+      commit**, not only before the release branch was cut. G9 is this
+      procedure, and it is the last gate for the reason that the other eight
+      are about the tree it ships: issues closed or deferred with a reason,
+      differential coverage or a stated ceiling, the five-distribution matrix
+      green and dated against a binary whose version was read back, mutation
+      testing on the integrity-critical crates, dead code resolved, the GUI
+      exercised and eyeballed, every document current, and the claim ledger and
+      ceiling document accurate. Re-running them at the tag is what makes them
+      claims about the release rather than about a commit that preceded it.
+
+### After the tag, all by hand
+
+- [ ] `packaging/PKGBUILD`: bump `pkgver`, reset `pkgrel=1`
+- [ ] `packaging/linux-hardener.spec`: `Version:` and a new `%changelog` stanza
+- [ ] `packaging/debian/changelog`: new top stanza `(X.Y.Z-1)`
+- [ ] Publish to the AUR, following the note under [Version
+      Locations](#version-locations). Read it before starting: while the
+      one-time rename note stands, publishing is a **new submission** and not a
+      push to the existing package
+- [ ] AUR badge pair once that package is live, not before: the `aur` `message`
+      in `scripts/badges/generate.js` and `docs/assets/badges/aur.svg`. They
+      track `PKGBUILD` rather than the tag, so a badge updated at the tag
+      advertises a package nobody can install yet
+- [ ] `SECURITY.md`: the current-release sentence, and the supported-versions
+      table gains the new series with the previous one moved down
+- [ ] `docs/ROADMAP.md` and `docs/NEXT.md`: the prose naming the current
+      release. Name the tag and no commit count; a count is stale the day it is
+      written, which is why `git rev-list --count v<X.Y.Z>..main` is given
+      instead of a number
+- [ ] **Install the first packaged build on a real host and run it** before
+      announcing anything. A package that builds is not a package that installs
+- [ ] Delete the one-time rename note in this file once the release carrying it
+      has shipped. A one-time note left in place is a permanent instruction to
+      do a one-time thing
 
 ---
 
@@ -445,4 +498,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-11
