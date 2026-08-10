@@ -1101,11 +1101,43 @@ else
         # unit same as for a missing one, so `mask sshd.service || mask
         # ssh.service` and then querying both the same way would query the wrong
         # unit whenever the first one succeeded.
+        # The unit name is resolved from what the host actually ships, before
+        # anything is done to it. Resolving it from the mask's exit status
+        # instead, as this arm did until the running-state question was added,
+        # forces the mask to happen first and there is no way to start a unit
+        # after masking it: `systemctl start` on a masked unit is refused.
+        # `systemctl cat` asks only whether the unit is known and changes
+        # nothing.
         SSH_UNIT="sshd.service"
-        if ! systemctl mask sshd.service > /dev/null 2>&1; then
+        if ! systemctl cat sshd.service > /dev/null 2>&1; then
             SSH_UNIT="ssh.service"
-            systemctl mask ssh.service > /dev/null 2>&1 || true
         fi
+
+        # Whether sshd is RUNNING decides what a failed reload even means, and
+        # the first booted run established the mask and not this. A masked and
+        # stopped sshd serves nothing, so a restored configuration that was
+        # never reloaded is not in force anywhere and there is no divergence to
+        # report: silence from the plugin would be correct. A masked and
+        # running sshd is the opposite, still serving the pre-rollback
+        # configuration with no way to be restarted onto the restored one, and
+        # silence there is the gap #142 is about. The two are different systems
+        # and the transcript could not tell them apart.
+        #
+        # The unit is started BEFORE the mask, because masking does not stop a
+        # running unit, it only refuses future starts: that ordering is what
+        # produces the running-and-unrestartable state this arm exists to put
+        # the plugin in front of. Started rather than merely observed, so the
+        # interesting case is reached instead of waited for.
+        # The host's own state, captured before this arm starts anything, so
+        # the teardown has the real original to put back rather than the
+        # running state this arm is about to create.
+        SSH_ACTIVE_ORIGINAL=$(systemctl is-active "$SSH_UNIT" 2>/dev/null || true)
+
+        systemctl start "$SSH_UNIT" > /dev/null 2>&1 || true
+        SSH_ACTIVE_BEFORE=$(systemctl is-active "$SSH_UNIT" 2>/dev/null || true)
+        info "  $SSH_UNIT active state before masking: ${SSH_ACTIVE_BEFORE:-unknown} (was ${SSH_ACTIVE_ORIGINAL:-unknown} before this arm started it)"
+
+        systemctl mask "$SSH_UNIT" > /dev/null 2>&1 || true
 
         # An independently checkable signal that the forcing step actually took,
         # read back rather than assumed. TESTs 12 to 14 each print one; TEST 10
@@ -1134,11 +1166,31 @@ else
             fail "No checkpoint created during the ssh divergence measurement"
         else
             SSH_ROWS=$(divergence_rows_for "$SSH_CP" /tmp/diverge-ssh.json)
+
+            # The half the first booted run could not supply. Read AFTER the
+            # rollback, because the rollback is what tried and failed to
+            # restart the unit, and it is the state the plugin was asked about.
+            SSH_ACTIVE_AFTER=$(systemctl is-active "$SSH_UNIT" 2>/dev/null || true)
+            info "  $SSH_UNIT active state after the rollback: ${SSH_ACTIVE_AFTER:-unknown}"
+            if [[ "$SSH_ACTIVE_BEFORE" == "active" && "$SSH_ACTIVE_AFTER" == "active" ]]; then
+                info "  DIVERGENCE WAS AVAILABLE: $SSH_UNIT is still running and could not be restarted onto the restored configuration, so silence from ssh-hardening is a gap"
+            else
+                info "  NO DIVERGENCE WAS AVAILABLE: $SSH_UNIT is not running (before=${SSH_ACTIVE_BEFORE:-unknown} after=${SSH_ACTIVE_AFTER:-unknown}), so the restored configuration is in force nowhere and silence from ssh-hardening is correct"
+            fi
+
             report_measurement "ssh-hardening" "$SSH_FORCED" "$SSH_ROWS"
             rm -f /tmp/diverge-ssh.json
         fi
 
-        systemctl unmask sshd.service > /dev/null 2>&1 || systemctl unmask ssh.service > /dev/null 2>&1 || true
+        # Unmask before restoring the running state: a masked unit refuses to
+        # start, so stopping and starting in the other order cannot put back a
+        # unit this arm found running.
+        systemctl unmask "$SSH_UNIT" > /dev/null 2>&1 || true
+        if [[ "$SSH_ACTIVE_ORIGINAL" == "active" ]]; then
+            systemctl start "$SSH_UNIT" > /dev/null 2>&1 || true
+        else
+            systemctl stop "$SSH_UNIT" > /dev/null 2>&1 || true
+        fi
     fi
 
     # Teardown, independent of which branch above ran: whatever this scenario
