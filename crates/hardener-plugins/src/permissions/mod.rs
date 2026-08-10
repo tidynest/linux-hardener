@@ -1491,6 +1491,30 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
     // are immediate. This plugin's paths also come from operator directives at
     // runtime, so there is no set it could enumerate.
 
+    /// Measured in an arch container on 2026-08-10, reproduced identically on
+    /// three further runs: `/etc/shadow` forced to mode 0666 while a
+    /// checkpoint held 0600, then rolled back. Readback: 0666 before the
+    /// rollback, 0600 after. The forcing worked, the rollback reverted it,
+    /// and there was nothing left to report.
+    ///
+    /// A permission mode lives in the inode. The checkpoint holds the mode,
+    /// and restoring the file's metadata is the entire revert: there is no
+    /// daemon holding a second, cached copy of a mode that could fall out of
+    /// step with what is now on disk.
+    ///
+    /// **No self-scoping guard.** This plugin takes `reloads_for_path`'s
+    /// default, which returns `false` for every path, because its paths come
+    /// from operator directives at runtime and cannot be enumerated (see that
+    /// method's own doc comment). Gating this method on `reloads_for_path`,
+    /// the way SSH's does, would refuse every path and leave it dead code.
+    async fn divergences_after_rollback(
+        &self,
+        _ctx: &Context,
+        _restored: &[std::path::PathBuf],
+    ) -> Vec<hardener_types::RollbackDivergence> {
+        Vec::new()
+    }
+
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport> {
         let mut issues = Vec::new();
         let mut estimated_changes = Vec::new();
