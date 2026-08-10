@@ -46,10 +46,23 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// carry this probe's answer, unlike [`is_service_enabled`](super::is_service_enabled),
 /// whose exit-status reading is deliberately correct for the apply path that
 /// calls it. This probe reads the printed word directly through the
-/// executor instead, the way `ssh/divergence.rs`'s `read_enablement` does:
-/// only the literal word `enabled` counts as enabled, only `disabled` and
-/// `masked` count as not enabled, and every other word, including the five
-/// exit-zero states above, is unverifiable rather than guessed.
+/// executor instead, the way `ssh/divergence.rs`'s `read_enablement` does.
+///
+/// Five words are interpreted and the rest are not. `enabled` and
+/// `enabled-runtime` count as enabled; `disabled`, `masked` and
+/// `masked-runtime` count as not enabled. The two `-runtime` words say the
+/// state holds for this boot only, which is still an unambiguous answer to
+/// what this probe asks, because it only ever asks about now: a rollback
+/// either restored the unit to the enablement the checkpoint recorded or it
+/// did not, and neither question reaches past the current boot.
+///
+/// Every other word is unverifiable rather than guessed, which is a statement
+/// about that word and not about the probe's reach. `static`, `indirect`,
+/// `alias`, `generated` and `transient` are not refusals to read: each is a
+/// unit whose enablement is not a settable property to begin with, so there is
+/// no value a rollback could have restored and nothing for this probe to
+/// compare. Adding them to either bucket would manufacture an answer rather
+/// than sharpen one.
 enum Enablement {
     Enabled,
     NotEnabled,
@@ -65,11 +78,11 @@ async fn read_enablement(ctx: &Context, service_name: &str) -> Enablement {
         .await
     {
         Ok(output) => match output.stdout.trim() {
-            "enabled" => Enablement::Enabled,
-            "disabled" | "masked" => Enablement::NotEnabled,
+            "enabled" | "enabled-runtime" => Enablement::Enabled,
+            "disabled" | "masked" | "masked-runtime" => Enablement::NotEnabled,
             other => Enablement::Unverifiable(format!(
-                "systemctl is-enabled {service_name} printed neither 'enabled', 'disabled' \
-                 nor 'masked': {other:?}"
+                "systemctl is-enabled {service_name} printed none of 'enabled', \
+                 'enabled-runtime', 'disabled', 'masked' or 'masked-runtime': {other:?}"
             )),
         },
         Err(e) => Enablement::Unverifiable(format!(

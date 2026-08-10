@@ -442,3 +442,54 @@ async fn garbage_words_with_diverged_shaped_exit_codes_are_unverifiable() {
         rows[0].divergence_detail
     );
 }
+
+/// `enabled-runtime` means enabled for this boot only, which is unambiguously
+/// enabled now, and now is the only tense this probe reads in. Deferring it to
+/// `Unverifiable` said the word could not be read when it had been read
+/// perfectly.
+///
+/// Asserted as `Diverged` rather than merely "not `Unverifiable`", because
+/// that is the claim the classification has to earn: paired with `inactive`
+/// this is the enabled-but-stopped divergence, and a row that reached the
+/// right bucket proves the word was interpreted. An assertion that only
+/// excluded `Unverifiable` would also pass if the word had been misread as
+/// `NotEnabled`, which agrees with `inactive` and reports nothing at all.
+#[tokio::test]
+async fn an_enabled_runtime_unit_that_is_not_running_is_diverged() {
+    let ctx = service_host("bluetooth", "inactive\n", 3, "enabled-runtime\n", 0);
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert_eq!(rows[0].divergence_subject, "bluetooth");
+    assert_eq!(
+        rows[0].divergence_state,
+        DivergenceState::Diverged,
+        "enabled-runtime is enabled for this boot, so an inactive unit is the \
+         enabled-but-stopped divergence, not an unreadable word: {}",
+        rows[0].divergence_detail
+    );
+}
+
+/// `masked-runtime` means masked for this boot only: the unit cannot be
+/// started, which is unambiguously not enabled. Same reasoning as
+/// `enabled-runtime` above and the same reason for asserting `Diverged`
+/// rather than "not `Unverifiable`": paired with `active` this is the
+/// not-enabled-but-running divergence, and misreading the word as `Enabled`
+/// would agree with `active` and report nothing.
+#[tokio::test]
+async fn a_masked_runtime_unit_that_is_running_is_diverged() {
+    let ctx = service_host("cups", "active\n", 0, "masked-runtime\n", 1);
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert_eq!(rows[0].divergence_subject, "cups");
+    assert_eq!(
+        rows[0].divergence_state,
+        DivergenceState::Diverged,
+        "masked-runtime cannot be started, so a running unit is the \
+         not-enabled-but-running divergence, not an unreadable word: {}",
+        rows[0].divergence_detail
+    );
+}
