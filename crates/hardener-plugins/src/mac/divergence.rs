@@ -70,5 +70,4 @@ pub(super) async fn mac_divergences(
     )]
 }
 
-#[cfg(test)]
 mod tests;

@@ -36,3 +36,79 @@ async fn an_unreadable_lsm_is_one_unverifiable_row() {
         rows[0].divergence_detail
     );
 }
+
+/// A host that detects SELinux gets a row naming SELinux, not the generic
+/// `mac` subject the two arms below share.
+#[tokio::test]
+async fn a_detected_selinux_system_names_selinux_as_the_subject() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_path_exists("/sys/fs/selinux", true),
+    ));
+
+    let rows = mac_divergences(&MacHardeningPlugin::new(), &ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row, not silence");
+    assert_eq!(
+        rows[0].divergence_subject, "selinux",
+        "the SELinux arm must name its own subject, not AppArmor's or the generic one"
+    );
+    assert_eq!(
+        rows[0].divergence_state,
+        DivergenceState::Unverifiable,
+        "detecting a MAC system is not the same as reading back what it enforces"
+    );
+}
+
+/// The AppArmor arm names `apparmor`, distinct from the SELinux arm above and
+/// from the generic `mac` subject the `Absent` and `Indeterminate` arms share.
+#[tokio::test]
+async fn a_detected_apparmor_system_names_apparmor_as_the_subject() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_path_exists("/sys/kernel/security/apparmor", true),
+    ));
+
+    let rows = mac_divergences(&MacHardeningPlugin::new(), &ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row, not silence");
+    assert_eq!(
+        rows[0].divergence_subject, "apparmor",
+        "the AppArmor arm must name its own subject, not SELinux's or the generic one"
+    );
+    assert_eq!(
+        rows[0].divergence_state,
+        DivergenceState::Unverifiable,
+        "detecting a MAC system is not the same as reading back what it enforces"
+    );
+}
+
+/// `Indeterminate` shares its subject, `mac`, with `Absent`, so subject alone
+/// cannot prove the row came from this arm. What can: the detection's own
+/// reason string, which this arm is the only one that interpolates into the
+/// sentence. A distinctive reason is used deliberately, so the assertion
+/// cannot pass by coincidence with either neighbour's fixed wording.
+#[tokio::test]
+async fn an_indeterminate_probe_carries_its_own_reason_into_the_detail() {
+    let ctx = Context::with_executor(Arc::new(
+        MockExecutor::new().with_path_exists_error("/sys/fs/selinux"),
+    ));
+
+    let rows = mac_divergences(&MacHardeningPlugin::new(), &ctx).await;
+
+    assert_eq!(rows.len(), 1, "one row, not silence");
+    assert_eq!(
+        rows[0].divergence_subject, "mac",
+        "Indeterminate shares its subject with Absent"
+    );
+    assert_eq!(
+        rows[0].divergence_state,
+        DivergenceState::Unverifiable,
+        "a probe that failed to run is not evidence of anything, in either direction"
+    );
+    assert!(
+        rows[0]
+            .divergence_detail
+            .contains("Mock: path_exists unavailable: /sys/fs/selinux"),
+        "the detection's own reason must survive into the sentence, not be dropped: {}",
+        rows[0].divergence_detail
+    );
+}
