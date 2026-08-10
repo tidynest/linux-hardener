@@ -1,6 +1,6 @@
 # Plugin authoring guide
 
-**Last Updated**: 2026-08-02
+**Last Updated**: 2026-08-10
 
 How to write a new hardening plugin. The 8 existing plugins in
 `crates/hardener-plugins/src/` are the best worked examples; this page
@@ -25,28 +25,38 @@ pub trait HardeningPlugin: Send + Sync {
     async fn apply(&self, ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult>;
     fn reloads_for_path(&self, path: &Path) -> bool { false }
     async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> { Ok(None) }
-    async fn divergences_after_rollback(&self, ctx: &Context, restored: &[PathBuf]) -> Vec<RollbackDivergence> { Vec::new() }
+    async fn divergences_after_rollback(&self, ctx: &Context, restored: &[PathBuf]) -> Vec<RollbackDivergence>;
     async fn validate(&self, ctx: &Context, config: &PluginConfig) -> Result<ValidationReport>;
 }
 ```
 
 The lifecycle is: registration, dependency resolution (dependencies are
 topologically ordered and processed first), `scan()`, `validate()` (dry-run),
-`apply()`, and `reload_after_rollback()` followed by `divergences_after_rollback()`
-when a checkpoint restore touches one of this plugin's paths. There is no
-plugin-level rollback method: restoring files is `CheckpointManager::rollback`'s
-job (see `docs/reference/data-flow.md`), and a plugin only re-enters the
-picture to tell the running system to pick the restored files back up, and to
-say what picking them back up did not fix.
+`apply()`, and then, after a checkpoint restore, `reload_after_rollback()`
+when the restore touched one of this plugin's paths, followed by
+`divergences_after_rollback()`, which is asked of every plugin whether the
+restore touched its paths or not. There is no plugin-level rollback method:
+restoring files is `CheckpointManager::rollback`'s job (see
+`docs/reference/data-flow.md`), and a plugin only re-enters the picture to
+tell the running system to pick the restored files back up, and to say what
+picking them back up did not fix.
 
 Per-method contract:
 
 - **`metadata()`**: returns `PluginMetadata` (`plugin_id`, `plugin_name`,
-  `plugin_version`, `plugin_description`, `plugin_category`). The
-  `define_plugin!` macro in `crates/hardener-plugins/src/macros.rs` generates
-  the struct, `metadata()`, and `dependencies()` from a declaration block, so
-  new plugins only hand-write `scan()`, `apply()` and `validate()`; the two
-  reload methods below are opt-in overrides with defaults.
+  `plugin_version`, `plugin_description`, `plugin_category`). All eight
+  plugins hand-write it, along with `dependencies()`, `scan()`, `apply()`,
+  `validate()` and `divergences_after_rollback()`; `reloads_for_path()` and
+  `reload_after_rollback()` are the only opt-in overrides with defaults. The
+  `define_plugin!` macro in `crates/hardener-plugins/src/macros.rs`, which
+  used to generate the struct, `metadata()` and `dependencies()` from a
+  declaration block, is `#[cfg(test)]` since #142 and generates this crate's
+  test plugins only: the `divergences_after_rollback` it writes returns an
+  empty vector, which is exactly the unearned "everything checkable came
+  back" that deleting the trait default was meant to stop a plugin claiming
+  by accident. Gating the module is what withdraws it, because
+  `#[macro_export]` would otherwise put the macro at the crate root of every
+  downstream build regardless of the module's visibility.
 - **`dependencies()`**: plugin IDs that must run before this one. Most
   plugins return an empty list.
 - **`scan()`**: read-only. Must never modify the system. Returns a
@@ -102,12 +112,26 @@ Per-method contract:
 - **`divergences_after_rollback()`**: asks this plugin's own subsystem, after
   its reload has run, what still disagrees with the configuration the
   rollback just restored. Returns a `Vec<RollbackDivergence>`, one row per
-  subject examined, and defaults to `Vec::new()` (nothing to say, not
-  "nothing was checked": a plugin with no probe simply is never asked, which
-  is a different silence). Only kernel and firewall implement it today (#138,
-  #139); the other six plugins are asked nothing because no probe has been
-  written for them, not because nothing there could diverge. Two contract
-  rules bind an implementation:
+  subject examined. **It has no default and every plugin must implement it**
+  (#142): a trait default returning `Vec::new()` is indistinguishable at
+  every renderer from a plugin that looked and found everything in order,
+  which is the meaning an empty vector already carries, so six plugins used
+  to report that claim without having made it. Scoping is the
+  implementation's job, not the caller's: `restored` is the list of paths the
+  rollback put back, and a plugin returns an empty vector when none of them
+  are its business. All eight plugins now answer it: kernel and firewall
+  first (#138, #139), then ssh, pam, audit, mac, services and permissions
+  (#142). Two of those eight answer with a ceiling rather than a clean
+  reading. `mac-hardening` and `audit-hardening` return `Unverifiable` rows
+  because loading an LSM policy and loading a kernel audit rule set are both
+  host-global, so no container this project builds can carry either: those
+  rows are honestly unmeasured, not measured-and-fine, and #18 is what turns
+  them into a measurement on a real VM. The one case where `mac-hardening`
+  returns an empty vector instead is a host with no MAC system detected at
+  all (`MacDetection::Absent`), where there is no restored configuration and
+  no enforced policy for either to disagree with, which is the same answer
+  `firewall/divergence.rs` gives for a host with no firewall backend
+  installed. Two contract rules bind an implementation:
   - **It must not change system state.** This is reporting, not
     reconciliation: no rollback behaviour, exit code, or `rollback_success`
     value may depend on what this method returns, and it must not restart,
@@ -119,11 +143,13 @@ Per-method contract:
     a claim that anything is wrong). There is no third, `Converged`, variant
     on purpose: an empty `Vec` means everything checkable came back and
     everything uncheckable still carries its own `Unverifiable` row, so
-    silence never stands for "nobody looked". Asked only of plugins a
-    restored path matched, and asked independently of whether there was
-    anything to reload: a plugin can have nothing to reload and diverge
-    anyway (the kernel probe's whole reason to exist, since a rollback never
-    writes `/proc/sys`).
+    silence never stands for "nobody looked". Asked of every plugin, and
+    asked independently of whether there was anything to reload: a plugin can
+    have nothing to reload and diverge anyway (the kernel probe's whole
+    reason to exist, since a rollback never writes `/proc/sys`). The dispatch
+    gated this on `reloads_for_path()` until #142, which meant the two
+    plugins that override that predicate for no path could never be asked at
+    all.
 
 ## Always go through the executor
 
