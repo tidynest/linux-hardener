@@ -493,3 +493,57 @@ async fn a_masked_runtime_unit_that_is_running_is_diverged() {
         rows[0].divergence_detail
     );
 }
+
+/// Three words reach the not-enabled-but-running arm and the sentence has to
+/// say which one it read. A masked unit is not a disabled one: masking
+/// symlinks the unit to `/dev/null` and refuses starts outright, where
+/// disabling only drops the `[Install]` symlinks and leaves the unit
+/// startable by hand or as a dependency. An operator told "disabled" about a
+/// masked unit is told something true in effect and wrong in fact, and the
+/// two are undone by different commands.
+///
+/// The negative half is the half that matters. Asserting only that the
+/// sentence names `masked` would pass on a sentence saying "disabled" too,
+/// because the old wording was `leave it disabled` and `masked` could have
+/// been appended anywhere without removing it.
+#[tokio::test]
+async fn a_masked_running_unit_is_named_masked_and_not_disabled() {
+    let ctx = service_host("bluetooth", "active\n", 0, "masked\n", 1);
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Diverged);
+    assert!(
+        rows[0].divergence_detail.contains("masked"),
+        "the sentence has to name the word that was read: {}",
+        rows[0].divergence_detail
+    );
+    assert!(
+        !rows[0].divergence_detail.contains("disabled"),
+        "a masked unit is not a disabled one and must not be called one: {}",
+        rows[0].divergence_detail
+    );
+}
+
+/// The same demand in the other direction, and the reason this change is not
+/// only about `masked`. `enabled-runtime` reaches the enabled-but-stopped arm
+/// since #149, and the old sentence attributed the state to "restored unit
+/// files". A runtime enablement does not live in those files at all, it lives
+/// in `/run`, so that attribution was wrong for it in a second way beyond
+/// imprecision. The sentence now reports what was read rather than asserting
+/// where it came from.
+#[tokio::test]
+async fn an_enabled_runtime_unit_is_named_enabled_runtime() {
+    let ctx = service_host("cups", "inactive\n", 3, "enabled-runtime\n", 0);
+
+    let rows = service_divergences(&ctx).await;
+
+    assert_eq!(rows.len(), 1, "one subject, one row");
+    assert_eq!(rows[0].divergence_state, DivergenceState::Diverged);
+    assert!(
+        rows[0].divergence_detail.contains("enabled-runtime"),
+        "the sentence has to name the word that was read, not just 'enabled': {}",
+        rows[0].divergence_detail
+    );
+}

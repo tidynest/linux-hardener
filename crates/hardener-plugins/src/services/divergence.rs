@@ -63,9 +63,16 @@ fn row(subject: &str, state: DivergenceState, detail: String) -> RollbackDiverge
 /// no value a rollback could have restored and nothing for this probe to
 /// compare. Adding them to either bucket would manufacture an answer rather
 /// than sharpen one.
+/// Each interpreted variant carries the word it was built from, because the
+/// bucket is not specific enough for the sentence a reader gets. Three words
+/// reach `NotEnabled`, and calling a `masked` unit "disabled" is true in
+/// effect and wrong in fact: masking symlinks the unit to `/dev/null` and
+/// refuses starts, disabling drops the `[Install]` symlinks and leaves it
+/// startable by hand or as a dependency, and the two are undone by different
+/// commands.
 enum Enablement {
-    Enabled,
-    NotEnabled,
+    Enabled(String),
+    NotEnabled(String),
     Unverifiable(String),
 }
 
@@ -78,8 +85,10 @@ async fn read_enablement(ctx: &Context, service_name: &str) -> Enablement {
         .await
     {
         Ok(output) => match output.stdout.trim() {
-            "enabled" | "enabled-runtime" => Enablement::Enabled,
-            "disabled" | "masked" | "masked-runtime" => Enablement::NotEnabled,
+            word @ ("enabled" | "enabled-runtime") => Enablement::Enabled(word.to_string()),
+            word @ ("disabled" | "masked" | "masked-runtime") => {
+                Enablement::NotEnabled(word.to_string())
+            }
             other => Enablement::Unverifiable(format!(
                 "systemctl is-enabled {service_name} printed none of 'enabled', \
                  'enabled-runtime', 'disabled', 'masked' or 'masked-runtime': {other:?}"
@@ -190,34 +199,40 @@ pub(super) async fn service_divergences(ctx: &Context) -> Vec<RollbackDivergence
                      disagrees with its restored unit files is unknown: {detail}"
                 ),
             )),
-            // The restored files say disabled, but the service manager reports
-            // it running anyway: whatever the rollback undid on disk, it did
-            // not reach the running process.
-            (Enablement::NotEnabled, Activity::Active) => rows.push(row(
+            // Not enabled, but the service manager reports it running anyway:
+            // whatever the rollback undid on disk, it did not reach the
+            // running process.
+            //
+            // Both sentences below report the word that was read rather than
+            // asserting where the state came from. The previous wording said
+            // "restored unit files leave it ...", which named the wrong source
+            // for two of the five words: `enabled-runtime` and
+            // `masked-runtime` live in `/run`, not in the unit files a
+            // rollback restores.
+            (Enablement::NotEnabled(word), Activity::Active) => rows.push(row(
                 name,
                 DivergenceState::Diverged,
                 format!(
-                    "{name}'s restored unit files leave it disabled, but the service manager \
-                     reports it running"
+                    "{name} reads {word} after the rollback, but the service manager reports \
+                     it running"
                 ),
             )),
-            // The restored files say enabled, but the service manager reports
-            // it stopped: reload_after_rollback only reloads the unit files,
-            // it never starts anything, so a unit apply had stopped stays
-            // stopped even once the files that governed it are put back.
-            (Enablement::Enabled, Activity::NotActive) => rows.push(row(
+            // Enabled, but the service manager reports it stopped:
+            // reload_after_rollback only reloads the unit files, it never
+            // starts anything, so a unit apply had stopped stays stopped even
+            // once the files that governed it are put back.
+            (Enablement::Enabled(word), Activity::NotActive) => rows.push(row(
                 name,
                 DivergenceState::Diverged,
                 format!(
-                    "{name}'s restored unit files leave it enabled, but the service manager \
-                     reports it not running"
+                    "{name} reads {word} after the rollback, but the service manager reports \
+                     it not running"
                 ),
             )),
-            // Enabled and running, or disabled and stopped: the restored
-            // files and the service manager agree, and this probe makes no
-            // claim.
-            (Enablement::Enabled, Activity::Active)
-            | (Enablement::NotEnabled, Activity::NotActive) => {}
+            // Enabled and running, or not enabled and stopped: the enablement
+            // and the service manager agree, and this probe makes no claim.
+            (Enablement::Enabled(_), Activity::Active)
+            | (Enablement::NotEnabled(_), Activity::NotActive) => {}
         }
     }
 
