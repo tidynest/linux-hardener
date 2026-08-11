@@ -58,6 +58,14 @@ other five 98 of 98 with 8 unaskable, no failures and no skips anywhere.** The
 gap between the two readings is the suite gaining checks, not a distribution
 changing: the arch difference is the same two rows in both.
 
+The Playwright GUI suite was read the same day, also against `7c81c491` and on
+the same six: **134 of 134 everywhere, none failed, none skipped, none flaky**,
+one worker and no name filter. It read 127 earlier the same day, and the seven
+added between the two readings are `T-THEME-08`, `T-THEME-09` and the five High
+Contrast screenshots. Every theme the application offers is now covered,
+and `T-THEME-09` compares the selector's own option list against the suite's,
+so the next theme added cannot arrive uncovered.
+
 Two suites in that run did not pass, and neither reading is about a distribution.
 The package suite failed one check on all six, which was a `pipefail` and `grep -q`
 SIGPIPE inversion in the harness rather than a product defect, fixed in `6a82a5b`

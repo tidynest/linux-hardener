@@ -592,15 +592,29 @@ tested and the command bodies that need a Tauri runtime and `pkexec` are not.
 component body is compiled and never instantiated. Its 10.02 per cent says
 nothing about whether the interface works.
 
-**The browser-level end-to-end suite is stale against the redesigned interface
-and is being rewritten**
-([issue #48](https://github.com/tidynest/linux-hardener/issues/48)). Until it
-lands, **nothing automated exercises the graphical application at all**, and the
-only evidence behind it is a person looking at it.
+**The browser-level end-to-end suite was rewritten against the redesigned
+interface** ([issue #48](https://github.com/tidynest/linux-hardener/issues/48),
+closed 2026-08-08), and this section said the opposite of the truth for three
+days afterwards: that nothing automated exercised the graphical application at
+all. It read **134 of 134 on all six distributions on 2026-08-11** against
+`7c81c491`, none skipped and none flaky, covering findings and compliance,
+configure, history and apply, fleet, scheduler, errors, the `/remote` redirect
+and all seven themes.
+
+**What that suite drives is not the desktop application.** It serves the same
+wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of
+it to stand in for `window.__TAURI__.core.invoke`. So the markup, the
+behaviour, the routing and the theming are exercised, and **the Tauri command
+bodies, `pkexec` and the CLI beneath them are not reached by it**: the frontend
+is asked what it renders for a given reply, never whether the backend would
+send that reply. The mock's field names are a hand-written copy of the Rust
+structs, so it can drift from them, and a drift empties a view rather than
+failing loudly.
 
 The practical reading for an operator: the command-line tool is the surface this
-release has evidence for, and the desktop is a front end to it whose own
-behaviour is checked by eye.
+release has the deepest evidence for; the desktop's interface is now exercised
+automatically against a stubbed backend, and the path from a button to a
+privileged command is still checked by eye.
 
 ---
 
