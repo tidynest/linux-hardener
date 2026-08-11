@@ -445,6 +445,16 @@ impl Default for SshHardeningPlugin {
     }
 }
 
+/// Everything a backup of `config_path` carries before its timestamp.
+///
+/// One source for the copy and for both prunes, so they cannot come to
+/// disagree about which files are backups: a prune whose prefix had drifted
+/// from the writer's would silently match nothing and the copies would
+/// accumulate again with nothing failing.
+fn backup_prefix(config_path: &str) -> String {
+    format!("{config_path}.backup.")
+}
+
 impl SshHardeningPlugin {
     /// Creates a new instance of the SSH hardening plugin.
     pub fn new() -> SshHardeningPlugin {
@@ -1502,6 +1512,25 @@ impl HardeningPlugin for SshHardeningPlugin {
         // what the permissions plugin does at permissions/mod.rs:845.
         let _lock = (!ctx.executor().is_remote()).then(|| lock_config_path(config_path));
 
+        // Pruned here as well as beside the copy, and this is the call that
+        // reaches a compliant host at all. The copy-side prune runs only when
+        // the config drifts, and the guard below returns before any of that,
+        // so a host with nothing to rewrite keeps every backup it has ever
+        // accumulated: 17 in /etc/ssh on the development host on 2026-08-11,
+        // against a dry run reporting "0 change(s) to apply".
+        //
+        // Unlike audit's and pam's, this call sits above no checkpoint, because
+        // a no-op here creates none. That changes nothing about what it may
+        // remove: in all three plugins the prune runs before the capture, so
+        // the copies it removes are absent from that apply's checkpoint either
+        // way. Older checkpoints still hold them.
+        //
+        // Above the no-op guard rather than inside it, so the retention is one
+        // rule rather than two: every apply prunes, whether or not it goes on
+        // to write anything.
+        crate::prune_timestamped_backups(ctx, &backup_prefix(config_path), crate::BACKUPS_KEPT)
+            .await;
+
         let original_content = main.content.clone();
 
         // Step 2: Compute the hardened config from the current content.
@@ -2016,13 +2045,11 @@ impl HardeningPlugin for SshHardeningPlugin {
         // because the vendor file is never edited.
         let main_write_needed = writing_main && config_content != original_content;
         if main_write_needed {
-            // One binding for the copy and for the prune below, so the two
-            // cannot come to disagree about which files are backups: a prune
-            // whose prefix had drifted from the writer's would silently match
-            // nothing and the copies would accumulate again with nothing
-            // failing.
-            let backup_prefix = format!("{config_path}.backup.");
-            let backup_path = format!("{backup_prefix}{}", Utc::now().format("%Y%m%d_%H%M%S"));
+            let backup_path = format!(
+                "{}{}",
+                backup_prefix(config_path),
+                Utc::now().format("%Y%m%d_%H%M%S")
+            );
             // `-p` was here from the start and `--no-dereference` was not, the
             // reverse of the audit plugin's copy; the two flags answer separate
             // questions and a backup needs both. `-p` preserves mode, ownership
@@ -2054,8 +2081,12 @@ impl HardeningPlugin for SshHardeningPlugin {
                     // so the creation and the retention sit together, and only
                     // on the path that made one: a compliant host takes no
                     // backup and has nothing to prune.
-                    crate::prune_timestamped_backups(ctx, &backup_prefix, crate::BACKUPS_KEPT)
-                        .await;
+                    crate::prune_timestamped_backups(
+                        ctx,
+                        &backup_prefix(config_path),
+                        crate::BACKUPS_KEPT,
+                    )
+                    .await;
                 }
                 Ok(output) => {
                     return Ok(ApplyResult {

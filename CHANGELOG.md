@@ -1226,10 +1226,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consequence worth stating:** because the prune now runs above the capture, a
   rollback no longer restores what it removed, which is the point of a
   retention limit and the opposite of what the earlier placement documented.
-  `ssh-hardening` is deliberately left with the copy-side prune alone: its
-  apply returns before creating any checkpoint when the configuration does not
-  drift, so a no-op there captures nothing and bloats nothing, and its backups
-  are pruned by the next apply that rewrites.
+  **`ssh-hardening` prunes on every apply as well**, decided after the same
+  measurement was made of it: `/etc/ssh` held 17 copies while `apply --dry-run`
+  reported "0 change(s) to apply", so on a host that stays compliant the
+  copy-side prune was never going to reach them. It differs from the other two
+  only in what sits above it, because a no-op ssh apply creates no checkpoint at
+  all; that changes nothing about what may be removed, since all three prune
+  before any capture and older checkpoints still hold the copies. The no-op
+  contract is unchanged and still asserted: a compliant apply copies nothing,
+  rewrites nothing and restarts nothing.
 
 - **`ssh-hardening` and `pam-hardening` prune their own backups too** (#154).
   The issue was found in `audit-hardening` and asked whether any other plugin

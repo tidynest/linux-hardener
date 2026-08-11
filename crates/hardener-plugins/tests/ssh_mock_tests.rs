@@ -3494,3 +3494,74 @@ async fn ssh_apply_prunes_the_backups_that_came_before_it() {
         );
     }
 }
+
+/// The prune has to run on an apply that rewrites nothing, which for this
+/// plugin is the only kind a compliant host ever performs.
+///
+/// ssh differs from audit and pam in what it does on a no-op: it returns before
+/// creating any checkpoint, so nothing captures its backups and there is no
+/// checkpoint bloat to undo. What is left is the pile itself. `/etc/ssh` held
+/// 17 on the development host on 2026-08-11 and `apply --dry-run` reported "0
+/// change(s) to apply", so the copy-side prune was never going to reach them:
+/// on a host that stays compliant, the next rewrite that would trigger it may
+/// never come.
+///
+/// The no-op contract the fixture beside this one pins is untouched. This
+/// asserts the same three things it does, that nothing was copied, rewritten or
+/// restarted, so a prune that started rewriting the config to reach its own
+/// call site would fail here rather than pass quietly.
+#[tokio::test]
+async fn ssh_apply_prunes_even_when_it_changes_nothing() {
+    let doomed = ["1763680168", "20251209_012340"];
+    let kept = ["20260718_112302", "20260810_120000", "20260810_120001"];
+
+    let mut executor =
+        compliant_noop_executor(COMPLIANT_SSHD_CONFIG).with_command_program("rm", ok_output(""));
+    for stamp in kept.iter().chain(doomed.iter()) {
+        executor = executor.with_file(&format!("/etc/ssh/sshd_config.backup.{stamp}"), "Port 22\n");
+    }
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result.apply_success,
+        "an already-compliant apply must succeed: {result:?}"
+    );
+    assert!(
+        !backed_up_config(&executor),
+        "the prune must not turn a no-op into a run that copies, commands: {:?}",
+        executor.log().commands_executed
+    );
+    assert!(
+        !rewrote_config(&executor),
+        "no config rewrite on a no-op, writes: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        !restarted_sshd(&executor),
+        "no sshd restart on a no-op, commands: {:?}",
+        executor.log().commands_executed
+    );
+
+    let log = executor.log();
+    let removed: Vec<&String> = log
+        .commands_executed
+        .iter()
+        .filter(|(program, _)| program == "rm")
+        .flat_map(|(_, args)| args.iter())
+        .collect();
+    for stamp in doomed {
+        let backup = format!("/etc/ssh/sshd_config.backup.{stamp}");
+        assert!(
+            removed.iter().any(|argument| **argument == backup),
+            "a no-op apply must still prune {backup}, rm was given: {removed:?}"
+        );
+    }
+    for stamp in kept {
+        let backup = format!("/etc/ssh/sshd_config.backup.{stamp}");
+        assert!(
+            !removed.iter().any(|argument| **argument == backup),
+            "the newest backups must survive, but {backup} was removed: {removed:?}"
+        );
+    }
+}
