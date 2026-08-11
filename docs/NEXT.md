@@ -2,12 +2,15 @@
 
 ---
 
-## Current State (as of 2026-08-01)
+## Current State (as of 2026-08-11)
 
-**Read this first: the last release is v1.5.1 (2026-07-27) and `main` is 189
-commits past it, none of them released.** The version in the tree is still
-`1.5.1`, so none of the work described in this section is in a build a user can
-install. `CHANGELOG.md` `[Unreleased]` is the authoritative record of that work;
+**Read this first: the last release is v1.5.1 (2026-07-27) and a substantial
+body of work on `main` is past it, none of it released.** No count is given
+here on purpose: it changes with every commit, and the figure that used to
+stand in this sentence was stale within days. Read it live with
+`git rev-list --count --no-merges v1.5.1..main`. The version in the tree is
+still `1.5.1`, so none of the work described in this section is in a build a
+user can install. `CHANGELOG.md` `[Unreleased]` is the authoritative record of that work;
 this section only orients. The bulk of it is defect repair proved on the five
 test containers: firewall boot persistence (a ufw enable that never asked
 systemd to want the unit at boot, and a Debian activity probe that read a
@@ -18,10 +21,13 @@ the cross-distro suite gaining rollback-lifecycle sections plus a refusal to
 accept a run that is not the size it declares.
 
 **Open work is tracked as GitHub issues, not in this file.** Nineteen issues,
-[#36 to #54](https://github.com/tidynest/linux-hardener/issues), were
-filed on 2026-08-01 covering everything known and unfixed; #18 and #19 predate
-them and are also open. Where a heading below still describes an open item, it
-names its issue.
+[#36 to #54](https://github.com/tidynest/linux-hardener/issues), were filed on
+2026-08-01 covering everything known and unfixed; #18 and #19 predate them.
+Most of that batch is closed and the list is not restated here, because it
+moves and this file does not: read it live with `gh issue list`. Where a
+heading below still describes an open item, it names its issue, and an issue
+that is still open is not evidence the work is undone - grep for the thing it
+says is missing first.
 
 **The specs and plans this file cites under `docs/superpowers/` are a local
 working area, not part of the repository.** Those paths are named so the
@@ -47,7 +53,9 @@ pass. Do not quote a check total from this file: `expected_check_total` in that
 script is the live count, and the comment above it traces how each block arrived
 at its size. Issue #47 tracked extending the oracle to the remaining six
 plugins; all eight are now in the compared set, two of them with a ceiling
-stated in the oracle.
+stated in the oracle. It stays open, retitled, for the one fixture that is
+left: a container reaching the pure-nftables path, so `firewall_backend_kind`'s
+`none` arm stops being unreachable.
 
 **Everything below this line shipped in v1.5.0 or earlier.** v1.5.1 followed on
 the same day, 2026-07-27, and is the current release: it made `scan --exit-code`
