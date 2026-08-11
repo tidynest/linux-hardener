@@ -15,6 +15,8 @@
 //! every import carried across unchanged, private items included.
 
 use super::*;
+use crate::config::PolicyException;
+use std::collections::HashMap;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -248,5 +250,196 @@ fn a_section_that_states_enabled_still_decides_it() {
     assert!(
         HardenerConfig::default().is_plugin_enabled("mac-hardening"),
         "with nothing said anywhere, a plugin runs, which is the shipped default"
+    );
+}
+
+/// `skip_defaults` has to set its own field and keep everything already
+/// decided, not hand back a fresh loader.
+///
+/// Every other test in this file calls it first and `with_cli_config` second,
+/// an order under which a `skip_defaults` that returned `Self::default()`
+/// behaves identically: the CLI path is set afterwards, and the two default
+/// locations it wrongly stopped skipping are absent on the machine running
+/// the suite. Reversing the order is what makes the difference reachable.
+#[test]
+fn skip_defaults_keeps_the_cli_path_a_prior_call_set() {
+    let mut file = NamedTempFile::new().unwrap();
+    writeln!(
+        file,
+        r#"
+[ssh.directives]
+PermitRootLogin = "no"
+"#
+    )
+    .unwrap();
+
+    let config = ConfigLoader::new()
+        .with_cli_config(file.path().to_path_buf())
+        .skip_defaults()
+        .load()
+        .expect("the CLI file exists, so a loader that kept it loads");
+
+    assert_eq!(
+        config
+            .ssh
+            .directives
+            .get("PermitRootLogin")
+            .map(String::as_str),
+        Some("no"),
+        "the builder call made before `skip_defaults` must survive it"
+    );
+}
+
+/// The directive limit is a ceiling, not a target: exactly the maximum is
+/// allowed and one more is refused.
+///
+/// Asking only about a wildly oversized config cannot fail under `>=` or `==`
+/// in place of `>`, so both sides of the boundary are here.
+#[test]
+fn the_directive_limit_admits_the_maximum_and_refuses_one_more() {
+    let plugin_with = |n: usize| PluginConfig {
+        enabled: None,
+        directives: (0..n).map(|i| (format!("d{i}"), "v".to_string())).collect(),
+        exceptions: HashMap::new(),
+    };
+
+    let at_limit = ConfigLoader::merge_plugin(
+        plugin_with(ConfigLoader::MAX_DIRECTIVES_PER_PLUGIN),
+        PluginConfig::default(),
+    )
+    .expect("exactly the maximum is within the limit");
+    assert_eq!(
+        at_limit.directives.len(),
+        ConfigLoader::MAX_DIRECTIVES_PER_PLUGIN
+    );
+
+    let err = ConfigLoader::merge_plugin(
+        plugin_with(ConfigLoader::MAX_DIRECTIVES_PER_PLUGIN + 1),
+        PluginConfig::default(),
+    )
+    .expect_err("one directive past the maximum is refused");
+    assert!(
+        err.to_string().contains("directive limit"),
+        "and refused for the reason it was, not some other failure: {err}"
+    );
+}
+
+/// The same ceiling reading for exceptions, which is a separate limit with a
+/// separate comparison and so a separate pair of survivors.
+#[test]
+fn the_exception_limit_admits_the_maximum_and_refuses_one_more() {
+    let plugin_with = |n: usize| PluginConfig {
+        enabled: None,
+        directives: HashMap::new(),
+        exceptions: (0..n)
+            .map(|i| {
+                (
+                    format!("e{i}"),
+                    PolicyException {
+                        value: "running".to_string(),
+                        allowed: true,
+                        reason: "fixture".to_string(),
+                        approved_by: None,
+                        approved_date: None,
+                        ticket: None,
+                        expires: None,
+                    },
+                )
+            })
+            .collect(),
+    };
+
+    let at_limit = ConfigLoader::merge_plugin(
+        plugin_with(ConfigLoader::MAX_EXCEPTIONS_PER_PLUGIN),
+        PluginConfig::default(),
+    )
+    .expect("exactly the maximum is within the limit");
+    assert_eq!(
+        at_limit.exceptions.len(),
+        ConfigLoader::MAX_EXCEPTIONS_PER_PLUGIN
+    );
+
+    let err = ConfigLoader::merge_plugin(
+        plugin_with(ConfigLoader::MAX_EXCEPTIONS_PER_PLUGIN + 1),
+        PluginConfig::default(),
+    )
+    .expect_err("one exception past the maximum is refused");
+    assert!(
+        err.to_string().contains("exception limit"),
+        "and refused for the reason it was, not some other failure: {err}"
+    );
+}
+
+/// The 1 MiB file cap, both sides. The padding is a TOML comment, so a file
+/// sized to the byte is still a file the parser accepts and the only thing
+/// under test is the size comparison.
+#[test]
+fn the_config_size_cap_admits_a_file_of_exactly_one_mib_and_refuses_one_byte_more() {
+    let sized_file = |bytes: usize| {
+        let head = "[ssh]\nenabled = true\n#";
+        let mut content = String::with_capacity(bytes);
+        content.push_str(head);
+        content.push_str(&"x".repeat(bytes - head.len() - 1));
+        content.push('\n');
+        assert_eq!(
+            content.len(),
+            bytes,
+            "the fixture must hit the byte exactly"
+        );
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        file.flush().unwrap();
+        file
+    };
+
+    let max = usize::try_from(ConfigLoader::MAX_CONFIG_SIZE).unwrap();
+
+    let at_limit = sized_file(max);
+    let config = ConfigLoader::load_from_file(at_limit.path())
+        .expect("a file of exactly the maximum is within the cap");
+    assert_eq!(config.ssh.enabled, Some(true));
+
+    let over = sized_file(max + 1);
+    let err = ConfigLoader::load_from_file(over.path())
+        .expect_err("one byte past the maximum is refused");
+    assert!(
+        err.to_string().contains("exceeds 1 MiB size limit"),
+        "and refused for its size, not for failing to parse or stat: {err}"
+    );
+}
+
+/// The environment plugin lists are split, trimmed, emptied of blanks, and
+/// every surviving id checked against the known set.
+///
+/// Asking only "did it come back Ok" cannot fail under a body replaced by a
+/// constant `Ok`, and asking only "did it come back Err" cannot fail under an
+/// inverted membership test that errors on the ids it should accept. Both
+/// directions are asked, and the refusal is read for what it names.
+#[test]
+fn the_env_plugin_list_is_parsed_and_every_id_checked() {
+    let ids = ConfigLoader::parse_and_validate_env_list(
+        " ssh-hardening , ,kernel-hardening ",
+        ConfigLoader::ENV_DISABLED_PLUGINS,
+    )
+    .expect("known ids, whitespace and an empty field the parser is meant to absorb");
+    assert_eq!(
+        ids,
+        vec!["ssh-hardening".to_string(), "kernel-hardening".to_string()],
+        "the ids are trimmed, kept in order, and the blank field dropped"
+    );
+
+    let err = ConfigLoader::parse_and_validate_env_list(
+        "ssh-hardening,not-a-plugin",
+        ConfigLoader::ENV_ENABLED_PLUGINS,
+    )
+    .expect_err("an id outside the known set is refused");
+    let message = err.to_string();
+    assert!(
+        message.contains("not-a-plugin"),
+        "the refusal names the offending id: {message}"
+    );
+    assert!(
+        message.contains(ConfigLoader::ENV_ENABLED_PLUGINS),
+        "and the variable it came from, so an operator knows which to fix: {message}"
     );
 }

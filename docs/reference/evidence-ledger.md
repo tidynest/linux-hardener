@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1950 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1956 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1955 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1961 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1990 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1990 across 294 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1995 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1995 across 294 files |
 
-The gap between 1990 annotations and 1950 executions is exactly 40, and all 40
+The gap between 1995 annotations and 1955 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 1990, and they are meant to be: the check globs every `.rs`
+are the same number, 1995, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1950 + 6 = 1956 and 40 + 7 = 47.
+covers. 1955 + 6 = 1961 and 40 + 7 = 47.
 
 ---
 
@@ -97,15 +97,15 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**Forty-two of those 161 have since been killed**, all on 2026-08-11, so the
+**Fifty-four of those 161 have since been killed**, all on 2026-08-11, so the
 tree as it stands reads:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
 | `hardener-common` | 121 | 33 | both `session_is_root`, and 13 of the 14 in `file_utils.rs` |
 | `hardener-state` | 153 | 12 | all seven in `signing.rs` |
-| `hardener-core` | 198 | 74 | all twenty in `executor/local.rs` |
-| **Total now** | **472** | **119** | **20% of viable** |
+| `hardener-core` | 210 | 62 | all twenty in `executor/local.rs`, and 12 of the 16 in `config_loader.rs` |
+| **Total now** | **484** | **107** | **18% of viable** |
 
 Every kill was verified by re-running the runner over the affected scope
 rather than by reasoning about the tests:
@@ -116,16 +116,18 @@ rather than by reasoning about the tests:
 | `--file crates/hardener-state/src/signing.rs` | 7 missed | **43 mutants, 35 caught, 8 unviable, none missed** |
 | `--file crates/hardener-common/src/file_utils.rs` | 14 missed | **47 mutants, 44 caught, 2 unviable, 1 missed** |
 | `--file crates/hardener-core/src/executor/local.rs` | 20 missed | **31 mutants, 29 caught, 2 unviable, none missed** |
+| `--file crates/hardener-core/src/config_loader.rs` | 16 missed | **33 mutants, 28 caught, 1 unviable, 4 missed** |
 
 `signing.rs` and `local.rs` are clear of survivors entirely rather than clear of
-the ones that were listed. `file_utils.rs` keeps one, deliberately, and it is
-recorded below as acceptable rather than left unexplained.
+the ones that were listed. `file_utils.rs` keeps one and `config_loader.rs`
+keeps four, deliberately, and all five are recorded below as acceptable rather
+than left unexplained.
 
 No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 119 are identified, not resolved.** G4 asks for each to be
+**The remaining 107 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
@@ -136,7 +138,8 @@ what the Phase 4 triage rule makes of them:
 | `hardener-common/file_utils.rs` | 1, was 14 | **Resolved.** Thirteen killed; the survivor is recorded as acceptable below. |
 | `hardener-core/executor/ssh.rs` | 25 | **Two different verdicts in one file.** Most are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. But `parse_stat_fields`, `unique_delimiter` and `resolve_ssh_user` are pure functions needing no host, and those are ordinary gaps. |
 | `hardener-common/executor/mock.rs` | 19 | `MockExecutor` itself, so neither disk nor host: a note by the rule. Worth stating anyway, because a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. |
-| `hardener-core/context.rs`, `config_loader.rs`, `config_validation.rs` | 40 | `config_loader` reaches disk; the other two are notes. |
+| `hardener-core/config_loader.rs` | 4, was 16 | **Resolved.** Twelve killed; the four survivors are recorded as acceptable below, and one of them is provably equivalent. |
+| `hardener-core/context.rs`, `config_validation.rs` | 24 | Notes by the rule: neither reaches disk or a host. |
 | `hardener-common/executor/mod.rs` | 9, was 11 | Reaches a host. **The two `session_is_root` survivors are killed**; see below. `host_keys_for` survives returning `vec![]`, and it decides which checkpoints a rollback can see. |
 | `hardener-state/signing.rs` | 0, was 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. **All seven killed**; see below. |
 | Remainder | 25 | `manager.rs` 5, `audit.rs` 4, `scan_manager.rs` 3, `error.rs` 3, `plugin.rs` 3, `inventory.rs` 3, and one each in `logging.rs`, `testing.rs`, `registry.rs`, `config.rs`. |
@@ -182,6 +185,54 @@ still miss the fifth reader somebody adds later.
 separates them is the sentinel's meaning: `-1` says no exit code exists, while
 `1` is a status a program can genuinely return. A shell told to kill itself is
 the test.
+
+**The `config_loader.rs` twelve, and the four that stay.** This file decides
+which configuration the whole tool believes, and it reaches disk, so the triage
+rule calls its survivors bugs. Twelve are dead and the five tests that killed
+them stand in `crates/hardener-core/src/config_loader/tests.rs`.
+
+Six were the three size ceilings, `MAX_CONFIG_SIZE`, `MAX_DIRECTIVES_PER_PLUGIN`
+and `MAX_EXCEPTIONS_PER_PLUGIN`, each surviving `>` becoming `==` and `>=`. A
+test that feeds a wildly oversized config cannot fail under either: `>=` still
+refuses it and `==` refuses it too. Only the boundary separates them, and only
+from both sides. Exactly the maximum must be accepted, which kills `>=` and
+`==` alike, and exactly one past it must be refused, which kills `==`. The size
+fixture pads with a TOML comment so that a file sized to the byte is still a
+file the parser accepts and the size comparison is the only thing under test.
+
+Five were `parse_and_validate_env_list`, which survived being replaced by three
+different constant `Ok`s and survived both its `!` being deleted. Deleting the
+`!` in the membership check inverts it into accepting every unknown plugin id
+and refusing every known one, which is the direction that matters: the
+`HARDENER_ENABLED_PLUGINS` and `HARDENER_DISABLED_PLUGINS` variables are what an
+operator uses to turn hardening off. One test asks both directions and reads the
+refusal for the id and the variable name it must carry, because a mutant that
+also returns an error passes any assertion that merely says an error came back.
+
+The twelfth was `skip_defaults` surviving replacement by `Default::default()`.
+Every existing test in the file called it before `with_cli_config`, an order
+under which the mutant is invisible: the CLI path is set afterwards on the fresh
+loader, and the two default locations it wrongly stopped skipping are absent on
+the machine running the suite. Reversing the call order is the whole test. The
+lesson generalises past this file: **a builder method is only pinned by a test
+that calls something before it.**
+
+The four that stay are the two `!` deletions in `load` at lines 55 and 63, and
+both constant replacements of `is_running_as_root`. They share one cause. The
+branch bodies they guard load `/etc/linux-hardener/config.toml` and
+`~/.config/linux-hardener/config.toml`, and neither file exists on a test
+runner, so taking the branch or skipping it produces an identical config and no
+assertion can separate them. `is_running_as_root -> false` is stronger than
+merely hard: under a non-root runner the real function already returns `false`,
+so that mutant is **provably equivalent** and no test will ever kill it.
+
+Killing the other three needs control of what `dirs::config_dir()` resolves,
+which means `HOME` or `XDG_CONFIG_HOME`. This crate is edition 2024, where
+`std::env::set_var` is `unsafe`, and `cargo test` runs a crate's tests as
+threads in one process, so a scoped environment swap would race the other 150-odd
+tests in `hardener-core`. That is the same shape as the `ssh -G` finding: the
+fix is to inject the path resolver rather than to fight the environment. It is
+recorded here as a ceiling of the current design, not as work that was skipped.
 
 **The one survivor recorded as acceptable, and why that is not a shrug.**
 `file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||
