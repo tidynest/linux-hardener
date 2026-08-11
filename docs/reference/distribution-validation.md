@@ -1034,7 +1034,7 @@ This matches the six-distribution reading above, which was re-run at 114 once
 | `dashboard.spec.js` | T-DASH-01..09 | 9 | Score display, scan trigger, navigation, activity feed |
 | `analysis.spec.js` | T-FIND-01..11, T-COMP-01..08 | 19 | Findings grouping and detail expander, declined exceptions, framework selection, report generation |
 | `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06, T-APPLY-01..04 | 20 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback; what an executed apply produces |
-| `themes.spec.js` | T-THEME-01..07 | 7 + 30 | 6 of the 7 themes verified, High Contrast not yet covered. The 30 screenshot tests are generated as 5 states x 6 themes |
+| `themes.spec.js` | T-THEME-01..07 | 7 + 30 | 6 of the 7 themes verified, High Contrast not covered at the time of this reading. Closed on 2026-08-11 by T-THEME-08 and T-THEME-09, taking this row to 9 + 35; the live description is in [file-map.md](file-map.md). The 30 screenshot tests are generated as 5 states x 6 themes |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 | `fleet.spec.js` | - | 7 | Fleet scan view |
 | `fleet-apply.spec.js` | - | 9 | Fleet Apply mode toggle, selection, confirm modal |

@@ -1,5 +1,5 @@
 // =============================================================================
-// THEME TESTS (T-THEME-01..07) + 30 Screenshot Captures
+// THEME TESTS (T-THEME-01..09) + 35 Screenshot Captures
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
@@ -12,6 +12,7 @@ const THEMES = [
   { value: 'command', name: 'Command', dataTheme: 'command' },
   { value: 'guardian', name: 'Guardian', dataTheme: 'guardian' },
   { value: 'daywatch', name: 'Daywatch', dataTheme: 'daywatch' },
+  { value: 'high-contrast', name: 'High Contrast', dataTheme: 'high-contrast' },
 ];
 
 test.describe('Themes', () => {
@@ -61,10 +62,52 @@ test.describe('Themes', () => {
     await selectTheme(page, 'daywatch');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'daywatch');
   });
+
+  // T-THEME-08: High Contrast theme. This one asserts the rendered colours as
+  // well as the attribute, unlike its six siblings above. The attribute being
+  // present says the selector fired; it does not say the rule won. A
+  // `[data-theme="high-contrast"]` block whose custom properties are beaten
+  // later in the cascade renders identically to no theme at all and passes a
+  // `toHaveAttribute` check, and this is the theme where that failure is an
+  // accessibility one rather than a cosmetic one. `body` resolves
+  // `background-color` and `color` straight from `--bg-primary` and
+  // `--text-primary`, so reading them back is reading what the user sees.
+  test('T-THEME-08: High Contrast applies data-theme and renders its WCAG AAA colours', async ({
+    page,
+  }) => {
+    await selectTheme(page, 'high-contrast');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'high-contrast');
+
+    const rendered = await page.evaluate(() => {
+      const style = getComputedStyle(document.body);
+      return { background: style.backgroundColor, text: style.color };
+    });
+    expect(rendered.background).toBe('rgb(0, 0, 0)');
+    expect(rendered.text).toBe('rgb(255, 255, 255)');
+  });
+
+  // T-THEME-09: every theme the application offers is covered by this file.
+  // The seven cases above and the screenshot matrix below both enumerate
+  // themes by hand, and the application enumerates them again in
+  // `crates/hardener-ui/src/utils/theme.rs`. Three hand-maintained copies of
+  // one fact drift, and this suite already proved it: High Contrast shipped
+  // with a selector entry, a stylesheet block and no test, and six of seven
+  // themes read as full coverage because nothing compared the lists. A
+  // per-theme check cannot catch that, because it has to be written for the
+  // theme nobody remembered. This one asks the page instead, so the eighth
+  // theme fails here on the day it is added.
+  test('T-THEME-09: the theme selector offers exactly the themes this file covers', async ({
+    page,
+  }) => {
+    const offered = await page.$$eval('#theme-select option', (options) =>
+      options.map((option) => option.value).sort()
+    );
+    expect(offered).toEqual(THEMES.map((theme) => theme.value).sort());
+  });
 });
 
 // ---------------------------------------------------------------------------
-// SCREENSHOT CAPTURES - 5 states x 6 themes = 30 screenshots
+// SCREENSHOT CAPTURES - 5 states x 7 themes = 35 screenshots
 // ---------------------------------------------------------------------------
 
 const STATES = [
