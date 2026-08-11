@@ -738,6 +738,22 @@ impl HardeningPlugin for PamHardeningPlugin {
             Path::new("/etc/security/faillock.conf"),
             Path::new("/etc/security/pwhistory.conf"),
         ];
+        // Pruned here as well as beside the copy, and this is the call that
+        // does the work on a host that is already compliant. The copy-side
+        // prune runs only when a copy is taken, so an apply that rewrites
+        // nothing pruned nothing, while the capture above still copied every
+        // dead backup in /etc/security into a fresh checkpoint for a rollback
+        // to restore. Sixteen had accumulated on the development host by
+        // 2026-08-11.
+        //
+        // Above the capture rather than below it, which the copy-side call
+        // cannot be: that is what stops the checkpoint holding them, and why a
+        // rollback no longer resurrects what a prune removed.
+        for path in PAM_BACKED_UP_FILES {
+            crate::prune_timestamped_backups(ctx, &pam_backup_prefix(path), crate::BACKUPS_KEPT)
+                .await;
+        }
+
         let checkpoint_id =
             crate::create_checkpoint_for_apply(ctx, "pam-hardening-pre-apply", &pam_paths).await?;
 
@@ -2763,6 +2779,29 @@ async fn apply_create_mode(ctx: &Context, path: &str, mode: u32, changes: &mut V
 /// non-root run, the backup now refuses rather than producing a copy that is
 /// not one. Apply runs as root, so it is a refusal that should never be
 /// reached.
+/// Every file this plugin can leave a timestamped backup beside.
+///
+/// `/etc/pam.d` is deliberately not here. The apply refuses to edit a stack
+/// file and reports the manual action instead, so it never copies one, and the
+/// development host bore that out on 2026-08-11: 16 backups across
+/// `/etc/security` and none at all in `/etc/pam.d`.
+const PAM_BACKED_UP_FILES: [&str; 4] = [
+    "/etc/security/pwquality.conf",
+    "/etc/security/faillock.conf",
+    "/etc/security/pwhistory.conf",
+    "/etc/login.defs",
+];
+
+/// Everything a backup of `file_path` carries before its timestamp.
+///
+/// One source for the copy and for both prunes, so they cannot come to
+/// disagree about which files are backups: a prune whose prefix had drifted
+/// from the writer's would silently match nothing and the copies would
+/// accumulate again with nothing failing.
+fn pam_backup_prefix(file_path: &str) -> String {
+    format!("{file_path}.backup-")
+}
+
 async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> {
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -2771,11 +2810,7 @@ async fn create_config_backup(ctx: &Context, file_path: &str) -> Result<String> 
         .map_err(|e| HardeningError::Plugin(format!("Failed to get system time: {}", e)))?
         .as_secs();
 
-    // One binding for the copy and for the prune below, so the two cannot come
-    // to disagree about which files are backups: a prune whose prefix had
-    // drifted from the writer's would silently match nothing and the copies
-    // would accumulate again with nothing failing.
-    let backup_prefix = format!("{file_path}.backup-");
+    let backup_prefix = pam_backup_prefix(file_path);
     let backup_path = format!("{backup_prefix}{timestamp}");
 
     let output = ctx

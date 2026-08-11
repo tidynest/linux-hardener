@@ -1209,6 +1209,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A no-op apply prunes too, in `audit-hardening` and `pam-hardening`**
+  (#154). The first half of this fix put the prune beside the copy, where it
+  runs only when a file is actually rewritten. Running the binary on the
+  development host on 2026-08-11 showed what that misses: the apply reported
+  "Audit rules file already matches desired content; skipped backup, rewrite
+  and reload" and left all **17** backups exactly where they were. A host that
+  stays compliant never prunes, and the pile it already has never shrinks.
+  **The harm is not the disk, and it kept happening.** Both plugins create
+  their checkpoint above that guard, and each captures the directory the
+  backups sit in, so every no-op apply went on copying 17 dead files into a
+  fresh checkpoint for a rollback to restore. Each now prunes **once per apply,
+  above the checkpoint capture**, as well as beside the copy: the first keeps a
+  compliant host from carrying its pile for ever and keeps the copies out of
+  the checkpoint, the second keeps the count exact after a rewrite. **A
+  consequence worth stating:** because the prune now runs above the capture, a
+  rollback no longer restores what it removed, which is the point of a
+  retention limit and the opposite of what the earlier placement documented.
+  `ssh-hardening` is deliberately left with the copy-side prune alone: its
+  apply returns before creating any checkpoint when the configuration does not
+  drift, so a no-op there captures nothing and bloats nothing, and its backups
+  are pruned by the next apply that rewrites.
+
 - **`ssh-hardening` and `pam-hardening` prune their own backups too** (#154).
   The issue was found in `audit-hardening` and asked whether any other plugin
   wrote timestamped backups the same way. Two do, and counted on the

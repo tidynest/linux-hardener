@@ -3978,3 +3978,73 @@ async fn a_pam_finding_that_is_not_about_a_value_offers_no_exception_key() {
         minlen.finding_exception_key,
     );
 }
+
+/// The prune has to run on an apply that rewrites nothing.
+///
+/// PAM's checkpoint is taken at the top of `apply`, before anything is read,
+/// and it captures `/etc/security` and `/etc/pam.d`. So a compliant host that
+/// rewrites no file still copies every dead backup into a fresh checkpoint on
+/// every apply, and a rollback of that apply restores them. The copy-side
+/// prune cannot reach this: no rewrite means no copy means no prune. Measured
+/// in the sibling `audit-hardening` case on the development host on
+/// 2026-08-11, where a no-op apply left all 17 backups standing.
+///
+/// `secure_pam_executor` is a host with nothing to rewrite, which is what makes
+/// this the no-op path rather than a rewrite that pruned beside its own copy.
+#[tokio::test]
+async fn a_no_op_pam_apply_still_prunes_the_backups_it_did_not_add() {
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let doomed = [
+        "/etc/security/pwquality.conf.backup-1784373783",
+        "/etc/security/pwquality.conf.backup-1784373999",
+    ];
+    let kept = [
+        "/etc/security/pwquality.conf.backup-1784374759",
+        "/etc/security/pwquality.conf.backup-1784374800",
+        "/etc/security/pwquality.conf.backup-1784374900",
+    ];
+
+    let mut executor = secure_pam_executor().with_command_program("rm", ok);
+    for backup in kept.iter().chain(doomed.iter()) {
+        executor = executor.with_file(backup, "minlen = 14\n");
+    }
+    let executor = Arc::new(executor);
+    let mut ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("a compliant host must apply without error");
+
+    let log = executor.log();
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(program, _)| program == "cp"),
+        "a compliant host must rewrite nothing and so take no backup, but cp ran: {:?}",
+        log.commands_executed
+    );
+
+    let removed: Vec<&String> = log
+        .commands_executed
+        .iter()
+        .filter(|(program, _)| program == "rm")
+        .flat_map(|(_, args)| args.iter())
+        .collect();
+    for backup in doomed {
+        assert!(
+            removed.iter().any(|argument| *argument == backup),
+            "a no-op apply must still prune {backup}, rm was given: {removed:?}"
+        );
+    }
+    for backup in kept {
+        assert!(
+            !removed.iter().any(|argument| *argument == backup),
+            "the newest backups must survive, but {backup} was removed: {removed:?}"
+        );
+    }
+}

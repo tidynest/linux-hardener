@@ -389,6 +389,16 @@ async fn read_current_audit_rules(ctx: &Context) -> AuditRulesResult {
     AuditRulesResult::Rules(rules)
 }
 
+/// Everything a backup of the rules file carries before its timestamp.
+///
+/// One source for the sites that need it, the copy and the two prunes, so they
+/// cannot come to disagree about which files are backups: a prune whose prefix
+/// had drifted from the writer's would silently match nothing and the copies
+/// would accumulate again with nothing failing.
+fn audit_backup_prefix() -> String {
+    format!("{AUDIT_RULES_PATH}.backup.")
+}
+
 /// Writes audit rules to the hardening rules file, backing up any existing one
 /// first.
 ///
@@ -410,11 +420,7 @@ async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<S
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos();
-    // One binding for the copy and for the prune that keeps the newest few, so
-    // the two cannot come to disagree about which files are backups: a prune
-    // whose prefix had drifted from the writer's would silently match nothing
-    // and the copies would accumulate again with nothing failing.
-    let backup_prefix = format!("{AUDIT_RULES_PATH}.backup.");
+    let backup_prefix = audit_backup_prefix();
     let backup_path = format!("{backup_prefix}{timestamp}.{nonce:08x}");
 
     // Back up whatever is there. Only a confirmed `Ok(false)` means "nothing to
@@ -1230,6 +1236,23 @@ impl HardeningPlugin for AuditHardeningPlugin {
             Path::new(AUDIT_COMPILED_RULES),
             Path::new(AUDIT_COMPILED_RULES_PREV),
         ];
+
+        // Pruned here as well as beside the copy, and this is the call that
+        // does the work on a host that is already compliant. The copy-side
+        // prune runs only when a copy is taken, so an apply that finds the
+        // rules file already correct rewrites nothing and pruned nothing:
+        // measured on the development host on 2026-08-11, an apply reporting
+        // "already matches desired content" left all 17 backups standing.
+        //
+        // Above the capture rather than below it, which the copy-side call
+        // cannot be. The declared path above captures the rules directory
+        // recursively, so every backup on disk is copied into this checkpoint
+        // and restored by a rollback of it; pruning first is what stops that,
+        // and it is why a rollback no longer resurrects what a prune removed.
+        // Nothing here can be the file the apply is about to write: the prefix
+        // matches only names this plugin generates for its own backups.
+        crate::prune_timestamped_backups(ctx, &audit_backup_prefix(), crate::BACKUPS_KEPT).await;
+
         let checkpoint_id =
             crate::create_checkpoint_for_apply(ctx, "audit-hardening-pre-apply", &audit_paths)
                 .await?;

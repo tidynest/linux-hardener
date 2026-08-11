@@ -2454,3 +2454,108 @@ async fn every_audit_finding_names_the_exception_key_that_silences_it() {
         );
     }
 }
+
+/// The prune has to run on an apply that rewrites nothing, and that is the
+/// whole of what this test is for.
+///
+/// Measured on the development host on 2026-08-11, against the first shipped
+/// half of #154: `hardener apply --plugin audit-hardening` reported "Audit
+/// rules file already matches desired content; skipped backup, rewrite and
+/// reload" and left all 17 backups standing. The prune sat beside the copy, so
+/// no copy meant no prune, and a host that stays compliant kept its pile for
+/// ever. The checkpoint above that guard captures the rules directory
+/// recursively either way, so every no-op apply went on copying 17 dead files
+/// into a new checkpoint for a rollback to restore.
+///
+/// The compliant state is produced by applying twice against the same mock
+/// rather than by pinning the rules content here: the second run reads back
+/// what the first one wrote, so the fixture cannot drift from whatever the
+/// plugin generates today.
+#[tokio::test]
+async fn a_no_op_apply_still_prunes_the_backups_it_did_not_add() {
+    let ok = CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let doomed = [
+        "/etc/audit/rules.d/hardening.rules.backup.20260223_004824",
+        "/etc/audit/rules.d/hardening.rules.backup.20260718_132303.082a30f9",
+    ];
+    let kept = [
+        "/etc/audit/rules.d/hardening.rules.backup.20260718_230736.0eb90a3a",
+        "/etc/audit/rules.d/hardening.rules.backup.20260719_052714.32bbd579",
+        "/etc/audit/rules.d/hardening.rules.backup.20260719_143205.280682a8",
+    ];
+
+    let mut executor = fully_configured_audit_executor()
+        .with_command_exists("augenrules", true)
+        .with_directory("/etc/audit/rules.d")
+        .with_command(
+            "chmod",
+            &["0640", "/etc/audit/rules.d/hardening.rules"],
+            ok.clone(),
+        )
+        .with_command("augenrules", &["--load"], ok.clone())
+        .with_command_program("cp", ok.clone())
+        .with_command_program("rm", ok);
+    for backup in kept.iter().chain(doomed.iter()) {
+        executor = executor.with_file(backup, "-w /etc/passwd -p wa -k identity\n");
+    }
+    let executor = Arc::new(executor);
+    let plugin = AuditHardeningPlugin::new();
+
+    // First apply: writes the rules file into the mock, which is what makes the
+    // second one a no-op.
+    let mut ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+    plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("the first apply must not error");
+
+    executor.clear_log();
+    let mut ctx = Context::with_executor(executor.clone() as Arc<dyn SystemExecutor>);
+    let result = plugin
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("the second apply must not error");
+
+    // Proves the run under test really is the no-op path. Without this the test
+    // could pass on a second apply that rewrote the file and pruned beside its
+    // own copy, which is the behaviour that was already working.
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|change| change.change_description.contains("already up to date")),
+        "the second apply must hit the idempotency guard, got: {:?}",
+        result.apply_changes
+    );
+    let log = executor.log();
+    assert!(
+        !log.commands_executed
+            .iter()
+            .any(|(program, _)| program == "cp"),
+        "a no-op apply must take no backup, but cp ran: {:?}",
+        log.commands_executed
+    );
+
+    let removed: Vec<&String> = log
+        .commands_executed
+        .iter()
+        .filter(|(program, _)| program == "rm")
+        .flat_map(|(_, args)| args.iter())
+        .collect();
+    for backup in doomed {
+        assert!(
+            removed.iter().any(|argument| *argument == backup),
+            "a no-op apply must still prune {backup}, rm was given: {removed:?}"
+        );
+    }
+    for backup in kept {
+        assert!(
+            !removed.iter().any(|argument| *argument == backup),
+            "the newest backups must survive, but {backup} was removed: {removed:?}"
+        );
+    }
+}
