@@ -438,25 +438,98 @@ fn an_unanswerable_resolver_falls_back_to_the_legacy_key() {
     assert_eq!(key, legacy_checkpoint_host_key("web-01", 22));
 }
 
-/// The `user` line is parsed out of what ssh really prints.
+/// The `user` line is parsed out of what ssh really prints, and the answer is
+/// the one ssh gave rather than merely some answer.
 ///
 /// A parse checked only against a hand-written fixture proves the fixture, not
 /// the format. `ssh -G` opens no connection, so this costs nothing and needs no
 /// host to exist. It is skipped rather than failed where ssh is absent, since
 /// then the resolver is correct to answer `None`.
+///
+/// This asked only whether *a* non-empty user came back, which a body replaced
+/// by any constant satisfies: the checkpoint key a bare target is filed under
+/// could have been a fabrication and nothing would have gone red. The
+/// comparison is against a second, independent reading of the same `ssh -G`
+/// output, because only an independent reference can fail a constant. Its
+/// ceiling is that both readings look for the same prefix, so a wrong prefix
+/// would agree with itself; what it does pin is that the value is ssh's.
 #[test]
 fn resolve_ssh_user_parses_what_ssh_actually_prints() {
-    if std::process::Command::new("ssh")
-        .arg("-V")
+    const HOST: &str = "a-host-that-need-not-exist";
+
+    let Ok(output) = std::process::Command::new("ssh")
+        .args(["-G", "--", HOST])
         .output()
-        .is_err()
-    {
+    else {
         eprintln!("skipping: no ssh on this machine");
         return;
-    }
-    let resolved = resolve_ssh_user("a-host-that-need-not-exist");
+    };
+    let printed = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("user ")
+                .map(|user| user.trim().to_string())
+        })
+        .expect("ssh -G always reports an effective user, defaulting to the local one");
+
+    assert_eq!(
+        resolve_ssh_user(HOST),
+        Some(printed),
+        "the resolved user must be the one ssh itself would use for this target, \
+         since it becomes the checkpoint key a bare target is filed under"
+    );
+}
+
+/// The heredoc delimiter must be absent from the body it terminates.
+///
+/// A delimiter the content already contains ends the heredoc early, so the
+/// remote write truncates the file at that line: `write_file` would report
+/// success having written part of an sshd_config.
+#[test]
+fn the_heredoc_delimiter_grows_until_the_content_cannot_contain_it() {
+    assert_eq!(
+        unique_delimiter("PermitRootLogin no\n"),
+        "HARDENER_EOF",
+        "content that cannot collide keeps the base delimiter"
+    );
+    assert_eq!(
+        unique_delimiter("# a comment saying HARDENER_EOF\n"),
+        "HARDENER_EOFX",
+        "one collision grows it by exactly one character"
+    );
+
+    let adversarial = "HARDENER_EOF and HARDENER_EOFX\n";
+    let delimiter = unique_delimiter(adversarial);
+    assert_eq!(
+        delimiter, "HARDENER_EOFXX",
+        "it keeps growing while the grown form still collides"
+    );
     assert!(
-        resolved.is_some_and(|user| !user.is_empty()),
-        "ssh -G always reports an effective user, defaulting to the local one"
+        !adversarial.contains(&delimiter),
+        "and the invariant that matters is the one the loop exists for: the \
+         content must not contain what terminates it"
+    );
+}
+
+/// A stat line short of its five fields parses to nothing, and saying so is the
+/// only safe answer.
+///
+/// `rsplitn(5, ' ')` yields at most five parts, so a length check written the
+/// other way round can never fire and the parse indexes past the end of a short
+/// line. The complete line beside it is the control: a guard that refused
+/// everything would pass the first two assertions on its own.
+#[test]
+fn a_stat_line_missing_fields_parses_to_nothing() {
+    assert!(
+        parse_stat_fields("regular file 640").is_none(),
+        "three fields cannot fill five, and a partial parse would invent a mode"
+    );
+    assert!(
+        parse_stat_fields("").is_none(),
+        "an empty line is the shape a failed `stat` leaves behind"
+    );
+    assert!(
+        parse_stat_fields("regular file 640 1234 0 42").is_some(),
+        "the control: a complete line still parses"
     );
 }
