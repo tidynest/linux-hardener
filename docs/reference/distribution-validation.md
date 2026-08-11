@@ -58,6 +58,14 @@ other five 98 of 98 with 8 unaskable, no failures and no skips anywhere.** The
 gap between the two readings is the suite gaining checks, not a distribution
 changing: the arch difference is the same two rows in both.
 
+Re-run booted again the same day against `dd85255f`, the v1.6.0 release
+candidate, containers recreated first. **Every count is identical to the
+`d04de4c4` reading**, which is the result that was wanted: two changes in that
+range would have shown here if anywhere, `fb98c044` altering checkpoint capture
+for special files and `dabbb1fe` pinning the remote metadata probe to `LC_ALL=C`,
+and neither moved a row. Declared plus unaskable is 106 on all six in both
+readings, so no row went missing rather than passing.
+
 The Playwright GUI suite was read the same day, also against `7c81c491` and on
 the same six: **134 of 134 everywhere, none failed, none skipped, none flaky**,
 one worker and no name filter. It read 127 earlier the same day, and the seven
