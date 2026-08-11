@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1925 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1931 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1929 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1935 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1965 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1965 across 294 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1969 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1969 across 294 files |
 
-The gap between 1965 annotations and 1925 executions is exactly 40, and all 40
+The gap between 1969 annotations and 1929 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 1965, and they are meant to be: the check globs every `.rs`
+are the same number, 1969, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1915 + 6 = 1921 and 40 + 7 = 47.
+covers. 1929 + 6 = 1935 and 40 + 7 = 47.
 
 ---
 
@@ -92,19 +92,23 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 
 | Crate | Mutants | Caught | Missed | Unviable | Timeouts | Missed, of viable |
 |---|---|---|---|---|---|---|
-| `hardener-common` | 164 | 106 | 48 | 10 | 0 | 31% |
+| `hardener-common` | 164 | 108 | 46 | 10 | 0 | 30% |
 | `hardener-state` | 217 | 146 | 19 | 52 | 0 | 12% |
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
-| **Total** | **700** | **430** | **161** | **109** | **0** | **27%** |
+| **Total** | **700** | **432** | **159** | **109** | **0** | **27%** |
+
+`hardener-common` reads 108 and 46 rather than the 106 and 48 the pass itself
+produced, because the two `session_is_root` survivors were killed the same day
+and the row records the tree as it stands. Every other figure is the run's own.
 
 No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**These 161 survivors are identified, not resolved.** G4 asks for each to be
-killed by a test or recorded with the reason it is acceptable, and only the
-first half of that, the identification, is done. Where they sit, and what the
-Phase 4 triage rule makes of them:
+**159 of the 161 survivors are identified, not resolved.** G4 asks for each to
+be killed by a test or recorded with the reason it is acceptable, and for all
+but the two below only the first half of that, the identification, is done.
+Where they sit, and what the Phase 4 triage rule makes of them:
 
 | Cluster | Survivors | Reading |
 |---|---|---|
@@ -112,9 +116,23 @@ Phase 4 triage rule makes of them:
 | `hardener-core/executor/ssh.rs` | 25 | **Two different verdicts in one file.** Most are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. But `parse_stat_fields`, `unique_delimiter` and `resolve_ssh_user` are pure functions needing no host, and those are ordinary gaps. |
 | `hardener-common/executor/mock.rs` | 19 | `MockExecutor` itself, so neither disk nor host: a note by the rule. Worth stating anyway, because a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. |
 | `hardener-core/context.rs`, `config_loader.rs`, `config_validation.rs` | 40 | `config_loader` reaches disk; the other two are notes. |
-| `hardener-common/executor/mod.rs` | 11 | Reaches a host. `session_is_root` survives replacement with **both** `true` and `false`, so the fail-closed privilege probe behind `hardener-plugins/src/lib.rs:49` and `ssh/mod.rs:419` is pinned by nothing. `host_keys_for` survives returning `vec![]`, and it decides which checkpoints a rollback can see. |
+| `hardener-common/executor/mod.rs` | 9, was 11 | Reaches a host. **The two `session_is_root` survivors are killed**; see below. `host_keys_for` survives returning `vec![]`, and it decides which checkpoints a rollback can see. |
 | `hardener-state/signing.rs` | 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. Detailed below. |
 | Remainder | 25 | `manager.rs` 5, `audit.rs` 4, `scan_manager.rs` 3, `error.rs` 3, `plugin.rs` 3, `inventory.rs` 3, and one each in `logging.rs`, `testing.rs`, `registry.rs`, `config.rs`. |
+
+**The two that were killed, and why these first.** `session_is_root` survived
+replacement of the whole function with **both** `true` and `false`, meaning the
+fail-closed privilege probe behind `hardener-plugins/src/lib.rs:49` and the ssh
+plugin's remote-root check at `ssh/mod.rs:419` was pinned by nothing at all: it
+had no test. Four now stand in `hardener-common/src/executor/tests.rs`, and the
+shape of them is the point. The contract is fail-closed, so the three ways it
+must refuse are worth more than the one way it may agree: a uid of zero on a
+successful exit is root; a uid of 1000 is not; **a non-zero exit is not root
+even when stdout says `0`**; and an executor that could not run `id -u` at all
+is not root. A single happy-path test would have killed the `false` mutant and
+left `true` alive, and `true` is the half that hands a caller privileges the far
+end never granted. Re-running the pair with
+`cargo mutants -p hardener-common --re session_is_root` reports **2 caught**.
 
 **Why the signing survivors are the ones to read first.**
 `derive_encryption_key` survives returning `Ok([0; 32])`, so the AES-256 key

@@ -864,3 +864,81 @@ async fn a_negative_exit_code_refuses_even_with_well_formed_stdout() {
          flushing a token that happens to parse must not be read as a well-formed NOTLINK"
     );
 }
+
+// ---------------------------------------------------------------------------
+// session_is_root
+//
+// The privilege probe behind `hardener-plugins/src/lib.rs:49` and the ssh
+// plugin's remote-root check at `ssh/mod.rs:419`. It had no test at all, which
+// the 2026-08-11 mutation pass found by surviving replacement of the whole
+// function with BOTH `true` and `false`: a constant in either direction was
+// indistinguishable from the real thing.
+//
+// Its contract is fail-closed, so the three ways it must refuse are worth more
+// than the one way it may agree. A single happy-path test would kill the
+// `false` mutant and leave the `true` mutant alive, which is the half that
+// hands a caller root it does not have.
+// ---------------------------------------------------------------------------
+
+fn uid_probe_answering(stdout: &str, exit_code: i32) -> MockExecutor {
+    MockExecutor::new().with_command(
+        "id",
+        &["-u"],
+        CommandOutput {
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+            exit_code,
+        },
+    )
+}
+
+/// A uid of zero, and nothing else, is root. The trailing newline is the shape
+/// a real `id -u` produces, so the `trim()` is part of the contract rather
+/// than defensive tidying.
+#[tokio::test]
+async fn a_uid_of_zero_is_root() {
+    let executor = uid_probe_answering("0\n", 0);
+
+    assert!(
+        session_is_root(&executor).await,
+        "`id -u` answering 0 on a successful exit is the one reading that means root"
+    );
+}
+
+/// The ordinary negative case, and the one that kills a constant `true`.
+#[tokio::test]
+async fn a_non_zero_uid_is_not_root() {
+    let executor = uid_probe_answering("1000\n", 0);
+
+    assert!(
+        !session_is_root(&executor).await,
+        "a uid of 1000 is not root, and reading it as root would hand a caller \
+         privileges the far end has not granted"
+    );
+}
+
+/// The sharp case: stdout says `0` while the command failed. Answering from
+/// the text alone would read a broken probe as a root session, which is the
+/// exact inversion the fail-closed contract exists to prevent.
+#[tokio::test]
+async fn a_failed_probe_is_not_root_even_when_its_stdout_says_zero() {
+    let executor = uid_probe_answering("0\n", 127);
+
+    assert!(
+        !session_is_root(&executor).await,
+        "a non-zero exit must refuse whatever stdout holds: a probe that could \
+         not answer must never be read as an answer"
+    );
+}
+
+/// The probe did not run at all. The mock refuses an unregistered command, so
+/// this is the `Err` arm of the `matches!` rather than a crafted failure.
+#[tokio::test]
+async fn a_probe_that_could_not_run_is_not_root() {
+    let executor = MockExecutor::new();
+
+    assert!(
+        !session_is_root(&executor).await,
+        "an executor that could not run `id -u` must refuse, not default to root"
+    );
+}
