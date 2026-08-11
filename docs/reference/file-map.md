@@ -268,6 +268,8 @@ const KERNEL_PARAMS: &[KernelParameter] = &[
 | `src/scan_manager.rs` | GUI scan persistence | `ScanHistoryManager` |
 | `src/manager/tests.rs` | Unit tests for `src/manager.rs`, 46 of them | Test-only; `super` resolves to `crate::manager`, so imports carried across unchanged |
 | `src/hash_chain/tests.rs` | Unit tests for `src/hash_chain.rs` | Test-only; same shape |
+| `src/audit/tests.rs` | Unit tests for `src/audit.rs` | Test-only; same shape. `recover_chain` and `QueryFilter::matches` are private, so `tests/audit_tests.rs` cannot reach them |
+| `src/scan_manager/tests.rs` | Unit tests for `src/scan_manager.rs` | Test-only; same shape. `current_timestamp` is private, so `tests/scan_manager_tests.rs` cannot reach it |
 | `src/signing/tests.rs` | Unit tests for `src/signing.rs` | Test-only; same shape |
 | `src/db/tests.rs` | Unit tests for `src/db.rs` | Test-only; same shape |
 
@@ -934,15 +936,15 @@ tree on **2026-08-10**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 1895. The eleventh
+The table covers the ten crates under `crates/` and sums to 1904. The eleventh
 workspace member, `src-tauri`, carries 107 more, which is why the tree total the
-evidence ledger records is 2002 and not this table's sum.
+evidence ledger records is 2011 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 130 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 88 |
-| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 121 |
+| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` | 130 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 104 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 275 |

@@ -2220,3 +2220,251 @@ async fn a_path_the_probe_cannot_answer_for_is_refused() {
         entry(plain).restore_error
     );
 }
+
+/// A row under test, recorded as an ordinary file with content.
+///
+/// Built here rather than captured, because the paths below are ones a capture
+/// would never produce: that is the point of the guard reading them.
+fn refusal_row(path: &str) -> FileState {
+    FileState {
+        file_path: path.to_string(),
+        file_content: Some(b"captured\n".to_vec()),
+        file_permissions: 0o100644,
+        file_owner_uid: 0,
+        file_owner_gid: 0,
+        file_link_target: None,
+        file_content_absence: None,
+    }
+}
+
+/// Each clause of the path guard refuses on its own.
+///
+/// The three conditions are joined by `||`, so a row failing any one of them is
+/// refused and a row failing none is admitted. Turned into `&&` the guard
+/// refuses only a path that is relative **and** carries `..` **and** sits
+/// outside the allowlist, which no real attack needs to be: a rollback would
+/// then write through `..` out of `/etc/x` because the path was absolute. Every
+/// case below fails exactly one clause, so no case can stand in for another,
+/// and the admitted control is what stops a guard that refuses everything
+/// passing the other three.
+#[tokio::test]
+async fn a_rollback_path_failing_any_one_clause_of_the_guard_is_refused() {
+    let manager = test_manager_with_etc_x().await;
+    let executor = MockExecutor::new();
+
+    for (path, clause) in [
+        (
+            "etc/x/sshd_config",
+            "it is relative, so it names nothing fixed",
+        ),
+        (
+            "/etc/x/../../root/.ssh/authorized_keys",
+            "it carries a parent-dir component and climbs out",
+        ),
+        (
+            "/usr/lib/systemd/system/sshd.service",
+            "it sits outside every allowed prefix",
+        ),
+    ] {
+        let refusal = manager
+            .rollback_target_refusal(&executor, &refusal_row(path))
+            .await;
+        assert!(
+            refusal.is_some(),
+            "`{path}` must be refused, because {clause}"
+        );
+        assert!(
+            refusal
+                .as_deref()
+                .is_some_and(|reason| reason.contains(path)),
+            "and the refusal must name the path it refused: {refusal:?}"
+        );
+    }
+
+    assert!(
+        manager
+            .rollback_target_refusal(&executor, &refusal_row("/etc/x/sshd_config"))
+            .await
+            .is_none(),
+        "the control: a path inside the allowlist with nothing wrong with it is \
+         admitted, or a guard that refused everything would satisfy the three \
+         assertions above"
+    );
+}
+
+/// A symlink is judged by where it lands, in both directions.
+///
+/// The out-of-bounds half already had a test. The in-bounds half did not, and
+/// without it the `within` guard on the resolved target can be forced to `false`
+/// with nothing going red: every symlinked row would then be refused, including
+/// the ones a rollback exists to restore, and the failure mode is a rollback
+/// that silently does nothing rather than one that writes somewhere wrong.
+#[tokio::test]
+async fn a_symlink_resolving_inside_the_allowlist_is_still_restorable() {
+    let manager = test_manager_with_etc_x().await;
+    let path = "/etc/x/sshd_config";
+
+    let inside = MockExecutor::new().with_symlink(path, "/etc/x/sshd_config.real");
+    assert!(
+        manager
+            .rollback_target_refusal(&inside, &refusal_row(path))
+            .await
+            .is_none(),
+        "a link whose target is inside the allowlist lands inside it, so the \
+         write is as safe as writing the path directly"
+    );
+
+    let outside = MockExecutor::new().with_symlink(path, "/usr/lib/systemd/system/sshd.service");
+    let refusal = manager
+        .rollback_target_refusal(&outside, &refusal_row(path))
+        .await;
+    assert!(
+        refusal
+            .as_deref()
+            .is_some_and(|reason| reason.contains("resolves outside")),
+        "and the other direction is refused for resolving out of bounds, not \
+         for some other reason: {refusal:?}"
+    );
+}
+
+/// Verification must read the stored bytes, not merely find the checkpoint.
+///
+/// `verify_checkpoint` exists to answer whether a checkpoint has been tampered
+/// with, and every caller treats `Ok(())` as "safe to restore". A body that
+/// returns `Ok(())` regardless is indistinguishable from a working one unless a
+/// test actually corrupts a stored row, so the tamper is the test: nothing else
+/// can tell the two apart.
+#[tokio::test]
+async fn a_checkpoint_whose_stored_content_was_altered_fails_verification() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let pool = crate::db::init_db(Some(&dir.path().join("verify.db")))
+        .await
+        .expect("init_db");
+    let signer = CheckpointSigner::new_with_path(&dir.path().join("test.key")).expect("signer");
+    let manager =
+        CheckpointManager::new_with_allowlist(pool.clone(), signer, vec!["/etc/x".to_string()])
+            .expect("manager");
+
+    let path = "/etc/x/sshd_config";
+    let executor = MockExecutor::new().with_file(path, "PermitRootLogin no\n");
+    let id = manager
+        .create_checkpoint(&executor, "verify", &[Path::new(path)])
+        .await
+        .expect("create_checkpoint");
+
+    manager
+        .verify_checkpoint(&id)
+        .await
+        .expect("the control: an untouched checkpoint verifies");
+
+    let altered = sqlx::query("UPDATE file_states SET content = ? WHERE checkpoint_id = ?")
+        .bind(b"PermitRootLogin yes\n".to_vec())
+        .bind(id.as_str())
+        .execute(&pool)
+        .await
+        .expect("tamper with the stored row");
+    assert_eq!(
+        altered.rows_affected(),
+        1,
+        "the tamper must actually land, or the refusal below proves nothing"
+    );
+
+    manager.verify_checkpoint(&id).await.expect_err(
+        "altered content must fail verification, since every caller reads Ok as safe to restore",
+    );
+}
+
+/// The pre-rollback snapshot does not try to read a path that is no longer a
+/// file.
+///
+/// The guard is `exists && is_file`, and it decides whether the content is read,
+/// not whether the path is recorded: a directory standing where a file was
+/// still produces a row, carrying no content. As `||` the guard admits the
+/// directory, `read_file` is called on it, and the whole snapshot fails, so a
+/// rollback whose own safety net could not be taken refuses to proceed.
+///
+/// Both halves are asserted because either alone is satisfiable by the wrong
+/// code: that the call succeeds, and that the row it wrote holds no content.
+#[tokio::test]
+async fn the_pre_rollback_snapshot_does_not_read_a_directory_standing_where_a_file_was() {
+    let manager = test_manager_with_etc_x().await;
+    let path = "/etc/x/sshd_config";
+    let executor = MockExecutor::new().with_directory(path);
+
+    let id = manager
+        .snapshot_current_state(&executor, "pre-rollback", &[refusal_row(path)])
+        .await
+        .expect("a directory where a file was recorded is recorded, not read");
+
+    let (_, file_states) = manager
+        .get_checkpoint(&id)
+        .await
+        .expect("the snapshot checkpoint exists");
+    let row = file_states
+        .iter()
+        .find(|state| state.file_path == path)
+        .expect("the path is still recorded, since it is there");
+    assert!(
+        row.file_content.is_none(),
+        "a directory has no content to snapshot, and a row claiming otherwise \
+         would be restored over it: {row:?}"
+    );
+}
+
+/// A refusal that printed nothing is still described, by its exit status.
+///
+/// The two arms are the whole point of the function: a command that failed
+/// silently and one that explained itself must both produce a description a
+/// caller can show. Collapsing the silent arm leaves the message ending in
+/// nothing at all, which puts the caller back where it started.
+#[tokio::test]
+async fn a_silent_command_failure_is_described_by_its_exit_status() {
+    use hardener_common::executor::CommandOutput;
+
+    let failing = |stderr: &str, exit_code: i32| {
+        MockExecutor::new().with_command_program(
+            "chmod",
+            CommandOutput {
+                stdout: String::new(),
+                stderr: stderr.to_string(),
+                exit_code,
+            },
+        )
+    };
+    let silent = failing("   \n", 2);
+    let described = restore_command_refusal(&silent, "chmod", &["0644", "/etc/x/f"], "/etc/x/f")
+        .await
+        .expect("a non-zero exit is a refusal");
+    assert!(
+        described.contains("exited 2"),
+        "a failure with nothing on stderr must be named by its status: {described}"
+    );
+
+    let noisy = failing("chmod: Operation not permitted", 1);
+    let described = restore_command_refusal(&noisy, "chmod", &["0644", "/etc/x/f"], "/etc/x/f")
+        .await
+        .expect("a non-zero exit is a refusal");
+    assert!(
+        described.contains("Operation not permitted"),
+        "and one that explained itself keeps its own words: {described}"
+    );
+    assert!(
+        !described.contains("exited 1"),
+        "without the status crowding out the explanation: {described}"
+    );
+
+    let succeeding = MockExecutor::new().with_command_program(
+        "chmod",
+        CommandOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        },
+    );
+    assert!(
+        restore_command_refusal(&succeeding, "chmod", &["0644", "/etc/x/f"], "/etc/x/f")
+            .await
+            .is_none(),
+        "the control: a command that worked is not a refusal"
+    );
+}

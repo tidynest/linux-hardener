@@ -490,3 +490,6 @@ fn str_to_severity(s: &str) -> Severity {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

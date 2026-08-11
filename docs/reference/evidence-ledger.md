@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1962 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1968 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1971 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1977 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2002 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2002 across 294 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2011 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2011 across 296 files |
 
-The gap between 2002 annotations and 1962 executions is exactly 40, and all 40
+The gap between 2011 annotations and 1971 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2002, and they are meant to be: the check globs every `.rs`
+are the same number, 2011, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1962 + 6 = 1968 and 40 + 7 = 47.
+covers. 1971 + 6 = 1977 and 40 + 7 = 47.
 
 ---
 
@@ -97,15 +97,15 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**Sixty-seven of those 161 have since been killed**, all on 2026-08-11, so the
+**Seventy-nine of those 161 have since been killed**, all on 2026-08-11, so the
 tree as it stands reads:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
 | `hardener-common` | 130 | 24 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
-| `hardener-state` | 153 | 12 | all seven in `signing.rs` |
+| `hardener-state` | 165 | 0 | all seven in `signing.rs`, and the twelve left across `manager.rs`, `audit.rs` and `scan_manager.rs` |
 | `hardener-core` | 214 | 57 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
-| **Total now** | **497** | **93** | **16% of viable** |
+| **Total now** | **509** | **81** | **14% of viable** |
 
 Every kill was verified by re-running the runner over the affected scope
 rather than by reasoning about the tests:
@@ -119,6 +119,9 @@ rather than by reasoning about the tests:
 | `--file crates/hardener-core/src/config_loader.rs` | 16 missed | **33 mutants, 28 caught, 1 unviable, 4 missed** |
 | `--file crates/hardener-common/src/executor/mod.rs` | 9 missed | **40 mutants, 38 caught, 2 unviable, none missed** |
 | `--file crates/hardener-core/src/executor/ssh.rs` | 25 missed | **55 mutants, 29 caught, 6 unviable, 20 missed** |
+| `--file crates/hardener-state/src/manager.rs` | 5 missed | **81 mutants, 60 caught, 21 unviable, none missed** |
+| `--file crates/hardener-state/src/audit.rs` | 4 missed | **32 mutants, 25 caught, 7 unviable, none missed** |
+| `--file crates/hardener-state/src/scan_manager.rs` | 3 missed | **25 mutants, 17 caught, 8 unviable, none missed** |
 
 `signing.rs` and `local.rs` are clear of survivors entirely rather than clear of
 the ones that were listed. `file_utils.rs` keeps one and `config_loader.rs`
@@ -129,7 +132,7 @@ No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 93 are identified, not resolved.** G4 asks for each to be
+**The remaining 81 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
@@ -144,7 +147,7 @@ what the Phase 4 triage rule makes of them:
 | `hardener-core/context.rs`, `config_validation.rs` | 24 | Notes by the rule: neither reaches disk or a host. |
 | `hardener-common/executor/mod.rs` | 0, was 11 | **Resolved.** Reaches a host, so a bug by the rule throughout. All eleven killed; see below. |
 | `hardener-state/signing.rs` | 0, was 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. **All seven killed**; see below. |
-| Remainder | 25 | `manager.rs` 5, `audit.rs` 4, `scan_manager.rs` 3, `error.rs` 3, `plugin.rs` 3, `inventory.rs` 3, and one each in `logging.rs`, `testing.rs`, `registry.rs`, `config.rs`. |
+| Remainder | 13, was 25 | **`hardener-state`'s twelve are resolved**, which clears that crate outright: `manager.rs` 5, `audit.rs` 4 and `scan_manager.rs` 3, all reaching disk and so bugs by the rule. Left: `error.rs` 3, `plugin.rs` 3, `inventory.rs` 3, and one each in `logging.rs`, `testing.rs`, `registry.rs`, `config.rs`. |
 
 **The two that were killed, and why these first.** `session_is_root` survived
 replacement of the whole function with **both** `true` and `false`, meaning the
@@ -341,6 +344,63 @@ leave `stat` answering in English, and the test would then pass while asking
 nothing. Where no such locale exists the skip says so. Confirmed to go red:
 removing the pin fails it with the probe output in the message, `"E\nnormal fil
 644 7 1000 1000\n"`.
+
+**The `hardener-state` twelve, which clear the crate.** All three files reach
+disk, so all twelve are bugs by the rule, and `hardener-state` now has no
+survivors at all.
+
+`verify_checkpoint` survived being replaced by `Ok(())`. It is the function that
+answers whether a checkpoint has been tampered with, and every caller reads
+`Ok` as safe to restore. Nothing but a genuine tamper can separate the two
+bodies, so the test alters a stored row through the pool and asserts the
+refusal, with an untouched verify beside it as the control.
+
+Two of `rollback_target_refusal`'s guards survived. The path check is three
+clauses joined by `||`, and as `&&` it refuses only a path that is relative
+**and** carries `..` **and** sits outside the allowlist, which no real one is:
+an absolute `/etc/x/../../root/.ssh/authorized_keys` was admitted. Each case in
+the test fails exactly one clause so none can stand in for another, with an
+admitted path as the control. The other guard is `within` on a resolved symlink
+target, forced to `false`: every symlinked row would then be refused, including
+the ones a rollback exists to restore. The out-of-bounds direction already had a
+test; the in-bounds one did not, and the failure it hid is a rollback that
+quietly does nothing rather than one that writes somewhere wrong.
+
+`snapshot_current_state`'s `exists && is_file` survived becoming `||`. **The
+first assertion written for it was wrong**, and that is worth recording: the
+guard decides whether the content is *read*, not whether the path is recorded,
+so a directory still produces a row, carrying no content. The test asserts what
+the code does rather than what it was assumed to do, both that the call
+succeeds and that the row holds no content, because either half alone is
+satisfiable by the wrong code.
+
+`restore_command_refusal` survived its `stderr.trim().is_empty()` guard being
+forced false, which leaves a silent failure described by nothing at all. Both
+arms are asserted, plus a success as the control.
+
+In `audit.rs`, `add_detail` survived being replaced by nothing, so the log could
+record an action without the context it is read for. `QueryFilter`'s time range
+survived `<` becoming `<=` and `>` becoming `>=`: both fields document
+themselves as inclusive, and only the two boundary seconds can fail those
+mutants, since any entry well inside the window matches either way. And
+`recover_chain` survived returning a genesis chain, which is the sharpest of the
+four: recovery runs whenever the logger reopens an existing file, and a fresh
+chain relinks the next entry to nothing, so everything already written stops
+being covered and tampering becomes undetectable by restarting the tool. The
+test asserts the exact recovered hash against the entry's own, not merely that
+it is not genesis.
+
+`scan_manager`'s `current_timestamp` survived `0`, `1` and `-1`. It stamps
+`started_at` and `completed_at` on every scan session, which is what the
+history, the trend report and the regression check order rows by; as a constant
+the whole history collapses onto one instant. No test asked what it returned,
+only that a row was written. One test kills all three by bracketing it between
+two independent readings of the system clock, which is the same rule as
+elsewhere: only an independent reference can fail a constant.
+
+Both `audit.rs` and `scan_manager.rs` needed a new `tests.rs` beside them,
+because `recover_chain`, `QueryFilter::matches` and `current_timestamp` are all
+private and the existing integration tests cannot reach any of them.
 
 **The one survivor recorded as acceptable, and why that is not a shrug.**
 `file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||

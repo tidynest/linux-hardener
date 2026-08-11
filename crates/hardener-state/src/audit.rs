@@ -471,3 +471,6 @@ impl AuditLogger {
         Ok(matching_entries)
     }
 }
+
+#[cfg(test)]
+mod tests;
