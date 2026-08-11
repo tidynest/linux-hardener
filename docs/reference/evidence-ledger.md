@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1955 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1961 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1958 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1964 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1995 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1995 across 294 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1998 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1998 across 294 files |
 
-The gap between 1995 annotations and 1955 executions is exactly 40, and all 40
+The gap between 1998 annotations and 1958 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 1995, and they are meant to be: the check globs every `.rs`
+are the same number, 1998, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1955 + 6 = 1961 and 40 + 7 = 47.
+covers. 1958 + 6 = 1964 and 40 + 7 = 47.
 
 ---
 
@@ -97,15 +97,15 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**Fifty-four of those 161 have since been killed**, all on 2026-08-11, so the
+**Sixty-three of those 161 have since been killed**, all on 2026-08-11, so the
 tree as it stands reads:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
-| `hardener-common` | 121 | 33 | both `session_is_root`, and 13 of the 14 in `file_utils.rs` |
+| `hardener-common` | 130 | 24 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
 | `hardener-state` | 153 | 12 | all seven in `signing.rs` |
 | `hardener-core` | 210 | 62 | all twenty in `executor/local.rs`, and 12 of the 16 in `config_loader.rs` |
-| **Total now** | **484** | **107** | **18% of viable** |
+| **Total now** | **493** | **98** | **17% of viable** |
 
 Every kill was verified by re-running the runner over the affected scope
 rather than by reasoning about the tests:
@@ -117,6 +117,7 @@ rather than by reasoning about the tests:
 | `--file crates/hardener-common/src/file_utils.rs` | 14 missed | **47 mutants, 44 caught, 2 unviable, 1 missed** |
 | `--file crates/hardener-core/src/executor/local.rs` | 20 missed | **31 mutants, 29 caught, 2 unviable, none missed** |
 | `--file crates/hardener-core/src/config_loader.rs` | 16 missed | **33 mutants, 28 caught, 1 unviable, 4 missed** |
+| `--file crates/hardener-common/src/executor/mod.rs` | 9 missed | **40 mutants, 38 caught, 2 unviable, none missed** |
 
 `signing.rs` and `local.rs` are clear of survivors entirely rather than clear of
 the ones that were listed. `file_utils.rs` keeps one and `config_loader.rs`
@@ -127,7 +128,7 @@ No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 107 are identified, not resolved.** G4 asks for each to be
+**The remaining 98 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
@@ -140,7 +141,7 @@ what the Phase 4 triage rule makes of them:
 | `hardener-common/executor/mock.rs` | 19 | `MockExecutor` itself, so neither disk nor host: a note by the rule. Worth stating anyway, because a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. |
 | `hardener-core/config_loader.rs` | 4, was 16 | **Resolved.** Twelve killed; the four survivors are recorded as acceptable below, and one of them is provably equivalent. |
 | `hardener-core/context.rs`, `config_validation.rs` | 24 | Notes by the rule: neither reaches disk or a host. |
-| `hardener-common/executor/mod.rs` | 9, was 11 | Reaches a host. **The two `session_is_root` survivors are killed**; see below. `host_keys_for` survives returning `vec![]`, and it decides which checkpoints a rollback can see. |
+| `hardener-common/executor/mod.rs` | 0, was 11 | **Resolved.** Reaches a host, so a bug by the rule throughout. All eleven killed; see below. |
 | `hardener-state/signing.rs` | 0, was 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. **All seven killed**; see below. |
 | Remainder | 25 | `manager.rs` 5, `audit.rs` 4, `scan_manager.rs` 3, `error.rs` 3, `plugin.rs` 3, `inventory.rs` 3, and one each in `logging.rs`, `testing.rs`, `registry.rs`, `config.rs`. |
 
@@ -157,6 +158,43 @@ is not root. A single happy-path test would have killed the `false` mutant and
 left `true` alive, and `true` is the half that hands a caller privileges the far
 end never granted. Re-running the pair with
 `cargo mutants -p hardener-common --re session_is_root` reports **2 caught**.
+
+**The other nine in the same file, and the two doubles that killed them.**
+`executor/mod.rs` is now clear of survivors entirely. Three tests did it, and
+which executor each uses is the whole of the difficulty.
+
+`host_keys_for` survived being replaced by three constants and survived its
+`!=` becoming `==`. It decides which checkpoints a rollback can see, so
+`vec![]` makes an operator's existing rollback points invisible, and the guard
+it lost is what stops a target reporting a legacy key equal to its current one
+being looked up twice. The equal case is therefore the one worth writing: a
+duplicate key would reach an operator as one checkpoint offered as two rollback
+points. Both cases are asked.
+
+`legacy_description` survived being replaced by `Some(String::new())` and
+`Some("xyzzy")`. It is a **provided** trait method returning `None`, so only an
+executor that does not override it can pin it, and `MockExecutor` is exactly
+that: `host_keys_for` over a mock must return one key, and any `Some` body adds
+a second. That is why the mock is the executor in that test rather than the
+purpose-built double beside it.
+
+`read_link` survived three constant `Ok` bodies, and it needed the opposite
+choice. It is provided too, but `MockExecutor` **does** override it, answering
+from its own symlink registry rather than by running a command, so the body
+under test never executes under the mock. A small double that implements only
+the trait's nine required methods runs it instead. Its three outcomes have to
+stay three: a target, a positive "not a symlink" from `readlink`'s exit 1, and
+`Err` for anything else. `Err` must never read as "not a symlink", because a
+checkpoint storing a symlink's followed content cannot restore it, and the
+write would go through the link into whatever it points at. Asking only whether
+a target came back cannot fail under a constant `Ok`, and asking only whether
+it errored cannot fail under one either, since two of the three arms do not
+error.
+
+The general shape, worth carrying to the next provided method: **a default trait
+body is pinned only by an implementor that inherits it.** Which double is
+correct is decided by what the type under test overrides, and the answer went
+opposite ways for two methods sitting thirty lines apart.
 
 **The `local.rs` twenty, and the contract that killed most of them at once.**
 This was the largest cluster in the workspace needing no host, and it was

@@ -942,3 +942,167 @@ async fn a_probe_that_could_not_run_is_not_root() {
         "an executor that could not run `id -u` must refuse, not default to root"
     );
 }
+
+/// A host whose `readlink` answer the test chooses, and whose checkpoint key an
+/// earlier release may have filed differently.
+///
+/// It overrides `legacy_description`, which is the case under test there, and
+/// deliberately does **not** override `read_link`, so the provided body that
+/// shells out to `readlink` is the one that runs. `MockExecutor` cannot stand in
+/// for the second half: it answers `read_link` from its own symlink registry
+/// rather than through a command, so the provided body never executes under it.
+struct LinkHost {
+    /// What `readlink -n -- <path>` reports on this host.
+    readlink: CommandOutput,
+    /// The key an earlier release filed this target's checkpoints under.
+    legacy: Option<String>,
+}
+
+impl LinkHost {
+    const KEY: &'static str = "root@10.242.117.2:22";
+
+    /// A host that answers `readlink` and whose key never moved.
+    fn answering(stdout: &str, exit_code: i32) -> Self {
+        Self {
+            readlink: CommandOutput {
+                stdout: stdout.to_string(),
+                stderr: "readlink: command not found".to_string(),
+                exit_code,
+            },
+            legacy: None,
+        }
+    }
+
+    /// A host whose key moved, with `readlink` left unasked.
+    fn filed_under(legacy: &str) -> Self {
+        let mut host = Self::answering("", 1);
+        host.legacy = Some(legacy.to_string());
+        host
+    }
+}
+
+#[async_trait]
+impl SystemExecutor for LinkHost {
+    fn description(&self) -> String {
+        Self::KEY.to_string()
+    }
+
+    fn is_remote(&self) -> bool {
+        true
+    }
+
+    fn legacy_description(&self) -> Option<String> {
+        self.legacy.clone()
+    }
+
+    async fn execute_command(&self, program: &str, _args: &[&str]) -> Result<CommandOutput> {
+        assert_eq!(program, "readlink", "no other command is under test here");
+        Ok(self.readlink.clone())
+    }
+
+    async fn read_file(&self, _path: &Path) -> Result<String> {
+        Err(anyhow!("unused"))
+    }
+    async fn read_file_optional(&self, _path: &Path) -> Result<Option<String>> {
+        Err(anyhow!("unused"))
+    }
+    async fn write_file(&self, _path: &Path, _content: &str) -> Result<()> {
+        Err(anyhow!("unused"))
+    }
+    async fn path_exists(&self, _path: &Path) -> Result<bool> {
+        Err(anyhow!("unused"))
+    }
+    async fn file_metadata(&self, _path: &Path) -> Result<FileMetadata> {
+        Err(anyhow!("unused"))
+    }
+    async fn read_dir(&self, _path: &Path) -> Result<Vec<PathBuf>> {
+        Err(anyhow!("unused"))
+    }
+}
+
+/// `read_link` has three outcomes and they must stay three.
+///
+/// The doc comment on it says why: a checkpoint that stores a symlink's
+/// followed content instead of its target cannot restore it, so `Err` must
+/// never be read as "not a symlink". Asking only whether a target came back
+/// cannot fail under a body replaced by a constant `Ok`, and asking only
+/// whether it errored cannot fail either, since two of the three arms do not.
+/// All three are asked, and the failure is read for what it names.
+#[tokio::test]
+async fn read_link_tells_a_target_a_non_symlink_and_a_failed_probe_apart() {
+    let path = Path::new("/usr/bin/vi");
+
+    let symlink = LinkHost::answering("/etc/alternatives/vi", 0);
+    assert_eq!(
+        symlink.read_link(path).await.unwrap(),
+        Some("/etc/alternatives/vi".to_string()),
+        "exit 0 means readlink resolved it, and the target is what it printed"
+    );
+
+    let regular_file = LinkHost::answering("", 1);
+    assert_eq!(
+        regular_file.read_link(path).await.unwrap(),
+        None,
+        "readlink(1) exits 1 for a path that is not a symlink, which is the \
+         positive answer and not a failure"
+    );
+
+    let no_readlink = LinkHost::answering("", 127);
+    let err = no_readlink
+        .read_link(path)
+        .await
+        .expect_err("any other status is readlink itself failing");
+    assert!(
+        err.to_string().contains("exited 127"),
+        "and it must say so, because a caller that read this as `not a symlink` \
+         would write through the link: {err}"
+    );
+}
+
+/// A target whose key never moved offers exactly that key, and offers it once.
+///
+/// `MockExecutor` is the executor here on purpose: it overrides
+/// `legacy_description` nowhere, so the trait's own `None` body is what answers,
+/// and a body replaced by any `Some` would add a second key to this list.
+#[tokio::test]
+async fn a_target_whose_key_never_moved_offers_exactly_that_key() {
+    let executor = MockExecutor::new()
+        .remote()
+        .with_description("root@host:22");
+
+    assert_eq!(
+        host_keys_for(&executor),
+        vec!["root@host:22".to_string()],
+        "the current key, alone: an extra key here is a lookup accepting \
+         checkpoints filed against a target this is not"
+    );
+}
+
+/// A target whose key did move offers both, newest first, and never the same
+/// key twice.
+///
+/// The equal case is the one the `!=` guard exists for. Without it a target
+/// reporting a legacy key identical to its current one would be looked up twice
+/// under the same key, and the duplicate would reach an operator as the same
+/// checkpoint offered twice as two rollback points.
+#[tokio::test]
+async fn a_target_whose_key_moved_offers_both_and_never_the_same_key_twice() {
+    let moved = LinkHost::filed_under("hardener@10.242.117.2:22");
+    assert_eq!(
+        host_keys_for(&moved),
+        vec![
+            LinkHost::KEY.to_string(),
+            "hardener@10.242.117.2:22".to_string(),
+        ],
+        "both keys, current first: captures write the first and lookups must \
+         still find what an earlier release filed under the second"
+    );
+
+    let unmoved = LinkHost::filed_under(LinkHost::KEY);
+    assert_eq!(
+        host_keys_for(&unmoved),
+        vec![LinkHost::KEY.to_string()],
+        "a legacy key equal to the current one is not a second key, and \
+         listing it twice would offer one checkpoint as two rollback points"
+    );
+}
