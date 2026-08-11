@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1971 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1977 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1976 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1982 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2011 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2011 across 296 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2016 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2016 across 296 files |
 
-The gap between 2011 annotations and 1971 executions is exactly 40, and all 40
+The gap between 2016 annotations and 1976 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2011, and they are meant to be: the check globs every `.rs`
+are the same number, 2016, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1971 + 6 = 1977 and 40 + 7 = 47.
+covers. 1976 + 6 = 1982 and 40 + 7 = 47.
 
 ---
 
@@ -97,15 +97,15 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**Seventy-nine of those 161 have since been killed**, all on 2026-08-11, so the
+**Eighty-eight of those 161 have since been killed**, all on 2026-08-11, so the
 tree as it stands reads:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
-| `hardener-common` | 130 | 24 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
+| `hardener-common` | 133 | 21 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
 | `hardener-state` | 165 | 0 | all seven in `signing.rs`, and the twelve left across `manager.rs`, `audit.rs` and `scan_manager.rs` |
-| `hardener-core` | 214 | 57 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
-| **Total now** | **509** | **81** | **14% of viable** |
+| `hardener-core` | 220 | 51 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
+| **Total now** | **518** | **72** | **12% of viable** |
 
 Every kill was verified by re-running the runner over the affected scope
 rather than by reasoning about the tests:
@@ -132,7 +132,7 @@ No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 81 are identified, not resolved.** G4 asks for each to be
+**The remaining 72 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
@@ -147,7 +147,7 @@ what the Phase 4 triage rule makes of them:
 | `hardener-core/context.rs`, `config_validation.rs` | 24 | Notes by the rule: neither reaches disk or a host. |
 | `hardener-common/executor/mod.rs` | 0, was 11 | **Resolved.** Reaches a host, so a bug by the rule throughout. All eleven killed; see below. |
 | `hardener-state/signing.rs` | 0, was 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. **All seven killed**; see below. |
-| Remainder | 13, was 25 | **`hardener-state`'s twelve are resolved**, which clears that crate outright: `manager.rs` 5, `audit.rs` 4 and `scan_manager.rs` 3, all reaching disk and so bugs by the rule. Left: `error.rs` 3, `plugin.rs` 3, `inventory.rs` 3, and one each in `logging.rs`, `testing.rs`, `registry.rs`, `config.rs`. |
+| Remainder | 4, was 25 | **`hardener-state`'s twelve are resolved**, which clears that crate outright: `manager.rs` 5, `audit.rs` 4 and `scan_manager.rs` 3, all reaching disk and so bugs by the rule. **`hardener-core`'s and `hardener-common`'s nine are resolved too**: `plugin.rs` 3, `error.rs` 3, and one each in `config.rs`, `registry.rs` and `inventory.rs`. Four stay, all recorded below: `inventory.rs`'s `load` and `save`, `testing.rs`'s mock, and `logging.rs`'s process-global logger init. |
 
 **The two that were killed, and why these first.** `session_is_root` survived
 replacement of the whole function with **both** `true` and `false`, meaning the
@@ -401,6 +401,73 @@ elsewhere: only an independent reference can fail a constant.
 Both `audit.rs` and `scan_manager.rs` needed a new `tests.rs` beside them,
 because `recover_chain`, `QueryFilter::matches` and `current_timestamp` are all
 private and the existing integration tests cannot reach any of them.
+
+**The last nine of the remainder, and the four that stay.** Verified per file:
+`plugin.rs` 3 mutants 3 caught, `config.rs` 59/54 with 5 unviable, `error.rs`
+18/16 with 2 unviable, `registry.rs` 17/7 with 10 unviable, `inventory.rs` 6/4
+with 2 missed, `testing.rs` 16/1 with 14 unviable and 1 missed, `logging.rs`
+1 mutant and 1 missed.
+
+`plugin.rs`'s two rollback hooks are **provided** trait methods, so the rule
+from `executor/mod.rs` applies again: only an implementor that overrides
+neither can pin them, and `MockPlugin` is that implementor. The directions
+differ. `reloads_for_path` defaulting to `true` would have every plugin claim
+every restored path, reloading subsystems a rollback never touched, and the
+permissions plugin depends on the `false` answer because its paths come from
+operator directives and cannot be enumerated. `reload_after_rollback`
+defaulting to `Some` puts a row in the rollback output for work nobody did, and
+`Some(String::new())` prints a blank line claiming an action.
+
+`PolicyException::is_expired` survived `>` becoming `>=`. `expires` names the
+last day an exception is honoured, so the comparison is strict; as `>=` the
+exception stops being honoured on the morning of the date the operator wrote
+down, and a scan reports a deviation that had approval. Only that one day
+separates the two operators, which is why a test asking about a long-past or
+far-future date could never have caught it.
+
+`PluginRegistry::count` survived `Ok(1)`, and the reason is the sharpest small
+lesson here: `test_register_plugin` asserts the count is 1 after registering
+one plugin, which the constant satisfies exactly. **A test can assert the right
+value and still pin nothing, when the value it asserts is the one the constant
+returns.** The replacement walks 0, 1, 2 and 3.
+
+`message_indicates_ssh_auth_failure` survived three of its four `||`s becoming
+`&&`. Each turns a pair of signatures into a conjunction, so a message carrying
+only one of the pair stops matching and the ssh-agent hint disappears from
+exactly the failure it exists for. Each case in the test carries one signature
+and none of the others, which is what lets it fail, and the four network
+messages are the control, since a predicate matching everything would satisfy
+the first half alone.
+
+`inventory::default_path` survived `Ok(PathBuf::new())`, which would have every
+caller read and write the empty path: a saved host vanishes and a fleet run
+finds no inventory. The assertion is on the shape, the file name, the parent
+directory and absoluteness, rather than on the whole string, because the prefix
+is the operator's own config directory and naming it would pin this machine
+instead of the contract.
+
+**`load` and `save` beside it stay, and it is the same ceiling as
+`config_loader`'s.** Both resolve through `default_path`, so both read
+`dirs::config_dir()` and therefore the environment. `load` returning
+`Ok(Default::default())` is indistinguishable from the real thing whenever the
+operator has no inventory file, which is the state of any test runner, and
+pinning `save` would mean a test writing over the maintainer's own
+`hosts.toml`. The injectable pair `load_from` and `save_to` already exists and
+is what the tests use; making `load` and `save` askable means the same path
+injection #155's sibling gap needs.
+
+`testing.rs`'s survivor is `MockPlugin::divergences_after_rollback`, which is
+test infrastructure and a note by the rule. It is worth one sentence anyway,
+for the same reason `MockExecutor`'s nineteen are: a mock that can return
+either answer unnoticed is a fixture that cannot fail, and a fixture bounds
+what every test above it can detect.
+
+`logging.rs`'s `init_logger` survived being replaced by nothing. It installs a
+process-global `tracing` subscriber and its own documentation records that it
+panics if called twice, so a test exercising it would either poison every other
+test in the binary or be the only test allowed to run. Recorded as acceptable
+on those grounds rather than left unexplained: what it costs is that a build
+shipping no logging at all would go unnoticed by the suite.
 
 **The one survivor recorded as acceptable, and why that is not a shrug.**
 `file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||

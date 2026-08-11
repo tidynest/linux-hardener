@@ -74,3 +74,34 @@ fn test_contains() {
     assert!(registry.contains(&PluginId::new("test_plugin")).unwrap());
     assert!(!registry.contains(&PluginId::new("nonexistent")).unwrap());
 }
+
+/// The count is the number registered, at every number.
+///
+/// `test_register_plugin` asserts it equals 1 after registering one, which a
+/// body returning a constant `1` satisfies exactly: an empty registry would
+/// report a plugin, and a full one would report a single plugin however many
+/// were loaded. `count` is what the CLI and the desktop both show as "plugins
+/// loaded", so the wrong number there is the first thing an operator sees.
+#[test]
+fn the_plugin_count_is_the_number_registered_at_every_number() {
+    let registry = PluginRegistry::new();
+    assert_eq!(
+        registry.count().unwrap(),
+        0,
+        "an empty registry has no plugins, which a constant answer cannot say"
+    );
+
+    for (registered, id) in ["first-hardening", "second-hardening", "third-hardening"]
+        .into_iter()
+        .enumerate()
+    {
+        registry
+            .register(Box::new(MockPlugin::new(id)))
+            .expect("a distinct id registers");
+        assert_eq!(
+            registry.count().unwrap(),
+            registered + 1,
+            "the count must follow every registration, not only the first"
+        );
+    }
+}

@@ -48,3 +48,41 @@ fn save_then_load_round_trips() {
     assert_eq!(loaded.hosts[0].name, "web-01");
     assert_eq!(loaded.hosts[0].user.as_deref(), Some("admin"));
 }
+
+/// The inventory path is the shared one, named rather than defaulted.
+///
+/// Both the CLI's `batch` and the desktop read the host list through this
+/// function, and it exists so the two cannot disagree about where the file is.
+/// Replaced by `Ok(PathBuf::new())` every caller reads and writes the empty
+/// path, so a saved host would vanish and a fleet run would find no inventory,
+/// and nothing else in the tree notices.
+///
+/// The assertion is on the shape rather than the whole string, because the
+/// prefix is the operator's own config directory and naming it here would pin
+/// this machine instead of the contract. What the path is *under* is the
+/// ceiling, and #155's sibling: `dirs::config_dir()` reads the environment, so
+/// this cannot be asked of an injected root without changing the signature,
+/// which is why `load` and `save` beside it stay unpinned.
+#[test]
+fn the_inventory_path_names_the_shared_file() {
+    let path = default_path().expect("the config directory resolves on any host");
+
+    assert_eq!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("hosts.toml"),
+        "the file both front ends read must be the one this names: {}",
+        path.display()
+    );
+    assert_eq!(
+        path.parent().and_then(|dir| dir.file_name()?.to_str()),
+        Some("linux-hardener"),
+        "and it sits in this tool's own config directory: {}",
+        path.display()
+    );
+    assert!(
+        path.is_absolute(),
+        "an inventory path resolved relative to the working directory would \
+         find a different file per caller: {}",
+        path.display()
+    );
+}

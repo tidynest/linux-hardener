@@ -103,3 +103,41 @@ fn network_failures_are_not_ssh_auth_failures() {
         "ssh: Could not resolve hostname bogus: Name or service not known"
     ));
 }
+
+/// Every signature the ssh auth hint looks for matches on its own.
+///
+/// The five are joined by `||`, so any one is enough. Turned into `&&` a pair of
+/// them becomes a conjunction, and a message carrying only one of that pair
+/// stops matching: the ssh-agent hint disappears from exactly the failure it
+/// exists for, and an operator with a locked agent is told nothing about it.
+/// Each case below carries one signature and none of the others, which is what
+/// makes it able to fail; the network messages are the control, because a hint
+/// that fired on everything would satisfy the first half on its own.
+#[test]
+fn each_ssh_auth_signature_is_enough_by_itself() {
+    for message in [
+        "Permission denied",
+        "no matching publickey in the offered set",
+        "authentication failed",
+        "Could not open a connection to your authentication agent",
+        "no such identity: /home/user/.ssh/id_ed25519",
+    ] {
+        assert!(
+            message_indicates_ssh_auth_failure(message),
+            "`{message}` carries an auth signature and must produce the hint"
+        );
+    }
+
+    for message in [
+        "connect to host 10.0.0.5 port 22: Connection refused",
+        "connect to host 10.0.0.5 port 22: Connection timed out",
+        "ssh: Could not resolve hostname web-01: Name or service not known",
+        "connect to host 10.0.0.5 port 22: No route to host",
+    ] {
+        assert!(
+            !message_indicates_ssh_auth_failure(message),
+            "`{message}` is a network fault, and labelling it an auth problem \
+             sends an operator to their keys while the host is unreachable"
+        );
+    }
+}
