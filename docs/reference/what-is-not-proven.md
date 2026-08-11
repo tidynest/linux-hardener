@@ -1,6 +1,6 @@
 # What This Release Does Not Prove
 
-**Last Updated**: 2026-08-10
+**Last Updated**: 2026-08-11
 
 This release does not claim to be proven bug-free, and no release of anything
 ever has been. It claims something narrower and checkable: every capability it
@@ -343,10 +343,13 @@ same as TESTs 1-9. A second invocation, with
 `VERIFY_ROLLBACK_DIVERGENCE_ONLY` set, runs under `--boot` and covers TEST 10
 onward: TEST 10 and TEST 11 are what it makes askable for the first time,
 while TESTs 12, 13 and 14 run a second time and their assertions are counted
-twice rather than added once. Both were read green on 2026-08-10: **30 passed
-and 2 skipped on the unbooted pass (TEST 10 and TEST 11, exactly the two
-`host_is_booted` gates above), exiting 2 rather than 0 because a skip must
-never be recorded as a clean pass, and 5 of 5 on the booted invocation.**
+twice rather than added once. Both were read green on 2026-08-10 and again on
+2026-08-11 against `d04de4c4`, with the same figures: **30 passed and 2 skipped
+on the unbooted pass (TEST 10 and TEST 11, exactly the two `host_is_booted`
+gates above), exiting 2 rather than 0 because a skip must never be recorded as
+a clean pass, and 5 of 5 on the booted invocation.** The second reading is the
+one that counts, because it is the first since #152 changed what every
+divergence row reports; the 2026-08-10 figures were taken before that.
 
 **On a remote host without root, a restore degrades to content only.** The
 content write goes through `sudo tee`, but the `chmod`, `chown` and `rm` that

@@ -1,6 +1,6 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-11
 
 This document tracks validation testing across supported Linux distributions.
 
@@ -51,6 +51,12 @@ sudo ./scripts/test/release-readiness-root.sh
 The differential suite ran the same day on the same six: arch 86 of 86 with 10
 unaskable, and the other five 88 of 88 with 8 unaskable. Arch differs because two
 further rows are unaskable there, not because anything failed.
+
+It has grown since and was re-run booted on 2026-08-11 against `d04de4c4`, with
+all six containers recreated first: **arch 96 of 96 with 10 unaskable, and the
+other five 98 of 98 with 8 unaskable, no failures and no skips anywhere.** The
+gap between the two readings is the suite gaining checks, not a distribution
+changing: the arch difference is the same two rows in both.
 
 Two suites in that run did not pass, and neither reading is about a distribution.
 The package suite failed one check on all six, which was a `pipefail` and `grep -q`
