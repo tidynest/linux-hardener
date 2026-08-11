@@ -588,3 +588,188 @@ fn an_existing_trailing_blank_line_is_neither_lost_nor_multiplied() {
         "a second pass over its own output must be a no-op"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The file_utils survivors of the 2026-08-11 mutation pass.
+//
+// Fourteen mutants lived here, on functions that reach disk, which the Phase 4
+// triage rule calls bugs rather than notes. `parse_config_value` was already
+// exercised thirteen times and two of its mutants still survived, which is the
+// reminder that a function having tests is not the same as its behaviour being
+// pinned. The other five functions had nothing at all.
+// ---------------------------------------------------------------------------
+
+/// `read_config_file` survived returning `Ok(String::new())` and
+/// `Ok("xyzzy".into())`: nothing asserted that what comes back is what is on
+/// disk. Every plugin's view of a configuration file arrives through here, so
+/// a constant would make each of them agree with a file that does not exist.
+#[test]
+fn reading_a_config_file_returns_what_the_file_holds() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("sshd_config");
+    let contents = "PermitRootLogin no\nPort 22\n";
+    std::fs::write(&path, contents).expect("write the file");
+
+    assert_eq!(
+        read_config_file(&path).expect("a readable file is read"),
+        contents,
+        "the reader must return the file's bytes, not a value of its own"
+    );
+}
+
+/// The optional reader survived `Ok(None)`, `Ok(Some(String::new()))` and
+/// `Ok(Some("xyzzy".into()))`. Present-and-readable is the case all three
+/// constants get wrong.
+#[test]
+fn the_optional_reader_returns_the_contents_of_a_file_that_is_there() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("faillock.conf");
+    let contents = "deny = 5\n";
+    std::fs::write(&path, contents).expect("write the file");
+
+    assert_eq!(
+        read_config_file_optional(&path).expect("a readable file is read"),
+        Some(contents.to_string()),
+        "a file that is present must come back with its contents"
+    );
+}
+
+/// Absent is the one error this reader is allowed to swallow, and the mutants
+/// that forced the `NotFound` guard to `false` or flipped its `==` turned that
+/// into a hard failure. A plugin asking after an optional file it does not
+/// have would then fail its whole scan.
+#[test]
+fn the_optional_reader_reports_a_missing_file_as_absent_rather_than_failing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    assert_eq!(
+        read_config_file_optional(&dir.path().join("not-here.conf"))
+            .expect("an absent optional file is not an error"),
+        None,
+        "a file that is not there must read as absent"
+    );
+}
+
+/// The other side of the same guard, and the case that kills forcing it to
+/// `true`. A directory is present and unreadable as text: `read_to_string`
+/// fails with `EISDIR`, which is emphatically not `NotFound`, and swallowing
+/// it would report a path that exists and cannot be read as one that is simply
+/// absent. That conflation is the shape this project has already paid for
+/// once, in the pam plugin.
+#[test]
+fn the_optional_reader_refuses_an_error_that_is_not_absence() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("a-directory");
+    std::fs::create_dir(&path).expect("create the directory");
+
+    assert!(
+        read_config_file_optional(&path).is_err(),
+        "a path that exists and cannot be read as text must fail, not read as absent"
+    );
+}
+
+/// `parse_config_value` survived `==` becoming `!=` in its case-sensitive key
+/// comparison, which inverts the match: every directive except the one asked
+/// for would answer. Two directives are needed to see it, because with one the
+/// inverted comparison has nothing to return.
+#[test]
+fn a_case_sensitive_lookup_answers_with_the_directive_that_was_asked_for() {
+    let content = "Alpha 1\nBeta 2\n";
+
+    assert_eq!(
+        parse_config_value(content, "Beta", ConfigFormat::SpaceSeparated, true),
+        Some("2".to_string()),
+        "the value must come from the directive whose key matches, not from the \
+         first key that does not"
+    );
+    assert_eq!(
+        parse_config_value(content, "beta", ConfigFormat::SpaceSeparated, true),
+        None,
+        "a case-sensitive lookup must not match a differently-cased key"
+    );
+}
+
+/// `strip_prefix_with_case` survived `>=` becoming `<` on its length check.
+/// The case-insensitive arm is the whole of what that guard protects, so an
+/// ordinary case-insensitive hit is what dies.
+#[test]
+fn a_case_insensitive_prefix_matches_regardless_of_case() {
+    assert_eq!(
+        strip_prefix_with_case("PermitRootLogin=no", "permitrootlogin", false),
+        Some("=no"),
+        "the case-insensitive arm must match and return the text after the prefix"
+    );
+}
+
+/// The same guard survived `&&` becoming `||`, which is the dangerous
+/// direction: the length check alone would then pass, the content comparison
+/// would never run, and any line at least as long as the directive name would
+/// match it. A key of the same length as the one asked for is what shows it.
+#[test]
+fn a_prefix_of_the_right_length_but_the_wrong_text_does_not_match() {
+    assert_eq!(
+        strip_prefix_with_case("Bar=1", "Foo", false),
+        None,
+        "matching on length alone would make every directive of the right width \
+         answer for every other"
+    );
+}
+
+/// `create_timestamped_backup` survived returning `Ok(Default::default())`,
+/// which writes no backup and hands back an empty path while reporting
+/// success. Every plugin's rollback contract rests on the copy this makes, and
+/// a backup that silently is not written is invisible until the rollback that
+/// needs it.
+#[test]
+fn a_timestamped_backup_is_actually_written_and_carries_the_original_bytes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("hardening.rules");
+    let contents = "-w /etc/passwd -p wa -k identity\n";
+    std::fs::write(&path, contents).expect("write the file");
+
+    let backup = create_timestamped_backup(&path).expect("the backup is taken");
+
+    assert!(
+        backup.exists(),
+        "the returned path must name a file that exists: {}",
+        backup.display()
+    );
+    assert_eq!(
+        std::fs::read_to_string(&backup).expect("read the backup"),
+        contents,
+        "the backup must hold the bytes of the file it was taken from"
+    );
+    assert_ne!(
+        backup, path,
+        "the backup must be a second file, not the original"
+    );
+}
+
+/// `safe_copy_to_new` survived `||` becoming `&&` in its destination guard,
+/// and a dangling symlink is exactly the input that separates the two: it is
+/// a symlink that does not exist, so the real guard refuses on the second
+/// test while the mutant's conjunction lets it through. The guard is there to
+/// stop a symlink race on a predictable backup path, so the distinction is a
+/// security one rather than a tidiness one.
+///
+/// The mutant still fails, because `O_EXCL` refuses too, but it fails with a
+/// different message from a later stage. Asserting on which error comes back
+/// is what separates them; asserting merely that one did would pass on both.
+#[test]
+fn copying_refuses_a_destination_that_is_a_dangling_symlink() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let source = dir.path().join("sshd_config");
+    std::fs::write(&source, "Port 22\n").expect("write the source");
+
+    let destination = dir.path().join("sshd_config.backup.1");
+    std::os::unix::fs::symlink(dir.path().join("no-such-target"), &destination)
+        .expect("plant a dangling symlink at the backup path");
+
+    let error = safe_copy_to_new(&source, &destination)
+        .expect_err("a symlink standing at the destination must be refused");
+
+    assert!(
+        error.to_string().contains("already exists"),
+        "the destination guard must refuse a symlink before opening anything: got {error}"
+    );
+}

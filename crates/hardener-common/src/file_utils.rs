@@ -224,7 +224,21 @@ pub fn parse_config_value(
     for line in content.lines() {
         let trimmed = line.trim();
 
-        // Skip comments and empty lines
+        // Skip comments and empty lines.
+        //
+        // This is defence in depth rather than the thing that stops a
+        // commented-out directive being honoured, and mutation testing is what
+        // established the difference: replacing the `||` with `&&` makes the
+        // condition unsatisfiable, so nothing is skipped, and no test dies.
+        // Nothing dies because a comment cannot match anyway. Both arms below
+        // compare from the start of the trimmed line, so a comment's key is
+        // `#PermitRootLogin` rather than `PermitRootLogin`, and an empty line's
+        // key is empty; neither equals a directive name unless the caller asks
+        // for one beginning with `#`, which nothing does.
+        //
+        // Keep the skip. It is what holds if `split_directive` ever learns to
+        // strip a leading marker, and it is cheaper than parsing every comment
+        // in the file.
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }

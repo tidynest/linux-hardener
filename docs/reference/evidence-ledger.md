@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1934 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1940 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1943 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1949 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1974 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1974 across 294 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1983 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1983 across 294 files |
 
-The gap between 1974 annotations and 1934 executions is exactly 40, and all 40
+The gap between 1983 annotations and 1943 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 1974, and they are meant to be: the check globs every `.rs`
+are the same number, 1983, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1934 + 6 = 1940 and 40 + 7 = 47.
+covers. 1943 + 6 = 1949 and 40 + 7 = 47.
 
 ---
 
@@ -92,41 +92,47 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 
 | Crate | Mutants | Caught | Missed | Unviable | Timeouts | Missed, of viable |
 |---|---|---|---|---|---|---|
-| Crate | Mutants | Caught | Missed | Unviable | Timeouts | Missed, of viable |
-|---|---|---|---|---|---|---|
 | `hardener-common` | 164 | 106 | 48 | 10 | 0 | 31% |
 | `hardener-state` | 217 | 146 | 19 | 52 | 0 | 12% |
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**Nine of those 161 have since been killed**, all on 2026-08-11, so the tree as
-it stands reads:
+**Twenty-two of those 161 have since been killed**, all on 2026-08-11, so the
+tree as it stands reads:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
-| `hardener-common` | 108 | 46 | both `session_is_root` survivors |
+| `hardener-common` | 121 | 33 | both `session_is_root`, and 13 of the 14 in `file_utils.rs` |
 | `hardener-state` | 153 | 12 | all seven in `signing.rs` |
 | `hardener-core` | 178 | 94 | unchanged |
-| **Total now** | **439** | **152** | **26% of viable** |
+| **Total now** | **452** | **139** | **24% of viable** |
 
-Both kills were verified by re-running the runner rather than by reasoning
-about the tests: `--re session_is_root` reports 2 caught where the pass
-reported 2 missed, and `--file crates/hardener-state/src/signing.rs` reports
-**43 mutants, 35 caught, 8 unviable, none missed**, so that file is now clear
-of survivors entirely rather than clear of the seven that were listed.
+Every kill was verified by re-running the runner over the affected scope
+rather than by reasoning about the tests:
+
+| Scope | Before | After |
+|---|---|---|
+| `--re session_is_root` | 2 missed | **2 caught** |
+| `--file crates/hardener-state/src/signing.rs` | 7 missed | **43 mutants, 35 caught, 8 unviable, none missed** |
+| `--file crates/hardener-common/src/file_utils.rs` | 14 missed | **47 mutants, 44 caught, 2 unviable, 1 missed** |
+
+`signing.rs` is clear of survivors entirely rather than clear of the seven that
+were listed. `file_utils.rs` keeps one, deliberately, and it is recorded below
+as acceptable rather than left unexplained.
 
 No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 152 are identified, not resolved.** G4 asks for each to be
+**The remaining 139 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
 
 | Cluster | Survivors | Reading |
 |---|---|---|
-| `hardener-core/executor/local.rs`, `hardener-common/file_utils.rs` | 34 | Reaches disk, so a bug by the rule. Includes `create_timestamped_backup` returning `Ok(Default::default())`, which writes no backup at all: the very files whose retention the pruning work bounds. |
+| `hardener-core/executor/local.rs` | 20 | Reaches disk, so a bug by the rule, and the largest cluster left that needs no host. |
+| `hardener-common/file_utils.rs` | 1, was 14 | **Resolved.** Thirteen killed; the survivor is recorded as acceptable below. |
 | `hardener-core/executor/ssh.rs` | 25 | **Two different verdicts in one file.** Most are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. But `parse_stat_fields`, `unique_delimiter` and `resolve_ssh_user` are pure functions needing no host, and those are ordinary gaps. |
 | `hardener-common/executor/mock.rs` | 19 | `MockExecutor` itself, so neither disk nor host: a note by the rule. Worth stating anyway, because a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. |
 | `hardener-core/context.rs`, `config_loader.rs`, `config_validation.rs` | 40 | `config_loader` reaches disk; the other two are notes. |
@@ -147,6 +153,44 @@ is not root. A single happy-path test would have killed the `false` mutant and
 left `true` alive, and `true` is the half that hands a caller privileges the far
 end never granted. Re-running the pair with
 `cargo mutants -p hardener-common --re session_is_root` reports **2 caught**.
+
+**The one survivor recorded as acceptable, and why that is not a shrug.**
+`file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||
+trimmed.starts_with('#')`, makes the condition unsatisfiable: a string cannot
+be both empty and begin with `#`, so nothing is skipped and every comment and
+blank line is parsed. No test dies, and the reason is that a comment cannot
+match anything. Both format arms compare from the start of the trimmed line, so
+a comment's key is `#PermitRootLogin` rather than `PermitRootLogin` and a blank
+line's key is empty; neither equals a directive name unless the caller asks for
+one beginning with `#`, and none of the twenty-odd call sites does.
+
+It is not strictly equivalent: `parse_config_value(content, "#", …)` would tell
+the two apart. Pinning that would be pinning nonsense, and worse, it would
+enshrine comment-parsing as a behaviour. So the skip stays, with a comment at
+the site saying it is defence in depth rather than the thing that stops a
+commented-out directive being honoured, and that it is what holds if
+`split_directive` ever learns to strip a leading marker.
+
+**The `file_utils.rs` thirteen.** These reach disk, which the triage rule calls
+a bug outright. `create_timestamped_backup` survived returning
+`Ok(Default::default())`, writing no backup and handing back an empty path
+while reporting success: every plugin's rollback rests on that copy, and a
+backup that silently is not written stays invisible until the rollback that
+needs it. `safe_copy_to_new` survived `||` becoming `&&` in the guard that
+refuses an existing destination, and a **dangling symlink** is the input that
+separates them, since it is a symlink that does not exist; that guard is there
+to stop a symlink race on a predictable backup path, so the difference is a
+security one. Both readers survived being replaced by constants, and the
+`NotFound` match guard survived being forced both ways, which would have turned
+a present-but-unreadable path into a reported absence, the same conflation this
+project has already paid for in the pam plugin.
+
+Two of them are worth noting as a pattern rather than a list.
+`parse_config_value` already carried thirteen tests and still lost two mutants,
+which is the reminder that a function having tests is not the same as its
+behaviour being pinned. And `safe_copy_to_new`'s mutant still fails, just later
+and with a different message, so asserting that an error came back would have
+passed on both; asserting **which** error is what kills it.
 
 **The signing seven, what they were and what killed them.** These were the
 sharpest finding of the pass, and all seven are now dead.
