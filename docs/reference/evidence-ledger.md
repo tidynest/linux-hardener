@@ -321,9 +321,13 @@ because the operator it mutated is gone, which is the better outcome of the two
 available. `only_a_regular_file_reads_as_a_file_over_ssh` now walks the six `%F`
 shapes, the two special-file rows being the ones that were wrong and the rest
 the control that stops the fix over-correcting into "nothing is a file".
-**Ceiling, unchanged by the fix:** `%F` is translated, so a `stat` under a
-non-English locale reports every path as not a file. That is a separate and
-larger gap, and it is not addressed here.
+**Ceiling, unchanged by the fix and now tracked as #155:** `%F` is translated,
+so a `stat` under a non-English locale reports every path as neither a file nor
+a directory. Measured on 2026-08-11: `LC_ALL=sv_SE.utf8 stat -c '%F'
+/etc/passwd` prints `normal fil` and the same command on `/etc` prints
+`katalog`, so `is_dir` fails beside `is_file` and the wrong type bit is OR-ed
+into `mode`. That is a separate and larger gap than the one fixed here, since it
+affects ordinary files rather than devices, and it is not addressed here.
 
 **The one survivor recorded as acceptable, and why that is not a shrug.**
 `file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||

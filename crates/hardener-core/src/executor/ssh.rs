@@ -395,9 +395,11 @@ fn parse_stat_fields(line: &str) -> Option<FileMetadata> {
         // special file` report as files while `LocalExecutor`, which answers
         // from `std::fs::Metadata::is_file`, reported them as not. Checkpoint
         // capture gates on this field, so the two executors disagreed about
-        // the same path. Ceiling, unchanged by the fix: `%F` is translated, so
-        // a `stat` run under a non-English locale reports every path as not a
-        // file.
+        // the same path. Ceiling, unchanged by the fix and tracked as #155:
+        // `%F` is translated, so a `stat` run under a non-English locale reports
+        // every path as neither a file nor a directory. Measured 2026-08-11:
+        // `LC_ALL=sv_SE.utf8 stat -c '%F' /etc/passwd` prints `normal fil`, and
+        // `is_dir` above fails the same way on `katalog`.
         is_file: file_type.contains("regular"),
         is_dir,
         mode: type_bit | permission_bits,
