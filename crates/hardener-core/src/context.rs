@@ -307,3 +307,6 @@ impl Context {
         &self.executor
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -193,3 +193,98 @@ fn test_kernel_key_accepts_valid_sysctl_names() {
     assert!(validate_directive_key("kernel", "kernel.randomize_va_space").is_ok());
     assert!(validate_directive_key("kernel", "fs.protected_hardlinks").is_ok());
 }
+
+/// The directive-key guard refuses on either clause, and its length ceiling is
+/// a ceiling.
+///
+/// The two clauses are joined by `||`, so as `&&` an empty key is admitted:
+/// nothing refuses it and the kernel plugin's `key.replace('.', "/")` then
+/// builds a sysctl path from nothing. The length comparison is the same
+/// boundary shape as everywhere else, and a test feeding a wildly oversized key
+/// cannot fail under `==` or `>=`, since all three refuse it.
+#[test]
+fn a_directive_key_is_refused_when_empty_and_only_past_its_ceiling() {
+    assert!(
+        validate_directive_key("kernel-hardening", "").is_err(),
+        "an empty key must be refused on its own clause"
+    );
+
+    let at_ceiling = "k".repeat(128);
+    assert!(
+        validate_directive_key("kernel-hardening", &at_ceiling).is_ok(),
+        "exactly 128 characters is within the limit, not past it"
+    );
+
+    let past_ceiling = "k".repeat(129);
+    assert!(
+        validate_directive_key("kernel-hardening", &past_ceiling).is_err(),
+        "and one character more is refused"
+    );
+}
+
+/// The ssh value ceiling is a ceiling too.
+#[test]
+fn an_ssh_value_is_accepted_at_its_ceiling_and_refused_past_it() {
+    assert!(
+        validate_ssh_value("Banner", &"b".repeat(256)).is_ok(),
+        "exactly 256 characters is within the limit"
+    );
+    assert!(
+        validate_ssh_value("Banner", &"b".repeat(257)).is_err(),
+        "and one character more is refused"
+    );
+    assert!(
+        validate_ssh_value("Banner", "").is_err(),
+        "the control: an empty value is refused for being empty"
+    );
+}
+
+/// Each character class a pam token may use is allowed on its own.
+///
+/// The three are joined by `||`, so as `&&` a pair becomes a conjunction and no
+/// single character can satisfy it: every token carrying the affected character
+/// is refused, and an operator's valid `pam_unix` setting stops loading. One
+/// token per class is what separates them, since a token mixing all three
+/// satisfies any of the mutants.
+#[test]
+fn each_character_class_a_pam_token_may_use_is_allowed_alone() {
+    for value in ["sha512", "sha_512", "pam-unix", "600"] {
+        assert!(
+            validate_pam_value("pam_key", value).is_ok(),
+            "`{value}` is a valid pam value and must load"
+        );
+    }
+    assert!(
+        validate_pam_value("pam_key", "sha512; rm -rf /").is_err(),
+        "the control: a token carrying anything else is refused"
+    );
+}
+
+/// A permissions mode is refused on either side of its length window, **for
+/// its width**.
+///
+/// The clauses are joined by `||`, so as `&&` the condition is unsatisfiable
+/// and no length is refused at all. The first version of this test asked only
+/// whether a refusal came back and did not fail the mutant: `"77"` fell through
+/// to the world-writable check and `"07555"` to the special-bits check, so both
+/// were still refused, for the wrong reason. The widths here are otherwise
+/// **valid** modes, so nothing downstream refuses them, and the message is read
+/// for what it names.
+#[test]
+fn a_permissions_mode_is_refused_on_either_side_of_its_width() {
+    for value in ["75", "00755"] {
+        let refusal = validate_permissions_value("/etc/shadow", value)
+            .expect_err("`{value}` is not a 3 or 4 digit octal mode and must be refused");
+        assert!(
+            refusal.contains("3-4 digit"),
+            "`{value}` must be refused for its width and not for something \
+             downstream, which would leave the width check unpinned: {refusal}"
+        );
+    }
+    for value in ["755", "0640"] {
+        assert!(
+            validate_permissions_value("/etc/shadow", value).is_ok(),
+            "the control: `{value}` is a valid mode and must be accepted"
+        );
+    }
+}

@@ -206,3 +206,240 @@ async fn the_writer_privilege_probe_answers_from_the_registries() {
          refusing arm is reachable at the caller"
     );
 }
+
+/// Every builder keeps what the builders before it registered.
+///
+/// Seven of them survived being replaced by `Default::default()`, which
+/// discards both the registration being made and everything set up before it.
+/// The triage rule calls a mock a note rather than a bug, and that is the wrong
+/// reading here: **a fixture decides what the tests above it can detect.** A
+/// builder that quietly returns a blank executor leaves every test using it
+/// asking its questions of an empty host, and a suite whose fixtures cannot be
+/// trusted proves nothing about the code it covers.
+///
+/// One chain exercises all seven, because the failure is precisely that a later
+/// call throws away an earlier one, and a chain is the only shape that can show
+/// it.
+#[tokio::test]
+async fn a_builder_chain_keeps_every_registration_made_before_it() {
+    let ok = CommandOutput {
+        stdout: "ok".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+
+    let executor = MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", "PermitRootLogin no\n")
+        .with_file("/etc/removed.conf", "gone\n")
+        .without_file("/etc/removed.conf")
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_read_dir_permission_denied("/etc/unreadable")
+        .with_command("systemctl", &["is-enabled", "sshd"], ok.clone())
+        .with_command_program("sshd", ok.clone())
+        .with_command_sequence("nft", &["list", "ruleset"], vec![ok.clone()])
+        .with_command_exists("nft", true);
+
+    assert_eq!(
+        executor
+            .read_file(Path::new("/etc/ssh/sshd_config"))
+            .await
+            .expect("the first registration survives every builder after it")
+            .trim(),
+        "PermitRootLogin no",
+        "a file registered before eight further builder calls is still there"
+    );
+    assert_eq!(
+        executor
+            .read_file_optional(Path::new("/etc/removed.conf"))
+            .await
+            .expect("an absent path is an answer"),
+        None,
+        "and one explicitly removed is still absent"
+    );
+    assert!(
+        executor
+            .path_exists(Path::new("/etc/ssh/sshd_config.d"))
+            .await
+            .expect("the directory is registered"),
+        "the directory registration survives"
+    );
+    assert!(
+        executor
+            .read_dir(Path::new("/etc/unreadable"))
+            .await
+            .is_err(),
+        "so does the unlistable directory, which is the only way a caller's \
+         permission-denied branch is reachable at all"
+    );
+    assert!(
+        executor
+            .execute_command("systemctl", &["is-enabled", "sshd"])
+            .await
+            .is_ok(),
+        "the exact-argument command registration survives"
+    );
+    assert!(
+        executor.execute_command("sshd", &["-t"]).await.is_ok(),
+        "and the whole-program one"
+    );
+    assert!(
+        executor
+            .execute_command("nft", &["list", "ruleset"])
+            .await
+            .is_ok(),
+        "and the sequenced one"
+    );
+    assert!(
+        executor
+            .command_exists("nft")
+            .await
+            .expect("an explicit registration answers"),
+        "and the explicit command-exists registration"
+    );
+}
+
+/// `command_exists` answers what it was told, in both directions and by both
+/// routes.
+///
+/// It survived being replaced by `true` and by `false`, and its registration
+/// lookup survived `==` becoming `!=`. Every plugin gates its probes on this,
+/// so a fixture answering `true` for everything hides a missing-tool branch
+/// that a real host takes, and one answering `false` for everything makes every
+/// plugin skip its work while the suite reports success. **A mock that can
+/// return either answer unnoticed cannot fail**, which is the whole reason
+/// these are worth killing rather than noting.
+#[tokio::test]
+async fn command_exists_answers_both_ways_and_by_both_routes() {
+    let executor = MockExecutor::new()
+        .with_command_exists("nft", true)
+        .with_command_exists("iptables", false)
+        .with_command(
+            "systemctl",
+            &["is-enabled", "sshd"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+
+    assert!(
+        executor
+            .command_exists("nft")
+            .await
+            .expect("registered true"),
+        "an explicit `true` must come back true"
+    );
+    assert!(
+        !executor
+            .command_exists("iptables")
+            .await
+            .expect("registered false"),
+        "and an explicit `false` false, which is the half a fixture defaulting \
+         to present can never say"
+    );
+    assert!(
+        executor
+            .command_exists("systemctl")
+            .await
+            .expect("inferred from a registered command"),
+        "a program with a registered command exists by that route alone"
+    );
+    // Worth recording rather than fixing here: the inference reads `commands`
+    // only, so a program registered through `with_command_program` is *not*
+    // inferred to exist. The two registrations answer differently, and a
+    // fixture using the whole-program form has to add `with_command_exists`
+    // beside it or its subject will skip the work.
+    assert!(
+        !executor
+            .command_exists("firewall-cmd")
+            .await
+            .expect("nothing registered is an answer, not an error"),
+        "and one registered nowhere does not: the `==` matching the program \
+         name is what tells these apart"
+    );
+}
+
+/// The operation log records what happened, and clearing it empties it.
+///
+/// `log` survived returning a default, `clear_log` survived doing nothing, and
+/// `files` survived three constant bodies. Every one of them is an assertion
+/// surface: a test that checks "the plugin wrote this file" against a log that
+/// is always empty passes only because it was written to expect nothing, and a
+/// `clear_log` that does nothing makes a two-phase test read the first phase's
+/// writes as the second's.
+#[tokio::test]
+async fn the_operation_log_records_what_happened_and_clears_on_request() {
+    let executor = MockExecutor::new().with_file("/etc/ssh/sshd_config", "PermitRootLogin no\n");
+
+    executor
+        .read_file(Path::new("/etc/ssh/sshd_config"))
+        .await
+        .expect("read the registered file");
+    executor
+        .write_file(Path::new("/etc/ssh/sshd_config"), "PermitRootLogin yes\n")
+        .await
+        .expect("write it back");
+
+    let log = executor.log();
+    assert_eq!(
+        log.files_read,
+        vec![PathBuf::from("/etc/ssh/sshd_config")],
+        "the read must be recorded, or every assertion made against this log \
+         passes by finding nothing"
+    );
+    assert_eq!(
+        log.files_written,
+        vec![(
+            PathBuf::from("/etc/ssh/sshd_config"),
+            "PermitRootLogin yes\n".to_string()
+        )],
+        "and so must the write, with what was written"
+    );
+
+    assert_eq!(
+        executor
+            .files()
+            .get(Path::new("/etc/ssh/sshd_config"))
+            .map(String::as_str),
+        Some("PermitRootLogin yes\n"),
+        "the virtual filesystem must hold what was written, not the content it \
+         started with: a `write_file` that did nothing would leave the original"
+    );
+
+    executor.clear_log();
+    let cleared = executor.log();
+    assert!(
+        cleared.files_read.is_empty() && cleared.files_written.is_empty(),
+        "clearing must actually empty it, or a second phase reads the first \
+         phase's operations as its own: {cleared:?}"
+    );
+}
+
+/// `read_file_optional` tells content from absence.
+///
+/// It survived `Ok(None)`, `Ok(Some(String::new()))` and `Ok(Some("xyzzy"))`.
+/// The distinction it draws is the one this project has already paid for
+/// twice: a present file and an absent one restore differently, and a fixture
+/// that cannot tell them apart cannot test the code that must.
+#[tokio::test]
+async fn read_file_optional_tells_content_from_absence() {
+    let executor = MockExecutor::new().with_file("/etc/login.defs", "UMASK 077\n");
+
+    assert_eq!(
+        executor
+            .read_file_optional(Path::new("/etc/login.defs"))
+            .await
+            .expect("a registered file"),
+        Some("UMASK 077\n".to_string()),
+        "a registered file comes back with exactly its content"
+    );
+    assert_eq!(
+        executor
+            .read_file_optional(Path::new("/etc/nothing-here"))
+            .await
+            .expect("an unregistered path is an answer, not an error"),
+        None,
+        "and an unregistered one is a positive absence"
+    );
+}

@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1976 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1982 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1989 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1995 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2016 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2016 across 296 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2029 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2029 across 297 files |
 
-The gap between 2016 annotations and 1976 executions is exactly 40, and all 40
+The gap between 2029 annotations and 1989 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2016, and they are meant to be: the check globs every `.rs`
+are the same number, 2029, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1976 + 6 = 1982 and 40 + 7 = 47.
+covers. 1989 + 6 = 1995 and 40 + 7 = 47.
 
 ---
 
@@ -97,15 +97,15 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**Eighty-eight of those 161 have since been killed**, all on 2026-08-11, so the
+**A hundred and thirty-one of those 161 have since been killed**, all on 2026-08-11, so the
 tree as it stands reads:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
-| `hardener-common` | 133 | 21 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
+| `hardener-common` | 152 | 2 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
 | `hardener-state` | 165 | 0 | all seven in `signing.rs`, and the twelve left across `manager.rs`, `audit.rs` and `scan_manager.rs` |
-| `hardener-core` | 220 | 51 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
-| **Total now** | **518** | **72** | **12% of viable** |
+| `hardener-core` | 244 | 27 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
+| **Total now** | **561** | **29** | **5% of viable** |
 
 Every kill was verified by re-running the runner over the affected scope
 rather than by reasoning about the tests:
@@ -132,7 +132,7 @@ No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 72 are identified, not resolved.** G4 asks for each to be
+**The remaining 29 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
@@ -142,9 +142,9 @@ what the Phase 4 triage rule makes of them:
 | `hardener-core/executor/local.rs` | 0, was 20 | **Resolved.** All twenty killed; see below. |
 | `hardener-common/file_utils.rs` | 1, was 14 | **Resolved.** Thirteen killed; the survivor is recorded as acceptable below. |
 | `hardener-core/executor/ssh.rs` | 20, was 25 | **Two different verdicts in one file.** The 19 that remain unaddressed are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. The host-free functions were ordinary gaps and are dealt with: `unique_delimiter`, `resolve_ssh_user` and the length guard in `parse_stat_fields` are killed, and of the two left in `parse_stat_fields` one was a **finding against the code rather than against the tests** and is fixed, leaving a single equivalent mutant. Both are described below. |
-| `hardener-common/executor/mock.rs` | 19 | `MockExecutor` itself, so neither disk nor host: a note by the rule. Worth stating anyway, because a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. |
+| `hardener-common/executor/mock.rs` | 0, was 19 | **Resolved.** `MockExecutor` itself, so the rule called these notes, and **the rule was the wrong reading**: a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. All nineteen killed; see below. |
 | `hardener-core/config_loader.rs` | 4, was 16 | **Resolved.** Twelve killed; the four survivors are recorded as acceptable below, and one of them is provably equivalent. |
-| `hardener-core/context.rs`, `config_validation.rs` | 24 | Notes by the rule: neither reaches disk or a host. |
+| `hardener-core/context.rs`, `config_validation.rs` | 0, was 24 | **Resolved.** The rule called these notes because neither reaches disk or a host, but `context.rs` is what tells every plugin which distribution and kernel it is running on, and `config_validation.rs` is a guard against path traversal. All twenty-four killed; see below. |
 | `hardener-common/executor/mod.rs` | 0, was 11 | **Resolved.** Reaches a host, so a bug by the rule throughout. All eleven killed; see below. |
 | `hardener-state/signing.rs` | 0, was 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. **All seven killed**; see below. |
 | Remainder | 4, was 25 | **`hardener-state`'s twelve are resolved**, which clears that crate outright: `manager.rs` 5, `audit.rs` 4 and `scan_manager.rs` 3, all reaching disk and so bugs by the rule. **`hardener-core`'s and `hardener-common`'s nine are resolved too**: `plugin.rs` 3, `error.rs` 3, and one each in `config.rs`, `registry.rs` and `inventory.rs`. Four stay, all recorded below: `inventory.rs`'s `load` and `save`, `testing.rs`'s mock, and `logging.rs`'s process-global logger init. |
@@ -468,6 +468,69 @@ panics if called twice, so a test exercising it would either poison every other
 test in the binary or be the only test allowed to run. Recorded as acceptable
 on those grounds rather than left unexplained: what it costs is that a build
 shipping no logging at all would go unnoticed by the suite.
+
+**The forty-three the triage rule had wrong.** `context.rs` 18,
+`executor/mock.rs` 19 and `config_validation.rs` 6 were all filed as *notes*,
+because none of them reaches disk or a host. Every one is now dead, and the
+filing is worth correcting rather than quietly amending: **"touches no I/O" is
+not the same as "cannot hurt anyone".**
+
+`context.rs` is what tells every plugin which distribution, version, kernel and
+architecture it is running on. All five detectors survived `Ok("xyzzy")`, so a
+constant distribution turns distribution-specific hardening into a coin flip
+and a constant kernel version defeats every version-gated check. Each is now
+compared against a **second, independent way of asking**: `/proc/sys/kernel/
+osrelease` against `uname(2)`, `/proc/sys/kernel/hostname` against the hostname
+syscall, the standard library's own `ARCH` constant, a hand-parse of
+`/etc/os-release` against the parser under test. Comparing a detector with
+itself would agree under any constant body, which is exactly what let these
+survive. `read_os_release` survived five constant bodies and is pinned by the
+assignment count, which no single-entry map can match, and `log_audit` survived
+`Ok(())`, reporting every entry as recorded while recording none.
+
+**One of those tests was itself vacuous on the first attempt, and the runner
+caught it.** The two distribution detectors were asserted inside `if let
+Some(expected) = field("VERSION_ID")`, and this machine is Arch, which is
+rolling and carries no `VERSION_ID`: the assertion never ran and
+`detect_distribution_version` was still reported alive. The documented fallback
+is part of the contract, so it is asserted rather than skipped, and the case now
+runs on every host. A guard written for a field that may be absent is a guard
+that may ask nothing.
+
+`config_validation.rs` guards against path traversal through the kernel
+plugin's `key.replace('.', "/")`. Its `||`s became `&&`s and its length
+comparisons lost their boundaries. **The permissions test failed to fail on the
+first attempt too**, and for the reason this ledger keeps recording: it asked
+only whether a refusal came back, and the mutant still refused, one check
+further down. `"77"` fell through the width check and was caught as
+world-writable; `"07555"` was caught as setting special bits. The widths in it
+are now otherwise-valid modes, so nothing downstream refuses them, and the
+message is read for what it names.
+
+`executor/mock.rs` was the plainest misfiling. Seven builders survived
+`Default::default()`, which discards both the registration being made and
+everything set up before it; `log` survived returning a default, `clear_log`
+survived doing nothing, `files` survived three constants, `read_file_optional`
+survived three more, `write_file` survived `Ok(())`, and `command_exists`
+survived **both** `true` and `false`. A test asserting "the plugin wrote this
+file" against a log that is always empty passes only because it was written to
+expect nothing. One builder chain exercises all seven, since the failure is
+precisely that a later call throws away an earlier one and a chain is the only
+shape that shows it.
+
+Writing those tests surfaced an asymmetry in the mock worth recording:
+`command_exists`'s fallback reads the `commands` registry only, so a program
+registered through `with_command_program` is **not** inferred to exist. The two
+registration forms answer differently, and a fixture using the whole-program
+form has to add `with_command_exists` beside it or its subject will skip the
+work. Left as it is and noted at the test, rather than changed under a pending
+release.
+
+`testing.rs`'s single survivor turns out to need no test at all.
+`MockPlugin::divergences_after_rollback`'s body is `Vec::new()` and the mutant
+is `vec![]`: the same value spelled differently, so it is **provably
+equivalent** and no assertion can separate them. It was filed as a note about
+test infrastructure, which was the right verdict for the wrong reason.
 
 **The one survivor recorded as acceptable, and why that is not a shrug.**
 `file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||
