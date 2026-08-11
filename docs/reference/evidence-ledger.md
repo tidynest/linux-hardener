@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1991 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1997 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1991 passed, 42 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1997 passed, 0 failed, 49 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2031 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2031 across 297 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2033 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2033 across 297 files |
 
-The gap between 2031 annotations and 1991 executions is exactly 40, and all 40
+The gap between 2033 annotations and 1991 executions is exactly 42, and all 42
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2031, and they are meant to be: the check globs every `.rs`
+are the same number, 2033, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1991 + 6 = 1997 and 40 + 7 = 47.
+covers. 1991 + 6 = 1997 and 42 + 7 = 49.
 
 ---
 
@@ -97,15 +97,15 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**A hundred and thirty-four of those 161 have since been killed**, all on 2026-08-11, so the
+**A hundred and fifty-one of those 161 have since been killed**, all on 2026-08-11, so the
 tree as it stands reads:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
 | `hardener-common` | 152 | 2 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
 | `hardener-state` | 165 | 0 | all seven in `signing.rs`, and the twelve left across `manager.rs`, `audit.rs` and `scan_manager.rs` |
-| `hardener-core` | 247 | 24 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
-| **Total now** | **564** | **26** | **4% of viable** |
+| `hardener-core` | 263 | 8 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
+| **Total now** | **580** | **10** | **2% of viable** |
 
 Every kill was verified by re-running the runner over the affected scope
 rather than by reasoning about the tests:
@@ -132,7 +132,7 @@ No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 26 are identified, not resolved.** G4 asks for each to be
+**The remaining 10 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
@@ -141,7 +141,7 @@ what the Phase 4 triage rule makes of them:
 |---|---|---|
 | `hardener-core/executor/local.rs` | 0, was 20 | **Resolved.** All twenty killed; see below. |
 | `hardener-common/file_utils.rs` | 1, was 14 | **Resolved.** Thirteen killed; the survivor is recorded as acceptable below. |
-| `hardener-core/executor/ssh.rs` | 20, was 25 | **Two different verdicts in one file.** The 19 that remain unaddressed are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. The host-free functions were ordinary gaps and are dealt with: `unique_delimiter`, `resolve_ssh_user` and the length guard in `parse_stat_fields` are killed, and of the two left in `parse_stat_fields` one was a **finding against the code rather than against the tests** and is fixed, leaving a single equivalent mutant. Both are described below. |
+| `hardener-core/executor/ssh.rs` | 4, was 25 | **The stated ceiling was wrong, and measuring it is what showed that.** "No SSH host" was recorded as the reason twenty survived; running the pass with the fixture booted and `--run-ignored=all` killed **eleven of them outright, with tests that already existed**. Nobody had ever run the mutation pass against a live container. Two new `#[ignore]`d tests took five more. The four left are described below and none is an ordinary gap: two are unreachable, one is provably equivalent, one needs a change to the container image. |
 | `hardener-common/executor/mock.rs` | 0, was 19 | **Resolved.** `MockExecutor` itself, so the rule called these notes, and **the rule was the wrong reading**: a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. All nineteen killed; see below. |
 | `hardener-core/config_loader.rs` | 1, was 16 | **Resolved.** Fifteen killed, three of them by giving the loader a path seam. The one left is **provably equivalent**: `is_running_as_root` replaced by `false`, which is what the real function already returns on a non-root runner. |
 | `hardener-core/context.rs`, `config_validation.rs` | 0, was 24 | **Resolved.** The rule called these notes because neither reaches disk or a host, but `context.rs` is what tells every plugin which distribution and kernel it is running on, and `config_validation.rs` is a guard against path traversal. All twenty-four killed; see below. |
@@ -549,6 +549,67 @@ is `vec![]`: the same value spelled differently, so it is **provably
 equivalent** and no assertion can separate them. It was filed as a note about
 test infrastructure, which was the right verdict for the wrong reason.
 
+**The sixteen in `executor/ssh.rs`, and the ceiling that was not one.** This
+file was recorded as having twenty survivors the default suite "cannot kill
+because it has no SSH host". That was a belief, not a reading. Booting
+`scripts/containers/boot-ssh-test-container.sh` and re-running the pass as
+
+```
+cargo mutants --test-tool nextest --cargo-test-arg --run-ignored=all \
+  --timeout 300 -j 1 --file "crates/hardener-core/src/executor/ssh.rs"
+```
+
+reports **20 missed becoming 9**, with no new tests written at all: the
+`#[ignore]`d suites that had existed all along killed eleven. No `-p` flag,
+deliberately, because the mutants are in `hardener-core` while four of the tests
+that kill them are `hardener-cli::batch_ssh_integration`.
+
+Two new `#[ignore]`d tests in `tests/ssh_executor_tests.rs` took five more.
+`read_dir` survived three mutants that each make a remote directory look empty,
+the body replaced by an empty vector, by a vector holding one empty path, and
+the `!` deleted from the blank-line filter so only blank lines survive it; the
+checkpoint layer captures directories by listing them, so a rollback would have
+restored a directory as though it had held nothing. `legacy_description`
+survived two `Some` constants, either of which offers an operator the
+checkpoints of a target this is not.
+
+**The four that remain, and not one is an ordinary gap.**
+
+Two are **unreachable over ssh**: `unwrap_or(-1)` in `run_command` and in
+`execute_command`. Measured rather than argued: a remote command killed by a
+signal makes the **local** ssh client exit 255, not die itself, so
+`output.status.code()` is always `Some` and the `-1` branch never runs.
+
+```
+$ ssh root@<fixture> 'kill -9 $$'; echo $?
+255
+```
+
+This is the same line as `LocalExecutor::execute_command`, whose identical
+sentinel **was** killed earlier in this pass by a self-killing shell. The
+difference is structural rather than a matter of effort: `LocalExecutor` spawns
+the process, so a signal-killed child really does report no exit code;
+`SshExecutor` spawns the ssh client, which survives its child and translates the
+death into a status. Identical code, identical mutant, killable in one executor
+and impossible in the other.
+
+One is **provably equivalent**: `|` becoming `^` in `mode: type_bit |
+permission_bits`, already recorded above.
+
+One needs a **change to the fixture, not to the tests**.
+`legacy_description -> None` is only observable on a *bare* target, one that
+named no user, and connecting without naming a user makes ssh offer the
+controller's own login name. The container has `root` and no account named
+after whoever runs the suite, so the connection is refused before an executor
+exists to ask. `checkpoint_host_key` and `legacy_checkpoint_host_key` are both
+pinned unprivileged; what is unpinned is this method's choice between them.
+
+**The lesson is about the ledger rather than about the code.** A ceiling
+recorded without being measured is a belief with a citation. This one had stood
+since the pass was first run, it named the right obstacle, and it was still
+wrong about eleven of twenty: the fixture that would have answered it was in the
+repository the whole time.
+
 **The one survivor recorded as acceptable, and why that is not a shrug.**
 `file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||
 trimmed.starts_with('#')`, makes the condition unsatisfiable: a string cannot
@@ -773,7 +834,7 @@ These are stated once here rather than repeated in every cell below.
 | Claim | Evidence | Command | Ceiling |
 |---|---|---|---|
 | `LocalExecutor` reads and writes the local filesystem as the plugins expect, and refuses paths it must not reach | `crates/hardener-core/src/executor/local/tests.rs` (12 tests against a real temporary filesystem), `crates/hardener-core/tests/mock_executor_tests.rs` (15 tests pinning the mock to the same contract) | `cargo nextest run -p hardener-core executor::local` | This is the only executor the default suite exercises against a real filesystem, and it does so entirely in unprivileged temporary directories. Nothing in a default run writes a root-owned file, runs `sudo tee`, or chmods a path outside the test's own tree, so the privileged behaviour that every apply depends on is proven only by the container suites. The `MockExecutor` conformance tests keep the two implementations answering the same shape, which is a weaker guarantee than answering the same values. |
-| `SshExecutor` performs the same reads and writes against a remote host over a key-authenticated connection | `crates/hardener-core/tests/ssh_executor_tests.rs` (3 run, 12 `#[ignore]`d behind `SSH_TEST_HOST`), `crates/hardener-plugins/tests/ssh_integration_tests.rs` (2 run, 12 `#[ignore]`d), `scripts/containers/boot-ssh-test-container.sh`, `crates/hardener-cli/tests/ssh_refusal.rs` (12 tests) | `cargo test -p hardener-core --test ssh_executor_tests -- --ignored`, after running `scripts/containers/boot-ssh-test-container.sh` under `sudo` and then, in your own shell, exporting the variables it prints and running the `ssh-add` it prints. The script prints those lines for you to paste; a child process cannot export into the shell that invoked it. | Only 3 of the 15 tests run by default, and those three assert config shape and description formatting: nothing that touches a wire runs in the default suite or in CI, so **a regression in the SSH transport is invisible to `cargo test`**. Both suites fail loudly rather than silently when `SSH_TEST_HOST` is unset, which is the correct behaviour and which the fleet row below now shares. There is no password authentication path by design, so nothing here covers one. |
+| `SshExecutor` performs the same reads and writes against a remote host over a key-authenticated connection | `crates/hardener-core/tests/ssh_executor_tests.rs` (3 run, 14 `#[ignore]`d behind `SSH_TEST_HOST`), `crates/hardener-plugins/tests/ssh_integration_tests.rs` (2 run, 12 `#[ignore]`d), `scripts/containers/boot-ssh-test-container.sh`, `crates/hardener-cli/tests/ssh_refusal.rs` (12 tests) | `cargo test -p hardener-core --test ssh_executor_tests -- --ignored`, after running `scripts/containers/boot-ssh-test-container.sh` under `sudo` and then, in your own shell, exporting the variables it prints and running the `ssh-add` it prints. The script prints those lines for you to paste; a child process cannot export into the shell that invoked it. | Only 3 of the 17 tests run by default, and those three assert config shape and description formatting: nothing that touches a wire runs in the default suite or in CI, so **a regression in the SSH transport is invisible to `cargo test`**. Both suites fail loudly rather than silently when `SSH_TEST_HOST` is unset, which is the correct behaviour and which the fleet row below now shares. There is no password authentication path by design, so nothing here covers one. |
 
 ### Checkpoint and rollback
 

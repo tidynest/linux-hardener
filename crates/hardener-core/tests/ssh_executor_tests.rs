@@ -504,3 +504,101 @@ async fn ssh_read_link_tells_a_symlink_from_a_regular_file() {
         .await
         .expect("remove the fixture");
 }
+
+/// A target that named its user reports no legacy key.
+///
+/// `legacy_description` survived being replaced by `None` and by two `Some`
+/// constants even with the SSH fixture booted, because nothing asked it over a
+/// live connection. It is what lets a rollback still see checkpoints written
+/// before the key format changed, so a constant `Some` offers checkpoints
+/// belonging to a target this is not. It cannot be asked without a host at all,
+/// since `SshExecutor` owns a `Session` and there is no way to construct one
+/// offline.
+///
+/// **Only this half is askable here, and the reason is the fixture.** The other
+/// half, a bare target reporting the key it used to be filed under, needs a
+/// connection made *without* naming a user, and ssh then offers the
+/// controller's own login name. The container has a `root` account and no
+/// `bakri`, so that connection is refused before an executor exists to ask.
+/// Killing the `None` replacement therefore needs a fixture carrying an account
+/// named after whoever runs the suite, which is a change to the container image
+/// rather than to this file. `checkpoint_host_key` and
+/// `legacy_checkpoint_host_key` are both pinned unprivileged in
+/// `executor/ssh/tests.rs`; what is unpinned is only this method's choice
+/// between them.
+#[tokio::test]
+#[ignore = "Requires SSH_TEST_HOST environment variable"]
+async fn an_ssh_target_that_named_its_user_reports_no_legacy_key() {
+    let config = get_test_config().expect("SSH_TEST_HOST not set");
+    assert!(
+        config.user.is_some(),
+        "the fixture must name a user for this to be the case it says it is"
+    );
+
+    let named = SshExecutor::connect(config)
+        .await
+        .expect("connect naming a user");
+    assert_eq!(
+        named.legacy_description(),
+        None,
+        "a target that named its user has always been filed under exactly what \
+         it named, so it has nothing to fall back to, and offering a key it \
+         never used would surface another target's checkpoints"
+    );
+    assert!(
+        named.description().starts_with("ssh://"),
+        "the control: it does have a current key, so the None above is a \
+         decision rather than an executor that answers nothing"
+    );
+}
+
+/// `read_dir` lists what is there, over a real connection.
+///
+/// Three mutants survived here with the fixture booted: the body replaced by an
+/// empty vector, by a vector holding one empty path, and the `!` deleted from
+/// the blank-line filter, which keeps only blank lines and so empties every
+/// listing. All three make a remote directory look empty, and the checkpoint
+/// layer captures directories by listing them: a rollback would then restore a
+/// directory as though it had held nothing.
+#[tokio::test]
+#[ignore = "Requires SSH_TEST_HOST environment variable"]
+async fn read_dir_lists_a_remote_directory_and_distinguishes_an_empty_one() {
+    let config = get_test_config().expect("SSH_TEST_HOST not set");
+    let executor = SshExecutor::connect(config).await.expect("connect");
+
+    let dir = "/tmp/hardener-read-dir-fixture";
+    let empty = "/tmp/hardener-read-dir-empty";
+    executor
+        .execute_command("sh", &["-c", &format!("rm -rf {dir} {empty}; mkdir -p {dir} {empty}; : > {dir}/alpha.conf; : > {dir}/beta.conf")])
+        .await
+        .expect("build the remote fixture");
+
+    let mut listed: Vec<String> = executor
+        .read_dir(Path::new(dir))
+        .await
+        .expect("the directory lists")
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+    listed.sort();
+    assert_eq!(
+        listed,
+        vec![format!("{dir}/alpha.conf"), format!("{dir}/beta.conf")],
+        "the listing must be the entries that are there, by name"
+    );
+
+    assert!(
+        executor
+            .read_dir(Path::new(empty))
+            .await
+            .expect("an empty directory lists")
+            .is_empty(),
+        "the control: an empty directory lists as empty, so the assertion above \
+         is about the entries and not about the call succeeding"
+    );
+
+    executor
+        .execute_command("rm", &["-rf", dir, empty])
+        .await
+        .expect("remove the fixture");
+}
