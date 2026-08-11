@@ -1209,6 +1209,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A remote executor called a device a file, and the local one did not.**
+  `SshExecutor` parses `stat -c '%F ...'` output, and its `is_file` test
+  accepted any `%F` string containing the word `file`. Every string for a
+  regular file, `regular file` and `regular empty file`, contains it, but so do
+  `character special file` and `block special file`. `LocalExecutor` answers the
+  same question from `std::fs::Metadata::is_file`, which is false for a device,
+  so the two executors disagreed about the same path, and checkpoint capture
+  gates on exactly this field. The test is now `contains("regular")` alone,
+  which is the only word the regular-file strings share and no special-file
+  string carries. Found by mutation testing: replacing the condition's `||` with
+  `&&` produced code that no test could distinguish from the shipped form, and
+  the mutant was the more correct of the two. **Ceiling, unchanged by the fix:**
+  `%F` is a translated string, so a `stat` running under a non-English locale
+  reports every path as not a file.
+
 - **A no-op apply prunes too, in `audit-hardening` and `pam-hardening`**
   (#154). The first half of this fix put the prune beside the copy, where it
   runs only when a file is actually rewritten. Running the binary on the

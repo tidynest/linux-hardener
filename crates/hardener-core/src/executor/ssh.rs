@@ -389,7 +389,16 @@ fn parse_stat_fields(line: &str) -> Option<FileMetadata> {
 
     Some(FileMetadata {
         exists: true,
-        is_file: file_type.contains("regular") || file_type.contains("file"),
+        // `regular file` and `regular empty file` are the only `%F` strings for
+        // one, so `regular` alone decides it. A second `contains("file")` arm
+        // used to sit here, and it made `character special file` and `block
+        // special file` report as files while `LocalExecutor`, which answers
+        // from `std::fs::Metadata::is_file`, reported them as not. Checkpoint
+        // capture gates on this field, so the two executors disagreed about
+        // the same path. Ceiling, unchanged by the fix: `%F` is translated, so
+        // a `stat` run under a non-English locale reports every path as not a
+        // file.
+        is_file: file_type.contains("regular"),
         is_dir,
         mode: type_bit | permission_bits,
         size: parts[2].parse().unwrap_or(0),

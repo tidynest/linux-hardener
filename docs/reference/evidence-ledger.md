@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1960 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1966 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1961 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1967 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2000 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2000 across 294 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2001 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2001 across 294 files |
 
-The gap between 2000 annotations and 1960 executions is exactly 40, and all 40
+The gap between 2001 annotations and 1961 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2000, and they are meant to be: the check globs every `.rs`
+are the same number, 2001, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1960 + 6 = 1966 and 40 + 7 = 47.
+covers. 1961 + 6 = 1967 and 40 + 7 = 47.
 
 ---
 
@@ -104,8 +104,8 @@ tree as it stands reads:
 |---|---|---|---|
 | `hardener-common` | 130 | 24 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
 | `hardener-state` | 153 | 12 | all seven in `signing.rs` |
-| `hardener-core` | 214 | 58 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs` |
-| **Total now** | **497** | **94** | **16% of viable** |
+| `hardener-core` | 214 | 57 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
+| **Total now** | **497** | **93** | **16% of viable** |
 
 Every kill was verified by re-running the runner over the affected scope
 rather than by reasoning about the tests:
@@ -118,7 +118,7 @@ rather than by reasoning about the tests:
 | `--file crates/hardener-core/src/executor/local.rs` | 20 missed | **31 mutants, 29 caught, 2 unviable, none missed** |
 | `--file crates/hardener-core/src/config_loader.rs` | 16 missed | **33 mutants, 28 caught, 1 unviable, 4 missed** |
 | `--file crates/hardener-common/src/executor/mod.rs` | 9 missed | **40 mutants, 38 caught, 2 unviable, none missed** |
-| `--file crates/hardener-core/src/executor/ssh.rs` | 25 missed | **56 mutants, 29 caught, 6 unviable, 21 missed** |
+| `--file crates/hardener-core/src/executor/ssh.rs` | 25 missed | **55 mutants, 29 caught, 6 unviable, 20 missed** |
 
 `signing.rs` and `local.rs` are clear of survivors entirely rather than clear of
 the ones that were listed. `file_utils.rs` keeps one and `config_loader.rs`
@@ -129,7 +129,7 @@ No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 94 are identified, not resolved.** G4 asks for each to be
+**The remaining 93 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
@@ -138,7 +138,7 @@ what the Phase 4 triage rule makes of them:
 |---|---|---|
 | `hardener-core/executor/local.rs` | 0, was 20 | **Resolved.** All twenty killed; see below. |
 | `hardener-common/file_utils.rs` | 1, was 14 | **Resolved.** Thirteen killed; the survivor is recorded as acceptable below. |
-| `hardener-core/executor/ssh.rs` | 21, was 25 | **Two different verdicts in one file.** The 19 that remain unaddressed are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. The host-free functions were ordinary gaps and are dealt with: `unique_delimiter`, `resolve_ssh_user` and the length guard in `parse_stat_fields` are killed, and the two left in `parse_stat_fields` are recorded below, one of them as a **finding against the code rather than against the tests**. |
+| `hardener-core/executor/ssh.rs` | 20, was 25 | **Two different verdicts in one file.** The 19 that remain unaddressed are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. The host-free functions were ordinary gaps and are dealt with: `unique_delimiter`, `resolve_ssh_user` and the length guard in `parse_stat_fields` are killed, and of the two left in `parse_stat_fields` one was a **finding against the code rather than against the tests** and is fixed, leaving a single equivalent mutant. Both are described below. |
 | `hardener-common/executor/mock.rs` | 19 | `MockExecutor` itself, so neither disk nor host: a note by the rule. Worth stating anyway, because a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. |
 | `hardener-core/config_loader.rs` | 4, was 16 | **Resolved.** Twelve killed; the four survivors are recorded as acceptable below, and one of them is provably equivalent. |
 | `hardener-core/context.rs`, `config_validation.rs` | 24 | Notes by the rule: neither reaches disk or a host. |
@@ -297,30 +297,33 @@ short line indexes past the end. A three-field line, an empty line, and a
 complete line as the control kill it; the control is not optional, because a
 guard that refused everything would satisfy the first two on its own.
 
-**The two that stay, and only one of them is about the tests.** `|` becoming
-`^` in `mode: type_bit | permission_bits` is equivalent in every reachable
-case: `type_bit` is `0o040000` or `0o100000` and `permission_bits` comes from
-`%a`, which is at most `0o7777`, so the operands never share a bit and the two
-operators agree. Only a malformed `stat` line carrying an oversized mode field
-separates them, and pinning that would be pinning nonsense.
+**One stays, and it is equivalent.** `|` becoming `^` in `mode: type_bit |
+permission_bits` agrees with the original in every reachable case: `type_bit` is
+`0o040000` or `0o100000` and `permission_bits` comes from `%a`, which is at most
+`0o7777`, so the operands never share a bit. Only a malformed `stat` line
+carrying an oversized mode field separates them, and pinning that would be
+pinning nonsense.
 
+**The other was not a gap in the tests but a bug in the code, and it is fixed.**
 `||` becoming `&&` in `is_file: file_type.contains("regular") ||
-file_type.contains("file")` is different: **the mutant is more correct than the
-code.** Every `%F` string for a regular file, `regular file` and `regular empty
-file`, contains both words, so the two forms agree there. They diverge on
+file_type.contains("file")` produced a mutant **more correct than the shipped
+line**. Every `%F` string for a regular file, `regular file` and `regular empty
+file`, contains both words, so the two forms agreed there. They diverged on
 `character special file` and `block special file`, which contain `file` but not
-`regular`: the shipped `||` calls a device a file, and `&&` does not.
+`regular`: the shipped `||` called a device a file and `&&` did not.
 `LocalExecutor` answers from `std::fs::Metadata::is_file`, which is false for a
-device, so the remote and local executors disagree about the same path, and
+device, so the remote and local executors disagreed about the same path, and
 `hardener-state/src/manager.rs:598` gates checkpoint capture on exactly this
-field. The code's own comment says special files are never checkpointed, which
-is why nothing has gone wrong yet, and it is also why no test covers it. Pinning
-the current behaviour would enshrine the divergence, so this is left open as a
-finding rather than killed: the fix is to drop the second arm, leaving
-`file_type.contains("regular")`, which matches `&&` on every `%F` value and is
-shorter than either. Both arms are English-only in any case, so a `stat` running
-under a translated locale reports every path as not-a-file, which is a separate
-and larger gap in the same line.
+field. Pinning the shipped behaviour would have enshrined the divergence, so the
+condition was reduced to `file_type.contains("regular")` instead: it matches the
+mutant on every `%F` value and is shorter than either form. The mutant is gone
+because the operator it mutated is gone, which is the better outcome of the two
+available. `only_a_regular_file_reads_as_a_file_over_ssh` now walks the six `%F`
+shapes, the two special-file rows being the ones that were wrong and the rest
+the control that stops the fix over-correcting into "nothing is a file".
+**Ceiling, unchanged by the fix:** `%F` is translated, so a `stat` under a
+non-English locale reports every path as not a file. That is a separate and
+larger gap, and it is not addressed here.
 
 **The one survivor recorded as acceptable, and why that is not a shrug.**
 `file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||

@@ -533,3 +533,37 @@ fn a_stat_line_missing_fields_parses_to_nothing() {
         "the control: a complete line still parses"
     );
 }
+
+/// `is_file` must mean over ssh what it means locally.
+///
+/// `LocalExecutor` answers from `std::fs::Metadata::is_file`, which is false for
+/// a device. This reader used to accept any `%F` containing the word `file`,
+/// which made `character special file` and `block special file` report as files
+/// here and not there, and `hardener-state/src/manager.rs:598` gates checkpoint
+/// capture on this field, so the two executors disagreed about the same path.
+/// The special-file rows are the ones that were wrong; the rest are the control
+/// that stops the fix over-correcting into "nothing is a file".
+#[test]
+fn only_a_regular_file_reads_as_a_file_over_ssh() {
+    for (stat_line, is_file, is_dir) in [
+        ("regular file 640 1234 0 42", true, false),
+        ("regular empty file 0 0 0 0", true, false),
+        ("directory 755 4096 0 0", false, true),
+        ("character special file 660 0 0 5", false, false),
+        ("block special file 660 0 0 5", false, false),
+        ("symbolic link 777 7 0 0", false, false),
+    ] {
+        let meta = parse_stat_fields(stat_line).expect("every line here is complete");
+        assert_eq!(
+            meta.is_file, is_file,
+            "is_file for `{stat_line}` must match what LocalExecutor reports \
+             for the same path, since checkpoint capture gates on it"
+        );
+        assert_eq!(meta.is_dir, is_dir, "is_dir for `{stat_line}`");
+        assert_ne!(
+            meta.mode, 0,
+            "and every existing path keeps a non-zero mode, or rollback reads \
+             `{stat_line}` as never having existed and removes it"
+        );
+    }
+}
