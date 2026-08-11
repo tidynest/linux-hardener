@@ -166,3 +166,125 @@ fn the_key_derivation_has_a_known_answer() {
          re-encrypts, not a new constant."
     );
 }
+
+// ---------------------------------------------------------------------------
+// The four functions the 2026-08-11 mutation pass found unpinned.
+//
+// Seven survivors sat in this file's subject, which the Phase 4 triage rule
+// calls bugs outright: it names disk, a host and a signature, and this is the
+// signature. The derivation above already had a cross-implementation known
+// answer; what follows covers the wrapper around it, the length guard, the
+// public-key accessor and the can-sign predicate, none of which had anything.
+// ---------------------------------------------------------------------------
+
+/// `derive_encryption_key` is the wrapper that reads this host's identity and
+/// hands it to the derivation the test above pins. It survived being replaced
+/// by `Ok([0; 32])` and by `Ok([1; 32])`, and a constant there would encrypt
+/// every host's signing key under the same key, which is the one thing
+/// deriving from the machine identity exists to prevent.
+///
+/// The reference is computed independently, by reading the identity the same
+/// way and deriving from it, rather than by calling the function a second
+/// time. A comparison between two calls of one function cannot fail under any
+/// mutation that makes it constant.
+#[test]
+fn the_wrapper_derives_from_this_host_identity_rather_than_a_constant() {
+    let machine_id = fs::read_to_string("/etc/machine-id")
+        .or_else(|_| fs::read_to_string("/var/lib/dbus/machine-id"));
+
+    match machine_id {
+        Ok(identity) => {
+            let expected = CheckpointSigner::derive_encryption_key_from(identity.trim())
+                .expect("the derivation succeeds for this host's identity");
+
+            assert_eq!(
+                CheckpointSigner::derive_encryption_key()
+                    .expect("the wrapper succeeds where the identity is readable"),
+                expected,
+                "the wrapper must return the derivation of this host's machine-id. A \
+                 constant here would give every host the same at-rest key"
+            );
+        }
+        Err(_) => {
+            // No machine-id under either path. The wrapper's only job is to
+            // read one, so it must fail rather than answer.
+            assert!(
+                CheckpointSigner::derive_encryption_key().is_err(),
+                "with no machine-id readable the wrapper must fail, not fall back \
+                 to a key it invented"
+            );
+        }
+    }
+}
+
+/// The length guard in `decrypt_key`, which both surviving mutants moved:
+/// `<` became `>`, and the `4 + 12 + 32 + 16` that spells the format became a
+/// subtraction. Forty bytes is the input that separates all three readings. It
+/// is refused by the real guard, and passes under either mutant to fail later
+/// with a decryption error instead, so asserting on *which* error is what kills
+/// them.
+#[test]
+fn a_key_file_shorter_than_the_format_is_refused_for_its_length() {
+    let error = CheckpointSigner::decrypt_key(&[0u8; 40])
+        .expect_err("40 bytes cannot hold MAGIC(4) + NONCE(12) + CIPHERTEXT(32) + TAG(16)");
+
+    assert!(
+        error.to_string().contains("too short"),
+        "a truncated key file must be refused for its length, before any \
+         decryption is attempted: got {error}"
+    );
+}
+
+/// The other side of the same boundary. A file long enough to parse must reach
+/// decryption and fail there, so the guard cannot quietly widen into rejecting
+/// well-formed input.
+#[test]
+fn a_key_file_long_enough_to_parse_fails_on_decryption_not_on_length() {
+    let error = CheckpointSigner::decrypt_key(&[0u8; 80])
+        .expect_err("80 zero bytes are long enough to parse and cannot decrypt");
+
+    assert!(
+        !error.to_string().contains("too short"),
+        "a file past the minimum length must not be refused as too short: got {error}"
+    );
+}
+
+/// `public_key_bytes` survived being replaced by `[0; 32]` and by `[1; 32]`,
+/// and the reason is worth keeping. Its only previous assertion compared
+/// `signer.public_key_bytes()` against `reloaded.public_key_bytes()`, which a
+/// constant satisfies on both sides: that test proves the two calls agree and
+/// never that either is right.
+///
+/// The reference here is the `.pub` file written beside the key by
+/// `save_public_key`, which is a different path to the same bytes.
+#[test]
+fn the_public_key_accessor_returns_the_key_written_beside_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let key_path = dir.path().join("signing.key");
+    let signer = CheckpointSigner::new_with_path(&key_path).expect("generate a signer");
+
+    let on_disk = fs::read(key_path.with_extension("pub")).expect("read the public key file");
+
+    assert_eq!(
+        signer.public_key_bytes().as_slice(),
+        on_disk.as_slice(),
+        "the accessor must return the key that was written to disk, not a value \
+         of its own"
+    );
+}
+
+/// `can_sign` survived being replaced by `false`. A signer that generated its
+/// own key holds the private half, and reporting otherwise would make every
+/// checkpoint go unsigned on a host that could sign perfectly well.
+#[test]
+fn a_signer_that_generated_its_own_key_can_sign() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let signer = CheckpointSigner::new_with_path(&dir.path().join("signing.key"))
+        .expect("generate a signer");
+
+    assert!(
+        signer.can_sign(),
+        "a freshly generated signer holds its private key and must report that it \
+         can sign"
+    );
+}

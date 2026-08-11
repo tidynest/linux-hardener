@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1929 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1935 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1934 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1940 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1969 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1969 across 294 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1974 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1974 across 294 files |
 
-The gap between 1969 annotations and 1929 executions is exactly 40, and all 40
+The gap between 1974 annotations and 1934 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 1969, and they are meant to be: the check globs every `.rs`
+are the same number, 1974, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1929 + 6 = 1935 and 40 + 7 = 47.
+covers. 1934 + 6 = 1940 and 40 + 7 = 47.
 
 ---
 
@@ -92,23 +92,37 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 
 | Crate | Mutants | Caught | Missed | Unviable | Timeouts | Missed, of viable |
 |---|---|---|---|---|---|---|
-| `hardener-common` | 164 | 108 | 46 | 10 | 0 | 30% |
+| Crate | Mutants | Caught | Missed | Unviable | Timeouts | Missed, of viable |
+|---|---|---|---|---|---|---|
+| `hardener-common` | 164 | 106 | 48 | 10 | 0 | 31% |
 | `hardener-state` | 217 | 146 | 19 | 52 | 0 | 12% |
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
-| **Total** | **700** | **432** | **159** | **109** | **0** | **27%** |
+| **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-`hardener-common` reads 108 and 46 rather than the 106 and 48 the pass itself
-produced, because the two `session_is_root` survivors were killed the same day
-and the row records the tree as it stands. Every other figure is the run's own.
+**Nine of those 161 have since been killed**, all on 2026-08-11, so the tree as
+it stands reads:
+
+| Crate | Caught | Missed | Change |
+|---|---|---|---|
+| `hardener-common` | 108 | 46 | both `session_is_root` survivors |
+| `hardener-state` | 153 | 12 | all seven in `signing.rs` |
+| `hardener-core` | 178 | 94 | unchanged |
+| **Total now** | **439** | **152** | **26% of viable** |
+
+Both kills were verified by re-running the runner rather than by reasoning
+about the tests: `--re session_is_root` reports 2 caught where the pass
+reported 2 missed, and `--file crates/hardener-state/src/signing.rs` reports
+**43 mutants, 35 caught, 8 unviable, none missed**, so that file is now clear
+of survivors entirely rather than clear of the seven that were listed.
 
 No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**159 of the 161 survivors are identified, not resolved.** G4 asks for each to
-be killed by a test or recorded with the reason it is acceptable, and for all
-but the two below only the first half of that, the identification, is done.
-Where they sit, and what the Phase 4 triage rule makes of them:
+**The remaining 152 are identified, not resolved.** G4 asks for each to be
+killed by a test or recorded with the reason it is acceptable, and for these
+only the first half of that, the identification, is done. Where they sit, and
+what the Phase 4 triage rule makes of them:
 
 | Cluster | Survivors | Reading |
 |---|---|---|
@@ -117,7 +131,7 @@ Where they sit, and what the Phase 4 triage rule makes of them:
 | `hardener-common/executor/mock.rs` | 19 | `MockExecutor` itself, so neither disk nor host: a note by the rule. Worth stating anyway, because a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. |
 | `hardener-core/context.rs`, `config_loader.rs`, `config_validation.rs` | 40 | `config_loader` reaches disk; the other two are notes. |
 | `hardener-common/executor/mod.rs` | 9, was 11 | Reaches a host. **The two `session_is_root` survivors are killed**; see below. `host_keys_for` survives returning `vec![]`, and it decides which checkpoints a rollback can see. |
-| `hardener-state/signing.rs` | 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. Detailed below. |
+| `hardener-state/signing.rs` | 0, was 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. **All seven killed**; see below. |
 | Remainder | 25 | `manager.rs` 5, `audit.rs` 4, `scan_manager.rs` 3, `error.rs` 3, `plugin.rs` 3, `inventory.rs` 3, and one each in `logging.rs`, `testing.rs`, `registry.rs`, `config.rs`. |
 
 **The two that were killed, and why these first.** `session_is_root` survived
@@ -134,21 +148,39 @@ left `true` alive, and `true` is the half that hands a caller privileges the far
 end never granted. Re-running the pair with
 `cargo mutants -p hardener-common --re session_is_root` reports **2 caught**.
 
-**Why the signing survivors are the ones to read first.**
-`derive_encryption_key` survives returning `Ok([0; 32])`, so the AES-256 key
-that encrypts the signing key at rest can be a constant and nothing notices;
-`derive_encryption_key_from` is tested, but the outer function that reads
-`/etc/machine-id` and calls it is not. `decrypt_key`'s length guard survives
-`<` becoming `>` and `+` becoming `-`. `can_sign` survives returning `false`.
+**The signing seven, what they were and what killed them.** These were the
+sharpest finding of the pass, and all seven are now dead.
 
-`public_key_bytes` survives returning both `[0; 32]` and `[1; 32]`, and its
-cause is worth generalising. The only assertion touching it is
-`signing/tests.rs:44`, which compares `signer.public_key_bytes()` against
-`reloaded.public_key_bytes()`. **A mutant that makes the function constant
-satisfies both sides**, so the test proves the two calls agree and never that
-either is right. Any assertion shaped `f(a) == f(b)` is blind to every constant
-mutation of `f`; killing this one needs an independent reference, the bytes on
-disk or a known key, rather than a second call.
+`derive_encryption_key` survived returning `Ok([0; 32])` and `Ok([1; 32])`, so
+the AES-256 key encrypting the signing key at rest could be a constant, which
+would give every host the same at-rest key.  `derive_encryption_key_from` had a
+cross-implementation known answer; the outer function that reads
+`/etc/machine-id` and calls it had nothing. It is now compared against the
+derivation of the identity read the same way, and where no machine-id is
+readable it must fail rather than answer.
+
+`decrypt_key`'s length guard survived `<` becoming `>` and `+` becoming `-`,
+both of which move the 64-byte boundary that `MAGIC(4) + NONCE(12) +
+CIPHERTEXT(32) + TAG(16)` spells out. Forty bytes separates all three readings:
+refused for its length by the real guard, and passed through to fail as a
+decryption error under either mutant, so the test asserts on **which** error
+comes back. An 80-byte case holds the other side, so the guard cannot widen
+into rejecting well-formed input.
+
+`can_sign` survived returning `false`, which would leave every checkpoint
+unsigned on a host able to sign perfectly well.
+
+`public_key_bytes` survived returning both `[0; 32]` and `[1; 32]`, and its
+cause is the one to generalise. The only assertion touching it compared
+`signer.public_key_bytes()` against `reloaded.public_key_bytes()`. **A mutant
+making the function constant satisfies both sides**, so that test proves the
+two calls agree and never that either is right. Any assertion shaped
+`f(a) == f(b)` is blind to every constant mutation of `f`. It is now held
+against the `.pub` file `save_public_key` wrote beside the key, which is a
+different path to the same bytes.
+
+The pattern across all four: **an independent reference kills a constant, a
+second call never can.**
 
 The `hardener-distro` smoke below is kept because the `-j 1` finding it
 produced is what makes the numbers above believable.
