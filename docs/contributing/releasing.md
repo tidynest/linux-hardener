@@ -95,11 +95,18 @@ Use the release script:
 # Dry run first
 ./scripts/release/release.sh patch --dry-run
 
-# Actual release
-./scripts/release/release.sh patch   # 0.1.0 -> 0.1.1
-./scripts/release/release.sh minor   # 0.1.1 -> 0.2.0
-./scripts/release/release.sh major   # 0.2.0 -> 1.0.0
+# Actual release, as the checklist runs it: tag locally, publish separately
+./scripts/release/release.sh patch --no-push   # 0.1.0 -> 0.1.1
+./scripts/release/release.sh minor --no-push   # 0.1.1 -> 0.2.0
+./scripts/release/release.sh major --no-push   # 0.2.0 -> 1.0.0
 ```
+
+**Use `--no-push`.** Without it the script performs steps 9 and 10 below,
+publishing the branch and the tag in the same run that creates them, and the
+release-readiness gates are then reading a tag the world already has. The flag
+stops after the tag and prints the push commands, so a failed gate costs
+`git tag -d` and a `git reset --hard HEAD~1` rather than a retraction. The
+reasoning is under [Release Checklist](#release-checklist).
 
 The release script automatically:
 1. Runs tests and clippy
@@ -121,8 +128,8 @@ The release script automatically:
 6. Updates `CHANGELOG.md`
 7. Refreshes `Cargo.lock` (`cargo update --workspace`)
 8. Creates git commit and tag
-9. Pushes to `main` on GitHub and GitLab
-10. Pushes the release tag to both remotes
+9. Pushes to `main` on GitHub and GitLab **unless `--no-push` was given**
+10. Pushes the release tag to both remotes, under the same condition
 
 If documentation validation fails, you'll be prompted to continue or abort the release.
 
@@ -423,8 +430,22 @@ list when you want to know what holds a version string.
 
 ### At the tag
 
-- [ ] `./scripts/release/release.sh <major|minor|patch>` (dry run first), which
-      writes every "Yes" row of [Version Locations](#version-locations)
+**The tag is created before it is published, and the gap between the two is
+where the gates run.** This phase used to list the script first and the gates
+second, which could not be carried out: the script tags and pushes in one run,
+so by the time the tagged commit existed it was already on both remotes, and a
+failing gate meant retracting a published tag rather than deleting a local one.
+`--no-push` is what separates the two, and `git` already separates `tag` from
+`push` for this reason.
+
+- [ ] `./scripts/release/release.sh <major|minor|patch> --dry-run` first
+- [ ] `./scripts/release/release.sh <major|minor|patch> --no-push`, which writes
+      every "Yes" row of [Version Locations](#version-locations), commits the
+      bump and creates the tag, **publishing nothing**
+- [ ] Rebuild from the tagged commit and read the version back, because the
+      gates below run against a binary and an artefact rather than a tree:
+      `cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli`
+      and, for the GUI suite, `cd crates/hardener-ui && trunk build --release`
 - [ ] **The release-readiness gates G1 through G8 all pass at the tagged
       commit**, not only before the release branch was cut. G9 is this
       procedure, and it is the last gate for the reason that the other eight
@@ -435,6 +456,15 @@ list when you want to know what holds a version string.
       exercised and eyeballed, every document current, and the claim ledger and
       ceiling document accurate. Re-running them at the tag is what makes them
       claims about the release rather than about a commit that preceded it.
+- [ ] Publish, and only now, the branch and the tag to both remotes. The script
+      prints these:
+
+      git push origin main && git push origin vX.Y.Z
+      git push gitlab main && git push gitlab vX.Y.Z
+
+- [ ] **If any gate fails, unwind instead of pushing:** `git tag -d vX.Y.Z` then
+      `git reset --hard HEAD~1`. That is the whole reason the tag was withheld,
+      and it is only cheap while nothing has fetched it
 
 ### After the tag, all by hand
 

@@ -22,6 +22,7 @@ NC='\033[0m' # No Colour
 DRY_RUN=false
 BUMP_TYPE=""
 VERIFY_ONLY=false
+NO_PUSH=false
 
 # Function to verify all version references match
 verify_versions() {
@@ -98,8 +99,12 @@ while [[ $# -gt 0 ]]; do
             VERIFY_ONLY=true
             shift
             ;;
+        --no-push)
+            NO_PUSH=true
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [patch|minor|major] [--dry-run]"
+            echo "Usage: $0 [patch|minor|major] [--dry-run] [--no-push]"
             echo "       $0 --verify"
             echo ""
             echo "Arguments:"
@@ -110,6 +115,11 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --verify   Check that all version references match (no changes)"
             echo "  --dry-run  Show what would be done without making changes"
+            echo "  --no-push  Bump, commit and tag locally, then stop and print the"
+            echo "             push commands. Required by the release checklist: the"
+            echo "             G1-G8 gates are read AT the tagged commit, and a tag"
+            echo "             that is already published cannot be gated, only"
+            echo "             retracted."
             echo "  -h, --help Show this help message"
             exit 0
             ;;
@@ -423,8 +433,31 @@ else
 fi
 
 # Step 8: Push to remotes (both branches on both remotes)
+#
+# Skipped under --no-push, which is what the release checklist calls for. The
+# G1-G8 release-readiness gates are read AT the tagged commit, and this script
+# creates that commit; if it published in the same run, the gates could only
+# ever run against a tag the world already has, and failing one would mean
+# retracting a published tag rather than deleting a local one. git separates
+# `tag` from `push` for exactly this reason.
 echo -e "\n${BLUE}Step 8: Pushing to remotes...${NC}"
-if $DRY_RUN; then
+if $NO_PUSH; then
+    echo -e "${YELLOW}Skipped: --no-push.${NC}"
+    if $DRY_RUN; then
+        echo "The bump commit and ${TAG_NAME} would exist locally, unpublished."
+    else
+        echo "The bump commit and ${TAG_NAME} exist locally and are not published."
+    fi
+    echo ""
+    echo "Read G1 through G8 at ${TAG_NAME} now. Publish only once they pass:"
+    echo ""
+    echo "  git push origin ${CURRENT_BRANCH} && git push origin ${TAG_NAME}"
+    echo "  git push gitlab ${CURRENT_BRANCH} && git push gitlab ${TAG_NAME}"
+    echo ""
+    echo "If a gate fails, undo the tag and the commit instead:"
+    echo ""
+    echo "  git tag -d ${TAG_NAME} && git reset --hard HEAD~1"
+elif $DRY_RUN; then
     echo "Would push to all remotes and branches:"
     echo "  - origin/${CURRENT_BRANCH}"
     echo "  - origin/${TAG_NAME}"
@@ -450,11 +483,22 @@ echo -e "\n${GREEN}=== Release Summary ===${NC}"
 echo -e "Version: ${CURRENT_VERSION} -> ${NEW_VERSION}"
 echo -e "Tag: ${TAG_NAME}"
 echo -e "Branch: ${CURRENT_BRANCH}"
-echo -e "Pushed: ${CURRENT_BRANCH} and ${TAG_NAME} to GitHub and GitLab"
+if $NO_PUSH; then
+    echo -e "Pushed: ${YELLOW}nothing, --no-push${NC}. ${TAG_NAME} is local only."
+else
+    echo -e "Pushed: ${CURRENT_BRANCH} and ${TAG_NAME} to GitHub and GitLab"
+fi
 
 if $DRY_RUN; then
     echo -e "\n${YELLOW}This was a dry run. No changes were made.${NC}"
     echo "Run without --dry-run to perform the actual release."
+elif $NO_PUSH; then
+    echo -e "\n${GREEN}Release ${NEW_VERSION} prepared, not published.${NC}"
+    echo ""
+    echo "Next steps:"
+    echo "1. Read G1 through G8 at ${TAG_NAME}, per docs/contributing/releasing.md"
+    echo "2. Push the branch and the tag with the commands above, if they pass"
+    echo "3. Then the manual after-the-tag set: packaging, AUR, badges, prose"
 else
     echo -e "\n${GREEN}Release ${NEW_VERSION} complete!${NC}"
     echo ""
