@@ -20,8 +20,8 @@ use hardener_types::{
     ApplyOutcome, ConfigSummary, ControlOutcome, FleetFrameworkPosture, FleetHostScan,
     FleetHostStatus, PluginId, RollbackOutcome, SeverityTallies,
     remote::{
-        FLEET_PROGRESS_EVENT, FleetProgress, HostSessionInfo, HostsConfig, RemoteConnectionInfo,
-        RemoteConnectionStatus, RemoteHostProfile,
+        FLEET_PROGRESS_EVENT, FleetProgress, HostSessionInfo, HostsConfig, RemoteConnectionStatus,
+        RemoteHostProfile,
     },
 };
 use serde::Serialize;
@@ -158,8 +158,6 @@ pub struct RemoteState {
 /// An active SSH connection with its executor and metadata.
 pub struct ActiveConnection {
     pub executor: std::sync::Arc<hardener_core::SshExecutor>,
-    #[allow(dead_code)]
-    pub info: RemoteConnectionInfo,
 }
 
 /// Returns the path to the main hardener config file.
@@ -1652,15 +1650,9 @@ pub async fn connect_remote(
     match hardener_core::SshExecutor::connect(ssh_config).await {
         Ok(executor) => {
             let user_display = profile.user.clone().unwrap_or_else(whoami::username);
-            let info = RemoteConnectionInfo {
-                profile_name: name,
-                host: profile.hostname.clone(),
-                user: user_display.clone(),
-            };
             let mut connection = state.active_connection.lock().await;
             *connection = Some(ActiveConnection {
                 executor: std::sync::Arc::new(executor),
-                info,
             });
             Ok(RemoteConnectionStatus::Connected {
                 host: profile.hostname,

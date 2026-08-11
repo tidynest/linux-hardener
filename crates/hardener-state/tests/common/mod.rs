@@ -4,7 +4,6 @@ use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use hardener_common::executor::{CommandOutput, FileMetadata, MockExecutor, SystemExecutor};
 use hardener_state::{CheckpointManager, init_db};
-use sqlx::SqlitePool;
 use std::fs::Permissions;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -94,8 +93,6 @@ impl SystemExecutor for DiskExecutor {
 /// Test fixture containing temporary directories and database.
 pub struct TestFixture {
     pub fixture_checkpoint_manager: CheckpointManager,
-    #[allow(dead_code)]
-    pub fixture_db_pool: SqlitePool,
     pub fixture_temp_dir: TempDir,
 }
 
@@ -124,7 +121,6 @@ impl TestFixture {
 
         TestFixture {
             fixture_checkpoint_manager: checkpoint_manager,
-            fixture_db_pool: db_pool,
             fixture_temp_dir: temp_dir,
         }
     }

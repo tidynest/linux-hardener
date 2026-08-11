@@ -38,7 +38,7 @@ them; do not copy a figure from an older document.
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
 | Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1965 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1965 across 295 files |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1965 across 294 files |
 
 The gap between 1965 annotations and 1925 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
@@ -79,7 +79,7 @@ Every row is graded by what its evidence actually asks:
 
 ---
 
-## Mutation testing, smoked on 2026-08-07
+## Mutation testing, run across the integrity-critical crates on 2026-08-11
 
 The three grades above say what a test's evidence is worth once it runs. None
 of them, and no coverage figure either, can say whether a test checks anything
@@ -87,11 +87,53 @@ at all: a line a test reaches and asserts nothing about counts exactly as
 covered as a line it pins. Mutation testing asks the one question that
 separates the two. Change the code, and does anything go red?
 
-Phase 4 is where that runs across the integrity-critical crates. What is
-recorded here is narrower, namely that the runner is installed and that its
-verdicts can be believed. Both were proven on `hardener-distro`, chosen because
-it is the smallest crate in the workspace and not because its result is
-interesting.
+**The full pass has now run, on 2026-08-11 at `56245cc7`.** All three
+integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
+
+| Crate | Mutants | Caught | Missed | Unviable | Timeouts | Missed, of viable |
+|---|---|---|---|---|---|---|
+| `hardener-common` | 164 | 106 | 48 | 10 | 0 | 31% |
+| `hardener-state` | 217 | 146 | 19 | 52 | 0 | 12% |
+| `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
+| **Total** | **700** | **430** | **161** | **109** | **0** | **27%** |
+
+No timeouts anywhere, so no verdict here is a stalled build reported as a
+survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
+outside the tree because they are a measurement rather than a document.
+
+**These 161 survivors are identified, not resolved.** G4 asks for each to be
+killed by a test or recorded with the reason it is acceptable, and only the
+first half of that, the identification, is done. Where they sit, and what the
+Phase 4 triage rule makes of them:
+
+| Cluster | Survivors | Reading |
+|---|---|---|
+| `hardener-core/executor/local.rs`, `hardener-common/file_utils.rs` | 34 | Reaches disk, so a bug by the rule. Includes `create_timestamped_backup` returning `Ok(Default::default())`, which writes no backup at all: the very files whose retention the pruning work bounds. |
+| `hardener-core/executor/ssh.rs` | 25 | **Two different verdicts in one file.** Most are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. But `parse_stat_fields`, `unique_delimiter` and `resolve_ssh_user` are pure functions needing no host, and those are ordinary gaps. |
+| `hardener-common/executor/mock.rs` | 19 | `MockExecutor` itself, so neither disk nor host: a note by the rule. Worth stating anyway, because a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. |
+| `hardener-core/context.rs`, `config_loader.rs`, `config_validation.rs` | 40 | `config_loader` reaches disk; the other two are notes. |
+| `hardener-common/executor/mod.rs` | 11 | Reaches a host. `session_is_root` survives replacement with **both** `true` and `false`, so the fail-closed privilege probe behind `hardener-plugins/src/lib.rs:49` and `ssh/mod.rs:419` is pinned by nothing. `host_keys_for` survives returning `vec![]`, and it decides which checkpoints a rollback can see. |
+| `hardener-state/signing.rs` | 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. Detailed below. |
+| Remainder | 25 | `manager.rs` 5, `audit.rs` 4, `scan_manager.rs` 3, `error.rs` 3, `plugin.rs` 3, `inventory.rs` 3, and one each in `logging.rs`, `testing.rs`, `registry.rs`, `config.rs`. |
+
+**Why the signing survivors are the ones to read first.**
+`derive_encryption_key` survives returning `Ok([0; 32])`, so the AES-256 key
+that encrypts the signing key at rest can be a constant and nothing notices;
+`derive_encryption_key_from` is tested, but the outer function that reads
+`/etc/machine-id` and calls it is not. `decrypt_key`'s length guard survives
+`<` becoming `>` and `+` becoming `-`. `can_sign` survives returning `false`.
+
+`public_key_bytes` survives returning both `[0; 32]` and `[1; 32]`, and its
+cause is worth generalising. The only assertion touching it is
+`signing/tests.rs:44`, which compares `signer.public_key_bytes()` against
+`reloaded.public_key_bytes()`. **A mutant that makes the function constant
+satisfies both sides**, so the test proves the two calls agree and never that
+either is right. Any assertion shaped `f(a) == f(b)` is blind to every constant
+mutation of `f`; killing this one needs an independent reference, the bytes on
+disk or a known key, rather than a second call.
+
+The `hardener-distro` smoke below is kept because the `-j 1` finding it
+produced is what makes the numbers above believable.
 
 | Measurement | Command | Reading |
 |---|---|---|
@@ -99,8 +141,8 @@ interesting.
 | Mutants tested in `hardener-distro` | `cargo mutants -p hardener-distro --timeout 120 -j 1` | 126 tested in 68s: 36 caught, 73 missed, 17 unviable, 0 timeouts. Taken before the Phase 3 deletion recorded below, and not reproducible on the crate as it now stands. |
 
 Run that command as printed, with a bare `cargo` and no wrapper in front of it.
-One correction to it cost a wrong answer to find, and Phase 4 inherits it
-because it will copy the line above.
+One correction to it cost a wrong answer to find, and the 2026-08-11 pass above
+inherited it by copying the line verbatim.
 
 **`-j 1`, never `-j 2`.** On this machine that is a correctness requirement
 rather than a preference. A single global `build.target-dir` sends every one of

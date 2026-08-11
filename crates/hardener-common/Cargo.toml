@@ -10,7 +10,6 @@ version.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 hardener-types = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }

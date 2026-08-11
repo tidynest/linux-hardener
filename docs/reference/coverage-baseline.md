@@ -260,10 +260,13 @@ the top of the sort:
   does not appear in the table below, and cannot; see "What the next phases
   inherit". It went in the same change as the module above, which is the
   outcome that section predicted a reference search would produce.
-- `crates/hardener-ui/src/utils/mock_data.rs`, 103 lines at 0 per cent. Already
-  declared dead in the tree: `crates/hardener-ui/src/utils/mod.rs` carries
+- `crates/hardener-ui/src/utils/mock_data.rs`, 103 lines at 0 per cent. It was
+  already declared dead in the tree: `utils/mod.rs` carried
   `#[allow(dead_code)]` above the module and a comment reading "Mock data is
-  available for development/testing but not currently used".
+  available for development/testing but not currently used". **Deleted on
+  2026-08-11** along with its `mod` line, and `validate_file_map.py` caught both
+  documents that still named it, which is the guard working rather than a
+  documentation lapse.
 
 **Reaches users, reaches no test (Phase 4, hunt here):**
 
@@ -350,7 +353,7 @@ Three readings repeat, and are stated once here rather than 40 times below:
 | `crates/hardener-ui/src/components/scan_history_tab.rs` | 0.00% | 111 / 111 | [host-target view] |
 | `crates/hardener-ui/src/components/host_row.rs` | 0.00% | 109 / 109 | [host-target view] |
 | `crates/hardener-ui/src/components/sidebar.rs` | 0.00% | 108 / 108 | [host-target view] |
-| `crates/hardener-ui/src/utils/mock_data.rs` | 0.00% | 103 / 103 | **Declared dead.** `#[allow(dead_code)]` in `utils/mod.rs` with a comment saying it is not currently used. Phase 3: delete. |
+| `crates/hardener-ui/src/utils/mock_data.rs` | 0.00% | 103 / 103 | **Deleted 2026-08-11.** Was declared dead in `utils/mod.rs` and is gone, with the `mod` line. The row is kept so the figures above still reconcile against the run they came from. |
 | `crates/hardener-distro/src/package/apt.rs` | 0.00% | 102 / 102 | **[deleted #127]** No caller anywhere. Went with the rest of `package/`. |
 | `crates/hardener-ui/src/components/schedule_section.rs` | 0.00% | 95 / 95 | [host-target view] |
 | `crates/hardener-ui/src/components/tabs.rs` | 0.00% | 94 / 94 | [host-target view] |

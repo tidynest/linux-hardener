@@ -55,11 +55,11 @@ pub struct CheckpointSigner {
 }
 
 impl CheckpointSigner {
-    /// Default path for the signing key.
+    /// Default path for the signing key. The public key's path is never a
+    /// constant beside it: both writers derive it as
+    /// `key_path.with_extension("pub")`, so the pair cannot come apart when
+    /// the key path is not the default one.
     const DEFAULT_KEY_PATH: &'static str = "/etc/linux-hardener/signing.key";
-    /// Default path for the public verification key.
-    #[allow(dead_code)]
-    const DEFAULT_PUBKEY_PATH: &'static str = "/etc/linux-hardener/signing.pub";
 }
 
 impl CheckpointSigner {

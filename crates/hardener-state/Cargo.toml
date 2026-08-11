@@ -33,7 +33,6 @@ ring = { workspace = true}
 tracing = { workspace = true }
 
 # Error handling
-nix = { workspace = true, features = ["fs"] }
 chrono = { workspace = true, features = ["serde"] }
 subtle = "2.6.1"
 zeroize = "1.8.2"
