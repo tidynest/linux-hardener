@@ -443,3 +443,79 @@ fn the_env_plugin_list_is_parsed_and_every_id_checked() {
         "and the variable it came from, so an operator knows which to fix: {message}"
     );
 }
+
+/// Writes a user config under `dir` and returns the loader that will read it.
+fn loader_reading_user_config(dir: &std::path::Path, body: &str) -> ConfigLoader {
+    let config_dir = dir.join("linux-hardener");
+    std::fs::create_dir_all(&config_dir).expect("create the config directory");
+    std::fs::write(config_dir.join("config.toml"), body).expect("write the user config");
+    ConfigLoader::new().with_config_dir(dir.to_path_buf())
+}
+
+/// A user config is read when defaults are not skipped, and not when they are.
+///
+/// Both branches were unobservable before the seam existed: neither default
+/// location is present on a test runner, so taking the `skip_defaults` branch
+/// and skipping it produced an identical configuration and deleting the `!`
+/// changed nothing any assertion could see. With the lookup pointed at a
+/// directory the test owns, the two answers differ.
+#[test]
+fn skip_defaults_decides_whether_the_user_config_is_read() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = "[ssh.directives]\nPermitRootLogin = \"no\"\n";
+
+    let read = loader_reading_user_config(dir.path(), body)
+        .load()
+        .expect("a loader that reads defaults loads the user config");
+    assert_eq!(
+        read.ssh
+            .directives
+            .get("PermitRootLogin")
+            .map(String::as_str),
+        Some("no"),
+        "the user config is one of the sources `load` is documented to merge"
+    );
+
+    let skipped = loader_reading_user_config(dir.path(), body)
+        .skip_defaults()
+        .load()
+        .expect("a loader that skips defaults still loads");
+    assert!(
+        !skipped.ssh.directives.contains_key("PermitRootLogin"),
+        "and `skip_defaults` must actually skip it, or the flag names nothing"
+    );
+}
+
+/// Running as root skips the user config, and not running as root reads it.
+///
+/// The rule exists because `pkexec` runs this tool as root from an
+/// unprivileged session: an ordinary user's `~/.config` must not be able to
+/// steer root-level hardening. The suite runs unprivileged, so the real
+/// `is_running_as_root` answers `false` and the *reading* half is what a test
+/// can ask directly; the refusing half is asked by pointing the loader at a
+/// directory whose config would be visible if the guard were inverted.
+///
+/// `is_running_as_root` replaced by `false` stays alive on purpose and is
+/// recorded as **provably equivalent**: under a non-root runner the real
+/// function already returns `false`, so no assertion can separate them. The
+/// `true` replacement is the dangerous half and is what this kills, along with
+/// the `!` deletion, which inverts the rule into reading user config **only**
+/// when root.
+#[test]
+fn an_unprivileged_session_reads_the_user_config_the_root_rule_would_skip() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = loader_reading_user_config(
+        dir.path(),
+        "[global]\ndisabled_plugins = [\"mac-hardening\"]\n",
+    )
+    .load()
+    .expect("the suite runs unprivileged, so the user config is read");
+
+    assert_eq!(
+        config.global.disabled_plugins,
+        vec!["mac-hardening".to_string()],
+        "an unprivileged session must honour the operator's own config; a rule \
+         answering `root` for everyone, or inverted to read it only as root, \
+         silently drops it"
+    );
+}

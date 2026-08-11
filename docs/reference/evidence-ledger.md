@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1989 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1995 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1991 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1997 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2029 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2029 across 297 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2031 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2031 across 297 files |
 
-The gap between 2029 annotations and 1989 executions is exactly 40, and all 40
+The gap between 2031 annotations and 1991 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2029, and they are meant to be: the check globs every `.rs`
+are the same number, 2031, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1989 + 6 = 1995 and 40 + 7 = 47.
+covers. 1991 + 6 = 1997 and 40 + 7 = 47.
 
 ---
 
@@ -97,15 +97,15 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**A hundred and thirty-one of those 161 have since been killed**, all on 2026-08-11, so the
+**A hundred and thirty-four of those 161 have since been killed**, all on 2026-08-11, so the
 tree as it stands reads:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
 | `hardener-common` | 152 | 2 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
 | `hardener-state` | 165 | 0 | all seven in `signing.rs`, and the twelve left across `manager.rs`, `audit.rs` and `scan_manager.rs` |
-| `hardener-core` | 244 | 27 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
-| **Total now** | **561** | **29** | **5% of viable** |
+| `hardener-core` | 247 | 24 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
+| **Total now** | **564** | **26** | **4% of viable** |
 
 Every kill was verified by re-running the runner over the affected scope
 rather than by reasoning about the tests:
@@ -132,7 +132,7 @@ No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 29 are identified, not resolved.** G4 asks for each to be
+**The remaining 26 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
@@ -143,7 +143,7 @@ what the Phase 4 triage rule makes of them:
 | `hardener-common/file_utils.rs` | 1, was 14 | **Resolved.** Thirteen killed; the survivor is recorded as acceptable below. |
 | `hardener-core/executor/ssh.rs` | 20, was 25 | **Two different verdicts in one file.** The 19 that remain unaddressed are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. The host-free functions were ordinary gaps and are dealt with: `unique_delimiter`, `resolve_ssh_user` and the length guard in `parse_stat_fields` are killed, and of the two left in `parse_stat_fields` one was a **finding against the code rather than against the tests** and is fixed, leaving a single equivalent mutant. Both are described below. |
 | `hardener-common/executor/mock.rs` | 0, was 19 | **Resolved.** `MockExecutor` itself, so the rule called these notes, and **the rule was the wrong reading**: a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. All nineteen killed; see below. |
-| `hardener-core/config_loader.rs` | 4, was 16 | **Resolved.** Twelve killed; the four survivors are recorded as acceptable below, and one of them is provably equivalent. |
+| `hardener-core/config_loader.rs` | 1, was 16 | **Resolved.** Fifteen killed, three of them by giving the loader a path seam. The one left is **provably equivalent**: `is_running_as_root` replaced by `false`, which is what the real function already returns on a non-root runner. |
 | `hardener-core/context.rs`, `config_validation.rs` | 0, was 24 | **Resolved.** The rule called these notes because neither reaches disk or a host, but `context.rs` is what tells every plugin which distribution and kernel it is running on, and `config_validation.rs` is a guard against path traversal. All twenty-four killed; see below. |
 | `hardener-common/executor/mod.rs` | 0, was 11 | **Resolved.** Reaches a host, so a bug by the rule throughout. All eleven killed; see below. |
 | `hardener-state/signing.rs` | 0, was 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. **All seven killed**; see below. |
@@ -259,22 +259,39 @@ the machine running the suite. Reversing the call order is the whole test. The
 lesson generalises past this file: **a builder method is only pinned by a test
 that calls something before it.**
 
-The four that stay are the two `!` deletions in `load` at lines 55 and 63, and
-both constant replacements of `is_running_as_root`. They share one cause. The
-branch bodies they guard load `/etc/linux-hardener/config.toml` and
-`~/.config/linux-hardener/config.toml`, and neither file exists on a test
-runner, so taking the branch or skipping it produces an identical config and no
-assertion can separate them. `is_running_as_root -> false` is stronger than
-merely hard: under a non-root runner the real function already returns `false`,
-so that mutant is **provably equivalent** and no test will ever kill it.
+**Three of the four that stayed are now dead, and it took a seam in the code.**
+`ConfigLoader` gained `with_config_dir`, which points the user-config lookup at
+a directory a test owns instead of at `dirs::config_dir()`. Without it the two
+branches deciding whether user config is read at all had no observable
+difference: `~/.config/linux-hardener/config.toml` is absent on a runner, so
+taking either branch produced an identical configuration and deleting a `!`
+changed nothing an assertion could see. This is the same shape of fix #155 took
+for `stat`: pin the input rather than teach the code about the environment, and
+the earlier note here that the alternative was an unsafe `env::set_var` under a
+threaded `cargo test` is why the seam is a field rather than a variable.
 
-Killing the other three needs control of what `dirs::config_dir()` resolves,
-which means `HOME` or `XDG_CONFIG_HOME`. This crate is edition 2024, where
-`std::env::set_var` is `unsafe`, and `cargo test` runs a crate's tests as
-threads in one process, so a scoped environment swap would race the other 150-odd
-tests in `hardener-core`. That is the same shape as the `ssh -G` finding: the
-fix is to inject the path resolver rather than to fight the environment. It is
-recorded here as a ceiling of the current design, not as work that was skipped.
+The dangerous halves are what the tests ask. `skip_defaults` must actually skip
+the user config, or the flag names nothing. An unprivileged session must read
+it, since `pkexec` is the reason the root rule exists and the rule inverted
+reads user config **only** as root. `is_running_as_root` replaced by `true`
+answers root for everyone and silently drops the operator's own configuration.
+
+**One stays and always will.** `is_running_as_root` replaced by `false` is
+**provably equivalent** under a non-root runner: the real function already
+returns `false` there, so no assertion can separate them. Killing it would need
+the suite to run as root, which would change what every other test in the tree
+is asking.
+
+**`inventory`'s `load` and `save` stay, for a structural reason worth stating.**
+Each is a two-line wrapper: resolve the ambient location, then delegate.
+`default_path` is pinned, and `load_from` and `save_to` are pinned by a
+round-trip and a missing-file case, so the composition is covered piecewise; what
+is not pinned is the composition itself, and it cannot be without controlling
+the ambient location. `load()` and `save()` take no arguments by design, and
+three callers depend on that, the CLI's `batch` and two Tauri commands. Giving
+them the seam `ConfigLoader` just got means changing a signature across the CLI
+and the desktop IPC, which is a larger change than two mutants justify while a
+release is pending. Recorded as a deliberate ceiling, with the fix named.
 
 **The host-free four in `ssh.rs`, and the one that indicted the code.**
 `unique_delimiter` survived being replaced by `String::new()` and by

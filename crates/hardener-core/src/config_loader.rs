@@ -19,6 +19,15 @@ pub struct ConfigLoader {
     cli_config_path: Option<PathBuf>,
     /// Skip loading from default locations (for testing).
     skip_defaults: bool,
+    /// Base directory the user config is looked up under.
+    ///
+    /// `None`, which is what every shipping caller leaves it as, resolves
+    /// through [`dirs::config_dir`]. It exists because `dirs::config_dir`
+    /// reads the environment and nothing else here can: without a seam, the
+    /// two branches deciding whether user config is read at all had no
+    /// observable difference on a test runner, since neither default location
+    /// exists there. See [`Self::with_config_dir`].
+    config_dir: Option<PathBuf>,
 }
 
 impl ConfigLoader {
@@ -45,6 +54,23 @@ impl ConfigLoader {
         self
     }
 
+    /// Look the user config up under `dir` instead of [`dirs::config_dir`].
+    ///
+    /// The seam exists so the precedence rules can be asked at all. `load`
+    /// decides twice whether to read user config, once on `skip_defaults` and
+    /// once on whether the process is root, and both decisions were
+    /// unobservable on a test runner: `~/.config/linux-hardener/config.toml`
+    /// is absent there, so taking the branch and skipping it produced the same
+    /// configuration. Pointing the lookup at a directory a test controls is
+    /// what makes the difference visible, and it is the same shape of fix #155
+    /// took for `stat`: pin the input rather than teach the parser about the
+    /// environment.
+    #[must_use]
+    pub fn with_config_dir(mut self, dir: PathBuf) -> Self {
+        self.config_dir = Some(dir);
+        self
+    }
+
     /// Load configuration from all sources.
     ///
     /// Returns the merged configuration with later sources overriding earlier ones.
@@ -61,7 +87,7 @@ impl ConfigLoader {
             //    (via pkexec) to prevent unprivileged user config from
             //    influencing root-level hardening operations.
             if !Self::is_running_as_root()
-                && let Some(path) = Self::user_config_path()
+                && let Some(path) = self.user_config_path_for()
             {
                 config = Self::merge_source(config, &path, false)?;
             }
@@ -122,6 +148,15 @@ impl ConfigLoader {
     /// Get the user config path.
     pub fn user_config_path() -> Option<PathBuf> {
         dirs::config_dir().map(|p| p.join("linux-hardener").join("config.toml"))
+    }
+
+    /// The user config path this loader reads, honouring
+    /// [`with_config_dir`](Self::with_config_dir).
+    fn user_config_path_for(&self) -> Option<PathBuf> {
+        match &self.config_dir {
+            Some(dir) => Some(dir.join("linux-hardener").join("config.toml")),
+            None => Self::user_config_path(),
+        }
     }
 
     /// Maximum config file size (1 MiB). Prevents OOM from oversized files.
