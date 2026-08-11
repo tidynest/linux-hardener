@@ -211,6 +211,11 @@ fn metadata_probe_confirms_existence_and_reads_stat_in_one_round_trip() {
     assert!(cmd.contains("stat -c '%F %a %s %u %g'"));
     assert!(cmd.contains("echo E") && cmd.contains("echo N"));
     assert!(
+        cmd.contains("LC_ALL=C stat -c"),
+        "the locale pin must sit on `stat` itself, since %F is translated and \
+         the parser matches English only (#155): {cmd}"
+    );
+    assert!(
         !cmd.contains("NOTFOUND"),
         "the sentinel that conflated absent with unreadable must be gone"
     );
@@ -347,6 +352,89 @@ fn metadata_probe_execution_flags_an_existing_unreadable_path_as_unverifiable() 
         message.contains("could not be read"),
         "error must say the metadata was unreadable, got: {message}"
     );
+}
+
+/// An installed locale under which `stat -c '%F'` answers in another language,
+/// or `None` when this machine cannot ask the question.
+///
+/// The search is the guard as much as the setup. A hard-coded locale name that
+/// happens not to be generated would leave `stat` falling back to English, and
+/// the test below would then pass without asking anything at all: it would
+/// prove the pin works against output the pin was never needed for. Requiring
+/// the chosen locale to actually change the answer is what makes the pass mean
+/// something, and its absence a stated skip rather than a silent one.
+fn a_locale_that_translates_stat(probe_file: &Path) -> Option<String> {
+    let listed = std::process::Command::new("locale")
+        .arg("-a")
+        .output()
+        .ok()?;
+    let names: Vec<String> = String::from_utf8_lossy(&listed.stdout)
+        .lines()
+        .map(str::to_string)
+        .collect();
+
+    names.into_iter().find(|name| {
+        std::process::Command::new("stat")
+            .args(["-c", "%F"])
+            .arg(probe_file)
+            .env("LC_ALL", name)
+            .output()
+            .is_ok_and(|output| !String::from_utf8_lossy(&output.stdout).contains("regular"))
+    })
+}
+
+/// The probe answers in English however the remote host is configured (#155).
+///
+/// `%F` is translated and `parse_stat_fields` matches `regular` and `directory`
+/// literally, so without the `LC_ALL=C` pin a Swedish host reports `normal fil`
+/// for a file and `katalog` for a directory: `is_file` goes false, checkpoint
+/// capture in `hardener-state` skips a path it looked at and found, and the
+/// wrong type bit lands in `mode`. `LocalExecutor` reads `std::fs::Metadata`
+/// and carries no locale, so this is also what keeps the two executors
+/// answering alike.
+///
+/// This runs the real command through a real shell under an inherited hostile
+/// locale, rather than asserting that the command text contains the pin. The
+/// text assertion above cannot tell a pin on `stat` from one placed where it
+/// does nothing.
+#[test]
+fn the_metadata_probe_answers_in_english_under_a_translated_locale() {
+    let dir = ScratchDir::new("locale");
+    let file = dir.path().join("target");
+    std::fs::write(&file, b"content").expect("write fixture file");
+
+    let Some(locale) = a_locale_that_translates_stat(&file) else {
+        eprintln!(
+            "unaskable: no locale installed here translates `stat -c '%F'`, so \
+             the pin cannot be exercised on this machine"
+        );
+        return;
+    };
+
+    for (path, is_file, is_dir) in [(file.as_path(), true, false), (dir.path(), false, true)] {
+        let output = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(metadata_probe_command(path))
+            .env("LC_ALL", &locale)
+            .output()
+            .expect("run the metadata probe under a translated locale");
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+
+        let meta = parse_metadata_probe(&stdout)
+            .unwrap_or_else(|e| panic!("probe under {locale} must still parse: {e:#}"));
+        assert_eq!(
+            meta.is_file,
+            is_file,
+            "is_file for {} under {locale}, from probe output {stdout:?}",
+            path.display()
+        );
+        assert_eq!(
+            meta.is_dir,
+            is_dir,
+            "is_dir for {} under {locale}, from probe output {stdout:?}",
+            path.display()
+        );
+    }
 }
 
 /// The checkpoint host key is derived by a free function rather than only

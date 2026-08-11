@@ -1220,9 +1220,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which is the only word the regular-file strings share and no special-file
   string carries. Found by mutation testing: replacing the condition's `||` with
   `&&` produced code that no test could distinguish from the shipped form, and
-  the mutant was the more correct of the two. **Ceiling, unchanged by the fix:**
-  `%F` is a translated string, so a `stat` running under a non-English locale
-  reports every path as not a file.
+  the mutant was the more correct of the two.
+
+- **A remote host in any language but English had every path misread** (#155).
+  The same `stat -c '%F'` output is a **translated** string, and
+  `parse_stat_fields` matches `regular` and `directory` literally, so on a host
+  running under another locale both tests failed: `LC_ALL=sv_SE.utf8 stat -c
+  '%F' /etc/passwd` prints `normal fil` and the same command on `/etc` prints
+  `katalog`. A regular file reported `is_file: false`, and since
+  `hardener-state` gates checkpoint capture on that field, a remote capture
+  recorded nothing for a file it had looked at and found; a directory reported
+  `is_dir: false` and took `S_IFREG` as its type bit. `mode` stayed non-zero
+  throughout, so the sentinel that makes rollback delete a path it recorded as
+  absent was never reached: this was a capture gap rather than a destructive
+  one. `metadata_probe_command` now pins **`LC_ALL=C` on the `stat`
+  invocation**, matching what `scripts/test/differential-suite.sh` already does
+  for `chage` and `passwd`. It is the only remote probe that parses translated
+  prose; the others read paths, numbers, exit codes, or literals the command
+  itself chose. `LocalExecutor` was never affected, since `std::fs::Metadata`
+  carries no locale. The test runs the real probe through a real shell under an
+  inherited hostile locale and searches the installed locales for one that
+  actually changes `stat`'s answer, so a machine that cannot ask the question
+  says so instead of passing quietly.
 
 - **A no-op apply prunes too, in `audit-hardening` and `pam-hardening`**
   (#154). The first half of this fix put the prune beside the copy, where it

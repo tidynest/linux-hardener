@@ -358,10 +358,21 @@ fn parse_path_exists_probe(stdout: &str) -> Result<bool> {
 /// `stat` alone cannot carry this. It exits non-zero for a missing path and for
 /// an unreadable one alike, so the previous `|| echo NOTFOUND` shape reported
 /// every failure as absence, and rollback deletes what it recorded as absent.
+///
+/// **`LC_ALL=C` is load-bearing** (#155). `%F` is a translated string, so a
+/// remote host running under any other locale answers in that language and
+/// [`parse_stat_fields`] matches neither `regular` nor `directory`: a file
+/// reports as not a file, checkpoint capture skips it, and a directory takes
+/// the wrong type bit. Measured: `LC_ALL=sv_SE.utf8 stat -c '%F' /etc/passwd`
+/// prints `normal fil` and the same command on `/etc` prints `katalog`. Only
+/// `stat` needs the pin; the existence marker is a literal this command
+/// chooses, and every other remote probe parses paths, numbers or exit codes.
+/// `LocalExecutor` reads `std::fs::Metadata` and carries no locale at all, so
+/// pinning here is also what keeps the two executors answering alike.
 fn metadata_probe_command(path: &Path) -> String {
     let escaped = shell_escape(&path.display().to_string());
     format!(
-        "test -e {escaped} && echo E || echo N; stat -c '%F %a %s %u %g' {escaped} 2>/dev/null || true"
+        "test -e {escaped} && echo E || echo N; LC_ALL=C stat -c '%F %a %s %u %g' {escaped} 2>/dev/null || true"
     )
 }
 
@@ -395,11 +406,10 @@ fn parse_stat_fields(line: &str) -> Option<FileMetadata> {
         // special file` report as files while `LocalExecutor`, which answers
         // from `std::fs::Metadata::is_file`, reported them as not. Checkpoint
         // capture gates on this field, so the two executors disagreed about
-        // the same path. Ceiling, unchanged by the fix and tracked as #155:
-        // `%F` is translated, so a `stat` run under a non-English locale reports
-        // every path as neither a file nor a directory. Measured 2026-08-11:
-        // `LC_ALL=sv_SE.utf8 stat -c '%F' /etc/passwd` prints `normal fil`, and
-        // `is_dir` above fails the same way on `katalog`.
+        // the same path. This match and `is_dir` above are English-only, which
+        // is why `metadata_probe_command` pins `LC_ALL=C`: see the note there,
+        // and do not remove the pin without teaching both matches every
+        // translation of `%F`.
         is_file: file_type.contains("regular"),
         is_dir,
         mode: type_bit | permission_bits,

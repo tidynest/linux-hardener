@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1961 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1967 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1962 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1968 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2001 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2001 across 294 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2002 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2002 across 294 files |
 
-The gap between 2001 annotations and 1961 executions is exactly 40, and all 40
+The gap between 2002 annotations and 1962 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2001, and they are meant to be: the check globs every `.rs`
+are the same number, 2002, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1961 + 6 = 1967 and 40 + 7 = 47.
+covers. 1962 + 6 = 1968 and 40 + 7 = 47.
 
 ---
 
@@ -321,13 +321,26 @@ because the operator it mutated is gone, which is the better outcome of the two
 available. `only_a_regular_file_reads_as_a_file_over_ssh` now walks the six `%F`
 shapes, the two special-file rows being the ones that were wrong and the rest
 the control that stops the fix over-correcting into "nothing is a file".
-**Ceiling, unchanged by the fix and now tracked as #155:** `%F` is translated,
-so a `stat` under a non-English locale reports every path as neither a file nor
-a directory. Measured on 2026-08-11: `LC_ALL=sv_SE.utf8 stat -c '%F'
-/etc/passwd` prints `normal fil` and the same command on `/etc` prints
-`katalog`, so `is_dir` fails beside `is_file` and the wrong type bit is OR-ed
-into `mode`. That is a separate and larger gap than the one fixed here, since it
-affects ordinary files rather than devices, and it is not addressed here.
+**The ceiling that fix left, #155, is now closed too.** `%F` is translated, so a
+`stat` under a non-English locale reported every path as neither a file nor a
+directory: measured on 2026-08-11, `LC_ALL=sv_SE.utf8 stat -c '%F' /etc/passwd`
+prints `normal fil` and the same command on `/etc` prints `katalog`, so `is_dir`
+failed beside `is_file` and the wrong type bit landed in `mode`. That was the
+larger of the two gaps, since it affected ordinary files rather than devices.
+`metadata_probe_command` now pins `LC_ALL=C` on the `stat` invocation, which is
+the only remote probe parsing translated prose; the rest read paths, numbers,
+exit codes, or literals the command itself chose.
+
+The test for it is a live oracle rather than a substring check, because a
+substring check cannot tell a pin on `stat` from one placed where it does
+nothing. It runs the real probe through a real shell with a hostile `LC_ALL`
+inherited, and **it searches the installed locales for one that actually changes
+`stat`'s answer rather than naming a locale that may not be generated.** That
+search is the vacuity guard: a hard-coded name absent from the machine would
+leave `stat` answering in English, and the test would then pass while asking
+nothing. Where no such locale exists the skip says so. Confirmed to go red:
+removing the pin fails it with the probe output in the message, `"E\nnormal fil
+644 7 1000 1000\n"`.
 
 **The one survivor recorded as acceptable, and why that is not a shrug.**
 `file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||
