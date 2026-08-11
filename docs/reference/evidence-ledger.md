@@ -32,15 +32,15 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1943 passed, 40 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1949 passed, 0 failed, 47 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1950 passed, 40 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1956 passed, 0 failed, 47 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1983 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1983 across 294 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 1990 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 1990 across 294 files |
 
-The gap between 1983 annotations and 1943 executions is exactly 40, and all 40
+The gap between 1990 annotations and 1950 executions is exactly 40, and all 40
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -48,14 +48,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 1983, and they are meant to be: the check globs every `.rs`
+are the same number, 1990, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 1943 + 6 = 1949 and 40 + 7 = 47.
+covers. 1950 + 6 = 1956 and 40 + 7 = 47.
 
 ---
 
@@ -97,15 +97,15 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**Twenty-two of those 161 have since been killed**, all on 2026-08-11, so the
+**Forty-two of those 161 have since been killed**, all on 2026-08-11, so the
 tree as it stands reads:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
 | `hardener-common` | 121 | 33 | both `session_is_root`, and 13 of the 14 in `file_utils.rs` |
 | `hardener-state` | 153 | 12 | all seven in `signing.rs` |
-| `hardener-core` | 178 | 94 | unchanged |
-| **Total now** | **452** | **139** | **24% of viable** |
+| `hardener-core` | 198 | 74 | all twenty in `executor/local.rs` |
+| **Total now** | **472** | **119** | **20% of viable** |
 
 Every kill was verified by re-running the runner over the affected scope
 rather than by reasoning about the tests:
@@ -115,23 +115,24 @@ rather than by reasoning about the tests:
 | `--re session_is_root` | 2 missed | **2 caught** |
 | `--file crates/hardener-state/src/signing.rs` | 7 missed | **43 mutants, 35 caught, 8 unviable, none missed** |
 | `--file crates/hardener-common/src/file_utils.rs` | 14 missed | **47 mutants, 44 caught, 2 unviable, 1 missed** |
+| `--file crates/hardener-core/src/executor/local.rs` | 20 missed | **31 mutants, 29 caught, 2 unviable, none missed** |
 
-`signing.rs` is clear of survivors entirely rather than clear of the seven that
-were listed. `file_utils.rs` keeps one, deliberately, and it is recorded below
-as acceptable rather than left unexplained.
+`signing.rs` and `local.rs` are clear of survivors entirely rather than clear of
+the ones that were listed. `file_utils.rs` keeps one, deliberately, and it is
+recorded below as acceptable rather than left unexplained.
 
 No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 139 are identified, not resolved.** G4 asks for each to be
+**The remaining 119 are identified, not resolved.** G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
 
 | Cluster | Survivors | Reading |
 |---|---|---|
-| `hardener-core/executor/local.rs` | 20 | Reaches disk, so a bug by the rule, and the largest cluster left that needs no host. |
+| `hardener-core/executor/local.rs` | 0, was 20 | **Resolved.** All twenty killed; see below. |
 | `hardener-common/file_utils.rs` | 1, was 14 | **Resolved.** Thirteen killed; the survivor is recorded as acceptable below. |
 | `hardener-core/executor/ssh.rs` | 25 | **Two different verdicts in one file.** Most are `SshExecutor`'s trait impl (`read_file`, `write_file`, `path_exists`, `read_dir`, `execute_command`), which the default suite cannot kill because it has no SSH host: that is the stated ceiling, and the question is whether the `#[ignore]`d `batch_ssh_integration.rs` kills them. But `parse_stat_fields`, `unique_delimiter` and `resolve_ssh_user` are pure functions needing no host, and those are ordinary gaps. |
 | `hardener-common/executor/mock.rs` | 19 | `MockExecutor` itself, so neither disk nor host: a note by the rule. Worth stating anyway, because a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. |
@@ -153,6 +154,34 @@ is not root. A single happy-path test would have killed the `false` mutant and
 left `true` alive, and `true` is the half that hands a caller privileges the far
 end never granted. Re-running the pair with
 `cargo mutants -p hardener-common --re session_is_root` reports **2 caught**.
+
+**The `local.rs` twenty, and the contract that killed most of them at once.**
+This was the largest cluster in the workspace needing no host, and it was
+mostly one mistake repeated: `description`, `read_file`, `read_file_optional`
+and `path_exists` each survived being replaced by constants, and the `NotFound`
+match guard that `read_file_optional`, `path_exists`, `file_metadata` and
+`read_dir` all share survived being forced one way or the other in each of
+them.
+
+The guard is worth a single test rather than four, because it is a single rule:
+**only `NotFound` is positive confirmation of absence**, and every other error
+means "could not determine" and must propagate. Forcing it to `true` is the
+dangerous direction, since an unreadable path then reports as a confirmed
+absence and a rollback that believes a file was absent deletes it. That is not
+hypothetical here: `path_exists`'s own comment records the rollback guard
+protecting `/etc/shadow` becoming unreachable on a local target for exactly
+this reason. One test asks all four readers about a path below a regular file,
+where `ENOTDIR` is unreachability that is emphatically not absence, and it
+needs no privileges. Asking them separately would take four tests and would
+still miss the fifth reader somebody adds later.
+
+`execute_command` survived the `-` being deleted from
+`output.status.code().unwrap_or(-1)`, turning the signal-killed sentinel from
+`-1` into `1`. No ordinary assertion separates those, because callers test
+`success()`, which is `exit_code == 0`, and both read as failure. What
+separates them is the sentinel's meaning: `-1` says no exit code exists, while
+`1` is a status a program can genuinely return. A shell told to kill itself is
+the test.
 
 **The one survivor recorded as acceptable, and why that is not a shrug.**
 `file_utils.rs:228`, replacing `||` with `&&` in `if trimmed.is_empty() ||

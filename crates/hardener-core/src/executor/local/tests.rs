@@ -409,3 +409,187 @@ async fn the_probe_resolves_a_symlinked_directory_component() {
          surgery predicts"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The local.rs survivors of the 2026-08-11 mutation pass.
+//
+// Twenty mutants lived here, the largest cluster in the workspace that needs
+// no host to kill. Most of them are the same shape: a reader replaced by a
+// constant, or the `NotFound` match guard that four of these functions share
+// forced one way or the other. The guard is the interesting one, so it gets a
+// test of its own that asks all four at once.
+// ---------------------------------------------------------------------------
+
+/// `description` survived being replaced by the empty string and by "xyzzy".
+/// It is what `host_key_for` builds a checkpoint's host key from, so a
+/// constant here files every local checkpoint under the wrong name.
+#[test]
+fn the_local_executor_describes_itself_as_local() {
+    assert_eq!(
+        LocalExecutor::new().description(),
+        "local",
+        "the description is the checkpoint host key for a local target and must \
+         not drift"
+    );
+}
+
+/// `read_file` survived returning the empty string and "xyzzy". Every plugin's
+/// view of a configuration file on a local target arrives through here.
+#[tokio::test]
+async fn reading_a_local_file_returns_its_contents() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("sshd_config");
+    let contents = "PermitRootLogin no\n";
+    std::fs::write(&path, contents).expect("write the file");
+
+    assert_eq!(
+        LocalExecutor::new()
+            .read_file(&path)
+            .await
+            .expect("a readable file is read"),
+        contents,
+        "the reader must return the file's bytes, not a value of its own"
+    );
+}
+
+/// `read_file_optional` survived `Ok(None)`, `Ok(Some(String::new()))` and
+/// `Ok(Some("xyzzy".into()))`, and separately survived its `NotFound` guard
+/// being forced to `false`, which turns an ordinary absent optional file into
+/// a hard failure.
+#[tokio::test]
+async fn the_optional_local_read_returns_contents_and_reports_absence_as_none() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("faillock.conf");
+    let contents = "deny = 5\n";
+    std::fs::write(&path, contents).expect("write the file");
+
+    let executor = LocalExecutor::new();
+
+    assert_eq!(
+        executor
+            .read_file_optional(&path)
+            .await
+            .expect("a readable file is read"),
+        Some(contents.to_string()),
+        "a file that is present must come back with its contents"
+    );
+    assert_eq!(
+        executor
+            .read_file_optional(&dir.path().join("not-here.conf"))
+            .await
+            .expect("an absent optional file is not an error"),
+        None,
+        "a file that is not there must read as absent"
+    );
+}
+
+/// `path_exists` survived being replaced by `Ok(true)` and by `Ok(false)`, so
+/// both answers need asking. Its doc comment names what a wrong answer costs:
+/// the rollback guard protecting `/etc/shadow` became unreachable on a local
+/// target when "could not determine" was taken for "confirmed absent".
+#[tokio::test]
+async fn path_exists_answers_both_ways_against_a_real_filesystem() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let present = dir.path().join("present.conf");
+    std::fs::write(&present, "x").expect("write the file");
+
+    let executor = LocalExecutor::new();
+
+    assert!(
+        executor.path_exists(&present).await.expect("stat succeeds"),
+        "a file that is there must be reported as there"
+    );
+    assert!(
+        !executor
+            .path_exists(&dir.path().join("absent.conf"))
+            .await
+            .expect("a missing path is not an error"),
+        "a file that is not there must be reported as absent"
+    );
+}
+
+/// `file_metadata`'s `NotFound` guard survived being forced to `false`, which
+/// would make a missing path an error rather than the `exists: false` record
+/// the contract promises. The zero-permission case is covered above; this is
+/// the plain absent one.
+#[tokio::test]
+async fn metadata_of_a_missing_path_is_absence_rather_than_failure() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    let metadata = LocalExecutor::new()
+        .file_metadata(&dir.path().join("gone.conf"))
+        .await
+        .expect("a missing path is a record, not an error");
+
+    assert!(
+        !metadata.exists,
+        "a missing path must come back as a record saying it does not exist"
+    );
+    assert_eq!(metadata.mode, 0, "an absent file carries no mode");
+    assert_eq!(metadata.size, 0, "an absent file carries no size");
+}
+
+/// The contract three of these functions state in their own comments, and the
+/// one `read_dir` shares without saying so: **only `NotFound` is positive
+/// confirmation of absence.** Every other error means "could not determine"
+/// and must propagate.
+///
+/// Forcing that guard to `true` survived in all four, which is the dangerous
+/// direction: an unreadable path would then be reported as a confirmed
+/// absence, and a rollback that believes a file was absent deletes it. Asking
+/// the four separately would need four tests and would still miss the fifth
+/// reader somebody adds later; asking them together says what the rule is.
+///
+/// `ENOTDIR` is the error to use, because a path below a regular file is
+/// unreachable for a reason that is emphatically not absence, and it needs no
+/// privileges to arrange.
+#[tokio::test]
+async fn only_not_found_confirms_absence_in_every_local_reader() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("a-regular-file");
+    std::fs::write(&file, "x").expect("write the file");
+    // A path below a regular file: every stat and open on it fails ENOTDIR.
+    let below_a_file = file.join("child.conf");
+
+    let executor = LocalExecutor::new();
+
+    assert!(
+        executor.read_file_optional(&below_a_file).await.is_err(),
+        "read_file_optional must propagate an error that is not absence"
+    );
+    assert!(
+        executor.path_exists(&below_a_file).await.is_err(),
+        "path_exists must propagate an error that is not absence, or the caller \
+         reads 'could not determine' as 'confirmed absent'"
+    );
+    assert!(
+        executor.file_metadata(&below_a_file).await.is_err(),
+        "file_metadata must propagate an error that is not absence"
+    );
+    assert!(
+        executor.read_dir(&below_a_file).await.is_err(),
+        "read_dir must propagate an error that is not absence rather than \
+         returning an empty listing"
+    );
+}
+
+/// `execute_command` survived the `-` being deleted from
+/// `output.status.code().unwrap_or(-1)`, turning the signal-killed sentinel
+/// from -1 into 1. Callers test `success()`, which is `exit_code == 0`, so
+/// both values read as failure and no ordinary assertion separates them. What
+/// separates them is the sentinel's own meaning: -1 says "killed by a signal,
+/// no exit code exists", and 1 is an exit code a program can genuinely return.
+#[tokio::test]
+async fn a_signal_killed_command_reports_the_negative_sentinel() {
+    let output = LocalExecutor::new()
+        .execute_command("sh", &["-c", "kill -TERM $$"])
+        .await
+        .expect("the shell runs and is killed by its own signal");
+
+    assert_eq!(
+        output.exit_code, -1,
+        "a process killed by a signal has no exit code, and -1 is how that is \
+         reported: a positive value there is indistinguishable from a real exit \
+         status"
+    );
+}
