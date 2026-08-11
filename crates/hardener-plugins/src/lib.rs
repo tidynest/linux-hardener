@@ -212,13 +212,23 @@ pub(crate) const BACKUPS_KEPT: usize = 3;
 /// operator cannot act on, would be a larger harm than the disk the copies
 /// occupy.
 ///
-/// **A rollback of the apply that pruned brings the pruned copies back**, and
-/// that is correct rather than a hole. Every caller runs below its plugin's
-/// pre-apply checkpoint, which captured the directory as it was, so a rollback
-/// restores the state before the prune along with everything else it restores.
-/// The count converges anyway: the next apply prunes what the rollback put
-/// back. Moving the prune above the checkpoint would fix the count and break
-/// the rollback's contract, which is to return the host to what it was.
+/// **Where a caller sits relative to its checkpoint decides what a rollback
+/// does with the pruned copies**, and both positions are in use deliberately.
+///
+/// Above the capture, which `audit-hardening` and `pam-hardening` each call
+/// once per apply: the copies are gone before the checkpoint records the
+/// directory, so they are not carried into it and a rollback does not bring
+/// them back. That is what a retention limit is for, and it is the only
+/// position that reaches a compliant host at all, because the copy-side call
+/// runs only when a copy is taken. An apply that rewrites nothing pruned
+/// nothing while its checkpoint went on capturing every dead backup, which was
+/// measured on the development host on 2026-08-11 and is the reason this
+/// paragraph replaced one arguing the opposite.
+///
+/// Below it, beside the copy: a rollback of that same apply restores what the
+/// prune removed, because the capture predates it. Left as it is rather than
+/// moved, because it keeps the count exact immediately after a rewrite, and
+/// what it restores the next apply prunes again.
 pub(crate) async fn prune_timestamped_backups(
     ctx: &hardener_core::Context,
     prefix: &str,
