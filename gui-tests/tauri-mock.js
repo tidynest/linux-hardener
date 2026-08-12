@@ -18,6 +18,11 @@
   // could reach before: with an all-success fixture the done panel is the only
   // one the interface can render.
   const applyMode = params.get('apply_mode') || '';
+  // `?checkpoint_source=unreadable` makes get_checkpoints report that the
+  // root-owned system database was skipped. The real condition needs a
+  // root-owned file the desktop cannot read, which a browser fixture has no
+  // way to produce, so the flag is set directly.
+  const checkpointSource = params.get('checkpoint_source') || '';
 
   function shouldError(cmd) {
     if (errorMode === 'all') return true;
@@ -649,7 +654,10 @@
         return DRY_RUN_RESULTS;
 
       case 'get_checkpoints':
-        return { checkpoints: CHECKPOINTS, system_unreadable: false };
+        return {
+          checkpoints: CHECKPOINTS,
+          system_unreadable: checkpointSource === 'unreadable',
+        };
 
       case 'create_checkpoint':
         return 'chk-mock-' + Date.now();

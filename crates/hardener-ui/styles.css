@@ -2835,6 +2835,26 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   overflow-wrap: break-word;
 }
 
+/* The same quiet register as .section-guidance, in the neutral border rather
+   than the info accent: this states a limitation of the current session, not
+   guidance about the feature. Never the error banner, which would fire on
+   every launch of a correctly configured host. */
+.checkpoint-source-note {
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+  background-color: var(--bg-secondary);
+  border-left: 3px solid var(--border);
+  padding: 12px 16px;
+  margin-bottom: var(--space-lg);
+  border-radius: 0 6px 6px 0;
+  word-wrap: break-word;
+}
+
+.checkpoint-source-note code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
 /* ============================================================
    19b. SCAN HISTORY TAB
    ============================================================ */

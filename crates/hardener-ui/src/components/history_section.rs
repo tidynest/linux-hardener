@@ -140,6 +140,21 @@ pub fn HistorySection() -> impl IntoView {
                 "the system to how it was at that moment."
             </p>
 
+            // Not a warning: the system database is root-owned by design, so
+            // an unprivileged desktop failing to read it is the normal state
+            // on a correctly configured host. A red banner here would fire on
+            // every launch and teach the operator to ignore red.
+            <Show when=move || system_unreadable.get()>
+                <p class="checkpoint-source-note">
+                    "Checkpoints created with root privileges are not listed here: "
+                    "this desktop cannot read "
+                    <code>"/var/lib/linux-hardener/checkpoints.db"</code>
+                    ". To see them, run "
+                    <code>"sudo hardener checkpoint list"</code>
+                    "."
+                </p>
+            </Show>
+
             <div class="checkpoint-controls">
                 <div class="create-checkpoint-form">
                     <input

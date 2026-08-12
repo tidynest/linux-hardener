@@ -144,6 +144,28 @@ test.describe('History', () => {
     await expect(page.locator('.history-section')).toBeVisible();
   });
 
+  // T-HIST-11: the note is absent when every source was read
+  //
+  // This is the half that can rot. A note rendered unconditionally passes any
+  // presence-only assertion, so the negative case is what proves the flag is
+  // actually consulted.
+  test('T-HIST-11: no source note when every checkpoint source was read', async ({ page }) => {
+    await expect(page.locator('.checkpoint-source-note')).toHaveCount(0);
+  });
+
+  // T-HIST-12: the note appears, and names the remedy, when a source was not
+  test('T-HIST-12: an unreadable source is named, with the command that shows it', async ({ page }) => {
+    await loadApp(page, '/hardening?checkpoint_source=unreadable');
+    await page.getByRole('tab', { name: 'History' }).click();
+
+    const note = page.locator('.checkpoint-source-note');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('/var/lib/linux-hardener/checkpoints.db');
+    await expect(note).toContainText('sudo hardener checkpoint list');
+    // The rows still render: the note explains a gap, it does not replace the list.
+    await expect(rollbackButtons(page)).toHaveCount(3);
+  });
+
   // T-HIST-02: The checkpoints, grouped by the day they were taken
   //
   // There is no checkpoints table. The redesign groups checkpoints under a
