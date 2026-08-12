@@ -24,6 +24,16 @@ pub struct CheckpointInfo {
     pub checkpoint_user: String,
 }
 
+/// A checkpoint list together with whether a source was left out of it.
+///
+/// Mirrors `CheckpointList` in `src-tauri/src/commands.rs`, the way
+/// `CheckpointInfo` above does. Both definitions have to move together.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct CheckpointList {
+    pub checkpoints: Vec<CheckpointInfo>,
+    pub system_unreadable: bool,
+}
+
 /// Scan session metadata for history display.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct ScanSessionInfo {

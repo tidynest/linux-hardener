@@ -649,7 +649,7 @@
         return DRY_RUN_RESULTS;
 
       case 'get_checkpoints':
-        return CHECKPOINTS;
+        return { checkpoints: CHECKPOINTS, system_unreadable: false };
 
       case 'create_checkpoint':
         return 'chk-mock-' + Date.now();

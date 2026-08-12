@@ -4,7 +4,7 @@
 //! In browser mode (without Tauri), all commands return errors gracefully.
 
 use crate::types::{
-    ApplyOutcome, ApplyResult, CheckpointDetail, CheckpointInfo, ComplianceReport, ConfigSummary,
+    ApplyOutcome, ApplyResult, CheckpointDetail, CheckpointList, ComplianceReport, ConfigSummary,
     FleetHostScan, PluginMetadata, RollbackOutcome, RollbackResult, ScanResult, ScanSessionInfo,
     SchedulerUiConfig, TestNotificationResult, WrittenException,
 };
@@ -231,8 +231,11 @@ pub async fn invoke_get_latest_scan() -> Result<Option<Vec<ScanResult>>, String>
 
 /// Invokes the get_checkpoints Tauri command.
 ///
-/// Retrieves all available system checkpoints for rollback.
-pub async fn invoke_get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
+/// Retrieves all available system checkpoints for rollback, together with
+/// whether the root-owned system database could be read. A list that silently
+/// omits a source is indistinguishable from a complete one, so the caller
+/// needs both halves.
+pub async fn invoke_get_checkpoints() -> Result<CheckpointList, String> {
     let result = invoke_command("get_checkpoints", JsValue::NULL).await?;
 
     serde_wasm_bindgen::from_value(result)

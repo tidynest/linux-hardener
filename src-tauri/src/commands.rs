@@ -212,6 +212,23 @@ pub struct CheckpointInfo {
     pub checkpoint_verified: bool,
 }
 
+/// A checkpoint list together with whether a source was left out of it.
+///
+/// The system database is root-owned, so an unprivileged desktop usually
+/// cannot read it. Returning the rows alone made a host holding five
+/// privileged checkpoints render identically to one holding none, which is
+/// the defect in #156: the operator could not tell a successful privileged
+/// checkpoint from a failed one, because both produced no new row.
+#[derive(Clone, Debug, Serialize)]
+pub struct CheckpointList {
+    pub checkpoints: Vec<CheckpointInfo>,
+    /// The system database exists but could not be read from here, so this
+    /// list may be missing every privileged checkpoint. `false` covers both
+    /// `DatabaseReach::Read` and `DatabaseReach::Absent`: one means the rows
+    /// are present, the other that there are none to miss.
+    pub system_unreadable: bool,
+}
+
 /// Formats a Unix timestamp as a human-readable string.
 fn format_timestamp(timestamp: i64) -> String {
     chrono::DateTime::from_timestamp(timestamp, 0)
@@ -925,18 +942,19 @@ async fn collect_checkpoints(
 /// created by privileged CLI operations (via pkexec) are in the system database.
 /// This function merges both sources for a complete view.
 #[tauri::command]
-pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
+pub async fn get_checkpoints() -> Result<CheckpointList, String> {
     let mut entries: Vec<(Checkpoint, CheckpointManager)> = Vec::new();
 
     collect_checkpoints(&get_user_db_path(), &mut entries).await;
 
     // The system database is root-owned, so an unprivileged desktop often
     // cannot read it, and a list silently missing every privileged checkpoint
-    // looks exactly like a host that has none. Say so where it can be
-    // diagnosed rather than leaving the operator to wonder where a checkpoint
-    // they watched being created went.
+    // looks exactly like a host that has none. Report it to the caller as
+    // well as the log: the log is not where the operator is looking.
     let system_db = get_system_db_path();
-    if collect_checkpoints(&system_db, &mut entries).await == DatabaseReach::Unreadable {
+    let system_unreadable =
+        collect_checkpoints(&system_db, &mut entries).await == DatabaseReach::Unreadable;
+    if system_unreadable {
         tracing::warn!(
             "system checkpoint database at {} could not be read; any checkpoint \
              it holds is missing from this list",
@@ -961,7 +979,10 @@ pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String> {
         });
     }
 
-    Ok(result)
+    Ok(CheckpointList {
+        checkpoints: result,
+        system_unreadable,
+    })
 }
 
 /// Creates a manual checkpoint of the current system state.

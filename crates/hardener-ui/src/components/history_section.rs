@@ -20,6 +20,9 @@ pub fn HistorySection() -> impl IntoView {
     // Local checkpoint state
     let checkpoints = RwSignal::new(Vec::<CheckpointInfo>::new());
     let is_loading = RwSignal::new(false);
+    // Whether the root-owned system database was skipped. Rendered as a note
+    // under the guidance bar; without it an incomplete list reads as complete.
+    let system_unreadable = RwSignal::new(false);
     let checkpoint_name = RwSignal::new(String::new());
     let is_creating = RwSignal::new(false);
     let expanded_detail = RwSignal::new(None::<CheckpointDetail>);
@@ -33,7 +36,10 @@ pub fn HistorySection() -> impl IntoView {
         leptos::task::spawn_local(async move {
             is_loading.set(true);
             match invoke_get_checkpoints().await {
-                Ok(cp) => checkpoints.set(cp),
+                Ok(list) => {
+                    checkpoints.set(list.checkpoints);
+                    system_unreadable.set(list.system_unreadable);
+                }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Failed to load checkpoints: {}", e).into());
                     app_state
@@ -70,8 +76,9 @@ pub fn HistorySection() -> impl IntoView {
             match invoke_create_checkpoint(name).await {
                 Ok(_id) => {
                     checkpoint_name.set(String::new());
-                    if let Ok(cp) = invoke_get_checkpoints().await {
-                        checkpoints.set(cp);
+                    if let Ok(list) = invoke_get_checkpoints().await {
+                        checkpoints.set(list.checkpoints);
+                        system_unreadable.set(list.system_unreadable);
                     }
                 }
                 Err(e) => {
@@ -90,8 +97,9 @@ pub fn HistorySection() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match invoke_delete_checkpoint(checkpoint_id).await {
                 Ok(_) => {
-                    if let Ok(cp) = invoke_get_checkpoints().await {
-                        checkpoints.set(cp);
+                    if let Ok(list) = invoke_get_checkpoints().await {
+                        checkpoints.set(list.checkpoints);
+                        system_unreadable.set(list.system_unreadable);
                     }
                 }
                 Err(e) => {
