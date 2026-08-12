@@ -519,3 +519,56 @@ fn an_unprivileged_session_reads_the_user_config_the_root_rule_would_skip() {
          silently drops it"
     );
 }
+
+/// A root session refuses the user config that an unprivileged one reads.
+///
+/// This is the half with security consequences and it had never been asked.
+/// `pkexec` runs this tool as root from an unprivileged session, so an ordinary
+/// user's `~/.config` must not steer root-level hardening. Every test runs
+/// unprivileged, which meant the rule could only ever be shown doing the safe,
+/// permissive thing; that it *refuses* was inferred from the neighbouring test
+/// rather than observed.
+///
+/// The same config body and directory as the unprivileged case, so the only
+/// difference between the two tests is the answer to the root question. If the
+/// guard were dropped, inverted, or wired to the wrong value, this goes red and
+/// its neighbour stays green, which is what says the rule is a rule rather than
+/// a constant.
+///
+/// Not a mutation kill, and not intended as one: replacing `is_running_as_root`
+/// with `false` remains provably equivalent under a non-root runner. What is
+/// pinned here is the behaviour that function feeds.
+/// Both answers are asserted in one test, and that is the point rather than
+/// tidiness. Asserting only the root case checks for an *empty* result, which
+/// is also what a loader that read nothing at all would produce: the seam
+/// returning `Default::default()` and discarding the directory passes such a
+/// test for entirely the wrong reason. Requiring the same builder to read the
+/// file when the answer is `false` is what makes emptiness mean refusal.
+#[test]
+fn a_root_session_skips_the_user_config_an_unprivileged_one_reads() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let body = "[global]\ndisabled_plugins = [\"mac-hardening\"]\n";
+
+    let as_root = loader_reading_user_config(dir.path(), body)
+        .with_running_as_root(true)
+        .load()
+        .expect("a root load still succeeds, it just ignores the user config");
+    let as_user = loader_reading_user_config(dir.path(), body)
+        .with_running_as_root(false)
+        .load()
+        .expect("an unprivileged load reads the same file");
+
+    assert_eq!(
+        as_user.global.disabled_plugins,
+        vec!["mac-hardening".to_string()],
+        "the unprivileged answer must still read the file, or the root case \
+         below is empty because nothing was read rather than because it was \
+         refused"
+    );
+    assert!(
+        as_root.global.disabled_plugins.is_empty(),
+        "root must not take plugin selection from an unprivileged ~/.config: \
+         pkexec runs this as root from the user's own session, so honouring it \
+         lets an ordinary user disable the hardening being applied to them"
+    );
+}

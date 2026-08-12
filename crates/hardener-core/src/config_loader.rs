@@ -28,6 +28,16 @@ pub struct ConfigLoader {
     /// observable difference on a test runner, since neither default location
     /// exists there. See [`Self::with_config_dir`].
     config_dir: Option<PathBuf>,
+    /// Whether this process counts as root for the user-config rule.
+    ///
+    /// `None`, which every shipping caller leaves it as, asks the real
+    /// effective UID. It exists because the suite runs unprivileged, so the
+    /// real check answers `false` for every test and only the *reading* half
+    /// of the rule could be asserted. The refusing half, the one that stops an
+    /// unprivileged `~/.config` steering root hardening under `pkexec`, was
+    /// inferred from the reading half rather than asked. See
+    /// [`Self::with_running_as_root`].
+    running_as_root: Option<bool>,
 }
 
 impl ConfigLoader {
@@ -71,6 +81,30 @@ impl ConfigLoader {
         self
     }
 
+    /// Answer the root check with `is_root` rather than the effective UID.
+    ///
+    /// The same shape of seam as [`Self::with_config_dir`], for the same
+    /// reason: pin the input rather than teach the rule about its environment.
+    /// A test runner is never root, so without this the rule could only ever
+    /// be asked the question it already answers.
+    ///
+    /// This does not make `is_running_as_root` mutation-killable, and is not
+    /// meant to. Replacing that function with `false` stays **provably
+    /// equivalent** under an unprivileged runner, because the real one returns
+    /// `false` there too. What this pins is the rule the function feeds, which
+    /// is the part with security consequences.
+    #[must_use]
+    pub fn with_running_as_root(mut self, is_root: bool) -> Self {
+        self.running_as_root = Some(is_root);
+        self
+    }
+
+    /// The root answer this load should use: the override, or the real UID.
+    fn running_as_root(&self) -> bool {
+        self.running_as_root
+            .unwrap_or_else(Self::is_running_as_root)
+    }
+
     /// Load configuration from all sources.
     ///
     /// Returns the merged configuration with later sources overriding earlier ones.
@@ -86,7 +120,7 @@ impl ConfigLoader {
             // 3. Load user config if it exists, skip when running as root
             //    (via pkexec) to prevent unprivileged user config from
             //    influencing root-level hardening operations.
-            if !Self::is_running_as_root()
+            if !self.running_as_root()
                 && let Some(path) = self.user_config_path_for()
             {
                 config = Self::merge_source(config, &path, false)?;
