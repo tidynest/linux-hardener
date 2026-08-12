@@ -101,6 +101,9 @@ def main():
         (".SRCINFO", "validate_srcinfo.py", []),
         ("CHANGELOG Headings", "validate_changelog_headings.py", []),
         ("Markdown Links", "validate_doc_links.py", []),
+        # A claim that a path is ignored is an instruction here, not a
+        # description: it is the stated reason `git add -A` is safe to run.
+        ("Ignore Rules", "validate_gitignore.py", []),
     ]
 
     # Add slower validators unless in quick mode
