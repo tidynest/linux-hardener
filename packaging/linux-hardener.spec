@@ -17,8 +17,15 @@ Supplements:    (polkit-kde-agent and plasma-workspace)
 
 # Carries an existing install across the rename from linux-system-hardener
 # (#51). Obsoletes drives the upgrade, Provides keeps the old name
-# satisfiable for anything that requires it.
-Obsoletes:      linux-system-hardener < 1.5.2
+# satisfiable for anything that requires it. Left unversioned, matching the
+# equivalent PKGBUILD (`replaces`/`conflicts`/`provides`) and debian/control
+# (`Replaces`/`Breaks`/`Provides`) entries: the rename commit (2026-08-07)
+# postdates the last version ever released under the old name (v1.5.1,
+# 2026-07-27), so linux-system-hardener will never see another release and
+# there is no future threshold to encode. Do not add a version bound here
+# that tracks this file's own Version: field above; a release script owns
+# that field and does not know about this line.
+Obsoletes:      linux-system-hardener
 Provides:       linux-system-hardener = %{version}-%{release}
 
 %description

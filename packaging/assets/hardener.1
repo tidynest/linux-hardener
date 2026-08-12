@@ -2,7 +2,7 @@
 .\" Copyright 2026 Eric Jingryd
 .\" Licensed under the Apache License, Version 2.0
 .\"
-.TH HARDENER 1 "2026-08-04" "1.5.1" "Linux Hardener"
+.TH HARDENER 1 "2026-08-12" "1.5.1" "Linux Hardener"
 .
 .SH NAME
 hardener \- comprehensive Linux security automation tool with multi-distribution support
@@ -34,10 +34,28 @@ hardener \- comprehensive Linux security automation tool with multi-distribution
 .
 .br
 .B hardener checkpoint
-.RI [ list | create | delete | show ]
+.RI [ list | create | delete | show | repair ]
 .
 .br
 .B hardener plugins
+.
+.br
+.B hardener exception add
+.I PLUGIN_ID
+.I KEY
+.B \-\-reason
+.I REASON
+.RB [ \-\-approved\-by
+.IR NAME ]
+.RB [ \-\-ticket
+.IR REF ]
+.RB [ \-\-expires
+.IR DATE ]
+.
+.br
+.B hardener exception remove
+.I PLUGIN_ID
+.I KEY
 .
 .br
 .B hardener report
@@ -106,7 +124,7 @@ hardener \- comprehensive Linux security automation tool with multi-distribution
 .
 .br
 .B hardener history
-.RI [ list | show | export ]
+.RI [ list | trends | regressions | show | export ]
 .
 .SH DESCRIPTION
 .B hardener
@@ -129,7 +147,7 @@ Firewall status and baseline rules via nftables, firewalld, or UFW.
 .B pam
 PAM password complexity, aging policies, and account lockout.
 .TP
-.B services
+.B service
 Detection and disabling of unnecessary network services.
 .TP
 .B permissions
@@ -166,10 +184,37 @@ Subcommands:
 .BR list ,
 .BR create ,
 .BR delete ,
-.BR show .
+.BR show ,
+.BR repair .
+.B "checkpoint repair"
+reports file rows that no checkpoint owns, stranded by something other than
+this tool editing the checkpoint database directly, since the schema's foreign
+key is enforced on every path reached through
+.BR hardener .
+Reporting only is the default; pass
+.B \-\-execute
+to remove the orphaned rows instead.
+Not host-scoped, and refuses
+.BR \-\-ssh :
+it mends this host's own checkpoint database, which holds the rows of every
+host it has ever reached.
 .TP
 .B plugins
 List all available security plugins with their metadata.
+.TP
+.B exception
+Accept a single finding as a documented deviation, without hand-editing
+.IR config.toml .
+Subcommands:
+.BR add ,
+.BR remove .
+Not host-scoped, and refuses
+.BR \-\-ssh :
+it edits this host's own configuration file, the file this host's
+.B apply
+reads; an exception for a remote host is written on that host.
+See
+.BR "Exception Options" .
 .TP
 .B report
 Generate compliance reports against industry security frameworks.
@@ -199,14 +244,14 @@ See
 .RB ( \-\-all ", " \-\-host ", " \-\-ssh ", " \-\-concurrency )
 and the
 .B Report Options
-.RB ( \-\-framework ", " \-\-scenario ).
+.RB ( \-\-framework ", " \-\-profile ", " \-\-scenario ).
 Tiered exit status identical to
 .BR "batch scan" .
 .TP
 .B batch apply
 Apply hardening to multiple hosts concurrently.
-.B Dry-run by default
-\(em validates each host and reports what would change without making any
+.BR "Dry-run by default" ,
+so it validates each host and reports what would change without making any
 modifications.
 Pass
 .B \-\-execute
@@ -233,13 +278,29 @@ selected.
 And a selection whose hosts cannot file their checkpoints apart is refused: the
 checkpoint host key is
 .IR ssh://user@host:port ,
-with a literal
+where a target that names no user has its account resolved through
+.B "ssh \-G"
+against your
+.IR ~/.ssh/config ,
+without opening a connection, and falls back to a literal
 .I root
-substituted for a target that named no user, so
+only when ssh itself cannot be run.
+So
+.B "\-\-ssh web\-01"
+and
+.B "\-\-ssh admin@web\-01"
+share one key whenever your ssh configuration resolves
+.I web\-01
+to
+.IR admin ,
+and
 .B "\-\-ssh web\-01"
 and
 .B "\-\-ssh root@web\-01"
-are two targets sharing one key.
+share one key only when it resolves
+.I web\-01
+to
+.IR root .
 The same two refusals apply to
 .B "batch rollback \-\-execute" ,
 which also writes checkpoints.
@@ -250,8 +311,8 @@ and
 .TP
 .B batch rollback
 Roll back multiple hosts concurrently to their latest per-plugin checkpoint.
-.B Dry-run by default
-\(em previews per host which checkpoint(s) would be restored.
+.BR "Dry-run by default" ,
+so it previews per host which checkpoint(s) would be restored.
 Pass
 .B \-\-execute
 to perform the restore.
@@ -332,8 +393,27 @@ return non-zero.
 View and export scan history.
 Subcommands:
 .BR list ,
+.BR trends ,
+.BR regressions ,
 .BR show ,
 .BR export .
+.B "history trends \-\-host" " " \fIKEY\fR
+shows a per-host security timeline, per-severity counts oldest scan first,
+capped at
+.B \-\-limit
+scans (default 20).
+.B "history regressions"
+compares each host's two newest completed scans and reports any host whose
+latest scan is worse than the previous one, limited to one host with
+.BR \-\-host ;
+it exits
+.B 1
+when a regression is found and
+.B 0
+when every host is stable or improving, so it can gate CI the way
+.B \-\-exit\-code
+gates
+.BR scan .
 .
 .SH OPTIONS
 .SS Global Options
@@ -443,9 +523,11 @@ Refused, with exit status 2 and before any connection is opened, by
 .BR systemd ,
 .BR history ,
 .BR plugins ,
-.B "checkpoint show"
-and
+.BR exception ,
+.BR "checkpoint show" ,
 .BR "checkpoint delete" ,
+and
+.BR "checkpoint repair" ,
 which act on this host alone.
 .TP
 .BI \-\-port " PORT"
@@ -518,6 +600,41 @@ Apply all enabled plugins.
 .B \-\-dry\-run
 Preview the changes that would be made without actually applying them.
 .
+.SS Exception Options
+.TP
+.I PLUGIN_ID
+Plugin the finding came from, as
+.B "hardener plugins"
+lists it.
+.TP
+.I KEY
+Exception key, as
+.B "hardener scan"
+prints beside the finding.
+.TP
+.BI \-\-reason " REASON"
+Why this deviation is accepted.
+Required on
+.BR add ;
+an undocumented deviation is what an exception exists to prevent.
+.TP
+.BI \-\-approved\-by " NAME"
+Who approved it.
+.TP
+.BI \-\-ticket " REF"
+Approval ticket or issue reference.
+.TP
+.BI \-\-expires " DATE"
+Date the exception stops applying (ISO 8601, e.g.
+.IR 2027\-01\-31 ).
+.PP
+.B "exception remove"
+takes only
+.I PLUGIN_ID
+and
+.IR KEY ;
+none of the flags above apply to it.
+.
 .SS Report Options
 .TP
 .BR \-s ", " \-\-scenario " " \fISCENARIO\fR
@@ -540,8 +657,20 @@ One of
 .BR nist ,
 .BR pcidss ,
 .BR hipaa ,
+.BR gdpr ,
+.BR iso27001 ,
+.BR soc2 ,
+.BR 800\-171 ,
 or
-.BR gdpr .
+.BR fedramp .
+.TP
+.BI \-\-profile " PROFILE"
+Compliance ID profile.
+One of
+.BR generic
+or
+.BR rhel10 .
+Default: auto-detect from the target system.
 .TP
 .BI \-\-report\-format " FORMAT"
 Report output format.
@@ -907,7 +1036,7 @@ Export scan history to JSON:
 .PP
 .RS
 .nf
-hardener history export \-f json \-o history.json
+hardener history export abc123 \-f json \-o history.json
 .fi
 .RE
 .PP
