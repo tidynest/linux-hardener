@@ -655,3 +655,39 @@ fn only_a_regular_file_reads_as_a_file_over_ssh() {
         );
     }
 }
+
+/// The file-type bit survives a mode field that already carries it.
+///
+/// `mode` is built as `type_bit | permission_bits`, and the OR is load
+/// bearing rather than cosmetic: checkpoint rollback reads `mode == 0` as
+/// "did not exist at capture" and removes the path, so any existing file must
+/// come back with a non-zero mode.
+///
+/// Normally the two operands are disjoint, `%a` reaching `0o7777` and the type
+/// bit sitting at `0o100000`, which is why an XOR here looks harmless and
+/// survived a mutation pass. They stop being disjoint the moment the mode
+/// field parses to something overlapping the type bits, and this parser reads
+/// text from the remote host rather than a trusted structure. Under XOR the
+/// bits cancel, `mode` becomes 0, and a rollback deletes a file that exists.
+///
+/// `0o100000` is not what `stat -c %a` emits. That is the point: the contract
+/// is "an existing path never reports mode 0", and it has to hold for whatever
+/// arrives, not only for well-formed output.
+#[test]
+fn the_type_bit_is_never_cancelled_by_the_permission_field() {
+    let meta = parse_stat_fields("regular file 100000 1234 0 42")
+        .expect("five fields parse, whatever the mode field holds");
+
+    assert_ne!(
+        meta.mode, 0,
+        "an existing path reporting mode 0 is read by checkpoint rollback as \
+         absent at capture, and the path is then deleted"
+    );
+    assert_eq!(
+        meta.mode & 0o170000,
+        0o100000,
+        "the regular-file type bit must be set, not cancelled: combining the \
+         type bit with the permission field must add bits rather than toggle \
+         them"
+    );
+}

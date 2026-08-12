@@ -32,13 +32,13 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 1995 passed, 42 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2001 passed, 0 failed, 49 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 1996 passed, 42 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2002 passed, 0 failed, 49 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 61 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 25 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2037 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2037 across 298 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2038 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2038 across 298 files |
 
 Three of these rows are re-derived from the tree on every `validate_all.py` run
 by `scripts/validate/validate_test_counts.py`: the annotation count, the
@@ -51,7 +51,7 @@ The rows a build produces are not re-measured there, and are not therefore
 unchecked: they are pinned to each other by the identities this section states,
 so a figure edited alone fails even though nothing about it was measured.
 
-The gap between 2037 annotations and 1995 executions is exactly 42, and all 42
+The gap between 2038 annotations and 1996 executions is exactly 42, and all 42
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -144,7 +144,7 @@ minutes: 583 caught, 10 missed, 109 unviable, 0 timeouts.**
 `hardener-core` reads 266 rather than 263 against 321 mutants rather than 319,
 which is source drift since `56245cc7`, not a change in what the tests catch.
 
-**Two of those 10 have since been killed**, both in `inventory.rs`, leaving 8.
+**Four of those 10 have since been killed**, leaving 6, of which every one is equivalent or unreachable. Two were in `inventory.rs`, one was the XOR in `parse_stat_fields`, and one was a mutant introduced by the seam added to pin the root half of the user-config rule.
 `save -> Ok(())` and `load -> Ok(Default::default())` survived because the unit
 tests exercised `save_to` and `load_from` while the front ends call the
 wrappers, and a wrapper is not its inner function. Re-running the file reports
