@@ -564,9 +564,32 @@ cargo mutants --test-tool nextest --cargo-test-arg --run-ignored=all \
 ```
 
 reports **20 missed becoming 9**, with no new tests written at all: the
-`#[ignore]`d suites that had existed all along killed eleven. No `-p` flag,
-deliberately, because the mutants are in `hardener-core` while four of the tests
-that kill them are `hardener-cli::batch_ssh_integration`.
+`#[ignore]`d suites that had existed all along killed eleven.
+
+**The rationale first recorded for omitting `-p` was false, and the number it
+produced is narrower than the text claimed.** The omission was justified here as
+widening the test scope, on the grounds that the mutants are in `hardener-core`
+while four of the tests that kill them are `hardener-cli::batch_ssh_integration`.
+`-p` selects what gets **mutated**; what gets **run** is `--test-workspace`,
+which defaults to false. Measured three ways on 2026-08-12:
+
+| Invocation | Tests run | Crates under test | Per mutant |
+|---|---:|---|---:|
+| no `-p`, as recorded above | 174 | `hardener-core` only | ~2s |
+| `--test-package` x 5 | 453 | the three mutated crates | 24.7s |
+| `--test-workspace true` | 453 | the same three | 73.2s |
+
+`hardener-cli` joins under none of them: cargo-mutants builds only the packages
+a mutant needs, so those test binaries never exist for nextest to run. The four
+tests credited with kills above cannot have made them.
+
+The **20 becoming 9** stands. It was measured under the first row, a narrower
+suite than the prose described, and narrower is pessimistic: a wider run can
+only kill more. The mechanism was wrong, not the count.
+
+Note the middle row against the last. Naming five packages is three times
+*faster* than `--test-workspace true`, because naming them bounds what cargo
+must build. Removing the flag made it slower.
 
 Two new `#[ignore]`d tests in `tests/ssh_executor_tests.rs` took five more.
 `read_dir` survived three mutants that each make a remote directory look empty,
