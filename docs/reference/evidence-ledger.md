@@ -36,9 +36,20 @@ them; do not copy a figure from an older document.
 | Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 1997 passed, 0 failed, 49 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 60 |
-| Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 21 validations passed |
+| Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 24 validations passed |
 | Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2033 |
 | Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2033 across 297 files |
+
+Three of these rows are re-derived from the tree on every `validate_all.py` run
+by `scripts/validate/validate_test_counts.py`: the annotation count, the
+ignored count, and the validator count, each by the command stated beside it.
+Those three carry today's answer rather than 2026-08-10's, and the date above
+governs only the rows a build produces. The validator row read 21 for two days
+after the count became 23, which is what prompted the check.
+
+The rows a build produces are not re-measured there, and are not therefore
+unchecked: they are pinned to each other by the identities this section states,
+so a figure edited alone fails even though nothing about it was measured.
 
 The gap between 2033 annotations and 1991 executions is exactly 42, and all 42
 are `#[ignore]`d tests, listed by

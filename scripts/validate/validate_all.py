@@ -88,6 +88,11 @@ def main():
         ("Policy Exception Sites", "validate_policy_exception_sites.py", []),
         ("Documented Exception Keys", "validate_documented_exception_keys.py", []),
         ("Evidence Ledger", "validate_evidence_ledger.py", []),
+        # The check above reads the ledger's paths. This one reads its numbers,
+        # which nothing read at all: a count in a sentence was invisible to
+        # every structural validator here, and the ledger's own validator row
+        # sat two behind the registry for two days.
+        ("Test Counts", "validate_test_counts.py", []),
         ("Persisted Finding Fields", "validate_persisted_finding_fields.py", []),
         # The neighbouring check above covers the Rust side of a finding. This
         # one covers the JavaScript fixture the GUI suite deserialises, which
