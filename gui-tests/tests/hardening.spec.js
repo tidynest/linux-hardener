@@ -155,7 +155,7 @@ test.describe('History', () => {
 
   // T-HIST-12: the note appears, and names the remedy, when a source was not
   test('T-HIST-12: an unreadable source is named, with the command that shows it', async ({ page }) => {
-    await loadApp(page, '/hardening?checkpoint_source=unreadable');
+    await loadApp(page, '/hardening', 'checkpoint_source=unreadable');
     await page.getByRole('tab', { name: 'History' }).click();
 
     const note = page.locator('.checkpoint-source-note');
