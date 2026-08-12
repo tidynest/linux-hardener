@@ -1209,6 +1209,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hardening History showed an incomplete checkpoint list as though it were
+  complete** (#156). The desktop merges its own checkpoint database with the
+  root-owned system one, and an unprivileged process cannot read the second,
+  so every checkpoint taken by a privileged operation was missing with nothing
+  said about it. Measured on a real host: the list showed six checkpoints while
+  the system database held five more, including one created through the GUI
+  ninety seconds earlier with the operator answering the polkit prompt, and one
+  taken automatically before a rollback. Since `create_checkpoint` signals
+  success only by clearing its input, a successful privileged checkpoint and a
+  failed one produced the same screen. `get_checkpoints` already computed
+  whether the system database could be read, and reported it with a
+  `tracing::warn!` that reaches a log file rather than the person reading the
+  list. The command now returns that fact, and the list says which source is
+  missing and which command shows it. No test caught this because the
+  Playwright mock returns one merged fixture and cannot hold an unreadable
+  root-owned database, so the seam does not exist there.
+
 - **Scan History said "1 findings across 8 checks".** The meta line under each
   timeline entry interpolated both counts without pluralising either, so every
   single-finding scan read as a grammatical error on a page the operator returns
