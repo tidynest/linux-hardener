@@ -118,8 +118,49 @@ tree as it stands reads:
 | `hardener-core` | 263 | 8 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
 | **Total now** | **580** | **10** | **2% of viable** |
 
-Every kill was verified by re-running the runner over the affected scope
-rather than by reasoning about the tests:
+### Confirmed by a full re-run under a wider scope, 2026-08-12
+
+The figures above were assembled from per-file re-runs. A complete pass has
+since been run against the whole set, with **every one of the three crates'
+tests running for every mutant** rather than `hardener-core`'s alone:
+
+```
+cargo mutants --test-tool nextest -j 1 --timeout 300 \
+  -p hardener-common -p hardener-state -p hardener-core \
+  --test-package hardener-common --test-package hardener-state --test-package hardener-core \
+  --cargo-test-arg --run-ignored=all
+```
+
+with the SSH fixture booted and `SSH_TEST_*` exported. **702 mutants in 53
+minutes: 583 caught, 10 missed, 109 unviable, 0 timeouts.**
+
+| Crate | Caught | Missed | Unviable |
+|---|---:|---:|---:|
+| `hardener-common` | 152 | 2 | 10 |
+| `hardener-state` | 165 | 0 | 52 |
+| `hardener-core` | 266 | 8 | 47 |
+
+`hardener-common` and `hardener-state` reproduce the assembled figures exactly.
+`hardener-core` reads 266 rather than 263 against 321 mutants rather than 319,
+which is source drift since `56245cc7`, not a change in what the tests catch.
+
+**The wider scope killed nothing extra.** Going from 174 tests to 453, with the
+three crates able to cross-kill for the first time, moved the survivor count by
+zero. The caveat recorded above, that a narrower measurement is pessimistic and
+a wider run can only kill more, holds in principle and is worth exactly nothing
+here. The 10 survivors are a property of the tests, not of the scope they were
+measured under.
+
+Baseline discipline that this run had to establish first: the pass was preceded
+by a baseline reading **14 failures instead of 6**, all eight extra downstream of
+`message_indicates_permission_denied` returning false. That was a mutated
+artefact left in the shared target directory by an earlier aborted run, not a
+defect. `cargo mutants` aborts on a failing baseline, so a poisoned artefact
+costs the entire pass. Prove the baseline against its recorded value before
+starting; a clean `git status` does not mean a clean build.
+
+Every kill in the table above was verified by re-running the runner over the
+affected scope rather than by reasoning about the tests:
 
 | Scope | Before | After |
 |---|---|---|
