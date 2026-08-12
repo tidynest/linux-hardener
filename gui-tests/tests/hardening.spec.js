@@ -149,7 +149,15 @@ test.describe('History', () => {
   // This is the half that can rot. A note rendered unconditionally passes any
   // presence-only assertion, so the negative case is what proves the flag is
   // actually consulted.
+  //
+  // The rollback-button count comes first and is load-bearing, not decoration.
+  // An absence assertion is satisfied by its first poll and never retries, so
+  // on its own `toHaveCount(0)` is equally green when the app never hydrated,
+  // the tab click missed, the route was wrong, the class was renamed, or
+  // get_checkpoints rejected. Anchoring on rows that only exist once the
+  // command resolved turns "no note" into "the flag was consulted and false".
   test('T-HIST-11: no source note when every checkpoint source was read', async ({ page }) => {
+    await expect(rollbackButtons(page)).toHaveCount(3);
     await expect(page.locator('.checkpoint-source-note')).toHaveCount(0);
   });
 
