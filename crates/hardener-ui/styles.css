@@ -74,7 +74,14 @@
   --content-padding: 16px;
   --sidebar-width: 220px;
   --sidebar-rail-width: 56px;
-  /* No max-width - content fills available space */
+  /* Two page measures, by page kind. Single-column form pages use
+     --width-form so a label on the left and its control on the right stay
+     within one eye movement; dense data pages (dashboard, analysis,
+     hardening, hosts, fleet apply) set no max-width and fill the space their
+     tables need. A new page picks one of these two rather than a fourth
+     number: settings, scheduler and hosts previously carried 900px, 760px and
+     960px set independently, with the intent recorded nowhere. */
+  --width-form: 900px;
 
   /* Spacing - one 4px scale */
   --space-xs: 4px;
@@ -2991,7 +2998,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    ============================================================ */
 
 .scheduler-page {
-  max-width: 760px;
+  max-width: var(--width-form);
 }
 
 /* Page header */
@@ -4252,7 +4259,11 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 /* Page shell. Token corrections vs the design draft: text colours use
    --text-secondary/--text-muted, borders use --border (the draft's
    --color-text-* / --color-border tokens do not exist in :root). */
-.hosts-page { padding: var(--space-lg); max-width: 960px; }
+/* No padding and no max-width here: .app-main already applies
+   --content-padding to every page, and --space-lg is the same 16px, so setting
+   it again inset this page by 32px while every other page sat at 16px. The
+   host list is tabular, so it fills the width like the other data pages
+   instead of stopping at a 960px of its own. */
 .hosts-header h1 { font-size: 1.4rem; font-weight: 500; margin: 0; }
 .hosts-subtitle { font-size: 0.82rem; color: var(--text-secondary); margin: 2px 0 0; }
 
@@ -4285,7 +4296,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
-  max-width: 900px;
+  max-width: var(--width-form);
 }
 
 .settings-header {
