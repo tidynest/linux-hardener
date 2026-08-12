@@ -253,7 +253,7 @@ run_playwright() {
     fi
 
     echo -e "${CYAN}[playwright] Running tests...${NC}"
-    mkdir -p test-results/screenshots
+    mkdir -p "test-results/${HARDENER_DISTRO:-local}/screenshots" test-reports
 
     # PLAYWRIGHT_GREP narrows the run to one spec or one test, so a session
     # diagnosing the suite can get an answer inside the 600 s ceiling instead of
@@ -261,9 +261,12 @@ run_playwright() {
     local -a filter=()
     [[ -n "${PLAYWRIGHT_GREP:-}" ]] && filter=(--grep "$PLAYWRIGHT_GREP")
 
+    # No --reporter here. The flag overrides the whole reporter array in
+    # playwright.config.js, which is why the configured json reporter never once
+    # ran and results.json has never existed on disk. The config supplies both
+    # list and json, and json writes outside outputDir so it survives.
     local exit_code=0
     npx playwright test \
-        --reporter=list \
         "${filter[@]}" \
         2>&1 || exit_code=$?
 

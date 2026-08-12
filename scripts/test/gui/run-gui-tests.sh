@@ -139,8 +139,9 @@ BOX_W=74
 # The nspawn invocation shared by both execution modes.
 nspawn_gui_tests() {
     local container_path="$1"
-    local -a env_args=()
-    [[ -n "$GREP_PATTERN" ]] && env_args=(--setenv="PLAYWRIGHT_GREP=$GREP_PATTERN")
+    local distro="$2"
+    local -a env_args=(--setenv="HARDENER_DISTRO=$distro")
+    [[ -n "$GREP_PATTERN" ]] && env_args+=(--setenv="PLAYWRIGHT_GREP=$GREP_PATTERN")
     timeout 600 systemd-nspawn -D "$container_path" \
         --bind="$PROJECT_DIR:/project" \
         "${env_args[@]}" \
@@ -156,12 +157,44 @@ nspawn_gui_tests() {
 # files are already on this side of it and this only relocates them: the first
 # timed-out run left fifteen populated directories under gui-tests/test-results
 # and nothing at all where the summary said to look.
+# Both the source and the destination are keyed by distro. The destination
+# because six distros used to write one results tree and the last one won: a
+# full six-distro run left 37 screenshots on disk, all rhel's, under a summary
+# reporting six passes. The source because Playwright clears outputDir when it
+# starts, so an un-namespaced source is deleted by the next container before the
+# copy can matter, and under --parallel it is deleted mid-run.
 collect_gui_artefacts() {
-    local source_dir="$PROJECT_DIR/gui-tests/test-results"
+    local distro="$1"
+    local source_dir="$PROJECT_DIR/gui-tests/test-results/$distro"
+    local report_src="$PROJECT_DIR/gui-tests/test-reports/$distro.json"
+    local dest="$RESULTS_DIR/$distro"
+    local shots="$RESULTS_DIR/screenshots/webui/$distro"
     [[ -d "$source_dir" ]] || return 0
-    mkdir -p "$RESULTS_DIR/screenshots/webui"
-    cp -r "$source_dir"/* "$RESULTS_DIR/" 2>/dev/null || true
-    cp -r "$source_dir"/screenshots/* "$RESULTS_DIR/screenshots/webui/" 2>/dev/null || true
+
+    # Cleared rather than merged: a partial run must look partial instead of
+    # inheriting the previous run's files under the same names.
+    rm -rf "$dest" "$shots"
+    mkdir -p "$dest" "$shots"
+
+    cp -r "$source_dir"/. "$dest/" 2>/dev/null || true
+    # One copy of each screenshot, at the path the summary points at. The two cp
+    # lines this replaces produced screenshots/ and screenshots/webui/
+    # byte-for-byte identical.
+    mv "$dest/screenshots"/*.png "$shots/" 2>/dev/null || true
+    rmdir "$dest/screenshots" 2>/dev/null || true
+    [[ -f "$report_src" ]] && cp "$report_src" "$dest/results.json"
+
+    # Written by root inside the container. Handed back so the artefacts can be
+    # read, and the analysis re-run, without sudo.
+    [[ -n "${SUDO_UID:-}" ]] && chown -R "$SUDO_UID:${SUDO_GID:-$SUDO_UID}" "$dest" "$shots"
+    return 0
+}
+
+# A distro that passed while writing no screenshots is the signature of the
+# collector losing them, which read as six green rows for as long as the summary
+# printed only a status. Expect 37.
+count_shots() {
+    find "$RESULTS_DIR/screenshots/webui/$1" -name '*.png' 2>/dev/null | wc -l
 }
 
 echo ""
@@ -206,7 +239,7 @@ run_single_distro() {
     local exit_code
     if [[ "$PARALLEL" == "true" ]]; then
         echo -e "[$distro] ${CYAN}Starting...${NC}"
-        nspawn_gui_tests "$container_path" > "$logfile" 2>&1
+        nspawn_gui_tests "$container_path" "$distro" > "$logfile" 2>&1
         exit_code=$?
         if [[ $exit_code -eq 0 ]]; then
             echo -e "[$distro] ${GREEN}PASS${NC}"
@@ -216,7 +249,7 @@ run_single_distro() {
     else
         echo -e "  ${CYAN}[RUN]${NC}  systemd-nspawn --pipe -> gui-test-inner.sh"
         echo -e "  ${CYAN}[LOG]${NC}  $logfile"
-        nspawn_gui_tests "$container_path" 2>&1 | tee "$logfile"
+        nspawn_gui_tests "$container_path" "$distro" 2>&1 | tee "$logfile"
         exit_code=${PIPESTATUS[0]}
         if [[ $exit_code -eq 0 ]]; then
             echo -e "  ${GREEN}[PASS]${NC} All Playwright tests passed"
@@ -226,7 +259,7 @@ run_single_distro() {
         echo ""
     fi
 
-    collect_gui_artefacts
+    collect_gui_artefacts "$distro"
 
     return "$exit_code"
 }
@@ -268,8 +301,8 @@ SUMMARY_FILE="$RESULTS_DIR/gui-summary.txt"
         echo "Date: $(date)"
     fi
     echo ""
-    printf "%-12s %8s\n" "Distro" "Status"
-    printf "%-12s %8s\n" "--------" "------"
+    printf "%-12s %8s %6s\n" "Distro" "Status" "Shots"
+    printf "%-12s %8s %6s\n" "--------" "------" "-----"
 
     for distro in "${DISTROS[@]}"; do
         exit_code="${RESULT_EXIT[$distro]:-1}"
@@ -280,12 +313,12 @@ SUMMARY_FILE="$RESULTS_DIR/gui-summary.txt"
         else
             status="FAIL"
         fi
-        printf "%-12s %8s\n" "$distro" "$status"
+        printf "%-12s %8s %6s\n" "$distro" "$status" "$(count_shots "$distro")"
     done
 
     echo ""
     echo "Logs: $RESULTS_DIR/<distro>-webui.log"
-    echo "Screenshots: $RESULTS_DIR/screenshots/webui/"
+    echo "Screenshots: $RESULTS_DIR/screenshots/webui/<distro>/"
 } > "$SUMMARY_FILE"
 
 # Print summary
@@ -297,8 +330,8 @@ else
 fi
 echo -e "${MAGENTA}╚$(printf '═%.0s' $(seq 1 $BOX_W))╝${NC}"
 echo ""
-printf "  ${BOLD}%-12s %8s${NC}\n" "Distro" "Status"
-printf "  %-12s %8s\n" "--------" "------"
+printf "  ${BOLD}%-12s %8s %6s${NC}\n" "Distro" "Status" "Shots"
+printf "  %-12s %8s %6s\n" "--------" "------" "-----"
 
 overall_exit=0
 for distro in "${DISTROS[@]}"; do
@@ -310,12 +343,12 @@ for distro in "${DISTROS[@]}"; do
     else
         colour="$RED"; status="FAIL"; overall_exit=1
     fi
-    printf "  ${colour}%-12s %8s${NC}\n" "$distro" "$status"
+    printf "  ${colour}%-12s %8s %6s${NC}\n" "$distro" "$status" "$(count_shots "$distro")"
 done
 
 echo ""
 echo -e "  Summary:      ${CYAN}$SUMMARY_FILE${NC}"
-echo -e "  Screenshots:  ${CYAN}$RESULTS_DIR/screenshots/webui/${NC}"
+echo -e "  Screenshots:  ${CYAN}$RESULTS_DIR/screenshots/webui/<distro>/${NC}"
 echo ""
 
 if [[ $overall_exit -eq 0 ]]; then

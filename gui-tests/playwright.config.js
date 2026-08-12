@@ -1,5 +1,6 @@
 // @ts-check
 const { defineConfig } = require('@playwright/test');
+const { outputDir, jsonReport } = require('./output-dir');
 
 module.exports = defineConfig({
   testDir: './tests',
@@ -24,8 +25,8 @@ module.exports = defineConfig({
 
   reporter: [
     ['list'],
-    ['json', { outputFile: 'test-results/results.json' }],
+    ['json', { outputFile: jsonReport }],
   ],
 
-  outputDir: 'test-results',
+  outputDir,
 });

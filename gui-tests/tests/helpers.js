@@ -3,6 +3,7 @@
 // =============================================================================
 
 const { expect } = require('@playwright/test');
+const { outputDir } = require('../output-dir');
 
 /**
  * Wait for WASM to finish loading and the app to render.
@@ -61,7 +62,7 @@ async function selectTheme(page, themeValue) {
  * Take a named screenshot and save to the screenshots directory.
  */
 async function takeScreenshot(page, name) {
-  await page.screenshot({ path: `test-results/screenshots/${name}.png`, fullPage: true });
+  await page.screenshot({ path: `${outputDir}/screenshots/${name}.png`, fullPage: true });
 }
 
 module.exports = { waitForApp, loadApp, runScan, selectTheme, takeScreenshot };

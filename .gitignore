@@ -82,6 +82,9 @@ __pycache__/
 
 # Cross-distro test output
 test-results/
+# Playwright's json reporter, written outside outputDir so it survives the
+# clear Playwright does at startup. One file per distro.
+test-reports/
 
 # Claude Code settings (user-specific)
 .claude/
