@@ -74,6 +74,20 @@ Contrast screenshots. Every theme the application offers is now covered,
 and `T-THEME-09` compares the selector's own option list against the suite's,
 so the next theme added cannot arrive uncovered.
 
+Re-read against `dd85255f` on 2026-08-12, after a `trunk build --release`:
+**134 of 134 on all six, none failed, none skipped, no name filter.** rhel took
+two runs. The first never started a test: `dnf` could not fetch `baseos` and
+`appstream` metadata, so chromium, node and the fonts never installed, and the
+runner refused to continue with no font under `/usr/share/fonts` rather than let
+Chromium lay every glyph out at zero width. The mirrors answered 200 from the
+host at the time, DNS resolved inside the container under the runner's own nspawn
+flags, and `dnf makecache` returned 0 on the next attempt, so the cause was a
+transient mirror failure and **nothing in the repository was changed for it**.
+The on-disk `/etc/resolv.conf` differs per container, 22 bytes naming
+`100.64.0.7` on rhel against fedora's 920-byte stub, and that is a red herring:
+nspawn overrides the file at runtime and both see `127.0.0.53`, which works
+because no `--private-network` means the container shares the host's loopback.
+
 Two suites in that run did not pass, and neither reading is about a distribution.
 The package suite failed one check on all six, which was a `pipefail` and `grep -q`
 SIGPIPE inversion in the harness rather than a product defect, fixed in `6a82a5b`
