@@ -1139,7 +1139,18 @@ pub fn ConfigureSection() -> impl IntoView {
                     // the same box, shown only when the selection includes
                     // an ssh/firewall area.
                     <div class="review-confirm-box">
-                        <Show when=move || has_changes.get()>
+                        // With nothing staged the box would otherwise draw an
+                        // empty accent frame around the two buttons: the
+                        // reassurance was gated on has_changes but the box was
+                        // not. Say why there is nothing to confirm instead.
+                        <Show
+                            when=move || has_changes.get()
+                            fallback=|| view! {
+                                <p class="review-confirm-reassurance">
+                                    "Nothing to apply. Everything in this selection is already compliant."
+                                </p>
+                            }
+                        >
                             <p class="review-confirm-reassurance">
                                 "A checkpoint is saved first, and you will be asked for your password. You can undo everything from History."
                             </p>

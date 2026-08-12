@@ -1209,6 +1209,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Scan History said "1 findings across 8 checks".** The meta line under each
+  timeline entry interpolated both counts without pluralising either, so every
+  single-finding scan read as a grammatical error on a page the operator returns
+  to often. Eleven other sites in `hardener-ui` already pluralise with an inline
+  `if n == 1` test; this one did not. Both counts now use it, so a one-plugin
+  scan is correct too. Found by walking the running desktop against the real
+  scan-history database, where single-finding sessions are common; the Playwright
+  mock returns a fixture with eight findings, so no test could ever have rendered
+  the singular.
+
+- **The confirm box drew an empty accent frame when there was nothing to
+  apply.** In the hardening review step the reassurance line about checkpoints
+  and passwords was shown only when the preview held changes, but the box that
+  contains it was shown unconditionally. A selection that was already compliant
+  therefore produced a highlighted panel drawing the eye to blank space beside
+  two buttons, one of them disabled. The box now falls back to naming the
+  situation, "Nothing to apply. Everything in this selection is already
+  compliant.", so the accent always has something to say.
+
 - **A remote executor called a device a file, and the local one did not.**
   `SshExecutor` parses `stat -c '%F ...'` output, and its `is_file` test
   accepted any `%F` string containing the word `file`. Every string for a

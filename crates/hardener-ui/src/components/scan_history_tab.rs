@@ -97,8 +97,11 @@ pub fn ScanHistoryTab(active_tab: RwSignal<usize>) -> impl IntoView {
                                             let is_failed = s.status == "failed";
                                             let time = checkpoint_time(&s.started_at).to_string();
                                             let meta = format!(
-                                                "{} findings across {} checks",
-                                                s.total_findings, s.total_plugins,
+                                                "{} finding{} across {} check{}",
+                                                s.total_findings,
+                                                if s.total_findings == 1 { "" } else { "s" },
+                                                s.total_plugins,
+                                                if s.total_plugins == 1 { "" } else { "s" },
                                             );
                                             let session_id = s.session_id.clone();
                                             let dot_cls = if is_failed {
