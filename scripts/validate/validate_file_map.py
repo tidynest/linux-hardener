@@ -24,11 +24,16 @@ SCAN_DIRS = [
     "src-tauri/src",
 ]
 
-# Files/patterns to exclude from validation
+# Files/patterns to exclude from validation. Every `/tests/` directory, not
+# only `/tests/common/`: the summary this script prints labels its "Actual"
+# count "(excluding tests)", and the label was false when only the common
+# helpers were dropped here while `missing_from_docs` filtered the rest of
+# `/tests/` out later, ad hoc, after the count had already been printed. One
+# exclusion list now does what both labels claim.
 EXCLUDE_PATTERNS = [
-    r"/target/",           # Build artifacts
-    r"/tests/common/",     # Test utilities (often not documented)
-    r"\.#",                # Editor temp files
+    r"/target/",   # Build artifacts
+    r"/tests/",    # Integration/unit test files (often not documented per-row)
+    r"\.#",        # Editor temp files
 ]
 
 # Path to file-map.md relative to project root
@@ -356,11 +361,12 @@ def main():
             if claim:
                 claimed_test_counts.append((full_path, int(claim.group(1))))
 
-    # Find discrepancies
+    # Find discrepancies. `actual_files` already excludes every `/tests/`
+    # path (see EXCLUDE_PATTERNS above), so this filter is now a defensive
+    # no-op rather than the sole exclusion it used to be; kept in case a
+    # future EXCLUDE_PATTERNS edit narrows the pattern again.
     missing_from_docs = actual_files - documented_full_paths
     extra_in_docs = documented_full_paths - actual_files
-
-    # Filter out test files from "missing" (they're often intentionally undocumented)
     missing_from_docs = {f for f in missing_from_docs if "/tests/" not in f}
 
     has_errors = False

@@ -58,29 +58,71 @@ def get_git_last_modified(filepath: Path) -> datetime | None:
     return None
 
 
-def parse_last_updated(content: str) -> tuple[str | None, datetime | None]:
-    """Parse 'Last Updated' date from markdown content."""
-    # Match patterns like:
-    # **Last Updated**: 2025-12-06
-    # *Last Updated*: 2025-12-06
-    # Last Updated: 2025-12-06
-    patterns = [
-        r'\*\*Last Updated\*\*:\s*(\d{4}-\d{2}-\d{2})',
-        r'\*Last Updated\*:\s*(\d{4}-\d{2}-\d{2})',
-        r'Last Updated:\s*(\d{4}-\d{2}-\d{2})',
-    ]
+# Match patterns like:
+# **Last Updated**: 2025-12-06
+# *Last Updated*: 2025-12-06
+# Last Updated: 2025-12-06
+LAST_UPDATED_PATTERNS = [
+    r'\*\*Last Updated\*\*:\s*(\d{4}-\d{2}-\d{2})',
+    r'\*Last Updated\*:\s*(\d{4}-\d{2}-\d{2})',
+    r'Last Updated:\s*(\d{4}-\d{2}-\d{2})',
+]
+LAST_UPDATED_COMBINED = re.compile(
+    "|".join(f"(?:{p})" for p in LAST_UPDATED_PATTERNS), re.IGNORECASE
+)
 
-    for pattern in patterns:
-        match = re.search(pattern, content, re.IGNORECASE)
-        if match:
-            date_str = match.group(1)
-            try:
-                date = datetime.strptime(date_str, "%Y-%m-%d")
-                return date_str, date
-            except ValueError:
-                pass
+# A fenced code block delimiter. Toggles an in/out-of-fence flag as the file
+# is read line by line; a fence need not be closed for the file to end, so an
+# unbalanced fence is treated as "still in a fence" for every line after it,
+# which is the conservative direction (missing a real marker rather than
+# validating an example as if it were one).
+FENCE_LINE = re.compile(r'^\s*(```|~~~)')
 
-    return None, None
+
+def find_last_updated_markers(content: str) -> list[tuple[int, str, datetime]]:
+    """Find every real 'Last Updated: DATE' marker in markdown content.
+
+    Returns (line_number, date_str, date) for each marker, 1-indexed by line.
+
+    This used to be parse_last_updated(), which called re.search once per
+    pattern and returned only the FIRST match in the whole file. A document
+    with both a header and a footer marker -- distribution-validation.md and
+    file-map.md both carry one of each -- had the footer never inspected, so
+    the two could silently disagree (or both go stale) with the validator
+    still reporting the file current. Every marker is now found and returned
+    for the caller to check individually.
+
+    Not every line that looks like a marker is one, though. scripts/README.md
+    documents this validator's own three supported formats under "Supported
+    Date Formats", each shown with an example date, inside a fenced
+    ```markdown block -- an illustration of the pattern, not a claim about
+    when scripts/README.md itself was last edited. The rule applied here is:
+    a marker counts only if it is NOT inside a fenced code block (``` or
+    ~~~). This is a heuristic rather than a proof -- a real marker placed
+    inside a fence on purpose would be silently skipped -- but the tree was
+    checked by hand and carries no such case today, and a missed real marker
+    (a false-negative warning, at worst) is a far smaller failure than
+    validating an example line as though it were a genuine date, which is
+    what produced this file's original bug in the other direction.
+    """
+    markers = []
+    in_fence = False
+    for lineno, line in enumerate(content.split("\n"), start=1):
+        if FENCE_LINE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = LAST_UPDATED_COMBINED.search(line)
+        if not match:
+            continue
+        date_str = next(g for g in match.groups() if g is not None)
+        try:
+            date = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            continue
+        markers.append((lineno, date_str, date))
+    return markers
 
 
 def is_archived(rel_path: Path) -> bool:
@@ -148,23 +190,25 @@ def git_ignored(root: Path, paths: list[Path]) -> set[Path]:
     return {Path(line) for line in result.stdout.split("\n") if line}
 
 
-def update_last_updated(filepath: Path, new_date: str) -> bool:
-    """Update the Last Updated date in a file."""
-    content = filepath.read_text()
+def update_last_updated(filepath: Path, line_no: int, new_date: str) -> bool:
+    """Update the Last Updated date on one specific line of a file.
 
-    patterns = [
-        (r'(\*\*Last Updated\*\*:\s*)\d{4}-\d{2}-\d{2}', rf'\g<1>{new_date}'),
-        (r'(\*Last Updated\*:\s*)\d{4}-\d{2}-\d{2}', rf'\g<1>{new_date}'),
-        (r'(Last Updated:\s*)\d{4}-\d{2}-\d{2}', rf'\g<1>{new_date}'),
-    ]
-
-    for pattern, replacement in patterns:
-        new_content, count = re.subn(pattern, replacement, content, flags=re.IGNORECASE)
-        if count > 0:
-            filepath.write_text(new_content)
-            return True
-
-    return False
+    Takes a line number (from find_last_updated_markers) instead of
+    substituting every occurrence of a date pattern across the whole file.
+    A file can carry two real markers (header and footer) that go stale on
+    different dates, and can also carry a same-looking pattern inside a
+    fenced code example that must never be rewritten -- a whole-file
+    substitution could not tell those apart.
+    """
+    lines = filepath.read_text().split("\n")
+    if not 1 <= line_no <= len(lines):
+        return False
+    new_line, count = re.subn(r'\d{4}-\d{2}-\d{2}', new_date, lines[line_no - 1], count=1)
+    if count == 0:
+        return False
+    lines[line_no - 1] = new_line
+    filepath.write_text("\n".join(lines))
+    return True
 
 
 def main():
@@ -188,10 +232,10 @@ def main():
         rel_path = filepath.relative_to(root)
         content = filepath.read_text()
 
-        date_str, doc_date = parse_last_updated(content)
+        markers = find_last_updated_markers(content)
         git_date = get_git_last_modified(filepath)
 
-        if doc_date is None:
+        if not markers:
             # An archived document is frozen by definition, so a "Last Updated"
             # date on it would be a claim nobody maintains. Requiring one
             # produced 37 permanent warnings, every run, and a warning that is
@@ -204,25 +248,30 @@ def main():
 
         if git_date is None:
             # File not in git yet, can't validate
-            current_files.append((rel_path, date_str, "untracked"))
+            for line_no, date_str, _ in markers:
+                current_files.append((rel_path, line_no, date_str, "untracked"))
             continue
 
-        # Check if documented date is stale compared to git
-        if git_date > doc_date + threshold:
-            stale_files.append({
-                "path": rel_path,
-                "documented": date_str,
-                "git_date": git_date.strftime("%Y-%m-%d"),
-                "days_stale": (git_date - doc_date).days,
-            })
-        else:
-            current_files.append((rel_path, date_str, "current"))
+        # Every marker is checked, not only the first: a file can carry more
+        # than one (header + footer), and each is an independent claim about
+        # when the file was last updated.
+        for line_no, date_str, doc_date in markers:
+            if git_date > doc_date + threshold:
+                stale_files.append({
+                    "path": rel_path,
+                    "line": line_no,
+                    "documented": date_str,
+                    "git_date": git_date.strftime("%Y-%m-%d"),
+                    "days_stale": (git_date - doc_date).days,
+                })
+            else:
+                current_files.append((rel_path, line_no, date_str, "current"))
 
     # Report results
     if current_files:
         print(f"{GREEN}Current files ({len(current_files)}):{NC}")
-        for path, date, status in current_files:
-            print(f"  ✓ {path}: {date}")
+        for path, line_no, date, status in current_files:
+            print(f"  ✓ {path}:{line_no}: {date}")
         print()
 
     if missing_dates:
@@ -234,7 +283,7 @@ def main():
     if stale_files:
         print(f"{RED}Stale dates found ({len(stale_files)}):{NC}")
         for info in stale_files:
-            print(f"  ✗ {info['path']}")
+            print(f"  ✗ {info['path']}:{info['line']}")
             print(f"      Documented: {info['documented']}")
             print(f"      Git shows:  {info['git_date']} ({info['days_stale']} days newer)")
 
@@ -242,10 +291,10 @@ def main():
             print(f"\n{BLUE}Updating stale dates...{NC}")
             for info in stale_files:
                 filepath = root / info['path']
-                if update_last_updated(filepath, info['git_date']):
-                    print(f"  ✓ Updated {info['path']} to {info['git_date']}")
+                if update_last_updated(filepath, info['line'], info['git_date']):
+                    print(f"  ✓ Updated {info['path']}:{info['line']} to {info['git_date']}")
                 else:
-                    print(f"  ✗ Failed to update {info['path']}")
+                    print(f"  ✗ Failed to update {info['path']}:{info['line']}")
             print()
         else:
             print(f"\n{YELLOW}Run with --fix to update stale dates automatically{NC}\n")
