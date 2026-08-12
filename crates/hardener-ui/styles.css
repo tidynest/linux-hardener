@@ -244,8 +244,19 @@
     --color-good-bright: #10b981;
     --color-warning: #d97706;
     --color-warning-bright: #f59e0b;
-    --color-critical: #dc2626;
-    --color-critical-bright: #ef4444;
+    /* Both of these are read as TEXT on this theme's four surfaces, and the
+       darkest of those is --bg-tertiary #e8e3db, not the page background. The
+       previous pair failed there: #dc2626 measured 3.78:1 and #ef4444 measured
+       2.95:1, against a 4.5 bar. #b91c1c holds 5.07:1 and #991b1b holds 6.51:1
+       on that same worst-case surface.
+
+       The relationship is also inverted from the dark themes on purpose. There
+       "bright" means lighter, because lighter stands out against a dark ground.
+       Daywatch inherited that and ended up with its emphasis colour lighter
+       than its base, which on a light ground is the wrong direction: here
+       emphasis has to go darker. */
+    --color-critical: #b91c1c;
+    --color-critical-bright: #991b1b;
     --color-info: #0891b2;
     --color-pending: #a8a29e;
     --color-accent: #0d9488;
