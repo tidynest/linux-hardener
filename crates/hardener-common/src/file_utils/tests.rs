@@ -773,3 +773,46 @@ fn copying_refuses_a_destination_that_is_a_dangling_symlink() {
         "the destination guard must refuse a symlink before opening anything: got {error}"
     );
 }
+
+/// A commented-out directive is not a value, and a live line still wins.
+///
+/// Reading `#PermitRootLogin yes` as `yes` would report a setting the file
+/// does not hold, and this parser feeds scan results an operator acts on. The
+/// reader had no test feeding it a comment at all: every case above is a live
+/// line, so the whole comment path was covered only by the writer's tests.
+///
+/// This does **not** kill the `||` to `&&` mutant on the skip above it, and
+/// nothing can. With `&&` the condition is unsatisfiable and nothing is
+/// skipped, but a comment's key parses as `#PermitRootLogin` and an empty
+/// line's key as empty, so neither matches a directive name and the result is
+/// identical. The mutant is provably equivalent; the behaviour below is still
+/// worth pinning, because it is what stays true if the skip is ever removed as
+/// redundant.
+#[test]
+fn a_commented_directive_is_not_read_as_a_value() {
+    assert_eq!(
+        parse_config_value(
+            "#PermitRootLogin yes\n",
+            "PermitRootLogin",
+            ConfigFormat::Auto,
+            true
+        ),
+        None,
+        "a commented directive must not be reported as set"
+    );
+    assert_eq!(
+        parse_config_value("#minlen = 14\n", "minlen", ConfigFormat::Auto, true),
+        None,
+        "and the same holds for the key=value form"
+    );
+    assert_eq!(
+        parse_config_value(
+            "#PermitRootLogin yes\nPermitRootLogin no\n",
+            "PermitRootLogin",
+            ConfigFormat::Auto,
+            true
+        ),
+        Some("no".to_string()),
+        "a live line below a commented one is the value that counts"
+    );
+}
