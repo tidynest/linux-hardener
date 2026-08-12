@@ -103,6 +103,7 @@ def main():
         validators.extend([
             ("CLI Documentation", "validate_cli_docs.py", []),
             ("Compliance Framework List", "validate_compliance_docs.py", []),
+            ("Colour Contrast", "validate_contrast.py", []),
         ])
 
     results = {}
