@@ -99,3 +99,4 @@ packaging/*.tar.zst
 
 # cargo-mutants run artefacts (regenerable; 3 MB and full of absolute paths)
 mutants.out/
+mutants.out.old/

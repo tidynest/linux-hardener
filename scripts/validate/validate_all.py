@@ -104,6 +104,7 @@ def main():
             ("CLI Documentation", "validate_cli_docs.py", []),
             ("Compliance Framework List", "validate_compliance_docs.py", []),
             ("Colour Contrast", "validate_contrast.py", []),
+            ("Version Locations", "validate_version_locations.py", []),
         ])
 
     results = {}
