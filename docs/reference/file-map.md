@@ -639,7 +639,7 @@ pub async fn invoke_get_scan_history(limit: Option<i32>) -> Result<Vec<ScanSessi
 pub async fn invoke_get_scan_session(session_id: String) -> Result<Vec<ScanResult>, String>;
 
 // Checkpoints
-pub async fn invoke_get_checkpoints() -> Result<Vec<CheckpointInfo>, String>;
+pub async fn invoke_get_checkpoints() -> Result<CheckpointList, String>;
 pub async fn invoke_create_checkpoint(name: String) -> Result<String, String>;
 pub async fn invoke_delete_checkpoint(checkpoint_id: String) -> Result<bool, String>;
 pub async fn invoke_get_checkpoint_detail(checkpoint_id: String) -> Result<CheckpointDetail, String>;
@@ -703,7 +703,7 @@ pub async fn export_compliance_report(frameworks: Vec<String>,
     output_path: Option<String>,) -> Result<String, String>
 pub async fn generate_compliance_report(frameworks: Vec<String>,) -> Result<Vec<ComplianceReport>, String>
 pub async fn get_checkpoint_detail(checkpoint_id: String) -> Result<CheckpointDetail, String>
-pub async fn get_checkpoints() -> Result<Vec<CheckpointInfo>, String>
+pub async fn get_checkpoints() -> Result<CheckpointList, String>
 pub async fn get_host_history(host: String,
     limit: Option<u32>,) -> Result<Vec<HostSessionInfo>, String>
 pub async fn get_latest_scan() -> Result<Option<Vec<ScanResult>>, String>
