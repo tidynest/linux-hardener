@@ -59,10 +59,16 @@ fn save_then_load_round_trips() {
 ///
 /// The assertion is on the shape rather than the whole string, because the
 /// prefix is the operator's own config directory and naming it here would pin
-/// this machine instead of the contract. What the path is *under* is the
-/// ceiling, and #155's sibling: `dirs::config_dir()` reads the environment, so
-/// this cannot be asked of an injected root without changing the signature,
-/// which is why `load` and `save` beside it stay unpinned.
+/// this machine instead of the contract.
+///
+/// This comment used to add that `dirs::config_dir()` reading the environment
+/// meant the wrappers could not be asked of an injected root without changing
+/// the signature, and that `load` and `save` therefore stayed unpinned. Reading
+/// the environment is what makes them pinnable: `XDG_CONFIG_HOME` moves the
+/// directory, measured 2026-08-12 after a mutation pass found both wrappers
+/// surviving. They are pinned in `tests/inventory_shared_path.rs`, which is a
+/// separate binary because writing that variable races every other thread in
+/// this one that reads any variable at all.
 #[test]
 fn the_inventory_path_names_the_shared_file() {
     let path = default_path().expect("the config directory resolves on any host");
