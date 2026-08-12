@@ -32,6 +32,15 @@
   --color-warning-bright: #fbbf24;
   --color-critical: #ef4444;
   --color-critical-bright: #f87171;
+  /* A destructive button's fill is not the same colour as destructive TEXT,
+     and conflating the two is how .btn-danger shipped at 3.76:1. Twenty of the
+     twenty-one uses of --color-critical are `color:` on a dark background,
+     where #ef4444 reads 4.92:1 and is correct; darkening it to fix the button
+     would drop that text to 3.83:1 and fail. So the fill gets its own pair.
+     #ffffff on #dc2626 is 4.83:1, and #dc2626 holds 3.83:1 against the darkest
+     page background, clearing the 3:1 boundary bar. */
+  --danger-fill: #dc2626;
+  --danger-on-fill: #ffffff;
   --color-info: #22d3ee;
   --color-pending: #64748b;
 
@@ -265,6 +274,11 @@
     --color-warning-bright: #fef08a;
     --color-critical: #fca5a5;
     --color-critical-bright: #fecaca;
+    /* This theme keeps the bright fill and flips the text instead. #fca5a5 on
+       #000 is 11:1 and is the whole point of the palette; it was the hardcoded
+       white on top of it that measured 1.9:1. Black on it measures 11.06:1. */
+    --danger-fill: #fca5a5;
+    --danger-on-fill: #000000;
     --color-info: #93c5fd;
     --color-pending: #a3a3a3;
     --color-accent: #67e8f9;
@@ -456,6 +470,22 @@ body {
 [data-theme="daywatch"] .form-select,
 [data-theme="daywatch"] .format-select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%231c1917' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+}
+
+/* .btn:disabled uses opacity 0.5, which alpha-blends the fill toward whatever
+   is behind it. That is background-dependent: it holds up on the six dark
+   themes and collapses to 2.35:1 on daywatch's cream, because a dark-green
+   #065f46 fill with #d1fae5 text both wash out toward the page. Explicit
+   colours are background-independent; these measure 6.08:1. Scoped to the one
+   theme that is broken rather than restyling the six that measure fine, so the
+   underlying opacity approach stays and will need this again for any future
+   light theme. */
+[data-theme="daywatch"] .btn:disabled,
+[data-theme="daywatch"] .btn[aria-disabled="true"] {
+    opacity: 1;
+    background-color: #e7e5e4;
+    color: #57534e;
+    border-color: #d6d3d1;
 }
 
 /* Schedule and notification selects sit alongside .form-input; cap width to
@@ -2590,8 +2620,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .btn-danger {
-  background: var(--color-critical);
-  color: #fff;
+  background: var(--danger-fill);
+  color: var(--danger-on-fill);
   border: none;
   border-radius: 4px;
   cursor: pointer;
