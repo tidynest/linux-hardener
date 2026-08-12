@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Validates that CLI documentation in README.md matches actual CLI implementation.
+Validates that the CLI documentation matches the CLI implementation.
 
 Usage:
     ./scripts/validate/validate_cli_docs.py
@@ -10,9 +10,29 @@ Exit codes:
     1: Discrepancies found
 
 Checks:
-    - All main commands are documented with examples
+    - All main commands are documented with examples in README.md
     - All subcommands are documented
     - Global flags are mentioned
+    - Every reference surface carries every command and subcommand
+
+Surfaces
+--------
+This check was named "CLI Documentation" and read `README.md` alone. It never
+opened `docs/reference/cli.md` or the man page, and its name gave no hint of
+that. An audit on 2026-08-12 read both by hand: `cli.md` was clean across 1135
+lines, and the man page carried ten defects, two of which an operator would act
+on. The narrowness was the whole story, since nothing had ever looked.
+
+README.md documents by example and is held to a weaker standard: a command
+absent from it is a warning, because the file is a tour rather than a
+reference. `cli.md` and the man page are references, are complete today, and a
+gap in either is an error.
+
+Reading the man page needs its markup taken seriously. Subcommands appear in an
+`.RI [ a | b | c ]` alternation under the `.B` line rather than beside the
+command, and roff escapes mean `run-once` is written `run\\-once`. A parser
+that misses either reports documented subcommands as missing, which is a false
+defect in a check whose purpose is trust.
 """
 
 import re
@@ -158,6 +178,102 @@ def parse_global_flags_from_readme(root: Path) -> set[str]:
     return flags
 
 
+def parse_commands_from_man(root: Path) -> tuple[set[str], set[tuple[str, str]]]:
+    """Parse commands and subcommands from the man page synopsis.
+
+    Two shapes carry them, and reading only the first is how this file went
+    unchecked. `.B hardener scan` names a command; the `.RI [ a | b | c ]` that
+    may follow names its subcommands, so a command whose subcommands live in
+    the alternation list looks bare to a parser that reads `.B` lines alone.
+
+    Roff escapes are undone first. `run-once` is written `run\\-once`, and a
+    literal comparison reports a documented subcommand as missing.
+    """
+    text = (root / "packaging" / "assets" / "hardener.1").read_text()
+    text = text.replace("\\-", "-")
+
+    top: set[str] = set()
+    pairs: set[tuple[str, str]] = set()
+    lines = text.splitlines()
+
+    for i, line in enumerate(lines):
+        match = re.match(r"^\.B(?:R)? +hardener +([\w-]+)(?: +([\w-]+))?", line)
+        if not match:
+            continue
+        command, direct = match.group(1), match.group(2)
+        top.add(command)
+        if direct:
+            pairs.add((command, direct))
+        # Subcommands offered as an alternation on the following line.
+        if i + 1 < len(lines):
+            alternation = re.match(r"^\.RI +\[ *(.+?) *\]", lines[i + 1])
+            if alternation:
+                for option in alternation.group(1).split("|"):
+                    option = option.strip()
+                    if re.fullmatch(r"[\w-]+", option):
+                        pairs.add((command, option))
+
+    return top, pairs
+
+
+def parse_commands_from_cli_md(root: Path) -> tuple[set[str], set[tuple[str, str]]]:
+    """Parse commands and subcommands from the cli.md headings."""
+    text = (root / "docs" / "reference" / "cli.md").read_text()
+    top = set(re.findall(r"^## ([a-z][\w-]*)$", text, re.M))
+    pairs = {
+        (match.group(1), match.group(2))
+        for match in re.finditer(r"^### ([a-z][\w-]+) ([\w-]+)$", text, re.M)
+    }
+    return top, pairs
+
+
+# The reference surfaces, each read in full. README.md is checked separately
+# below because it documents by example rather than by heading, so absence
+# there is a weaker signal and stays a warning.
+REFERENCE_SURFACES = [
+    ("docs/reference/cli.md", parse_commands_from_cli_md),
+    ("packaging/assets/hardener.1", parse_commands_from_man),
+]
+
+
+def check_reference_surfaces(root: Path, source_commands: dict[str, dict]) -> bool:
+    """Hold every reference surface to the full command set from cli.rs.
+
+    Returns True on a defect. Missing entries are errors rather than warnings:
+    both surfaces are complete as of 2026-08-12, so this locks that in. The man
+    page had never been opened by any check, and an audit found ten defects in
+    it including two an operator would act on, while `cli.md` came back clean
+    across 1135 lines.
+    """
+    expected_pairs = {
+        (name, subcommand)
+        for name, info in source_commands.items()
+        for subcommand in info.get("subcommands") or []
+    }
+    failed = False
+
+    for path, parse in REFERENCE_SURFACES:
+        top, pairs = parse(root)
+        missing_top = set(source_commands) - top
+        missing_subs = expected_pairs - pairs
+
+        if not missing_top and not missing_subs:
+            print(
+                f"  {GREEN}✓{NC} {path}: all {len(source_commands)} commands and "
+                f"{len(expected_pairs)} subcommands present"
+            )
+            continue
+
+        failed = True
+        print(f"  {RED}✗ {path}:{NC}")
+        for command in sorted(missing_top):
+            print(f"    - command not documented: {command}")
+        for command, subcommand in sorted(missing_subs):
+            print(f"    - subcommand not documented: {command} {subcommand}")
+
+    return failed
+
+
 def main():
     print(f"{BLUE}Validating CLI documentation...{NC}\n")
 
@@ -272,6 +388,12 @@ def main():
             print(f"    --{flag}")
     else:
         print(f"  {GREEN}✓ All key global flags documented{NC}")
+    print()
+
+    # Check 4: the reference surfaces carry every command and subcommand
+    print(f"{BLUE}Checking reference documentation surfaces...{NC}")
+    if check_reference_surfaces(root, source_commands):
+        has_errors = True
     print()
 
     # Summary
