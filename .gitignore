@@ -42,19 +42,10 @@ crates/hardener-ui/dist/
 crates/hardener-ui/themes/
 
 # Internal development documents (not for public repositories)
-SSH_CLI_IMPLEMENTATION.md
-/HANDOFF.md
 docs/HANDOFF.md
 docs/NEXT-SESSION-PROMPT.md
 docs/QUESTIONS-FOR-MAINTAINER.md
-docs/SSH_REMOTE_PLAN.md
-docs/archive/DOCUMENTATION_AUDIT.md
-docs/archive/FRONTEND_LAYOUT_PLAN.md
-docs/archive/GUI_V031_TEST_PLAN.md
-docs/archive/browser-automation.md
-docs/archive/claude-code-configuration.md
-docs/archive/css-architecture.md
-docs/archive/tauri-plus-leptos-development-on-arch-linux-with-hyprland.md
+docs/archive/
 MCP_INSTRUCTIONS.md
 docs/superpowers/
 

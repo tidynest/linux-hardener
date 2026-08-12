@@ -117,10 +117,12 @@ The release script automatically:
    - Syncs version references to Cargo.toml
 3. Validates documentation (`validate_all.py --quick`)
 4. Updates the version in `Cargo.toml` (`workspace.package.version`), then runs
-   `update_all_docs.py --apply` a second time so the three `**Version**` markers
-   follow the bump rather than the version it replaced, and asserts all three
-   against `Cargo.toml` afterwards. Also rewrites `packaging/assets/hardener.1`
-   (the `.TH` header) and `src-tauri/tauri.conf.json`
+   `update_all_docs.py --apply` a second time so the four version markers
+   (architecture.md, data-flow.md and README.md's `**Version**` markers, plus
+   SECURITY.md's supported-release sentence) follow the bump rather than the
+   version it replaced, and asserts all four against `Cargo.toml` afterwards.
+   Also rewrites `packaging/assets/hardener.1` (the `.TH` header) and
+   `src-tauri/tauri.conf.json`
 5. Rewrites the test count in `README.md`, in `docs/assets/badges/tests.svg` and
    in the `tests` `message` in `scripts/badges/generate.js`, taken from the
    `cargo test` run in step 1, and the version in
@@ -327,6 +329,7 @@ Version is defined in the workspace root and inherited by all crates:
 | `docs/architecture/architecture.md` | `**Version:**` | Architecture doc header | Yes, step 3b |
 | `docs/reference/data-flow.md` | `**Version:**` | Data-flow doc header | Yes, step 3b |
 | `README.md` | `**Version**:` | README footer | Yes, step 3b |
+| `SECURITY.md` | supported-release sentence | Security policy | Yes, step 3b |
 | `packaging/assets/hardener.1` | `.TH` header | Man page version | Yes, step 3b |
 | `src-tauri/tauri.conf.json` | `version` | Desktop app version | Yes, step 3b |
 | `scripts/badges/generate.js` | `version` `message` | Badge declaration | Yes, step 3c |
@@ -336,22 +339,28 @@ Version is defined in the workspace root and inherited by all crates:
 | `packaging/debian/changelog` | top stanza `(X.Y.Z-1)` | Debian package version | No, manual |
 | `scripts/badges/generate.js` | `aur` `message` | AUR badge declaration | No, manual, tracks `PKGBUILD` |
 | `docs/assets/badges/aur.svg` | rendered label | README AUR badge | No, manual, tracks `PKGBUILD` |
-| `SECURITY.md` | supported-release prose | Security policy | No, manual |
+| `SECURITY.md` | supported-versions table | Security policy | No, manual |
 | `docs/NEXT.md` | `**Current Version**:` and the opening prose | Working notes | No, manual |
 | `docs/ROADMAP.md` | current-release prose | Working notes | No, manual |
 
-The three packaging files, the AUR badge pair and the four prose markers are the
-ones a release forgets: nothing in `release.sh` writes them and `--verify` does
-not read them, so they drift silently until somebody installs the package or
-reads the wrong number.
+The three packaging files, the AUR badge pair and the three remaining manual
+markers (SECURITY.md's supported-versions table, `docs/NEXT.md` and
+`docs/ROADMAP.md`) are the ones a release forgets: nothing in `release.sh`
+writes them and `--verify` does not read them, so they drift silently until
+somebody installs the package or reads the wrong number.
 
-The first three doc rows arrive through `update_all_docs.py`, which owns them,
-and step 3b runs it **after** the bump for that reason. It also runs at step 2b,
-before the bump, where it syncs them to the version being replaced; that used to
-be the only run, so `architecture.md` stayed correct through its own sed while
-`README.md` and `data-flow.md` shipped a version behind. Step 3b now asserts all
-three against the workspace version afterwards, and imports the target list from
-the updater rather than restating it, so a target added there is covered here.
+The first four doc rows arrive through `update_all_docs.py`, which owns them
+(architecture.md, data-flow.md and README.md's `**Version**` markers, plus
+SECURITY.md's supported-release sentence, matched separately since it names the
+release in prose rather than as a marker), and step 3b runs it **after** the
+bump for that reason. It also runs at step 2b, before the bump, where it syncs
+them to the version being replaced; that used to be the only run, so
+`architecture.md` stayed correct through its own sed while `README.md` and
+`data-flow.md` shipped a version behind. Step 3b now asserts all four against
+the workspace version afterwards, and imports the target list from the updater
+rather than restating it, so a target added there is covered here. Only
+SECURITY.md's supported-versions table stays manual: growing it to name a new
+series and retire an old one is a judgement call the sentence sync cannot make.
 
 All crates use `version.workspace = true` to inherit the workspace version.
 `Cargo.lock` workspace entries are refreshed with `cargo update --workspace` after the bump.
@@ -479,8 +488,10 @@ failing gate meant retracting a published tag rather than deleting a local one.
       in `scripts/badges/generate.js` and `docs/assets/badges/aur.svg`. They
       track `PKGBUILD` rather than the tag, so a badge updated at the tag
       advertises a package nobody can install yet
-- [ ] `SECURITY.md`: the current-release sentence, and the supported-versions
-      table gains the new series with the previous one moved down
+- [ ] `SECURITY.md`: the supported-versions table gains the new series with the
+      previous one moved down. (The current-release sentence is not a manual
+      step here: step 3b already wrote it, same mechanism as the README.md and
+      architecture.md rows.)
 - [ ] `docs/ROADMAP.md` and `docs/NEXT.md`: the prose naming the current
       release. Name the tag and no commit count; a count is stale the day it is
       written, which is why `git rev-list --count v<X.Y.Z>..main` is given
@@ -528,4 +539,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-08-11
+**Last Updated**: 2026-08-12

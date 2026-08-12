@@ -1,6 +1,6 @@
 # Evidence Ledger
 
-**Last Updated**: 2026-08-11
+**Last Updated**: 2026-08-12
 
 This release does not claim to be proven bug-free. It claims something narrower
 and checkable: every capability it advertises carries a named piece of evidence
@@ -341,7 +341,11 @@ because the operator it mutated is gone, which is the better outcome of the two
 available. `only_a_regular_file_reads_as_a_file_over_ssh` now walks the six `%F`
 shapes, the two special-file rows being the ones that were wrong and the rest
 the control that stops the fix over-correcting into "nothing is a file".
-**The ceiling that fix left, #155, is now closed too.** `%F` is translated, so a
+**The ceiling that fix left is now fixed in code too, tracked as #155.** The fix
+landed in commit `dabbb1fe` on 2026-08-11, but that commit and every one after
+it are still unpushed to GitHub as of this writing, so the tracker has not seen
+the `Closes` trailer and #155 reads OPEN there; it should close on the next
+push. `%F` is translated, so a
 `stat` under a non-English locale reported every path as neither a file nor a
 directory: measured on 2026-08-11, `LC_ALL=sv_SE.utf8 stat -c '%F' /etc/passwd`
 prints `normal fil` and the same command on `/etc` prints `katalog`, so `is_dir`
@@ -760,7 +764,7 @@ These are stated once here rather than repeated in every cell below.
   `cargo test --workspace $WORKSPACE_EXCLUDE`, where `WORKSPACE_EXCLUDE` is
   `--exclude linux-hardener-desktop --exclude hardener-ui`. It executes no
   `#[ignore]`d test and no shell suite, and those two exclusions make CI's set
-  strictly smaller than the 1886 recorded above, so a green CI run is a weaker
+  strictly smaller than the 1991 recorded above, so a green CI run is a weaker
   reading than that number. Every grade-3 result in this ledger was produced by
   a person starting a root session, since 2026-08-07 through
   `scripts/test/release-readiness-root.sh`, which batches every root-only suite

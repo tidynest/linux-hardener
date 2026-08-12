@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-12
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -1027,7 +1027,7 @@ sudo ./scripts/containers/create-container.sh rhel clean
 
 **Script**: `verify-rollback.sh`
 
-**Purpose**: Runs 9 targeted tests, 26 checks on the all-pass path, to verify that the rollback system works correctly inside an nspawn container. Validates the complete apply-then-rollback cycle for multiple plugins. The runner is `release-readiness-root.sh --only rollback`, which builds the arch container; read green at 26 of 26 on 2026-08-08.
+**Purpose**: Runs 14 targeted tests to verify that the rollback system works correctly inside an nspawn container: TEST 1-9 ask whether a value returned to its pre-apply state, and TEST 10-14 ask whether each plugin's scan (ssh-hardening, service-minimisation, audit-hardening, permissions-hardening, pam-hardening) correctly reports a divergence forced onto the host behind the rollback's back. Validates the complete apply-then-rollback cycle for multiple plugins. The runner is `release-readiness-root.sh --only rollback`, which runs the script twice against the same arch container: once under `--pipe` (TEST 1-9 plus TEST 12-14, which need no service manager; TEST 10-11 record their precondition and skip) and once more booted (TEST 10-14 only, all askable). Measured 2026-08-11 at commit `dd85255f`: the `--pipe` pass read 30 of 32 checks passed, 2 skipped, 0 failed; the booted pass read 5 of 5, 0 skipped.
 
 **Usage**:
 ```bash
@@ -1047,6 +1047,11 @@ sudo ./scripts/test/verify-rollback.sh
 | 7 | Firewall rollback | Whichever backend the plugin selects: its own configuration and what the host is actually enforcing |
 | 8 | Divergence reporting | A rollback leaving a sysctl no surviving file names reports it as `Diverged` rather than plain success |
 | 9 | Legacy `/etc/sysctl.conf` | A parameter named only in that file stays `Diverged`, with the sentence saying the value is lost at the next reboot rather than that no file names it |
+| 10 | What `ssh-hardening` reports after a rollback | Needs `--booted`; forces a divergence via `systemctl mask` and checks the plugin reports it |
+| 11 | What `service-minimisation` reports after a rollback | Needs `--booted`; forces a divergence via `systemctl start` on a masked unit |
+| 12 | What `audit-hardening` reports after a rollback | Runs unbooted; forces a divergence via `auditctl` reaching the kernel audit subsystem |
+| 13 | What `permissions-hardening` reports after a rollback | Runs unbooted; forces `/etc/shadow` to mode 666 after the checkpoint and checks the rollback restores it |
+| 14 | What `pam-hardening` reports after a rollback | Runs unbooted; forces a line appended to `/etc/security/faillock.conf` after the checkpoint |
 
 **Exit Codes**:
 - `0`: Every check ran and passed
@@ -1058,8 +1063,8 @@ sudo ./scripts/test/verify-rollback.sh
 - Pre-built musl binary at `/project/target/release/hardener`
 - Root privileges
 - Container environment. The runner, `release-readiness-root.sh --only rollback`,
-  builds and uses the arch container, which is what the 26-of-26 reading above
-  was taken on
+  builds and uses the arch container, which is what the readings above
+  were taken on
 
 ---
 
@@ -1081,15 +1086,15 @@ sudo ./scripts/test/root-test-suite.sh --apply
 **Test Categories**:
 | Category | Tests | Description |
 |----------|-------|-------------|
-| Environment | 4 | Container detection, binary exists |
-| Basic commands | 2 | Version, help, plugins |
-| Scan (root) | 9 | All 8 plugins with root access |
-| Reports | 8 | All 7 frameworks + JSON + PDF |
-| Dry-run | 5 | All plugins show estimated changes |
+| Environment | 4 | Root check, binary exists, container detection, `--version` |
+| Basic commands | 2 | `hardener --help`, `hardener plugins` |
+| Scan (root) | 9 | Full scan, 6 of 8 plugins individually (kernel, firewall, audit, ssh, pam, permissions; not services or mac), severity filter, `--exit-code` |
+| Reports | 8 | 6 of the 10 `ComplianceFramework` variants (cis, stig, nist, pcidss, hipaa, gdpr) + JSON + PDF |
+| Dry-run | 5 | `--all --dry-run`, then 4 of 8 plugins individually (kernel, firewall, permissions, ssh) |
 | Daemon/History | 2 | Database path, scan history |
 | Systemd | 2 | Generate, status commands |
 | Checkpoint | 1 | List checkpoints |
-| Apply + Rollback | 3 | Actual hardening + verification (with `--apply`) |
+| Apply + Rollback | 5 | Apply kernel hardening, verify, checkpoint created, rollback, verify rollback (with `--apply`) |
 
 **Test Modes**:
 | Test | Without `--apply` | With `--apply` |
@@ -1590,7 +1595,7 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 
 **Script**: `run-gui-tests.sh`
 
-**Purpose**: Host orchestrator that runs 113 Playwright Web UI tests across every distro in `DISTRO_ORDER`. The 113 figure is the 2026-06-29 five-distro reading; the Ubuntu container has never been run. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
+**Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. Counted directly from `gui-tests/tests/*.spec.js` at commit `dddb7651`: 142 tests (107 literal `test(` call sites, minus the 2 sites that each generate multiple tests at runtime through a loop, plus the 37 tests those two loops generate: `themes.spec.js` over 7 themes x 5 states = 35, and `hardening.spec.js`'s T-DIVG-03 over 2 viewport widths = 2). This has not yet been observed in an actual run; the Ubuntu container has never been run either. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
 
 **Usage**:
 ```bash

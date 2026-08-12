@@ -608,7 +608,7 @@ report zero `ManualReview` for covered controls.
 
 | Item | Description | Priority | Status |
 |------|-------------|----------|--------|
-| Increase test coverage | Target 90%+ coverage | Low | ✅ Complete (660+ tests) |
+| Increase test coverage | Target 90%+ coverage | Low | Partial. 1991 tests run by `cargo nextest run --workspace`, but the 90 per cent target is not met: `docs/reference/coverage-baseline.md` lists every file under 60 per cent and records `src-tauri/src/commands.rs` at 26.60 per cent |
 | Consolidate `create_plugin_registry()` | Duplicated in CLI, report, Tauri | Low | ✅ Complete |
 | Consolidate test mock plugins | Duplicated in registry.rs and plugin_manager_tests.rs | Low | ✅ Complete |
 | Config file utilities | Duplicated parsing/backup in SSH and PAM plugins | Low | ✅ Complete |

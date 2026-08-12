@@ -13,11 +13,11 @@ cargo test --workspace
 ```
 
 Runs every test across all 11 workspace members (the ten crates under `crates/`
-plus `src-tauri`). Measured 2026-08-08: 1821 passed, 0 failed, 47 ignored, over
-60 result lines. 1815 of those passes and 40 of those ignores are the
-unit and integration tests `cargo nextest run --workspace` also runs; the
-remaining 6 passes and 7 ignores are doctests, which nextest does not run at
-all. The
+plus `src-tauri`). Measured 2026-08-12 at commit `dddb7651`: 1997 passed, 0
+failed, 49 ignored, over 60 result lines. 1991 of those passes and 42 of those
+ignores are the unit and integration tests `cargo nextest run --workspace`
+also runs; the remaining 6 passes and 7 ignores are doctests, which nextest
+does not run at all. The
 ignored ones are mostly the root-only and live-sshd tests described further down,
 with a few that want a particular firewall backend installed; they are not
 failures and an ordinary `cargo test` does not run them.
@@ -32,7 +32,7 @@ cargo nextest run --workspace       # the unit and integration tests, in paralle
 cargo test --doc --workspace        # the doctests nextest does not run
 ```
 
-`cargo nextest` is installed on this machine (0.9.140) and runs the same tests
+`cargo nextest` is installed on this machine (0.9.143) and runs the same tests
 faster, one process per test. **It does not run doctests at all.** That is a
 property of nextest rather than a configuration in this repository, so a gate
 built out of `cargo nextest run` alone has not compiled or run a single `///`
@@ -68,13 +68,29 @@ cargo test -p hardener-types                 # Shared type tests
 cargo test -- --nocapture                    # Print stdout/stderr from passing tests
 ```
 
-### Run ignored tests (require root)
+### Run ignored tests
 
 ```bash
 sudo cargo test -- --ignored
 ```
 
-Some tests require root privileges and are marked `#[ignore]`. These test operations like file permission changes that need elevated access.
+This runs all 42 `#[ignore]`d tests in the workspace, and root privileges alone
+only satisfy 7 of them. The rest need a fixture the command above does not
+provide, and it does not skip them quietly when the fixture is missing:
+
+| Prerequisite | Count | What it unlocks |
+|---|---:|---|
+| Root privileges only | 7 | One apply test per plugin except kernel (firewall, permissions, PAM, services, audit, SSH, MAC) that modifies the host; `sudo` is sufficient |
+| `SSH_TEST_HOST` (booted container) | 28 | The SSH executor tests and the batch SSH integration suite; **panics, rather than skips, without the variable set**, naming the fixture script |
+| `NFTABLES_LIVE_APPLY_HOST` | 2 | The live nftables apply tests in `ssh_integration_tests.rs` |
+| A named firewall backend installed | 3 | `firewall_tests.rs`'s firewalld-only, UFW-only and nftables-only cases |
+| A visual eyeball, run manually | 1 | `batch/tests.rs`'s formatting helper, `--ignored --nocapture` |
+| Run manually | 1 | `kernel_tests.rs`'s `kernel_apply`, `sudo cargo test kernel_apply -- --ignored --nocapture` |
+
+For the 28 that need `SSH_TEST_HOST`, use the "SSH integration fixture (booted
+container)" steps below rather than running `sudo cargo test -- --ignored`
+bare; a run without the fixture fails on all 28 rather than reporting nothing
+to do.
 
 ---
 
@@ -482,16 +498,24 @@ than the system it makes them about:
 sudo ./scripts/test/verify-rollback.sh
 ```
 
-Runs 9 targeted tests, 26 checks on the all-pass path, that read back off the
-system what a rollback claims to have restored: the kernel plugin's persistent
-drop-in and, where the container permits the question, its runtime `sysctl`
-value; `sshd_config` content; a directory mode; `rollback --format json`
-producing a valid `RollbackResult`; two applies leaving two checkpoints; a
-`login.defs` directive; the selected firewall backend's configuration and what
-the host enforces; that a rollback leaving a sysctl no surviving file names
-reports it as `Diverged`; and that a parameter named only in `/etc/sysctl.conf`
-stays `Diverged` while saying the value is lost at the next reboot rather than
-that no file names it. It refuses to run outside a container, and
+Runs 14 targeted tests that read back off the system what a rollback claims to
+have restored. The first nine ask whether a value returned to its pre-apply
+state: the kernel plugin's persistent drop-in and, where the container permits
+the question, its runtime `sysctl` value; `sshd_config` content; a directory
+mode; `rollback --format json` producing a valid `RollbackResult`; two applies
+leaving two checkpoints; a `login.defs` directive; the selected firewall
+backend's configuration and what the host enforces; that a rollback leaving a
+sysctl no surviving file names reports it as `Diverged`; and that a parameter
+named only in `/etc/sysctl.conf` stays `Diverged` while saying the value is
+lost at the next reboot rather than that no file names it. TEST 10 through
+TEST 14, added 2026-08-10, ask a different question: after a rollback, does
+each plugin's own scan (`ssh-hardening`, `service-minimisation`,
+`audit-hardening`, `permissions-hardening`, `pam-hardening`) correctly report
+a divergence forced onto the host behind the rollback's back. TEST 10 and
+TEST 11 need `systemctl mask`/`systemctl is-enabled` to answer at all, so they
+record their precondition and skip under `--pipe`, naming `--booted` as what
+would let them run; TEST 12 through TEST 14 need no service manager and run
+unbooted. It refuses to run outside a container, and
 it resolves its binary through the same target-directory helper the host-side
 runners use, so a machine with `CARGO_TARGET_DIR` or a `[build] target-dir` set
 needs `/project/target` bound as well as `/project` (see "Cargo target directory
@@ -508,8 +532,15 @@ namespace, so under `--pipe` that half records a counted, named `[SKIP]` rather
 than a pass, and the file assertions are the whole of the arm.
 
 `scripts/test/release-readiness-root.sh` is the only runner that calls this
-script, under `systemd-nspawn --pipe` against the arch container, and no dated
-run of it exists. Its first result is a baseline rather than a regression.
+script, and it calls it twice against the same arch container: once under
+`systemd-nspawn --pipe` (TEST 1-9 plus TEST 12-14, none of which need a
+service manager) and once more booted via `systemd-run --machine`, with
+`VERIFY_ROLLBACK_DIVERGENCE_ONLY` set so only TEST 10 onward run. Measured
+2026-08-11 at commit `dd85255f`: the `--pipe` pass read 30 of 32 checks
+passed, 2 skipped, 0 failed (exit 2, TEST 10 and TEST 11 recording their
+precondition and skipping); the booted pass read 5 of 5, 0 skipped, 0 failed.
+Logs: `test-results/release-readiness/rollback.log` and
+`rollback-booted.log`.
 
 ### Manual verification
 
@@ -1360,6 +1391,21 @@ cargo build --release --target x86_64-unknown-linux-gnu -p hardener-cli
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 ```
 
+`cargo audit` runs in CI as a 5-attempt retry loop rather than a single call.
+
+There is a seventh job, `msrv`, that none of the above reproduces: every job
+listed installs `@stable`, so a tree that starts needing a newer toolchain
+compiles everywhere else in CI and fails only for the person on the floor.
+That happened: the declared minimum read 1.85 from 2026-02 until 2026-08-05
+while the tree needed 1.88 for let-chains, and nothing above caught it. `msrv`
+builds on the version `Cargo.toml` declares instead:
+
+```bash
+version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)
+rustup toolchain install "$version"
+cargo "+$version" check --workspace --all-targets --exclude linux-hardener-desktop --exclude hardener-ui
+```
+
 ### release.yml (on tags matching `v[0-9]+.[0-9]+.[0-9]+`)
 
 ```bash
@@ -1381,4 +1427,4 @@ in `build-mode: none`, on every push and pull request to `main` and on a schedul
 (Mondays, 06:00 UTC). It has no local reproduction: results go to the
 repository's security tab.
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-12

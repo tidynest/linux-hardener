@@ -1,6 +1,6 @@
 # What This Release Does Not Prove
 
-**Last Updated**: 2026-08-11
+**Last Updated**: 2026-08-12
 
 This release does not claim to be proven bug-free, and no release of anything
 ever has been. It claims something narrower and checkable: every capability it
@@ -513,8 +513,8 @@ matching the two SSH suites in `crates/hardener-core` and
 whether you can read the result, not how much of the fleet path was exercised:
 four happy paths, against one container, started by hand.
 
-**Nothing that touches a wire runs by default or in CI.** Of the 40 tests the
-workspace suite skips, 25 need `SSH_TEST_HOST` and a booted fixture from
+**Nothing that touches a wire runs by default or in CI.** Of the 42 tests the
+workspace suite skips, 27 need `SSH_TEST_HOST` and a booted fixture from
 `scripts/containers/boot-ssh-test-container.sh`. A regression in the SSH
 transport is therefore invisible to `cargo test`.
 
@@ -599,7 +599,14 @@ days afterwards: that nothing automated exercised the graphical application at
 all. It read **134 of 134 on all six distributions on 2026-08-11** against
 `7c81c491`, none skipped and none flaky, covering findings and compliance,
 configure, history and apply, fleet, scheduler, errors, the `/remote` redirect
-and all seven themes.
+and all seven themes. **That reading is now stale and has not been repeated.**
+`gui-tests/tests/settings.spec.js` (8 tests, covering the Appearance and About
+panes) was added on 2026-08-12 at `dddb7651`, growing the suite to 142 tests
+per distribution, 134 plus those 8 (`npx playwright test --list` inside
+`gui-tests/` confirms 142 today). Nobody has yet run the grown suite across all
+six distributions: the 134-of-134 figure describes the suite as it stood when
+it was measured, not the suite as it now stands, and 142 is a count, not a
+result.
 
 **What that suite drives is not the desktop application.** It serves the same
 wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of
@@ -610,6 +617,26 @@ is asked what it renders for a given reply, never whether the backend would
 send that reply. The mock's field names are a hand-written copy of the Rust
 structs, so it can drift from them, and a drift empties a view rather than
 failing loudly.
+
+**The mock and the real command set are not the same set.**
+`src-tauri/src/commands.rs` carries 32 `#[tauri::command]` functions;
+`gui-tests/tauri-mock.js` carries 33 `case` labels, and the two lists differ in
+both directions. `get_host_history` and `run_deep_scan` are real commands the
+frontend calls (`crates/hardener-ui/src/tauri_bindings.rs`, from
+`components/host_panel.rs` and the deep-scan action), and neither has a mock
+case: a Playwright run that reached either path would fall through to the
+mock's `default:` arm, which throws an "Unknown command" error naming the
+command it could not answer. No spec file under `gui-tests/` mentions either
+command name, so no test reaches that path to trigger the throw either; both
+are simply untouched by the browser suite.
+`export_report`, `run_scan_filtered` and `run_scan_with_options` run the other
+way: all three have a mock case and none exists in `commands.rs`, so they
+answer a command the frontend never sends. `scripts/validate/validate_gui_mock_fixtures.py`,
+the one validator that reads the mock's payload shapes at all, invokes only 8
+of the 32 real commands (`run_scan`, `run_apply`, `list_plugins`,
+`run_rollback`, `run_fleet_scan`, `generate_compliance_report`,
+`add_policy_exception`, `remove_policy_exception`) to do it, so it neither
+catches the two uncovered real commands nor the three dead mock ones.
 
 The practical reading for an operator: the command-line tool is the surface this
 release has the deepest evidence for; the desktop's interface is now exercised
@@ -627,23 +654,30 @@ and the date of the last such run is in
 [distribution-validation.md](distribution-validation.md).
 
 **A green CI run is a weaker reading than the workspace suite**, because the two
-crate exclusions above make CI's set strictly smaller than the 1815 tests
-`cargo nextest run --workspace` passed on 2026-08-08. That is the same figure
-[evidence-ledger.md](evidence-ledger.md) records for the CI ceiling; the 1693
-this paragraph used to quote was the 2026-08-07 reading of the same suite.
+crate exclusions above make CI's set strictly smaller than the 1991 tests
+`cargo nextest run --workspace` passed on 2026-08-12. That is the same figure
+[evidence-ledger.md](evidence-ledger.md) records for the CI ceiling. Earlier
+readings of the same growing suite were 1693 on 2026-08-07 and 1815 on
+2026-08-08; re-measure this figure rather than copying it forward again.
 
-**The 40 tests the workspace suite skips, and what each needs:**
+**The 42 tests the workspace suite skips, and what each needs:**
 
 | What it needs | Count | Where |
 |---|---:|---|
-| A live SSH host (`SSH_TEST_HOST`) | 25 | `crates/hardener-core/tests/ssh_executor_tests.rs` (12), `crates/hardener-plugins/tests/ssh_integration_tests.rs` (9), `crates/hardener-cli/tests/batch_ssh_integration.rs` (4) |
+| A live SSH host (`SSH_TEST_HOST`) | 27 | `crates/hardener-core/tests/ssh_executor_tests.rs` (14), `crates/hardener-plugins/tests/ssh_integration_tests.rs` (9), `crates/hardener-cli/tests/batch_ssh_integration.rs` (4) |
 | Root, and permission to change the host it runs on | 8 | one per plugin, in each plugin's integration test file |
 | The nftables fixture container | 3 | `crates/hardener-plugins/tests/ssh_integration_tests.rs` |
 | A named firewall backend already installed | 3 | `crates/hardener-plugins/tests/firewall_tests.rs` |
 | A person to look at the output | 1 | `crates/hardener-cli/src/commands/batch/tests.rs` |
 
-None of the 40 runs in CI. A `cargo test --workspace` run reports a larger
-ignored figure than 40, because it also builds a documentation-test binary for
+The `ssh_executor_tests.rs` cell grew from 12 to 14 on 2026-08-11, when the
+mutation-testing pass added two more `#[ignore]`d tests, `read_dir` and
+`legacy_description`, while killing survivors in `executor/ssh.rs` (see
+[evidence-ledger.md](evidence-ledger.md)); that is the whole of the 40-to-42
+change.
+
+None of the 42 runs in CI. A `cargo test --workspace` run reports a larger
+ignored figure than 42, because it also builds a documentation-test binary for
 each of the workspace's nine library crates and seven documentation examples are
 `#[ignore]`d as well.
 
@@ -652,13 +686,50 @@ release tests.** The gap between the two figures is the desktop application. The
 full per-crate and per-file picture, and the six limitations of how it was
 measured, are in [the coverage baseline](coverage-baseline.md).
 
-**Mutation testing has been smoked, not run.** Coverage says which lines a test
-reaches and cannot say whether the test checks anything; mutation testing is the
-question that separates the two, and so far it has been put only to
-`hardener-distro`, chosen because it is the smallest crate in the workspace. The
-integrity-critical crates, the plugins, the state layer and the compliance
-renderers, have not been mutation-tested. Until they have, no figure anywhere in
-this project distinguishes a line a test pins from a line a test merely visits.
+**Mutation testing has run on three of the workspace's eleven crates.** Coverage
+says which lines a test reaches and cannot say whether the test checks
+anything; mutation testing is the question that separates the two. A full pass
+against the three integrity-critical crates, `hardener-common`,
+`hardener-state` and `hardener-core`, completed on 2026-08-11 at `56245cc7`:
+700 mutants, 430 caught and 161 missed on the first reading. A day of kill
+commits against that survivor list, `269dadc2` through `dd85255f`, brought it
+to 580 caught and 10 missed, 2 per cent of viable mutants, and found two
+production bugs along the way rather than only test gaps: `SshExecutor`
+classified a device as a regular file
+(`crates/hardener-core/src/executor/ssh.rs`, fixed in `fb98c044`), and the same
+file misread `stat` output entirely under a non-English locale
+([issue #155](https://github.com/tidynest/linux-hardener/issues/155), fixed in
+`dabbb1fe`). Full detail, cluster by cluster, is in
+[evidence-ledger.md](evidence-ledger.md).
+
+**Ten survivors remain, identified but not resolved.**
+`hardener-common/file_utils.rs` keeps one, recorded acceptable because a
+comment can never match a directive name. `hardener-common/logging.rs` keeps
+one, recorded acceptable because the process-global logger it installs panics
+if called twice, so a test exercising it would poison every other test in the
+binary. `hardener-core/executor/ssh.rs` keeps four: two are unreachable over a
+real connection, because a signal-killed remote command exits through the
+local ssh client, which never reports the sentinel the mutant touches; one is
+provably equivalent; and one needs a change to the test fixture rather than to
+the code. `hardener-core/config_loader.rs` keeps one, provably equivalent
+under a non-root test runner. `hardener-core/inventory.rs` keeps two, `load`
+and `save`, because pinning them needs a signature change reaching the CLI and
+two Tauri commands, judged a larger change than two mutants justify while a
+release is pending. `hardener-core/testing.rs` keeps one, a test double's own
+method, provably equivalent.
+
+**Seven of the eleven workspace crates have never been mutation-tested at
+all:** `hardener-plugins` (all eight plugins), `hardener-compliance` (the
+compliance renderers), `hardener-cli`, `hardener-scheduler`,
+`hardener-types`, `hardener-ui` and `src-tauri` (`linux-hardener-desktop`, the
+desktop). `hardener-distro` was
+mutation-tested once, before the Phase 3 deletion that removed the dead module
+holding every one of its survivors; that reading no longer corresponds to the
+crate as it stands and is kept in the ledger only for the `-j 1` finding it
+paid for, not as a current figure. Until the plugins and the compliance
+renderers have been mutation-tested, no figure anywhere in this project
+distinguishes, for that code, a line a test pins from a line a test merely
+visits.
 
 ---
 

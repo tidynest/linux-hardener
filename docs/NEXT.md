@@ -125,7 +125,9 @@ cis` shows 6 `ManualReview`, down from 17), PAM/permissions assessment
 improvements (faillock/pwhistory threshold comparison; shadow/gshadow
 allowed-bits mask), SSH crypto hardening (KexAlgorithms/Ciphers/MACs incl. PQ),
 remote-correct checkpoints, Fleet GUI (scan posture + apply/rollback), and polkit
-DE test tooling. `cargo test --workspace` = **660 passed / 0 failed / 38 ignored**.
+DE test tooling. `cargo test --workspace` read **660 passed / 0 failed / 38
+ignored** at the time, on a tree roughly a third the size of current `main`;
+not a figure to quote against a run today.
 
 ### Key completed milestones (cumulative through v1.2.0):
 
@@ -530,4 +532,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-12

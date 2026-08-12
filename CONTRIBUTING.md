@@ -10,7 +10,7 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 ### Prerequisites
 
-- Rust 1.85 or later
+- Rust 1.88 or later
 - Linux system (for full functionality testing)
 - Git
 
@@ -334,7 +334,11 @@ linux-hardener/
 ├── scripts/                  # Development utilities
 ├── docs/                     # Documentation
 ├── .github/workflows/        # GitHub Actions CI/CD (connected and functional)
-└── .gitlab-ci.yml            # GitLab CI/CD (also functional)
+└── .gitlab-ci.yml            # GitLab CI/CD (check/clippy/test run --workspace on a
+                               # bare rust:latest image, unlike GitHub CI, with no
+                               # GTK/WebKitGTK install step and no exclusion of the
+                               # desktop or hardener-ui crates; not independently
+                               # verified to pass)
 ```
 
 ## Releasing
@@ -366,4 +370,4 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 Thank you for contributing to Linux Hardener!
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-12

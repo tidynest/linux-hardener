@@ -1,6 +1,6 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-08-11
+**Last Updated**: 2026-08-12
 
 This document tracks validation testing across supported Linux distributions.
 
@@ -87,6 +87,14 @@ The on-disk `/etc/resolv.conf` differs per container, 22 bytes naming
 `100.64.0.7` on rhel against fedora's 920-byte stub, and that is a red herring:
 nspawn overrides the file at runtime and both see `127.0.0.53`, which works
 because no `--private-network` means the container shares the host's loopback.
+
+**Both 134-of-134 readings above are now stale.** `gui-tests/tests/settings.spec.js`
+(T-SET-01..08, 8 tests) and the `gui-tests/output-dir.js` helper landed in
+`dddb7651`, after both the `7c81c491` and the `dd85255f` readings. `npx
+playwright test --list` against the working tree now reports **142 tests in 10
+files**. That figure has not been read on any container or in any run; it is a
+static count, not a measured result, and must not be presented as one until a
+suite run against the current tree produces it.
 
 Two suites in that run did not pass, and neither reading is about a distribution.
 The package suite failed one check on all six, which was a `pipefail` and `grep -q`
@@ -1120,4 +1128,4 @@ test-results/gui/
 
 ---
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-12

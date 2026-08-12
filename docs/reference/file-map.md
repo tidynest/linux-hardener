@@ -1,6 +1,6 @@
 # Linux Hardener - File Map
 
-**Last Updated**: 2026-08-11
+**Last Updated**: 2026-08-12
 
 This document lists all source files with their purpose and key exports.
 
@@ -970,7 +970,7 @@ counts measured the same way and on the same date as the table above.
 
 ## GUI Tests (Playwright + Desktop)
 
-114 Playwright tests target the Web UI across every distro in `DISTRO_ORDER`. **Green on all six on 2026-08-08**, 114 of 114 each, in 1.7 to 2.4 minutes against the 600 s ceiling the whole investigation began with the suite exceeding. That reading replaces a 113 figure from 2026-06-29 which had gone stale in both directions: the suite had been rewritten, and it failed on all six on 2026-08-07 for reasons that were environmental rather than about the interface. Those are recorded in [distribution-validation.md](distribution-validation.md#gui-test-suite-2026-08-08) and in issue #48. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
+114 Playwright tests target the Web UI across every distro in `DISTRO_ORDER`. **Green on all six on 2026-08-08**, 114 of 114 each, in 1.7 to 2.4 minutes against the 600 s ceiling the whole investigation began with the suite exceeding. That reading replaces a 113 figure from 2026-06-29 which had gone stale in both directions: the suite had been rewritten, and it failed on all six on 2026-08-07 for reasons that were environmental rather than about the interface. Those are recorded in [distribution-validation.md](distribution-validation.md#gui-test-suite-2026-08-08) and in issue #48. **The 114 figure is itself now stale.** `gui-tests/tests/settings.spec.js` (T-SET-01..08, 8 tests) and the `gui-tests/output-dir.js` helper landed later, in `dddb7651`, and `hardening.spec.js` gained its `T-DIVG-*` divergence tests (`3b3dc293`) after the 2026-08-08 reading as well. `npx playwright test --list` against the working tree now reports **142 tests in 10 files**; that count has not been run on any container, and is not a substitute for the 114-of-114 result above until it is. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
 
 ### Test Files
 
@@ -987,13 +987,15 @@ counts measured the same way and on the same date as the table above.
 | `gui-tests/tests/helpers.js` | Shared test helpers and utilities |
 | `gui-tests/tests/dashboard.spec.js` | T-DASH-01..09 (9 tests): score, scan trigger, navigation, activity |
 | `gui-tests/tests/analysis.spec.js` | T-FIND-01..11, T-COMP-01..08, T-EXC-01..05 (24 tests): findings, compliance and finding-row exception authoring |
-| `gui-tests/tests/hardening.spec.js` | T-CONF-01..10, T-HIST-01..06, T-APPLY-01..04 (20 tests): configure, history, and what an executed apply produces |
+| `gui-tests/tests/hardening.spec.js` | T-CONF-01..10, T-HIST-01..06, T-APPLY-01..04, T-DIVG-01..05 (26 tests): configure, history, what an executed apply produces, and the rollback modal's divergence section. T-DIVG-03 is parameterized over two widths (`-wide`, `-narrow`), so the five DIVG ids run as 6 tests |
 | `gui-tests/tests/themes.spec.js` | T-THEME-01..09 (9 tests + 35 screenshots): all 7 themes. T-THEME-08 covers High Contrast and reads `body`'s computed colours as well as the attribute, because a beaten cascade renders as no theme and still carries the attribute; T-THEME-09 holds the selector's option list against this file's own list, so the next theme added cannot arrive uncovered. The 35 are generated at collection time from 5 states x 7 themes |
 | `gui-tests/tests/errors.spec.js` | T-ERR-01..04 (4 tests): error handling and dismiss |
-| `gui-tests/tests/fleet.spec.js` | Fleet scan view (7 tests) |
-| `gui-tests/tests/fleet-apply.spec.js` | Fleet Apply mode toggle, selection and confirm modal (9 tests) |
+| `gui-tests/tests/fleet.spec.js` | T-FLEET-01..09 (9 tests): Fleet scan view |
+| `gui-tests/tests/fleet-apply.spec.js` | T-FAPPLY-01..09 (9 tests): Fleet Apply mode toggle, selection and confirm modal |
 | `gui-tests/tests/remote.spec.js` | T-REMOTE-01..03 (3 tests): the `/remote` redirect, the saved host list, the Add Host form |
-| `gui-tests/tests/scheduler.spec.js` | Scheduler and notification configuration (6 tests) |
+| `gui-tests/tests/scheduler.spec.js` | T-SCHED-01..06 (6 tests): Scheduler and notification configuration |
+| `gui-tests/tests/settings.spec.js` | T-SET-01..08 (8 tests): the Settings page, the Appearance theme swatch grid (`ThemePicker`'s roving-tabindex keyboard nav and `aria-checked` state), and the About block's version/build identity |
+| `gui-tests/output-dir.js` | Per-distro output/report path helper (`test-results/<distro>`, `test-reports/<distro>.json`), required by `playwright.config.js` and `tests/helpers.js` so the two do not disagree about the path |
 
 ### Runner Scripts
 
@@ -1015,4 +1017,4 @@ counts measured the same way and on the same date as the table above.
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-12

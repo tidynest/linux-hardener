@@ -155,7 +155,7 @@ The Tauri desktop application uses `pkexec` (polkit) for operations that require
 
 3. **Polkit Agent Requirement**: A polkit authentication agent must be running in the desktop session (GNOME, KDE, Hyprland, etc. all provide one).
 
-4. **Per-Command Capability ACLs**: Every application IPC command is declared in `src-tauri/build.rs` (`tauri_build::AppManifest`), which autogenerates an `allow-*`/`deny-*` permission pair per command and enables Tauri's runtime ACL check for application commands. The main-window capability (`src-tauri/capabilities/default.json`) grants each of the 30 commands explicitly, grouped by risk tier; a command whose permission is removed is rejected by the ACL layer before argument deserialisation or handler dispatch. This layers beneath the existing IPC input validation, `PrivilegedOpGuard` rate limiting, and pkexec boundary rather than replacing any of them.
+4. **Per-Command Capability ACLs**: Every application IPC command is declared in `src-tauri/build.rs` (`tauri_build::AppManifest`), which autogenerates an `allow-*`/`deny-*` permission pair per command and enables Tauri's runtime ACL check for application commands. The main-window capability (`src-tauri/capabilities/default.json`) grants each of the 32 commands explicitly, grouped by risk tier; a command whose permission is removed is rejected by the ACL layer before argument deserialisation or handler dispatch. This layers beneath the existing IPC input validation, `PrivilegedOpGuard` rate limiting, and pkexec boundary rather than replacing any of them.
 
 ## Secure Development Practices
 
@@ -166,7 +166,7 @@ The project follows these security practices:
 - No use of `unsafe` Rust without justification
 - Error handling avoids information disclosure
 - Sensitive data is not logged
-- All IPC inputs are validated (length limits, control character rejection, allowlist-based plugin IDs) with 47 dedicated tests
+- All IPC inputs are validated (length limits, control character rejection, allowlist-based plugin IDs) with 48 dedicated tests
 - Signing keys are encrypted at rest using AES-256-GCM with HKDF-SHA256 derived from the machine identity and a frozen salt. The salt is a key-derivation input rather than a label, so changing it makes every existing signing key undecryptable and every signature already written unverifiable; it is named `KEY_DERIVATION_SALT` and pinned by a known-answer test whose expected bytes are computed independently from RFC 5869 rather than recorded from this implementation
 - System binaries are resolved via a trusted path allowlist, not the ambient `PATH` environment variable
 - Privileged IPC operations are rate-limited (5-second cooldown) with mutual exclusion to prevent concurrent privilege escalation attempts
@@ -271,4 +271,4 @@ For security concerns: [private vulnerability report](https://github.com/tidynes
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-hardener/issues)
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-12
