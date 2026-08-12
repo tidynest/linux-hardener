@@ -321,6 +321,12 @@ SUMMARY_FILE="$RESULTS_DIR/gui-summary.txt"
     echo "Screenshots: $RESULTS_DIR/screenshots/webui/<distro>/"
 } > "$SUMMARY_FILE"
 
+# The per-distro collector hands its own directories back, but the results root,
+# the per-distro logs and this summary are written directly by the script as
+# root and were left owned by it: a completed run produced ten root-owned
+# entries that no unprivileged cleanup could remove.
+[[ -n "${SUDO_UID:-}" ]] && chown -R "$SUDO_UID:${SUDO_GID:-$SUDO_UID}" "$RESULTS_DIR"
+
 # Print summary
 echo -e "${MAGENTA}╔$(printf '═%.0s' $(seq 1 $BOX_W))╗${NC}"
 if [[ "$PARALLEL" == "true" ]]; then
