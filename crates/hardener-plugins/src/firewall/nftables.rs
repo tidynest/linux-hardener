@@ -314,7 +314,9 @@ impl NftablesBackend {
             .executor()
             .execute_command("nft", args)
             .await
-            .map_err(|e| HardeningError::Plugin(format!("Failed to execute nft command: {}", e)))?;
+            .map_err(|e| {
+                HardeningError::Plugin(format!("Failed to execute nft command: {:#}", e))
+            })?;
 
         if !output.success() {
             return Err(HardeningError::Plugin(format!(

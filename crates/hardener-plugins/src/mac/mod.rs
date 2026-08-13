@@ -293,7 +293,9 @@ impl MacHardeningPlugin {
             .executor()
             .execute_command("getenforce", &[])
             .await
-            .map_err(|e| HardeningError::Plugin(format!("Failed to execute getenforce: {}", e)))?;
+            .map_err(|e| {
+                HardeningError::Plugin(format!("Failed to execute getenforce: {:#}", e))
+            })?;
 
         if !output.success() {
             return Err(HardeningError::Plugin(
@@ -324,7 +326,9 @@ impl MacHardeningPlugin {
             .executor()
             .execute_command("setenforce", &["1"])
             .await
-            .map_err(|e| HardeningError::Plugin(format!("Failed to execute setenforce: {}", e)))?;
+            .map_err(|e| {
+                HardeningError::Plugin(format!("Failed to execute setenforce: {:#}", e))
+            })?;
 
         if output.success() {
             Ok(Change {

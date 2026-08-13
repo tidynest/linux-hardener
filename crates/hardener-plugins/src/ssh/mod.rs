@@ -303,7 +303,7 @@ pub async fn validate_sshd_config(
         .await
         .map_err(|e| {
             hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to write temp sshd_config for validation: {}",
+                "Failed to write temp sshd_config for validation: {:#}",
                 e
             ))
         })?;
@@ -357,7 +357,7 @@ pub async fn validate_sshd_config(
             output.stderr.trim()
         ))),
         Err(e) => Err(hardener_common::error::HardeningError::Plugin(format!(
-            "Failed to execute `sshd -t`: {}",
+            "Failed to execute `sshd -t`: {:#}",
             e
         ))),
     }
@@ -504,7 +504,7 @@ impl SshHardeningPlugin {
                 output.stderr
             ))),
             Err(e) => Err(hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to execute service restart command: {}",
+                "Failed to execute service restart command: {:#}",
                 e
             ))),
         }

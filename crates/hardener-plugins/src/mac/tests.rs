@@ -612,3 +612,37 @@ async fn every_covered_mac_control_can_be_reported_unchecked() {
 
     crate::tests::assert_every_covered_control_is_reportable("mac", &coverage(), &reportable, &[]);
 }
+
+/// A failed spawn must say WHY it failed.
+///
+/// `LocalExecutor::execute_command` attaches "Failed to execute command X" as
+/// anyhow CONTEXT over the underlying `io::Error`, so `{}` prints the context
+/// and silently discards the source. The CLI walk caught this on the SSH
+/// plugin's service restart, where an operator was told "Failed to execute
+/// command service" and could not tell a missing binary from a denied one.
+/// Nine other call sites shared the shape; this pins the decision for all of
+/// them by pinning one, since a revert to `{}` is a one-character edit.
+///
+/// The mock's ordinary failure is a bare `anyhow!` with no source, against
+/// which `{}` and `{:#}` render identically, so this drives
+/// `with_command_spawn_failure` instead. A test on the ordinary failure would
+/// have passed whichever specifier the code used, which is the whole question.
+#[tokio::test]
+async fn a_failed_spawn_reports_the_reason_and_not_only_the_command() {
+    let executor = MockExecutor::new().with_command_spawn_failure("getenforce");
+    let error = MacHardeningPlugin::new()
+        .get_selinux_mode(&Context::with_executor(Arc::new(executor)))
+        .await
+        .expect_err("a command that cannot be spawned is an error");
+
+    let message = error.to_string();
+    assert!(
+        message.contains("Failed to execute command getenforce"),
+        "the message lost the command it was trying to run: {message}"
+    );
+    assert!(
+        message.contains("No such file or directory"),
+        "the message names the command but drops the reason it failed, which is \
+         the half an operator needs: {message}"
+    );
+}

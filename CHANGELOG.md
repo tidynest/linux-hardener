@@ -32,6 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the probe change below gave them an unchecked route. Both halves of the check
   were confirmed to go red before the work was accepted.
 
+- **Ten error messages named the command that failed and dropped the reason it
+  failed**, the first product defect the CLI walk found. `LocalExecutor` builds
+  its errors as an `io::Error` under an anyhow context line, and `{}` on an
+  anyhow error prints only the outermost context, so an apply inside a
+  container reported `Failed to execute service restart command: Failed to
+  execute command service`: doubled, and silent on whether the binary was
+  missing, not executable or denied. All ten sites are the same shape, an
+  executor call whose error is interpolated with `{}`, in `firewall`
+  (firewalld, nftables, ufw), `mac` and `ssh`. They now use `{:#}`, which
+  renders the whole chain. The 101 other sites matching the same regex were
+  measured and left alone: `serde_json`, `io::Error` and `HardeningError`
+  (whose variants carry a `String` and no `#[source]`) have no chain for `{}`
+  to hide, and changing them would be churn rather than a fix.
+  `MockExecutor::with_command_spawn_failure` is new because the mock's ordinary
+  failure is a bare `anyhow!` with no source, against which `{}` and `{:#}`
+  render identically, so a test written on it would have passed whichever the
+  code used.
+
 - **`audit` reported "could not tell" as "not installed".**
   `is_auditd_installed` resolved a failed probe to `false` with
   `unwrap_or(false)`, so a host whose probe could not run (a broken `sh`, an

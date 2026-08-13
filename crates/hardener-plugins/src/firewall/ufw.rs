@@ -81,7 +81,9 @@ impl UfwBackend {
             .executor()
             .execute_command("ufw", args)
             .await
-            .map_err(|e| HardeningError::Plugin(format!("Failed to execute ufw command: {}", e)))?;
+            .map_err(|e| {
+                HardeningError::Plugin(format!("Failed to execute ufw command: {:#}", e))
+            })?;
 
         if !output.success() {
             return Err(HardeningError::Plugin(format!(

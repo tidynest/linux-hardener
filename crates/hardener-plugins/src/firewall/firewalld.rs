@@ -49,7 +49,7 @@ impl FirewalldBackend {
             .execute_command("firewall-cmd", args)
             .await
             .map_err(|e| {
-                HardeningError::Plugin(format!("Failed to execute firewall-cmd: {}", e))
+                HardeningError::Plugin(format!("Failed to execute firewall-cmd: {:#}", e))
             })?;
 
         if !output.success() {
@@ -177,7 +177,7 @@ impl FirewallBackend for FirewalldBackend {
             .executor()
             .execute_command("systemctl", &["start", "firewalld"])
             .await
-            .map_err(|e| HardeningError::Plugin(format!("Failed to start firewalld: {}", e)))?;
+            .map_err(|e| HardeningError::Plugin(format!("Failed to start firewalld: {:#}", e)))?;
 
         if !start_output.success() {
             return Err(HardeningError::Plugin(format!(
@@ -191,7 +191,7 @@ impl FirewallBackend for FirewalldBackend {
             .executor()
             .execute_command("systemctl", &["enable", "firewalld"])
             .await
-            .map_err(|e| HardeningError::Plugin(format!("Failed to enable firewalld: {}", e)))?;
+            .map_err(|e| HardeningError::Plugin(format!("Failed to enable firewalld: {:#}", e)))?;
 
         if !enable_output.success() {
             return Err(HardeningError::Plugin(format!(

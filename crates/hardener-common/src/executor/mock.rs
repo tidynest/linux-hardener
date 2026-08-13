@@ -18,6 +18,7 @@ type CommandProgramStore = Arc<Mutex<HashMap<String, CommandOutput>>>;
 type CommandSequenceStore = Arc<Mutex<HashMap<(String, Vec<String>), VecDeque<CommandOutput>>>>;
 type CommandExistsStore = Arc<Mutex<HashMap<String, bool>>>;
 type CommandExistsErrorStore = Arc<Mutex<HashSet<String>>>;
+type CommandSpawnFailureStore = Arc<Mutex<HashSet<String>>>;
 type LogStore = Arc<Mutex<MockExecutorLog>>;
 type PermissionDeniedStore = Arc<Mutex<HashSet<PathBuf>>>;
 type PathExistsStore = Arc<Mutex<HashMap<PathBuf, bool>>>;
@@ -63,6 +64,7 @@ pub struct MockExecutor {
     command_sequences: CommandSequenceStore,
     command_exists: CommandExistsStore,
     command_exists_error: CommandExistsErrorStore,
+    command_spawn_failure: CommandSpawnFailureStore,
     read_permission_denied: PermissionDeniedStore,
     read_dir_denied: PermissionDeniedStore,
     metadata_error: PermissionDeniedStore,
@@ -92,6 +94,7 @@ impl MockExecutor {
             command_sequences: Arc::new(Mutex::new(HashMap::new())),
             command_exists: Arc::new(Mutex::new(HashMap::new())),
             command_exists_error: Arc::new(Mutex::new(HashSet::new())),
+            command_spawn_failure: Arc::new(Mutex::new(HashSet::new())),
             read_permission_denied: Arc::new(Mutex::new(HashSet::new())),
             read_dir_denied: Arc::new(Mutex::new(HashSet::new())),
             metadata_error: Arc::new(Mutex::new(HashSet::new())),
@@ -332,6 +335,23 @@ impl MockExecutor {
             .lock()
             .expect("command_exists mutex poisoned")
             .insert(program.to_string(), exists);
+        self
+    }
+
+    /// Makes `execute_command` for `program` fail the way a real host fails it:
+    /// an `io::Error` underneath, with a context line stacked on top.
+    ///
+    /// The mock's own failure is a bare `anyhow!` with no source, and against
+    /// one of those `{}` and `{:#}` render identically. A test written on it
+    /// would pass whichever the caller used, which is the whole question. This
+    /// reproduces `LocalExecutor::execute_command`'s shape instead, where the
+    /// spawn error is the source and "Failed to execute command X" is context,
+    /// so a caller that formats with `{}` provably loses the reason.
+    pub fn with_command_spawn_failure(self, program: &str) -> Self {
+        self.command_spawn_failure
+            .lock()
+            .expect("command_spawn_failure mutex poisoned")
+            .insert(program.to_string());
         self
     }
 
@@ -638,6 +658,22 @@ impl SystemExecutor for MockExecutor {
     }
 
     async fn execute_command(&self, program: &str, args: &[&str]) -> Result<CommandOutput> {
+        // Outranks every registration, and is shaped like the real thing: an
+        // io::Error underneath a context line, exactly as
+        // `LocalExecutor::execute_command` builds it. See
+        // `with_command_spawn_failure`.
+        if self
+            .command_spawn_failure
+            .lock()
+            .expect("command_spawn_failure mutex poisoned")
+            .contains(program)
+        {
+            return Err(anyhow::Error::new(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "No such file or directory (os error 2)",
+            ))
+            .context(format!("Failed to execute command {program}")));
+        }
         let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
         self.log
             .lock()
