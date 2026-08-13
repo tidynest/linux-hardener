@@ -613,6 +613,38 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Secure authentication".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SSG: sshd_disable_root_login declares
+            // `AC-6(2),AC-17(a),IA-2,IA-2(5),CM-7(a),CM-7(b),CM-6(a)`. AC-17(a)
+            // is carried here because it was otherwise mapped in exactly one
+            // place in the tree, the /etc/ssh arm of the permissions plugin,
+            // which asks what mode the directory carries. That check answers
+            // its own question honestly on a host with no /etc/ssh and returns
+            // Clear, which the generator reads as a Pass for a remote-access
+            // control nothing had assessed (#167). The rule that reads the
+            // configuration must be able to speak for it.
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-17(a)".to_string(),
+                compliance_control_title: "Remote Access - Usage Restrictions and Configuration"
+                    .to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            // ISO 27001:2022 8.2 is the successor of A.9.2.3, which the same
+            // SSG rule declares. Not an analogy: the correspondence is the
+            // standard's own, and the tree numbers ISO by the 2022 revision.
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::ISO27001,
+                compliance_control_id: "8.2".to_string(),
+                compliance_control_title: "Privileged access rights".to_string(),
+                compliance_section: Some("Technological".to_string()),
+            },
+            // 800-171r3 3.1.12 ← 800-53 AC-17 (SP 800-171r3 source-control table).
+            nist171("3.1.12", "Remote Access"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-17.
+            fedramp(
+                "AC-17(a)",
+                "Remote Access - Usage Restrictions and Configuration",
+            ),
             // SOC 2: CC6.1 mirrors the privileged-access restriction intent (CIS 5.2.10).
             soc2(
                 "CC6.1",
@@ -797,6 +829,26 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 compliance_control_title: "Networks security".to_string(),
                 compliance_section: Some("Technological".to_string()),
             },
+            // SSG: sshd_set_idle_timeout declares
+            // `CM-6(a),AC-17(a),AC-2(5),AC-12,SC-10`. Carried for the same
+            // reason as on PermitRootLogin, and not only for the absent-host
+            // case: a readable configuration with a compliant PermitRootLogin
+            // and no idle timeout would otherwise report AC-17(a) as a Pass
+            // that one of its two sourced rules contradicts.
+            ComplianceMapping {
+                compliance_framework: ComplianceFramework::NIST,
+                compliance_control_id: "AC-17(a)".to_string(),
+                compliance_control_title: "Remote Access - Usage Restrictions and Configuration"
+                    .to_string(),
+                compliance_section: Some("Access Control".to_string()),
+            },
+            // 800-171r3 3.1.12 ← 800-53 AC-17 (SP 800-171r3 source-control table).
+            nist171("3.1.12", "Remote Access"),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53 AC-17.
+            fedramp(
+                "AC-17(a)",
+                "Remote Access - Usage Restrictions and Configuration",
+            ),
             // SOC 2: CC6.1 mirrors the idle-session termination intent (HIPAA automatic logoff).
             soc2(
                 "CC6.1",

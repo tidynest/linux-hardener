@@ -902,6 +902,46 @@ async fn scan_reports_directives_unchecked_when_sshd_config_read_fails_indetermi
     );
 }
 
+/// The remote-access controls must be answerable by the plugin that reads the
+/// SSH configuration, not only by a check on the directory's mode.
+///
+/// `AC-17(a)`, `3.1.12` and ISO 8.2 were mapped in exactly one place in the
+/// whole tree: the `/etc/ssh` arm of the permissions plugin, which asks what
+/// mode the directory carries. That check answers its own question honestly on
+/// a host with no `/etc/ssh` - there is no directory, so there are no wrong
+/// permissions on it - and returns `Clear`, which the generator reads as a Pass
+/// for all three controls (#167). Nothing had assessed remote access at all.
+///
+/// SSG maps `AC-17(a)` to the sshd rules themselves as well as to the directory
+/// rule: `sshd_disable_root_login` declares `AC-6(2),AC-17(a),IA-2,IA-2(5)`,
+/// and `sshd_set_idle_timeout` declares `CM-6(a),AC-17(a),AC-2(5),AC-12,SC-10`.
+/// With those carried here, the unchecked entries this plugin already emits
+/// reach the three controls, and the generator prefers an unchecked entry over
+/// an assessed silence.
+#[tokio::test]
+async fn remote_access_controls_are_unchecked_when_no_sshd_config_exists() {
+    let ctx = Context::with_executor(Arc::new(missing_ssh_executor()));
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    let mapped: Vec<&str> = result
+        .scan_unchecked
+        .iter()
+        .flat_map(|u| &u.unchecked_compliance)
+        .map(|m| m.compliance_control_id.as_str())
+        .collect();
+
+    for id in ["AC-17(a)", "3.1.12", "8.2"] {
+        assert!(
+            mapped.contains(&id),
+            "{id} was sole-mapped to a directory-mode check, so it passed on a \
+             host with no SSH configuration at all"
+        );
+    }
+}
+
 // === PermitRootLogin remote-root lockout guard ===
 //
 // Applying `PermitRootLogin no` over the very root SSH session performing the

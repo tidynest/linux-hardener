@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Three remote-access controls were answerable only by a check on a
+  directory's mode** (#167). `AC-17(a)`, NIST 800-171r3 `3.1.12` and ISO
+  27001:2022 8.2 were mapped in exactly one place in the tree: the `/etc/ssh`
+  arm of the permissions plugin, which asks what mode that directory carries.
+  That check is honest on a host with no `/etc/ssh` - no directory, so no wrong
+  permissions on it - and returns `Clear`, which the generator reads as a Pass
+  for three controls nothing had assessed. The SSH plugin, which reads the
+  configuration those controls are about, claimed none of them. They are now
+  carried by `PermitRootLogin` and by the `ClientAliveInterval` /
+  `ClientAliveCountMax` pair, both SSG-sourced: `sshd_disable_root_login`
+  declares `AC-6(2),AC-17(a),IA-2,IA-2(5),CM-7(a),CM-7(b),CM-6(a)` and
+  `sshd_set_idle_timeout` declares `CM-6(a),AC-17(a),AC-2(5),AC-12,SC-10`. ISO
+  8.2 is the 27001:2022 successor of `A.9.2.3`, which the same root-login rule
+  declares; the correspondence is the standard's own, not an analogy. The
+  permissions mapping is left in place, because its own SSG source
+  (`directory_permissions_sshd_config_d`) really does declare `AC-17(a)` and
+  removing it would make the file disagree with the citation beside it. The
+  fix is that an unchecked entry now exists to outrank it: the generator
+  prefers unchecked over an assessed silence. A second false pass closes with
+  it, on hosts where the configuration *is* readable - a compliant
+  `PermitRootLogin` with no idle timeout used to report `AC-17(a)` as a Pass
+  that one of its two sourced rules contradicts. Measured on this host:
+  `report --framework nist` reports `AC-17(a)` PASS before and after, 19
+  controls, 13 passing, score 68.4%, so a configured host sees no change.
+
 - **A host with no `sshd_config` passed every SSH compliance control.** The SSH
   plugin's `coverage()` declares CIS 5.2.6, 5.2.7, 5.2.10, 5.2.11, 5.2.13 and
   5.2.14, HIPAA `164.312(a)(1)` and `164.312(d)`, ISO 8.5, 8.20 and 8.24, GDPR
