@@ -1257,27 +1257,45 @@ impl HardeningPlugin for SshHardeningPlugin {
                         scan_error: None,
                     });
                 }
+                // Not a refusal, but not a clean host either: the read failed
+                // and the existence probe could not confirm absence. Silence
+                // here passed the whole SSH catalogue for the same reason the
+                // `Absent` arm below did. `Unknown` as the blocker because the
+                // plugin has established only that privilege was not the
+                // cause, which is not enough to claim sudo would not help.
                 return Ok(ScanResult {
                     scan_plugin_id: plugin_id,
                     scan_success: false,
                     scan_findings: vec![],
-                    scan_unchecked: vec![],
+                    scan_unchecked: unchecked_ssh_checks(
+                        &format!("{path} could not be read: {reason}"),
+                        UncheckedBlocker::Unknown,
+                    ),
                     scan_duration_us: duration_us,
                     scan_error: Some(format!("Failed to read {path}: {reason}")),
                 });
             }
+            // The error alone is not enough. `coverage()` declares every SSH
+            // control assessed, and the compliance generator cannot see
+            // `scan_success`: a control that is assessed, carries no finding
+            // and is recorded unchecked by nothing passes. Returning empty
+            // vectors here therefore passed the whole SSH catalogue on a host
+            // with no SSH configuration at all, which is #159 and #166 in a
+            // fifth plugin. Environment rather than Privilege as the blocker:
+            // a file that is not installed stays not installed under sudo.
             LayeredRead::Absent => {
                 let duration_us = start_time.elapsed().as_micros() as u64;
+                let reason = format!(
+                    "no sshd_config exists at {SSHD_ADMIN_CONFIG_PATH} or at its /usr/etc \
+                     counterpart, so no SSH setting on this host can be read"
+                );
                 return Ok(ScanResult {
                     scan_plugin_id: plugin_id,
                     scan_success: false,
                     scan_findings: vec![],
-                    scan_unchecked: vec![],
+                    scan_unchecked: unchecked_ssh_checks(&reason, UncheckedBlocker::Environment),
                     scan_duration_us: duration_us,
-                    scan_error: Some(format!(
-                        "Failed to read {SSHD_ADMIN_CONFIG_PATH}: no sshd_config exists there \
-                         or at its /usr/etc counterpart"
-                    )),
+                    scan_error: Some(format!("Failed to read {SSHD_ADMIN_CONFIG_PATH}: {reason}")),
                 });
             }
         };

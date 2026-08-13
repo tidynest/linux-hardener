@@ -67,3 +67,45 @@ fn every_path_ssh_checkpoints_is_one_it_reloads_for() {
         );
     }
 }
+
+/// Every control this plugin declares assessed must have a route to being
+/// reported unchecked.
+///
+/// This is the invariant the whole #159/#166 defect class violates: a plugin
+/// declares a control in `coverage()`, some host state makes its evidence
+/// unreachable, nothing records that, and the generator passes the control on
+/// the mere absence of a finding. `coverage()` and `unchecked_ssh_checks`
+/// happen to iterate the same two tables through the same mapping function, so
+/// they cannot drift today. A mapping added to `coverage()` from anywhere else
+/// would break that quietly, and this is what would notice.
+///
+/// Lives here rather than in `tests/ssh_mock_tests.rs` because
+/// `unchecked_ssh_checks` is private, and the alternative - a `pub` wrapper
+/// existing only for a test - puts test scaffolding into the shipped API.
+#[test]
+fn every_covered_ssh_control_can_be_reported_unchecked() {
+    let reportable: std::collections::HashSet<String> =
+        unchecked_ssh_checks("read failed", UncheckedBlocker::Environment)
+            .into_iter()
+            .flat_map(|u| u.unchecked_compliance)
+            .map(|m| m.compliance_control_id)
+            .collect();
+
+    let covered = coverage();
+    assert!(
+        !covered.is_empty(),
+        "a plugin covering nothing would satisfy the check below without \
+         asserting anything, which is the one way this test can go quiet"
+    );
+
+    let unreportable: Vec<&str> = covered
+        .iter()
+        .map(|m| m.compliance_control_id.as_str())
+        .filter(|id| !reportable.contains(*id))
+        .collect();
+    assert!(
+        unreportable.is_empty(),
+        "declared assessed but mapped by no unchecked entry, so a host where \
+         the evidence is unreachable passes them silently: {unreportable:?}"
+    );
+}

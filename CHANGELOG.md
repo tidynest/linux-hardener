@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A host with no `sshd_config` passed every SSH compliance control.** The SSH
+  plugin's `coverage()` declares CIS 5.2.6, 5.2.7, 5.2.10, 5.2.11, 5.2.13 and
+  5.2.14, HIPAA `164.312(a)(1)` and `164.312(d)`, ISO 8.5, 8.20 and 8.24, GDPR
+  `TM-AUTH` and `TM-SH`, and NIST `SC-13` assessed. When `read_layered` returned
+  `Absent`, meaning no `sshd_config` at `/etc/ssh` or its `/usr/etc`
+  counterpart, the plugin returned an error and both an empty findings vector
+  and an empty unchecked vector. The compliance generator cannot see
+  `scan_success`, and passes any control that is assessed, carries no finding
+  and is recorded unchecked by nothing, so all fourteen controls reported Pass
+  on a host with no SSH configuration to have hardened. The same silence
+  followed a read that failed for a reason other than privilege, where the
+  existence probe could not confirm absence either. Both arms now record every
+  directive and crypto directive unchecked, which is the route the
+  permission-denied arm two branches above already took. `Environment` as the
+  blocker for the absent case, since a file that is not installed stays not
+  installed under sudo; `Unknown` for the indeterminate read, because the plugin
+  has established only that privilege was not the cause and a wrong remedy costs
+  an operator more than a missing one. `scan_success` stays false and the error
+  stays: the scan really could not run, and only its silence was the defect.
+  This is the fifth instance of the pattern behind #159, #166 and #167, and the
+  widest. A unit test now pins the invariant directly: every control
+  `coverage()` declares must be mapped by some unchecked entry.
+
 - **Two CLI tables were laid out to widths their own data outgrew.** `plugins`
   padded the id column to 20 while the longest id, `permissions-hardening`, is
   21, so that one row began its second column a character right of the other

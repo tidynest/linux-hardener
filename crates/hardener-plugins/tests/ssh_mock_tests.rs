@@ -12,7 +12,7 @@ use hardener_plugins::ssh::{
     SshHardeningPlugin, select_algorithms, sshd_validate_scratch_path, supported_algorithms,
     validate_sshd_config,
 };
-use hardener_types::DeclineReason;
+use hardener_types::{DeclineReason, UncheckedBlocker};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -793,6 +793,112 @@ async fn scan_reports_directives_unchecked_when_sshd_config_is_root_only() {
     assert!(
         !kex_entry.unchecked_compliance.is_empty(),
         "crypto directive unchecked entries must carry their real compliance mappings"
+    );
+}
+
+/// A host with no `sshd_config` in either layer must record the directives as
+/// unchecked, not as nothing at all.
+///
+/// This plugin's `coverage()` declares CIS 5.2.6, 5.2.7, 5.2.10, 5.2.11,
+/// 5.2.13, 5.2.14, HIPAA `164.312(d)` and `164.312(a)(1)`, ISO 8.5, 8.20,
+/// 8.24, GDPR `TM-AUTH`/`TM-SH` and NIST `SC-13` assessed. The generator
+/// passes any control that is assessed, carries no finding, and is recorded
+/// unchecked by nothing, and it cannot see `scan_success`. Returning an error
+/// with both vectors empty therefore hands every one of those controls a
+/// silent Pass on a host with no SSH configuration to have hardened, which is
+/// #159 and #166 in a fifth plugin.
+///
+/// `scan_success` stays false and the error stays: the absence really did stop
+/// the scan. What changes is that the absence is now also stated in the one
+/// place the compliance generator reads.
+#[tokio::test]
+async fn scan_reports_directives_unchecked_when_no_sshd_config_exists() {
+    let ctx = Context::with_executor(Arc::new(missing_ssh_executor()));
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(
+        !result.scan_success,
+        "the scan genuinely could not run; only its silence is the defect"
+    );
+    assert!(result.scan_findings.is_empty());
+
+    let unchecked_ids: Vec<&str> = result
+        .scan_unchecked
+        .iter()
+        .map(|u| u.unchecked_check_id.as_str())
+        .collect();
+    for id in [
+        "ssh-permitrootlogin",
+        "ssh-passwordauthentication",
+        "ssh-permitemptypasswords",
+        "ssh-maxauthtries",
+        "ssh-x11forwarding",
+        "ssh-clientaliveinterval",
+        "ssh-clientalivecountmax",
+        "ssh-kexalgorithms",
+        "ssh-ciphers",
+        "ssh-macs",
+    ] {
+        assert!(
+            unchecked_ids.contains(&id),
+            "{id} must be unchecked when no sshd_config exists, got: {unchecked_ids:?}"
+        );
+    }
+
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .all(|u| u.unchecked_blocker == UncheckedBlocker::Environment),
+        "a file that is not installed stays not installed under sudo, so a \
+         privileged re-run is the wrong remedy to offer"
+    );
+}
+
+/// A read that fails for a reason other than privilege must record the
+/// directives unchecked too.
+///
+/// `read_one` reports `Unreadable` with `permission_denied: false` whenever the
+/// read failed and the existence probe could not confirm absence: an I/O error,
+/// a path whose parent cannot be traversed, a probe that failed for its own
+/// reasons. The plugin returned an error and no unchecked entries there, so
+/// every SSH control auto-passed on the same route as the absent case.
+///
+/// `Unknown` rather than `Environment` as the blocker: the plugin knows only
+/// that the read failed and that it was not a refusal, so claiming a privileged
+/// re-run would not help is a claim it has not earned. A wrong remedy costs an
+/// operator more than a missing one.
+#[tokio::test]
+async fn scan_reports_directives_unchecked_when_sshd_config_read_fails_indeterminately() {
+    // No file registered, so the read fails; the existence probe then fails
+    // too, which is what separates this from confirmed absence.
+    let mock = MockExecutor::new().with_path_exists_error("/etc/ssh/sshd_config");
+    let ctx = Context::with_executor(Arc::new(mock));
+    let result = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    assert!(result.scan_findings.is_empty());
+    let unchecked_ids: Vec<&str> = result
+        .scan_unchecked
+        .iter()
+        .map(|u| u.unchecked_check_id.as_str())
+        .collect();
+    assert!(
+        unchecked_ids.contains(&"ssh-permitrootlogin"),
+        "an indeterminate read must not read as a clean SSH configuration, \
+         got: {unchecked_ids:?}"
+    );
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .all(|u| u.unchecked_blocker == UncheckedBlocker::Unknown),
+        "the plugin has not established what is missing, so it offers no remedy"
     );
 }
 
