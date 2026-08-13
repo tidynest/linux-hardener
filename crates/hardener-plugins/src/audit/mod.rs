@@ -26,7 +26,7 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
-use std::{path::Path, time::Instant};
+use std::{collections::HashSet, path::Path, time::Instant};
 use tracing::info;
 
 /// Audit Hardening Plugin
@@ -644,6 +644,31 @@ const AUDIT_FINDING_TYPES: &[&str] = &[
     "rules",
 ];
 
+/// The subset of [`AUDIT_FINDING_TYPES`] that can only fire once auditd is
+/// installed: all four describe the state of a daemon, and a host without the
+/// package has no daemon to be in a state.
+///
+/// Their mappings are therefore exactly the controls that would auto-pass on
+/// such a host, because `coverage()` declares them assessed while no finding
+/// that reaches them can be raised. `not_installed` is deliberately absent: it
+/// maps the presence control, which it does answer.
+const AUDIT_POST_INSTALL_FINDING_TYPES: &[&str] =
+    &["not_enabled", "not_running", "config", "rules"];
+
+/// The mappings of every post-install finding, de-duplicated.
+///
+/// The four ids share several controls, so the flattened list repeats them;
+/// emitting the same control twice in one `unchecked_compliance` would be
+/// harmless to the generator's set and untidy in the JSON.
+fn audit_post_install_mappings() -> Vec<ComplianceMapping> {
+    let mut seen = HashSet::new();
+    AUDIT_POST_INSTALL_FINDING_TYPES
+        .iter()
+        .flat_map(|&t| get_audit_compliance_mappings(t))
+        .filter(|m| seen.insert((m.compliance_framework, m.compliance_control_id.clone())))
+        .collect()
+}
+
 /// Every compliance mapping this plugin can emit, across all finding types it
 /// raises. Aggregated into the engine's automated-coverage set.
 pub fn coverage() -> Vec<ComplianceMapping> {
@@ -951,12 +976,36 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 finding_exception_key: Some(AUDITD_PRESENT_EXCEPTION.to_string()),
             });
 
+            // The finding above answers "is auditd installed". It does not
+            // answer whether the service is enabled, running, or carrying the
+            // right rules, and on this host nothing can: all four of those
+            // findings need a daemon to exist before they can describe it.
+            //
+            // Without this entry the generator sees controls that are assessed,
+            // unchecked by nothing, and carrying no finding, and passes them on
+            // the absence alone. CIS 4.1.1.2 therefore read Pass one line below
+            // the 4.1.1.1 that failed for exactly the reason 4.1.1.2 could not
+            // be evaluated (#166, the same defect as #159 in the MAC plugin).
+            unchecked.push(UncheckedCheck {
+                unchecked_check_id: "auditd-post-install".to_string(),
+                unchecked_title: "auditd service and rule state".to_string(),
+                unchecked_category: FindingCategory::Audit,
+                unchecked_reason: "auditd is not installed, so whether it is enabled, running \
+                     and correctly ruled cannot be determined"
+                    .to_string(),
+                // Not `Privilege`: an uninstalled package stays uninstalled
+                // under sudo, so offering a privileged re-run would be a wrong
+                // remedy.
+                unchecked_blocker: UncheckedBlocker::Environment,
+                unchecked_compliance: audit_post_install_mappings(),
+            });
+
             // If not installed, no point checking further
             return Ok(ScanResult {
                 scan_duration_us: start.elapsed().as_micros() as u64,
                 scan_error: None,
                 scan_findings: findings,
-                scan_unchecked: vec![],
+                scan_unchecked: unchecked,
                 scan_plugin_id: self.metadata().plugin_id,
                 scan_success: true,
             });

@@ -715,3 +715,38 @@ async fn the_prune_removes_only_this_plugin_s_own_backups() {
         log.commands_executed
     );
 }
+
+/// The two finding-type tables must partition, with `not_installed` the only
+/// member on the presence side.
+///
+/// `AUDIT_POST_INSTALL_FINDING_TYPES` is maintained by hand as a subset of
+/// `AUDIT_FINDING_TYPES`, and it decides which controls the not-installed arm
+/// reports unchecked. A fifth post-install id added to the wider table alone
+/// would map a control that `coverage()` declares assessed and that nothing
+/// then records as unevaluable, which is exactly the construction that made
+/// CIS 4.1.1.2 pass on a host with no auditd (#166).
+#[test]
+fn audit_finding_type_tables_partition() {
+    for finding_type in AUDIT_POST_INSTALL_FINDING_TYPES {
+        assert!(
+            AUDIT_FINDING_TYPES.contains(finding_type),
+            "{finding_type} is declared a post-install finding but is not an \
+             audit finding type at all, so coverage() never sees it"
+        );
+    }
+
+    let presence: Vec<&&str> = AUDIT_FINDING_TYPES
+        .iter()
+        .filter(|t| !AUDIT_POST_INSTALL_FINDING_TYPES.contains(t))
+        .collect();
+
+    assert_eq!(
+        presence,
+        vec![&"not_installed"],
+        "every audit finding type is either about auditd being installed or \
+         about the state of an auditd that is. A new id on the presence side \
+         needs its mappings answered by the not_installed finding; one on the \
+         post-install side belongs in AUDIT_POST_INSTALL_FINDING_TYPES so the \
+         not-installed arm reports it unchecked"
+    );
+}

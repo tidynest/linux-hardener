@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Audit controls reported PASS on a host with no audit daemon** (#166). The
+  same defect as #159 one plugin over, found by the review of that fix. When
+  auditd is not installed the scan raised its finding and returned early with
+  no unchecked entries, so the four finding types that describe a running
+  daemon, `not_enabled`, `not_running`, `config` and `rules`, left every control
+  they map passing on an absence. Nine did: CIS 4.1.1.2 "Ensure auditd service
+  is enabled and running" printed PASS one line below the 4.1.1.1 that failed
+  because auditd is not installed, along with CIS 4.1.2.1, STIG
+  `OL08-00-030181`, NIST and FedRAMP `AU-12(c)`, NIST SP 800-171 `3.3.3`,
+  PCI-DSS `10.2.7`, ISO 27001 `8.16` and SOC 2 `CC7.1`. The plugin now records
+  those checks as unchecked with an `Environment` blocker, since an uninstalled
+  package stays uninstalled under sudo. Both plugins gained a test asserting
+  their two finding-type tables partition, so a new finding id added to the
+  wider table alone cannot silently reintroduce either defect.
+
 - **CIS 1.6.1.4 reported PASS on a host with no MAC system at all** (#159).
   One report stated, four lines apart, that no MAC system is installed and that
   the MAC system's mode is correctly enforcing. The MAC plugin declares the

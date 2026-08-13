@@ -11,7 +11,7 @@ use hardener_core::{
     PolicyException, SystemExecutor, UncheckedBlocker, plugin::HardeningPlugin,
 };
 use hardener_plugins::AuditHardeningPlugin;
-use hardener_types::DeclineReason;
+use hardener_types::{ComplianceFramework, DeclineReason};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -182,6 +182,60 @@ async fn test_audit_scan_not_installed() {
     assert_eq!(finding.finding_id, "audit_not_installed");
     assert_eq!(finding.finding_severity, Severity::Critical);
     assert_eq!(finding.finding_current_value, "not installed");
+}
+
+/// A host with no auditd cannot be asked whether its audit service is enabled,
+/// and returning no unchecked entries makes the report answer yes.
+///
+/// `AUDIT_FINDING_TYPES` has five members, of which only `not_installed`
+/// answers a presence question. `not_enabled`, `not_running`, `config` and
+/// `rules` all describe an auditd that exists. `coverage()` declares every
+/// control they map as assessed, so when the not-installed arm returned
+/// `scan_unchecked: vec![]` the generator passed those controls on the absence
+/// of findings that could never fire, and CIS 4.1.1.2 printed PASS one line
+/// under the 4.1.1.1 that failed for exactly that reason (#166).
+///
+/// The same defect as #159 in the MAC plugin, and fixed the same way.
+#[tokio::test]
+async fn audit_reports_post_install_checks_unchecked_when_auditd_is_absent() {
+    let ctx = Context::with_executor(Arc::new(no_auditd_executor()));
+    let plugin = AuditHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "audit_not_installed"),
+        "absence is still asserted as a finding; this test is about what \
+         accompanies it"
+    );
+
+    let entry = result
+        .scan_unchecked
+        .iter()
+        .find(|u| u.unchecked_check_id == "auditd-post-install")
+        .expect(
+            "a host without auditd must report the checks that need auditd as \
+             unchecked, or their controls auto-pass on findings that cannot fire",
+        );
+
+    assert_eq!(
+        entry.unchecked_blocker,
+        UncheckedBlocker::Environment,
+        "an uninstalled package stays uninstalled under sudo, so offering a \
+         privileged re-run would be a wrong remedy"
+    );
+
+    assert!(
+        entry.unchecked_compliance.iter().any(|m| {
+            m.compliance_framework == ComplianceFramework::CIS
+                && m.compliance_control_id == "4.1.1.2"
+        }),
+        "the entry must carry CIS 4.1.1.2, the control that printed PASS beside \
+         the FAIL saying auditd is not installed"
+    );
 }
 
 #[tokio::test]
