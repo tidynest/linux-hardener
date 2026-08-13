@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Scan history recorded when the database was written, not when the scan
+  ran** (#168). Both CLI paths reach persistence only after every plugin has
+  finished: `commands/scan.rs` passes its completed results, and
+  `commands/batch.rs` calls `persist_host` once `scan_grouped` has returned.
+  `create_session` stamped `Utc::now()` inside the insert, so `started_at` held
+  the completion time under the name of the start, and
+  `completed_at - started_at` measured the finding inserts rather than the scan.
+  Measured on 353 rows: zero seconds for 83 of 106 `batch` rows and 238 of 245
+  `cli` rows, with every non-zero one carrying a large finding count. A full
+  eight-plugin scan of a remote host over SSH does not complete in under a
+  second. The scheduler's runner was never affected, because it opens the
+  session before scanning, which is what the `running` status was always for.
+  Callers that persist after the fact now pass the instant their scan began.
+  Verified end to end: a scan begun at a known epoch now records exactly that
+  epoch and a duration matching the wall clock. Found while confirming a
+  suspicion the host CLI walk left open; the walk's own theory, a double-persist
+  on the batch path, was disproved by counting rows around a single invocation.
+
 - **Timestamps were local and unlabelled in some commands, UTC and labelled in
   others** (#164). The binary carried two `format_timestamp` implementations,
   both converting to local time and both printing no zone, so on a `CEST` host

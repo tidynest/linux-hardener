@@ -302,3 +302,73 @@ async fn previous_completed_session_returns_prior() {
         .expect("has a previous");
     assert_eq!(prev.id, first);
 }
+
+/// A caller that persists after its scan can record when the scan began.
+///
+/// Both CLI paths reach persistence only once every plugin has run, so
+/// stamping `Utc::now()` inside the insert put the completion time in
+/// `started_at` and made `completed_at - started_at` measure the finding
+/// inserts. Measured on the machine that found this: zero seconds for 83 of
+/// 106 batch rows and 238 of 245 cli rows, with the non-zero ones all carrying
+/// large finding counts. The scheduler's runner was never affected, because it
+/// opens the session before scanning (#168).
+#[tokio::test]
+async fn a_session_can_record_a_start_that_precedes_its_insert() {
+    let dir = tempdir().unwrap();
+    let manager = ScanHistoryManager::new(&dir.path().join("test.db"))
+        .await
+        .unwrap();
+
+    // Well before the insert, and far enough back that no clock skew or slow
+    // test host could account for it.
+    let began = chrono::Utc::now().timestamp() - 600;
+
+    let id = manager
+        .create_session_started_at("batch", "web-01", &["kernel".into()], began)
+        .await
+        .unwrap();
+
+    let session = manager.get_session(&id).await.unwrap().unwrap();
+    assert_eq!(
+        session.started_at, began,
+        "the caller's instant must be stored, not the moment of the insert"
+    );
+
+    manager
+        .complete_session(&id, &[], None, None)
+        .await
+        .unwrap();
+    let completed = manager.get_session(&id).await.unwrap().unwrap();
+    let duration = completed.completed_at.expect("a completed session") - completed.started_at;
+    assert!(
+        duration >= 600,
+        "the recorded duration must span the scan, not just the write: {duration}s"
+    );
+}
+
+/// The convenience wrapper still stamps now, which is correct for a caller
+/// that opens its session before scanning, as the scheduler's runner does.
+///
+/// Without this, `create_session` could be left delegating with any value at
+/// all and the test above would still pass.
+#[tokio::test]
+async fn create_session_without_an_instant_stamps_the_present() {
+    let dir = tempdir().unwrap();
+    let manager = ScanHistoryManager::new(&dir.path().join("test.db"))
+        .await
+        .unwrap();
+
+    let before = chrono::Utc::now().timestamp();
+    let id = manager
+        .create_session("daemon", "localhost", &[])
+        .await
+        .unwrap();
+    let after = chrono::Utc::now().timestamp();
+
+    let session = manager.get_session(&id).await.unwrap().unwrap();
+    assert!(
+        session.started_at >= before && session.started_at <= after,
+        "expected an instant inside [{before}, {after}], got {}",
+        session.started_at
+    );
+}

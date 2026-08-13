@@ -56,15 +56,41 @@ impl ScanHistoryManager {
         Ok(())
     }
 
-    /// Creates a new scan session, returning its ID.
+    /// Creates a new scan session that began now, returning its ID.
+    ///
+    /// Correct for a caller that opens the session before scanning, which is
+    /// what the scheduler's runner does. A caller that only reaches this point
+    /// after its scan has finished must use [`Self::create_session_started_at`]
+    /// and pass the instant the scan actually began, or `started_at` records
+    /// the write rather than the work (#168).
     pub async fn create_session(
         &self,
         trigger_type: &str,
         host: &str,
         plugins: &[String],
     ) -> Result<String> {
+        self.create_session_started_at(trigger_type, host, plugins, Utc::now().timestamp())
+            .await
+    }
+
+    /// Creates a new scan session that began at `started_at`, returning its ID.
+    ///
+    /// Both CLI paths persist after the fact: `commands/scan.rs` calls its
+    /// persistence with the finished results, and `commands/batch.rs` calls
+    /// `persist_host` once `scan_grouped` has returned. Stamping `now()` inside
+    /// this function therefore recorded the completion time under the name
+    /// `started_at`, and made `completed_at - started_at` measure the finding
+    /// inserts rather than the scan: 83 of 106 batch rows and 238 of 245 cli
+    /// rows on the machine that found this read zero seconds, and the non-zero
+    /// ones all carried large finding counts.
+    pub async fn create_session_started_at(
+        &self,
+        trigger_type: &str,
+        host: &str,
+        plugins: &[String],
+        started_at: i64,
+    ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
-        let now = Utc::now().timestamp();
         let plugins_json =
             serde_json::to_string(plugins).map_err(|e| HardeningError::Database(e.to_string()))?;
 
@@ -73,7 +99,7 @@ impl ScanHistoryManager {
             VALUES ( ?, ?, 'running', ?, ?, ?)",
         )
         .bind(&id)
-        .bind(now)
+        .bind(started_at)
         .bind(trigger_type)
         .bind(host)
         .bind(&plugins_json)

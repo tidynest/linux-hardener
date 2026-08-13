@@ -84,6 +84,12 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     // Plugins are independent, so scan them concurrently. join_all yields
     // results in input order, which keeps the rendered output deterministic.
     let wall = std::time::Instant::now();
+    // A second clock, because the two answer different questions. `wall` is
+    // monotonic and measures elapsed time; the history row needs an instant it
+    // can store, and `Instant` cannot be converted to one. Taken here rather
+    // than at persistence, which happens after every plugin has finished and so
+    // recorded the completion time under the name `started_at` (#168).
+    let scan_started_at = chrono::Utc::now().timestamp();
     let scans = futures::future::join_all(selected.iter().map(|(metadata, plugin)| {
         plugin.scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
     }))
@@ -161,7 +167,13 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     }
 
     // Persist scan session to history database
-    persist_scan_session(&all_results, opts.executor.as_ref(), opts.config_path).await;
+    persist_scan_session(
+        &all_results,
+        opts.executor.as_ref(),
+        opts.config_path,
+        scan_started_at,
+    )
+    .await;
 
     // Handle exit code flag. An incomplete scan exits non-zero too: a clean
     // exit is a positive claim about the host, and a plugin that never ran
@@ -237,6 +249,7 @@ async fn persist_scan_session(
     results: &[(PluginMetadata, ScanResult)],
     executor: &dyn SystemExecutor,
     config_path: Option<&PathBuf>,
+    started_at: i64,
 ) {
     let db = match open_history_db(config_path).await {
         Ok(db) => db,
@@ -249,7 +262,10 @@ async fn persist_scan_session(
         .collect();
     let hostname = session_host_key(executor).await;
 
-    let session_id = match db.create_session("cli", &hostname, &plugins).await {
+    let session_id = match db
+        .create_session_started_at("cli", &hostname, &plugins, started_at)
+        .await
+    {
         Ok(id) => id,
         Err(_) => return,
     };

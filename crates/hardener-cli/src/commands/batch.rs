@@ -866,12 +866,16 @@ async fn persist_host(
     history: &ScanHistoryManager,
     host_key: &str,
     grouped: &[(PluginMetadata, ScanResult)],
+    started_at: i64,
 ) {
     let plugins: Vec<String> = grouped
         .iter()
         .map(|(m, _)| m.plugin_id.to_string())
         .collect();
-    let session_id = match history.create_session("batch", host_key, &plugins).await {
+    let session_id = match history
+        .create_session_started_at("batch", host_key, &plugins, started_at)
+        .await
+    {
         Ok(id) => id,
         Err(e) => {
             warn!("batch history: create_session for {host_key} failed: {e}");
@@ -923,10 +927,14 @@ async fn scan_with_executor(
     history: Option<Arc<ScanHistoryManager>>,
     config: &HardenerConfig,
 ) -> HostOutcome {
+    // Stamped before the scan, not inside `persist_host`, which runs once
+    // `scan_grouped` has returned. Recording it there put the completion time
+    // in `started_at` and left every remote scan looking instantaneous (#168).
+    let scan_started_at = chrono::Utc::now().timestamp();
     match scan_grouped(true, executor.clone(), &CliOutputFormat::Json, config).await {
         Ok(grouped) => {
             if let Some(history) = &history {
-                persist_host(history, &host_key, &grouped.results).await;
+                persist_host(history, &host_key, &grouped.results, scan_started_at).await;
             }
             // Shared with the single-host path so a plugin whose scan did not
             // complete, or which the config never let run, contributes its
