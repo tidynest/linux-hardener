@@ -320,6 +320,8 @@ fn checkpoint(id: &str, created: &str) -> CheckpointInfo {
         checkpoint_name: format!("cp-{id}"),
         checkpoint_created: created.to_string(),
         checkpoint_user: "root".to_string(),
+        // Not what the grouping tests measure; they only read the stamp.
+        checkpoint_verified: true,
     }
 }
 

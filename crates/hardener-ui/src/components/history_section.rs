@@ -220,6 +220,7 @@ pub fn HistorySection() -> impl IntoView {
                                 let name = cp.checkpoint_name.clone();
                                 let time = checkpoint_time(&cp.checkpoint_created).to_string();
                                 let user = cp.checkpoint_user.clone();
+                                let verified = cp.checkpoint_verified;
                                 let is_latest = mark_id.as_deref() == Some(id.as_str());
                                 let detail_id = id.clone();
                                 let cp_for_modal = cp.clone();
@@ -243,6 +244,13 @@ pub fn HistorySection() -> impl IntoView {
                                             <div class="timeline-meta">
                                                 <span class="timeline-time">{time}</span>
                                                 <span class="timeline-user">{user}</span>
+                                                <span class=move || if verified {
+                                                    "timeline-verify timeline-verify-ok"
+                                                } else {
+                                                    "timeline-verify timeline-verify-bad"
+                                                }>
+                                                    {if verified { "Verified" } else { "Unverified" }}
+                                                </span>
                                             </div>
                                             <div class="timeline-actions">
                                                 <button

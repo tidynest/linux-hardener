@@ -42,6 +42,27 @@ PROBES = [
     # is caught here for both.
     ("run_apply", {}, "[].apply_changes[]", "Change"),
     ("list_plugins", {}, "[]", "PluginMetadata"),
+    # The five checkpoint and scan-session structs. Until #157 they were
+    # hand-written in `hardener-ui/src/types.rs`, outside the tree TYPES
+    # resolves, so no probe could name them however badly the mock drifted:
+    # `system_unreadable` (#156) and `checkpoint_verified` (#157) both fell
+    # through that copy. They now live in `hardener-types`, so these entries
+    # are possible for the first time.
+    ("get_checkpoints", {}, "", "CheckpointList"),
+    ("get_checkpoints", {}, "checkpoints[]", "CheckpointInfo"),
+    ("get_scan_history", {}, "[]", "ScanSessionInfo"),
+    (
+        "get_checkpoint_detail",
+        {"checkpointId": "chk-20260223-001"},
+        "",
+        "CheckpointDetail",
+    ),
+    (
+        "get_checkpoint_detail",
+        {"checkpointId": "chk-20260223-001"},
+        "files[]",
+        "CheckpointFileInfo",
+    ),
     # The rollback modal's payload, which no probe reached. Its divergence
     # section shipped unrendered (#143) and its rows were absent from this mock
     # entirely, so the one check that could have said the fixture was short was

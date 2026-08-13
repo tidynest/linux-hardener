@@ -11,9 +11,11 @@ use std::str::FromStr;
 // Re-export chrono types used in reports
 pub use chrono::{DateTime, Utc};
 
+pub mod checkpoint;
 pub mod config_picker;
 pub mod remote;
 pub mod scheduler;
+pub use checkpoint::*;
 pub use config_picker::*;
 pub use remote::*;
 

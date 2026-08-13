@@ -1209,6 +1209,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Daywatch's two success colours were dark-theme values on a light ground,
+  and both failed WCAG AA everywhere they were read.** `--color-good`
+  `#059669` measured 3.49:1 on the page background and 2.95:1 on the theme's
+  darkest surface; `--color-good-bright` `#10b981` measured 2.35:1 and 1.99:1,
+  the lowest readings anywhere in the theme, across 22 and 9 use sites of
+  which nearly all set `color`. They are now `#036b52` and `#065f46`, holding
+  6.03:1/5.09:1 and 7.12:1/6.02:1. The base was picked to sit level with
+  `--color-critical` rather than to clear the bar by the widest margin, so a
+  verified and an unverified checkpoint carry equal weight. This is the same
+  correction `--color-critical` and `--color-critical-bright` already received
+  for this theme, including the inversion the stylesheet documents there: on a
+  light ground emphasis goes darker, so "bright" is the darker of the pair.
+  The green pair was simply left out of that sweep. **Found by arithmetic, not
+  by review** - `validate_contrast.py` cannot see either, by its documented
+  scope: it weighs only rules declaring a colour and a background in the same
+  block, and these are colour-only rules inheriting their surface from an
+  ancestor. Six themes and 222 screenshots did not surface it either.
+- **Every checkpoint's signature was verified on every Hardening History load
+  and the answer thrown away** (#157). `get_checkpoints` has called
+  `verify_checkpoint` on each row since `8d2abc1d`, the commit closing
+  SAM-032, whose stated remedy was to show verification status in the
+  checkpoint list. The frontend's hand-written copy of `CheckpointInfo` had no
+  field to receive it, so the result was discarded before it reached the view
+  and an operator could not learn a checkpoint failed verification until a
+  rollback refused. `git log -S checkpoint_verified` over the frontend file is
+  empty: the field was never mirrored, so this was an unfinished fix rather
+  than a decision to hide it. **Not a security hole at any point.**
+  `CheckpointManager::rollback` verifies the signature itself on a path that
+  never calls `verify_checkpoint`, so a tampered checkpoint could not be
+  restored either way; what was lost was the operator's ability to see it
+  coming. Every checkpoint row now states `Verified` or `Unverified`, both
+  spelled as words rather than colour alone, and both shown rather than only
+  the failure: silence would leave "checked and it passed" and "never checked"
+  reading identically, which is the ambiguity #156 was about.
+- **The five checkpoint and scan-session types were defined twice, by hand**,
+  which is what let #156 and #157 both happen. `CheckpointInfo`,
+  `CheckpointList`, `CheckpointDetail`, `CheckpointFileInfo` and
+  `ScanSessionInfo` were written out in `src-tauri/src/commands.rs` and again
+  in `crates/hardener-ui/src/types.rs`, the only hand-written types in a file
+  that otherwise re-exports everything. They now live once in
+  `crates/hardener-types/src/checkpoint.rs`, so a field the backend adds is a
+  frontend compile error rather than a silent loss, and so
+  `validate_gui_mock_fixtures.py`, which resolves structs only under
+  `crates/hardener-types/src`, can reach them: it gained five probes over
+  `get_checkpoints`, `get_scan_history` and `get_checkpoint_detail`, 17 to 22,
+  and was confirmed to fail with the field removed rather than pass
+  vacuously. `impl From<ScanSession> for ScanSessionInfo` became the free
+  function `session_to_info`, because both types are now foreign to
+  `src-tauri` and the coherence rules reject the trait impl.
 - **Hardening History showed an incomplete checkpoint list as though it were
   complete** (#156). The desktop merges its own checkpoint database with the
   root-owned system one, and an unprivileged process cannot read the second,

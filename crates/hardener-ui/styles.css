@@ -247,8 +247,22 @@
     --text-primary: #1c1917;
     --text-secondary: #44403c;
     --text-muted: #6a635f; /* Brightened for WCAG AA on this theme's darkest surface; the default was brightened for the same reason and the other themes were not swept with it. */
-    --color-good: #059669;
-    --color-good-bright: #10b981;
+    /* The same two corrections the critical pair below received, which this
+       pair was left out of. Both are read as TEXT on this theme's four
+       surfaces, and both failed the 4.5 bar on every one of them: #059669
+       measured 3.49:1 on the page background and 2.95:1 on the darkest
+       surface, and #10b981 measured 2.35:1 and 1.99:1, the lowest readings in
+       the theme. #036b52 holds 6.03:1 and 5.09:1, #065f46 holds 7.12:1 and
+       6.02:1.
+
+       The base is picked to sit level with --color-critical rather than to
+       clear the bar by as much as possible: 6.03 against that colour's 5.99
+       means a verified and an unverified checkpoint carry equal weight, and
+       neither state shouts. The direction is inverted from the dark themes
+       for the reason given below - on a light ground emphasis goes darker,
+       so "bright" is the darker of the pair here. */
+    --color-good: #036b52;
+    --color-good-bright: #065f46;
     --color-warning: #d97706;
     --color-warning-bright: #f59e0b;
     /* Both of these are read as TEXT on this theme's four surfaces, and the
@@ -1920,6 +1934,24 @@ tbody tr:hover {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   margin-top: 2px;
+}
+
+/* Signature verification status, shown on every checkpoint row rather than
+   only on failures: silence would mean both "verified" and "never checked",
+   which is the ambiguity that made #156 invisible. Colour alone does not
+   carry it, the word does, so it survives a monochrome or colour-blind read.
+   No `background` is declared, so both rules inherit the row's surface and
+   add no new pair for validate_contrast.py to weigh. */
+.timeline-verify {
+  font-weight: 600;
+}
+
+.timeline-verify-ok {
+  color: var(--color-good);
+}
+
+.timeline-verify-bad {
+  color: var(--color-critical);
 }
 
 .timeline-actions {

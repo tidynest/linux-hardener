@@ -465,24 +465,31 @@
     },
   ];
 
+  // The oldest entry is deliberately unverified. An all-verified fixture makes
+  // the two states render identically as far as any assertion can tell, so no
+  // test could distinguish "we checked and it passed" from "we never checked",
+  // which is the ambiguity #157 is about.
   const CHECKPOINTS = [
     {
       checkpoint_id: 'chk-20260223-001',
       checkpoint_name: 'Pre-hardening checkpoint',
       checkpoint_created: '2026-02-23 10:30:00 UTC',
       checkpoint_user: 'root',
+      checkpoint_verified: true,
     },
     {
       checkpoint_id: 'chk-20260222-003',
       checkpoint_name: 'SSH hardening rollback point',
       checkpoint_created: '2026-02-22 15:45:00 UTC',
       checkpoint_user: 'root',
+      checkpoint_verified: true,
     },
     {
       checkpoint_id: 'chk-20260221-001',
       checkpoint_name: 'Initial system state',
       checkpoint_created: '2026-02-21 09:00:00 UTC',
       checkpoint_user: 'root',
+      checkpoint_verified: false,
     },
   ];
 

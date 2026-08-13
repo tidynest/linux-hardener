@@ -174,6 +174,29 @@ test.describe('History', () => {
     await expect(rollbackButtons(page)).toHaveCount(3);
   });
 
+  // T-HIST-13: both verification states render, on every row
+  //
+  // SAM-032 asked for verification status "in the checkpoint list", and the
+  // backend has computed it on every load since 8d2abc1d. The hand-written
+  // frontend mirror had no field to receive it, so it was discarded every
+  // time (#157) and no screenshot could show what was missing.
+  //
+  // Asserting BOTH labels is the point. A row silent when verified leaves
+  // "checked and it passed" indistinguishable from "never checked", which is
+  // the same ambiguity the #156 source note exists to remove.
+  //
+  // Counts rather than one node's visibility: the fixture is two verified and
+  // one not, so 2 + 1 is a claim an all-verified fixture could not have made
+  // however the component behaved. The rollback-button count leads for the
+  // reason given at T-HIST-11 - it anchors the assertions on rows that exist
+  // only once get_checkpoints resolved.
+  test('T-HIST-13: every checkpoint row states whether its signature verified', async ({ page }) => {
+    await expect(rollbackButtons(page)).toHaveCount(3);
+    await expect(page.locator('.timeline-verify-ok')).toHaveCount(2);
+    await expect(page.locator('.timeline-verify-bad')).toHaveCount(1);
+    await expect(page.locator('.timeline-verify-bad')).toHaveText('Unverified');
+  });
+
   // T-HIST-02: The checkpoints, grouped by the day they were taken
   //
   // There is no checkpoints table. The redesign groups checkpoints under a

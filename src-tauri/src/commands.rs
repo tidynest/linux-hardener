@@ -17,14 +17,14 @@ use hardener_state::{
     ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db,
 };
 use hardener_types::{
-    ApplyOutcome, ConfigSummary, ControlOutcome, FleetFrameworkPosture, FleetHostScan,
-    FleetHostStatus, PluginId, RollbackOutcome, SeverityTallies,
+    ApplyOutcome, CheckpointDetail, CheckpointFileInfo, CheckpointInfo, CheckpointList,
+    ConfigSummary, ControlOutcome, FleetFrameworkPosture, FleetHostScan, FleetHostStatus, PluginId,
+    RollbackOutcome, ScanSessionInfo, SeverityTallies,
     remote::{
         FLEET_PROGRESS_EVENT, FleetProgress, HostSessionInfo, HostsConfig, RemoteConnectionStatus,
         RemoteHostProfile,
     },
 };
-use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::process::Command;
 use tracing::error;
@@ -198,35 +198,6 @@ fn load_hosts_config() -> Result<HostsConfig, String> {
 /// Saves host profiles to the shared inventory file.
 fn save_hosts_config(config: &HostsConfig) -> Result<(), String> {
     hardener_core::inventory::save(config).map_err(|e| safe_err(e.to_string()))
-}
-
-/// Checkpoint information returned to the frontend.
-#[derive(Clone, Debug, Serialize)]
-pub struct CheckpointInfo {
-    pub checkpoint_id: String,
-    pub checkpoint_name: String,
-    pub checkpoint_created: String,
-    pub checkpoint_user: String,
-    /// Whether the checkpoint's signature was successfully verified.
-    /// `false` indicates potential tampering or a missing signing key.
-    pub checkpoint_verified: bool,
-}
-
-/// A checkpoint list together with whether a source was left out of it.
-///
-/// The system database is root-owned, so an unprivileged desktop usually
-/// cannot read it. Returning the rows alone made a host holding five
-/// privileged checkpoints render identically to one holding none, which is
-/// the defect in #156: the operator could not tell a successful privileged
-/// checkpoint from a failed one, because both produced no new row.
-#[derive(Clone, Debug, Serialize)]
-pub struct CheckpointList {
-    pub checkpoints: Vec<CheckpointInfo>,
-    /// The system database exists but could not be read from here, so this
-    /// list may be missing every privileged checkpoint. `false` covers both
-    /// `DatabaseReach::Read` and `DatabaseReach::Absent`: one means the rows
-    /// are present, the other that there are none to miss.
-    pub system_unreadable: bool,
 }
 
 /// Formats a Unix timestamp as a human-readable string.
@@ -1456,27 +1427,18 @@ pub async fn export_compliance_report(
     Ok(final_path)
 }
 
-/// Scan session info returned to the frontend.
-#[derive(Clone, Debug, Serialize)]
-pub struct ScanSessionInfo {
-    pub session_id: String,
-    pub started_at: String,
-    pub completed_at: Option<String>,
-    pub total_findings: i32,
-    pub total_plugins: i32,
-    pub status: String,
-}
-
-impl From<ScanSession> for ScanSessionInfo {
-    fn from(s: ScanSession) -> ScanSessionInfo {
-        ScanSessionInfo {
-            session_id: s.session_id.as_str().to_string(),
-            started_at: format_timestamp(s.session_started_at),
-            completed_at: s.session_completed_at.map(format_timestamp),
-            total_findings: s.session_total_findings,
-            total_plugins: s.session_total_plugins,
-            status: s.session_status.as_str().to_string(),
-        }
+/// Converts a stored `ScanSession` into the frontend's session metadata.
+///
+/// A free function rather than `impl From`: both types are now foreign to this
+/// crate, so the coherence rules reject the trait impl (E0117).
+fn session_to_info(s: ScanSession) -> ScanSessionInfo {
+    ScanSessionInfo {
+        session_id: s.session_id.as_str().to_string(),
+        started_at: format_timestamp(s.session_started_at),
+        completed_at: s.session_completed_at.map(format_timestamp),
+        total_findings: s.session_total_findings,
+        total_plugins: s.session_total_plugins,
+        status: s.session_status.as_str().to_string(),
     }
 }
 
@@ -1489,7 +1451,7 @@ pub async fn get_scan_history(limit: Option<i32>) -> Result<Vec<ScanSessionInfo>
         .await
         .map_err(safe_err)?;
 
-    Ok(sessions.into_iter().map(ScanSessionInfo::from).collect())
+    Ok(sessions.into_iter().map(session_to_info).collect())
 }
 
 /// Retrieves full scan results for a specific session.
@@ -1508,25 +1470,6 @@ pub async fn get_scan_session(session_id: String) -> Result<Vec<ScanResult>, Str
 pub async fn list_plugins() -> Result<Vec<PluginMetadata>, String> {
     let registry = create_plugin_registry();
     registry.list().map_err(safe_err)
-}
-
-/// Checkpoint detail info returned to the frontend.
-#[derive(Clone, Debug, Serialize)]
-pub struct CheckpointDetail {
-    pub checkpoint_id: String,
-    pub checkpoint_name: String,
-    pub checkpoint_created: String,
-    pub checkpoint_user: String,
-    pub file_count: usize,
-    pub files: Vec<CheckpointFileInfo>,
-}
-
-/// Individual file state within a checkpoint.
-#[derive(Clone, Debug, Serialize)]
-pub struct CheckpointFileInfo {
-    pub path: String,
-    pub permissions: String,
-    pub has_content: bool,
 }
 
 /// Converts a `Checkpoint` and its `FileState` entries into frontend detail.
