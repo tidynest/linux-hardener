@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Two CLI listings told the operator less than their own JSON did.**
+  `plugins` carried `plugin_category` for all eight plugins in `--format json`
+  and named it for none of them in the table, so the two views of one command
+  disagreed about what a plugin is; the category now leads each detail line
+  (`[Network] Hardens OpenSSH server configuration`), because it is also the
+  field that answers which of the eight to reach for. `checkpoint list` closed
+  only its capped listings, with "showing 20 of 25; use --all to see all", and
+  said nothing at all when the table was complete, so an operator had to count
+  rows to learn the total and had nothing telling them nothing was hidden. It
+  now closes every non-empty listing, matching `history list`'s "N session(s)
+  shown."; the empty case still prints "No checkpoints found." and adds no
+  count, which would answer the same question twice. Both found by the host CLI
+  walk, in the observations it recorded without filing.
+
 - **The same PAM read failure was reported twice in every scan.**
   `layer_drift_findings` walks its own table of layered configuration files so
   that a caller cannot cover three and forget the fourth, and read all four

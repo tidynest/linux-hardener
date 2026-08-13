@@ -207,9 +207,47 @@ fn checkpoint_list_footer_discloses_the_cap() {
         checkpoint_list_footer(20, 25),
         Some("showing 20 of 25; use --all to see all".to_string())
     );
-    // Nothing hidden (--all, or a list at/under the limit): no footer.
-    assert_eq!(checkpoint_list_footer(25, 25), None);
+}
+
+/// An uncapped listing states its total too.
+///
+/// `history list` closes every listing with "N session(s) shown.", and
+/// `checkpoint list` closed only the capped ones, so an operator reading an
+/// uncapped table had to count the rows to learn how many there were and had
+/// nothing telling them the table was complete. The two commands present the
+/// same kind of thing and should end the same way.
+#[test]
+fn checkpoint_list_footer_states_the_total_when_nothing_is_hidden() {
+    assert_eq!(
+        checkpoint_list_footer(25, 25),
+        Some("25 checkpoint(s) shown.".to_string())
+    );
+    assert_eq!(
+        checkpoint_list_footer(1, 1),
+        Some("1 checkpoint(s) shown.".to_string())
+    );
+    // The empty case prints "No checkpoints found." and returns before the
+    // footer, so a count there would be a second answer to the same question.
     assert_eq!(checkpoint_list_footer(0, 0), None);
+}
+
+/// The text listing must name the category the JSON already carries.
+///
+/// `plugins --format json` emits `plugin_category` for all eight plugins and
+/// the text listing omitted it entirely, so the two views of the same command
+/// disagreed about what a plugin is. The category is what tells an operator
+/// which of the eight to reach for; the description alone leaves them reading
+/// all eight.
+#[test]
+fn the_plugin_detail_line_names_the_category() {
+    let mut plugin = metadata("SSH Hardening");
+    plugin.plugin_category = FindingCategory::Network;
+    plugin.plugin_description = "Hardens OpenSSH server configuration".to_string();
+
+    assert_eq!(
+        plugin_detail_line(&plugin),
+        "[Network] Hardens OpenSSH server configuration"
+    );
 }
 
 fn metadata(name: &str) -> PluginMetadata {

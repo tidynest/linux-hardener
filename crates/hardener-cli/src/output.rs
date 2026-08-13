@@ -408,6 +408,17 @@ fn format_change_error(error: &str) -> String {
     format!("    {}", error.dimmed())
 }
 
+/// The dimmed second line under each plugin in the text listing.
+///
+/// The category leads it because that is the field the text view was missing:
+/// `plugins --format json` carries `plugin_category` for all eight plugins and
+/// the table carried it for none, so the two views of one command disagreed
+/// about what a plugin is. It is also the field that answers "which of these
+/// eight do I want", which the description alone does not.
+fn plugin_detail_line(plugin: &PluginMetadata) -> String {
+    format!("[{}] {}", plugin.plugin_category, plugin.plugin_description)
+}
+
 pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
     match format {
         OutputFormat::Json => match serde_json::to_string_pretty(&plugins) {
@@ -439,7 +450,7 @@ pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
                     plugin.plugin_name,
                     format!("v{}", plugin.plugin_version).dimmed()
                 );
-                println!("  {}", plugin.plugin_description.dimmed());
+                println!("  {}", plugin_detail_line(plugin).dimmed());
             }
         }
     }
@@ -532,7 +543,17 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint], limit:
 /// checkpoint is already visible. Tells the admin how many exist and how to
 /// see them all.
 fn checkpoint_list_footer(shown: usize, total: usize) -> Option<String> {
-    (shown < total).then(|| format!("showing {shown} of {total}; use --all to see all"))
+    match (shown, total) {
+        // Handled before the table is drawn, with "No checkpoints found."; a
+        // count here would answer the same question twice.
+        (_, 0) => None,
+        // An uncapped listing states its total too. `history list` closes every
+        // listing with "N session(s) shown.", and this one closed only the
+        // capped ones, so an operator reading a full table had to count the
+        // rows and had nothing saying the table was complete.
+        (shown, total) if shown >= total => Some(format!("{total} checkpoint(s) shown.")),
+        (shown, total) => Some(format!("showing {shown} of {total}; use --all to see all")),
+    }
 }
 
 pub fn checkpoint_created(format: &OutputFormat, id: &hardener_state::CheckpointId) {
