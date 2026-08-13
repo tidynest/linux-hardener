@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`report --format json` was accepted, exited 0, and printed the text
+  report** (#160). `report` carries two flags whose help text both read "Output
+  format": `--report-format`, which drives the report body, and the global
+  `-f/--format`, which did not. The global flag reached only the progress
+  rendering, which it suppressed, so the one invocation that looked most like
+  machine mode was the one that emitted prose, byte-identical to running with no
+  format flag at all. Every other verb honours `--format json` in that position,
+  including `scan`, `plugins`, `checkpoint list` and `history list`. A CI job
+  piping this into a parser fails at the parse, which is the good case; one
+  grepping for `"control_status": "Fail"` finds nothing and calls the host
+  clean. `--report-format` now takes no clap default, so the command can tell an
+  explicit `text` from an unstated flag, and the global format decides only in
+  the second case. An explicit `--report-format` still wins in every
+  combination, and `csv`, `html` and `pdf` are unaffected: the global flag has
+  no spelling for them and never did. Found by the host CLI walk.
+
 - **Audit controls reported PASS on a host with no audit daemon** (#166). The
   same defect as #159 one plugin over, found by the review of that fix. When
   auditd is not installed the scan raised its finding and returned early with

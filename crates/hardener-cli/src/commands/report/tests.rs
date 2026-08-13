@@ -375,3 +375,63 @@ fn an_output_path_that_names_no_document_is_left_alone() {
         "htm and html are one document type, so neither contradicts the other"
     );
 }
+
+/// `--report-format` wins whenever it is given, and the global `-f/--format`
+/// decides only when it is not.
+///
+/// The middle two cases are the ones #160 got wrong. `report --format json`
+/// was accepted, exited 0, suppressed the progress rendering, and printed the
+/// text report, because `--report-format` carried a clap `default_value` and
+/// the command could not tell a defaulted "text" from an unstated one.
+#[test]
+fn the_global_format_decides_only_when_report_format_is_unstated() {
+    // Unstated: the global flag decides. Both directions, so a function that
+    // ignored its argument and returned a constant fails one of them.
+    assert_eq!(
+        resolve_output_format(None, OutputFormat::Json).unwrap(),
+        OutputFormat::Json,
+        "report --format json must render JSON, as it does for every other verb"
+    );
+    assert_eq!(
+        resolve_output_format(None, OutputFormat::Text).unwrap(),
+        OutputFormat::Text,
+        "no flags at all still means text"
+    );
+
+    // Stated: it wins, including when it names the value the other flag
+    // contradicts. Both directions again, for the same reason.
+    assert_eq!(
+        resolve_output_format(Some("text"), OutputFormat::Json).unwrap(),
+        OutputFormat::Text,
+        "an explicit --report-format text is a choice, not an absence, and \
+         must not be overridden by the global flag"
+    );
+    assert_eq!(
+        resolve_output_format(Some("json"), OutputFormat::Text).unwrap(),
+        OutputFormat::Json,
+        "an explicit --report-format json wins over a global text"
+    );
+
+    // The three formats the global flag cannot express still work when named,
+    // and are unreachable through the None arm because `GlobalFormat` narrows
+    // the global flag to Text or Json at parse time.
+    for (spelling, expected) in [
+        ("csv", OutputFormat::Csv),
+        ("html", OutputFormat::Html),
+        ("pdf", OutputFormat::Pdf),
+        ("TXT", OutputFormat::Text),
+        ("JSON", OutputFormat::Json),
+    ] {
+        assert_eq!(
+            resolve_output_format(Some(spelling), OutputFormat::Text).unwrap(),
+            expected,
+            "'{spelling}' must still resolve, case-insensitively"
+        );
+    }
+
+    assert!(
+        resolve_output_format(Some("xml"), OutputFormat::Json).is_err(),
+        "a value no renderer implements is still refused, and is not quietly \
+         replaced by the global flag"
+    );
+}

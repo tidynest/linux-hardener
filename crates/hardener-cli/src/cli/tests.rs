@@ -735,7 +735,7 @@ fn the_narrowed_flag_widens_to_the_format_it_names() {
 /// The rich formats keep their own route, which is the reason the flag above
 /// can be narrowed without taking a capability away.
 ///
-/// This asserts the parse alone: `--report-format` is a `String` that
+/// This asserts the parse alone: `--report-format` is an `Option<String>` that
 /// `commands::report` matches at runtime, so what this pins is that the flag
 /// still exists, still takes those three values, and still carries them
 /// through to the command. The runtime match is proved by the suite's own
@@ -745,9 +745,33 @@ fn report_still_takes_the_formats_the_global_flag_does_not() {
     for format in ["csv", "html", "pdf"] {
         let cli = Cli::parse_from(["hardener", "report", "--report-format", format]);
         if let Command::Report { report_format, .. } = cli.command {
-            assert_eq!(report_format, format);
+            assert_eq!(report_format.as_deref(), Some(format));
         } else {
             panic!("Expected Report command");
         }
+    }
+}
+
+/// An unstated `--report-format` must arrive as `None`, not as a defaulted
+/// string.
+///
+/// This is the parse half of #160. The flag carried a clap `default_value` of
+/// "text", so `commands::report` received the same value whether the user had
+/// asked for text or asked for nothing, and could not let the global
+/// `-f/--format` decide in the second case without overriding the first. The
+/// resolution half is pinned in `commands::report`'s own tests; without this
+/// one, re-adding `default_value` would leave that test green and silently
+/// restore the defect, because the resolver would simply never see `None`.
+#[test]
+fn an_unstated_report_format_is_absent_rather_than_defaulted() {
+    let cli = Cli::parse_from(["hardener", "report"]);
+    if let Command::Report { report_format, .. } = cli.command {
+        assert_eq!(
+            report_format, None,
+            "a defaulted value here makes the command unable to tell an \
+             explicit --report-format text from an unstated one"
+        );
+    } else {
+        panic!("Expected Report command");
     }
 }

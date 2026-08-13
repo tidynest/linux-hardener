@@ -160,9 +160,14 @@ pub enum Command {
         #[arg(long)]
         profile: Option<String>,
 
-        /// Output format (text, json, csv, html, pdf).
-        #[arg(long, default_value = "text")]
-        report_format: String,
+        /// Report body format (text, json, csv, html, pdf).
+        ///
+        /// Defaults to text, or to the global `--format` when that is `json`
+        /// and this flag is not given. No `default_value`, deliberately: the
+        /// command has to tell "the user asked for text" apart from "the user
+        /// asked for nothing", and a defaulted `String` cannot (#160).
+        #[arg(long)]
+        report_format: Option<String>,
 
         /// Output file path (prints to stdout if not specified).
         #[arg(short, long)]

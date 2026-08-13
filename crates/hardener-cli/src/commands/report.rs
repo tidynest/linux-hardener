@@ -16,12 +16,53 @@ use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
 use std::{fs, io, io::Write, path::PathBuf, sync::Arc};
 
+/// Decides which format the report body is rendered in.
+///
+/// `--report-format` wins whenever it is given, including when it names the
+/// default. When it is absent the global `-f/--format` decides, so `report
+/// --format json` returns JSON the way it does for `scan`, `plugins`,
+/// `checkpoint list` and `history list`.
+///
+/// It did not, before #160. `--report-format` carried a clap `default_value`,
+/// so the command could not tell "the user asked for text" from "the user asked
+/// for nothing", and the global flag reached only the progress rendering, which
+/// it suppressed. `report --format json` therefore exited 0, printed no
+/// progress, and emitted the text report: the invocation that looked most like
+/// machine mode was the one that produced prose. A CI job grepping that output
+/// for `"control_status": "Fail"` finds nothing and calls the host clean.
+///
+/// Extracted from `run` so the decision can be tested without standing up a
+/// scan; `run` reaches this point only after eight plugins have executed.
+fn resolve_output_format(
+    report_format: Option<&str>,
+    cli_format: CliOutputFormat,
+) -> Result<OutputFormat> {
+    let Some(value) = report_format else {
+        // No round trip through a string: the global flag is already an
+        // `OutputFormat`, narrowed to Text or Json at parse time by
+        // `GlobalFormat`.
+        return Ok(cli_format);
+    };
+
+    match value.to_lowercase().as_str() {
+        "json" => Ok(OutputFormat::Json),
+        "text" | "txt" => Ok(OutputFormat::Text),
+        "csv" => Ok(OutputFormat::Csv),
+        "html" => Ok(OutputFormat::Html),
+        "pdf" => Ok(OutputFormat::Pdf),
+        _ => Err(anyhow!(
+            "Unsupported format '{}'. Use 'TEXT', 'JSON', 'CSV', 'HTML' or 'PDF'.",
+            value
+        )),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     scenario: Option<String>,
     framework: Option<String>,
     profile: Option<String>,
-    report_format: String,
+    report_format: Option<String>,
     output: Option<String>,
     cli_format: CliOutputFormat,
     quiet: bool,
@@ -42,20 +83,7 @@ pub async fn run(
         eprintln!("Profile: {}", profile_line(profile, &scenario));
     }
 
-    // Determine output format
-    let output_format = match report_format.to_lowercase().as_str() {
-        "json" => OutputFormat::Json,
-        "text" | "txt" => OutputFormat::Text,
-        "csv" => OutputFormat::Csv,
-        "html" => OutputFormat::Html,
-        "pdf" => OutputFormat::Pdf,
-        _ => {
-            return Err(anyhow!(
-                "Unsupported format '{}'. Use 'TEXT', 'JSON', 'CSV', 'HTML' or 'PDF'.",
-                report_format
-            ));
-        }
-    };
+    let output_format = resolve_output_format(report_format.as_deref(), cli_format)?;
 
     // Judged before the scan, not at the point of writing: this is an argument
     // contradicting an argument, and running eight plugins, or a whole remote
