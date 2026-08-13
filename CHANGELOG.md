@@ -1268,6 +1268,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`rollback --help` now states that a whole-system apply has no whole-system
+  undo.** `apply --all` records one checkpoint per plugin rather than one for
+  the run, and `rollback` restores exactly one id, so reverting a full harden
+  takes eight invocations with the ids read off `checkpoint list`. Nothing was
+  broken: each rollback restores precisely what its checkpoint holds and says
+  which files it touched. The gap was invisible to per-plugin tests, which all
+  pass, and surfaced only when the CLI walk diffed its pristine snapshot
+  against its restored one and found 50 findings against 45. It is recorded as
+  a ceiling rather than fixed because the alternative is worse: grouping the
+  eight needs a new column on `Checkpoint`, and a `--last-apply` that reverts
+  them in sequence has to decide what to do when the fourth fails, where
+  fail-closed leaves a machine neither hardened nor pristine. Eight commands
+  that each succeed or refuse beat one that can die halfway. `recipes.sh` in
+  the walk harness carries the same note, so the difference between the two
+  snapshots is not mistaken for a harness bug and "fixed" by reverting all
+  eight.
+
 - **The `host_key` / `host_identifier` JSON key split is now documented rather
   than reconciled.** `checkpoint list` emits `host_key` and `history list` emits
   `host_identifier` for one concept, both derived from `host_key_for` in

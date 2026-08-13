@@ -155,6 +155,16 @@ recipe checkpoint-show      root ro  -- checkpoint show RUNTIME_ID
 # destroyed. The restore phase did nothing, the restored snapshot came out
 # byte-identical to the applied one, and the walk could not show that a
 # rollback undoes anything.
+#
+# The restored snapshot does NOT come back to the pristine one, and that is the
+# design rather than a defect. `rollback` takes exactly one checkpoint id, and
+# `apply --all` records one checkpoint per plugin, so this single invocation
+# undoes whichever plugin's checkpoint is newest and leaves the other seven
+# hardened. On arch that reads as 50 findings pristine against 45 restored: SSH
+# returns in full, three PAM settings and two permissions findings stay fixed.
+# Do not "fix" the gap by reverting every checkpoint here. Rolling all eight
+# back in reverse order would hide the very thing the walk is showing, which is
+# that a whole-system apply has no whole-system undo.
 recipe rollback-run         root mut -- rollback RUNTIME_ID
 recipe checkpoint-delete    root mut -- checkpoint delete RUNTIME_ID
 recipe history-show         root ro  -- history show RUNTIME_SESSION

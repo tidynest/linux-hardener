@@ -282,6 +282,17 @@ hardener checkpoint list                     # Find the checkpoint ID
 sudo hardener rollback abc123                # Restore to that checkpoint
 ```
 
+**One rollback undoes one plugin, not one apply.** `apply --all` records a
+separate `<plugin>-pre-apply` checkpoint for each plugin it runs, so a single
+whole-system apply leaves eight of them, and `rollback` takes exactly one id.
+Reverting a full harden therefore means eight invocations, newest first, with
+the ids read off `checkpoint list`; rolling back only the newest leaves the
+other seven plugins hardened. This is deliberate rather than an oversight. The
+blast radius of an undo is one plugin, and a single command that reverted all
+eight would have to choose what to do when one of them failed partway, where
+refusing to continue leaves a machine neither hardened nor at its starting
+state.
+
 A checkpoint that records a protected system path (account databases, `/etc/ssh`,
 `/etc/sudoers` and similar; see `UNDELETABLE_ROLLBACK_PATHS` in the source) as
 absent is never trusted to mean the file should be deleted. If that path is

@@ -125,6 +125,14 @@ pub enum Command {
     },
 
     /// Rollback to a previous checkpoint.
+    ///
+    /// Restores exactly one checkpoint, and reports which files it touched.
+    /// `apply --all` records one checkpoint per plugin rather than one for the
+    /// run, so undoing a whole-system apply means rolling back each of them in
+    /// turn, newest first; `checkpoint list` shows the ids. Rolling back a
+    /// single `<plugin>-pre-apply` checkpoint leaves every other plugin
+    /// hardened, which is deliberate: the blast radius of an undo is one
+    /// plugin, not the machine.
     Rollback {
         /// Checkpoint ID to restore.
         checkpoint_id: String,
