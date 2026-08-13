@@ -148,6 +148,40 @@ EOF
     esac
 done
 
+# Named once, so the rebuild advice below cannot drift from where the script
+# actually lives.
+CREATE_CONTAINER="$PROJECT_DIR/scripts/containers/create-container.sh"
+
+APPLY_ARTEFACTS=(
+    "/etc/ssh/sshd_config.d/00-hardener.conf"
+    "/etc/ssh/sshd_config.d/10-hardening.conf"
+    "/etc/sysctl.d/99-hardener.conf"
+    "/etc/audit/rules.d/hardening.rules"
+    "/etc/linux-hardener/nftables/50-linux-hardener.nft"
+    "/var/lib/linux-hardener/checkpoints.db"
+)
+
+# apply_artefacts CONTAINER_PATH
+# Prints the artefacts present, one per line; prints nothing for a clean one.
+#
+# The CLI walk applies hardening and rolls back a single plugin, so it leaves
+# five of eight applied. This runner never cleaned containers, so a walk
+# followed by `--apply` reported four failures that were the walk's leftovers
+# read as regressions in the tool. Only the audit check's own vacuity guard,
+# which happened to name the file it found, kept that from being filed as four
+# new defects.
+#
+# `release-readiness-root.sh` rebuilds every container before it measures and
+# says why at its clean step; this runner is the one people reach for directly,
+# and it had no equivalent.
+apply_artefacts() {
+    local container_path="$1" artefact
+    for artefact in "${APPLY_ARTEFACTS[@]}"; do
+        [[ -e "$container_path$artefact" ]] && echo "$artefact"
+    done
+    return 0
+}
+
 # =============================================================================
 # Reading and reporting one distribution's counts
 #
@@ -463,6 +497,29 @@ self_test() {
     check_eq "$(distro_table_fields arch 81 81 0 0 9)" "arch 81 81 0 0 0 0 9" \
         "a differential row carries its unaskable count into the summary tables rather than only into the log"
 
+    # The dirty-container guard. Pure enough to test here: it reads a directory
+    # tree and prints what it found, so it needs neither root nor a container.
+    #
+    # Both directions are asserted. A guard that never fires reads exactly like
+    # a clean estate, which is the state this runner was in before it existed:
+    # a walk had hardened all six and `--apply` reported the leftovers as four
+    # failures in the tool.
+    local fake_clean="$workdir/clean" fake_dirty="$workdir/dirty"
+    mkdir -p "$fake_clean/etc" "$fake_dirty/etc/ssh/sshd_config.d"
+    : > "$fake_dirty/etc/ssh/sshd_config.d/00-hardener.conf"
+    check_eq "$(apply_artefacts "$fake_clean")" "" \
+        "a container with no apply behind it reports no artefacts"
+    check_eq "$(apply_artefacts "$fake_dirty")" "/etc/ssh/sshd_config.d/00-hardener.conf" \
+        "and one carrying a hardener drop-in is named by the path that proves it"
+
+    # A checkpoint database alone is enough: `checkpoint create` leaves one
+    # without applying anything, and a rollback check reading a host that
+    # already has checkpoints is measuring the wrong starting state.
+    mkdir -p "$fake_dirty/var/lib/linux-hardener"
+    : > "$fake_dirty/var/lib/linux-hardener/checkpoints.db"
+    check_contains "$(apply_artefacts "$fake_dirty")" "/var/lib/linux-hardener/checkpoints.db" \
+        "a checkpoint database counts as evidence the host is not pristine"
+
     rm -rf "$workdir"
 
     if (( failures > 0 )); then
@@ -608,6 +665,10 @@ if [[ -n "$HOST_LSM" ]]; then
     LSM_ENV=("--setenv=HARDENER_DIFF_LSM=$HOST_LSM")
 fi
 
+# Files a pristine container never has, and only an apply or a checkpoint
+# creates. Read from the plugin sources rather than guessed, and deliberately
+# short: one of these is enough to know hardening ran here, and a longer list
+# is a longer thing to keep true.
 # The default execution mode: systemd never runs, so anything that asks the
 # service manager a question is untestable here.
 nspawn_suite_pipe() {
@@ -761,6 +822,26 @@ run_single_distro() {
         fi
         echo "CONTAINER NOT FOUND: $container_path" > "$logfile"
         return 99
+    fi
+
+    local left_over
+    if left_over="$(apply_artefacts "$container_path")" && [[ -n "$left_over" ]]; then
+        echo -e "  ${YELLOW}[DIRTY]${NC} This container carries hardening from an earlier run:"
+        # Read line by line rather than splitting on whitespace: the paths
+        # hold none today, and a guard that mangles the evidence it found
+        # is the wrong thing to be careless about.
+        while IFS= read -r artefact; do
+            echo "            $artefact"
+        done <<< "$left_over"
+        if [[ "$DO_APPLY" == "true" ]]; then
+            echo -e "  ${RED}[REFUSED]${NC} A rollback check cannot read a host already hardened."
+            echo "            Every failure it reported would be a pre-apply control working."
+            echo "            Rebuild: sudo $CREATE_CONTAINER $distro clean --no-confirm &&"
+            echo "                     sudo $CREATE_CONTAINER $distro"
+            echo "DIRTY CONTAINER: $left_over" > "$logfile"
+            return 98
+        fi
+        echo -e "            Readings that depend on a pristine host may be void."
     fi
 
     if [[ "$PARALLEL" == "true" ]]; then
