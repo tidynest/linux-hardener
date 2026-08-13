@@ -698,6 +698,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Contrast checking can now see colour-only rules** (#158).
+  `validate_contrast.py` weighs only rules declaring both a text colour and a
+  background in the same block, and its docstring says why a wider static parse
+  was tried and rejected: it manufactured defects, and a check that
+  manufactures defects gets muted. The cost of that scope was paid twice, most
+  recently by a Daywatch `--color-good` pair sitting at 3.49:1 on the surface
+  that actually renders, across 22 use sites, through six themes and 222
+  screenshots, found only by hand arithmetic during an unrelated review. The
+  missing capability was the computed cascade, which means a browser, so the
+  browser half now exists as `gui-tests/tests/contrast.spec.js`: it asks the
+  page which `color`-only rules matched a rendered element, reads the real
+  colour and the real backdrop off `getComputedStyle`, and weighs those. Every
+  pairing it reports provably rendered, so nothing is manufactured. The
+  selector list is derived from the stylesheet at run time rather than curated,
+  because a hand list answers the question once and then rots. Failure policy
+  follows the static file exactly: everything measured is reported every run
+  and only pairings absent from `DEFERRED` fail. Because a browser knows the
+  rendered font size, large text gets the 3.0 bar the specification allows
+  instead of the flat 4.5 a static parse must assume. The two files are
+  disjoint by design, since one defect failing two checks with two different
+  numbers is how a team learns to read neither. The WCAG arithmetic is split
+  into `contrast-math.js` so it can be proved without a browser; its
+  self-check's oracle is #158's own hand measurements.
+
 - **A CLI walk harness that stages every command's output for a person to read
   rather than asserting anything about it**
   (`scripts/test/cli-walk/`). A check can only fail on a case somebody already

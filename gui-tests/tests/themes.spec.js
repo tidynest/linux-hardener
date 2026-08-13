@@ -3,17 +3,7 @@
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
-const { loadApp, runScan, selectTheme, takeScreenshot } = require('./helpers');
-
-const THEMES = [
-  { value: 'default', name: 'Midnight Teal', dataTheme: null },
-  { value: 'fortress', name: 'Fortress', dataTheme: 'fortress' },
-  { value: 'sentinel', name: 'Sentinel', dataTheme: 'sentinel' },
-  { value: 'command', name: 'Command', dataTheme: 'command' },
-  { value: 'guardian', name: 'Guardian', dataTheme: 'guardian' },
-  { value: 'daywatch', name: 'Daywatch', dataTheme: 'daywatch' },
-  { value: 'high-contrast', name: 'High Contrast', dataTheme: 'high-contrast' },
-];
+const { loadApp, runScan, selectTheme, takeScreenshot, THEMES } = require('./helpers');
 
 test.describe('Themes', () => {
   test.beforeEach(async ({ page }) => {

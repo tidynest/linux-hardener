@@ -33,6 +33,13 @@ colour whose background comes from an ancestor rule is not checked here, and
 the daywatch `--color-critical` defect would not have been caught by this file.
 Widening it needs the computed cascade, which means a browser, which means the
 container GUI suite rather than a static parse.
+
+That browser half now exists, as `gui-tests/tests/contrast.spec.js` (#158). It
+covers the colour-only rules named above, and the two files are deliberately
+disjoint: it skips any rule declaring both a colour and a background, because
+one defect failing two checks with two different numbers is how a team learns
+to read neither. This file still runs on every commit and needs no container,
+which is why the narrow scope is worth keeping rather than retiring.
 """
 
 import re

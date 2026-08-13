@@ -65,4 +65,20 @@ async function takeScreenshot(page, name) {
   await page.screenshot({ path: `${outputDir}/screenshots/${name}.png`, fullPage: true });
 }
 
-module.exports = { waitForApp, loadApp, runScan, selectTheme, takeScreenshot };
+/**
+ * Every theme the selector offers, in the order it lists them.
+ *
+ * One definition, read by themes.spec.js and contrast.spec.js. A second copy
+ * is how a theme gets added to the picker and checked by only one of them.
+ */
+const THEMES = [
+  { value: 'default', name: 'Midnight Teal', dataTheme: null },
+  { value: 'fortress', name: 'Fortress', dataTheme: 'fortress' },
+  { value: 'sentinel', name: 'Sentinel', dataTheme: 'sentinel' },
+  { value: 'command', name: 'Command', dataTheme: 'command' },
+  { value: 'guardian', name: 'Guardian', dataTheme: 'guardian' },
+  { value: 'daywatch', name: 'Daywatch', dataTheme: 'daywatch' },
+  { value: 'high-contrast', name: 'High Contrast', dataTheme: 'high-contrast' },
+];
+
+module.exports = { waitForApp, loadApp, runScan, selectTheme, takeScreenshot, THEMES };
