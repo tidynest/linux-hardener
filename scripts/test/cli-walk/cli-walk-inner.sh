@@ -31,6 +31,22 @@ if [[ ! -x "$BIN" ]]; then
     exit 1
 fi
 
+# Before any phase, because the mutate phase is where it matters and the
+# pristine scan should see the host the applies will run against.
+#
+# Without this the walk covered SSH apply on debian and ubuntu without ever
+# writing an SSH setting: `sshd -t` refused every candidate for want of
+# /run/sshd, the plugin fail-closed exactly as designed, and the capture read
+# as "11 of 12 change(s) applied". Not a silent skip either way, because a
+# capture nobody can tell apart from a real apply is worse than a refusal.
+# shellcheck source=../../lib/sshd-privsep.sh
+source /project/scripts/lib/sshd-privsep.sh
+if ! require_sshd_privsep_dir; then
+    echo "WALK PROBLEM: sshd has no usable privilege separation directory, so" >&2
+    echo "  every SSH apply below refuses before writing and the captures show" >&2
+    echo "  a fail-closed plugin rather than what hardening does." >&2
+fi
+
 CAPTURE="/project/test-results/cli-walk/$DISTRO"
 rm -rf "$CAPTURE"
 walk_init "$CAPTURE"

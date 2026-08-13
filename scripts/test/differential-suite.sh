@@ -263,51 +263,11 @@ require_commands() {
     fi
 }
 
-# sshd refuses to parse a configuration without its compiled-in privilege
-# separation directory, and on a booted host systemd creates that directory
-# through `RuntimeDirectory=sshd`. This suite runs under `nspawn --pipe`, where
-# nothing boots, so on Debian the directory is simply absent and every ssh
-# oracle dies on "Missing privilege separation directory" before it can read a
-# single value. The container is not wrong; it has just never been booted.
-#
-# Create exactly the directory sshd names, and only when sshd names one: a
-# container that already has it is left untouched, and any other sshd complaint
-# is left for the oracle to report rather than being second-guessed here.
-require_sshd_privsep_dir() {
-    local complaint dir
-    # `if` rather than `sshd -t && return 0`: under `set -e` the exemption for a
-    # failing left operand does not extend to the status of the list itself.
-    if complaint=$(sshd -t 2>&1); then
-        return 0
-    fi
-    # sshd's message arrives carriage-return terminated under nspawn's console
-    # handling, and `mkdir "/run/sshd\r"` creates a directory sshd will never
-    # look for while the line reporting it reads exactly right. Strip the
-    # carriage returns, and any other surrounding blank, before the path is used
-    # for anything at all.
-    dir=$(printf '%s\n' "$complaint" | tr -d '\r' |
-        sed -n 's/^Missing privilege separation directory:[[:space:]]*//p' |
-        sed 's/[[:space:]]*$//' | head -1)
-    [[ -n "$dir" ]] || return 0
-    if ! mkdir -p "$dir" || ! chmod 0755 "$dir"; then
-        echo "FATAL: sshd needs the privilege separation directory $dir, and it" >&2
-        echo "  could not be created. Every ssh oracle reads through sshd, so a" >&2
-        echo "  run without it would compare nothing and print a clean summary." >&2
-        return 1
-    fi
-    # Creating it is not the same as fixing it. Ask sshd again rather than
-    # assume, and carry what it still says: a guard that reports a success it
-    # never observed is the exact failure this suite exists to catch, and the
-    # first version of this function shipped with that defect.
-    if complaint=$(sshd -t 2>&1); then
-        echo "Created sshd privilege separation directory $dir (nothing booted to create it)"
-        return 0
-    fi
-    echo "FATAL: created $dir, and sshd still refuses to parse a configuration:" >&2
-    printf '  %s\n' "$complaint" >&2
-    ls -ld "$dir" >&2 || echo "  and $dir does not stat" >&2
-    return 1
-}
+# The sshd privilege separation guard is shared with full-test-suite.sh and
+# the CLI walk, both of which reach sshd inside the same unbooted containers
+# and neither of which had it. Its self-test still lives in this file, below.
+# shellcheck source=../lib/sshd-privsep.sh
+source "$DIFF_PROJECT_DIR/scripts/lib/sshd-privsep.sh"
 
 # Refuse a binary that is absent or not executable, before apply rather than
 # after: half a destructive run tells nobody anything.

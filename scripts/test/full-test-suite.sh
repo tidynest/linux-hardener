@@ -18,6 +18,11 @@ set -uo pipefail
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Shared with differential-suite.sh and the CLI walk: all three reach sshd
+# inside containers that never boot. See the library for why that matters.
+# shellcheck source=../lib/sshd-privsep.sh
+source "$PROJECT_DIR/scripts/lib/sshd-privsep.sh"
 BINARY="${BINARY:-$PROJECT_DIR/target/x86_64-unknown-linux-musl/release/hardener}"
 [[ -x "$BINARY" ]] || BINARY="$PROJECT_DIR/target/release/hardener"
 LOG_FILE="/tmp/hardener-full-test-$(date +%Y%m%d-%H%M%S).log"
@@ -419,6 +424,21 @@ preflight_checks() {
         exit 1
     fi
     log_check "Version: $version"
+
+    # In pre-flight, because every SSH check below reads through sshd and this
+    # suite runs in the same unbooted containers the differential one does.
+    # Debian and Ubuntu create /run/sshd from `RuntimeDirectory=sshd` when
+    # systemd starts the unit, nothing boots here, and sshd then refuses every
+    # configuration it is given. The guard was written for the differential
+    # suite and lived inside it, so this suite ran without it and reported SSH
+    # coverage on two distributions where no SSH setting could be written.
+    if ! require_sshd_privsep_dir; then
+        log "${RED}ERROR: sshd has no usable privilege separation directory${NC}"
+        log "  Every SSH check reads through sshd, so the run would compare"
+        log "  nothing and print a clean summary."
+        exit 1
+    fi
+    log_check "sshd privilege separation directory present"
 
     # Before any section runs, because a shortened table makes every expectation
     # below it wrong and there is nothing to learn from a run measured against a
