@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`history list` rendered a whole fleet as one unlabelled timeline** (#162).
+  The text table had no host column, though the JSON beside it has always
+  carried `host_identifier` and `--host` exists as a filter. On the machine
+  that found this, eighteen of twenty rows were an SSH test container and two
+  were the desktop, and the plain reading of the table was that findings here
+  had fallen from 5 critical and 11 high to 0 critical and 1 high. Those are
+  two different machines, and nothing in the output said so: a security tool
+  misleading its user about the state of the box in front of them. The table now
+  names the host in a column of its own, beside the session id. Values are
+  padded and never truncated, because two machines that render identically are
+  the defect this column exists to fix. It also closes a discovery dead end:
+  `history trends` requires `--host`, and `history list` was the only surface
+  that could show a valid value. `total_findings` was deliberately not added
+  alongside it: the four severity columns already sum to it in every row, so a
+  fifth number would add width and no information. Found by the host CLI walk.
+
 - **The compliance report published a score without saying its scan was
   partial** (#161). `report` runs the same scan `scan` does, and `scan` is
   honest about what it could not reach: "28 check(s) could not be verified, 26

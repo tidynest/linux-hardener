@@ -56,3 +56,57 @@ fn find_regressions_flags_only_worse_latest() {
     assert_eq!(regs[0].previous_total, 1);
     assert_eq!(regs[0].current_total, 2);
 }
+
+/// The session table names the host each row belongs to, and its header lines
+/// up with its rows.
+///
+/// Until #162 there was no host column at all. On a machine that scans a
+/// fleet, `history list` rendered every host's sessions as one unlabelled
+/// timeline: eighteen rows from an SSH test container sat above two from this
+/// desktop, and the plain reading was that findings here had fallen from 5
+/// critical to 0. Two different machines, and nothing in the output said so.
+#[test]
+fn the_session_table_names_the_host_and_stays_aligned() {
+    let desktop = session("TidyNest", 1_786_604_777, 0, 1);
+    let container = session("root@10.242.117.2:22", 1_786_553_226, 5, 11);
+
+    let desktop_row = session_row(&desktop);
+    let container_row = session_row(&container);
+
+    assert!(
+        desktop_row.contains("TidyNest"),
+        "the row must name its host: {desktop_row:?}"
+    );
+    assert!(
+        container_row.contains("root@10.242.117.2:22"),
+        "a host identifier is not truncated, because two machines that render \
+         identically are the defect this column exists to fix: {container_row:?}"
+    );
+
+    // Alignment: the header's Host column has to start where the rows' does,
+    // or the column is decorative rather than readable.
+    //
+    // Sliced at the offset rather than searched for, because the fixture's
+    // session id is "{host}-{started_at}" and a search finds the host inside
+    // the id at position 0. That is what this assertion caught when it was
+    // written the obvious way.
+    let header_host = SESSION_TABLE_HEADER
+        .find("Host")
+        .expect("the header declares a Host column");
+    assert!(
+        desktop_row[header_host..].starts_with("TidyNest"),
+        "the value must begin under its own heading, at column {header_host}: \
+         {desktop_row:?}"
+    );
+    assert!(
+        container_row[header_host..].starts_with("root@10.242.117.2:22"),
+        "and so must a longer one: {container_row:?}"
+    );
+
+    // The counts still read across, and in the right order: a row that put
+    // high where crit belongs would satisfy every assertion above.
+    assert!(
+        container_row.trim_end().ends_with("5   11    0    0"),
+        "crit, high, med, low in that order: {container_row:?}"
+    );
+}

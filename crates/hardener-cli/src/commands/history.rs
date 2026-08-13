@@ -14,6 +14,49 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+/// Column header for the session table, and the width its rule is drawn to.
+///
+/// `Host` is second, beside the identity it qualifies. It was absent
+/// altogether until #162: on a machine that scans a fleet, `history list`
+/// rendered every host's sessions as one unlabelled timeline, so a run of the
+/// SSH test container sitting above two desktop scans read as this machine's
+/// findings falling from 5 critical to 0. Two different machines, and nothing
+/// in the output said so.
+///
+/// It also closes a discovery dead end. `history trends` requires `--host`,
+/// and `history list` is the only surface that could tell an operator what a
+/// valid value looks like, so the one command that needed to print host
+/// identifiers was the one that would not.
+const SESSION_TABLE_HEADER: &str = concat!(
+    "Session ID                            ",
+    "Host                      ",
+    "Started              ",
+    "Status      ",
+    "Trigger   ",
+    "Crit High  Med  Low",
+);
+
+/// One row of the session table, laid out to match [`SESSION_TABLE_HEADER`].
+///
+/// Values are padded, never truncated. A host identifier longer than its
+/// column pushes the row wide, which is ugly; truncating it could render two
+/// different machines identically, which is the defect this column exists to
+/// fix.
+fn session_row(session: &ScanSession) -> String {
+    format!(
+        "{:<36}  {:<24}  {:<19}  {:<10}  {:<8}  {:>4} {:>4} {:>4} {:>4}",
+        session.id,
+        session.host_identifier,
+        format_timestamp(session.started_at),
+        session.status,
+        session.trigger_type,
+        session.critical_count,
+        session.high_count,
+        session.medium_count,
+        session.low_count,
+    )
+}
+
 /// Lists recent scan sessions.
 pub async fn list(
     format: OutputFormat,
@@ -49,25 +92,11 @@ pub async fn list(
                 return Ok(());
             }
 
-            println!(
-                "{:<36}  {:<19}  {:<10}  {:<8}  {:>4} {:>4} {:>4} {:>4}",
-                "Session ID", "Started", "Status", "Trigger", "Crit", "High", "Med", "Low"
-            );
-            println!("{}", "-".repeat(100));
+            println!("{SESSION_TABLE_HEADER}");
+            println!("{}", "-".repeat(SESSION_TABLE_HEADER.len()));
 
             for session in &sessions {
-                let started = format_timestamp(session.started_at);
-                println!(
-                    "{:<36}  {:<19}  {:<10}  {:<8}  {:>4} {:>4} {:>4} {:>4}",
-                    session.id,
-                    started,
-                    session.status,
-                    session.trigger_type,
-                    session.critical_count,
-                    session.high_count,
-                    session.medium_count,
-                    session.low_count,
-                );
+                println!("{}", session_row(session));
             }
 
             if !quiet {
