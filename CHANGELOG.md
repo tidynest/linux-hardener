@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **CIS 1.6.1.4 reported PASS on a host with no MAC system at all** (#159).
+  One report stated, four lines apart, that no MAC system is installed and that
+  the MAC system's mode is correctly enforcing. The MAC plugin declares the
+  enforcement-mode control as covered, because `selinux-not-enforcing`,
+  `apparmor-complain-mode` and `apparmor-no-profiles` all map to it, but none of
+  those findings can fire on a host with no MAC system to be in the wrong mode,
+  and `no-mac-system` maps only to the installation control. The generator
+  passes a control that is assessed, unchecked by nothing, and carries no
+  finding, so the enforcement control passed on an absence that could never have
+  been a presence. The plugin now records the enforcement checks as unchecked
+  with an `Environment` blocker when no MAC system is detected, which routes
+  them to manual review. `Environment` and not `Privilege`: a MAC system that is
+  not installed stays not installed under sudo. Frameworks that express
+  installation and enforcement as one control, as NIST does with `AC-3`, were
+  never affected, because the `no-mac-system` finding reaches them directly and
+  a live finding still outranks an unchecked one. On the host that found this,
+  the CIS score falls from 70.5% to 68.2% as one inflated pass becomes a manual
+  review. Found by the host CLI walk.
+
 - **A remote `apply` on the nftables backend locked the operator out of the
   host it was hardening.** `enable` created the input chain with `policy drop`
   and no rules, and ran before `apply_rules` installed the baseline rule named

@@ -22,6 +22,7 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
 use tracing::{info, warn};
@@ -422,6 +423,34 @@ const MAC_FINDING_TYPES: &[&str] = &[
     "apparmor-complain-mode",
     "apparmor-no-profiles",
 ];
+
+/// The subset of [`MAC_FINDING_TYPES`] that can only fire when a MAC system is
+/// actually present: all three describe a mode, and a host with nothing
+/// installed has no mode to be in.
+///
+/// Their mappings are therefore exactly the controls that would auto-pass on
+/// such a host, because `coverage()` declares them assessed while no finding
+/// that reaches them can ever be raised. `no-mac-system` is deliberately not
+/// here: it maps to the *installation* control, which it does answer.
+const MAC_ENFORCEMENT_FINDING_TYPES: &[&str] = &[
+    "selinux-not-enforcing",
+    "apparmor-complain-mode",
+    "apparmor-no-profiles",
+];
+
+/// The mappings of every enforcement-mode finding, de-duplicated.
+///
+/// Three finding ids share CIS 1.6.1.4, so the flattened list repeats it;
+/// emitting the same control twice in one `unchecked_compliance` would be
+/// harmless to the generator's set and untidy in the JSON.
+fn mac_enforcement_mappings() -> Vec<ComplianceMapping> {
+    let mut seen = HashSet::new();
+    MAC_ENFORCEMENT_FINDING_TYPES
+        .iter()
+        .flat_map(|&t| get_mac_compliance_mappings(t))
+        .filter(|m| seen.insert((m.compliance_framework, m.compliance_control_id.clone())))
+        .collect()
+}
 
 /// Every compliance mapping this plugin can emit, across all finding types it
 /// raises. Aggregated into the engine's automated-coverage set.
@@ -837,6 +866,30 @@ impl HardeningPlugin for MacHardeningPlugin {
                     // a host that has no MAC system to enforce anything.
                     finding_exception: config.exception_outcome_for_presence(MAC_PRESENT_EXCEPTION),
                     finding_exception_key: Some(MAC_PRESENT_EXCEPTION.to_string()),
+                });
+
+                // The finding above answers "is a MAC system installed". It
+                // does not answer "is its mode enforcing", and on this host
+                // nothing can: the three findings that speak for the mode all
+                // need a MAC system to have a mode at all.
+                //
+                // Without this entry the generator sees controls that are
+                // assessed, unchecked by nothing, and carrying no finding, and
+                // passes them on the absence alone. CIS 1.6.1.4 therefore read
+                // Pass three lines below the 1.6.1.1 that failed for exactly
+                // the reason 1.6.1.4 could not be evaluated (#159).
+                unchecked.push(UncheckedCheck {
+                    unchecked_check_id: "mac-enforcement-mode".to_string(),
+                    unchecked_title: "MAC enforcement mode".to_string(),
+                    unchecked_category: FindingCategory::Kernel,
+                    unchecked_reason: "no MAC system is installed, so whether one is enforcing \
+                         cannot be determined"
+                        .to_string(),
+                    // Not `Privilege`: a MAC system that is not installed stays
+                    // not installed under sudo, so offering a privileged re-run
+                    // would be a wrong remedy.
+                    unchecked_blocker: UncheckedBlocker::Environment,
+                    unchecked_compliance: mac_enforcement_mappings(),
                 });
             }
         }

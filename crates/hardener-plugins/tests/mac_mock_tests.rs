@@ -8,7 +8,7 @@ use hardener_core::{
     PolicyException, SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::MacHardeningPlugin;
-use hardener_types::DeclineReason;
+use hardener_types::{ComplianceFramework, DeclineReason, UncheckedBlocker};
 use std::sync::Arc;
 
 /// Creates a mock executor with SELinux in enforcing mode.
@@ -1210,6 +1210,67 @@ async fn mac_scan_reports_undetectable_as_unchecked_not_absent() {
     assert!(
         !unchecked.unchecked_compliance.is_empty(),
         "the unchecked entry must carry the mappings, so its controls reach manual review"
+    );
+}
+
+/// A host with no MAC system cannot be asked whether its MAC mode is
+/// enforcing, and saying nothing about that is not the same as saying it is
+/// fine.
+///
+/// The enforcement-mode controls are declared in this plugin's `coverage()`,
+/// because `selinux-not-enforcing`, `apparmor-complain-mode` and
+/// `apparmor-no-profiles` all map to them. None of those ids can fire when
+/// there is no MAC system to be in the wrong mode, and `no-mac-system` maps
+/// only to the *installation* control. The generator passes a control that is
+/// assessed, unchecked by nothing, and carries no finding, so CIS 1.6.1.4
+/// reported `Pass` on a host that has no MAC system at all, three lines under
+/// the 1.6.1.1 that correctly failed for exactly that reason (#159).
+///
+/// Recording the unreachable checks as unchecked is what routes them to manual
+/// review instead. `Environment` rather than `Privilege`: a MAC system that is
+/// not installed stays not installed under sudo.
+#[tokio::test]
+async fn mac_scan_reports_enforcement_unchecked_when_no_mac_system_exists() {
+    let ctx = Context::with_executor(Arc::new(no_mac_executor()));
+    let plugin = MacHardeningPlugin::new();
+
+    let result = plugin.scan(&ctx, &PluginConfig::default()).await.unwrap();
+
+    assert!(
+        result
+            .scan_findings
+            .iter()
+            .any(|f| f.finding_id == "no-mac-system"),
+        "absence is still asserted as a finding; this test is about what \
+         accompanies it"
+    );
+
+    let enforcement = result
+        .scan_unchecked
+        .iter()
+        .find(|u| u.unchecked_check_id == "mac-enforcement-mode")
+        .expect(
+            "a host with no MAC system must report the enforcement-mode check \
+             as unchecked, or its controls auto-pass on the absence of a \
+             finding that could never fire",
+        );
+
+    assert_eq!(
+        enforcement.unchecked_blocker,
+        UncheckedBlocker::Environment,
+        "no MAC system installed survives a privileged re-run, so offering \
+         sudo would be a wrong remedy"
+    );
+
+    // The mappings are the whole point: without them the entry reaches the
+    // generator's unchecked set under no control id and changes nothing.
+    assert!(
+        enforcement.unchecked_compliance.iter().any(|m| {
+            m.compliance_framework == ComplianceFramework::CIS
+                && m.compliance_control_id == "1.6.1.4"
+        }),
+        "the entry must carry CIS 1.6.1.4, the control that was passing \
+         vacuously"
     );
 }
 
