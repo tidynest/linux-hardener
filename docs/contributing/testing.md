@@ -114,6 +114,7 @@ sudo ./scripts/containers/create-container.sh arch clean         # Remove contai
 | `fedora` | `hardener-test-fedora` |
 | `rhel` (Rocky Linux, RHEL-compatible) | `hardener-test-rhel` |
 | `opensuse` | `hardener-test-opensuse` |
+| `arch-nftables` (fixture variant, not in `DISTRO_ORDER`) | `hardener-test-nftables` |
 
 **The Ubuntu container is the newest entry and no suite has been run inside it.**
 It takes the Debian family's code path and the same `debootstrap` bootstrap,

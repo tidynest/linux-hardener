@@ -698,6 +698,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A fixture that reaches the pure-nftables firewall path, and the oracle
+  arms it makes askable** (#47). All six standard containers select ufw or
+  firewalld: arch and debian find no active backend and fall back to ufw, while
+  fedora, rhel and openSUSE choose firewalld. Nothing could exercise the
+  plugin's nftables branch, so the differential suite's `firewall_backend_kind`
+  read a pure-nftables ruleset as `none` and its default-drop row recorded a
+  failure. `create-container.sh arch-nftables` is the same Arch bootstrap with
+  ufw left out; with no ufw and no firewalld installed, nftables is the only
+  backend `classify_installed` finds and `detect_backend` selects it whether or
+  not it is active. It is a second Arch rather than a seventh distribution and
+  is deliberately absent from `DISTRO_ORDER`, so no cross-distro runner's
+  container count, timings or expected totals move. The fixture came first and
+  the oracle second, in that order, because an oracle taught to recognise a
+  state no fixture produces is a check nothing exercises, which is the vacuity
+  this suite exists to remove. `firewall_backend_kind` names nftables last of
+  the three, since this tool's table can coexist with ufw's or firewalld's and
+  the backend that matters is the one managing traffic;
+  `firewall_default_is_drop` asks the input hook by name rather than matching
+  `policy drop` anywhere, because the forward chain carries it too and a
+  ruleset dropping only forwarded traffic would otherwise read as hardened. The
+  priority is left unconstrained, since `nft list ruleset` prints a well-known
+  priority back by name and pinning the literal the tool writes would make the
+  arm match the tool's file instead of the kernel's answer.
+
 - **Contrast checking can now see colour-only rules** (#158).
   `validate_contrast.py` weighs only rules declaring both a text colour and a
   background in the same block, and its docstring says why a wider static parse

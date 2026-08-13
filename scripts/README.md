@@ -975,6 +975,7 @@ done
 | Fedora | `/var/lib/machines/hardener-test-fedora` |
 | RHEL/Rocky | `/var/lib/machines/hardener-test-rhel` |
 | openSUSE | `/var/lib/machines/hardener-test-opensuse` |
+| Arch, nftables only | `/var/lib/machines/hardener-test-nftables` |
 
 > **Note:** The RHEL/Rocky container is optional - Fedora validation covers the entire Red Hat family.
 
@@ -1376,6 +1377,7 @@ environment declares the run booted.
 | fedora | `/var/lib/machines/hardener-test-fedora` | podman export |
 | rhel | `/var/lib/machines/hardener-test-rhel` | podman export (Rocky 10) |
 | opensuse | `/var/lib/machines/hardener-test-opensuse` | podman export (Leap 16.0 image) |
+| arch-nftables | `/var/lib/machines/hardener-test-nftables` | pacstrap, ufw left out (#47) |
 
 **Output Files**:
 ```

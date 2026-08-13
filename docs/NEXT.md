@@ -53,9 +53,13 @@ pass. Do not quote a check total from this file: `expected_check_total` in that
 script is the live count, and the comment above it traces how each block arrived
 at its size. Issue #47 tracked extending the oracle to the remaining six
 plugins; all eight are now in the compared set, two of them with a ceiling
-stated in the oracle. It stays open, retitled, for the one fixture that is
-left: a container reaching the pure-nftables path, so `firewall_backend_kind`'s
-`none` arm stops being unreachable.
+stated in the oracle. The one fixture that was left, a container reaching the
+pure-nftables path, now exists as `create-container.sh arch-nftables`: the same
+Arch bootstrap with ufw left out, so nftables is the only backend the plugin
+can select. `firewall_backend_kind` and `firewall_default_is_drop` gained their
+nftables arms alongside it, in that order, because an oracle taught to
+recognise a state no fixture produces is a check nothing exercises. **Neither
+has been run**: building the container needs root.
 
 **Everything below this line shipped in v1.5.0 or earlier.** v1.5.1 followed on
 the same day, 2026-07-27, and is the current release: it made `scan --exit-code`

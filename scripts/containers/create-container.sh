@@ -10,6 +10,9 @@
 #   fedora   -> hardener-test-fedora
 #   rhel     -> hardener-test-rhel
 #   opensuse -> hardener-test-opensuse
+# Plus one fixture variant, which is a second Arch rather than a seventh
+# distribution and is deliberately absent from DISTRO_ORDER:
+#   arch-nftables -> hardener-test-nftables
 #
 # Usage:
 #   sudo ./scripts/containers/create-container.sh <distro>        # Create container
@@ -50,6 +53,12 @@ Distros:
   fedora    Fedora 44 (podman image export)           -> hardener-test-fedora
   rhel      Rocky Linux 10 (podman image export)      -> hardener-test-rhel
   opensuse  openSUSE Leap 16.0 (podman image export)  -> hardener-test-opensuse
+
+Fixture variants:
+  arch-nftables  Arch with ufw left out           -> hardener-test-nftables
+                 Same bootstrap as arch. With no ufw and no firewalld,
+                 nftables is the only backend the plugin can select, which is
+                 the path none of the six standard fixtures reaches (#47).
 
 Commands:
   (none)    Create new test container
@@ -108,6 +117,12 @@ EOF
 # recreate loop would sit waiting for a keypress nobody is there to give.
 # --help and -h are deliberately let through, being handled as verbs below.
 NO_CONFIRM=false
+# Which bootstrap function runs, and whether the Arch one installs ufw. Both
+# are overridden only by `arch-nftables`, which shares Arch's bootstrap rather
+# than duplicating it: a second copy of a pacstrap line is how one of them
+# acquires a package the other never gets.
+BOOTSTRAP_DISTRO=""
+ARCH_INSTALL_UFW=true
 POSITIONAL=()
 for arg in "$@"; do
     case "$arg" in
@@ -133,6 +148,21 @@ case "$DISTRO" in
         EXIT_HINT="Exit with 'exit' or Ctrl+D"
         DEPS=("pacstrap:arch-install-scripts" "systemd-nspawn:systemd")
         POST_CREATE_NOTE=""
+        ;;
+    arch-nftables)
+        # The same Arch bootstrap with ufw left out (#47). All six standard
+        # fixtures reach ufw or firewalld, so the plugin's nftables branch and
+        # the differential suite's nftables oracle had nothing to run against.
+        # With ufw absent and firewalld never installed on Arch, nftables is
+        # the only backend `classify_installed` finds, so `detect_backend`
+        # selects it whether or not it is active.
+        CONTAINER_NAME="${CONTAINERS[arch-nftables]}"
+        DISTRO_LABEL="Arch Linux (nftables only)"
+        EXIT_HINT="Exit with 'exit' or Ctrl+D"
+        DEPS=("pacstrap:arch-install-scripts" "systemd-nspawn:systemd")
+        BOOTSTRAP_DISTRO="arch"
+        ARCH_INSTALL_UFW=false
+        POST_CREATE_NOTE="Note: ufw is deliberately absent; nftables is the only backend"
         ;;
     debian)
         DEBIAN_RELEASE="trixie"  # Debian 13
@@ -196,13 +226,13 @@ Note: Rocky Linux (RHEL) uses SELinux (limited in container)"
         ;;
     "")
         log_error "Missing distro argument"
-        echo "Distros: arch debian ubuntu fedora rhel opensuse"
+        echo "Distros: arch debian ubuntu fedora rhel opensuse arch-nftables"
         echo "Usage: sudo $0 <distro> [enter|shell|clean|help]"
         exit 1
         ;;
     *)
         log_error "Unknown distro: $DISTRO"
-        echo "Distros: arch debian ubuntu fedora rhel opensuse"
+        echo "Distros: arch debian ubuntu fedora rhel opensuse arch-nftables"
         echo "Usage: sudo $0 <distro> [enter|shell|clean|help]"
         exit 1
         ;;
@@ -359,9 +389,16 @@ podman_export_rootfs() {
 bootstrap_arch() {
     # Bootstrap minimal Arch system
     mkdir -p "$CONTAINER_PATH"
+    # ufw is the one package the arch-nftables variant leaves out, and leaving
+    # it out is the whole point of that fixture: with no ufw and no firewalld,
+    # nftables is the only backend the plugin can select. iptables stays, since
+    # it is not a backend in its own right and removing it would change more
+    # than the question being asked.
+    local firewall_packages=(iptables nftables)
+    [[ "$ARCH_INSTALL_UFW" == true ]] && firewall_packages+=(ufw)
     # bluez gives service-minimisation a unit to assess; see enable_test_services.
     pacstrap -c "$CONTAINER_PATH" base base-devel \
-        openssh audit bluez ufw iptables nftables \
+        openssh audit bluez "${firewall_packages[@]}" \
         sudo polkit jq --noconfirm
 
     # Set up container
@@ -690,7 +727,7 @@ create_container() {
     fi
 
     log_info "Creating $DISTRO_LABEL container at $CONTAINER_PATH..."
-    "bootstrap_$DISTRO"
+    "bootstrap_${BOOTSTRAP_DISTRO:-$DISTRO}"
 
     # Create bind mount point for project
     mkdir -p "$CONTAINER_PATH/project"

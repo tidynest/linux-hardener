@@ -85,6 +85,17 @@ declare -A CONTAINERS=(
     [fedora]="hardener-test-fedora"
     [rhel]="hardener-test-rhel"
     [opensuse]="hardener-test-opensuse"
+    # An Arch bootstrap with ufw left out, so nftables is the only firewall
+    # backend installed and the plugin has to select it (#47). Every one of the
+    # six above reaches ufw or firewalld instead, so the plugin's nftables path
+    # and the differential suite's nftables oracle had no fixture that could
+    # exercise them.
+    #
+    # Deliberately NOT in DISTRO_ORDER. It is a second Arch rather than a
+    # seventh distribution, and adding it there would change the container
+    # count, the timings and the expected totals of every cross-distro runner
+    # for a fixture that answers one question.
+    [arch-nftables]="hardener-test-nftables"
 )
 # Ubuntu sits beside Debian because it takes the Debian family's code path and
 # the same bootstrap. It is the newest entry and no run of any suite against it

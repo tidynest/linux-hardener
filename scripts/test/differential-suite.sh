@@ -2338,6 +2338,13 @@ firewall_backend_kind() {
         printf 'firewalld'
     elif [[ "$snapshot" == *"ufw-before-input"* || "$snapshot" == *"ufw-user-input"* ]]; then
         printf 'ufw'
+    elif [[ "$snapshot" == *"table inet linux_hardener"* ]]; then
+        # This tool's own table (#47). Named LAST of the three on purpose: on a
+        # host where ufw or firewalld is in force this table can coexist with
+        # theirs, and the backend that matters is the one managing traffic, not
+        # whichever the tool happens to have written once. Only where neither
+        # of the other two appears does this table mean nftables is the backend.
+        printf 'nftables'
     else
         printf 'none'
     fi
@@ -2360,6 +2367,22 @@ firewall_default_is_drop() {
             # pre-apply capture holds `reject with icmpx admin-prohibited` in
             # those positions instead, which is what makes this discriminating.
             grep -qE '^[[:space:]]+drop$' <<< "$snapshot"
+            ;;
+        nftables)
+            # The third spelling of the one property. The base chain carries
+            # the policy inline with its hook declaration, so this asks the
+            # input hook specifically rather than matching `policy drop`
+            # anywhere: the forward chain carries it too, and a ruleset that
+            # dropped forwarded traffic while accepting inbound would otherwise
+            # read as hardened.
+            #
+            # The priority is deliberately unconstrained. The tool writes
+            # `priority 0` (firewall/nftables.rs), and `nft list ruleset` prints
+            # a well-known priority back by NAME, so the same chain reads
+            # `priority filter` off a live host. Pinning the literal the tool
+            # writes would make this arm match the tool's file and never the
+            # kernel's answer, which is the one thing an oracle must not do.
+            grep -qE '^[[:space:]]*type filter hook input priority [^;]+;[[:space:]]*policy drop;' <<< "$snapshot"
             ;;
         *) return 1 ;;
     esac
@@ -2441,11 +2464,15 @@ firewall_boot_reading() {
 # debian's firewall survived a reboot on 9b400b9 before the repair in 61a33f9
 # existed and arch's did not. Two rows read as evidence where one was.
 #
-# These have to stay the units of the two backends firewall_backend_kind can
-# name, and no code path makes them: the self-test reads that function's own
-# body back and compares, and the boot-persistence row says so in its message
-# when the two come apart during a run.
-FIREWALL_UNIT_CANDIDATES=(firewalld ufw)
+# These have to stay the units of the backends firewall_backend_kind can name,
+# in the same order, and no code path makes them: the self-test reads that
+# function's own body back and compares, and the boot-persistence row says so
+# in its message when the two come apart during a run.
+#
+# `nftables` is the unit name the tool itself returns
+# (crates/hardener-plugins/src/firewall/nftables.rs:838), taken from there for
+# the same reason as the other two rather than assumed from the kind.
+FIREWALL_UNIT_CANDIDATES=(firewalld ufw nftables)
 
 # Those units asked before the apply, as space-separated `<unit>|<word>` pairs.
 # Neither a unit name nor a word systemd prints carries whitespace, and the
@@ -7433,10 +7460,51 @@ password required pam_unix.so"
 === iptables policies ===
 -P INPUT ACCEPT'
 
+    # The nftables pair (#47). Unlike the four above, these are NOT trimmed
+    # from a live container: no fixture that reaches this path existed until
+    # `create-container.sh arch-nftables`, and that container has not been
+    # built. They are written from the ruleset the tool itself emits
+    # (crates/hardener-plugins/src/firewall/nftables.rs), so they prove the
+    # oracle agrees with the tool and NOT yet that either agrees with the
+    # kernel. Replace them with real `nft list ruleset` output on the first run
+    # that has one, and expect the priority to come back as `filter`, which is
+    # exactly why the AFTER fixture spells it that way and the BEFORE spells it
+    # `0`: both have to match, and one fixture using each says so.
+    local fw_nftables_after='table inet linux_hardener {
+        chain input {
+                type filter hook input priority filter; policy drop;
+                ct state { established, related } accept
+                iifname "lo" accept
+                tcp dport 22 accept
+        }
+
+        chain forward {
+                type filter hook forward priority filter; policy drop;
+        }
+}
+=== iptables policies ===
+-P INPUT ACCEPT'
+
+    local fw_nftables_before='table inet linux_hardener {
+        chain input {
+                type filter hook input priority 0; policy accept;
+        }
+
+        chain forward {
+                type filter hook forward priority 0; policy drop;
+        }
+}
+=== iptables policies ===
+-P INPUT ACCEPT'
+
     check_eq "$(firewall_backend_kind "$fw_ufw_after")" "ufw" \
         "a ufw ruleset is recognised by its own chains"
     check_eq "$(firewall_backend_kind "$fw_firewalld_after")" "firewalld" \
         "a firewalld ruleset is recognised by its table"
+    check_eq "$(firewall_backend_kind "$fw_nftables_after")" "nftables" \
+        "a ruleset carrying only this tool's own table names nftables"
+    check_eq "$(firewall_backend_kind "$fw_nftables_after$fw_ufw_after")" "ufw" \
+        "and where ufw is also in force, ufw wins: the backend that matters is the one managing traffic"
     check_eq "$(firewall_backend_kind "")" "none" \
         "an empty ruleset names no backend rather than guessing one"
 
@@ -7451,6 +7519,14 @@ password required pam_unix.so"
         firewall_default_is_drop "$fw_firewalld_after"
     check_status 1 "firewalld before apply rejects rather than drops, which is not the target" \
         firewall_default_is_drop "$fw_firewalld_before"
+    check_status 0 "nftables after apply drops inbound by default" \
+        firewall_default_is_drop "$fw_nftables_after"
+    # The BEFORE fixture drops on FORWARD and accepts on INPUT. A pattern
+    # matching `policy drop` anywhere passes it, and would call a host hardened
+    # while every inbound packet is still accepted. That is the whole reason
+    # this arm asks the input hook by name.
+    check_status 1 "nftables dropping only on forward is not inbound default-drop" \
+        firewall_default_is_drop "$fw_nftables_before"
 
     # The measured trap: firewalld's BEFORE holds every rule its AFTER holds
     # except the target, so a check reading presence rather than the target
@@ -7509,14 +7585,18 @@ password required pam_unix.so"
         case "$2" in
             firewalld) printf 'not-found\n'; return 1 ;;
             ufw) printf '  disabled \n'; return 1 ;;
+            # A third distinct word, and the only one exiting 0. Answering the
+            # same word for two units could not tell "asked each" apart from
+            # "asked one and copied its answer along the list".
+            nftables) printf 'enabled\n'; return 0 ;;
             *) printf 'unexpected-unit\n'; return 1 ;;
         esac
     }
-    check_eq "$(firewall_boot_readings_before)" "firewalld|not-found ufw|disabled" \
+    check_eq "$(firewall_boot_readings_before)" "firewalld|not-found ufw|disabled nftables|enabled" \
         "the before reading asks every candidate unit and pairs each answer with the unit it came from"
     unset -f systemctl
 
-    # The candidate list and firewall_backend_kind name the same two backends,
+    # The candidate list and firewall_backend_kind name the same backends,
     # and each is written out by hand. Read the kinds back out of that
     # function's own body so the two cannot drift apart in silence: a third
     # backend taught to it alone would otherwise get no before reading at all,
@@ -7525,8 +7605,8 @@ password required pam_unix.so"
     # branch in run_firewall_checks covers.
     local fw_kinds
     fw_kinds="$(declare -f firewall_backend_kind | sed -nE "s/.*printf '([a-z]+)'.*/\1/p" | tr '\n' ' ')"
-    check_eq "${FIREWALL_UNIT_CANDIDATES[*]}" "firewalld ufw" \
-        "the units asked before apply are pinned to their two literals"
+    check_eq "${FIREWALL_UNIT_CANDIDATES[*]}" "firewalld ufw nftables" \
+        "the units asked before apply are pinned to their three literals"
     check_eq "${fw_kinds% }" "${FIREWALL_UNIT_CANDIDATES[*]} none" \
         "and they are exactly the backends firewall_backend_kind can name, plus its no-backend case"
 
