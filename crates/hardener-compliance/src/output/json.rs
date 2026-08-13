@@ -15,6 +15,14 @@ struct JsonReport<'a> {
     report_framework_name: &'static str,
     /// Description of the framework.
     report_framework_description: &'static str,
+    /// The profile whose control identifier scheme this report used.
+    ///
+    /// Not cosmetic: `--profile rhel10` and `--profile generic` under the same
+    /// framework produce completely disjoint control id sets, so without this
+    /// a consumer archiving evidence cannot tell which scheme a stored report
+    /// speaks. The text, HTML and PDF renderers have always said so in their
+    /// title; JSON did not (#163).
+    report_profile: &'a hardener_common::types::ComplianceProfile,
     /// When this report was generated.
     report_generated_at: &'a chrono::DateTime<chrono::Utc>,
     /// Individual control check results.
@@ -38,6 +46,7 @@ impl<'a> JsonReport<'a> {
             report_framework: &report.report_framework,
             report_framework_name: report.report_framework.full_name(),
             report_framework_description: report.report_framework.description(),
+            report_profile: &report.report_profile,
             report_generated_at: &report.report_generated_at,
             report_controls: &report.report_controls,
             report_summary: &report.report_summary,

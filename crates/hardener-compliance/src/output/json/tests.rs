@@ -80,3 +80,57 @@ fn test_json_formatter_pretty() {
     assert!(output.contains('\n'));
     assert!(output.contains("  ")); // Indentation
 }
+
+/// The machine-readable renderers name the profile whose identifier scheme
+/// they used.
+///
+/// `report --framework stig --profile rhel10` and `--profile generic` produce
+/// completely disjoint control id sets: 25 controls of the form
+/// `RHEL-10-200531` against 22 of another scheme, 47 differing lines and not
+/// one in common. The text, HTML and PDF renderers say which, through
+/// `report_title`. JSON and CSV did not, so two runs that agree on nothing
+/// produced byte-indistinguishable metadata and a consumer archiving evidence
+/// could not tell which scheme a stored report used (#163).
+#[test]
+fn json_names_the_profile_it_rendered() {
+    let report_for = |profile| ComplianceReport {
+        report_framework: ComplianceFramework::STIG,
+        report_profile: profile,
+        report_coverage_note: None,
+        report_generated_at: Utc::now(),
+        report_controls: vec![],
+        report_summary: ComplianceSummary {
+            summary_total_controls: 0,
+            summary_passing: 0,
+            summary_failing: 0,
+            summary_not_applicable: 0,
+            summary_manual_review: 0,
+            summary_score_percentage: 100.0,
+        },
+    };
+
+    let formatter = JsonFormatter::pretty();
+    let generic = formatter.format(&report_for(ComplianceProfile::Generic));
+    let rhel10 = formatter.format(&report_for(ComplianceProfile::Rhel10));
+
+    assert!(
+        generic.contains("report_profile"),
+        "the field must be present, not merely differ: {generic}"
+    );
+
+    // The two must be distinguishable. Comparing the rendered documents rather
+    // than asserting a spelling means this still holds if the serialised
+    // representation changes, and fails if the field is emitted as a constant.
+    let strip = |s: &str| {
+        s.lines()
+            .filter(|l| !l.contains("report_generated_at"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_ne!(
+        strip(&generic),
+        strip(&rhel10),
+        "two profiles with disjoint control id schemes must not render \
+         identical JSON"
+    );
+}

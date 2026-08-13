@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The JSON and CSV reports did not say which profile they used** (#163).
+  Under one framework, `--profile rhel10` and `--profile generic` produce
+  completely disjoint control identifier sets: for STIG, 25 controls of the form
+  `RHEL-10-200531` against 22 of another scheme, 47 differing lines and not one
+  in common. The text, HTML and PDF renderers have always named the profile in
+  their title, through `report_title`. JSON and CSV did not, so two runs that
+  agree on nothing produced indistinguishable metadata and a consumer archiving
+  compliance evidence could not tell which scheme a stored report speaks. The
+  renderer that can say so was the one nobody parses. JSON gains
+  `report_profile`; CSV gains a `Profile` column, appended rather than placed
+  beside the framework columns it belongs with, because a consumer splitting on
+  commas reads by position and an inserted column would silently shift Status
+  and Finding Count. CSV writes it per row rather than per file, since
+  `format_all` concatenates several reports under one header and nothing says
+  they share a profile. Found by the host CLI walk; the CSV half was found while
+  fixing the JSON half.
+
 - **`history list` rendered a whole fleet as one unlabelled timeline** (#162).
   The text table had no host column, though the JSON beside it has always
   carried `host_identifier` and `--host` exists as a filter. On the machine

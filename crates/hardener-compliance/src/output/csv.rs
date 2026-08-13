@@ -22,7 +22,10 @@ impl Default for CsvFormatter {
     }
 }
 
-const CSV_HEADER: &str = "Framework,Framework Name,Framework Description,Control ID,Control Title,Section,Status,Finding Count\n";
+/// Profile is appended rather than placed beside the framework columns it
+/// belongs with, because a consumer splitting on commas reads by position and
+/// an inserted column would silently shift Status and Finding Count.
+const CSV_HEADER: &str = "Framework,Framework Name,Framework Description,Control ID,Control Title,Section,Status,Finding Count,Profile\n";
 
 impl ReportFormatter for CsvFormatter {
     fn format(&self, report: &ComplianceReport) -> String {
@@ -44,6 +47,9 @@ fn write_report_rows(output: &mut String, report: &ComplianceReport) {
     let framework_escaped = escape_csv_field(&report.report_framework.to_string());
     let framework_name = escape_csv_field(report.report_framework.full_name());
     let framework_description = escape_csv_field(report.report_framework.description());
+    // Per row, not per file: `format_all` concatenates several reports under
+    // one header, and nothing says they share a profile.
+    let profile = escape_csv_field(&report.report_profile.to_string());
 
     for control in &report.report_controls {
         let status_str = match control.control_status {
@@ -64,7 +70,7 @@ fn write_report_rows(output: &mut String, report: &ComplianceReport) {
             .count();
 
         output.push_str(&format!(
-            "{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{}\n",
             framework_escaped,
             framework_name,
             framework_description,
@@ -73,6 +79,7 @@ fn write_report_rows(output: &mut String, report: &ComplianceReport) {
             escape_csv_field(&control.control_section),
             status_str,
             live_findings,
+            profile,
         ));
     }
 }
