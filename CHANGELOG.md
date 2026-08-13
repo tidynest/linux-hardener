@@ -1663,6 +1663,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The SSH restart fallback asked for Debian's service name everywhere.**
+  `restart_ssh_service` tries `systemctl restart sshd` first, which is correct
+  on every distribution because Debian ships `sshd.service` as an alias, and
+  falls back to the `service` command when that fails. The fallback asked for
+  `service ssh restart`: Debian's init script name, and not the one the Red Hat
+  family or openSUSE use. Reachable only on a host with no working systemd,
+  since a booted one never needs the fallback, so the effect was confined to
+  non-systemd Rocky, Fedora and SUSE hosts, which were told to restart a
+  service that does not exist there and got a message naming that absence
+  rather than the real problem. It now tries `sshd` and then `ssh`, and when
+  neither works the error names both attempts rather than only the last, which
+  would have sent an operator after the wrong init script. Found by reading the
+  one row the cross-distribution walk's exit-code pointer flagged; the
+  containers show the shape of it but cannot prove it, because they fail on not
+  having booted rather than on the unit name.
+
 - **`apply` counted SSH directives it never wrote.** When `sshd -t` rejects the
   candidate configuration the plugin aborts before touching the live file,
   which is the behaviour that makes a lockout impossible and is not in

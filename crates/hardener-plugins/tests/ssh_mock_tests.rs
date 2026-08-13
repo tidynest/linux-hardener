@@ -1037,6 +1037,102 @@ async fn ssh_remote_root_apply_downgrades_permitrootlogin_to_prohibit_password()
     );
 }
 
+/// An executor whose systemctl refuses, so the `service` fallback is the only
+/// route left. `apply_ready_executor` answers systemctl successfully, and the
+/// fallback is unreachable until that is overridden.
+fn service_fallback_executor(config: &str) -> MockExecutor {
+    apply_ready_executor(config)
+        .remote()
+        .with_command("id", &["-u"], ok_output("0\n"))
+        .with_command(
+            "systemctl",
+            &["restart", "sshd"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "System has not been booted with systemd as init system (PID 1)."
+                    .to_string(),
+                exit_code: 1,
+            },
+        )
+}
+
+/// The `service` fallback has to know the Red Hat family's name for sshd.
+///
+/// `systemctl restart sshd` is right everywhere, because Debian ships
+/// `sshd.service` as an alias, so this fallback is reached only on a host with
+/// no working systemd. There the init script is `ssh` on Debian and `sshd` on
+/// the Red Hat family, and the fallback asked for Debian's name on every
+/// distribution: a non-systemd Rocky or Fedora host was told to restart a
+/// service that does not exist there. Only the Red Hat name answers here, so a
+/// fallback that asks for `ssh` alone cannot pass this.
+#[tokio::test]
+async fn ssh_apply_restart_falls_back_to_the_red_hat_service_name() {
+    let executor = service_fallback_executor("# minimal config\n").with_command(
+        "service",
+        &["sshd", "restart"],
+        ok_output(""),
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result.apply_success,
+        "the fallback must reach sshd under the Red Hat name: {result:?}"
+    );
+}
+
+/// And the Debian name has to keep working, because that is the one the
+/// fallback used to ask for and the only one it was ever proved against.
+#[tokio::test]
+async fn ssh_apply_restart_falls_back_to_the_debian_service_name() {
+    let executor = service_fallback_executor("# minimal config\n").with_command(
+        "service",
+        &["ssh", "restart"],
+        ok_output(""),
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        result.apply_success,
+        "the fallback must reach sshd under the Debian name: {result:?}"
+    );
+}
+
+/// When no name works the failure must name both attempts. Reporting only the
+/// last would send an operator looking for the wrong init script, and reporting
+/// only the first would hide that the other was tried at all.
+#[tokio::test]
+async fn ssh_apply_restart_failure_names_both_service_attempts() {
+    let executor = service_fallback_executor("# minimal config\n")
+        .with_command(
+            "service",
+            &["sshd", "restart"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "sshd: unrecognized service".to_string(),
+                exit_code: 1,
+            },
+        )
+        .with_command(
+            "service",
+            &["ssh", "restart"],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "ssh: unrecognized service".to_string(),
+                exit_code: 1,
+            },
+        );
+
+    let result = run_ssh_apply(&executor).await;
+
+    let reported = format!("{:?}", result.apply_changes);
+    assert!(
+        reported.contains("sshd: unrecognized service") && reported.contains("ssh: unrecognized"),
+        "both attempts must appear in the failure, got: {reported}"
+    );
+}
+
 /// A candidate `sshd -t` rejects must leave nothing counted as applied.
 ///
 /// The gate runs ahead of the first write precisely so a bad candidate touches

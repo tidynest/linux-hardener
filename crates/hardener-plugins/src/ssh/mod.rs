@@ -488,26 +488,43 @@ impl SshHardeningPlugin {
             }
         }
 
-        // Fallback to service command.
-        let service_result = ctx
-            .executor()
-            .execute_command("service", &["ssh", "restart"])
-            .await;
-
-        match service_result {
-            Ok(output) if output.success() => {
-                info!("SSH service restarted successfully via service command");
-                Ok(())
+        // Fallback to the service command, under both names the families use.
+        //
+        // Only reachable once systemctl has already failed, so the host has no
+        // working systemd and its init script is what matters: Debian calls it
+        // `ssh`, the Red Hat family and openSUSE call it `sshd`. This asked for
+        // Debian's name on every distribution, so a non-systemd Rocky or Fedora
+        // host was told to restart a service that does not exist there, and the
+        // message it got back named that absence rather than the real problem.
+        // Trying both costs one extra process on the host where the first name
+        // is wrong, which is cheaper and far more predictable than detecting
+        // the distribution to choose.
+        //
+        // `sshd` first, to match the systemctl attempt above; the divergence
+        // probe is tied to that same name and says so at `divergence.rs`.
+        let mut attempts = Vec::new();
+        for unit in ["sshd", "ssh"] {
+            match ctx
+                .executor()
+                .execute_command("service", &[unit, "restart"])
+                .await
+            {
+                Ok(output) if output.success() => {
+                    info!("SSH service restarted successfully via `service {unit} restart`");
+                    return Ok(());
+                }
+                Ok(output) => attempts.push(format!("`service {unit} restart`: {}", output.stderr)),
+                Err(e) => attempts.push(format!("`service {unit} restart`: {e:#}")),
             }
-            Ok(output) => Err(hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to restart SSH service: {}",
-                output.stderr
-            ))),
-            Err(e) => Err(hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to execute service restart command: {:#}",
-                e
-            ))),
         }
+
+        // Every attempt, not just the last. Reporting one would send an
+        // operator after the wrong init script, and reporting the last would
+        // hide that the other name was tried at all.
+        Err(hardener_common::error::HardeningError::Plugin(format!(
+            "Failed to restart SSH service: {}",
+            attempts.join("; ")
+        )))
     }
 }
 
