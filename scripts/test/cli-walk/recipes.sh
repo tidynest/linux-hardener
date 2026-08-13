@@ -11,9 +11,11 @@
 # unable to read the root-owned checkpoint database and saying nothing.
 #
 # phase kind "ro" means the recipe does not modify SYSTEM state, so it is safe
-# to repeat in the pristine, applied and restored snapshots. Two ro recipes do
-# write files (report, history export); both are directed into the capture
-# directory rather than a system path.
+# to repeat in the pristine, applied and restored snapshots. Some ro recipes do
+# write files (report, history export, scan); report and history export are
+# directed into the capture directory rather than a system path. Scan persists a
+# session to the history database, but this is application bookkeeping, not
+# system state, so it remains ro and safe to repeat across phases.
 # =============================================================================
 
 RECIPE_SLUGS=()

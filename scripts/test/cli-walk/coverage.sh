@@ -48,16 +48,32 @@ for cmd in "${TOP[@]}"; do
 done
 
 covered() {
-    local target="$1" i argv first second
+    local target="$1" i argv first second cmd_idx
+    # Value-taking global flags are explicit to avoid guessing whether a flag
+    # takes a value. Stacking, boolean flags, and new flags all handled by this
+    # loop walk.
+    local -r value_taking_flags=(--ssh --format -f --config -C)
+
     for i in "${!RECIPE_SLUGS[@]}"; do
         mapfile -t argv <<< "${RECIPE_ARGV[$i]}"
-        first="${argv[0]:-}"
-        second="${argv[1]:-}"
-        # --ssh style global flags push the command along by two.
-        if [[ "$first" == --* ]]; then
-            first="${argv[2]:-}"
-            second="${argv[3]:-}"
-        fi
+
+        # Walk from the start, skipping global flags and consuming one extra
+        # token for flags that take a value. Stop at the first non-flag token.
+        cmd_idx=0
+        while [[ $cmd_idx -lt ${#argv[@]} && "${argv[$cmd_idx]}" == -* ]]; do
+            local flag="${argv[$cmd_idx]}"
+            local takes_value=0
+            for vf in "${value_taking_flags[@]}"; do
+                [[ "$flag" == "$vf" ]] && { takes_value=1; break; }
+            done
+            ((cmd_idx++))
+            if [[ $takes_value -eq 1 && $cmd_idx -lt ${#argv[@]} ]]; then
+                ((cmd_idx++))
+            fi
+        done
+
+        first="${argv[$cmd_idx]:-}"
+        second="${argv[$((cmd_idx + 1))]:-}"
         [[ "$target" == "$first" ]] && return 0
         [[ "$target" == "$first $second" ]] && return 0
     done
