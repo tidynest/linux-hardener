@@ -1274,6 +1274,62 @@ async fn mac_scan_reports_enforcement_unchecked_when_no_mac_system_exists() {
     );
 }
 
+/// The enforcement entry is reported whether or not the operator has excused
+/// the missing MAC system, and that is deliberate.
+///
+/// An applied exception makes `has_live_finding` treat `no-mac-system` as a
+/// documented deviation rather than a failure, so on an excused host the
+/// controls it maps to go back to Pass. The enforcement controls must not
+/// follow them there. An exception excuses a violation; it does not manufacture
+/// evidence that the mode is enforcing, and on a host with no MAC system that
+/// evidence still cannot exist.
+///
+/// The visible consequence is that an excused host reports CIS 1.6.1.1 as Pass
+/// and 1.6.1.4 as manual review at the same time. Those are different
+/// questions: one asks whether a MAC system is installed, which the exception
+/// answers, and the other asks what mode it is in, which nothing can.
+#[tokio::test]
+async fn mac_enforcement_stays_unchecked_even_when_absence_is_excepted() {
+    let ctx = Context::with_executor(Arc::new(no_mac_executor()));
+    let plugin = MacHardeningPlugin::new();
+
+    let mut config = PluginConfig::default();
+    config.exceptions.insert(
+        "mac-present".to_string(),
+        PolicyException {
+            value: "absent".to_string(),
+            allowed: true,
+            reason: "confinement is enforced by the hypervisor layer instead".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+
+    let result = plugin.scan(&ctx, &config).await.unwrap();
+
+    let finding = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "no-mac-system")
+        .expect("the finding is still raised, and carries the exception");
+    assert!(
+        finding.is_policy_excepted(),
+        "the fixture must actually apply the exception, or this test is about \
+         the unexcused case that the neighbouring test already covers"
+    );
+
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .any(|u| u.unchecked_check_id == "mac-enforcement-mode"),
+        "an excused absence is still an absence: the mode remains unevaluable, \
+         so the enforcement controls must not return to passing on it"
+    );
+}
+
 #[tokio::test]
 async fn mac_validate_raises_an_issue_when_detection_failed() {
     let ctx = Context::with_executor(Arc::new(undetectable_mac_executor()));

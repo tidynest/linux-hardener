@@ -341,6 +341,43 @@ fn selinux_enforcing_has_privacy_and_iso_mappings() {
     );
 }
 
+/// The two finding-type tables must partition, with `no-mac-system` the only
+/// member on the presence side.
+///
+/// `MAC_ENFORCEMENT_FINDING_TYPES` is maintained by hand as a subset of
+/// `MAC_FINDING_TYPES`, and it decides which controls the `Absent` arm reports
+/// unchecked. A fourth enforcement id added to the wider table alone would map
+/// a control that `coverage()` declares assessed and that nothing then records
+/// as unevaluable, which is exactly the construction that made CIS 1.6.1.4 pass
+/// on a host with no MAC system (#159). Nothing else in this file would notice:
+/// the three loops below all iterate `MAC_FINDING_TYPES`, so a new id would be
+/// covered by them and invisible here.
+#[test]
+fn mac_finding_type_tables_partition() {
+    for finding_type in MAC_ENFORCEMENT_FINDING_TYPES {
+        assert!(
+            MAC_FINDING_TYPES.contains(finding_type),
+            "{finding_type} is declared an enforcement finding but is not a MAC \
+             finding type at all, so coverage() never sees it"
+        );
+    }
+
+    let presence: Vec<&&str> = MAC_FINDING_TYPES
+        .iter()
+        .filter(|t| !MAC_ENFORCEMENT_FINDING_TYPES.contains(t))
+        .collect();
+
+    assert_eq!(
+        presence,
+        vec![&"no-mac-system"],
+        "every MAC finding type is either about a MAC system being present or \
+         about the mode it is in. A new id on the presence side needs its \
+         mappings answered by the no-mac-system finding; one on the enforcement \
+         side belongs in MAC_ENFORCEMENT_FINDING_TYPES so the Absent arm reports \
+         it unchecked"
+    );
+}
+
 /// Confirms every MAC finding type carries the SOC 2 unauthorised-software
 /// criterion CC6.8, filed under its Trust Services Criteria series.
 #[test]

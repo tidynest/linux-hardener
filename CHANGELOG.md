@@ -28,6 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the CIS score falls from 70.5% to 68.2% as one inflated pass becomes a manual
   review. Found by the host CLI walk.
 
+  **One deliberate behaviour change on hosts with a `mac-present` exception.**
+  An applied exception makes the engine treat `no-mac-system` as a documented
+  deviation rather than a failure, so the nine controls it shares with the
+  enforcement findings previously returned to Pass. They now report manual
+  review instead, because the enforcement entry is recorded whether or not the
+  absence is excused. An exception excuses a violation; it does not manufacture
+  evidence that a MAC system is enforcing, and on a host without one that
+  evidence cannot exist. Such a host now reports CIS 1.6.1.1 as Pass and 1.6.1.4
+  as manual review at once, which is correct: one asks whether a MAC system is
+  installed, and the exception answers it, while the other asks what mode it is
+  in, and nothing can.
+
 - **A remote `apply` on the nftables backend locked the operator out of the
   host it was hardening.** `enable` created the input chain with `policy drop`
   and no rules, and ran before `apply_rules` installed the baseline rule named
