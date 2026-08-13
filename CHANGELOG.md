@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Timestamps were local and unlabelled in some commands, UTC and labelled in
+  others** (#164). The binary carried two `format_timestamp` implementations,
+  both converting to local time and both printing no zone, so on a `CEST` host
+  one instant read `09:06:17` in `history list`, `07:06:17 UTC` in the
+  compliance report, and `2026-08-13T07:06:17Z` in the tracing lines, with only
+  the report saying which it was. An operator correlating the history table
+  against `journalctl`, or against the scan's own log lines, saw a two hour gap
+  and nothing in either output to explain it. On a security tool, timeline
+  reconstruction after an incident is a core use, and an unlabelled zone is the
+  classic way to get it wrong. There is now one definition for the whole binary,
+  in UTC, labelled. **This changes what `history list`, `history trends` and
+  `checkpoint list` display**: the same instants, named correctly, two hours
+  from where a CEST reader last saw them. UTC rather than labelled local,
+  because the report already prints UTC and the alternative would have left two
+  conventions in one tool. The `Started` columns widened from 19 to 23 to hold
+  the label, which is what the accompanying test guards: a label that overflows
+  a fixed-width column pushes every column after it out of alignment on every
+  row. Found by the host CLI walk.
+
 - **A killed service probe was read as a host with no services installed**
   (#167, partial). `systemctl list-unit-files` exits 1 with an empty stderr when
   none of the named units exist, which is the ordinary answer on a clean host,

@@ -110,3 +110,44 @@ fn the_session_table_names_the_host_and_stays_aligned() {
         "crit, high, med, low in that order: {container_row:?}"
     );
 }
+
+/// Timestamps say which zone they are in, and the column is wide enough to
+/// hold one that does.
+///
+/// The binary had two `format_timestamp` implementations, both converting to
+/// local time and both printing no zone, so the same instant read `09:06:17` in
+/// the history table and `07:06:17 UTC` in the compliance report on a `CEST`
+/// host, and only the report said which. An operator correlating the table
+/// against `journalctl` saw a two hour gap with nothing to explain it (#164).
+///
+/// The width assertion is not decoration: `Started` is a fixed-width column,
+/// and a label that overflows it pushes every column after it out of
+/// alignment on every row.
+#[test]
+fn session_timestamps_name_their_zone_and_fit_their_column() {
+    // 1786604777 is 2026-08-13 07:06:17 UTC, and 09:06:17 in CEST. The host
+    // that found this defect is CEST, so a renderer that silently kept local
+    // time would print the second and pass any assertion that only checked for
+    // digits.
+    let row = session_row(&session("TidyNest", 1_786_604_777, 0, 1));
+
+    let started = SESSION_TABLE_HEADER
+        .find("Started")
+        .expect("the header declares a Started column");
+    let rendered = &row[started..];
+
+    assert!(
+        rendered.starts_with("2026-08-13 07:06:17 UTC"),
+        "the instant must render in UTC and say so: {rendered:?}"
+    );
+
+    // The Status column is what gets pushed if the label does not fit.
+    let status = SESSION_TABLE_HEADER
+        .find("Status")
+        .expect("the header declares a Status column");
+    assert!(
+        row[status..].starts_with("completed"),
+        "the zone label must fit inside the Started column, or every column \
+         after it shifts: {row:?}"
+    );
+}

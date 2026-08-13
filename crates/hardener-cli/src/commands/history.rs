@@ -4,8 +4,8 @@
 
 use crate::cli::OutputFormat;
 use crate::commands::daemon::load_scheduler_config;
+use crate::output::format_timestamp;
 use anyhow::{Result, anyhow, bail};
-use chrono::{DateTime, Local, Utc};
 use hardener_scheduler::{
     ScanHistoryManager,
     db::{ScanFindingRow, ScanSession, SessionFilter, is_worse, trend_direction},
@@ -30,7 +30,7 @@ use std::path::PathBuf;
 const SESSION_TABLE_HEADER: &str = concat!(
     "Session ID                            ",
     "Host                      ",
-    "Started              ",
+    "Started                  ",
     "Status      ",
     "Trigger   ",
     "Crit High  Med  Low",
@@ -44,7 +44,7 @@ const SESSION_TABLE_HEADER: &str = concat!(
 /// fix.
 fn session_row(session: &ScanSession) -> String {
     format!(
-        "{:<36}  {:<24}  {:<19}  {:<10}  {:<8}  {:>4} {:>4} {:>4} {:>4}",
+        "{:<36}  {:<24}  {:<23}  {:<10}  {:<8}  {:>4} {:>4} {:>4} {:>4}",
         session.id,
         session.host_identifier,
         format_timestamp(session.started_at),
@@ -166,10 +166,10 @@ pub async fn trends(
 
             println!("Security trend for host '{}' (oldest first):\n", host);
             println!(
-                "{:<19}  {:>5} {:>4} {:>4} {:>4} {:>4}  {:>7}  Trend",
+                "{:<23}  {:>5} {:>4} {:>4} {:>4} {:>4}  {:>7}  Trend",
                 "Started", "Total", "Crit", "High", "Med", "Low", "Δtotal"
             );
-            println!("{}", "-".repeat(72));
+            println!("{}", "-".repeat(76));
 
             for p in &points {
                 let delta = p
@@ -177,7 +177,7 @@ pub async fn trends(
                     .map(|d| format!("{:+}", d))
                     .unwrap_or_else(|| "-".to_string());
                 println!(
-                    "{:<19}  {:>5} {:>4} {:>4} {:>4} {:>4}  {:>7}  {}",
+                    "{:<23}  {:>5} {:>4} {:>4} {:>4} {:>4}  {:>7}  {}",
                     format_timestamp(p.started_at),
                     p.total,
                     p.critical,
@@ -488,16 +488,9 @@ async fn open_database(config_path: Option<&PathBuf>) -> Result<ScanHistoryManag
         .map_err(|e| anyhow!("Failed to open database: {}", e))
 }
 
-/// Formats a Unix timestamp as local datetime string.
-fn format_timestamp(timestamp: i64) -> String {
-    DateTime::from_timestamp(timestamp, 0)
-        .map(|dt: DateTime<Utc>| {
-            dt.with_timezone(&Local)
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string()
-        })
-        .unwrap_or_else(|| "Unknown".to_string())
-}
+// `format_timestamp` used to live here as a second, local-time copy. It is now
+// `crate::output::format_timestamp`, imported at the top of this file: one
+// definition, in UTC, labelled. See its doc comment for why (#164).
 
 /// Prints session details in human-readable format.
 fn print_session_detail(session: &ScanSession, findings: &[ScanFindingRow], quiet: bool) {

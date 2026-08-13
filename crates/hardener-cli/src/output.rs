@@ -822,17 +822,27 @@ fn format_severity(severity: &Severity) -> colored::ColoredString {
     severity_label(label, severity)
 }
 
-fn format_timestamp(timestamp: i64) -> String {
-    use chrono::{DateTime, Local, TimeZone, Utc};
-
-    let datetime: DateTime<Utc> = Utc
-        .timestamp_opt(timestamp, 0)
-        .single()
-        .unwrap_or_else(Utc::now);
-
-    // Convert to local time and format
-    let local: DateTime<Local> = datetime.into();
-    local.format("%Y-%m-%d %H:%M:%S").to_string()
+/// Renders a Unix timestamp for a human, in UTC, saying so.
+///
+/// One definition for the whole binary. There were two, both converting to
+/// local time and both printing no zone, so `history list` and `checkpoint
+/// list` disagreed with `report` about what a timestamp meant while looking
+/// identical to it. On a `CEST` host the same instant read `09:06:17` in the
+/// history table, `07:06:17 UTC` in the report and `2026-08-13T07:06:17Z` in
+/// the tracing lines, and only the report said which it was. An operator
+/// correlating the history table against `journalctl`, or against the scan's
+/// own log lines, saw a two hour gap with nothing to explain it (#164).
+///
+/// UTC rather than labelled local, because the report already prints UTC and
+/// the alternative would have left two conventions in one tool. Timeline
+/// reconstruction after an incident is a core use of this output, and it
+/// usually spans hosts that are not in one zone.
+///
+/// The width is fixed at 23 characters, which the table layouts depend on.
+pub(crate) fn format_timestamp(timestamp: i64) -> String {
+    chrono::DateTime::from_timestamp(timestamp, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+        .unwrap_or_else(|| "Unknown".to_string())
 }
 
 #[cfg(test)]
