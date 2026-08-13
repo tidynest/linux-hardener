@@ -126,12 +126,63 @@ walk_write_index() {
 }
 
 # walk_normalise FILE
-# Blanks the two things that differ between distributions for reasons that are
-# never a finding: absolute paths and timestamps. It exists as a function
-# because both sides of the diff must normalise identically, and two copies of
-# one expression drift.
+# Blanks what differs between distributions for reasons that are never a
+# finding: absolute paths, timestamps, the session UUIDs and checkpoint ids
+# minted fresh on every run, and the name of the machine the containers sit on.
+# It exists as a function because both sides of the diff must normalise
+# identically, and two copies of one expression drift.
+#
+# Paths and timestamps alone left every capture differing from every other, and
+# the four additions here account for only five of those rows: the rest differ
+# because the distributions genuinely raise different findings. That is why the
+# pointer leads with exit codes now rather than with this comparison.
 walk_normalise() {
-    sed -E 's#/[A-Za-z0-9_./-]+#PATH#g; s#[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9:]+#TIME#g' "$1"
+    local host="${HOSTNAME:-}"
+    [[ -z "$host" ]] && host="$(hostname 2>/dev/null || true)"
+    local script='s#/[A-Za-z0-9_./-]+#PATH#g
+s#[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9:]+#TIME#g
+s#\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b#UUID#g
+s#\bcp_[0-9]+_[0-9a-f]+\b#CHECKPOINT#g'
+    # Guarded, because an empty pattern matches at every position: without this
+    # a host with no name would have its every capture replaced by HOST, and
+    # all six would then agree about everything.
+    if [[ -n "$host" ]]; then
+        script+="
+s#\\b${host//./\\.}\\b#HOST#g"
+    fi
+    sed -E "$script" "$1"
+}
+
+# walk_exit_disagreements CAPTURE_PARENT DISTRO...
+# Emits one markdown row per slug whose captures did not all exit the same way.
+#
+# The comparison worth leading with. Two distributions raising different
+# findings is the normal case and says nothing; two exiting differently means
+# the same command reached a different conclusion about what it managed to do,
+# which is a lead whatever the reason turns out to be. On the first six-way
+# walk this named exactly one slug out of 73, against 51 for the content table.
+walk_exit_disagreements() {
+    local parent="$1"; shift
+    local distros=("$@")
+    local ref="${distros[0]}"
+    local refdir rel d code codes seen
+    while IFS= read -r refdir; do
+        rel="${refdir#"$parent/$ref/"}"
+        codes=""
+        seen=""
+        for d in "${distros[@]}"; do
+            [[ -f "$parent/$d/$rel/exit" ]] || continue
+            code="$(cat "$parent/$d/$rel/exit")"
+            codes+="$d=$code "
+            case " $seen " in
+                *" $code "*) ;;
+                *) seen+="$code " ;;
+            esac
+        done
+        # shellcheck disable=SC2086
+        set -- $seen
+        [[ $# -gt 1 ]] && echo "| $rel | $codes |"
+    done < <(find "$parent/$ref" -mindepth 2 -maxdepth 2 -type d | sort)
 }
 
 # walk_write_diff_pointer CAPTURE_PARENT REFERENCE_DISTRO OTHER...
@@ -149,6 +200,32 @@ walk_write_diff_pointer() {
         echo "# Cross-distribution diff pointer"
         echo ""
         echo "Reference: $ref. A difference is not a defect; it is a place to look."
+        echo ""
+        echo "## Exit codes that disagree"
+        echo ""
+        echo "Read this section first. The same command reaching a different"
+        echo "conclusion about what it managed to do is a lead on any distribution;"
+        echo "two distributions raising different findings is Tuesday."
+        echo ""
+        echo "| Phase/Invocation | Exit code by distribution |"
+        echo "|------------------|---------------------------|"
+        local exit_rows
+        exit_rows="$(walk_exit_disagreements "$parent" "$ref" "${others[@]}")"
+        if [[ -n "$exit_rows" ]]; then
+            echo "$exit_rows"
+        else
+            echo "| (none) | every capture exited the same way on every distribution |"
+        fi
+        echo ""
+        echo "## Content that differs"
+        echo ""
+        echo "Long by nature, and NOT a defect list. Distributions ship different"
+        echo "defaults and different packages, so they raise different findings, and"
+        echo "on the first six-way walk 51 of 73 slugs landed here. Absolute paths,"
+        echo "timestamps, session UUIDs, checkpoint ids and this machine's hostname"
+        echo "are normalised away first, so what remains is genuine disagreement"
+        echo "about content. Use it to answer a question you already have, rather"
+        echo "than as a list to work through."
         echo ""
         echo "| Phase/Invocation | Differs from $ref |"
         echo "|------------------|-------------------|"

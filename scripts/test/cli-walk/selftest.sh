@@ -101,6 +101,42 @@ walk_write_diff_pointer "$POINTER" arch debian
 check "pointer flags an absent capture" "yes" \
     "$(grep -q 'debian(absent)' "$POINTER/diff-pointer.md" && echo yes || echo no)"
 
+# An exit code that disagrees is the pointer's headline, and it has to be found
+# even where the stdout matches exactly. The two comparisons answer different
+# questions: a command can print the same thing on both distributions and still
+# have reached a different conclusion about what it managed to do. Built with
+# identical stdout on purpose, so this can only pass by reading the exit files.
+mkdir -p "$POINTER/arch/pristine/003-exit" "$POINTER/debian/pristine/003-exit"
+echo "identical output" > "$POINTER/arch/pristine/003-exit/stdout"
+echo "identical output" > "$POINTER/debian/pristine/003-exit/stdout"
+echo 0 > "$POINTER/arch/pristine/003-exit/exit"
+echo 1 > "$POINTER/debian/pristine/003-exit/exit"
+walk_write_diff_pointer "$POINTER" arch debian
+check "pointer names an exit-code disagreement" "yes" \
+    "$(grep -q 'arch=0 debian=1' "$POINTER/diff-pointer.md" && echo yes || echo no)"
+
+# And agreement must stay unreported. A section that names every slug names
+# none, which is the failure the whole rewrite is about.
+mkdir -p "$POINTER/arch/pristine/004-agree" "$POINTER/debian/pristine/004-agree"
+echo "identical output" > "$POINTER/arch/pristine/004-agree/stdout"
+echo "identical output" > "$POINTER/debian/pristine/004-agree/stdout"
+echo 0 > "$POINTER/arch/pristine/004-agree/exit"
+echo 0 > "$POINTER/debian/pristine/004-agree/exit"
+walk_write_diff_pointer "$POINTER" arch debian
+check "pointer stays silent where exit codes agree" "no" \
+    "$(grep -q '004-agree' "$POINTER/diff-pointer.md" && echo yes || echo no)"
+
+# The added normalisations must blank a checkpoint id and a session UUID, which
+# are minted fresh per run and so differ on every distribution every time.
+mkdir -p "$POINTER/arch/pristine/005-ids" "$POINTER/debian/pristine/005-ids"
+echo "cp_1786650211904_ad3568b1 1896c7b4-8fc3-4b53-b7f1-a4b0a0383b5f done" \
+    > "$POINTER/arch/pristine/005-ids/stdout"
+echo "cp_1786651070318_218a5a75 3328dbab-63eb-4f65-9f44-f305e8087dbf done" \
+    > "$POINTER/debian/pristine/005-ids/stdout"
+walk_write_diff_pointer "$POINTER" arch debian
+check "pointer ignores checkpoint ids and UUIDs" "no" \
+    "$(grep -q '005-ids' "$POINTER/diff-pointer.md" && echo yes || echo no)"
+
 # The WALK PROBLEM comparison must need nothing installed. It was written with
 # `cmp`, which the rhel container lacks: the missing command returned 127, the
 # `&&` short-circuited, and the one container whose restore phase HAD done
