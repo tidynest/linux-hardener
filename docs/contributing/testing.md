@@ -1261,6 +1261,89 @@ self-test is where the fix is proven.
 
 ---
 
+## CLI Walk (Staging, Not Asserting)
+
+A walk is not a test suite. It runs every CLI command and subcommand, captures
+all output untruncated, and presents it for a person to read. It asserts almost
+nothing on purpose: a check can only fail on a case somebody already imagined,
+and the GUI walk found four defects that 142 tests and 222 screenshots had all
+passed over. A non-zero exit from a recipe is data, not a failure.
+
+There is exactly one total check, and it flags rather than fails: a recipe run
+with `--format json` whose stdout does not parse is unambiguously wrong, needs
+nobody to have anticipated the case, and catches a whole class at once (a
+tracing line leaking to stdout, a partial write, a panic mid-serialisation).
+Only an untrustworthy capture fails a walk, so the exit code keeps meaning
+"trustworthy or not" and nothing else.
+
+### Host walk (safe, unprivileged tier only)
+
+```bash
+./scripts/test/cli-walk/cli-walk-host.sh
+```
+
+Runs only the `unprivileged` tier and refuses every other one. The refusal is
+structural rather than a property of the current recipe list happening to be
+safe: `apply` on the development host is the one genuinely unrecoverable action
+available here, and a filter that depends on data staying correct is not a
+guard. Read `test-results/cli-walk/host/index.md` first.
+
+### Container walk (all six distributions)
+
+```bash
+sudo --preserve-env=SSH_AUTH_SOCK ./scripts/test/cli-walk/cli-walk-container.sh
+```
+
+Recreates every container, then walks each through five phases: `pristine`,
+`mutate`, `applied`, `restore`, `restored`. Every container is recreated
+because a completed run poisons its own container, and a walk mutates
+considerably more than a test suite does.
+
+Runtime ids (a checkpoint id, a history session id) do not exist until earlier
+phases have created them, so the runner resolves them from the CLI's own JSON
+between phases and records a skip with a reason wherever one is not yet
+available.
+
+The `ssh` tier runs last, alone, and arch only: `boot-ssh-test-container.sh`
+pins one static veth pair, so two booted fixtures cannot coexist. It runs on
+the host pointing at the fixture rather than inside it, because its recipes are
+`batch` verbs that target a remote. `batch` authenticates by key or agent only,
+so the tier needs `SUDO_USER` and a forwarded `SSH_AUTH_SOCK` with the fixture
+key loaded (`ssh-add ~/.ssh/hardener_test_ed25519`); without them it records a
+named skip rather than capturing four identical auth failures that would read
+as a product defect. Pass `--no-ssh` to omit it.
+
+The fixture takes over `hardener-test`, which is the container the GUI runner
+uses, so the orchestrator refuses to start while that machine is busy rather
+than failing obscurely later.
+
+### Reading a walk
+
+Read `test-results/cli-walk/arch/index.md`. The other five captures exist for
+`diff-pointer.md`, which names every invocation whose output differs from arch
+after paths and timestamps are normalised away. That pointer is a pointer:
+distributions legitimately differ, so a difference is never a failure and it
+never touches an exit code.
+
+Findings go to `docs/superpowers/specs/`, which is gitignored, so a reading
+pass produces no commit.
+
+### Coverage and self-test
+
+```bash
+./scripts/test/cli-walk/coverage.sh <path-to-hardener>
+./scripts/test/cli-walk/selftest.sh
+```
+
+`coverage.sh` recurses `--help` and fails if any discovered command has neither
+a recipe nor a written skip, so a new subcommand cannot be added and walked
+past silently. `selftest.sh` proves the capture machinery before any walk
+trusts it: a bug in `run_recipe` that silently wrote empty stdout files would
+make every future walk worthless while looking entirely healthy. The host
+runner runs it and refuses to walk if it fails.
+
+---
+
 ## Cross-Distro Testing
 
 Runs the full test suite across multiple distribution containers from the host.
@@ -1427,4 +1510,4 @@ in `build-mode: none`, on every push and pull request to `main` and on a schedul
 (Mondays, 06:00 UTC). It has no local reproduction: results go to the
 repository's security tab.
 
-**Last Updated**: 2026-08-12
+**Last Updated**: 2026-08-13

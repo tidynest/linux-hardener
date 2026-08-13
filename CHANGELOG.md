@@ -680,6 +680,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A CLI walk harness that stages every command's output for a person to read
+  rather than asserting anything about it**
+  (`scripts/test/cli-walk/`). A check can only fail on a case somebody already
+  imagined; the GUI walk found four defects that 142 tests and 222 screenshots
+  had all passed over, which is the argument for reading output rather than
+  only asserting on it. Every command and subcommand runs, its argv, stdout,
+  stderr and exit code are captured untruncated, and a non-zero exit is data
+  rather than a failure. There is exactly one total check and it flags rather
+  than fails: stdout from a `--format json` recipe that does not parse. Only an
+  untrustworthy capture fails a walk, so the exit code keeps meaning
+  "trustworthy or not" and nothing else. `cli-walk-host.sh` runs the
+  unprivileged tier here and refuses every other tier structurally, because
+  `apply` on a development host is unrecoverable and a filter that depends on
+  data staying correct is not a guard. `cli-walk-container.sh` walks all six
+  distribution containers through five phases (`pristine`, `mutate`, `applied`,
+  `restore`, `restored`), recreating each container first because a completed
+  run poisons its own, then runs the `ssh` tier last and alone against the
+  booted fixture, and writes a cross-distribution diff pointer naming every
+  invocation whose output disagrees with arch once paths and timestamps are
+  normalised away. What could not be attempted is recorded with a reason:
+  "never ran" must never render as "ran and passed". `coverage.sh` fails if a
+  discovered command has neither a recipe nor a written skip, and `selftest.sh`
+  proves the capture machinery before any walk trusts it, because a bug that
+  silently wrote empty stdout files would make every walk worthless while
+  looking entirely healthy. Documented in
+  [docs/contributing/testing.md](docs/contributing/testing.md).
+
 - **A finding can now be accepted as a documented policy exception without
   hand-editing a root-owned `config.toml`, from the CLI or the desktop**
   (#66). `hardener exception add <plugin-id> <key> --reason <text>` (plus
