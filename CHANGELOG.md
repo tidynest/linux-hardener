@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The same PAM read failure was reported twice in every scan.**
+  `layer_drift_findings` walks its own table of layered configuration files so
+  that a caller cannot cover three and forget the fourth, and read all four
+  itself. `scan` and `validate` had each already read `pwquality.conf` and
+  `login.defs` by the time they called it, and `read_conf_classified` warns on
+  failure, so on this host - where `/etc/security/pwquality.conf` is mode 0600 -
+  every scan printed the identical "Failed to read ... permission denied" line
+  twice, which reads as two separate problems. The walk now takes the reads its
+  caller already holds as a hint: it still iterates the table itself, so a
+  caller that omits a file costs a second read rather than a missed check. A
+  second privileged read of an already-read file goes with the duplicate line.
+  `validate`'s two reads moved above the call to make them available there.
+  Measured on the binary: one `WARN` for `pwquality.conf` per scan, previously
+  two. `faillock.conf` and `pwhistory.conf` are still read once per directive by
+  the threshold reader, which several directives share; collapsing that needs a
+  read cache and is not part of this change. Found by the host CLI walk, in the
+  observations it recorded without filing.
+
 - **Three remote-access controls were answerable only by a check on a
   directory's mode** (#167). `AC-17(a)`, NIST 800-171r3 `3.1.12` and ISO
   27001:2022 8.2 were mapped in exactly one place in the tree: the `/etc/ssh`

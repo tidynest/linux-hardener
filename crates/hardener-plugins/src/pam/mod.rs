@@ -575,8 +575,18 @@ impl HardeningPlugin for PamHardeningPlugin {
         let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
 
         // Drift between the layers, for every file the table names rather than
-        // for login.defs alone.
-        findings.extend(layer_drift_findings(ctx).await);
+        // for login.defs alone. The two files already read above are handed
+        // over so they are not read, and warned about, a second time.
+        findings.extend(
+            layer_drift_findings(
+                ctx,
+                &[
+                    ("/etc/security/pwquality.conf", &pwquality),
+                    ("/etc/login.defs", &login_defs_read),
+                ],
+            )
+            .await,
+        );
 
         // Whether each file's consuming module is loaded, read once per file
         // rather than once per directive: six pwquality keys share one module,
@@ -1233,28 +1243,38 @@ impl HardeningPlugin for PamHardeningPlugin {
         // them. Listing drift there would inflate the count and promise a write
         // that never happens. The message says so outright, so the preview
         // cannot be read as an undertaking to fix it.
-        issues.extend(
-            layer_drift_findings(ctx)
-                .await
-                .into_iter()
-                .map(|finding| ValidationIssue {
-                    validation_issue_config_key: None,
-                    validation_issue_message: format!(
-                        "{}; apply will not import them, so restoring them is a manual step",
-                        finding.finding_description
-                    ),
-                    validation_issue_severity: finding.finding_severity,
-                }),
-        );
-
-        // Estimate changes state-aware: read the current file values the same
-        // way apply does and list only directives that would actually change;
-        // already-compliant directives are tallied in compliant_count, not
-        // listed, so estimated_changes holds only real pending changes.
+        // Read here rather than below, where they used to sit, so the drift
+        // walk can be handed them instead of reading the same two files a
+        // second time and warning a second time about the same failure.
+        //
         // Classified reads so a root-only file yields honest requires-root
-        // wording, never a false "(currently not set)" claim.
+        // wording, never a false "(currently not set)" claim. Both feed the
+        // state-aware change estimate further down, which lists only directives
+        // that would actually change; already-compliant directives are tallied
+        // in compliant_count rather than listed, so estimated_changes holds
+        // only real pending changes.
         let pwquality = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
         let login_defs = read_conf_classified(ctx, "/etc/login.defs").await;
+
+        issues.extend(
+            layer_drift_findings(
+                ctx,
+                &[
+                    ("/etc/security/pwquality.conf", &pwquality),
+                    ("/etc/login.defs", &login_defs),
+                ],
+            )
+            .await
+            .into_iter()
+            .map(|finding| ValidationIssue {
+                validation_issue_config_key: None,
+                validation_issue_message: format!(
+                    "{}; apply will not import them, so restoring them is a manual step",
+                    finding.finding_description
+                ),
+                validation_issue_severity: finding.finding_severity,
+            }),
+        );
 
         // Medium, and not High, on purpose. High blocks the dry run
         // (`has_blocking_issue`), and this is a pre-existing condition of the
@@ -2213,20 +2233,36 @@ async fn read_conf_classified(ctx: &Context, path: &str) -> ConfRead {
 /// operator's hand-rolled file and a vendor that adds a key in a later package
 /// as well as a file an older release of this tool wrote.
 ///
-/// The admin files are read here rather than passed in, so a caller cannot
-/// cover three files and forget the fourth. `scan` reads two of them a second
-/// time as a result; a config file read twice costs less than a check wired to
-/// one call site.
-async fn layer_drift_findings(ctx: &Context) -> Vec<Finding> {
+/// The table is walked here rather than passed in, so a caller cannot cover
+/// three files and forget the fourth. `already_read` is a reuse hint and
+/// nothing more: a caller that omits a file it has read costs a second read,
+/// never a missed check, which is what kept the safety when the re-reads went.
+///
+/// Those re-reads were not free. `scan` and `validate` each read two of these
+/// four before calling this, and `read_conf_classified` warns on failure, so on
+/// a host where `/etc/security/pwquality.conf` is mode 0600 every run printed
+/// the identical "Failed to read ... permission denied" line twice, which reads
+/// as two separate problems. The second privileged read of an already-read file
+/// went with it.
+async fn layer_drift_findings(ctx: &Context, already_read: &[(&str, &ConfRead)]) -> Vec<Finding> {
     let mut findings = Vec::new();
 
     for conf in layer_drift::LAYERED_CONFS {
         let Some(vendor_path) = vendor_path_for(conf.admin_path) else {
             continue;
         };
-        let ConfRead::Content(admin, ConfigLayer::Admin) =
-            read_conf_classified(ctx, conf.admin_path).await
-        else {
+        let freshly_read;
+        let admin_read = match already_read
+            .iter()
+            .find(|(path, _)| *path == conf.admin_path)
+        {
+            Some((_, read)) => *read,
+            None => {
+                freshly_read = read_conf_classified(ctx, conf.admin_path).await;
+                &freshly_read
+            }
+        };
+        let ConfRead::Content(admin, ConfigLayer::Admin) = admin_read else {
             continue;
         };
 
@@ -2235,7 +2271,7 @@ async fn layer_drift_findings(ctx: &Context) -> Vec<Finding> {
         // vendor file directly. Its three outcomes are what is wanted.
         match read_conf_classified(ctx, &vendor_path).await {
             ConfRead::Content(vendor, _) => {
-                let masked = layer_drift::masked_keys(&admin, &vendor);
+                let masked = layer_drift::masked_keys(admin, &vendor);
                 if !masked.is_empty() {
                     findings.push(layer_drift::masked_keys_finding(
                         conf,

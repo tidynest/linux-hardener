@@ -4048,3 +4048,47 @@ async fn a_no_op_pam_apply_still_prunes_the_backups_it_did_not_add() {
         );
     }
 }
+
+/// The drift walk must not re-read a file its caller has already read.
+///
+/// `layer_drift_findings` walks `LAYERED_CONFS` itself, so a caller cannot
+/// cover three files and forget the fourth. `scan` and `validate` have both
+/// already read `pwquality.conf` and `login.defs` by the time they call it, so
+/// those two were read twice per run. The visible cost was a duplicate warning:
+/// on a host where `/etc/security/pwquality.conf` is mode 0600, every scan
+/// printed the identical "Failed to read ... permission denied" line twice,
+/// which reads as two separate problems. The invisible cost is a second
+/// privileged read of a file the run had already read.
+///
+/// Asserted on the executor's read log rather than on log output, because the
+/// duplicate line is the symptom and the repeated read is the thing.
+///
+/// `faillock.conf` and `pwhistory.conf` are deliberately not asserted here.
+/// They are read once per directive by the threshold reader, several directives
+/// share each file, and collapsing that needs a read cache rather than the
+/// reuse hint this covers. Written as a loop over the two files the hint
+/// reaches so that adding a third to the hint extends the check by one line.
+#[tokio::test]
+async fn the_drift_walk_does_not_reread_what_its_caller_read() {
+    let executor = Arc::new(secure_pam_executor());
+    let ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    for path in ["/etc/security/pwquality.conf", "/etc/login.defs"] {
+        let reads = executor
+            .log()
+            .files_read
+            .iter()
+            .filter(|read| read.as_os_str() == path)
+            .count();
+        assert!(
+            reads <= 1,
+            "{path} was read {reads} times in one scan; a file read twice \
+             warns twice about the same failure"
+        );
+    }
+}
