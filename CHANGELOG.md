@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Two CLI tables were laid out to widths their own data outgrew.** `plugins`
+  padded the id column to 20 while the longest id, `permissions-hardening`, is
+  21, so that one row began its second column a character right of the other
+  seven. `checkpoint list` padded NAME to 24 against names up to 31, and on this
+  host the HOST column began at five different offsets down a single listing.
+  Both now measure their widths from the rows being rendered, so a longer id or
+  name cannot reintroduce it. The padding is applied outside the styling rather
+  than through `{:<width$}`: a colour code is bytes the formatter counts as
+  width, so a styled value inside a padded field pads short and the fix would
+  not have survived a terminal. `checkpoint list` also stopped wasting eleven
+  columns on a 36-wide field holding 25-character ids. Found by the host CLI
+  walk, in the observations it recorded without filing.
+
 - **Scan history recorded when the database was written, not when the scan
   ran** (#168). Both CLI paths reach persistence only after every plugin has
   finished: `commands/scan.rs` passes its completed results, and

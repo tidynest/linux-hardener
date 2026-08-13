@@ -417,10 +417,25 @@ pub fn plugin_list(format: &OutputFormat, plugins: &[PluginMetadata]) {
         _ => {
             println!("{}", "Available Plugins".bold());
             println!("{}", "─".repeat(60));
+            // Measured, not guessed. The literal was 20 and the longest id,
+            // `permissions-hardening`, is 21, so that one row overflowed its
+            // field and began its second column one character right of the
+            // other seven. A fixed width is wrong again the moment a longer id
+            // is added; this cannot be.
+            let id_width = plugins
+                .iter()
+                .map(|p| p.plugin_id.as_str().len())
+                .max()
+                .unwrap_or(0);
             for plugin in plugins {
+                // Padded by hand rather than through `{:width$}`: the id is
+                // coloured, and a colour code is bytes the formatter counts as
+                // width, so a styled value inside a padded field pads short.
+                let id = plugin.plugin_id.as_str();
                 println!(
-                    "{:20} {} {}",
-                    plugin.plugin_id.as_str().cyan(),
+                    "{}{} {} {}",
+                    id.cyan(),
+                    " ".repeat(id_width - id.len()),
                     plugin.plugin_name,
                     format!("v{}", plugin.plugin_version).dimmed()
                 );
@@ -450,22 +465,59 @@ pub fn checkpoint_list(format: &OutputFormat, checkpoints: &[Checkpoint], limit:
                 return;
             }
 
+            // Widths measured from the rows, not fixed. The literals were 36
+            // and 24 against ids of 25 and names up to 31, so every
+            // `service-minimisation-pre-apply` row overflowed NAME and pushed
+            // HOST and CREATED right: on this host the HOST column began at
+            // five different offsets down one listing.
+            //
+            // Padding is applied outside the styling. A colour code is bytes
+            // that `{:<width$}` counts as width, so a styled value inside a
+            // padded field pads short and the fix would not survive a terminal.
+            let pad = |s: &str, w: usize| " ".repeat(w.saturating_sub(s.len()));
+            let id_w = visible
+                .iter()
+                .map(|c| c.checkpoint_id.as_str().len())
+                .chain(std::iter::once("ID".len()))
+                .max()
+                .unwrap_or(0);
+            let name_w = visible
+                .iter()
+                .map(|c| c.checkpoint_name.len())
+                .chain(std::iter::once("NAME".len()))
+                .max()
+                .unwrap_or(0);
+            let host_w = visible
+                .iter()
+                .map(|c| c.host_key.len())
+                .chain(std::iter::once("HOST".len()))
+                .max()
+                .unwrap_or(0);
+            let rule = "─".repeat(id_w + name_w + host_w + 23 + 6);
+
             println!("{}", "Checkpoints".bold());
-            println!("{}", "─".repeat(90));
+            println!("{rule}");
             println!(
-                "{:<36}  {:<24}  {:<12}  {}",
+                "{}{}  {}{}  {}{}  {}",
                 "ID".bold(),
+                pad("ID", id_w),
                 "NAME".bold(),
+                pad("NAME", name_w),
                 "HOST".bold(),
+                pad("HOST", host_w),
                 "CREATED".bold()
             );
-            println!("{}", "─".repeat(90));
+            println!("{rule}");
             for cp in visible {
+                let id = cp.checkpoint_id.as_str();
                 println!(
-                    "{:<36}  {:<24}  {:<12}  {}",
-                    cp.checkpoint_id.as_str().cyan(),
+                    "{}{}  {}{}  {}{}  {}",
+                    id.cyan(),
+                    pad(id, id_w),
                     cp.checkpoint_name,
+                    pad(&cp.checkpoint_name, name_w),
                     cp.host_key.dimmed(),
+                    pad(&cp.host_key, host_w),
                     format_timestamp(cp.checkpoint_timestamp).dimmed()
                 );
             }
