@@ -671,3 +671,27 @@ async fn a_backup_prunes_the_copies_that_came_before_it() {
         );
     }
 }
+
+/// Every control this plugin declares assessed must have a route to being
+/// reported unchecked. See
+/// [`crate::tests::assert_every_covered_control_is_reportable`] for why.
+///
+/// Nothing is excused here. `unchecked_pam_directive` is built from the same
+/// table and the same mapping function as `coverage()`, so every declared
+/// control is reachable by construction; this is what would notice a mapping
+/// added from anywhere else.
+// assertions-in-helper: the invariant has one definition, in
+// crate::tests::assert_every_covered_control_is_reportable, so that eight
+// plugins state it once rather than eight times. Both of its assertions,
+// including the two vacuity guards, fire from there.
+#[test]
+fn every_covered_pam_control_can_be_reported_unchecked() {
+    let reportable: Vec<_> = PAM_DIRECTIVES
+        .iter()
+        .map(|directive| {
+            unchecked_pam_directive(directive, "the file could not be read".to_string(), false)
+        })
+        .collect();
+
+    crate::tests::assert_every_covered_control_is_reportable("pam", &coverage(), &reportable, &[]);
+}

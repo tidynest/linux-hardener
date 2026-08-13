@@ -2864,3 +2864,30 @@ fn is_no_backend_error_rejects_a_different_error_variant() {
     );
     assert!(!is_no_backend_error(&executor_failure));
 }
+
+/// Every control this plugin declares assessed must have a route to being
+/// reported unchecked. See
+/// [`crate::tests::assert_every_covered_control_is_reportable`] for why.
+///
+/// Nothing is excused here, and this plugin makes that easy: its coverage is a
+/// single flat list rather than a per-finding table, and both places that push
+/// an unchecked entry carry that same list, so a control it declares and cannot
+/// report is not currently constructible. Asserted through
+/// `not_at_boot_unchecked` rather than against `get_firewall_compliance_mappings`
+/// directly, so the check goes through the production builder and would catch a
+/// builder that started filtering the list.
+// assertions-in-helper: the invariant has one definition, in
+// crate::tests::assert_every_covered_control_is_reportable, so that eight
+// plugins state it once rather than eight times. Both of its assertions,
+// including the two vacuity guards, fire from there.
+#[test]
+fn every_covered_firewall_control_can_be_reported_unchecked() {
+    let reportable = vec![not_at_boot_unchecked(&nftables::NftablesBackend)];
+
+    crate::tests::assert_every_covered_control_is_reportable(
+        "firewall",
+        &coverage(),
+        &reportable,
+        &[],
+    );
+}

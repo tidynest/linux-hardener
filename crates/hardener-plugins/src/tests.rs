@@ -262,3 +262,74 @@ mod backup_pruning {
         );
     }
 }
+
+/// Shared by every plugin's own coverage-invariant test.
+///
+/// The invariant is the one the whole #159/#166/#167 defect class violates: a
+/// plugin declares a control in `coverage()`, some host state makes the finding
+/// that reaches it unraisable, nothing records that, and
+/// `hardener-compliance`'s generator passes the control on the absence of a
+/// finding alone. The generator cannot see `scan_success`, so a plugin that
+/// fails outright with no unchecked entries passes its whole catalogue.
+///
+/// `always_answerable` is the deliberate escape hatch, and it is checked in
+/// both directions. A control belongs there only when the plugin can answer it
+/// on every host it runs on: the MAC plugin's presence control is the model,
+/// since "is a MAC system installed" is answered by the very absence that makes
+/// the enforcement controls unevaluable. An id listed there that `coverage()`
+/// no longer declares fails too, so the list cannot rot into a set of excuses
+/// for controls nobody checks any more.
+///
+/// Both inputs are asserted non-empty. That is the vacuity guard: a plugin
+/// covering nothing, or a builder yielding nothing, would otherwise satisfy
+/// this without asserting anything at all.
+pub(crate) fn assert_every_covered_control_is_reportable(
+    plugin: &str,
+    covered: &[hardener_types::ComplianceMapping],
+    reportable: &[hardener_core::plugin::UncheckedCheck],
+    always_answerable: &[&str],
+) {
+    assert!(
+        !covered.is_empty(),
+        "{plugin} declares no coverage, so the check below would assert nothing"
+    );
+    assert!(
+        !reportable.is_empty(),
+        "{plugin} produced no unchecked entries to check against, so the check \
+         below would assert nothing"
+    );
+
+    let mut reachable: std::collections::HashSet<&str> = reportable
+        .iter()
+        .flat_map(|entry| &entry.unchecked_compliance)
+        .map(|mapping| mapping.compliance_control_id.as_str())
+        .collect();
+    reachable.extend(always_answerable.iter().copied());
+
+    let covered_ids: std::collections::HashSet<&str> = covered
+        .iter()
+        .map(|mapping| mapping.compliance_control_id.as_str())
+        .collect();
+
+    let unreportable: Vec<&str> = covered_ids
+        .iter()
+        .copied()
+        .filter(|id| !reachable.contains(id))
+        .collect();
+    assert!(
+        unreportable.is_empty(),
+        "{plugin} declares these controls assessed, and no unchecked entry maps \
+         them, so a host where their evidence is unreachable passes them \
+         silently: {unreportable:?}"
+    );
+
+    let stale: Vec<&&str> = always_answerable
+        .iter()
+        .filter(|id| !covered_ids.contains(**id))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "{plugin} excuses these controls from needing an unchecked route, but no \
+         longer declares them covered at all: {stale:?}"
+    );
+}

@@ -750,3 +750,42 @@ fn audit_finding_type_tables_partition() {
          not-installed arm reports it unchecked"
     );
 }
+
+/// Every control this plugin declares assessed must have a route to being
+/// reported unchecked, or be one a finding answers on every host. See
+/// [`crate::tests::assert_every_covered_control_is_reportable`] for why.
+///
+/// The four excused ids are the ones `not_installed` maps and no post-install
+/// finding does. They are answered rather than reported: `is_auditd_installed`
+/// resolves a failed probe to `false` (`unwrap_or(false)`), so this plugin
+/// always raises the `not_installed` finding when it cannot confirm the
+/// package, and a finding fails a control rather than passing it. That is
+/// fail-closed and safe for these four, and it is why they need no unchecked
+/// route. It is also the reason the list is written out rather than derived: a
+/// control added to `not_installed` that nothing else answers must fail here
+/// and be decided on, not absorbed silently.
+///
+/// The unchecked entries come from a real scan rather than a list composed
+/// here, for the reason given on the MAC plugin's copy of this test:
+/// hand-building them restates `coverage()`'s own definition and survives the
+/// production arm being deleted.
+#[tokio::test]
+async fn every_covered_audit_control_can_be_reported_unchecked() {
+    // Nothing registered, so `command_exists("auditd")` answers false and the
+    // scan takes the not-installed arm, which is the one that reports the
+    // post-install checks unchecked.
+    let scanned = AuditHardeningPlugin::new()
+        .scan(
+            &Context::with_executor(Arc::new(MockExecutor::new())),
+            &PluginConfig::default(),
+        )
+        .await
+        .expect("an absent auditd is not an error");
+
+    crate::tests::assert_every_covered_control_is_reportable(
+        "audit",
+        &coverage(),
+        &scanned.scan_unchecked,
+        &["3.3.1", "4.1.1.1", "AU-2(a)", "OL08-00-030180"],
+    );
+}

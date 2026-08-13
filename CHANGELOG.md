@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The coverage invariant is now asserted by all eight plugins.** The defect
+  behind #159, #166, #167 and the SSH silence above is one shape: a plugin
+  declares a control in `coverage()`, some host state makes the finding that
+  reaches it unraisable, nothing records that, and the compliance generator
+  passes the control on the absence of a finding alone. Five instances were
+  found by hand. The SSH fix added a test asserting the invariant directly, and
+  it now exists for `kernel`, `firewall`, `pam`, `services`, `permissions`,
+  `mac` and `audit` as well, sharing one definition in
+  `crate::tests::assert_every_covered_control_is_reportable` so that eight
+  plugins state it once rather than eight times. All eight pass, so no sixth
+  instance is present. The helper checks its escape hatch in both directions: a
+  control may be excused from needing an unchecked route only by being listed,
+  and an id listed that `coverage()` no longer declares fails too, so the list
+  cannot rot into excuses for controls nobody checks. Both inputs are asserted
+  non-empty, which is the vacuity guard. `mac` and `audit` build their unchecked
+  entries inline rather than through a builder, so their tests drive real scans
+  through `MockExecutor` and read what the plugin actually emitted; composing
+  the entries in the test would have restated `coverage()`'s own definition and
+  survived either production arm being deleted. `audit` excuses four ids
+  (`3.3.1`, `4.1.1.1`, `AU-2(a)`, `OL08-00-030180`), which `not_installed`
+  answers on every host because `is_auditd_installed` resolves a failed probe to
+  `false`: a finding fails a control rather than passing it, so those four are
+  fail-closed rather than silent. Both halves of the check were confirmed to go
+  red before the work was accepted.
+
 - **Two CLI listings told the operator less than their own JSON did.**
   `plugins` carried `plugin_category` for all eight plugins in `--format json`
   and named it for none of them in the table, so the two views of one command

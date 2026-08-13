@@ -563,3 +563,30 @@ fn permissions_reloads_for_nothing_because_mode_changes_are_immediate() {
     assert!(!plugin.reloads_for_path(Path::new("/etc/shadow")));
     assert!(!plugin.reloads_for_path(Path::new("/etc/sudoers")));
 }
+
+/// Every control this plugin declares assessed must have a route to being
+/// reported unchecked. See
+/// [`crate::tests::assert_every_covered_control_is_reportable`] for why.
+///
+/// Nothing is excused here. Both unchecked builders take a directive from the
+/// same table `coverage()` walks and carry the mappings that table's own
+/// function returns, so every declared control is reachable by construction;
+/// this is what would notice a mapping added from anywhere else.
+// assertions-in-helper: the invariant has one definition, in
+// crate::tests::assert_every_covered_control_is_reportable, so that eight
+// plugins state it once rather than eight times. Both of its assertions,
+// including the two vacuity guards, fire from there.
+#[test]
+fn every_covered_permissions_control_can_be_reported_unchecked() {
+    let reportable: Vec<_> = CRITICAL_PERMISSIONS
+        .iter()
+        .map(|directive| unverifiable_unchecked(directive, "the mode could not be read"))
+        .collect();
+
+    crate::tests::assert_every_covered_control_is_reportable(
+        "permissions",
+        &coverage(),
+        &reportable,
+        &[],
+    );
+}

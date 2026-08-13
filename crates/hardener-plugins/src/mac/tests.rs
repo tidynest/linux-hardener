@@ -561,3 +561,54 @@ async fn an_unreadable_selinux_mode_reports_no_reload() {
         "nothing was reloaded, so nothing may be reported"
     );
 }
+
+/// Every control this plugin declares assessed must have a route to being
+/// reported unchecked. See
+/// [`crate::tests::assert_every_covered_control_is_reportable`] for why.
+///
+/// Nothing is excused, and nothing needs to be: the `Absent` arm reports the
+/// enforcement checks unchecked and the `Indeterminate` arm reports the
+/// presence check unchecked, so between them the two host states this plugin
+/// cannot draw a conclusion from reach every control it declares.
+///
+/// The unchecked entries come from running both scans rather than from a list
+/// written here. Hand-building them would compare `coverage()` against a union
+/// composed in this file, which is `coverage()`'s own definition restated and
+/// would survive either arm being deleted. Driving the plugin does not:
+/// `mac_finding_type_tables_partition` guards the tables, and this guards that
+/// the code actually reaches them.
+#[tokio::test]
+async fn every_covered_mac_control_can_be_reported_unchecked() {
+    let config = PluginConfig::default();
+    let plugin = MacHardeningPlugin::new();
+
+    // No overrides: every path_exists answers false, so detection reports
+    // Absent and the enforcement checks go unchecked.
+    let absent = plugin
+        .scan(
+            &Context::with_executor(Arc::new(MockExecutor::new())),
+            &config,
+        )
+        .await
+        .expect("an absent MAC system is not an error");
+
+    // A probe that fails rather than answering: detection reports
+    // Indeterminate and the presence check goes unchecked.
+    let indeterminate = plugin
+        .scan(
+            &Context::with_executor(Arc::new(
+                MockExecutor::new().with_path_exists_error("/sys/fs/selinux"),
+            )),
+            &config,
+        )
+        .await
+        .expect("an unreadable probe is not an error");
+
+    let reportable: Vec<_> = absent
+        .scan_unchecked
+        .into_iter()
+        .chain(indeterminate.scan_unchecked)
+        .collect();
+
+    crate::tests::assert_every_covered_control_is_reportable("mac", &coverage(), &reportable, &[]);
+}

@@ -257,3 +257,25 @@ async fn services_divergences_after_rollback_is_scoped_to_restored_unit_paths() 
         "a restored path under {ADMIN_UNIT_DIR} must let the probe run"
     );
 }
+
+/// Every control this plugin declares assessed must have a route to being
+/// reported unchecked. See
+/// [`crate::tests::assert_every_covered_control_is_reportable`] for why.
+///
+/// Nothing is excused here. `unchecked_all_services` walks the same table and
+/// the same mapping function as `coverage()`, so every declared control is
+/// reachable by construction; this is what would notice a mapping added from
+/// anywhere else.
+// assertions-in-helper: the invariant has one definition, in
+// crate::tests::assert_every_covered_control_is_reportable, so that eight
+// plugins state it once rather than eight times. Both of its assertions,
+// including the two vacuity guards, fire from there.
+#[test]
+fn every_covered_service_control_can_be_reported_unchecked() {
+    crate::tests::assert_every_covered_control_is_reportable(
+        "services",
+        &coverage(),
+        &unchecked_all_services("the listing failed"),
+        &[],
+    );
+}
