@@ -89,15 +89,26 @@ recipe history-regressions  unprivileged ro -- history regressions
 # CLI does not have: `--execute` (there is none; a bare `apply --all` IS the
 # execute path), `--name` and `--plugin`/`--key` (positionals), and an `apply`
 # with neither `--all` nor `--plugin`, which the tool correctly refuses.
-recipe apply-dry            root mut -- apply --all --dry-run
-recipe apply-all            root mut -- apply --all
-recipe checkpoint-create    root mut -- checkpoint create 'walk probe'
-recipe checkpoint-repair    root mut -- checkpoint repair
+# ORDER IS LOAD-BEARING in this block. A phase runs its recipes in declaration
+# order, so a recipe that consumes what an earlier one produced has to come
+# after it, and one that needs a state an earlier one destroys has to come
+# before. Two orderings were wrong on the first real walk and both read as
+# product failures rather than as recipe bugs.
+#
+# `exception add` pins the value of a finding that is live NOW, so it must run
+# BEFORE the apply that fixes that finding. Placed after, it correctly refused
+# with "No live finding is keyed 'PASS_MAX_DAYS'" on every phase, and the
+# success path was never walked at all.
+#
 # pam-hardening/PASS_MAX_DAYS rather than a service key: this pairing is raised
 # on every distribution a pristine container can be, so the recipe exercises
 # `exception add` instead of exercising its "no such key" refusal everywhere.
 recipe exception-add        root mut -- exception add pam-hardening PASS_MAX_DAYS --reason 'cli walk probe'
 recipe exception-remove     root mut -- exception remove pam-hardening PASS_MAX_DAYS
+recipe apply-dry            root mut -- apply --all --dry-run
+recipe apply-all            root mut -- apply --all
+recipe checkpoint-create    root mut -- checkpoint create 'walk probe'
+recipe checkpoint-repair    root mut -- checkpoint repair
 
 # --- Scheduling --------------------------------------------------------------
 recipe systemd-generate     root   ro  -- systemd generate
@@ -126,7 +137,13 @@ recipe ssh-refusal-daemon   unprivileged ro -- --ssh nonexistent.invalid daemon 
 # RUNTIME_SESSION from earlier captures in the same phase sequence, and skip
 # with a reason where no id exists yet. RUNTIME_OUT is the capture directory.
 recipe checkpoint-show      root ro  -- checkpoint show RUNTIME_ID
-recipe checkpoint-delete    root mut -- checkpoint delete RUNTIME_ID
+# `rollback` BEFORE `checkpoint delete`, and this is the second ordering the
+# first walk had wrong. Both resolve the same RUNTIME_ID, which is fixed for
+# the whole phase, so delete-then-rollback hands `rollback` an id it has just
+# destroyed. The restore phase did nothing, the restored snapshot came out
+# byte-identical to the applied one, and the walk could not show that a
+# rollback undoes anything.
 recipe rollback-run         root mut -- rollback RUNTIME_ID
+recipe checkpoint-delete    root mut -- checkpoint delete RUNTIME_ID
 recipe history-show         root ro  -- history show RUNTIME_SESSION
 recipe history-export       root ro  -- history export RUNTIME_SESSION --output RUNTIME_OUT
