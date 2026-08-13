@@ -101,6 +101,23 @@ walk_write_diff_pointer "$POINTER" arch debian
 check "pointer flags an absent capture" "yes" \
     "$(grep -q 'debian(absent)' "$POINTER/diff-pointer.md" && echo yes || echo no)"
 
+# The WALK PROBLEM comparison must need nothing installed. It was written with
+# `cmp`, which the rhel container lacks: the missing command returned 127, the
+# `&&` short-circuited, and the one container whose restore phase HAD done
+# nothing was the one container that never said so. Running the comparison with
+# an empty PATH is the check, because it fails the moment someone reaches for
+# an external tool again; asserting only that identical files compare equal
+# would have passed on this machine throughout.
+SNAP="$TMP/snap"
+mkdir -p "$SNAP"
+printf 'same\n' > "$SNAP/a"
+printf 'same\n' > "$SNAP/b"
+printf 'different\n' > "$SNAP/c"
+check "identical snapshots compare equal with no PATH" "yes" \
+    "$(PATH='' "$BASH" -c '[[ "$(<"$1")" == "$(<"$2")" ]] && echo yes || echo no' _ "$SNAP/a" "$SNAP/b")"
+check "differing snapshots compare unequal with no PATH" "no" \
+    "$(PATH='' "$BASH" -c '[[ "$(<"$1")" == "$(<"$2")" ]] && echo yes || echo no' _ "$SNAP/a" "$SNAP/c")"
+
 if [[ $fails -eq 0 ]]; then
     echo "selftest: all checks passed"
     exit 0

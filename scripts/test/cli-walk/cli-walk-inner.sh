@@ -133,14 +133,27 @@ phase_snapshot() {
     [[ -f "${match[0]}" ]] && printf '%s' "${match[0]}"
 }
 
+# Compared with a bash builtin and NOT with `cmp`, which is the shape this
+# check was written to catch, found in the check itself. `cmp` lives in
+# diffutils, the rhel container does not install it, and a missing command
+# returns 127: the `&&` short-circuited, the `if` was false, and no note was
+# written. That container's restore phase HAD done nothing, and its index came
+# out clean while debian and ubuntu, which have diffutils, were flagged
+# correctly for the identical condition. A guard that reports a problem only on
+# hosts equipped to notice it is worse than none, because the silence reads as
+# a pass. `$(<file)` needs nothing installed, so there is no absence left to
+# handle rather than a handled one. It strips trailing newlines from both sides
+# equally, which cannot turn two differing snapshots into a match.
 SNAPSHOT_NOTE=""
 applied_snap="$(phase_snapshot applied)"
 restored_snap="$(phase_snapshot restored)"
 pristine_snap="$(phase_snapshot pristine)"
-if [[ -n "$applied_snap" && -n "$pristine_snap" ]] && cmp -s "$pristine_snap" "$applied_snap"; then
+if [[ -n "$applied_snap" && -n "$pristine_snap" ]] &&
+    [[ "$(<"$pristine_snap")" == "$(<"$applied_snap")" ]]; then
     SNAPSHOT_NOTE=" | WALK PROBLEM: applied is byte-identical to pristine, so the mutate phase changed nothing"
 fi
-if [[ -n "$applied_snap" && -n "$restored_snap" ]] && cmp -s "$applied_snap" "$restored_snap"; then
+if [[ -n "$applied_snap" && -n "$restored_snap" ]] &&
+    [[ "$(<"$applied_snap")" == "$(<"$restored_snap")" ]]; then
     SNAPSHOT_NOTE="$SNAPSHOT_NOTE | WALK PROBLEM: restored is byte-identical to applied, so the restore phase changed nothing"
 fi
 
