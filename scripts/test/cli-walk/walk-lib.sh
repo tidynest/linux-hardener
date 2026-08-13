@@ -98,7 +98,13 @@ walk_write_index() {
         local row
         for row in "${WALK_ROWS[@]}"; do
             IFS='|' read -r phase slug code bytes note <<< "$row"
-            echo "| $phase | $slug | $code | $bytes | $note |"
+            # Escape pipe characters in the note field before rendering to markdown.
+            # The note is caller-supplied text and can contain literal pipes, which
+            # would otherwise split the table row into extra columns. WALK_ROWS stores
+            # the note unescaped (it parses correctly because read gives the trailing
+            # field the remainder intact); only the markdown rendering needs escaping.
+            local escaped_note="${note//|/\\|}"
+            echo "| $phase | $slug | $code | $bytes | $escaped_note |"
         done
     } > "$out"
 }

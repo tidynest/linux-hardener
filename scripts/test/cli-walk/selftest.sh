@@ -50,6 +50,16 @@ check "failure captured"   "1"   "$(cat "$TMP/pristine/002-selftest-false/exit" 
 run_recipe selftest-block pristine 1 -- /bin/sleep 30
 check "timeout captured"   "124" "$(cat "$TMP/pristine/003-selftest-block/exit" 2>/dev/null)"
 
+# A note containing a literal pipe must be escaped in the markdown table output.
+# Without escaping, the pipe would split the row into extra columns, corrupting
+# the table. With the fix, escaped pipes appear as \| in the note field.
+walk_skip with-pipe-in-reason pristine "something | happened | here"
+walk_write_index "test binary"
+generated_row=$(grep "with-pipe-in-reason" "$TMP/index.md" 2>/dev/null)
+# The note field must contain the escaped pipe sequence \| to preserve rendering.
+has_escaped_pipe="$(echo "$generated_row" | grep -q '\\|' && echo yes || echo no)"
+check "pipe-in-note escaped" "yes" "$has_escaped_pipe"
+
 if [[ $fails -eq 0 ]]; then
     echo "selftest: all checks passed"
     exit 0
