@@ -1502,6 +1502,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`/etc/security/faillock.conf` and `/etc/security/pwhistory.conf` were read
+  twice by every PAM scan and every PAM dry run** (#170). Both `scan` and
+  `validate` walk the layer-drift table and then walk the directive table, and
+  the hand-over that stops the second walk re-reading a file named only two of
+  the four files the drift table covers, so the other two were read once by
+  each. `read_conf_classified` warns on failure, so on a host where either file
+  is mode 0600 every run printed the identical "Failed to read ... permission
+  denied" line twice, reading as two separate problems, and a second privileged
+  read went with it. `read_effective_threshold` now takes the same `already_read`
+  hand-over the drift walk takes, with the same read-if-absent fallback rather
+  than a new cache, and both verbs hoist all four files. `apply` never called
+  the drift walk and already read each once; it passes an empty hand-over and is
+  unchanged. Measured on the mock executor's read log before and after: scan and
+  validate went from 2 to 1 for each of the two files, apply stayed at 1. Both
+  paths are covered by their own read-count test, and the two paths are named by
+  one constant each so a path spelled differently in the two places cannot
+  silently revert this.
+
+- **A PAM `finding_impact` said "that file" and named no file** (#169). The
+  finding raised when a directive's module is absent from the PAM stack carried
+  the path only in `finding_description`, a sibling field, so a JSON consumer
+  rendering `finding_impact` on its own got a sentence pointing at nothing. Both
+  it and the neighbouring unenforceable-`PASS_MIN_DAYS` finding, which said
+  "whatever the file says", now name their file. Guarded by a rule over the
+  whole directive table rather than by two string assertions: any `finding_impact`
+  referring to "the file" or "that file" must also carry a path, so a third
+  finding phrased the same way fails rather than shipping.
+
 - **Daywatch's two success colours were dark-theme values on a light ground,
   and both failed WCAG AA everywhere they were read.** `--color-good`
   `#059669` measured 3.49:1 on the page background and 2.95:1 on the theme's

@@ -574,19 +574,23 @@ impl HardeningPlugin for PamHardeningPlugin {
         // it already had.
         let login_defs_read = read_conf_classified(ctx, "/etc/login.defs").await;
 
+        // The other two files the drift table names. Hoisted here for the same
+        // reason as the two above: the drift walk and the directive loop both
+        // want them, and whichever reads second reads a file this run already
+        // read and warns a second time about the same failure (#170).
+        let faillock = read_conf_classified(ctx, FAILLOCK_CONF).await;
+        let pwhistory = read_conf_classified(ctx, PWHISTORY_CONF).await;
+
         // Drift between the layers, for every file the table names rather than
-        // for login.defs alone. The two files already read above are handed
-        // over so they are not read, and warned about, a second time.
-        findings.extend(
-            layer_drift_findings(
-                ctx,
-                &[
-                    ("/etc/security/pwquality.conf", &pwquality),
-                    ("/etc/login.defs", &login_defs_read),
-                ],
-            )
-            .await,
-        );
+        // for login.defs alone. The files already read above are handed over so
+        // they are not read, and warned about, a second time.
+        let already_read: [(&str, &ConfRead); 4] = [
+            ("/etc/security/pwquality.conf", &pwquality),
+            ("/etc/login.defs", &login_defs_read),
+            (FAILLOCK_CONF, &faillock),
+            (PWHISTORY_CONF, &pwhistory),
+        ];
+        findings.extend(layer_drift_findings(ctx, &already_read).await);
 
         // Whether each file's consuming module is loaded, read once per file
         // rather than once per directive: six pwquality keys share one module,
@@ -647,22 +651,29 @@ impl HardeningPlugin for PamHardeningPlugin {
                 continue;
             }
 
-            let current_value =
-                match observed_pam_value(ctx, directive, &pwquality, &login_defs_read).await {
-                    PamObserved::Value(v) => Some(v),
-                    PamObserved::NotSet => None,
-                    PamObserved::Unreadable {
-                        path,
+            let current_value = match observed_pam_value(
+                ctx,
+                directive,
+                &pwquality,
+                &login_defs_read,
+                &already_read,
+            )
+            .await
+            {
+                PamObserved::Value(v) => Some(v),
+                PamObserved::NotSet => None,
+                PamObserved::Unreadable {
+                    path,
+                    permission_denied,
+                } => {
+                    unchecked.push(unchecked_pam_directive(
+                        directive,
+                        unreadable_reason(path, permission_denied),
                         permission_denied,
-                    } => {
-                        unchecked.push(unchecked_pam_directive(
-                            directive,
-                            unreadable_reason(path, permission_denied),
-                            permission_denied,
-                        ));
-                        continue;
-                    }
-                };
+                    ));
+                    continue;
+                }
+            };
 
             // Resolve the effective target the same way apply and validate do,
             // through the one function all three call: a directive override
@@ -860,7 +871,14 @@ impl HardeningPlugin for PamHardeningPlugin {
         let mut observed_values = Vec::with_capacity(PAM_DIRECTIVES.len());
         for directive in PAM_DIRECTIVES {
             observed_values.push(
-                observed_pam_value(ctx, directive, &pwquality_observed, &login_defs_observed).await,
+                observed_pam_value(
+                    ctx,
+                    directive,
+                    &pwquality_observed,
+                    &login_defs_observed,
+                    &[],
+                )
+                .await,
             );
         }
 
@@ -1255,25 +1273,28 @@ impl HardeningPlugin for PamHardeningPlugin {
         // only real pending changes.
         let pwquality = read_conf_classified(ctx, "/etc/security/pwquality.conf").await;
         let login_defs = read_conf_classified(ctx, "/etc/login.defs").await;
+        let faillock = read_conf_classified(ctx, FAILLOCK_CONF).await;
+        let pwhistory = read_conf_classified(ctx, PWHISTORY_CONF).await;
+
+        let already_read: [(&str, &ConfRead); 4] = [
+            ("/etc/security/pwquality.conf", &pwquality),
+            ("/etc/login.defs", &login_defs),
+            (FAILLOCK_CONF, &faillock),
+            (PWHISTORY_CONF, &pwhistory),
+        ];
 
         issues.extend(
-            layer_drift_findings(
-                ctx,
-                &[
-                    ("/etc/security/pwquality.conf", &pwquality),
-                    ("/etc/login.defs", &login_defs),
-                ],
-            )
-            .await
-            .into_iter()
-            .map(|finding| ValidationIssue {
-                validation_issue_config_key: None,
-                validation_issue_message: format!(
-                    "{}; apply will not import them, so restoring them is a manual step",
-                    finding.finding_description
-                ),
-                validation_issue_severity: finding.finding_severity,
-            }),
+            layer_drift_findings(ctx, &already_read)
+                .await
+                .into_iter()
+                .map(|finding| ValidationIssue {
+                    validation_issue_config_key: None,
+                    validation_issue_message: format!(
+                        "{}; apply will not import them, so restoring them is a manual step",
+                        finding.finding_description
+                    ),
+                    validation_issue_severity: finding.finding_severity,
+                }),
         );
 
         // Medium, and not High, on purpose. High blocks the dry run
@@ -1304,7 +1325,7 @@ impl HardeningPlugin for PamHardeningPlugin {
             // actually has, matching apply's rendering of an absent or
             // unreadable directive as "not set" so neither trusts an
             // exception on faith.
-            let observed = observed_pam_value(ctx, d, &pwquality, &login_defs).await;
+            let observed = observed_pam_value(ctx, d, &pwquality, &login_defs, &already_read).await;
             if let Some(exception) =
                 config.matching_exception(d.pam_directive_name, observed.value_or_not_set())
             {
@@ -1489,6 +1510,16 @@ fn module_not_loaded_message(conf_path: &str, module: &str) -> String {
 /// The one directive whose enforcement depends on how shadow was built.
 const MIN_DAYS_DIRECTIVE: &str = "PASS_MIN_DAYS";
 
+/// The two `security/*.conf` files this plugin both compares for layer drift
+/// and reads a directive out of.
+///
+/// Named rather than written out at each use because the two uses have to
+/// agree: the hoisted read is matched to the directive's file by string, so a
+/// path spelled differently in the two places silently reverts #170 and the
+/// file is read, and warned about, twice again.
+const FAILLOCK_CONF: &str = "/etc/security/faillock.conf";
+const PWHISTORY_CONF: &str = "/etc/security/pwhistory.conf";
+
 /// Whether this host's shadow implements a minimum password age at all.
 ///
 /// Arch builds it without one. `chage` there has no `-m/--mindays`, prints no
@@ -1538,8 +1569,8 @@ fn min_days_unenforceable_finding(directive: &PamDirective) -> Finding {
         ),
         finding_explanation: directive.pam_description.to_string(),
         finding_impact:
-            "New accounts are created with no minimum password age whatever the file says, \
-             so a user can change a password repeatedly to cycle back to an old one"
+            "New accounts are created with no minimum password age whatever /etc/login.defs \
+             says, so a user can change a password repeatedly to cycle back to an old one"
                 .to_string(),
         finding_recommended_value: directive.pam_secure_value.to_string(),
         finding_remediation_steps: vec![
@@ -1574,10 +1605,10 @@ fn module_absent_finding(directive: &PamDirective, module: &str, conf_path: &str
             directive.pam_directive_name, module, conf_path
         ),
         finding_explanation: directive.pam_description.to_string(),
-        finding_impact:
-            "Nothing on this host reads that file, so the directive has no effect whatever \
+        finding_impact: format!(
+            "Nothing on this host reads {conf_path}, so the directive has no effect whatever \
              its value and the host enforces nothing for it"
-                .to_string(),
+        ),
         finding_recommended_value: directive.pam_secure_value.to_string(),
         finding_remediation_steps: vec![
             format!("Install the package providing {module} if it is missing"),
@@ -1788,7 +1819,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_secure_value: "5",
         pam_description: "Lock the account after at most 5 failed attempts",
         pam_severity: Severity::High,
-        pam_config_file: PamConfigFile::SecurityConf("/etc/security/faillock.conf"),
+        pam_config_file: PamConfigFile::SecurityConf(FAILLOCK_CONF),
         pam_compare: Strictness::AtMost,
     },
     PamDirective {
@@ -1796,7 +1827,7 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_secure_value: "5",
         pam_description: "Remember at least the last 5 passwords to prevent reuse",
         pam_severity: Severity::Medium,
-        pam_config_file: PamConfigFile::SecurityConf("/etc/security/pwhistory.conf"),
+        pam_config_file: PamConfigFile::SecurityConf(PWHISTORY_CONF),
         pam_compare: Strictness::AtLeast,
     },
 ];
@@ -2438,7 +2469,12 @@ enum ThresholdRead {
 /// Effective value of a threshold directive: an inline PAM-stack override wins
 /// over the `/etc/security/*.conf` value. A conf file blocked by privileges
 /// surfaces as `PermissionDenied` so the caller reports it unchecked.
-async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &'static str) -> ThresholdRead {
+async fn read_effective_threshold(
+    ctx: &Context,
+    arg: &str,
+    conf: &'static str,
+    already_read: &[(&str, &ConfRead)],
+) -> ThresholdRead {
     match read_pamd_inline(ctx, conf, arg).await {
         InlineRead::Value(inline) => return ThresholdRead::Value(inline),
         // The stack wins over the conf, so a stack that could not be read
@@ -2454,17 +2490,29 @@ async fn read_effective_threshold(ctx: &Context, arg: &str, conf: &'static str) 
         }
         InlineRead::NotSet => {}
     }
-    match read_conf_classified(ctx, conf).await {
+    // The caller's read where it has one, and only otherwise our own. Same
+    // hand-over the drift walk takes, for the same reason: `scan` and
+    // `validate` both walk the drift table before reaching this, so without it
+    // the conf is read, and warned about, once there and once here (#170).
+    let freshly_read;
+    let conf_read = match already_read.iter().find(|(path, _)| *path == conf) {
+        Some((_, read)) => *read,
+        None => {
+            freshly_read = read_conf_classified(ctx, conf).await;
+            &freshly_read
+        }
+    };
+    match conf_read {
         ConfRead::Unreadable {
             permission_denied, ..
         } => ThresholdRead::Unreadable {
             path: conf,
-            permission_denied,
+            permission_denied: *permission_denied,
         },
         // A missing file has no directives, same as today: empty content.
         ConfRead::Absent => ThresholdRead::NotSet,
         ConfRead::Content(content, _) => {
-            match parse_config_value(&content, arg, ConfigFormat::KeyValue, true) {
+            match parse_config_value(content, arg, ConfigFormat::KeyValue, true) {
                 Some(v) => ThresholdRead::Value(v),
                 None => ThresholdRead::NotSet,
             }
@@ -2513,6 +2561,13 @@ impl PamObserved {
 /// the classified reads the caller has already performed, so this does I/O only
 /// for `SecurityConf` directives.
 ///
+/// `already_read` covers those: any file in it is taken from there rather than
+/// read again, the same hand-over [`layer_drift_findings`] takes. `scan` and
+/// `validate` pass all four files the drift table names, because both walk that
+/// table before reaching this and would otherwise read the two `SecurityConf`
+/// files, and warn about them, twice per run (#170). `apply` passes nothing: it
+/// never calls the drift walk, so its read here is the run's first.
+///
 /// `login_defs` is classified rather than plain content because the two states
 /// it used to conflate call for opposite answers: a file that is genuinely
 /// absent leaves its directives unset, while one that exists and could not be
@@ -2524,6 +2579,7 @@ async fn observed_pam_value(
     directive: &PamDirective,
     pwquality: &ConfRead,
     login_defs: &ConfRead,
+    already_read: &[(&str, &ConfRead)],
 ) -> PamObserved {
     match &directive.pam_config_file {
         PamConfigFile::PwQuality => match pwquality {
@@ -2565,7 +2621,9 @@ async fn observed_pam_value(
         },
         PamConfigFile::PamAuth => PamObserved::NotSet,
         PamConfigFile::SecurityConf(path) => {
-            match read_effective_threshold(ctx, directive.pam_directive_name, path).await {
+            match read_effective_threshold(ctx, directive.pam_directive_name, path, already_read)
+                .await
+            {
                 ThresholdRead::Value(v) => PamObserved::Value(v),
                 ThresholdRead::NotSet => PamObserved::NotSet,
                 // The path carried here, not `path`: what could not be read may

@@ -64,7 +64,7 @@ pub(super) const LAYERED_CONFS: &[LayeredConf] = &[
              report against that weaker policy too.",
     },
     LayeredConf {
-        admin_path: "/etc/security/faillock.conf",
+        admin_path: super::FAILLOCK_CONF,
         finding_id: "pam-faillock-conf-masked-keys",
         consumer: "pam_faillock",
         impact: "Account lockout runs on pam_faillock's built-in defaults rather than the \
@@ -73,7 +73,7 @@ pub(super) const LAYERED_CONFS: &[LayeredConf] = &[
              vendor file states.",
     },
     LayeredConf {
-        admin_path: "/etc/security/pwhistory.conf",
+        admin_path: super::PWHISTORY_CONF,
         finding_id: "pam-pwhistory-conf-masked-keys",
         consumer: "pam_pwhistory",
         impact: "Password reuse prevention runs on pam_pwhistory's built-in defaults rather \

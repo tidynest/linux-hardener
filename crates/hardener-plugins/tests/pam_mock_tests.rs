@@ -4092,3 +4092,41 @@ async fn the_drift_walk_does_not_reread_what_its_caller_read() {
         );
     }
 }
+
+/// `validate` reads the same files as `scan` and had the same duplicate.
+///
+/// Separate from the `scan` test rather than folded into it: the two verbs
+/// hoist their reads independently, so one can regress while the other holds,
+/// and a single test covering both would have to pick one verb's failure
+/// message. `apply` is not covered because it never calls the drift walk, so
+/// it never had the second read to remove; a test asserting a property it gets
+/// for free would pass whatever this fix did.
+#[tokio::test]
+async fn validate_does_not_reread_what_it_already_read() {
+    let executor = Arc::new(secure_pam_executor());
+    let ctx = Context::with_executor(executor.clone());
+
+    PamHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .unwrap();
+
+    for path in [
+        "/etc/security/pwquality.conf",
+        "/etc/login.defs",
+        "/etc/security/faillock.conf",
+        "/etc/security/pwhistory.conf",
+    ] {
+        let reads = executor
+            .log()
+            .files_read
+            .iter()
+            .filter(|read| read.as_os_str() == path)
+            .count();
+        assert!(
+            reads <= 1,
+            "{path} was read {reads} times in one validate; a file read twice \
+             warns twice about the same failure"
+        );
+    }
+}

@@ -695,3 +695,54 @@ fn every_covered_pam_control_can_be_reported_unchecked() {
 
     crate::tests::assert_every_covered_control_is_reportable("pam", &coverage(), &reportable, &[]);
 }
+
+/// `finding_impact` is read on its own, so every file it points at must be
+/// named inside it.
+///
+/// The two "the host cannot act on this" findings both open by referring to a
+/// file deictically. `module_absent_finding` said "Nothing on this host reads
+/// that file" and named the path only in `finding_description`, a sibling
+/// field; `min_days_unenforceable_finding` said "whatever the file says". A
+/// text renderer prints the description alongside, so an operator's reference
+/// resolves either way, but a JSON consumer rendering `finding_impact` alone
+/// gets a sentence pointing at nothing.
+///
+/// Written as a rule over the whole directive table rather than as two string
+/// assertions: a per-case check needs someone to have thought of the case, and
+/// a third finding phrased the same way would pass one. Both constructors are
+/// exercised for every directive that can reach them, and the rule is that a
+/// field referring to "the file" or "that file" must also carry a path.
+#[test]
+fn every_impact_that_points_at_a_file_names_it() {
+    let deictic = ["that file", "the file"];
+    let mut checked = 0;
+
+    for directive in PAM_DIRECTIVES {
+        let Some(conf_path) = directive.pam_config_file.conf_path() else {
+            continue;
+        };
+        let mut impacts = vec![module_absent_finding(directive, "pam_pwquality", conf_path)];
+        if directive.pam_directive_name == MIN_DAYS_DIRECTIVE {
+            impacts.push(min_days_unenforceable_finding(directive));
+        }
+
+        for finding in impacts {
+            let impact = &finding.finding_impact;
+            checked += 1;
+            if !deictic.iter().any(|phrase| impact.contains(phrase)) {
+                continue;
+            }
+            assert!(
+                impact.contains('/'),
+                "{} refers to a file it does not name, so the reference \
+                 resolves only against a sibling field: {impact}",
+                finding.finding_id
+            );
+        }
+    }
+
+    assert!(
+        checked > 0,
+        "no impact text was examined, so this test proved nothing"
+    );
+}
