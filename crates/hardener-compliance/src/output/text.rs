@@ -116,6 +116,15 @@ impl ReportFormatter for TextFormatter {
             report.report_summary.summary_score_percentage
         ));
 
+        // Directly under the score, because it is the score the caveat is
+        // about: the checks that could not run are in its denominator, so a
+        // privileged re-run produces a different number. The report used to
+        // publish the figure and say nothing, and the report is the artefact
+        // an operator keeps (#161).
+        if let Some(note) = report.report_coverage_note.as_deref() {
+            output.push_str(&format!("\n  {note}\n"));
+        }
+
         output
     }
 }

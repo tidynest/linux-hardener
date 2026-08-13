@@ -24,6 +24,7 @@ fn test_json_formatter_basic() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_controls: vec![ControlResult {
             control_id: "1.5.1".to_string(),
@@ -59,6 +60,7 @@ fn test_json_formatter_pretty() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_controls: vec![],
         report_summary: ComplianceSummary {

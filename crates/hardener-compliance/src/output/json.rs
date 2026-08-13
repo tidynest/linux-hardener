@@ -21,6 +21,15 @@ struct JsonReport<'a> {
     report_controls: &'a [hardener_types::ControlResult],
     /// Summary statistics for the report.
     report_summary: &'a hardener_types::ComplianceSummary,
+    /// What the scan behind this report could not verify, absent when it
+    /// verified everything.
+    ///
+    /// A consumer archiving compliance evidence has the same problem the
+    /// operator reading the text renderer had: the unchecked checks sit in the
+    /// score's denominator and nothing said so (#161). `skip_serializing_if`
+    /// keeps a complete run's JSON exactly as it was.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    report_coverage_note: &'a Option<String>,
 }
 
 impl<'a> JsonReport<'a> {
@@ -32,6 +41,7 @@ impl<'a> JsonReport<'a> {
             report_generated_at: &report.report_generated_at,
             report_controls: &report.report_controls,
             report_summary: &report.report_summary,
+            report_coverage_note: &report.report_coverage_note,
         }
     }
 }

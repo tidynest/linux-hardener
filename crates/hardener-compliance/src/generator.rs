@@ -193,6 +193,12 @@ impl ReportGenerator {
             report_generated_at: Utc::now(),
             report_controls: controls,
             report_summary: summary,
+            // Every unchecked entry, not only those mapping a control in this
+            // framework: the sentence describes the scan, and the scan is the
+            // same one whichever framework is being rendered from it. Narrowing
+            // it per framework would make the same run report different
+            // coverage depending on which report you asked for.
+            report_coverage_note: hardener_types::unchecked_summary(unchecked),
         }
     }
 }

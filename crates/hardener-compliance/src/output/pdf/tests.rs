@@ -24,6 +24,7 @@ fn test_pdf_formatter_creates_output() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_controls: vec![
             ControlResult {

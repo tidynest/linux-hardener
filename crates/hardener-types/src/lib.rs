@@ -1158,6 +1158,19 @@ pub struct ComplianceReport {
     pub report_controls: Vec<ControlResult>,
     /// Summary statistics for the report.
     pub report_summary: ComplianceSummary,
+    /// What the scan behind this report could not verify, or `None` when it
+    /// verified everything.
+    ///
+    /// The same sentence `scan` prints, from the same [`unchecked_summary`],
+    /// because the report runs the same scan and used to publish its score
+    /// without a word about the checks that did not run. Those checks are in
+    /// the score's denominator, so a privileged re-run produces a different
+    /// number and nothing in the document said so (#161).
+    ///
+    /// `#[serde(default)]` so a report serialised before this field existed
+    /// still deserialises.
+    #[serde(default)]
+    pub report_coverage_note: Option<String>,
 }
 
 /// Result of checking a single compliance control.

@@ -24,6 +24,7 @@ fn test_csv_formatter_basic() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_controls: vec![
             ControlResult {
@@ -88,6 +89,7 @@ fn finding_count_counts_live_violations_only() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,

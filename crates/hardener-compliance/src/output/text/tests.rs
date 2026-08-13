@@ -24,6 +24,7 @@ fn test_text_formatter_basic() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_controls: vec![
             ControlResult {
@@ -73,6 +74,7 @@ fn report_with(status: ControlStatus, findings: Vec<hardener_types::Finding>) ->
     ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,
@@ -121,6 +123,7 @@ fn stig_report(profile: ComplianceProfile) -> ComplianceReport {
     ComplianceReport {
         report_framework: ComplianceFramework::STIG,
         report_profile: profile,
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_controls: vec![],
         report_summary: ComplianceSummary::from_controls(&[]),

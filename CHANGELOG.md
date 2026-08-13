@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The compliance report published a score without saying its scan was
+  partial** (#161). `report` runs the same scan `scan` does, and `scan` is
+  honest about what it could not reach: "28 check(s) could not be verified, 26
+  of them for want of root; run with sudo for a fuller scan". The report then
+  printed six summary numbers and a percentage with no caveat anywhere, in any
+  renderer, while those unchecked checks sat in the score's denominator. An
+  operator printed it, saw a figure, and had no way to learn from the document
+  that a privileged re-run would produce a different one. The report is the
+  artefact people keep; `scan` is the one they run once. Reports now carry
+  `report_coverage_note`, rendered under the score in text and as a field in
+  JSON, and it is the same sentence from the same `unchecked_summary`, which
+  decides whether to offer sudo from each entry's own blocker rather than
+  assuming root. A run that verified everything says nothing, and its JSON is
+  unchanged. Found by the host CLI walk.
+
 - **`report --format json` was accepted, exited 0, and printed the text
   report** (#160). `report` carries two flags whose help text both read "Output
   format": `--report-format`, which drives the report body, and the global

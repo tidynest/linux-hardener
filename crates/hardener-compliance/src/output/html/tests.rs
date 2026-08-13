@@ -24,6 +24,7 @@ fn test_html_formatter_basic() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_controls: vec![ControlResult {
             control_id: "1.5.1".to_string(),
@@ -69,6 +70,7 @@ fn passing_control_shows_the_deviation_its_exception_documents() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,

@@ -123,6 +123,7 @@ fn test_compliance_report_serialization() {
     let report = ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
         report_generated_at: Utc::now(),
         report_controls: vec![make_control("1.1", ControlStatus::Pass)],
         report_summary: ComplianceSummary {

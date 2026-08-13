@@ -480,3 +480,67 @@ fn noncatalogue_finding_still_surfaces_as_failure() {
             .any(|c| c.control_id == "OL08-00-999999" && c.control_status == ControlStatus::Fail)
     );
 }
+
+/// The report states that its scan was partial, in the same words `scan` uses.
+///
+/// `report` runs the very same scan as `scan`, which prints "27 check(s) could
+/// not be verified, 26 of them for want of root; run with sudo for a fuller
+/// scan". The report then printed a score and six summary numbers with no
+/// caveat anywhere in either renderer, and the unchecked checks are in the
+/// denominator of that score. An operator prints the report, sees 70.5%, and
+/// has no way to learn from the document that a privileged re-run would produce
+/// a different number. The report is the artefact people keep; `scan` is the one
+/// they run once (#161).
+///
+/// The sentence is not composed here. `hardener_types::unchecked_summary` is
+/// the single definition, already used by four renderers, and it decides when
+/// to offer sudo based on each entry's own blocker rather than assuming root.
+#[test]
+fn a_partial_scan_says_so_in_the_report() {
+    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
+
+    let unchecked = vec![
+        UncheckedCheck {
+            unchecked_check_id: "pam-minlen".to_string(),
+            unchecked_title: "PAM setting: minlen".to_string(),
+            unchecked_category: FindingCategory::Authentication,
+            unchecked_reason: "requires root".to_string(),
+            unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
+            unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        },
+        UncheckedCheck {
+            unchecked_check_id: "mac-enforcement-mode".to_string(),
+            unchecked_title: "MAC enforcement mode".to_string(),
+            unchecked_category: FindingCategory::Kernel,
+            unchecked_reason: "no MAC system is installed".to_string(),
+            unchecked_blocker: hardener_types::UncheckedBlocker::Environment,
+            unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.6.1.4")],
+        },
+    ];
+
+    let report = generator.generate(&[], &unchecked).pop().unwrap();
+
+    let note = report
+        .report_coverage_note
+        .as_deref()
+        .expect("a run that could not verify two checks must say so in the report");
+
+    assert!(
+        note.contains('2') && note.contains("could not be verified"),
+        "the note must carry the count and the reason, got {note:?}"
+    );
+    assert!(
+        note.contains("sudo"),
+        "one of the two is privilege-blocked, so the remedy is worth offering: {note:?}"
+    );
+
+    // The other half, and the one that can rot: a complete run must claim
+    // nothing. A note composed unconditionally would pass every assertion
+    // above and put "0 check(s) could not be verified" on a clean report.
+    let complete = generator.generate(&[], &[]).pop().unwrap();
+    assert!(
+        complete.report_coverage_note.is_none(),
+        "a run that verified everything has no caveat to make, got {:?}",
+        complete.report_coverage_note
+    );
+}
