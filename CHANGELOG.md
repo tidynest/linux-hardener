@@ -1124,6 +1124,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The `host_key` / `host_identifier` JSON key split is now documented rather
+  than reconciled.** `checkpoint list` emits `host_key` and `history list` emits
+  `host_identifier` for one concept, both derived from `host_key_for` in
+  `hardener-common`. They were never unified because the two commands read
+  different databases and both names are a released machine contract, so a
+  rename breaks whichever consumers read the renamed one. `docs/reference/cli.md`
+  now states this under both commands, along with the one place the values
+  themselves diverge: a remote target is `ssh://user@host:port` in both, while
+  the local host is the literal `local` in checkpoints and the `/etc/hostname`
+  name in history, because the scheduler daemon writes that table without an
+  executor to ask. No code changed.
+
 - Rollback divergence rows now say whether they are the designed consequence of
   a plugin's own apply. The CLI, desktop and fleet surfaces print the rows
   nothing in the design produces first, and routine ones under an "Expected, by

@@ -359,7 +359,9 @@ Checkpoints belonging to other hosts are never shown, which matches the rollback
 rule that refuses to restore one host's state onto another. A target that names
 no user is filtered on the key ssh resolves it to *and* on the older key an
 earlier release fabricated for it, so nothing already recorded drops out of the
-list; see the checkpoint host key under [batch](#batch).
+list; see the checkpoint host key under [batch](#batch). The JSON field is
+`host_key`, which `history list` spells `host_identifier` for the same concept:
+see [history list](#history-list) for why both names are kept.
 
 ```
 hardener checkpoint list [FLAGS]
@@ -1053,6 +1055,21 @@ View and export past scan sessions.
 ### history list
 
 List recent scan sessions.
+
+**The JSON key here is `host_identifier`; `checkpoint list` calls the same thing
+`host_key`.** One concept under two released names. Both values come from one
+helper, `host_key_for` in `hardener-common`, but the two commands read different
+databases (`scheduler.db` here, `checkpoints.db` there), so neither field was
+ever renamed to match the other and renaming one now would break whichever
+consumers read it. A parser accepts the name emitted by the command it runs.
+
+The values agree for a remote target, `ssh://user@host:port` in both. They
+differ for the **local** host: `checkpoint list` records the literal `local`,
+`history list` records what `/etc/hostname` says. That is deliberate. The
+scheduler daemon and the CLI both write this table, so their local-host rule had
+to be shared, and the daemon has no executor to ask; checkpoints live in a table
+nothing else writes and never needed it. The three identities a fleet run keeps
+apart are described under [batch](#batch).
 
 ```
 hardener history list [FLAGS]
