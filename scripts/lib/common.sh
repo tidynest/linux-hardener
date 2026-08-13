@@ -5,8 +5,10 @@
 # Sourced by the test runners (scripts/test/*.sh, scripts/test/gui/*.sh,
 # scripts/test/polkit/*.sh) and the container tooling (scripts/containers/*.sh).
 # Provides the ANSI colour codes, the box-drawing banner helper, cargo
-# target-dir resolution, and the distro/container name tables shared by the
-# cross-distro, package and GUI test runners plus create-container.sh.
+# target-dir resolution, the distro/container name tables shared by the
+# cross-distro, package and GUI test runners plus create-container.sh, and the
+# three binary-identity questions the release-readiness and CLI walk runners
+# both ask before trusting a container's output.
 #
 # Callers must set PROJECT_DIR before calling resolve_target_dir (it reads
 # that variable); sourcing this file alone does not require it. Not safe to
@@ -101,3 +103,59 @@ declare -A CONTAINERS=(
 # the same bootstrap. It is the newest entry and no run of any suite against it
 # is dated anywhere: a container existing is not a container that has been run.
 DISTRO_ORDER=(arch debian ubuntu fedora rhel opensuse)
+
+# =============================================================================
+# Binary identity
+# =============================================================================
+#
+# Moved here from release-readiness-root.sh, which had the only copy, when the
+# CLI walk needed the same three questions (#47 follow-up). A container run once
+# attributed a failure to code the binary did not contain, and the CLI walk's
+# first real run did it again: it reproduced `report --format json` printing
+# prose, which had been fixed the previous day, because the container held a
+# binary from the commit before the fix. Every runner checks a binary EXISTS;
+# these are what check it is the one the tree describes.
+#
+# Callers must set PROJECT_DIR before calling workspace_version or
+# first_source_newer_than.
+
+# The version the working tree declares, read from the [workspace.package]
+# block. Cargo.toml holds many `version =` lines (every dependency has one), so
+# the section header is tracked rather than the first match taken.
+workspace_version() {
+    awk '
+        /^\[/    { in_workspace_package = ($0 == "[workspace.package]"); next }
+        in_workspace_package && /^version[[:space:]]*=/ {
+            line = $0
+            sub(/^version[[:space:]]*=[[:space:]]*"/, "", line)
+            sub(/".*$/, "", line)
+            print line
+            exit
+        }
+    ' "$PROJECT_DIR/Cargo.toml"
+}
+
+# The first line of a binary's --version, or the empty string if it will not
+# answer. Kept to one line: a multi-line answer would break every comparison
+# below into a shape no reader can attribute to the path printed beside it.
+binary_version_line() {
+    local binary="$1" output
+    if ! output="$("$binary" --version 2>&1)" || [[ -z "$output" ]]; then
+        return 1
+    fi
+    printf '%s' "${output%%$'\n'*}"
+}
+
+# The first tracked source file that is newer than the binary, or nothing.
+#
+# A commit check cannot see an uncommitted edit: the binary carries the commit
+# it was built at, and an edit on top of that commit leaves the identity string
+# untouched while making the binary stale. This is what notices.
+first_source_newer_than() {
+    local binary="$1"
+    find "$PROJECT_DIR/crates" "$PROJECT_DIR/src-tauri" \
+        "$PROJECT_DIR/Cargo.toml" "$PROJECT_DIR/Cargo.lock" \
+        -newer "$binary" \
+        \( -name '*.rs' -o -name 'Cargo.toml' -o -name 'Cargo.lock' \) \
+        -print -quit 2>/dev/null
+}

@@ -72,6 +72,47 @@ if [[ ! -x "$MUSL" ]]; then
     exit 1
 fi
 
+# The binary has to be the one the tree describes, and this is not paranoia:
+# the first real run of this harness walked a binary from the previous day and
+# faithfully reproduced `report --format json` printing prose, a defect fixed
+# that morning. Every line of that capture was true about a binary nobody was
+# asking about. A walk exists to attribute output to code, so walking the wrong
+# code is not a degraded run, it is a worthless one.
+#
+# Three questions, the same three release-readiness-root.sh asks, from the same
+# helpers in common.sh. No override: an override reintroduces exactly this.
+walk_binary_line="$(binary_version_line "$MUSL")" || {
+    echo -e "${RED}$MUSL would not report a version${NC}"
+    exit 1
+}
+# "hardener 1.5.1 (e8a7640c 2026-08-12)".
+read -r _ walk_bin_version walk_bin_commit _ <<< "$walk_binary_line"
+walk_bin_commit="${walk_bin_commit#(}"
+walk_bin_commit="${walk_bin_commit%)}"
+walk_tree_version="$(workspace_version)"
+walk_head_commit="$(git -C "$PROJECT_DIR" rev-parse --short HEAD 2>/dev/null || echo "")"
+walk_stale_source="$(first_source_newer_than "$MUSL")"
+
+walk_binary_problem=""
+[[ "$walk_bin_version" != "$walk_tree_version" ]] &&
+    walk_binary_problem="binary says version $walk_bin_version, tree says $walk_tree_version"
+[[ -n "$walk_head_commit" && "$walk_bin_commit" != "$walk_head_commit" ]] &&
+    walk_binary_problem="${walk_binary_problem:+$walk_binary_problem; }built at $walk_bin_commit, HEAD is $walk_head_commit"
+[[ -n "$walk_stale_source" ]] &&
+    walk_binary_problem="${walk_binary_problem:+$walk_binary_problem; }source newer than the binary: $walk_stale_source"
+
+if [[ -n "$walk_binary_problem" ]]; then
+    echo -e "${RED}The musl binary is not the one this tree describes.${NC}"
+    echo "  $walk_binary_problem"
+    echo ""
+    echo "  Every container would walk that binary and every line of the capture"
+    echo "  would be read as a fact about code it does not contain. Rebuild as"
+    echo "  your normal user, NOT under sudo:"
+    echo "    cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli"
+    exit 1
+fi
+echo -e "${DIM}Binary: $walk_binary_line (tree $walk_tree_version at $walk_head_commit)${NC}"
+
 TARGET_BIND=()
 [[ "$TARGET_DIR" != "$PROJECT_DIR/target" ]] && TARGET_BIND=("--bind-ro=$TARGET_DIR:/project/target")
 

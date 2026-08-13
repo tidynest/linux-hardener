@@ -65,21 +65,39 @@ recipe scan-json            unprivileged ro -- scan --format json
 recipe plugins-text         unprivileged ro -- plugins
 recipe plugins-json         unprivileged ro -- plugins --format json
 recipe report-text          unprivileged ro -- report --framework cis
+# Both format paths, because they are different code. `--report-format` is the
+# command's own flag; the global `--format json` reaches it only through
+# `resolve_output_format`, and until #160 it silenced progress and emitted prose,
+# so the invocation that looked most like machine mode produced the least
+# machine-readable output. One recipe cannot cover both.
 recipe report-json          unprivileged ro -- report --framework cis --format json
+recipe report-report-format unprivileged ro -- report --framework cis --report-format json
+# A second framework, because a walk over one says nothing about the catalogue.
+recipe report-nist          unprivileged ro -- report --framework nist
 recipe checkpoint-list      unprivileged ro -- checkpoint list
 recipe checkpoint-list-json unprivileged ro -- checkpoint list --format json
 recipe history-list         unprivileged ro -- history list
 recipe history-list-json    unprivileged ro -- history list --format json
-recipe history-trends       unprivileged ro -- history trends
+# `--host` is required, and `local` is the identifier `host_key_for` gives this
+# host: read out of a real capture's `history list --format json`, not assumed.
+recipe history-trends       unprivileged ro -- history trends --host local
 recipe history-regressions  unprivileged ro -- history regressions
 
 # --- Mutating local ----------------------------------------------------------
-recipe apply-dry            root mut -- apply --dry-run
-recipe apply-execute        root mut -- apply --execute
-recipe checkpoint-create    root mut -- checkpoint create --name 'walk probe'
+# Every argument here was read off `<command> --help`, not guessed. The first
+# real walk lost its whole mutate phase to six recipes that invented flags the
+# CLI does not have: `--execute` (there is none; a bare `apply --all` IS the
+# execute path), `--name` and `--plugin`/`--key` (positionals), and an `apply`
+# with neither `--all` nor `--plugin`, which the tool correctly refuses.
+recipe apply-dry            root mut -- apply --all --dry-run
+recipe apply-all            root mut -- apply --all
+recipe checkpoint-create    root mut -- checkpoint create 'walk probe'
 recipe checkpoint-repair    root mut -- checkpoint repair
-recipe exception-add        root mut -- exception add --plugin service-minimisation --key bluetooth-service --reason 'cli walk probe'
-recipe exception-remove     root mut -- exception remove --plugin service-minimisation --key bluetooth-service
+# pam-hardening/PASS_MAX_DAYS rather than a service key: this pairing is raised
+# on every distribution a pristine container can be, so the recipe exercises
+# `exception add` instead of exercising its "no such key" refusal everywhere.
+recipe exception-add        root mut -- exception add pam-hardening PASS_MAX_DAYS --reason 'cli walk probe'
+recipe exception-remove     root mut -- exception remove pam-hardening PASS_MAX_DAYS
 
 # --- Scheduling --------------------------------------------------------------
 recipe systemd-generate     root   ro  -- systemd generate

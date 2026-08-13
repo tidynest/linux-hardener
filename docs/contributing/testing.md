@@ -1318,6 +1318,29 @@ The fixture takes over `hardener-test`, which is the container the GUI runner
 uses, so the orchestrator refuses to start while that machine is busy rather
 than failing obscurely later.
 
+### The binary a walk walks
+
+The orchestrator refuses to start unless the musl binary is the one the tree
+describes, asking the same three questions `release-readiness-root.sh` asks and
+from the same helpers in `scripts/lib/common.sh`: does the semantic version
+match `[workspace.package]`, was it built at the checked-out commit, and is any
+tracked source newer than the binary itself.
+
+This is not caution. The first real run of this harness walked a binary from the
+previous day and faithfully reproduced `report --format json` printing prose, a
+defect fixed that morning (#160). Every line of that capture was true about a
+binary nobody was asking about. **The version matched**, which is why nothing
+noticed; only the commit and modification-time questions caught it. A walk
+exists to attribute output to code, so walking the wrong code is not a degraded
+run, it is a worthless one. There is deliberately no override.
+
+Build it as your normal user, never under sudo, which would leave root-owned
+artefacts in the cargo target directory:
+
+```bash
+cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
+```
+
 ### Reading a walk
 
 Read `test-results/cli-walk/arch/index.md`. The other five captures exist for
@@ -1338,7 +1361,12 @@ pass produces no commit.
 
 `coverage.sh` recurses `--help` and fails if any discovered command has neither
 a recipe nor a written skip, so a new subcommand cannot be added and walked
-past silently. `selftest.sh` proves the capture machinery before any walk
+past silently. It proves every COMMAND has a recipe and says nothing about
+whether a recipe's ARGUMENTS parse, which cannot be known without running them.
+That gap is covered at run time instead: `run_recipe` flags a clap parse error
+in the index as `RECIPE BUG`, because such a row is a fact about `recipes.sh`
+and not about the tool, and the first real walk lost its entire mutate phase to
+six of them sitting in the index as ordinary non-zero exits. `selftest.sh` proves the capture machinery before any walk
 trusts it: a bug in `run_recipe` that silently wrote empty stdout files would
 make every future walk worthless while looking entirely healthy. The host
 runner runs it and refuses to walk if it fails.

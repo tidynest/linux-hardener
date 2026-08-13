@@ -186,47 +186,6 @@ record_result() {
 # parts of this script that can be exercised without root, and they are kept
 # free of side effects so that stays true.
 
-# The version the working tree declares, read from the [workspace.package]
-# block. Cargo.toml holds many `version =` lines (every dependency has one), so
-# the section header is tracked rather than the first match taken.
-workspace_version() {
-    awk '
-        /^\[/    { in_workspace_package = ($0 == "[workspace.package]"); next }
-        in_workspace_package && /^version[[:space:]]*=/ {
-            line = $0
-            sub(/^version[[:space:]]*=[[:space:]]*"/, "", line)
-            sub(/".*$/, "", line)
-            print line
-            exit
-        }
-    ' "$PROJECT_DIR/Cargo.toml"
-}
-
-# The first line of a binary's --version, or the empty string if it will not
-# answer. Kept to one line: a multi-line answer would break every comparison
-# below into a shape no reader can attribute to the path printed beside it.
-binary_version_line() {
-    local binary="$1" output
-    if ! output="$("$binary" --version 2>&1)" || [[ -z "$output" ]]; then
-        return 1
-    fi
-    printf '%s' "${output%%$'\n'*}"
-}
-
-# The first tracked source file that is newer than the binary, or nothing.
-#
-# The commit check below cannot see an uncommitted edit: the binary carries the
-# commit it was built at, and an edit on top of that commit leaves the identity
-# string untouched while making the binary stale. This is what notices.
-first_source_newer_than() {
-    local binary="$1"
-    find "$PROJECT_DIR/crates" "$PROJECT_DIR/src-tauri" \
-        "$PROJECT_DIR/Cargo.toml" "$PROJECT_DIR/Cargo.lock" \
-        -newer "$binary" \
-        \( -name '*.rs' -o -name 'Cargo.toml' -o -name 'Cargo.lock' \) \
-        -print -quit 2>/dev/null
-}
-
 # =============================================================================
 # Pre-flight
 # =============================================================================

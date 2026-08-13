@@ -62,9 +62,15 @@ except Exception:
 ' "$rows_key" "$id_key"
 }
 
+# Both key names were read out of a real capture rather than assumed, after the
+# first walk skipped `history show` and `history export` in EVERY phase,
+# including the ones where sessions plainly existed. `history list --format
+# json` returns a bare list whose id key is `id`; the guess was `session_id`,
+# `first_id` swallowed the KeyError, printed nothing, and the skip reason said
+# "no runtime id available at this phase", which was true and told nobody why.
 resolve_runtime_ids() {
     RUNTIME_ID="$(first_id checkpoints checkpoint_id -- checkpoint list --format json)"
-    RUNTIME_SESSION="$(first_id sessions session_id -- history list --format json)"
+    RUNTIME_SESSION="$(first_id sessions id -- history list --format json)"
 }
 
 # run_phase PHASE KIND

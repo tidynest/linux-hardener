@@ -50,6 +50,21 @@ check "failure captured"   "1"   "$(cat "$TMP/pristine/002-selftest-false/exit" 
 run_recipe selftest-block pristine 1 -- /bin/sleep 30
 check "timeout captured"   "124" "$(cat "$TMP/pristine/003-selftest-block/exit" 2>/dev/null)"
 
+# A clap parse error must be called out as a recipe bug rather than left to
+# read as ordinary non-zero output. The first real walk lost its whole mutate
+# phase to six such rows, each indistinguishable in the index from a genuine
+# refusal by the tool.
+run_recipe selftest-badargs pristine 0 -- \
+    /bin/sh -c "echo \"error: unexpected argument '--nope' found\" >&2; exit 2"
+badargs_row="${WALK_ROWS[-1]}"
+check "recipe bug flagged"  "yes" \
+    "$(grep -q 'RECIPE BUG' <<< "$badargs_row" && echo yes || echo no)"
+# And a genuine non-zero exit must NOT be flagged, or the note means nothing.
+run_recipe selftest-realfail pristine 0 -- \
+    /bin/sh -c "echo 'Error: --ssh is not honoured by this command.' >&2; exit 2"
+check "real refusal not flagged" "no" \
+    "$(grep -q 'RECIPE BUG' <<< "${WALK_ROWS[-1]}" && echo yes || echo no)"
+
 # A note containing a literal pipe must be escaped in the markdown table output.
 # Without escaping, the pipe would split the row into extra columns, corrupting
 # the table. With the fix, escaped pipes appear as \| in the note field.

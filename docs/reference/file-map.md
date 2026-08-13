@@ -815,7 +815,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | File | Purpose |
 |------|---------|
 | `scripts/README.md` | Comprehensive script documentation |
-| `scripts/lib/common.sh` | Shared colours, box-banner helper, `resolve_target_dir`, and the distro/container name tables sourced by the test runners and container tooling |
+| `scripts/lib/common.sh` | Shared colours, box-banner helper, `resolve_target_dir`, the distro/container name tables sourced by the test runners and container tooling, and the three binary-identity questions (`workspace_version`, `binary_version_line`, `first_source_newer_than`) that the release-readiness and CLI walk runners both ask before trusting a container's output |
 | `scripts/lib/parallel.sh` | Shared bounded-concurrency job pool for the `--parallel` cross-distro and Web UI GUI test runners |
 | `scripts/validate/validate_naming.py` | Naming convention validator |
 | `scripts/validate/validate_all.py` | Master validation orchestrator |

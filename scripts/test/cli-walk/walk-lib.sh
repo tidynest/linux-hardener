@@ -73,6 +73,22 @@ run_recipe() {
         fi
     fi
 
+    # The second total check, and the only other one that earns its place: a
+    # clap parse error is never a finding. It says the RECIPE is wrong, and a
+    # reader who takes it for product behaviour is reading a fact about this
+    # file. The first real walk lost its entire mutate phase this way, to six
+    # recipes carrying flags the CLI does not have, and every one of them sat
+    # in the index as an ordinary non-zero exit alongside the real ones.
+    #
+    # coverage.sh cannot catch this: it proves every COMMAND has a recipe and
+    # says nothing about whether a recipe's ARGUMENTS parse. Nothing can prove
+    # that without running them, which for the mutating tiers means a
+    # container, so it is caught here at the moment it happens instead.
+    if grep -qE '^error: (unexpected argument|the following required arguments)' \
+        "$dir/stderr" 2>/dev/null; then
+        note="${note:+$note; }RECIPE BUG: arguments do not parse, so this row is about recipes.sh and not about the tool"
+    fi
+
     WALK_ROWS+=("$phase|$seq-$slug|$code|$bytes|$note")
 }
 

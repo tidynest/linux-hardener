@@ -746,6 +746,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into `contrast-math.js` so it can be proved without a browser; its
   self-check's oracle is #158's own hand measurements.
 
+- **The CLI walk harness refuses to walk a binary the tree does not describe.**
+  Its first real run walked one from the previous day and faithfully reproduced
+  `report --format json` printing prose, a defect fixed that morning (#160), so
+  every line of the capture was true about a binary nobody was asking about.
+  **The semantic version matched**, which is why nothing noticed; only the
+  commit and the modification-time questions catch it. The orchestrator now asks
+  all three, the same three `release-readiness-root.sh` asks, from helpers moved
+  into `scripts/lib/common.sh` rather than copied. There is no override. That
+  same run also lost its entire mutate phase to six recipes carrying flags the
+  CLI does not have (`apply --execute`, `checkpoint create --name`,
+  `exception add --plugin/--key`), each sitting in the index as an ordinary
+  non-zero exit beside the genuine refusals; `coverage.sh` proves every command
+  has a recipe and cannot prove a recipe's arguments parse, so `run_recipe` now
+  flags a clap parse error as `RECIPE BUG` at the moment it happens. The recipes
+  are corrected against `--help` rather than memory, `report` is walked through
+  both its format paths because the global flag and `--report-format` are
+  different code, and `history list`'s id key is read out of a real capture
+  after the guessed `session_id` made every `history show` skip silently.
+
 - **A CLI walk harness that stages every command's output for a person to read
   rather than asserting anything about it**
   (`scripts/test/cli-walk/`). A check can only fail on a case somebody already
