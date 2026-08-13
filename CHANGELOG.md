@@ -1663,6 +1663,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A rollback left behind the compiled audit rule set its own reload had
+  recreated.** `/etc/audit/audit.rules` and `/etc/audit/audit.rules.prev` are
+  captured by the checkpoint and restored correctly, and the rollback then runs
+  `augenrules` so the running kernel agrees with the restored files. But
+  `augenrules` writes a compiled rule set whenever it runs, so on a host whose
+  audit package ships none it put back the very file the restore had just
+  removed. Five distributions ship one and showed nothing wrong; Arch ships
+  none, and a rollback there ended with an `/etc/audit/audit.rules` the host
+  never had. The rules in it carry no hardening, so this was a file left
+  behind rather than a posture left applied, but a rollback is meant to end
+  with the host as it was. The reload now removes whichever compiled paths it
+  brought into existence that the restore had not left, and an unreadable
+  answer counts as present, because deleting a distribution's own compiled rule
+  set on the strength of a stat that failed would be the far worse mistake.
+  Found by the cross-distribution suite against rebuilt containers.
+
 - **The SSH restart fallback asked for Debian's service name everywhere.**
   `restart_ssh_service` tries `systemctl restart sshd` first, which is correct
   on every distribution because Debian ships `sshd.service` as an alias, and

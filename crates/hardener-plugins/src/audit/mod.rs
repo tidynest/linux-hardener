@@ -27,7 +27,7 @@ use hardener_core::{
     },
 };
 use std::{collections::HashSet, path::Path, time::Instant};
-use tracing::info;
+use tracing::{info, warn};
 
 /// Audit Hardening Plugin
 ///
@@ -564,6 +564,86 @@ async fn set_audit_rules_mode(ctx: &Context) -> Option<Change> {
 /// is the supported mechanism. The final error discloses whether a flush
 /// happened, because after one the host may be left with no audit rules
 /// loaded until they are reloaded manually or the host reboots.
+/// The two files `augenrules` writes, paired with whether each is on the host.
+///
+/// Read immediately after a rollback's restore and again after its reload, so
+/// the pair can be compared. Order is fixed so the two readings line up.
+async fn compiled_rule_paths_present(ctx: &Context) -> Vec<(&'static str, bool)> {
+    let mut present = Vec::new();
+    for path in [AUDIT_COMPILED_RULES, AUDIT_COMPILED_RULES_PREV] {
+        // An unreadable answer is treated as "present", which is the direction
+        // that removes nothing. Deleting a file because a stat could not be
+        // taken would be the worse mistake by far.
+        let exists = ctx
+            .executor()
+            .path_exists(Path::new(path))
+            .await
+            .unwrap_or(true);
+        present.push((path, exists));
+    }
+    present
+}
+
+/// Which paths the reload brought into existence that the restore had removed.
+///
+/// Separated from the work so the decision can be tested from data. A mock
+/// executor cannot make `augenrules` create a file part-way through a call, so
+/// driving this through the plugin would only ever exercise the case where
+/// nothing changed; both directions matter, and the dangerous one is removing
+/// a compiled rule set the distribution ships.
+fn paths_the_reload_created<'a>(
+    before: &[(&'a str, bool)],
+    after: &[(&'a str, bool)],
+) -> Vec<&'a str> {
+    before
+        .iter()
+        .zip(after.iter())
+        .filter(|((_, was_there), (_, is_there))| !*was_there && *is_there)
+        .map(|((path, _), _)| *path)
+        .collect()
+}
+
+/// Removes what the post-rollback reload created and the restore had not left.
+///
+/// A rollback is meant to end with the host as it was. `augenrules` does not
+/// know that: it writes a compiled rule set whenever it runs, so on a host
+/// whose audit package ships none, an undo left behind a file the operator
+/// never had. The rules in it carry no hardening, which is why five
+/// distributions showed nothing wrong, and why the sixth is the one that says
+/// what the rule actually is.
+async fn remove_paths_the_reload_created(ctx: &Context, before: &[(&'static str, bool)]) {
+    let after = compiled_rule_paths_present(ctx).await;
+    for path in paths_the_reload_created(before, &after) {
+        match ctx
+            .executor()
+            .execute_command("rm", &["-f", "--", path])
+            .await
+        {
+            Ok(output) if output.success() => {
+                info!("Removed {path}, which the post-rollback reload recreated");
+            }
+            Ok(output) => warn!(
+                "Could not remove {path}, recreated by the post-rollback reload: \
+                 rm exited {} ({})",
+                output.exit_code,
+                output.stderr.trim()
+            ),
+            Err(e) => warn!("Could not remove {path}, recreated by the post-rollback reload: {e}"),
+        }
+    }
+}
+
+/// Loads the rules in [`AUDIT_RULES_DIR`] into the running kernel.
+///
+/// Prefers `augenrules --load`, which compiles every `*.rules` file in that
+/// directory into [`AUDIT_COMPILED_RULES`] and loads the result, and retries
+/// once behind an `auditctl -D` flush when the only obstacle is rules a
+/// previous load already left resident. Run by both the apply and the
+/// rollback, so the running kernel and the files on disk agree either way.
+///
+/// Writing [`AUDIT_COMPILED_RULES`] is a side effect of the load rather than
+/// its purpose, and it is why a rollback removes what it recreated; see
+/// [`remove_paths_the_reload_created`].
 async fn reload_audit_rules(ctx: &Context) -> Result<()> {
     let mut flushed = false;
 
@@ -1645,7 +1725,25 @@ impl HardeningPlugin for AuditHardeningPlugin {
     }
 
     async fn reload_after_rollback(&self, ctx: &Context) -> Result<Option<String>> {
-        let Err(error) = reload_audit_rules(ctx).await else {
+        // What the restore left, read before the reload runs. The restore has
+        // already finished by the time this is called, so this IS the state the
+        // operator asked to return to.
+        //
+        // `augenrules` writes AUDIT_COMPILED_RULES every time it compiles, and
+        // a fresh AUDIT_COMPILED_RULES_PREV whenever there was a compiled file
+        // to displace. Both are captured and restored correctly; the reload
+        // then puts back whichever of them the restore had removed. On the five
+        // distributions whose audit package ships a compiled rule set the file
+        // exists either way and nothing looked wrong. Arch ships none, so a
+        // rollback there ended with an /etc/audit/audit.rules the host never
+        // had: five lines of augenrules' own default, carrying no hardening,
+        // but a file this tool created and did not undo.
+        let compiled_before = compiled_rule_paths_present(ctx).await;
+
+        let reload = reload_audit_rules(ctx).await;
+        remove_paths_the_reload_created(ctx, &compiled_before).await;
+
+        let Err(error) = reload else {
             info!("Audit rules reloaded successfully");
             return Ok(Some("audit rules reloaded".to_string()));
         };

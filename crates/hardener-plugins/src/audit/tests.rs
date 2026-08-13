@@ -862,3 +862,95 @@ async fn an_absent_auditd_still_reports_the_post_install_checks_unchecked() {
         "an absent auditd left the service and rule checks reading as compliant"
     );
 }
+
+// A rollback ends with the host as it was, and `augenrules` does not know
+// that: it writes a compiled rule set whenever it runs, so the reload a
+// rollback performs puts back whichever of the two compiled files the restore
+// had just removed. On the five distributions whose audit package ships a
+// compiled rule set the file exists either way and nothing looked wrong. Arch
+// ships none, and a rollback there left an /etc/audit/audit.rules the host
+// never had, which is what the cross-distribution suite caught.
+//
+// Tested from data rather than through the plugin. A mock executor cannot make
+// `augenrules` create a file part-way through a call, so driving this through
+// `reload_after_rollback` would only ever exercise the case where nothing
+// changed, which is the half that was never in doubt.
+
+#[test]
+fn a_compiled_file_the_reload_created_is_removed() {
+    let before = [
+        (AUDIT_COMPILED_RULES, false),
+        (AUDIT_COMPILED_RULES_PREV, false),
+    ];
+    let after = [
+        (AUDIT_COMPILED_RULES, true),
+        (AUDIT_COMPILED_RULES_PREV, false),
+    ];
+
+    assert_eq!(
+        paths_the_reload_created(&before, &after),
+        vec![AUDIT_COMPILED_RULES],
+        "the reload created the compiled rule set on a host that had none"
+    );
+}
+
+#[test]
+fn a_compiled_file_the_distribution_ships_is_left_alone() {
+    // The dangerous direction. Removing a compiled rule set the audit package
+    // ships would take the host further from its pre-apply state than the
+    // rollback found it, which is the opposite of the point.
+    let before = [
+        (AUDIT_COMPILED_RULES, true),
+        (AUDIT_COMPILED_RULES_PREV, false),
+    ];
+    let after = [
+        (AUDIT_COMPILED_RULES, true),
+        (AUDIT_COMPILED_RULES_PREV, false),
+    ];
+
+    assert!(
+        paths_the_reload_created(&before, &after).is_empty(),
+        "a file present before the reload is not this function's to remove"
+    );
+}
+
+#[test]
+fn a_prev_copy_the_reload_wrote_is_removed_too() {
+    // `augenrules` writes a fresh .prev whenever it has a compiled file to
+    // displace, so a rollback on a host that had one and no .prev ends with a
+    // .prev the apply's reload never left either.
+    let before = [
+        (AUDIT_COMPILED_RULES, true),
+        (AUDIT_COMPILED_RULES_PREV, false),
+    ];
+    let after = [
+        (AUDIT_COMPILED_RULES, true),
+        (AUDIT_COMPILED_RULES_PREV, true),
+    ];
+
+    assert_eq!(
+        paths_the_reload_created(&before, &after),
+        vec![AUDIT_COMPILED_RULES_PREV],
+        "the .prev the reload wrote is as much its doing as the compiled file"
+    );
+}
+
+#[test]
+fn a_file_the_reload_removed_is_not_resurrected() {
+    // The function only ever names things to delete. A path that went away
+    // across the reload is not its business, and must not appear in the list
+    // that feeds `rm`.
+    let before = [
+        (AUDIT_COMPILED_RULES, true),
+        (AUDIT_COMPILED_RULES_PREV, true),
+    ];
+    let after = [
+        (AUDIT_COMPILED_RULES, false),
+        (AUDIT_COMPILED_RULES_PREV, false),
+    ];
+
+    assert!(
+        paths_the_reload_created(&before, &after).is_empty(),
+        "a path that disappeared across the reload is not one the reload created"
+    );
+}
