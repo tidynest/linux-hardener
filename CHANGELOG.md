@@ -27,12 +27,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entries inline rather than through a builder, so their tests drive real scans
   through `MockExecutor` and read what the plugin actually emitted; composing
   the entries in the test would have restated `coverage()`'s own definition and
-  survived either production arm being deleted. `audit` excuses four ids
-  (`3.3.1`, `4.1.1.1`, `AU-2(a)`, `OL08-00-030180`), which `not_installed`
-  answers on every host because `is_auditd_installed` resolves a failed probe to
-  `false`: a finding fails a control rather than passing it, so those four are
-  fail-closed rather than silent. Both halves of the check were confirmed to go
-  red before the work was accepted.
+  survived either production arm being deleted. No plugin excuses any control:
+  `audit` excused four (`3.3.1`, `4.1.1.1`, `AU-2(a)`, `OL08-00-030180`) until
+  the probe change below gave them an unchecked route. Both halves of the check
+  were confirmed to go red before the work was accepted.
+
+- **`audit` reported "could not tell" as "not installed".**
+  `is_auditd_installed` resolved a failed probe to `false` with
+  `unwrap_or(false)`, so a host whose probe could not run (a broken `sh`, an
+  exhausted process table, an SSH transport that dropped mid-scan) was told its
+  audit daemon was missing. This was never a false pass: the `not_installed`
+  finding fails a control rather than passing it, so the outcome was
+  fail-closed, which is why it survived. It was wrong in two other ways. An
+  operator was sent to install a package that was very likely already there,
+  and because a finding rather than an unchecked entry answered the four
+  controls `not_installed` maps, those four had to be excused by name from the
+  coverage invariant above. The probe now returns three states, matching the
+  `mac` plugin's `MacDetection`, whose reasoning is the same: reporting a
+  failed probe as absence turns "we could not look" into "there is nothing
+  there". `scan` reports the presence check and the post-install checks
+  unchecked, so the controls reach manual review; `apply` still refuses, but
+  says which of the two reasons it is refusing for; and `validate`, which
+  already kept the states apart, now carries the probe's own reason instead of
+  dropping it. `MockExecutor::with_command_exists_error` was added because
+  without it no test could reach a failed probe at all.
 
 - **Two CLI listings told the operator less than their own JSON did.**
   `plugins` carried `plugin_category` for all eight plugins in `--format json`

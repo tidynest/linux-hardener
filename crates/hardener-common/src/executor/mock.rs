@@ -17,6 +17,7 @@ type CommandStore = Arc<Mutex<HashMap<(String, Vec<String>), CommandOutput>>>;
 type CommandProgramStore = Arc<Mutex<HashMap<String, CommandOutput>>>;
 type CommandSequenceStore = Arc<Mutex<HashMap<(String, Vec<String>), VecDeque<CommandOutput>>>>;
 type CommandExistsStore = Arc<Mutex<HashMap<String, bool>>>;
+type CommandExistsErrorStore = Arc<Mutex<HashSet<String>>>;
 type LogStore = Arc<Mutex<MockExecutorLog>>;
 type PermissionDeniedStore = Arc<Mutex<HashSet<PathBuf>>>;
 type PathExistsStore = Arc<Mutex<HashMap<PathBuf, bool>>>;
@@ -61,6 +62,7 @@ pub struct MockExecutor {
     command_programs: CommandProgramStore,
     command_sequences: CommandSequenceStore,
     command_exists: CommandExistsStore,
+    command_exists_error: CommandExistsErrorStore,
     read_permission_denied: PermissionDeniedStore,
     read_dir_denied: PermissionDeniedStore,
     metadata_error: PermissionDeniedStore,
@@ -89,6 +91,7 @@ impl MockExecutor {
             command_programs: Arc::new(Mutex::new(HashMap::new())),
             command_sequences: Arc::new(Mutex::new(HashMap::new())),
             command_exists: Arc::new(Mutex::new(HashMap::new())),
+            command_exists_error: Arc::new(Mutex::new(HashSet::new())),
             read_permission_denied: Arc::new(Mutex::new(HashSet::new())),
             read_dir_denied: Arc::new(Mutex::new(HashSet::new())),
             metadata_error: Arc::new(Mutex::new(HashSet::new())),
@@ -329,6 +332,28 @@ impl MockExecutor {
             .lock()
             .expect("command_exists mutex poisoned")
             .insert(program.to_string(), exists);
+        self
+    }
+
+    /// Makes the "does this command exist" probe for `program` fail outright,
+    /// rather than answer yes or no.
+    ///
+    /// Without this the mock's `command_exists` could only ever succeed, so
+    /// any branch a caller takes on a probe that FAILED was unreachable from a
+    /// test. That is a different state from "not installed" and callers that
+    /// collapse the two report "we could not look" as "there is nothing
+    /// there". On a host it happens whenever the probe itself cannot run: a
+    /// broken `sh`, an exhausted process table, or an SSH transport that
+    /// dropped mid-scan.
+    ///
+    /// Takes precedence over [`with_command_exists`](Self::with_command_exists)
+    /// so a test can register a program as present and still make the probe
+    /// fail, which is what an SSH drop looks like from the caller's side.
+    pub fn with_command_exists_error(self, program: &str) -> Self {
+        self.command_exists_error
+            .lock()
+            .expect("command_exists_error mutex poisoned")
+            .insert(program.to_string());
         self
     }
 
@@ -650,6 +675,18 @@ impl SystemExecutor for MockExecutor {
     }
 
     async fn command_exists(&self, program: &str) -> Result<bool> {
+        // A failed probe outranks any registered answer: see
+        // `with_command_exists_error`.
+        if self
+            .command_exists_error
+            .lock()
+            .expect("command_exists_error mutex poisoned")
+            .contains(program)
+        {
+            return Err(anyhow::anyhow!(
+                "probing for command '{program}' failed: mock probe error"
+            ));
+        }
         // Check explicit registration first
         if let Some(&exists) = self
             .command_exists

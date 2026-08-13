@@ -273,12 +273,34 @@ const AUDIT_RULES_MODE: &str = "0640";
 /// ============================================================================
 /// AUDITD HELPER FUNCTIONS
 /// ============================================================================
-/// Checks if auditd is installed on the system.
-async fn is_auditd_installed(ctx: &Context) -> Result<bool> {
-    ctx.executor()
-        .command_exists("auditd")
-        .await
-        .map_err(|e| hardener_common::error::HardeningError::Plugin(e.to_string()))
+/// Outcome of probing the host for the audit daemon.
+///
+/// `Absent` and `Indeterminate` are deliberately distinct, for the reason the
+/// MAC plugin gives on [`crate::mac`]'s equivalent: reporting a failed probe as
+/// absence turns "we could not look" into "there is nothing there".
+///
+/// This plugin used to collapse the two with `unwrap_or(false)`. That was
+/// fail-closed rather than a false pass, because the `not_installed` finding it
+/// raised fails a control rather than passing it, so it was never urgent. It
+/// cost accuracy in two places all the same. An operator on a host whose probe
+/// failed was told to install a package that may well already be there, and the
+/// four controls `not_installed` answers had no route to being reported
+/// unchecked, so they had to be excused by name from the coverage invariant.
+#[derive(Clone, Debug, PartialEq)]
+enum AuditdPresence {
+    Installed,
+    Absent,
+    Indeterminate(String),
+}
+
+/// Probes the host for the audit daemon, keeping "absent" and "could not tell"
+/// apart.
+async fn probe_auditd(ctx: &Context) -> AuditdPresence {
+    match ctx.executor().command_exists("auditd").await {
+        Ok(true) => AuditdPresence::Installed,
+        Ok(false) => AuditdPresence::Absent,
+        Err(e) => AuditdPresence::Indeterminate(e.to_string()),
+    }
 }
 
 /// Checks if auditd service is enabled to start at boot.
@@ -955,7 +977,49 @@ impl HardeningPlugin for AuditHardeningPlugin {
         let mut unchecked = Vec::new();
 
         // Check if auditd is installed
-        if !is_auditd_installed(ctx).await.unwrap_or(false) {
+        let presence = probe_auditd(ctx).await;
+
+        // The probe failed, so absence is not a fact this scan can assert.
+        // Reported unchecked rather than as a "not installed" finding, so the
+        // controls reach manual review instead of resting on a conclusion
+        // nothing supports, and so the operator is not sent to install a
+        // package that may already be there.
+        if let AuditdPresence::Indeterminate(reason) = &presence {
+            unchecked.push(UncheckedCheck {
+                unchecked_check_id: "audit_not_installed".to_string(),
+                unchecked_title: "audit daemon presence".to_string(),
+                unchecked_category: FindingCategory::Audit,
+                unchecked_reason: format!(
+                    "could not determine whether auditd is installed: {reason}"
+                ),
+                // The probe failed and its reason is prose. Whether root would
+                // have got an answer is exactly what is not known, so no
+                // remedy is offered.
+                unchecked_blocker: UncheckedBlocker::Unknown,
+                unchecked_compliance: get_audit_compliance_mappings("not_installed"),
+            });
+            unchecked.push(UncheckedCheck {
+                unchecked_check_id: "auditd-post-install".to_string(),
+                unchecked_title: "auditd service and rule state".to_string(),
+                unchecked_category: FindingCategory::Audit,
+                unchecked_reason: "whether auditd is installed could not be determined, so \
+                     whether it is enabled, running and correctly ruled cannot be either"
+                    .to_string(),
+                unchecked_blocker: UncheckedBlocker::Unknown,
+                unchecked_compliance: audit_post_install_mappings(),
+            });
+
+            return Ok(ScanResult {
+                scan_duration_us: start.elapsed().as_micros() as u64,
+                scan_error: None,
+                scan_findings: findings,
+                scan_unchecked: unchecked,
+                scan_plugin_id: self.metadata().plugin_id,
+                scan_success: true,
+            });
+        }
+
+        if presence == AuditdPresence::Absent {
             findings.push(Finding {
                 finding_category: FindingCategory::Audit,
                 finding_current_value: "not installed".to_string(),
@@ -1179,16 +1243,35 @@ impl HardeningPlugin for AuditHardeningPlugin {
         // neither a stray directory nor a checkpoint of a state nothing
         // changed. It is a probe with no side effects, so nothing downstream
         // sees a difference from it running first.
-        if !is_auditd_installed(ctx).await.unwrap_or(false) {
+        //
+        // Both non-installed outcomes refuse, so this stays fail-closed either
+        // way, but they say different things. Refusing because the package is
+        // absent is a conclusion; refusing because the probe failed is not, and
+        // an operator told the wrong one goes and installs a package that is
+        // very likely already there.
+        let refusal = match probe_auditd(ctx).await {
+            AuditdPresence::Installed => None,
+            AuditdPresence::Absent => Some((
+                "Auditd not installed - cannot apply rules".to_string(),
+                "auditd package not found".to_string(),
+                "Auditd is not installed".to_string(),
+            )),
+            AuditdPresence::Indeterminate(reason) => Some((
+                "Could not determine whether auditd is installed - not applying rules".to_string(),
+                format!("probing for auditd failed: {reason}"),
+                "Whether auditd is installed could not be determined".to_string(),
+            )),
+        };
+        if let Some((description, error, apply_error)) = refusal {
             return Ok(ApplyResult {
                 apply_changes: vec![Change {
                     change_type: ChangeType::Service,
-                    change_description: "Auditd not installed - cannot apply rules".to_string(),
-                    change_error: Some("auditd package not found".to_string()),
+                    change_description: description,
+                    change_error: Some(error),
                     change_success: false,
                 }],
                 apply_checkpoint_id: None,
-                apply_error: Some("Auditd is not installed".to_string()),
+                apply_error: Some(apply_error),
                 apply_plugin_id: self.metadata().plugin_id,
                 apply_success: false,
             });
@@ -1616,9 +1699,11 @@ impl HardeningPlugin for AuditHardeningPlugin {
         let mut exceptions: Vec<String> = Vec::new();
         let mut issues = Vec::new();
 
-        // Check if auditd is installed
-        match is_auditd_installed(ctx).await {
-            Ok(true) => {
+        // Check if auditd is installed. This arm already kept the three states
+        // apart before `scan` and `apply` did, which is why its two failure
+        // messages differ from each other.
+        match probe_auditd(ctx).await {
+            AuditdPresence::Installed => {
                 // Check if auditd is enabled
                 if let Ok(false) = is_auditd_enabled(ctx).await {
                     estimated_changes.push("Enable auditd service".to_string());
@@ -1678,7 +1763,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     }
                 }
             }
-            Ok(false) => {
+            AuditdPresence::Absent => {
                 issues.push(ValidationIssue {
                     validation_issue_config_key: None,
                     validation_issue_message:
@@ -1686,12 +1771,15 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     validation_issue_severity: Severity::Critical,
                 });
             }
-            Err(_) => {
-                // Can't determine, add as issue
+            AuditdPresence::Indeterminate(reason) => {
+                // Carries the reason rather than dropping it. A warning that
+                // says only that something failed leaves the operator with the
+                // same question they started with.
                 issues.push(ValidationIssue {
                     validation_issue_config_key: None,
-                    validation_issue_message: "Failed to check auditd installation status"
-                        .to_string(),
+                    validation_issue_message: format!(
+                        "Failed to check auditd installation status: {reason}"
+                    ),
                     validation_issue_severity: Severity::High,
                 });
             }

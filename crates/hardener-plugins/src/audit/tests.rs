@@ -755,15 +755,16 @@ fn audit_finding_type_tables_partition() {
 /// reported unchecked, or be one a finding answers on every host. See
 /// [`crate::tests::assert_every_covered_control_is_reportable`] for why.
 ///
-/// The four excused ids are the ones `not_installed` maps and no post-install
-/// finding does. They are answered rather than reported: `is_auditd_installed`
-/// resolves a failed probe to `false` (`unwrap_or(false)`), so this plugin
-/// always raises the `not_installed` finding when it cannot confirm the
-/// package, and a finding fails a control rather than passing it. That is
-/// fail-closed and safe for these four, and it is why they need no unchecked
-/// route. It is also the reason the list is written out rather than derived: a
-/// control added to `not_installed` that nothing else answers must fail here
-/// and be decided on, not absorbed silently.
+/// Nothing is excused. The four ids that used to be (`3.3.1`, `4.1.1.1`,
+/// `AU-2(a)`, `OL08-00-030180`) are the ones `not_installed` maps and no
+/// post-install finding does, and they were excused because the probe resolved
+/// a failure to `false`, so the plugin raised `not_installed` on a host it
+/// could not read and a finding fails a control rather than passing it. That
+/// was fail-closed rather than wrong, which is why it survived; it was also
+/// the plugin telling an operator a package was missing when what had actually
+/// happened was that it could not look. The probe now reports
+/// [`AuditdPresence::Indeterminate`] instead, which reaches these four through
+/// an unchecked entry, so the excuses are retired rather than merely reworded.
 ///
 /// The unchecked entries come from a real scan rather than a list composed
 /// here, for the reason given on the MAC plugin's copy of this test:
@@ -771,9 +772,73 @@ fn audit_finding_type_tables_partition() {
 /// production arm being deleted.
 #[tokio::test]
 async fn every_covered_audit_control_can_be_reported_unchecked() {
-    // Nothing registered, so `command_exists("auditd")` answers false and the
-    // scan takes the not-installed arm, which is the one that reports the
-    // post-install checks unchecked.
+    // The probe fails, which is the arm that reports both the presence check
+    // and the post-install checks unchecked. The absent arm reaches only the
+    // post-install half, and is asserted separately below.
+    let executor = MockExecutor::new().with_command_exists_error("auditd");
+    let scanned = AuditHardeningPlugin::new()
+        .scan(
+            &Context::with_executor(Arc::new(executor)),
+            &PluginConfig::default(),
+        )
+        .await
+        .expect("a failed probe is reported, not returned as an error");
+
+    crate::tests::assert_every_covered_control_is_reportable(
+        "audit",
+        &coverage(),
+        &scanned.scan_unchecked,
+        &[],
+    );
+}
+
+/// A failed probe must not be reported as an absent package.
+///
+/// The two states are one keystroke apart in the source and worlds apart for
+/// an operator: one says "install auditd", the other says "this scan could not
+/// tell". Asserting only that the controls reach manual review would pass
+/// against a build that raised the `not_installed` finding as well, so the
+/// absence of that finding is asserted directly.
+#[tokio::test]
+async fn a_failed_probe_is_not_reported_as_an_absent_auditd() {
+    let executor = MockExecutor::new().with_command_exists_error("auditd");
+    let scanned = AuditHardeningPlugin::new()
+        .scan(
+            &Context::with_executor(Arc::new(executor)),
+            &PluginConfig::default(),
+        )
+        .await
+        .expect("a failed probe is reported, not returned as an error");
+
+    assert!(
+        !scanned
+            .scan_findings
+            .iter()
+            .any(|finding| finding.finding_id == "audit_not_installed"),
+        "a scan that could not run the probe claimed auditd was not installed"
+    );
+
+    let presence = scanned
+        .scan_unchecked
+        .iter()
+        .find(|entry| entry.unchecked_check_id == "audit_not_installed")
+        .expect("the presence check is reported unchecked when the probe fails");
+    assert!(
+        presence.unchecked_reason.contains("mock probe error"),
+        "the unchecked entry drops the probe's own reason: {}",
+        presence.unchecked_reason
+    );
+}
+
+/// An auditd that is genuinely absent still reports the post-install checks
+/// unchecked. This is #166: the `not_installed` finding answers whether the
+/// package is there and nothing else, and without this entry the generator
+/// read four assessed controls carrying no finding and passed them on the
+/// absence alone.
+#[tokio::test]
+async fn an_absent_auditd_still_reports_the_post_install_checks_unchecked() {
+    // Nothing registered, so `command_exists("auditd")` answers false rather
+    // than failing, which is the absent arm.
     let scanned = AuditHardeningPlugin::new()
         .scan(
             &Context::with_executor(Arc::new(MockExecutor::new())),
@@ -782,10 +847,18 @@ async fn every_covered_audit_control_can_be_reported_unchecked() {
         .await
         .expect("an absent auditd is not an error");
 
-    crate::tests::assert_every_covered_control_is_reportable(
-        "audit",
-        &coverage(),
-        &scanned.scan_unchecked,
-        &["3.3.1", "4.1.1.1", "AU-2(a)", "OL08-00-030180"],
+    assert!(
+        scanned
+            .scan_findings
+            .iter()
+            .any(|finding| finding.finding_id == "audit_not_installed"),
+        "an absent auditd did not raise the finding that says so"
+    );
+    assert!(
+        scanned
+            .scan_unchecked
+            .iter()
+            .any(|entry| entry.unchecked_check_id == "auditd-post-install"),
+        "an absent auditd left the service and rule checks reading as compliant"
     );
 }
