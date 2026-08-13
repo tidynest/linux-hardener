@@ -1037,6 +1037,72 @@ async fn ssh_remote_root_apply_downgrades_permitrootlogin_to_prohibit_password()
     );
 }
 
+/// A candidate `sshd -t` rejects must leave nothing counted as applied.
+///
+/// The gate runs ahead of the first write precisely so a bad candidate touches
+/// no bytes, and it fires for real on the debian and ubuntu fixtures, which
+/// have no `/run/sshd`. The staged directive edits were still recorded as
+/// successes, so `apply` announced "11 of 12 change(s) applied" on a host where
+/// it wrote nothing and the scan straight after still raised all ten SSH
+/// findings. Skipped is what those edits are: not applied, and not failed
+/// either, because they were never attempted against the live file.
+#[tokio::test]
+async fn ssh_apply_counts_nothing_applied_when_sshd_rejects_the_candidate() {
+    let temp = sshd_validate_temp_path();
+    let executor = apply_ready_executor("# minimal config\n")
+        .remote()
+        .with_command("id", &["-u"], ok_output("0\n"))
+        .with_command(
+            "sshd",
+            &["-t", "-f", &temp],
+            CommandOutput {
+                stdout: String::new(),
+                stderr: "Missing privilege separation directory: /run/sshd".to_string(),
+                exit_code: 255,
+            },
+        );
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(
+        !result.apply_success,
+        "a rejected candidate must not report success: {result:?}"
+    );
+    // Not "nothing counted": the backup file really was written before the
+    // gate ran, so it really is a change this apply made. What must not be
+    // counted is a hardening directive, none of which reached the live file.
+    let counted: Vec<&str> = result
+        .apply_changes
+        .iter()
+        .filter(|c| !c.is_skipped() && !c.is_checkpoint() && c.change_success)
+        .map(|c| c.change_description.as_str())
+        .collect();
+    assert!(
+        counted.iter().all(|d| d.starts_with("Created backup:")),
+        "only the backup was written, so no directive edit may be counted as applied; got: {counted:#?}"
+    );
+    // The refusal itself still has to be visible. Reporting nothing applied
+    // without saying why would trade an overcount for a silence.
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| !c.change_success && c.change_description.contains("rejected by `sshd -t`")),
+        "the refusal must be reported, got: {:#?}",
+        result.apply_changes
+    );
+    // And the edits stay listed, so the operator can still see what would have
+    // changed had the candidate been accepted.
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.is_skipped() && c.change_description.starts_with("PermitRootLogin:")),
+        "the staged edits must remain visible as skipped, got: {:#?}",
+        result.apply_changes
+    );
+}
+
 #[tokio::test]
 async fn ssh_remote_root_apply_leaves_existing_permitrootlogin_no_untouched() {
     let executor = apply_ready_executor("PermitRootLogin no\n")

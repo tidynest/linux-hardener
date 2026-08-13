@@ -1663,6 +1663,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`apply` counted SSH directives it never wrote.** When `sshd -t` rejects the
+  candidate configuration the plugin aborts before touching the live file,
+  which is the behaviour that makes a lockout impossible and is not in
+  question. But the directive edits were moved into the committed list one line
+  above that gate, so every one of them was reported as applied anyway: on the
+  debian and ubuntu fixtures, which have no `/run/sshd` and so fail the gate for
+  real, `apply` announced "11 of 12 change(s) applied" having written no bytes,
+  and the scan immediately after still raised all ten SSH findings. They are
+  now marked `Skipped`, which keeps them out of both the applied and the failed
+  counts because neither is what happened, while leaving them listed so the
+  operator can still read what would have changed. The backup file is still
+  counted, because it genuinely was written. Found by the cross-distribution CLI
+  walk: every per-plugin test passed throughout, since each individual rollback
+  and apply was correct in isolation, and the overcount was visible only by
+  comparing what `apply` claimed against what the next scan saw.
+
 - **The note explaining why root-owned checkpoints are missing from the History
   list was announced to nobody.** It renders after `get_checkpoints` resolves
   rather than with the tab, and it sat in no live region, so a screen-reader

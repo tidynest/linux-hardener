@@ -2179,8 +2179,6 @@ impl HardeningPlugin for SshHardeningPlugin {
             }
         }
 
-        committed.append(&mut changes);
-
         // Step 5: Validate the candidate config with `sshd -t` BEFORE touching
         // the live file. If sshd would refuse to start, abort here: no write, no
         // restart; the running daemon and its config are left fully intact, so
@@ -2196,6 +2194,19 @@ impl HardeningPlugin for SshHardeningPlugin {
         };
         if let Err(e) = validate_sshd_config(ctx.executor().as_ref(), &candidate).await {
             error!("Candidate sshd_config failed validation, aborting apply: {e}");
+            // Staged, never written. These edits were moved into `committed`
+            // above this gate and so were counted as applied on every host
+            // where sshd refused the candidate: the debian and ubuntu fixtures
+            // have no /run/sshd, and `apply` there announced "11 of 12
+            // change(s) applied" having written no bytes, with the scan
+            // immediately after still raising all ten SSH findings. Skipped is
+            // what they are, and it keeps them out of both the applied and the
+            // failed counts, because neither happened; the descriptions stay
+            // listed so the operator can still read what would have changed.
+            for change in &mut changes {
+                change.change_type = ChangeType::Skipped;
+            }
+            committed.append(&mut changes);
             committed.push(Change {
                 change_description: "Candidate sshd_config rejected by `sshd -t`; \
                     no changes written, service not restarted"
@@ -2212,6 +2223,12 @@ impl HardeningPlugin for SshHardeningPlugin {
                 apply_error: Some(format!("sshd config validation failed: {e}")),
             });
         }
+
+        // Past the gate, so the candidate is one sshd will accept and these
+        // edits are about to be written. Appended here rather than before the
+        // gate, which is the only difference between a change this apply made
+        // and one it merely planned.
+        committed.append(&mut changes);
 
         // Step 6: Write modified configuration using executor. The vendor file
         // is never a write target: creating /etc/ssh/sshd_config to hold these
