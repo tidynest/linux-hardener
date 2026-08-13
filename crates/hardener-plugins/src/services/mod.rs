@@ -455,7 +455,17 @@ impl ServiceStates {
         // stderr. Verified against systemd on this machine: no match gives
         // exit 1 with empty stderr, a bad option gives exit 1 with a message.
         // Checking `.success()` alone would turn a clean host into an error.
-        if !unit_files.success() && !unit_files.stderr.trim().is_empty() {
+        //
+        // Exit 1 specifically, not merely non-zero. A child killed by a signal
+        // has no exit code, and `LocalExecutor` reports `code().unwrap_or(-1)`,
+        // so it arrives here as -1 with nothing on stderr: the exact shape this
+        // arm tolerates. Every unit then read as absent, all five directives
+        // reported clean, and the scan returned success with no findings and no
+        // unchecked entries, so the compliance generator passed every control
+        // they cover on the silence (#167).
+        if !unit_files.success()
+            && (unit_files.exit_code != 1 || !unit_files.stderr.trim().is_empty())
+        {
             return Err(HardeningError::Plugin(format!(
                 "systemctl list-unit-files failed with exit {}: {}",
                 unit_files.exit_code,

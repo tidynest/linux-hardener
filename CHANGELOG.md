@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A killed service probe was read as a host with no services installed**
+  (#167, partial). `systemctl list-unit-files` exits 1 with an empty stderr when
+  none of the named units exist, which is the ordinary answer on a clean host,
+  so the services plugin tolerated that combination deliberately. It tolerated
+  any non-zero exit with an empty stderr, and `LocalExecutor` reports
+  `status.code().unwrap_or(-1)`, so a child killed by a signal arrives as
+  exactly that shape. Every unit then read as absent, all five directives
+  reported clean, and the scan returned success with no findings and no
+  unchecked entries, so the compliance generator passed every control they cover
+  on the silence. The tolerated case is now exit 1 specifically; anything else
+  fails the scan, which the scan-outcome net turns into five unchecked entries
+  carrying their compliance mappings. The `permissions` half of #167 is
+  deliberately not fixed: there the question about permissions is answered, and
+  only the broader control the directive feeds is left unsupported, which is a
+  mapping decision rather than a check one. Recorded on the issue.
+
 - **The JSON and CSV reports did not say which profile they used** (#163).
   Under one framework, `--profile rhel10` and `--profile generic` produce
   completely disjoint control identifier sets: for STIG, 25 controls of the form

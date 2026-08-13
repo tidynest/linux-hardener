@@ -1119,3 +1119,137 @@ async fn a_service_finding_names_the_exception_key_that_silences_it() {
         "an exception written under the advertised key must annotate the finding",
     );
 }
+
+/// A `list-unit-files` that was killed rather than answering must fail the
+/// scan, not read as a host with none of the units installed.
+///
+/// `list-unit-files` exits 1 with empty stderr when none of the named units
+/// exist, which is the ordinary answer on a clean host, so the plugin tolerates
+/// that combination deliberately. It used to tolerate *any* non-zero exit with
+/// empty stderr, and a child killed by a signal is exactly that: the executor
+/// reports `status.code().unwrap_or(-1)`, so a signal kill arrives as -1 with
+/// nothing on stderr.
+///
+/// The consequence was total coverage loss reported as success. Every unit
+/// would read as absent, all five directives would report clean, and the scan
+/// would return `scan_success: true` with no findings and no unchecked entries,
+/// so the compliance generator would pass every control they cover on the
+/// silence (#167).
+#[tokio::test]
+async fn a_signal_killed_unit_file_probe_is_not_an_empty_host() {
+    let mut args = vec!["list-unit-files", "--type=service", "--no-legend"];
+    args.extend(ASSESSED_UNITS);
+
+    let executor = MockExecutor::new()
+        .with_command_exists("systemctl", true)
+        .with_command(
+            "systemctl",
+            &args,
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: -1,
+            },
+        );
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = ServicesHardeningPlugin::new();
+
+    let result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("the stand-in net turns the plugin error into a failed result");
+
+    // Not an `Err` reaching the caller: the scan-outcome net converts a failed
+    // probe into a result that says so, which is the better outcome. What
+    // matters is that neither half claims the host is clean.
+    assert!(
+        !result.scan_success,
+        "a probe that did not answer must not be reported as a successful scan"
+    );
+    assert!(
+        result.scan_findings.is_empty(),
+        "and it must not invent findings either"
+    );
+    assert_eq!(
+        result.scan_unchecked.len(),
+        5,
+        "every directive the probe would have covered must be recorded \
+         unchecked, or the compliance generator passes its controls on the \
+         silence: {:?}",
+        result
+            .scan_unchecked
+            .iter()
+            .map(|u| &u.unchecked_check_id)
+            .collect::<Vec<_>>()
+    );
+    // The entries have to carry mappings, or they reach the generator under no
+    // control id and change nothing. Asserted on a control rather than on every
+    // entry: ModemManager is in the directive list and no framework covers it,
+    // so an entry with no mappings is correct there and an `all` would fail on
+    // a plugin behaving perfectly.
+    assert!(
+        result
+            .scan_unchecked
+            .iter()
+            .flat_map(|u| &u.unchecked_compliance)
+            .any(|m| m.compliance_control_id == "2.1.1"),
+        "the xinetd directive covers CIS 2.1.1, and its control must reach the \
+         generator as unchecked rather than passing on the silence"
+    );
+}
+
+/// The clean-host case the check above must not break: exit 1 with empty
+/// stderr still means "none of these units exist here".
+///
+/// Without this, narrowing the tolerated exit could be done by tolerating
+/// nothing at all, which would turn every clean host into a failed scan and
+/// still pass the test above.
+#[tokio::test]
+async fn no_matching_units_is_still_an_ordinary_answer() {
+    let mut args = vec!["list-unit-files", "--type=service", "--no-legend"];
+    args.extend(ASSESSED_UNITS);
+    let mut unit_args = vec![
+        "list-units",
+        "--type=service",
+        "--all",
+        "--no-legend",
+        "--plain",
+    ];
+    unit_args.extend(ASSESSED_UNITS);
+
+    let executor = MockExecutor::new()
+        .with_command_exists("systemctl", true)
+        .with_command(
+            "systemctl",
+            &args,
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 1,
+            },
+        )
+        .with_command(
+            "systemctl",
+            &unit_args,
+            CommandOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: 0,
+            },
+        );
+
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = ServicesHardeningPlugin::new();
+
+    let result = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("a host with none of these units installed scans cleanly");
+
+    assert!(result.scan_success);
+    assert!(
+        result.scan_findings.is_empty(),
+        "no units installed means nothing to report"
+    );
+}
