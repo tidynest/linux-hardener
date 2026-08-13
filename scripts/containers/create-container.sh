@@ -18,6 +18,7 @@
 #   sudo ./scripts/containers/create-container.sh <distro>        # Create container
 #   sudo ./scripts/containers/create-container.sh <distro> enter  # Enter existing container
 #   sudo ./scripts/containers/create-container.sh <distro> clean  # Remove container
+#   sudo ./scripts/containers/create-container.sh <distro> verify # Check the contract
 #
 # --no-confirm may be added in any position to answer the clean prompt, for the
 # recreate-then-measure loop that removes all six in sequence.
@@ -65,6 +66,7 @@ Commands:
   enter     Enter container (full boot with systemd)
   shell     Quick shell access (no systemd)
   clean     Remove the container
+  verify    Check an existing container against the contract below
   help      Show this help
 
 Exit codes:
@@ -75,9 +77,11 @@ Exit codes:
      "the bootstrap failed"; both are distinct from the 0 that used to be
      returned for a container this script did not build.
 
-All containers provide:
+All containers provide, and the 'verify' command checks rather than assumes:
   - Full systemd support (for service testing)
   - Pre-installed: openssh, audit, firewall tooling, nftables
+  (checked as binaries: sshd, auditd, nft, systemctl, and ufw or firewall-cmd
+   by distribution. arch-nftables carries neither firewall tool on purpose.)
   - Project mounted at /project
   - Root password: test
   - Test user: testuser / test (passwordless sudo)
@@ -709,6 +713,55 @@ bootstrap_opensuse() {
 # Verbs
 # =============================================================================
 
+# The binaries every finished container must carry, by distribution.
+#
+# Named as binaries rather than packages because five package managers spell
+# the same software five ways, and what the suites need is a command that runs.
+# The firewall entry differs by design: arch, debian and ubuntu get ufw, the
+# Red Hat family and openSUSE get firewalld, and `arch-nftables` deliberately
+# has neither so that nftables is the only backend its plugin can select.
+contract_binaries() {
+    case "$DISTRO" in
+        arch-nftables) echo sshd auditd nft systemctl ;;
+        arch | debian | ubuntu) echo sshd auditd nft systemctl ufw ;;
+        *) echo sshd auditd nft systemctl firewall-cmd ;;
+    esac
+}
+
+# Checks a container against the contract this script's own help publishes,
+# instead of trusting that whatever built it did what it said.
+#
+# The rhel container walked all five phases of a full cross-distribution run
+# carrying no openssh-server, no audit and no firewalld. Three of its eight
+# plugins could not scan, it produced 14 findings where every other
+# distribution produced 49, and every suite that used it exited 0 throughout.
+# `enable_test_services` already refuses at creation when a unit cannot be
+# enabled, so a container this script builds today cannot end up that way; what
+# nothing checked was a container built by an older version of the script.
+# `create` on an existing path exits 3 without looking inside it, so a fixture
+# that predates a package being added to the list stays in service for as long
+# as nobody deletes it, and every suite run against it measures less than it
+# reports while reading exactly like one that measured everything.
+verify_contract() {
+    local binary missing=()
+    for binary in $(contract_binaries); do
+        systemd-nspawn --quiet --directory="$CONTAINER_PATH" \
+            sh -c "command -v $binary >/dev/null 2>&1" 2>/dev/null ||
+            missing+=("$binary")
+    done
+
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        log_info "Contract check passed: $(contract_binaries | wc -w) binaries present"
+        return 0
+    fi
+
+    log_error "Container at $CONTAINER_PATH does not satisfy the fixture contract"
+    log_error "  missing: ${missing[*]}"
+    log_error "  A suite run against it measures less than it reports, and says so nowhere."
+    log_error "  Rebuild it: sudo $SELF clean --no-confirm && sudo $SELF"
+    return 1
+}
+
 create_container() {
     check_dependencies
 
@@ -723,6 +776,12 @@ create_container() {
     if [[ -d "$CONTAINER_PATH" ]]; then
         log_error "Container already exists at $CONTAINER_PATH, so nothing was built"
         log_info "Use '$SELF enter' to enter or '$SELF clean' to remove"
+        # Checked before refusing, because "already there" is the branch a stale
+        # container reaches and the caller is about to run suites against it.
+        # The status stays 3 either way: release-readiness-root.sh judges that
+        # value, and a container failing the contract is still the same fact
+        # about this run, which is that it built nothing.
+        verify_contract || true
         exit 3
     fi
 
@@ -731,6 +790,11 @@ create_container() {
 
     # Create bind mount point for project
     mkdir -p "$CONTAINER_PATH/project"
+
+    # Called bare, so a bootstrap that reported installing these and did not
+    # fails here rather than handing back a container that tests less than the
+    # caller believes. Same reasoning as `enable_test_services` above.
+    verify_contract
 
     log_info "Container created successfully!"
     echo ""
@@ -825,6 +889,14 @@ case "$VERB" in
     clean)
         check_root
         clean_container
+        ;;
+    verify)
+        check_root
+        if [[ ! -d "$CONTAINER_PATH" ]]; then
+            log_error "Container does not exist at $CONTAINER_PATH"
+            exit 1
+        fi
+        verify_contract
         ;;
     help|--help|-h)
         usage
