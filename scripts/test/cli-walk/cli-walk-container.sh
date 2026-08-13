@@ -206,12 +206,14 @@ if [[ "$RUN_SSH" == true ]]; then
 fi
 
 # --- Cross-distribution diff pointer -----------------------------------------
+WROTE_POINTER=false
 if [[ ${#DISTROS[@]} -gt 1 ]]; then
     OTHERS=()
     for d in "${DISTROS[@]}"; do
         [[ "$d" != "arch" ]] && OTHERS+=("$d")
     done
     walk_write_diff_pointer "$CAPTURE_PARENT" arch "${OTHERS[@]}"
+    WROTE_POINTER=true
 fi
 
 echo ""
@@ -220,7 +222,21 @@ for d in "${DISTROS[@]}"; do
     echo "  $d: exit ${RESULT_EXIT[$d]:-?}  ->  test-results/cli-walk/$d/index.md"
 done
 echo ""
-echo "Read test-results/cli-walk/arch/index.md. The other five are captured"
-echo "for the diff pointer, not for reading."
-[[ -f "$CAPTURE_PARENT/diff-pointer.md" ]] && \
+# Says what THIS run produced, rather than describing a six-distribution walk
+# whatever ran. A `--distro rhel` run used to print "Read arch/index.md. The
+# other five are captured for the diff pointer", naming a capture it had not
+# refreshed, and then pointed at a diff-pointer.md left by an earlier run
+# purely because the file existed. That pointer described the rhel container
+# as it had been before it was rebuilt, which is the reading it was least
+# able to give and the one it was recommending.
+if [[ "$WROTE_POINTER" == true ]]; then
+    echo "Read test-results/cli-walk/arch/index.md. The others are captured"
+    echo "for the diff pointer, not for reading."
     echo "Then test-results/cli-walk/diff-pointer.md for where they disagree."
+else
+    for d in "${DISTROS[@]}"; do
+        echo "Read test-results/cli-walk/$d/index.md."
+    done
+    [[ -f "$CAPTURE_PARENT/diff-pointer.md" ]] &&
+        echo "diff-pointer.md is left from an earlier run and does NOT cover this one."
+fi
