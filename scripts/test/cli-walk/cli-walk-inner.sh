@@ -114,5 +114,35 @@ run_phase restore  mut
 resolve_runtime_ids
 run_phase restored ro
 
+# The third total check, and it exists because three separate recipe orderings
+# have now silently emptied a phase. A walk asserts nothing about the product,
+# but a phase that changed nothing is a fact about the WALK, and one no reader
+# can see: the rows all look healthy, the exit codes are what they should be,
+# and only comparing two snapshots byte for byte says the phase demonstrated
+# nothing. The rollback that prompted this reported twenty files restored and
+# left the host exactly where it was, because the checkpoint it targeted had
+# been taken after the apply rather than before it.
+#
+# Flags only, and never touches the exit code: the capture is trustworthy, it
+# is simply uninformative, and those are different failures.
+phase_snapshot() {
+    local phase="$1"
+    # One glob, because the sequence number in the directory name moves with
+    # every recipe added above it and hardcoding one is its own stale reference.
+    local match=("$CAPTURE/$phase"/*-scan-text/stdout)
+    [[ -f "${match[0]}" ]] && printf '%s' "${match[0]}"
+}
+
+SNAPSHOT_NOTE=""
+applied_snap="$(phase_snapshot applied)"
+restored_snap="$(phase_snapshot restored)"
+pristine_snap="$(phase_snapshot pristine)"
+if [[ -n "$applied_snap" && -n "$pristine_snap" ]] && cmp -s "$pristine_snap" "$applied_snap"; then
+    SNAPSHOT_NOTE=" | WALK PROBLEM: applied is byte-identical to pristine, so the mutate phase changed nothing"
+fi
+if [[ -n "$applied_snap" && -n "$restored_snap" ]] && cmp -s "$applied_snap" "$restored_snap"; then
+    SNAPSHOT_NOTE="$SNAPSHOT_NOTE | WALK PROBLEM: restored is byte-identical to applied, so the restore phase changed nothing"
+fi
+
 STAMP="$($BIN --version 2>&1 | head -1) (binary mtime: $(date -r "$BIN" '+%Y-%m-%d %H:%M'))"
-walk_write_index "Binary: $STAMP | distro: $DISTRO | tiers: $TIERS"
+walk_write_index "Binary: $STAMP | distro: $DISTRO | tiers: $TIERS$SNAPSHOT_NOTE"

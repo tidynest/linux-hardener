@@ -1270,12 +1270,27 @@ nothing on purpose: a check can only fail on a case somebody already imagined,
 and the GUI walk found four defects that 142 tests and 222 screenshots had all
 passed over. A non-zero exit from a recipe is data, not a failure.
 
-There is exactly one total check, and it flags rather than fails: a recipe run
-with `--format json` whose stdout does not parse is unambiguously wrong, needs
-nobody to have anticipated the case, and catches a whole class at once (a
-tracing line leaking to stdout, a partial write, a panic mid-serialisation).
+There are three total checks, and every one of them flags rather than fails.
+Each earns its place the same way: it needs nobody to have anticipated a
+particular case, and it catches a whole class at once.
+
+1. **Stdout from a `--format json` recipe that does not parse.** Unambiguously
+   wrong, and it catches a tracing line leaking to stdout, a partial write and
+   a panic mid-serialisation alike.
+2. **A clap parse error, flagged as `RECIPE BUG`.** Such a row is a fact about
+   `recipes.sh` and not about the tool, and six of them once sat in an index as
+   ordinary non-zero exits beside genuine refusals.
+3. **A phase whose snapshot is byte-identical to the phase before it**, flagged
+   in the index header as a `WALK PROBLEM`. Three separate recipe orderings
+   have silently emptied a phase, and none was visible in the rows: the exit
+   codes were all correct and only comparing two captures byte for byte says
+   the phase demonstrated nothing.
+
 Only an untrustworthy capture fails a walk, so the exit code keeps meaning
-"trustworthy or not" and nothing else.
+"trustworthy or not" and nothing else. The third check is the edge of that
+rule and stays on the flagging side deliberately: an empty phase is a capture
+that is perfectly trustworthy and simply uninformative, which is a different
+failure.
 
 ### Host walk (safe, unprivileged tier only)
 

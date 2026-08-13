@@ -105,10 +105,22 @@ recipe history-regressions  unprivileged ro -- history regressions
 # `exception add` instead of exercising its "no such key" refusal everywhere.
 recipe exception-add        root mut -- exception add pam-hardening PASS_MAX_DAYS --reason 'cli walk probe'
 recipe exception-remove     root mut -- exception remove pam-hardening PASS_MAX_DAYS
-recipe apply-dry            root mut -- apply --all --dry-run
-recipe apply-all            root mut -- apply --all
+# `checkpoint create` BEFORE the apply, and this is the third ordering the
+# first walks had wrong. `checkpoint list` is `ORDER BY timestamp DESC`, so
+# RUNTIME_ID always resolves to the NEWEST checkpoint. Created after the apply,
+# the probe was the newest and held the already-hardened state, so the rollback
+# in the restore phase faithfully restored the host to exactly where it already
+# was: it reported twenty files restored, exited as designed, and left the
+# restored snapshot byte-identical to the applied one. A no-op by construction
+# is the worst kind of green.
+#
+# Created before, every checkpoint at that boundary is pre-apply: this probe and
+# the per-plugin `<plugin>-pre-apply` ones the apply takes itself. Whichever is
+# newest, rolling back to it undoes real changes and the two snapshots differ.
 recipe checkpoint-create    root mut -- checkpoint create 'walk probe'
 recipe checkpoint-repair    root mut -- checkpoint repair
+recipe apply-dry            root mut -- apply --all --dry-run
+recipe apply-all            root mut -- apply --all
 
 # --- Scheduling --------------------------------------------------------------
 recipe systemd-generate     root   ro  -- systemd generate
