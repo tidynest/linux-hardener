@@ -30,6 +30,22 @@ pub enum HardeningError {
     #[error("Notification error: {0}")]
     Notification(String),
 
+    /// The operator named something that does not exist.
+    ///
+    /// Distinct from every variant around it, and the distinction is the point:
+    /// those all say the tool failed at something, and this one says the tool
+    /// worked and the answer is no. Rolling back to a checkpoint id that was
+    /// never created is not a database malfunction, and reporting it as one
+    /// sent an operator to look at the database. The CLI walk caught exactly
+    /// that: `Database error: no rows returned by a query that expected to
+    /// return at least one row`, which names neither what was missing nor what
+    /// to do about it.
+    ///
+    /// The payload carries the whole noun phrase and the remedy, because
+    /// "Not found: " reads as a prefix rather than as a sentence opener.
+    #[error("Not found: {0}")]
+    NotFound(String),
+
     /// Plugin operation failed.
     #[error("Plugin error: {0}")]
     Plugin(String),

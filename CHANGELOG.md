@@ -32,6 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the probe change below gave them an unchecked route. Both halves of the check
   were confirmed to go red before the work was accepted.
 
+- **Rolling back to a checkpoint that does not exist reported a database
+  fault**, the second defect the CLI walk found. `get_checkpoint` mapped every
+  `fetch_one` failure to `HardeningError::Database`, including sqlx's
+  `RowNotFound`, so an operator naming an id that was never created was told
+  `Database error: no rows returned by a query that expected to return at least
+  one row`. That names neither the checkpoint nor the remedy, and it points at
+  a database where nothing is wrong. A new `HardeningError::NotFound` variant
+  carries the distinction the enum was missing: every variant around it says
+  the tool failed at something, and this one says the tool worked and the
+  answer is no. The message now reads `Not found: checkpoint '<id>'. Run
+  \`hardener checkpoint list\` to see the checkpoints that exist.` Only this
+  call site changed: the other three `fetch_one` uses in the crate select a
+  COUNT or return an inserted row, where a missing row genuinely is a fault.
+
 - **Ten error messages named the command that failed and dropped the reason it
   failed**, the first product defect the CLI walk found. `LocalExecutor` builds
   its errors as an `io::Error` under an anyhow context line, and `{}` on an

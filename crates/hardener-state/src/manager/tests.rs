@@ -2468,3 +2468,46 @@ async fn a_silent_command_failure_is_described_by_its_exit_status() {
         "the control: a command that worked is not a refusal"
     );
 }
+
+/// An id nobody created must be reported as a missing checkpoint, not as a
+/// database fault.
+///
+/// The CLI walk found this by rolling back to a checkpoint it had already
+/// deleted, and the operator got "Database error: no rows returned by a query
+/// that expected to return at least one row". That names neither what was
+/// missing nor what to do, and it points at the database, where nothing is
+/// wrong. Compare the refusal `exception remove` gives two commands away: "No
+/// exception 'PASS_MAX_DAYS' in [pam.exceptions] to remove."
+///
+/// Both halves are asserted. Checking only for the id would pass against a
+/// message that still carried the sqlx prose alongside it, which is most of
+/// what made the original unreadable.
+#[tokio::test]
+async fn a_checkpoint_id_that_was_never_created_is_not_a_database_error() {
+    let manager = test_manager().await;
+
+    let error = manager
+        .get_checkpoint(&CheckpointId::new("cp_never_created".to_string()))
+        .await
+        .expect_err("an id with no row is an error");
+
+    assert!(
+        matches!(error, HardeningError::NotFound(_)),
+        "an absent checkpoint is reported as {error:?}, which sends the operator \
+         to look at a database that is working correctly"
+    );
+
+    let message = error.to_string();
+    assert!(
+        message.contains("cp_never_created"),
+        "the message does not name the checkpoint that was missing: {message}"
+    );
+    assert!(
+        message.contains("checkpoint list"),
+        "the message names no way to find out which ids do exist: {message}"
+    );
+    assert!(
+        !message.contains("no rows returned"),
+        "the sqlx wording survived into the operator-facing message: {message}"
+    );
+}

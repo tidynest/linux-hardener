@@ -768,7 +768,22 @@ impl CheckpointManager {
         .bind(checkpoint_id.as_str())
         .fetch_one(&self.db_pool)
         .await
-        .map_err(|e| HardeningError::Database(e.to_string()))?;
+        // An id nobody created is not a database malfunction. Mapping every
+        // `fetch_one` failure to `Database` reported it as one, and the CLI
+        // walk caught what an operator then reads: "Database error: no rows
+        // returned by a query that expected to return at least one row", which
+        // names neither the checkpoint nor the remedy and points at the
+        // database, where there is nothing wrong. Every other `fetch_one` in
+        // this crate selects a COUNT or returns an inserted row, so this is the
+        // only one where RowNotFound can mean the operator named something that
+        // does not exist.
+        .map_err(|e| match e {
+            sqlx::Error::RowNotFound => HardeningError::NotFound(format!(
+                "checkpoint '{}'. Run `hardener checkpoint list` to see the checkpoints that exist.",
+                checkpoint_id.as_str()
+            )),
+            other => HardeningError::Database(other.to_string()),
+        })?;
 
         let checkpoint = Checkpoint {
             checkpoint_id: CheckpointId::new(checkpoint_row.get::<String, _>("id")),
