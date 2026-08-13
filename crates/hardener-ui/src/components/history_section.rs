@@ -140,20 +140,31 @@ pub fn HistorySection() -> impl IntoView {
                 "the system to how it was at that moment."
             </p>
 
-            // Not a warning: the system database is root-owned by design, so
-            // an unprivileged desktop failing to read it is the normal state
-            // on a correctly configured host. A red banner here would fire on
-            // every launch and teach the operator to ignore red.
-            <Show when=move || system_unreadable.get()>
-                <p class="checkpoint-source-note">
-                    "Checkpoints created with root privileges are not listed here: "
-                    "this desktop cannot read "
-                    <code>"/var/lib/linux-hardener/checkpoints.db"</code>
-                    ". To see them, run "
-                    <code>"sudo hardener checkpoint list"</code>
-                    "."
-                </p>
-            </Show>
+            // Always-present live region, for the reason given at
+            // notification_section.rs: a region that only mounts with its
+            // content is not reliably read by screen readers, and this note
+            // appears after `get_checkpoints` resolves rather than with the
+            // tab. Without the wrapper it is announced to nobody, and a
+            // screen-reader user is left with a list that silently omits every
+            // root-owned checkpoint and no statement that it does.
+            //
+            // `status`, not `alert`: the system database is root-owned by
+            // design, so an unprivileged desktop failing to read it is the
+            // normal state on a correctly configured host. `alert` interrupts,
+            // and this is the same reason the note is not a red banner. One
+            // would fire on every launch and teach the operator to ignore red.
+            <div role="status" aria-live="polite">
+                <Show when=move || system_unreadable.get()>
+                    <p class="checkpoint-source-note">
+                        "Checkpoints created with root privileges are not listed here: "
+                        "this desktop cannot read "
+                        <code>"/var/lib/linux-hardener/checkpoints.db"</code>
+                        ". To see them, run "
+                        <code>"sudo hardener checkpoint list"</code>
+                        "."
+                    </p>
+                </Show>
+            </div>
 
             <div class="checkpoint-controls">
                 <div class="create-checkpoint-form">
@@ -244,6 +255,27 @@ pub fn HistorySection() -> impl IntoView {
                                             <div class="timeline-meta">
                                                 <span class="timeline-time">{time}</span>
                                                 <span class="timeline-user">{user}</span>
+                                                // The word carries the state and
+                                                // the colour only reinforces it,
+                                                // so this survives a monochrome
+                                                // or colour-blind read and needs
+                                                // no aria of its own.
+                                                //
+                                                // What is NOT settled here is
+                                                // whether "Unverified", heard
+                                                // alone at the end of a meta row
+                                                // ("14:02, root, Unverified"),
+                                                // says enough about WHAT was not
+                                                // verified. Adding an sr-only
+                                                // qualifier would fix that and
+                                                // would also make every row in a
+                                                // long list longer to hear. That
+                                                // trade needs someone who
+                                                // navigates one with a screen
+                                                // reader; it is not a thing to
+                                                // guess at, and guessing has
+                                                // been declined rather than
+                                                // deferred again.
                                                 <span class=move || if verified {
                                                     "timeline-verify timeline-verify-ok"
                                                 } else {

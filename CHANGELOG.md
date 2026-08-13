@@ -1547,6 +1547,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The note explaining why root-owned checkpoints are missing from the History
+  list was announced to nobody.** It renders after `get_checkpoints` resolves
+  rather than with the tab, and it sat in no live region, so a screen-reader
+  user was left with a list that silently omits every root-owned checkpoint and
+  no statement that it does. It is now wrapped in an always-present
+  `role="status" aria-live="polite"` region, which is the pattern the
+  notification and scheduler sections already use and for the reason already
+  written down at both: a region that mounts together with its content is not
+  reliably read. `status` rather than `alert`, because an unprivileged desktop
+  being unable to read a root-owned database is the normal state on a correctly
+  configured host, and this is the same reason the note is not a red banner.
+  The Playwright case asserts the region as an ancestor of the note rather than
+  on the note itself, since moving the attributes onto the note would satisfy a
+  simpler assertion while reintroducing exactly the bug.
+
 - **`/etc/security/faillock.conf` and `/etc/security/pwhistory.conf` were read
   twice by every PAM scan and every PAM dry run** (#170). Both `scan` and
   `validate` walk the layer-drift table and then walk the directive table, and

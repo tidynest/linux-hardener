@@ -172,6 +172,16 @@ test.describe('History', () => {
     await expect(note).toContainText('sudo hardener checkpoint list');
     // The rows still render: the note explains a gap, it does not replace the list.
     await expect(rollbackButtons(page)).toHaveCount(3);
+
+    // The note is announced, not merely rendered. It appears after
+    // get_checkpoints resolves, so a screen reader is told about it only if a
+    // live region was already in the DOM to receive it; a region that mounts
+    // with its content is not reliably read. Asserted as an ancestor rather
+    // than on the note itself, because moving the attributes onto the note
+    // would satisfy `toHaveAttribute` while reintroducing exactly the bug.
+    const region = page.locator('[role="status"]', { has: page.locator('.checkpoint-source-note') });
+    await expect(region).toHaveCount(1);
+    await expect(region).toHaveAttribute('aria-live', 'polite');
   });
 
   // T-HIST-13: both verification states render, on every row
