@@ -425,17 +425,23 @@ preflight_checks() {
     fi
     log_check "Version: $version"
 
-    # In pre-flight, because every SSH check below reads through sshd and this
-    # suite runs in the same unbooted containers the differential one does.
+    # For --apply, and only for --apply. This suite never invokes sshd itself;
+    # its SSH work is `scan` and JSON fixtures, and scan does not reach the
+    # validation gate. What does reach it is the tool: `apply` validates its
+    # candidate with `sshd -t` before writing, so on a host without the
+    # privilege separation directory every SSH apply fail-closes and the suite
+    # measures a refusal rather than what hardening does.
+    #
     # Debian and Ubuntu create /run/sshd from `RuntimeDirectory=sshd` when
-    # systemd starts the unit, nothing boots here, and sshd then refuses every
-    # configuration it is given. The guard was written for the differential
-    # suite and lived inside it, so this suite ran without it and reported SSH
-    # coverage on two distributions where no SSH setting could be written.
+    # systemd starts the unit, and nothing boots in these containers. The guard
+    # was written for the differential suite and lived inside it, so this one
+    # ran without it. An earlier version of this comment claimed every SSH
+    # check here reads through sshd; none of them do, and the run that prompted
+    # the correction passed 109 of 109 on all six distributions either way.
     if ! require_sshd_privsep_dir; then
         log "${RED}ERROR: sshd has no usable privilege separation directory${NC}"
-        log "  Every SSH check reads through sshd, so the run would compare"
-        log "  nothing and print a clean summary."
+        log "  Under --apply the tool validates with sshd -t before writing, so"
+        log "  every SSH apply would refuse and the run would measure that."
         exit 1
     fi
     log_check "sshd privilege separation directory present"
