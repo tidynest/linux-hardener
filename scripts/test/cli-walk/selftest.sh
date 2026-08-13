@@ -60,6 +60,32 @@ generated_row=$(grep "with-pipe-in-reason" "$TMP/index.md" 2>/dev/null)
 has_escaped_pipe="$(echo "$generated_row" | grep -q '\\|' && echo yes || echo no)"
 check "pipe-in-note escaped" "yes" "$has_escaped_pipe"
 
+# The diff pointer must report a real difference and stay silent about one
+# that is only a path or a timestamp. Both halves matter: a normaliser too
+# aggressive erases the findings it exists to point at, and one too timid
+# names every slug on every distribution, which is the same as naming none.
+POINTER="$TMP/pointer"
+for dist in arch debian; do
+    mkdir -p "$POINTER/$dist/pristine/001-same" "$POINTER/$dist/pristine/002-differs"
+done
+echo "built at 2026-08-13 10:00:00 from /home/one/tree" > "$POINTER/arch/pristine/001-same/stdout"
+echo "built at 2026-08-14 23:59:59 from /var/two/other" > "$POINTER/debian/pristine/001-same/stdout"
+echo "12 findings" > "$POINTER/arch/pristine/002-differs/stdout"
+echo "34 findings" > "$POINTER/debian/pristine/002-differs/stdout"
+
+walk_write_diff_pointer "$POINTER" arch debian
+check "pointer names a real difference" "yes" \
+    "$(grep -q '002-differs' "$POINTER/diff-pointer.md" && echo yes || echo no)"
+check "pointer ignores paths and times" "no" \
+    "$(grep -q '001-same' "$POINTER/diff-pointer.md" && echo yes || echo no)"
+
+# An absent capture is reported, never treated as agreement. A distribution
+# whose walk died before this slug would otherwise read as matching.
+rm -rf "$POINTER/debian/pristine/002-differs"
+walk_write_diff_pointer "$POINTER" arch debian
+check "pointer flags an absent capture" "yes" \
+    "$(grep -q 'debian(absent)' "$POINTER/diff-pointer.md" && echo yes || echo no)"
+
 if [[ $fails -eq 0 ]]; then
     echo "selftest: all checks passed"
     exit 0

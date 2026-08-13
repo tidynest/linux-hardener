@@ -108,3 +108,48 @@ walk_write_index() {
         done
     } > "$out"
 }
+
+# walk_normalise FILE
+# Blanks the two things that differ between distributions for reasons that are
+# never a finding: absolute paths and timestamps. It exists as a function
+# because both sides of the diff must normalise identically, and two copies of
+# one expression drift.
+walk_normalise() {
+    sed -E 's#/[A-Za-z0-9_./-]+#PATH#g; s#[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9:]+#TIME#g' "$1"
+}
+
+# walk_write_diff_pointer CAPTURE_PARENT REFERENCE_DISTRO OTHER...
+# For every slug, reports which other distributions' stdout differs from the
+# reference, after normalising paths and timestamps.
+#
+# A POINTER, not an assertion. Distributions legitimately differ, so a
+# difference is never a failure and this never touches an exit code. It turns
+# five unread captures into a short "look here too" list.
+walk_write_diff_pointer() {
+    local parent="$1" ref="$2"; shift 2
+    local others=("$@")
+    local out="$parent/diff-pointer.md"
+    {
+        echo "# Cross-distribution diff pointer"
+        echo ""
+        echo "Reference: $ref. A difference is not a defect; it is a place to look."
+        echo ""
+        echo "| Phase/Invocation | Differs from $ref |"
+        echo "|------------------|-------------------|"
+        local refdir d rel diffs
+        while IFS= read -r refdir; do
+            rel="${refdir#"$parent/$ref/"}"
+            diffs=""
+            for d in "${others[@]}"; do
+                [[ -f "$parent/$d/$rel/stdout" ]] || { diffs+="$d(absent) "; continue; }
+                if ! diff -q \
+                    <(walk_normalise "$refdir/stdout") \
+                    <(walk_normalise "$parent/$d/$rel/stdout") \
+                    > /dev/null 2>&1; then
+                    diffs+="$d "
+                fi
+            done
+            [[ -n "$diffs" ]] && echo "| $rel | $diffs |"
+        done < <(find "$parent/$ref" -mindepth 2 -maxdepth 2 -type d | sort)
+    } > "$out"
+}

@@ -91,17 +91,22 @@ recipe systemd-status       booted ro  -- systemd status
 recipe systemd-uninstall    booted mut -- systemd uninstall
 
 # --- Remote ------------------------------------------------------------------
-recipe batch-scan           ssh ro  -- batch scan --format json
-recipe batch-report         ssh ro  -- batch report --format json
-recipe batch-apply          ssh mut -- batch apply --execute
-recipe batch-rollback       ssh mut -- batch rollback
+# The ssh tier runs OUTSIDE a container, pointing at the booted SSH fixture.
+# These are `batch` verbs: they target a remote, so running them inside the
+# container under test would target the container from itself. RUNTIME_SSH is
+# resolved to the fixture's `user@host` by whoever runs the tier; without a
+# target `batch` has no hosts and the capture would say nothing.
+recipe batch-scan           ssh ro  -- batch scan --ssh RUNTIME_SSH --format json
+recipe batch-report         ssh ro  -- batch report --ssh RUNTIME_SSH --format json
+recipe batch-apply          ssh mut -- batch apply --ssh RUNTIME_SSH --execute
+recipe batch-rollback       ssh mut -- batch rollback --ssh RUNTIME_SSH
 recipe ssh-refusal-daemon   unprivileged ro -- --ssh nonexistent.invalid daemon status
 
 # --- Runtime-id placeholders ---------------------------------------------------
 # checkpoint delete/show, rollback and history show/export each need an id
-# that only exists at runtime. Task 5 resolves ids from earlier captures and
-# registers the real recipes dynamically; these placeholders exist only so
-# coverage.sh sees the command families as covered before that task lands.
+# that only exists at runtime. The runners substitute RUNTIME_ID and
+# RUNTIME_SESSION from earlier captures in the same phase sequence, and skip
+# with a reason where no id exists yet. RUNTIME_OUT is the capture directory.
 recipe checkpoint-show      root ro  -- checkpoint show RUNTIME_ID
 recipe checkpoint-delete    root mut -- checkpoint delete RUNTIME_ID
 recipe rollback-run         root mut -- rollback RUNTIME_ID
