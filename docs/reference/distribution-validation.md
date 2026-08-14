@@ -1,11 +1,14 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-08-15
 
 This document tracks validation testing across supported Linux distributions.
 
-**Last measured full cross-distro validation:** 2026-08-07, on containers
-recreated immediately beforehand.
+**Last measured full cross-distro validation:** 2026-08-14, on containers
+recreated immediately beforehand, by `release-readiness-root.sh` against
+`hardener 1.5.1 (6bce4229)`. This line read 2026-08-07 until 2026-08-15 while
+the Summary below already recorded the 2026-08-14 run, which is the same defect
+shape as a summary contradicting its own table.
 **Container set that ran:** Arch rolling, Debian 13 "Trixie", Ubuntu 24.04 LTS
 "Noble", Fedora 44, Rocky Linux 10 (RHEL 10 binary-compatible) and openSUSE
 Leap 16.0, all built by `scripts/containers/create-container.sh`.
@@ -34,6 +37,24 @@ of the time (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6).
 
 Measured 2026-08-14 by `scripts/test/run-cross-distro-tests.sh --apply
 --booted`, with all six containers recreated and their contract verified first.
+
+**The binary that produced this reading**, captured by
+`release-readiness-root.sh` into
+`test-results/release-readiness/00-preflight.log` before any container was
+touched:
+
+    Binary version: hardener 1.5.1 (6bce4229 2026-08-14)
+    Tree version:   1.5.1
+    Tree commit:    6bce4229
+    Tree status:    0 modified path(s)
+
+That line is here because a reading without it cannot be attributed. A stale
+musl binary in a container has produced a green matrix before, and every
+failure in such a run is charged to code the binary does not contain. The
+pre-flight refuses a mismatch outright rather than warning: on the run above it
+first aborted on `binary built at 69ed307d, HEAD is 6bce4229`, and the reading
+was taken only after a rebuild.
+
 The wider release sweep, which recreates all six containers before every suite
 that uses one, is:
 
@@ -1150,4 +1171,4 @@ test-results/gui/
 
 ---
 
-**Last Updated**: 2026-08-14
+**Last Updated**: 2026-08-15

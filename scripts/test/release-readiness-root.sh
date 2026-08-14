@@ -315,15 +315,40 @@ check_binary_identity() {
 # and it is not fatal to the run: the other five suites are still worth having,
 # and the GUI suite is recorded NOTRUN rather than skipped quietly.
 check_gui_artefacts() {
-    if [[ -f "$PROJECT_DIR/crates/hardener-ui/dist/index.html" ]]; then
-        GUI_ARTEFACTS_PRESENT=true
-        log_info "GUI artefacts present (crates/hardener-ui/dist/index.html)"
+    if [[ ! -f "$PROJECT_DIR/crates/hardener-ui/dist/index.html" ]]; then
+        GUI_ARTEFACTS_PRESENT=false
+        log_warn "No crates/hardener-ui/dist/index.html: the GUI suite will be recorded NOTRUN"
+        log_warn "  Build it as your normal user first:"
+        log_warn "    cd crates/hardener-ui && trunk build --release"
         return
     fi
-    GUI_ARTEFACTS_PRESENT=false
-    log_warn "No crates/hardener-ui/dist/index.html: the GUI suite will be recorded NOTRUN"
-    log_warn "  Build it as your normal user first:"
-    log_warn "    cd crates/hardener-ui && trunk build --release"
+
+    # Present is not current, and this check asked only the first question
+    # until 2026-08-15. The first real run of this script spent four suites and
+    # 24 container rebuilds getting to the GUI suite, which then refused in one
+    # second because dist/ predated three commits of frontend source. Pre-flight
+    # exists precisely so that a run destined to abort aborts before the root
+    # session starts, and it passed the artefact that stopped the run.
+    #
+    # The rule is the GUI runner's own, deliberately: two definitions of "the
+    # bundle is current" is how they come to disagree, and the runner's is the
+    # one that decides.
+    local newer
+    newer=$(find "$PROJECT_DIR/crates/hardener-ui/src" \
+                 "$PROJECT_DIR/crates/hardener-ui/styles.css" \
+        -newer "$PROJECT_DIR/crates/hardener-ui/dist/index.html" -print -quit 2>/dev/null)
+    if [[ -n "$newer" ]]; then
+        GUI_ARTEFACTS_PRESENT=false
+        preflight_fail \
+            "GUI artefacts are STALE: ${newer#"$PROJECT_DIR/"} is newer than dist/index.html"
+        log_error "  The containers would serve the previous build, and the GUI"
+        log_error "  suite refuses on exactly this. Rebuild as your normal user:"
+        log_error "    cd crates/hardener-ui && trunk build --release"
+        return
+    fi
+
+    GUI_ARTEFACTS_PRESENT=true
+    log_info "GUI artefacts present and newer than the frontend source"
 }
 
 run_preflight() {
