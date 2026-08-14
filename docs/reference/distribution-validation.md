@@ -32,8 +32,10 @@ of the time (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6).
 
 ## Summary
 
-Measured 2026-08-07 by `scripts/test/release-readiness-root.sh`, which recreates
-all six containers before every suite that uses one:
+Measured 2026-08-14 by `scripts/test/run-cross-distro-tests.sh --apply
+--booted`, with all six containers recreated and their contract verified first.
+The wider release sweep, which recreates all six containers before every suite
+that uses one, is:
 
 ```bash
 sudo ./scripts/test/release-readiness-root.sh
@@ -41,12 +43,18 @@ sudo ./scripts/test/release-readiness-root.sh
 
 | Distribution | Family | Version | Test Date | Declared | Recorded | Pass | Fail | Skip | Status |
 |--------------|--------|---------|-----------|----------|----------|------|------|------|--------|
-| Arch Linux | Arch | Rolling | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
-| Debian | Debian | 13 (Trixie) | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
-| Ubuntu | Debian | 24.04 LTS (Noble) | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
-| Fedora | Red Hat | 44 | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
-| Rocky Linux | Red Hat | 10 | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
-| openSUSE | SUSE | Leap 16.0 | 2026-08-07 | 149 | 149 | 146 | 0 | 9 | VALIDATED |
+| Arch Linux | Arch | Rolling | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| Debian | Debian | 13 (Trixie) | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| Ubuntu | Debian | 24.04 LTS (Noble) | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| Fedora | Red Hat | 44 | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| Rocky Linux | Red Hat | 10 | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| openSUSE | SUSE | Leap 16.0 | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+
+The pass count rose by one and the skip count fell by one against the
+2026-08-07 reading, and no check was added or removed to do it: section 23's
+`ssh-hardening` checkpoint row was recorded and then skipped, and now carries a
+verdict. Why that mattered is under
+[Expected Container Skips](#expected-container-skips-8-per-distro).
 
 The differential suite ran the same day on the same six: arch 86 of 86 with 10
 unaskable, and the other five 88 of 88 with 8 unaskable. Arch differs because two
@@ -110,13 +118,17 @@ gap on the other three; both are recorded on issue #48.
 > refusal through the failure count so a short run cannot read as a pass in
 > `test-results/summary.txt`.
 
-> **Why passed plus failed does not reach the recorded total.** Three of the 149
+> **Why passed plus failed does not reach the recorded total.** Two of the 149
 > recorded checks are section 23 rows that are recorded and then skipped: the ssh
 > plugin's apply has nothing to do on a host sections 13 to 15 have already
-> hardened, so it takes no checkpoint and there is nothing of its own to roll
-> back. That outcome is declared, not a fault. The other six of the nine skips
-> are never recorded as checks at all. The full breakdown is under
-> [Expected Container Skips](#expected-container-skips-9-per-distro).
+> hardened, so it takes no checkpoint, and with no checkpoint of its own there is
+> nothing to roll back and nothing to read afterwards. That outcome is declared,
+> not a fault. The row that establishes it is a pass rather than a third skip,
+> because the apply's own change list is read to confirm it changed nothing: an
+> apply that changed the host and recorded no checkpoint reaches the same branch,
+> and what it did could not be rolled back at all. The other six of the eight
+> skips are never recorded as checks at all. The full breakdown is under
+> [Expected Container Skips](#expected-container-skips-8-per-distro).
 
 > **The audit plugin's apply fails in a container, by design, on all six.**
 > There is no auditd to reload, so `augenrules --load` and `systemctl restart
@@ -308,9 +320,9 @@ rather than as a fault.
 - **Container awareness:** A question this host cannot answer is declared unaskable in advance and skipped. A value that turns out undeterminable at runtime is a failure, never a skip
 - **`/proc/sys` stays read-only in both execution modes**, so the `fs.*` and `kernel.*` parameters are out of reach and the kernel apply cannot touch the host. The `net.ipv4.*` parameters become writable inside the container's own namespace, which `--private-network` grants with or without `--boot`
 
-### Expected Container Skips (9 per distro)
+### Expected Container Skips (8 per distro)
 
-On an `--apply --booted` run every distribution skips exactly 9, and the same 9:
+On an `--apply --booted` run every distribution skips exactly 8, and the same 8:
 
 | # | Section | Test | Reason |
 |---|---------|------|--------|
@@ -320,14 +332,24 @@ On an `--apply --booted` run every distribution skips exactly 9, and the same 9:
 | 4 | 12 | Systemd uninstall | Depends on systemd install |
 | 5 | 14 | Apply audit-hardening | No kernel audit subsystem available in container |
 | 6 | 14 | Apply mac-hardening | No SELinux/AppArmor kernel modules in container |
-| 7 | 23 | Lifecycle: ssh-hardening's apply recorded the checkpoint it took | ssh takes no checkpoint where its apply has nothing to do |
-| 8 | 23 | Lifecycle rollback: ssh-hardening | Follows from 7: there is no checkpoint of its own to roll back |
-| 9 | 23 | Lifecycle: ssh-hardening findings after the rollback | Follows from 7: nothing was rolled back, so nothing to read |
+| 7 | 23 | Lifecycle rollback: ssh-hardening | ssh recorded no checkpoint of its own, so there is none to roll back |
+| 8 | 23 | Lifecycle: ssh-hardening findings after the rollback | Follows from 7: nothing was rolled back, so nothing to read |
 
-Skips 1 to 6 are never recorded as checks. Skips 7 to 9 are recorded and then
-skipped, which is why 146 passed and 0 failed out of 149 recorded rather than
+The row above those two, `Lifecycle: ssh-hardening's apply recorded a checkpoint
+for whatever it changed`, was a third skip until 2026-08-14 and is now a pass.
+It had reported "it took no checkpoint, so it had nothing to do", which is the
+usual reason and was never the thing measured: an apply that changed this host
+and recorded no checkpoint reaches the identical branch, and nothing it did
+could be rolled back. `apply_real_change_count` reads the apply's own change
+list, counting every `change_type` except `Skipped` and `Checkpoint`, so the
+row now passes on a confirmed no-op and fails on an unrollbackable write.
+Measured on all six: ssh reports no real change there, so the outcome the skip
+had assumed is now the outcome it asserts.
+
+Skips 1 to 6 are never recorded as checks. Skips 7 and 8 are recorded and then
+skipped, which is why 147 passed and 0 failed out of 149 recorded rather than
 149 passed. The runner now prints that split rather than leaving it to be
-worked out: a clean run reads `149 declared, 146 passed, 0 failed, 9 skipped (3
+worked out: a clean run reads `149 declared, 147 passed, 0 failed, 8 skipped (2
 declared without a verdict, 6 never declared)`, so the row adds up on the page.
 It used to read `146/149 passed, 9 skipped` with no failure count at all, which
 was read as three silent failures on a run that had none. The first number in

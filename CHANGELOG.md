@@ -1663,6 +1663,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A lifecycle check reported an apply with no way back as one that had
+  nothing to do.** Section 23 of the full test suite reads the checkpoint each
+  plugin's apply recorded, and where the document held none it skipped the
+  three rows below it saying "it took no checkpoint, so it had nothing to do".
+  That is the ssh plugin's usual reason on a host sections 13 to 15 have
+  already hardened, and it was never the thing measured: an apply that changed
+  the host and recorded no checkpoint reaches the identical branch, and nothing
+  it did there could be rolled back at all. The row now reads the apply's own
+  change list through `apply_real_change_count`, which counts every
+  `change_type` except `Skipped` and `Checkpoint`, and either passes on a
+  confirmed no-op or fails naming the number of real changes applied with no
+  rollback point. Counted by exclusion rather than by listing the six real
+  variants, so a `ChangeType` added later counts as real and the check can only
+  ever become stricter, never quietly weaker. Four self-test cases cover it,
+  and the helper mutated to answer zero turns two of them red, so the failing
+  branch is observed rather than assumed. Measured on all six distributions
+  booted under `--apply`, every one identical: ssh reports no real change
+  there, and the run reads 149 declared, 147 passed, 0 failed, 8 skipped
+  against the 146 and 9 of the reading before it. No check was added or removed
+  to move those numbers; one that was recorded and then skipped now carries a
+  verdict.
+
 - **A rollback left behind the compiled audit rule set its own reload had
   recreated.** `/etc/audit/audit.rules` and `/etc/audit/audit.rules.prev` are
   captured by the checkpoint and restored correctly, and the rollback then runs

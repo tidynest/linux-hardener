@@ -773,6 +773,24 @@ apply_checkpoint_id_of() {
     printf '%s' "$field" | grep -oE 'cp_[0-9]+_[a-f0-9]+'
 }
 
+# How many entries in an apply document are real hardening changes rather than
+# bookkeeping: every `change_type` except `Skipped` (nothing applicable on this
+# host) and `Checkpoint` (the rollback point itself). This is the question
+# `ApplyResult::applied_change_count` asks in Rust and the renderers use.
+#
+# Matched by exclusion rather than by listing the six real variants, so a
+# `ChangeType` added later counts as real without this being touched. The check
+# can then only ever become stricter, never quietly weaker.
+#
+# A document that is not there counts zero, which is safe only because the
+# caller has already failed the run when the apply produced no document at all.
+apply_real_change_count() {
+    local count
+    count="$(grep -o '"change_type"[^,]*' "$1" 2>/dev/null \
+        | grep -Ev '"(Skipped|Checkpoint)"' | wc -l)"
+    printf '%s' "$count"
+}
+
 finding_count_verdict() {
     local before="$1" after="$2"
     if [[ "$before" == "no-document" || "$after" == "no-document" ]]; then
@@ -1777,9 +1795,21 @@ test_per_plugin_lifecycle() {
         local cp_id
         cp_id="$(apply_checkpoint_id_of "$life_json")"
 
-        log_test "Lifecycle: $full_id's apply recorded the checkpoint it took"
+        log_test "Lifecycle: $full_id's apply recorded a checkpoint for whatever it changed"
         if [[ "$cp_id" == "none" ]]; then
-            log_skip "Lifecycle: $full_id's apply took no checkpoint, so it had nothing to do and leaves nothing of its own to roll back"
+            # "It took no checkpoint" was read here as "it had nothing to do",
+            # which is the usual reason and was never the thing measured. An
+            # apply that changed this host and recorded no checkpoint reaches
+            # the same branch, and nothing it did can be rolled back; the row
+            # reported that in a message asserting the opposite. The apply's
+            # own change list is what separates the two.
+            local real_changes
+            real_changes="$(apply_real_change_count "$life_json")"
+            if [[ "$real_changes" != "0" ]]; then
+                log_fail "Lifecycle: $full_id applied $real_changes real change(s) and recorded no checkpoint, so nothing it did to this host can be rolled back"
+            else
+                log_pass "Lifecycle: $full_id's apply took no checkpoint and its document records no change needing one"
+            fi
             log_test "Lifecycle rollback: $full_id"
             log_skip "Lifecycle rollback: $full_id (its apply took no checkpoint)"
             log_test "Lifecycle: $full_id findings are where they were after the rollback"
@@ -2106,6 +2136,26 @@ LISTING
         "an apply that took none says none, though its changes mention a checkpoint id"
     check_eq "$(apply_checkpoint_id_of "$workdir/missing.json")" "none" \
         "a document that is not there is not a checkpoint to roll back"
+
+    # The claim the lifecycle skip used to make without measuring it. A
+    # document with no checkpoint and no real change is a plugin that had
+    # nothing to do; the same document carrying a change is an apply whose
+    # work cannot be undone. Both reached the same branch and read the same.
+    printf '[[{"apply_checkpoint_id": null,"apply_changes":[{"change_type":"Checkpoint"},{"change_type":"Skipped"}]}]]\n' \
+        > "$workdir/apply-changed-nothing.json"
+    printf '[[{"apply_checkpoint_id": null,"apply_changes":[{"change_type":"Checkpoint"},{"change_type":"ConfigFile"}]}]]\n' \
+        > "$workdir/apply-changed-unrollbackably.json"
+    printf '[[{"apply_changes":[{"change_type":"AVariantAddedLater"}]}]]\n' \
+        > "$workdir/apply-changed-by-a-new-type.json"
+
+    check_eq "$(apply_real_change_count "$workdir/apply-changed-nothing.json")" "0" \
+        "bookkeeping and no-ops are not changes a host needs undone"
+    check_eq "$(apply_real_change_count "$workdir/apply-changed-unrollbackably.json")" "1" \
+        "a config file written alongside a null checkpoint is a change with no way back"
+    check_eq "$(apply_real_change_count "$workdir/apply-changed-by-a-new-type.json")" "1" \
+        "a change type added after this check counts as real, so the check cannot quietly weaken"
+    check_eq "$(apply_real_change_count "$workdir/missing.json")" "0" \
+        "a document that is not there records no change"
 
     # All four arms, because the comparison this replaces had two and one of
     # them was unreachable on every host the suite runs on.
