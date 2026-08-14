@@ -1334,7 +1334,11 @@ fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
                     ),
                 );
             }
-            ApplyStatus::Applied { ok, failed, .. } => {
+            ApplyStatus::Applied {
+                ok,
+                failed,
+                plugins,
+            } => {
                 applied += 1;
                 let status = if *failed > 0 {
                     "partially applied".yellow()
@@ -1343,6 +1347,14 @@ fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
                 };
                 push_detail(&mut out, "status", &status.to_string());
                 push_detail(&mut out, "result", &format!("{ok} ok, {failed} failed"));
+                // Only the failures are named. A clean host reads as it always
+                // has, and a fleet of them does not become a wall of rows;
+                // anyone wanting every plugin reads the JSON, which carries
+                // them all.
+                for plugin in plugins.iter().filter(|p| !p.success) {
+                    let reason = plugin.error.as_deref().unwrap_or("no reason given");
+                    out.push_str(&format!("    {} {}: {reason}\n", "x".red(), plugin.plugin));
+                }
             }
             ApplyStatus::Failed { error } => {
                 failed_hosts += 1;

@@ -1788,6 +1788,70 @@ fn render_apply_text_validation_states() {
     );
 }
 
+/// A clean host reads exactly as it did before, and a broken one says what
+/// broke.
+///
+/// Both directions in one test on purpose: a renderer that always prints the
+/// failure block passes a one-sided test, and so does one that never prints
+/// it.
+#[test]
+fn the_apply_text_names_failing_plugins_and_stays_quiet_otherwise() {
+    colored::control::set_override(false);
+    let mk = |name: &str, status| ApplyOutcome {
+        name: name.into(),
+        target: format!("root@{name}:22"),
+        status,
+    };
+    let row = |plugin: &str, success: bool, error: Option<&str>| PluginOutcome {
+        plugin: PluginId::new(plugin),
+        success,
+        applied: usize::from(success),
+        failed: usize::from(!success),
+        error: error.map(str::to_string),
+    };
+
+    let clean = render_apply_text(&[mk(
+        "web-01",
+        ApplyStatus::Applied {
+            ok: 1,
+            failed: 0,
+            plugins: vec![row("kernel-hardening", true, None)],
+        },
+    )]);
+    assert!(
+        !clean.contains("kernel-hardening"),
+        "a clean host names no plugins: {clean}"
+    );
+
+    let broken = render_apply_text(&[mk(
+        "db-02",
+        ApplyStatus::Applied {
+            ok: 1,
+            failed: 1,
+            plugins: vec![
+                row("kernel-hardening", true, None),
+                row(
+                    "firewall-configuration",
+                    false,
+                    Some("loopback rule would be dropped"),
+                ),
+            ],
+        },
+    )]);
+    assert!(
+        broken.contains("firewall-configuration"),
+        "the failing plugin is named: {broken}"
+    );
+    assert!(
+        broken.contains("loopback rule would be dropped"),
+        "and its reason is given: {broken}"
+    );
+    assert!(
+        !broken.contains("kernel-hardening"),
+        "the plugins that worked are still just a count: {broken}"
+    );
+}
+
 /// The per-plugin rows are the reason the `plugins` field exists at all: a
 /// consumer reading `batch apply --format json` needs to see which plugin an
 /// "ok"/"failed" count is about, not just the two totals. Built with one
