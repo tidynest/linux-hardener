@@ -23,8 +23,8 @@ use hardener_state::{ActionResult, ActionType, Checkpoint, CheckpointManager};
 use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use hardener_types::{
-    ApplyOutcome, ApplyStatus, DivergenceState, PluginOutcome, RollbackOutcome, RollbackResult,
-    RollbackStatus,
+    ApplyOutcome, ApplyStatus, ControlOutcome, DivergenceState, PluginOutcome, RollbackOutcome,
+    RollbackResult, RollbackStatus,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -352,7 +352,7 @@ impl BatchSummary {
 }
 
 /// One framework's assessed posture for a single host.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct FrameworkPosture {
     pub framework: String,
     pub score: f64,
@@ -361,6 +361,16 @@ pub struct FrameworkPosture {
     pub manual_review: usize,
     pub not_applicable: usize,
     pub total: usize,
+    /// One verdict per control the summary counted, in the generator's own
+    /// order.
+    ///
+    /// The CLI half of the same decision `FleetFrameworkPosture` took for the
+    /// GUI: the rows ride along rather than being fetched, because a second
+    /// round trip to a fleet is the expensive one. Slim rows, so the payload
+    /// grows by about a fifth rather than tripling; a consumer wanting the
+    /// evidence joins the findings it already holds by their own
+    /// `finding_compliance` mappings.
+    pub controls: Vec<ControlOutcome>,
 }
 
 /// Whether a host was assessed or failed to scan.
@@ -394,6 +404,11 @@ pub fn posture_from_report(report: &ComplianceReport) -> FrameworkPosture {
         manual_review: s.summary_manual_review,
         not_applicable: s.summary_not_applicable,
         total: s.summary_total_controls,
+        controls: report
+            .report_controls
+            .iter()
+            .map(ControlOutcome::from)
+            .collect(),
     }
 }
 

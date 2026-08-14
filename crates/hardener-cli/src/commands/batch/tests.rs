@@ -17,10 +17,15 @@
 //! 1671 test lines across 70 tests, the largest inline block anywhere in the workspace and the reason this crate was left until last.
 
 use super::*;
-use hardener_common::types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity};
+use hardener_common::types::{
+    ComplianceFramework, ComplianceMapping, ControlStatus, FindingCategory, Severity,
+};
 use hardener_compliance::Scenario;
 use hardener_core::ValidationReport;
-use hardener_types::{ApplyResult, DivergenceState, ExceptionOutcome, RollbackDivergence};
+use hardener_types::{
+    ApplyResult, ComplianceSummary, ControlResult, DivergenceState, ExceptionOutcome,
+    RollbackDivergence,
+};
 
 /// Every `batch` subcommand accepted the global `--config` flag and threw
 /// it away, so a fleet was assessed and hardened against whatever config
@@ -710,8 +715,66 @@ fn posture(failing: usize) -> FrameworkPosture {
         manual_review: 2,
         not_applicable: 0,
         total: 12 + failing,
+        controls: vec![],
     }
 }
+
+/// Builds a `ComplianceReport` with one `ControlResult` per named id and
+/// status, and a summary derived from those same controls, for exercising
+/// `posture_from_report`. Every other field is a valid placeholder: nothing
+/// in `posture_from_report` reads them.
+fn compliance_report_with_controls(controls: &[(&str, ControlStatus)]) -> ComplianceReport {
+    let report_controls: Vec<ControlResult> = controls
+        .iter()
+        .map(|(id, status)| ControlResult {
+            control_id: (*id).to_string(),
+            control_title: format!("Test control {id}"),
+            control_section: "Test Section".into(),
+            control_status: status.clone(),
+            control_findings: vec![],
+        })
+        .collect();
+    ComplianceReport {
+        report_framework: ComplianceFramework::CIS,
+        report_profile: ComplianceProfile::default(),
+        report_generated_at: chrono::Utc::now(),
+        report_summary: ComplianceSummary::from_controls(&report_controls),
+        report_controls,
+        report_coverage_note: None,
+    }
+}
+
+/// The report envelope carries the control rows, not just the tallies.
+///
+/// `batch report --format json` was 883 bytes of per-framework counts where
+/// the local equivalent is 205 KB with the rows, so the check the host walk
+/// runs (every control an unchecked entry names comes back ManualReview) could
+/// not be performed against a fleet at all.
+#[test]
+fn the_report_posture_carries_control_rows() {
+    let report = compliance_report_with_controls(&[
+        ("1.6.1.4", ControlStatus::ManualReview),
+        ("1.1.1", ControlStatus::Pass),
+    ]);
+
+    let posture = posture_from_report(&report);
+
+    assert_eq!(
+        posture.controls.len(),
+        2,
+        "a row per control the summary counted"
+    );
+    let mac = posture
+        .controls
+        .iter()
+        .find(|c| c.control_id == "1.6.1.4")
+        .expect("the control is named");
+    assert!(
+        matches!(mac.control_status, ControlStatus::ManualReview),
+        "the verdict travels with the row, which is the point"
+    );
+}
+
 fn assessed_report(name: &str, frameworks: Vec<FrameworkPosture>) -> HostReport {
     HostReport {
         name: name.into(),
@@ -870,6 +933,7 @@ fn report_rollup_groups_multiple_frameworks_per_host() {
         manual_review: 0,
         not_applicable: 0,
         total: 10 + failing,
+        controls: vec![],
     };
     let reports = vec![
         assessed_report("web", vec![fw("CIS", 3), fw("STIG", 1)]),
@@ -967,6 +1031,7 @@ fn report_exit_code_tiers() {
         manual_review: 5,
         not_applicable: 0,
         total: 12,
+        controls: vec![],
     };
     assert_eq!(
         report_exit_code(&[assessed_report("a", vec![manual_only])]),
