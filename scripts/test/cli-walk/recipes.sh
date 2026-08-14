@@ -194,6 +194,16 @@ recipe systemd-generate-json root  ro  -- systemd generate --format json
 recipe daemon-status        root   ro  -- daemon status
 recipe daemon-status-json   root   ro  -- daemon status --format json
 recipe daemon-run-once      root   mut -- daemon run-once
+# CEILING: this recipe reaches the refusal branch only. The scheduler is
+# disabled by default, so on a stock container `daemon start` declines rather
+# than blocks, and the blocking path the 5-second timeout exists for has never
+# been walked. The timeout stays because a container whose config ever enables
+# the scheduler would hang the walk. Deliberate: exercising the blocking path
+# needs a `[scheduler] enabled = true` fixture written into the container, and
+# that would stop exercising the refusal, which is worth capturing in its own
+# right. Neither the walk index nor coverage.sh can see this, because the row
+# does execute and does produce output; the gap is one level in, so this comment
+# is the only place it is recorded.
 recipe_timeout daemon-start booted mut 5 -- daemon start
 recipe systemd-install      booted mut -- systemd install
 recipe systemd-status       booted ro  -- systemd status
