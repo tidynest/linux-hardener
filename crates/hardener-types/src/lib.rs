@@ -793,20 +793,11 @@ impl ApplyResult {
         if self.apply_success {
             return None;
         }
-        let reasons: Vec<&str> = self
-            .apply_changes
-            .iter()
-            .filter(|c| !c.is_skipped() && !c.is_checkpoint() && !c.change_success)
-            .filter_map(|c| c.change_error.as_deref())
-            .collect();
         // A failure whose changes all succeeded, or whose failures recorded no
         // reason of their own, genuinely has nothing to say here. `None` lets
         // the renderer print its own honest placeholder rather than an empty
         // string that reads like a plugin which failed for no reason.
-        match reasons.is_empty() {
-            true => None,
-            false => Some(reasons.join("; ")),
-        }
+        Change::join_failure_reasons(&self.apply_changes)
     }
 }
 
@@ -834,6 +825,27 @@ impl Change {
     /// hardening change. Excluded from both the applied and the failed counts.
     pub fn is_checkpoint(&self) -> bool {
         self.change_type == ChangeType::Checkpoint
+    }
+
+    /// Joins what the genuinely failed changes in `changes` recorded about
+    /// themselves, skips and checkpoints excluded.
+    ///
+    /// `None` where nothing failed, or where the failures recorded no reason
+    /// of their own, so a caller can fall back to something honest rather than
+    /// print an empty string. Shared rather than inlined because a plugin
+    /// composing its own `apply_error` has to derive it the same way
+    /// [`ApplyResult::failure_reason`] would, or the two disagree about the
+    /// same change list.
+    pub fn join_failure_reasons(changes: &[Change]) -> Option<String> {
+        let reasons: Vec<&str> = changes
+            .iter()
+            .filter(|c| !c.is_skipped() && !c.is_checkpoint() && !c.change_success)
+            .filter_map(|c| c.change_error.as_deref())
+            .collect();
+        match reasons.is_empty() {
+            true => None,
+            false => Some(reasons.join("; ")),
+        }
     }
 }
 

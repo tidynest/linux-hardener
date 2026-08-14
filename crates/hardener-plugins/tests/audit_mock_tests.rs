@@ -825,6 +825,40 @@ async fn test_audit_apply_reload_failure_not_immutable_stays_failed() {
 }
 
 #[tokio::test]
+async fn audit_apply_error_names_the_change_that_failed() {
+    // #171. `ApplyResult::failure_reason` prefers `apply_error` and only falls
+    // back to what the failed changes recorded, so a constant string here
+    // shadows the detail the plugin already has. On the fleet path that string
+    // is the only text an operator ever sees: the walk's ssh tier printed
+    // `x audit-hardening: Some changes failed` beside two plugins naming exact
+    // causes, while this same reload failure knew the previous rules were
+    // still loaded.
+    let executor = reload_fails_executor(CommandOutput {
+        stdout: "enabled 1\nfailure 1\npid 0\nrate_limit 0\n".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    });
+    let mut ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let result = plugin.apply(&mut ctx, &config).await.unwrap();
+
+    assert!(!result.apply_success, "the reload genuinely failed");
+    let reported = result
+        .failure_reason()
+        .expect("a failed apply must report some reason");
+    assert_ne!(
+        reported, "Some changes failed",
+        "the generic string shadows what the failed changes recorded"
+    );
+    assert!(
+        reported.contains("still active"),
+        "the reason must carry what the failed change said, got: {reported}"
+    );
+}
+
+#[tokio::test]
 async fn test_audit_apply_reload_failure_probe_exit_nonzero_stays_failed() {
     // The immutability probe itself fails (non-zero exit) but emits partial
     // stdout that happens to contain "enabled 2": untrusted output from a

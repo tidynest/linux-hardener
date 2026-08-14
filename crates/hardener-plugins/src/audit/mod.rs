@@ -1707,14 +1707,23 @@ impl HardeningPlugin for AuditHardeningPlugin {
         // Determine overall success
         let all_successful = changes.iter().all(|c| c.change_success);
 
+        // Not a constant. `ApplyResult::failure_reason` prefers `apply_error`
+        // and only falls back to the change list, so a generic string here
+        // shadows what the failed changes recorded. Over `batch` that string
+        // is the whole of what an operator sees: the walk's ssh tier printed
+        // "Some changes failed" beside two plugins naming exact causes (#171).
+        // The old wording survives as a floor, for a failure path that
+        // recorded no reason of its own.
+        let apply_error = match all_successful {
+            true => None,
+            false => Change::join_failure_reasons(&changes)
+                .or_else(|| Some("Some changes failed".to_string())),
+        };
+
         Ok(ApplyResult {
             apply_changes: changes,
             apply_checkpoint_id: checkpoint_id,
-            apply_error: if all_successful {
-                None
-            } else {
-                Some("Some changes failed".to_string())
-            },
+            apply_error,
             apply_plugin_id: self.metadata().plugin_id,
             apply_success: all_successful,
         })

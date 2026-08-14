@@ -1684,6 +1684,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`audit-hardening` reported `Some changes failed` and discarded the reasons
+  its own changes had recorded.** `ApplyResult::failure_reason` prefers
+  `apply_error` and derives from the change list only where that field is
+  `None`, so a plugin filling it with a constant shadows detail it already
+  holds. audit records specific errors in six places in the same file,
+  `systemctl enable failed` and `systemctl start failed` among them, and over
+  `batch` not one of them reached the operator: the CLI walk's ssh tier printed
+  `x audit-hardening: Some changes failed` beside two plugins naming exact
+  causes. `pam` and `ssh` read exactly for the opposite reason, leaving
+  `apply_error: None` so the derivation runs. This is the gap the fleet detail
+  envelope was built to close, reappearing one level in, and it was invisible
+  locally because the CLI lists every failed change with its own error
+  underneath. audit now composes its error through
+  `Change::join_failure_reasons`, extracted from `failure_reason` and shared
+  rather than inlined so the two cannot disagree about one change list. The old
+  wording survives as a floor: a failure path recording no reason of its own
+  still yields it rather than the renderer's "no reason given" placeholder,
+  which is the check that kept this from being a one-line deletion (#171).
+
 - **`README.md`'s test count read 1991 against a tree running 2049, and no
   validator could have said so.** `validate_test_counts.py` holds other
   documents to the evidence ledger through `CROSS_DOCUMENT_SITES`, and the

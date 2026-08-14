@@ -277,6 +277,16 @@ mod plugin_outcome_tests {
                 .is_none(),
             "a success has no reason, whatever its change list holds"
         );
+
+        // The premise audit-hardening's floor rests on (#171). It composes its
+        // own `apply_error` from this helper and keeps a generic string for the
+        // `None` case, which is only honest while `None` means "the failures
+        // said nothing" rather than "there were no failures".
+        assert!(
+            Change::join_failure_reasons(&[failed_change(None)]).is_none(),
+            "a failure recording no reason of its own must yield None, so a \
+             caller can fall back rather than print an empty string"
+        );
     }
 
     /// The conversion must count through the helpers, not through the length of
