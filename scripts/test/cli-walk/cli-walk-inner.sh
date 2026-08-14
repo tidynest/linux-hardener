@@ -17,6 +17,9 @@ set -uo pipefail
 
 DISTRO="${1:?distro required}"
 TIERS="${2:?tiers csv required}"
+# Where to write, which is not always the distribution's name: a booted walk and
+# a --pipe walk are two different hosts and must not overwrite each other.
+CAPTURE_NAME="${3:-$DISTRO}"
 
 SCRIPT_DIR="/project/scripts/test/cli-walk"
 # shellcheck source=walk-lib.sh
@@ -47,7 +50,7 @@ if ! require_sshd_privsep_dir; then
     echo "  a fail-closed plugin rather than what hardening does." >&2
 fi
 
-CAPTURE="/project/test-results/cli-walk/$DISTRO"
+CAPTURE="/project/test-results/cli-walk/$CAPTURE_NAME"
 rm -rf "$CAPTURE"
 walk_init "$CAPTURE"
 

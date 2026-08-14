@@ -1374,6 +1374,15 @@ pass produces no commit.
 ./scripts/test/cli-walk/selftest.sh
 ```
 
+`--booted` boots each container under its own systemd instead of `--pipe`,
+which is the only way to reach the `booted` tier: `daemon start`, `systemd
+install`, `systemd status` and `systemd uninstall` need a real service manager
+as PID 1. Captures land in `test-results/cli-walk/<distro>-booted`, beside the
+`--pipe` ones rather than over them, because the two are **different hosts and
+not two capability levels**. Booting arch starts auditd, which lays down a
+compiled rule set before any recipe runs, so a booted capture cannot reach a
+case that exists only on an unbooted host.
+
 Each capture directory holds `cmd`, `exit`, `stdout` and `stderr`, plus a
 `stderr.txt` with ANSI escapes stripped wherever stderr was non-empty. The raw
 file stays, because what the tool emitted is the evidence; the copy exists

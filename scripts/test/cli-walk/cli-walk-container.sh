@@ -22,6 +22,10 @@
 #   --distro NAME   Only this distribution
 #   --jobs N        Max parallel containers (default 3)
 #   --no-ssh        Skip the ssh tier entirely
+#   --booted        Boot each container under its own systemd, which is the only
+#                   way to reach the `booted` tier. Captures land in
+#                   test-results/cli-walk/<distro>-booted, beside the --pipe
+#                   ones rather than over them.
 # =============================================================================
 
 set -uo pipefail
@@ -41,15 +45,25 @@ source "$SCRIPT_DIR/recipes.sh"
 SINGLE_DISTRO=""
 MAX_JOBS=3
 RUN_SSH=true
+DO_BOOTED=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --distro) SINGLE_DISTRO="$2"; shift 2 ;;
         --jobs)   MAX_JOBS="$2"; shift 2 ;;
         --no-ssh) RUN_SSH=false; shift ;;
-        --help)   sed -n '2,25p' "$0"; exit 0 ;;
+        --booted) DO_BOOTED=true; shift ;;
+        --help)   sed -n '2,27p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1"; exit 2 ;;
     esac
 done
+
+# A booted walk writes beside the --pipe one rather than over it. The two are
+# different hosts and not two capability levels: booting arch starts auditd,
+# which lays down a compiled rule set before any recipe runs, so a booted
+# capture cannot reach a case that only exists on an unbooted host. Overwriting
+# would leave one reading claiming to be the other.
+CAPTURE_SUFFIX=""
+[[ "$DO_BOOTED" == true ]] && CAPTURE_SUFFIX="-booted"
 
 if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}ERROR: must run as root (systemd-nspawn requires it)${NC}"
@@ -126,19 +140,87 @@ CAPTURE_PARENT="$PROJECT_DIR/test-results/cli-walk"
 
 declare -A RESULT_EXIT
 
+# Boot one container under its own systemd and run the walk as a child of it.
+#
+# Mirrors `nspawn_suite_booted` in run-cross-distro-tests.sh, which solved this
+# first and whose two hard-won details are kept verbatim. The readiness loop
+# waits on the transport rather than on `machinectl status`, which succeeds as
+# soon as the machine registers and long before the container's bus is
+# listening. And a container that never accepts a command is a FAILURE rather
+# than a skip: `systemd-run --machine` needs dbus inside the container, only
+# debian installs it explicitly, and an undeterminable result is never a skip.
+#
+# --private-network is a safety requirement and not a preference. nspawn grants
+# CAP_NET_ADMIN only to a container that owns its network namespace, and this
+# walk runs `apply --all`, firewall plugin included. A booted walk container on
+# the host's namespace would write those rules into the host's own netfilter.
+walk_booted() {
+    local distro="$1" path="$2" capture="$3"
+    local machine unit rc=0
+    machine="$(basename "$path")"
+    unit="hardener-walk-$machine"
+
+    # Idempotent: a machine left behind by an interrupted run would otherwise
+    # hold the container and read as a container-in-use failure.
+    machinectl terminate "$machine" > /dev/null 2>&1 || true
+    systemctl reset-failed "$unit" > /dev/null 2>&1 || true
+    sleep 1
+
+    if ! systemd-run --unit="$unit" \
+        systemd-nspawn --machine="$machine" --directory="$path" \
+        --bind="$PROJECT_DIR:/project" \
+        "${TARGET_BIND[@]}" \
+        --boot --private-network --console=passive > /dev/null; then
+        echo "FATAL: could not launch $machine"
+        return 1
+    fi
+
+    local ready=""
+    for _ in $(seq 1 60); do
+        if systemd-run --machine="$machine" --wait --pipe --quiet /bin/true > /dev/null 2>&1; then
+            ready=1
+            break
+        fi
+        sleep 1
+    done
+
+    if [[ -z "$ready" ]]; then
+        echo "FATAL: $machine booted but never accepted a command."
+        echo "  'systemd-run --machine' needs dbus INSIDE the container. Only"
+        echo "  debian installs it explicitly (create-container.sh); openSUSE"
+        echo "  installs systemd with --no-recommends and may not have it."
+        journalctl -u "$unit" -n 20 --no-pager 2>&1 || true
+        machinectl terminate "$machine" > /dev/null 2>&1 || true
+        return 1
+    fi
+
+    systemd-run --machine="$machine" --wait --pipe --quiet \
+        /bin/bash /project/scripts/test/cli-walk/cli-walk-inner.sh \
+        "$distro" "$WALK_CONTAINER_BOOTED_TIERS" "$capture" || rc=$?
+
+    machinectl terminate "$machine" > /dev/null 2>&1 || true
+    return "$rc"
+}
+
 run_single_distro() {
     local distro="$1"
     local machine="${CONTAINERS[$distro]}"
     local path="/var/lib/machines/$machine"
+    local capture="$distro$CAPTURE_SUFFIX"
 
     "$PROJECT_DIR/scripts/containers/create-container.sh" "$distro" clean --no-confirm > /dev/null 2>&1
     "$PROJECT_DIR/scripts/containers/create-container.sh" "$distro" --no-confirm > /dev/null 2>&1
 
-    systemd-nspawn -D "$path" \
-        --bind="$PROJECT_DIR:/project" \
-        "${TARGET_BIND[@]}" \
-        --pipe \
-        /bin/bash /project/scripts/test/cli-walk/cli-walk-inner.sh "$distro" "$WALK_CONTAINER_TIERS"
+    if [[ "$DO_BOOTED" == true ]]; then
+        walk_booted "$distro" "$path" "$capture"
+    else
+        systemd-nspawn -D "$path" \
+            --bind="$PROJECT_DIR:/project" \
+            "${TARGET_BIND[@]}" \
+            --pipe \
+            /bin/bash /project/scripts/test/cli-walk/cli-walk-inner.sh \
+            "$distro" "$WALK_CONTAINER_TIERS" "$capture"
+    fi
     # Written from a plain run above, never through a pipe.
     echo $? > "$CAPTURE_PARENT/.$distro.exit"
 }
@@ -210,16 +292,16 @@ WROTE_POINTER=false
 if [[ ${#DISTROS[@]} -gt 1 ]]; then
     OTHERS=()
     for d in "${DISTROS[@]}"; do
-        [[ "$d" != "arch" ]] && OTHERS+=("$d")
+        [[ "$d" != "arch" ]] && OTHERS+=("$d$CAPTURE_SUFFIX")
     done
-    walk_write_diff_pointer "$CAPTURE_PARENT" arch "${OTHERS[@]}"
+    walk_write_diff_pointer "$CAPTURE_PARENT" "arch$CAPTURE_SUFFIX" "${OTHERS[@]}"
     WROTE_POINTER=true
 fi
 
 echo ""
 print_boxline "  CLI WALK CAPTURES"
 for d in "${DISTROS[@]}"; do
-    echo "  $d: exit ${RESULT_EXIT[$d]:-?}  ->  test-results/cli-walk/$d/index.md"
+    echo "  $d: exit ${RESULT_EXIT[$d]:-?}  ->  test-results/cli-walk/$d$CAPTURE_SUFFIX/index.md"
 done
 echo ""
 # Says what THIS run produced, rather than describing a six-distribution walk
@@ -230,12 +312,12 @@ echo ""
 # as it had been before it was rebuilt, which is the reading it was least
 # able to give and the one it was recommending.
 if [[ "$WROTE_POINTER" == true ]]; then
-    echo "Read test-results/cli-walk/arch/index.md. The others are captured"
+    echo "Read test-results/cli-walk/arch$CAPTURE_SUFFIX/index.md. The others are captured"
     echo "for the diff pointer, not for reading."
     echo "Then test-results/cli-walk/diff-pointer.md for where they disagree."
 else
     for d in "${DISTROS[@]}"; do
-        echo "Read test-results/cli-walk/$d/index.md."
+        echo "Read test-results/cli-walk/$d$CAPTURE_SUFFIX/index.md."
     done
     [[ -f "$CAPTURE_PARENT/diff-pointer.md" ]] &&
         echo "diff-pointer.md is left from an earlier run and does NOT cover this one."

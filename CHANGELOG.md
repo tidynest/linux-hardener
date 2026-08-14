@@ -730,6 +730,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`cli-walk-container.sh --booted`**, which boots each container under its own
+  systemd and is the only way to reach the walk's `booted` tier. Its five
+  recipes, behind `daemon start`, `systemd install`, `systemd status` and
+  `systemd uninstall`, had been registered and structurally unreachable: the
+  orchestrator launched every container with `--pipe` and passed its tier list
+  as a hardcoded literal. The boot, readiness and terminate sequence mirrors
+  `nspawn_suite_booted` in `run-cross-distro-tests.sh`, including the two
+  details that were hard-won there: readiness waits on the transport rather
+  than on `machinectl status`, which succeeds long before the container's bus
+  is listening, and a container that never accepts a command is reported as a
+  failure rather than skipped.
+
+  Captures land in `test-results/cli-walk/<distro>-booted`, beside the `--pipe`
+  ones rather than over them, because the two are different hosts and not two
+  capability levels.
+
+  `WALK_CONTAINER_BOOTED_TIERS` joins the reachability set, which made the
+  `unreachable_tier booted` declaration stale, and `coverage.sh` refused the run
+  until it was removed. That is the direction that check exists to fail in, and
+  it fired without being prompted.
+
 - **A fixture that reaches the pure-nftables firewall path, and the oracle
   arms it makes askable** (#47). All six standard containers select ufw or
   firewalld: arch and debian find no active backend and fall back to ufw, while

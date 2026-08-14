@@ -72,14 +72,20 @@ skip() {
 # ever touched. The orchestrator holding its tier list as a literal is what let
 # the two drift without anything noticing.
 WALK_CONTAINER_TIERS="unprivileged,root"
+# The same orchestrator under `--booted`, which boots the container under its
+# own systemd and so can give the one tier `--pipe` cannot. A separate constant
+# rather than an edit to the line above, because the two are different hosts
+# and the default run genuinely does not give `booted`.
+WALK_CONTAINER_BOOTED_TIERS="unprivileged,root,booted"
 WALK_HOST_TIERS="unprivileged"
 WALK_SSH_TIERS="ssh"
 
-# Their union: every tier that some runner can give. Derived here rather than
-# recomposed by the caller, so "reachable" has one definition and adding a
-# runner cannot leave a second copy behind.
+# Their union: every tier that some runner can give in SOME runnable
+# configuration. Derived here rather than recomposed by the caller, so
+# "reachable" has one definition and adding a runner cannot leave a second copy
+# behind.
 # shellcheck disable=SC2034  # read by coverage.sh, which sources this file
-WALK_REACHABLE_TIERS="$WALK_CONTAINER_TIERS,$WALK_HOST_TIERS,$WALK_SSH_TIERS"
+WALK_REACHABLE_TIERS="$WALK_CONTAINER_TIERS,$WALK_CONTAINER_BOOTED_TIERS,$WALK_HOST_TIERS,$WALK_SSH_TIERS"
 
 # unreachable_tier TIER REASON
 # A tier no runner can give. Declaring one does NOT make the gap quiet, which is
@@ -100,8 +106,10 @@ unreachable_tier() {
     UNREACHABLE_REASONS+=("$2")
 }
 
-unreachable_tier booted \
-    "no runner boots a container: cli-walk-container.sh launches every container with --pipe, and cli-walk-host.sh refuses every tier but unprivileged"
+# No tier is currently unreachable. `booted` was, until cli-walk-container.sh
+# gained --booted; the declaration that used to sit here was removed because
+# coverage.sh refused the run while it stood, which is the direction that check
+# is meant to fail in.
 
 # --- Read-only core ----------------------------------------------------------
 # Every verb rendering both formats is captured twice, under adjacent slugs.
