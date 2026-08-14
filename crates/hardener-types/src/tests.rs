@@ -312,7 +312,14 @@ mod fleet_mutation_tests {
         ));
         let applied: ApplyStatus =
             serde_json::from_str(r#"{"state":"applied","ok":2,"failed":1}"#).unwrap();
-        assert!(matches!(applied, ApplyStatus::Applied { ok: 2, failed: 1 }));
+        assert!(matches!(
+            applied,
+            ApplyStatus::Applied {
+                ok: 2,
+                failed: 1,
+                ..
+            }
+        ));
     }
 
     #[test]

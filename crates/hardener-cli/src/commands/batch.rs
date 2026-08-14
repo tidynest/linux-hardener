@@ -23,7 +23,8 @@ use hardener_state::{ActionResult, ActionType, Checkpoint, CheckpointManager};
 use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use hardener_types::{
-    ApplyOutcome, ApplyStatus, DivergenceState, RollbackOutcome, RollbackResult, RollbackStatus,
+    ApplyOutcome, ApplyStatus, DivergenceState, PluginOutcome, RollbackOutcome, RollbackResult,
+    RollbackStatus,
 };
 use serde::Serialize;
 use std::path::PathBuf;
@@ -1260,14 +1261,16 @@ fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> 
     }
 
     if execute {
-        let ok = result
+        let plugins: Vec<PluginOutcome> = result
             .results
             .iter()
-            .filter(|(_, r)| r.apply_success)
-            .count();
+            .map(|(_, r)| PluginOutcome::from(r))
+            .collect();
+        let ok = plugins.iter().filter(|p| p.success).count();
         ApplyStatus::Applied {
             ok,
-            failed: result.results.len() - ok,
+            failed: plugins.len() - ok,
+            plugins,
         }
     } else {
         let plugins = result.validation_reports.len();
@@ -1331,7 +1334,7 @@ fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
                     ),
                 );
             }
-            ApplyStatus::Applied { ok, failed } => {
+            ApplyStatus::Applied { ok, failed, .. } => {
                 applied += 1;
                 let status = if *failed > 0 {
                     "partially applied".yellow()

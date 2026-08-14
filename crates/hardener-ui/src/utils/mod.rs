@@ -828,7 +828,7 @@ pub fn fleet_apply_cells(o: &FleetApplyOutcome) -> OutcomeView {
                 error: None,
             }
         }
-        ApplyStatus::Applied { ok, failed } => {
+        ApplyStatus::Applied { ok, failed, .. } => {
             let mut cells = Vec::new();
             if *ok > 0 {
                 cells.push((format!("{ok} applied"), "score-good"));

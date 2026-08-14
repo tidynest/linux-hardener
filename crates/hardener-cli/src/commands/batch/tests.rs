@@ -20,7 +20,7 @@ use super::*;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, FindingCategory, Severity};
 use hardener_compliance::Scenario;
 use hardener_core::ValidationReport;
-use hardener_types::{DivergenceState, ExceptionOutcome, RollbackDivergence};
+use hardener_types::{ApplyResult, DivergenceState, ExceptionOutcome, RollbackDivergence};
 
 /// Every `batch` subcommand accepted the global `--config` flag and threw
 /// it away, so a fleet was assessed and hardened against whatever config
@@ -99,6 +99,91 @@ fn a_host_whose_config_disabled_every_plugin_is_not_a_clean_apply() {
         ),
         other => panic!("a run that applied nothing must not report success: {other:?}"),
     }
+}
+
+/// Minimal metadata for a `results` row. `status_from_result` reads only the
+/// `ApplyResult` half of the pair, so the content here is a placeholder, not
+/// a fixture under test.
+fn metadata_for(plugin: &PluginId) -> PluginMetadata {
+    PluginMetadata {
+        plugin_category: FindingCategory::Kernel,
+        plugin_description: String::new(),
+        plugin_id: plugin.clone(),
+        plugin_name: plugin.as_str().to_string(),
+        plugin_version: "0.0.0".to_string(),
+    }
+}
+
+fn apply_result_ok(plugin: PluginId) -> ApplyResult {
+    ApplyResult {
+        apply_plugin_id: plugin,
+        apply_success: true,
+        apply_changes: vec![],
+        apply_checkpoint_id: None,
+        apply_error: None,
+    }
+}
+
+fn apply_result_failed(plugin: PluginId, error: &str) -> ApplyResult {
+    ApplyResult {
+        apply_plugin_id: plugin,
+        apply_success: false,
+        apply_changes: vec![],
+        apply_checkpoint_id: None,
+        apply_error: Some(error.to_string()),
+    }
+}
+
+/// The envelope carries a row per plugin, not just the two counts.
+///
+/// `batch apply` printed "5 ok, 3 failed" and nothing else, so an operator on
+/// a fleet could not tell which three or why. Asserted on the failing row's
+/// error specifically, because a version that carried the names and dropped
+/// the reasons would look correct in a row count.
+#[test]
+fn the_apply_envelope_names_each_plugin() {
+    let results = vec![
+        (
+            metadata_for(&PluginId::new("kernel-hardening")),
+            apply_result_ok(PluginId::new("kernel-hardening")),
+        ),
+        (
+            metadata_for(&PluginId::new("firewall-configuration")),
+            apply_result_failed(
+                PluginId::new("firewall-configuration"),
+                "loopback rule would be dropped",
+            ),
+        ),
+    ];
+    let result = super::super::apply::ApplyHostResult {
+        results,
+        validation_reports: vec![],
+        had_failure: true,
+        skipped: vec![],
+    };
+
+    let status = status_from_result(true, &result);
+
+    let ApplyStatus::Applied {
+        ok,
+        failed,
+        plugins,
+    } = status
+    else {
+        panic!("an executed apply is Applied");
+    };
+    assert_eq!((ok, failed), (1, 1));
+    assert_eq!(plugins.len(), 2, "a row per plugin, successes included");
+    let firewall = plugins
+        .iter()
+        .find(|p| p.plugin == PluginId::new("firewall-configuration"))
+        .expect("the failing plugin is named");
+    assert!(!firewall.success);
+    assert_eq!(
+        firewall.error.as_deref(),
+        Some("loopback rule would be dropped"),
+        "the reason travels with the row"
+    );
 }
 
 /// One report, one host, two verbs, one answer.
@@ -225,8 +310,22 @@ fn eyeball_render_all_verbs() {
         status,
     };
     let apply = render_apply_text(&[
-        mk("web-01", ApplyStatus::Applied { ok: 5, failed: 0 }),
-        mk("db-02", ApplyStatus::Applied { ok: 3, failed: 2 }),
+        mk(
+            "web-01",
+            ApplyStatus::Applied {
+                ok: 5,
+                failed: 0,
+                plugins: Vec::new(),
+            },
+        ),
+        mk(
+            "db-02",
+            ApplyStatus::Applied {
+                ok: 3,
+                failed: 2,
+                plugins: Vec::new(),
+            },
+        ),
         mk(
             "cache",
             ApplyStatus::Failed {
@@ -1535,7 +1634,11 @@ fn apply_exit_code_precedence() {
         status,
     };
     assert_eq!(
-        apply_exit_code(&[mk(ApplyStatus::Applied { ok: 3, failed: 0 })]),
+        apply_exit_code(&[mk(ApplyStatus::Applied {
+            ok: 3,
+            failed: 0,
+            plugins: Vec::new()
+        })]),
         0
     );
     assert_eq!(
@@ -1548,7 +1651,11 @@ fn apply_exit_code_precedence() {
         0
     );
     assert_eq!(
-        apply_exit_code(&[mk(ApplyStatus::Applied { ok: 2, failed: 1 })]),
+        apply_exit_code(&[mk(ApplyStatus::Applied {
+            ok: 2,
+            failed: 1,
+            plugins: Vec::new()
+        })]),
         1
     );
     assert_eq!(
@@ -1562,7 +1669,11 @@ fn apply_exit_code_precedence() {
     );
     assert_eq!(
         apply_exit_code(&[
-            mk(ApplyStatus::Applied { ok: 0, failed: 2 }),
+            mk(ApplyStatus::Applied {
+                ok: 0,
+                failed: 2,
+                plugins: Vec::new()
+            }),
             mk(ApplyStatus::Failed {
                 error: "connect".into()
             }),
@@ -1580,8 +1691,22 @@ fn render_apply_text_sections_and_summary() {
         status,
     };
     let text = render_apply_text(&[
-        mk("web-01", ApplyStatus::Applied { ok: 5, failed: 0 }),
-        mk("db-02", ApplyStatus::Applied { ok: 3, failed: 2 }),
+        mk(
+            "web-01",
+            ApplyStatus::Applied {
+                ok: 5,
+                failed: 0,
+                plugins: Vec::new(),
+            },
+        ),
+        mk(
+            "db-02",
+            ApplyStatus::Applied {
+                ok: 3,
+                failed: 2,
+                plugins: Vec::new(),
+            },
+        ),
         mk(
             "cache",
             ApplyStatus::Failed {
@@ -1668,7 +1793,11 @@ fn render_apply_json_has_state_tags() {
     let out = render_apply_json(&[ApplyOutcome {
         name: "web".into(),
         target: "root@web".into(),
-        status: ApplyStatus::Applied { ok: 5, failed: 0 },
+        status: ApplyStatus::Applied {
+            ok: 5,
+            failed: 0,
+            plugins: Vec::new(),
+        },
     }]);
     assert!(
         out.contains("\"state\": \"applied\""),

@@ -1116,14 +1116,22 @@ fn apply_cells_any_failed_reads_failed_glyph() {
 
 #[test]
 fn apply_cells_applied_clean() {
-    let v = fleet_apply_cells(&apply_out(ApplyStatus::Applied { ok: 5, failed: 0 }));
+    let v = fleet_apply_cells(&apply_out(ApplyStatus::Applied {
+        ok: 5,
+        failed: 0,
+        plugins: Vec::new(),
+    }));
     assert_eq!(v.glyph, OutcomeGlyph::Ok);
     assert_eq!(v.cells, vec![("5 applied".to_string(), "score-good")]);
 }
 
 #[test]
 fn apply_cells_applied_with_failures() {
-    let v = fleet_apply_cells(&apply_out(ApplyStatus::Applied { ok: 3, failed: 2 }));
+    let v = fleet_apply_cells(&apply_out(ApplyStatus::Applied {
+        ok: 3,
+        failed: 2,
+        plugins: Vec::new(),
+    }));
     assert_eq!(v.glyph, OutcomeGlyph::Failed);
     assert_eq!(
         v.cells,
@@ -1136,7 +1144,11 @@ fn apply_cells_applied_with_failures() {
 
 #[test]
 fn apply_cells_applied_nothing_shows_muted_fallback() {
-    let v = fleet_apply_cells(&apply_out(ApplyStatus::Applied { ok: 0, failed: 0 }));
+    let v = fleet_apply_cells(&apply_out(ApplyStatus::Applied {
+        ok: 0,
+        failed: 0,
+        plugins: Vec::new(),
+    }));
     assert_eq!(v.glyph, OutcomeGlyph::Ok);
     assert_eq!(v.cells, vec![("No changes".to_string(), "")]);
 }

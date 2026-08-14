@@ -1423,8 +1423,19 @@ pub enum ApplyStatus {
         compliant: usize,
         failed: usize,
     },
-    /// Execute: `ok` plugins applied, `failed` did not.
-    Applied { ok: usize, failed: usize },
+    /// Execute: `ok` plugins applied, `failed` did not, and one
+    /// [`PluginOutcome`] row per plugin naming which was which.
+    ///
+    /// The counts are kept beside the rows rather than derived from them
+    /// because the text renderer and the GUI cells both read them directly,
+    /// and because a consumer wanting only the headline should not have to
+    /// walk the list to get it.
+    Applied {
+        ok: usize,
+        failed: usize,
+        #[serde(default)]
+        plugins: Vec<PluginOutcome>,
+    },
     /// Host-level error (connect / not privileged / usage).
     Failed { error: String },
 }
