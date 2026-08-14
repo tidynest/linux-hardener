@@ -60,6 +60,18 @@ skip() {
 }
 
 # --- Read-only core ----------------------------------------------------------
+# Every verb rendering both formats is captured twice, under adjacent slugs.
+# The pairing is a detector and not a convenience: `report --format json`
+# emitted prose rather than JSON for a whole release, and it was caught only
+# because its text and JSON captures sat next to each other in the index and
+# compared byte-identical. One capture cannot show that. A pair that is
+# identical means the verb ignored the flag or has no JSON renderer behind it,
+# and which of those it is comes second to noticing at all.
+#
+# Each pair below was measured before being registered, never assumed: the two
+# captures differ and the JSON one parses. `--format` is a global flag, so it
+# is accepted everywhere and honoured only where a renderer exists, which is
+# exactly why "the flag was accepted" says nothing.
 recipe scan-text            unprivileged ro -- scan
 recipe scan-json            unprivileged ro -- scan --format json
 recipe plugins-text         unprivileged ro -- plugins
@@ -81,7 +93,9 @@ recipe history-list-json    unprivileged ro -- history list --format json
 # `--host` is required, and `local` is the identifier `host_key_for` gives this
 # host: read out of a real capture's `history list --format json`, not assumed.
 recipe history-trends       unprivileged ro -- history trends --host local
+recipe history-trends-json  unprivileged ro -- history trends --host local --format json
 recipe history-regressions  unprivileged ro -- history regressions
+recipe history-regressions-json unprivileged ro -- history regressions --format json
 
 # --- Mutating local ----------------------------------------------------------
 # Every argument here was read off `<command> --help`, not guessed. The first
@@ -124,11 +138,14 @@ recipe apply-all            root mut -- apply --all
 
 # --- Scheduling --------------------------------------------------------------
 recipe systemd-generate     root   ro  -- systemd generate
+recipe systemd-generate-json root  ro  -- systemd generate --format json
 recipe daemon-status        root   ro  -- daemon status
+recipe daemon-status-json   root   ro  -- daemon status --format json
 recipe daemon-run-once      root   mut -- daemon run-once
 recipe_timeout daemon-start booted mut 5 -- daemon start
 recipe systemd-install      booted mut -- systemd install
 recipe systemd-status       booted ro  -- systemd status
+recipe systemd-status-json  booted ro  -- systemd status --format json
 recipe systemd-uninstall    booted mut -- systemd uninstall
 
 # --- Remote ------------------------------------------------------------------
@@ -137,8 +154,14 @@ recipe systemd-uninstall    booted mut -- systemd uninstall
 # container under test would target the container from itself. RUNTIME_SSH is
 # resolved to the fixture's `user@host` by whoever runs the tier; without a
 # target `batch` has no hosts and the capture would say nothing.
-recipe batch-scan           ssh ro  -- batch scan --ssh RUNTIME_SSH --format json
-recipe batch-report         ssh ro  -- batch report --ssh RUNTIME_SSH --format json
+#
+# Both renderers here too. These were registered JSON-only, which is the shape
+# the GUI and the suites drive them in, so the text path they also carry had
+# never been captured at all.
+recipe batch-scan-text      ssh ro  -- batch scan --ssh RUNTIME_SSH
+recipe batch-scan-json      ssh ro  -- batch scan --ssh RUNTIME_SSH --format json
+recipe batch-report-text    ssh ro  -- batch report --ssh RUNTIME_SSH
+recipe batch-report-json    ssh ro  -- batch report --ssh RUNTIME_SSH --format json
 recipe batch-apply          ssh mut -- batch apply --ssh RUNTIME_SSH --execute
 recipe batch-rollback       ssh mut -- batch rollback --ssh RUNTIME_SSH
 recipe ssh-refusal-daemon   unprivileged ro -- --ssh nonexistent.invalid daemon status
