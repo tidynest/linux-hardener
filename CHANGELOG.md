@@ -1684,6 +1684,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`systemd status` put its answer on a different stream in each renderer.**
+  Text mode wrote `Checking system service status` to stdout and forwarded
+  systemctl's stderr to its own, and systemctl reports absent units there:
+  `hardener systemd status | ...` yielded a 31-byte progress line and no
+  answer, while the same query under `--format json` yielded the substance,
+  because the JSON envelope carries both streams as fields. Both exit 0, so
+  nothing said the answer had gone missing. Text mode now writes everything
+  systemctl said to stdout, in the order systemctl produced it, which is where
+  a status command's answer belongs in either renderer. The exit code is
+  unchanged: 0 for a query that succeeded, with systemctl's own code carried in
+  the JSON body, which stays the only way to tell an absent unit from a healthy
+  one without parsing prose.
+
+  The join is a named function rather than two `print!` calls so the decision
+  has a test that does not have to boot a container to observe a stream; the
+  absent-unit case is asserted alongside the ordinary one, so swapping the
+  streams would fail as loudly as dropping one. Found by the first booted CLI
+  walk, and found the way the text/JSON pairing is meant to work: two adjacent
+  captures of one verb, differing in where the content sat rather than in
+  whether there was any.
+
 - **Every SSH rollback on openSUSE reported a failure it had not had.** The
   pre-apply checkpoint captured the resolved main config, which on openSUSE is
   the vendor copy at `/usr/etc/ssh/sshd_config`. `DEFAULT_ROLLBACK_PREFIXES`

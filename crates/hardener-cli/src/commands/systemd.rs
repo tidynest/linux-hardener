@@ -308,12 +308,30 @@ pub async fn status(user_mode: bool, format: OutputFormat, quiet: bool) -> Resul
         );
         return Ok(());
     }
-    print!("{}", String::from_utf8_lossy(&output.stdout));
-    if !output.stderr.is_empty() {
-        eprint!("{}", String::from_utf8_lossy(&output.stderr));
-    }
+    print!(
+        "{}",
+        status_report(
+            &String::from_utf8_lossy(&output.stdout),
+            &String::from_utf8_lossy(&output.stderr),
+        )
+    );
 
     Ok(())
+}
+
+/// Joins what `systemctl` said into the one stream a status answer belongs on.
+///
+/// `systemctl status` reports absent units as `Unit X could not be found.` on
+/// stderr with nothing on stdout, so forwarding each stream to its counterpart
+/// left `hardener systemd status | ...` holding a progress line and no answer,
+/// while `--format json` carried both fields on stdout. The two renderers
+/// disagreed about where the answer was; this is the half that was wrong.
+///
+/// Joined here rather than at the call site so the decision has a test: the
+/// caller shells out to `systemctl`, and a check that has to boot a container to
+/// observe a stream is a check nothing runs.
+fn status_report(stdout: &str, stderr: &str) -> String {
+    format!("{stdout}{stderr}")
 }
 
 /// Renders one command result in whichever form the global `--format` asked for.

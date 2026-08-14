@@ -32,6 +32,31 @@ fn the_uninstall_summary_reports_what_happened() {
     );
 }
 
+/// The answer reached stdout only when `systemctl` had put it there.
+///
+/// The absent-unit case is the one that was wrong and the one that matters: it
+/// is all stderr and no stdout, so a renderer that forwards stream to stream
+/// prints nothing at all. Asserted alongside the ordinary case so a fix that
+/// simply swapped the streams would fail too.
+#[test]
+fn the_status_answer_is_on_one_stream_whichever_stream_systemctl_used() {
+    assert_eq!(
+        status_report("", "Unit linux-hardener.timer could not be found.\n"),
+        "Unit linux-hardener.timer could not be found.\n",
+        "absent units are reported on stderr and are still the answer"
+    );
+    assert_eq!(
+        status_report("● linux-hardener.timer - Scheduled scan\n", ""),
+        "● linux-hardener.timer - Scheduled scan\n",
+        "the ordinary case is unchanged"
+    );
+    assert_eq!(
+        status_report("● linux-hardener.timer\n", "Unit ...service not found.\n"),
+        "● linux-hardener.timer\nUnit ...service not found.\n",
+        "one unit found and one absent: both halves, in the order systemctl gave"
+    );
+}
+
 /// Nothing installed is not a removal.
 ///
 /// Split from the test above because it is what the old wording got most wrong,
