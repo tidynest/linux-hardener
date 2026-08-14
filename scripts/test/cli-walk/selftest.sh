@@ -154,6 +154,68 @@ check "identical snapshots compare equal with no PATH" "yes" \
 check "differing snapshots compare unequal with no PATH" "no" \
     "$(PATH='' "$BASH" -c '[[ "$(<"$1")" == "$(<"$2")" ]] && echo yes || echo no' _ "$SNAP/a" "$SNAP/c")"
 
+# The "not exercised" section, both directions. A capture with no such section
+# reads as the whole command surface and never is: the host walk attempts 17 of
+# 44 registered recipes and passes over the rest without so much as a skip row.
+#
+# The non-empty direction is the one that earns its place. The first version of
+# this section printed its heading and a correct count and then nothing at all,
+# because a `printf` format opening with a dash is read as an option: the error
+# went to stderr, the walk that produced it had stderr redirected away, and a
+# heading above an accurate "27 of 44" read exactly like a working section.
+NC="$TMP/notcovered"
+mkdir -p "$NC"
+# A stand-in registry. This file does not source recipes.sh, which is the point:
+# walk_write_not_covered has to work off whatever registry is in scope, and a
+# fabricated one keeps the assertion independent of what the real recipes happen
+# to be today.
+# shellcheck disable=SC2034  # both are read by walk_write_not_covered
+RECIPE_SLUGS=(alpha beta gamma)
+# shellcheck disable=SC2034  # see above
+RECIPE_TIERS=(unprivileged root booted)
+
+walk_init "$NC"
+run_recipe alpha pristine 0 -- /bin/echo one
+walk_skip beta pristine "no runtime id here"
+walk_write_index "test binary"
+check "unattempted recipe is named"  "1" \
+    "$(grep -c '^- gamma (tier booted)' "$NC/index.md")"
+check "attempted recipe is not named" "0" \
+    "$(grep -c '^- alpha' "$NC/index.md")"
+check "a skip row counts as attempted" "0" \
+    "$(grep -c '^- beta' "$NC/index.md")"
+check "the count matches the list"   "1" \
+    "$(grep -c '^1 of 3 registered recipes were never' "$NC/index.md")"
+
+walk_init "$NC"
+run_recipe alpha pristine 0 -- /bin/echo one
+walk_skip beta pristine "skipped"
+walk_skip gamma pristine "skipped"
+walk_write_index "test binary"
+check "a fully exercised walk says so" "1" \
+    "$(grep -c 'Every registered recipe was attempted' "$NC/index.md")"
+
+# Both streams reach the index. `Bytes` counted stdout alone, so the single
+# most worthwhile row of the first host walk read as 0 and looked like a
+# command that had produced nothing.
+walk_init "$NC"
+run_recipe selftest-streams pristine 0 -- \
+    /bin/sh -c "printf 'out' ; printf 'stderr words' >&2"
+IFS='|' read -r _ _ _ out_bytes err_bytes _ <<< "${WALK_ROWS[-1]}"
+check "stdout bytes recorded" "3"  "$out_bytes"
+check "stderr bytes recorded" "12" "$err_bytes"
+check "stripped stderr copy written" "yes" \
+    "$([[ -f "$NC/pristine/001-selftest-streams/stderr.txt" ]] && echo yes || echo no)"
+
+# And the escapes are actually gone, which is the only reason the copy exists.
+walk_init "$NC"
+run_recipe selftest-ansi pristine 0 -- \
+    /bin/sh -c "printf '\033[2mdim\033[0m plain\n' >&2"
+check "ANSI escapes stripped from the copy" "0" \
+    "$(grep -c $'\033' "$NC/pristine/001-selftest-ansi/stderr.txt")"
+check "raw stderr keeps them" "1" \
+    "$(grep -c $'\033' "$NC/pristine/001-selftest-ansi/stderr")"
+
 if [[ $fails -eq 0 ]]; then
     echo "selftest: all checks passed"
     exit 0

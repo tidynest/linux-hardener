@@ -1374,6 +1374,20 @@ pass produces no commit.
 ./scripts/test/cli-walk/selftest.sh
 ```
 
+Each capture directory holds `cmd`, `exit`, `stdout` and `stderr`, plus a
+`stderr.txt` with ANSI escapes stripped wherever stderr was non-empty. The raw
+file stays, because what the tool emitted is the evidence; the copy exists
+because the tracing lines render as bracket noise around the substance.
+
+`index.md` carries `Out` and `Err` byte counts separately and the argument tail
+of each invocation. Counting stdout alone made a command whose entire output
+was a message on stderr read as `0`, which looks like a command that produced
+nothing: on the first host walk that was the most worthwhile row in the
+capture. The binary path is identical on every row and sits in the header
+instead. The index ends with **Not exercised by this walk**, naming every
+registered recipe the run never attempted and its tier, because a walk that
+lists only what it ran reads as the whole command surface and never is.
+
 `coverage.sh` recurses `--help` and fails if any discovered command has neither
 a recipe nor a written skip, so a new subcommand cannot be added and walked
 past silently.

@@ -40,6 +40,14 @@ run_recipe() {
     printf '%q ' "$@" > "$dir/cmd"
     printf '\n' >> "$dir/cmd"
 
+    # The argument tail, for the index. The binary path is identical on every
+    # row and sits in the header beside the version, so repeating it 44 times
+    # would crowd out the part that differs. Pipes are escaped at the point of
+    # storage rather than at rendering, because the row is pipe-delimited and
+    # only the note may safely hold a raw one, being last.
+    local args="${*:2}"
+    args="${args//|/\\|}"
+
     local code note=""
     if [[ "$timeout_s" != "0" ]]; then
         # SIGTERM by default, which is what a service manager sends, so the
@@ -59,8 +67,21 @@ run_recipe() {
     # Written from a plain run above, never through a pipe.
     echo "$code" > "$dir/exit"
 
-    local bytes
+    # Both streams. `Bytes` counted stdout alone, so a command whose whole
+    # output was a message on stderr read as `0` and looked like one that
+    # produced nothing. On the first host walk that was the single most
+    # worthwhile row in the capture, and the index pointed away from it.
+    local bytes err_bytes
     bytes=$(wc -c < "$dir/stdout")
+    err_bytes=$(wc -c < "$dir/stderr")
+
+    # A readable copy of stderr beside the raw one. The tracing lines carry ANSI
+    # escapes, which render as bracket noise around the substance and will hide
+    # exactly the WARN a walk exists to surface once a run is long or failing.
+    # The raw file stays, because what the tool actually emitted is the evidence.
+    if [[ -s "$dir/stderr" ]]; then
+        sed 's/\x1b\[[0-9;]*m//g' "$dir/stderr" > "$dir/stderr.txt"
+    fi
 
     # The single total check. Unparseable JSON from a --format json command is
     # unambiguously wrong, requires nobody to have anticipated a case, and
@@ -89,14 +110,14 @@ run_recipe() {
         note="${note:+$note; }RECIPE BUG: arguments do not parse, so this row is about recipes.sh and not about the tool"
     fi
 
-    WALK_ROWS+=("$phase|$seq-$slug|$code|$bytes|$note")
+    WALK_ROWS+=("$phase|$seq-$slug|$code|$bytes|$err_bytes|$args|$note")
 }
 
 # walk_skip SLUG PHASE REASON
 # Records a recipe that could not be attempted. An omitted row reads as a
 # clean sheet, and "never ran" must never render as "ran and passed".
 walk_skip() {
-    WALK_ROWS+=("$2|$1|skipped|0|$3")
+    WALK_ROWS+=("$2|$1|skipped|0|0||$3")
 }
 
 # walk_write_index HEADER_LINE
@@ -109,20 +130,66 @@ walk_write_index() {
         echo ""
         echo "$header"
         echo ""
-        echo "| Phase | Invocation | Exit | Bytes | Note |"
-        echo "|-------|------------|------|-------|------|"
+        echo "| Phase | Invocation | Exit | Out | Err | Arguments | Note |"
+        echo "|-------|------------|------|-----|-----|-----------|------|"
         local row
         for row in "${WALK_ROWS[@]}"; do
-            IFS='|' read -r phase slug code bytes note <<< "$row"
+            IFS='|' read -r phase slug code bytes err_bytes args note <<< "$row"
             # Escape pipe characters in the note field before rendering to markdown.
             # The note is caller-supplied text and can contain literal pipes, which
             # would otherwise split the table row into extra columns. WALK_ROWS stores
             # the note unescaped (it parses correctly because read gives the trailing
             # field the remainder intact); only the markdown rendering needs escaping.
             local escaped_note="${note//|/\\|}"
-            echo "| $phase | $slug | $code | $bytes | $escaped_note |"
+            echo "| $phase | $slug | $code | $bytes | $err_bytes | \`$args\` | $escaped_note |"
         done
+        walk_write_not_covered
     } > "$out"
+}
+
+# The recipes this walk never attempted, appended to the index by
+# walk_write_index.
+#
+# A capture with no such section reads as the whole surface, and it never is.
+# The host walk runs 17 of 44 registered recipes and said nothing about the
+# other 27: recipes of another tier are passed over without even a skip row, so
+# they left no trace at all in the one file a reader is told to open first.
+#
+# Recipes only. Which flag VALUES went unexercised is not derivable from the
+# registry, `report --report-format` alone having five of them, so the section
+# says so rather than implying a completeness it cannot offer.
+walk_write_not_covered() {
+    # The self-test sources this library without recipes.sh, and a walk that
+    # cannot see the registry has nothing to compare against.
+    [[ -n "${RECIPE_SLUGS+x}" ]] || return 0
+    [[ ${#RECIPE_SLUGS[@]} -gt 0 ]] || return 0
+
+    local ran=" " row slug i missing=()
+    for row in ${WALK_ROWS[@]+"${WALK_ROWS[@]}"}; do
+        IFS='|' read -r _ slug _ <<< "$row"
+        # run_recipe prefixes a sequence number; walk_skip does not.
+        ran+="${slug#*-} $slug "
+    done
+    for i in "${!RECIPE_SLUGS[@]}"; do
+        slug="${RECIPE_SLUGS[$i]}"
+        [[ "$ran" == *" $slug "* ]] || missing+=("$slug (tier ${RECIPE_TIERS[$i]})")
+    done
+
+    echo ""
+    echo "## Not exercised by this walk"
+    echo ""
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        echo "Every registered recipe was attempted or has a skip row above."
+        return 0
+    fi
+    echo "${#missing[@]} of ${#RECIPE_SLUGS[@]} registered recipes were never"
+    echo "attempted here, so the table above is not the whole command surface."
+    echo "This lists recipes; it cannot list flag values a recipe does not carry."
+    echo ""
+    # `--` because the format string opens with a dash, which printf otherwise
+    # reads as an option: it errors to stderr and writes nothing, leaving a
+    # heading and a count that read exactly like a working section.
+    printf -- '- %s\n' "${missing[@]}"
 }
 
 # walk_normalise FILE

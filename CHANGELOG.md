@@ -1663,6 +1663,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The CLI walk's index pointed away from its own best rows.** Its `Bytes`
+  column counted stdout alone, so a command whose entire output was a message
+  on stderr read as `0` and looked like one that had produced nothing. On the
+  first host walk the two such rows were the most worthwhile in the capture: a
+  PAM warning naming the file it was denied permission to read, and the `--ssh`
+  refusal explaining that the flag changed nothing but the exit status. Split
+  into `Out` and `Err`.
+
+  Three further gaps closed with it. The invocation is now in the index, since
+  every navigation decision needed it and the binary path, identical on every
+  row, belongs in the header where the version already sits. A `stderr.txt`
+  with ANSI escapes stripped is written beside the raw file, which stays,
+  because what the tool emitted is the evidence. And the index ends with **Not
+  exercised by this walk**, naming every registered recipe the run never
+  attempted and its tier: the host walk attempts 17 of 44 and passed over the
+  other 27 without so much as a skip row, so the table read as the whole
+  command surface.
+
+  Ten self-test cases cover the four, each asserted in both directions, and two
+  mutations confirm they fail: the section's list emptied and the stderr count
+  forced to zero each turn one red. The first of those mutations restores a real
+  bug this work introduced and caught, worth recording because of how it
+  presented. A `printf` format opening with a dash is read as an option, so the
+  section printed its heading and an accurate "27 of 44" and then nothing at
+  all, and the error went to a stderr the run had redirected away.
+
 - **The CLI walk's coverage report counted recipes registered, not recipes
   anything could run.** It ended "All discovered commands are covered" while
   `daemon start`, `systemd install`, `systemd status` and `systemd uninstall`
