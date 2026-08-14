@@ -1684,6 +1684,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`batch apply` on a fleet said how many plugins failed and never which ones
+  or why.** The JSON envelope's `ApplyStatus::Applied` carried only `ok` and
+  `failed` counts, and the text renderer printed `5 ok, 3 failed` with nothing
+  underneath. On the CLI walk's ssh fixture three plugins failed applying to
+  the same host, and only one of them said anywhere why: pam logged its reason
+  at INFO (`pam_pwquality.so is not loaded`, so nothing on the host reads the
+  file it would write), which is benign and expected, while the other two were
+  silent in both the envelope and the log. An operator hardening a fleet had no
+  way to tell that apart from a host left half-hardened, and a fleet is
+  precisely where they cannot go and look at the machine directly.
+
+  `ApplyStatus::Applied` now carries `plugins: Vec<PluginOutcome>`, one row per
+  plugin naming it, whether it succeeded, how many changes applied and failed,
+  and its reason where it did not succeed. The `ok` count is now summed
+  through those rows rather than tracked alongside them, so the headline and
+  the list cannot disagree. The text renderer names every failing plugin and
+  its reason, four-space indented under the summary line; a clean fleet's
+  output is unchanged, because there is nothing to list and the successes stay
+  a single count exactly as before. `batch report`'s per-host posture gained
+  the matching detail: `FrameworkPosture` now carries a `controls` row per
+  control, the same shape the local `report` command already returned, so a
+  fleet-wide compliance JSON names every control id and verdict instead of a
+  framework tally alone; its text output is unchanged too.
+
+  A prerequisite surfaced on the way and was a real gap of its own:
+  firewall-hardening's ruleset-refusal branch set `apply_error: None` beside
+  `apply_success: false`, the only one of eight failing-apply sites in the
+  plugins crate that failed without saying why. It now returns its refusal
+  reason on both the change and the result, so the new per-plugin row has
+  something to report for that plugin rather than an empty one.
+
 - **`systemd status` put its answer on a different stream in each renderer.**
   Text mode wrote `Checking system service status` to stdout and forwarded
   systemctl's stderr to its own, and systemctl reports absent units there:
