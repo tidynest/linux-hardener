@@ -1684,6 +1684,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`README.md`'s test count read 1991 against a tree running 2049, and no
+  validator could have said so.** `validate_test_counts.py` holds other
+  documents to the evidence ledger through `CROSS_DOCUMENT_SITES`, and the
+  README's Tests section was never registered there, so its figure went stale
+  before the fleet detail envelope and survived it. Three sites are registered
+  now: the sample output's pass count, its skip count, and the prose one line
+  below restating the skip count, which is the shape this validator exists for.
+  Registering them exposed an ordering defect one level in. The cross-document
+  loop ran before the loop that reads the figures no static read can produce,
+  and a site naming a label the run has not learned yet was skipped in silence,
+  so a README figure held to `nextest passes` could never have been compared at
+  all. Confirmed by mutation: with the two blocks in their old order the run
+  reports every check green with 1991 still in the README. Three things changed
+  rather than one, because the number was the symptom. The pinned figures are
+  read first; a registered site the loop skips is now an error naming both
+  causes rather than a silent pass; and the summary counts the sites it
+  compared rather than the sites registered, since the mutant printed 5 while
+  comparing 4. Registered is not compared, the same shape as `coverage.sh`
+  counting recipes registered rather than recipes a runner can reach.
+
 - **`batch apply` on a fleet said how many plugins failed and never which ones
   or why.** The JSON envelope's `ApplyStatus::Applied` carried only `ok` and
   `failed` counts, and the text renderer printed `5 ok, 3 failed` with nothing

@@ -121,6 +121,27 @@ CROSS_DOCUMENT_SITES: list[tuple[str, str, str, str]] = [
         "the Modes section. The Python figure beside it is this total minus "
         "the one shell check, and is not separately captured",
     ),
+    (
+        "README.md",
+        r"cargo nextest run --workspace\):\s+(\d+) passed",
+        "nextest passes",
+        "the Tests section's sample output. It read 1991 against a tree "
+        "running 2049, stale since before the fleet detail envelope, because "
+        "no site here named it",
+    ),
+    (
+        "README.md",
+        r"cargo nextest run --workspace\):[^\n]*?(\d+) skipped",
+        "ignored tests",
+        "the skip figure in the same sample output",
+    ),
+    (
+        "README.md",
+        r"The (\d+) skipped tests need root",
+        "ignored tests",
+        "the prose restating the skip count one line below the block, which "
+        "is the shape this validator exists for: a number in a sentence",
+    ),
 ]
 
 # Figures no static read can produce. Each is pinned by an identity below
@@ -208,12 +229,30 @@ def check(root: Path) -> int:
             f"{LEDGER}: says {claim} {label}, the tree has {actual} ({command})"
         )
 
+    # Read the pinned figures BEFORE the cross-document loop, not after. A site
+    # naming a label `claims` does not hold yet is skipped in silence, so with
+    # these two blocks the other way round a README figure held to
+    # `nextest passes` is never compared and the run still reports every check
+    # green. Only the three DERIVED labels were reachable here before.
+    for label, pattern in UNMEASURABLE.items():
+        claim = stated(text, pattern, label, errors)
+        if claim is not None:
+            claims[label] = claim
+
+    compared = 0
     for path, pattern, label, note in CROSS_DOCUMENT_SITES:
         if label not in claims:
+            errors.append(
+                f"{path}: registered against {label}, which this run never "
+                f"learned, so the site was skipped rather than checked. Either "
+                f"the ledger row for {label} did not parse, or the loop that "
+                f"reads it runs after this one"
+            )
             continue
         elsewhere = stated((root / path).read_text(), pattern, f"{label} in {path}", errors)
         if elsewhere is None:
             continue
+        compared += 1
         if elsewhere == claims[label]:
             where = note.split(".")[0]
             print(f"  {GREEN}✓{NC} {path} agrees at {elsewhere} {label} ({where})")
@@ -221,11 +260,6 @@ def check(root: Path) -> int:
         errors.append(
             f"{path}: says {elsewhere} {label}, {LEDGER} says {claims[label]} ({note})"
         )
-
-    for label, pattern in UNMEASURABLE.items():
-        claim = stated(text, pattern, label, errors)
-        if claim is not None:
-            claims[label] = claim
 
     # The identities the document asserts in prose. These pin the figures no
     # static read can produce, so moving one without the others fails here.
@@ -275,7 +309,13 @@ def check(root: Path) -> int:
 
     print(f"{GREEN}All {len(DERIVED)} derived counts match the tree{NC}")
     print(f"  Pinned by arithmetic rather than measured: {len(UNMEASURABLE)}")
-    print(f"  Other documents held to the ledger:        {len(CROSS_DOCUMENT_SITES)}")
+    # Registered is not compared. This line read the length of the list, so a
+    # site the loop above skipped was still counted as held; the mutation that
+    # restored the old block order printed 5 while comparing 4.
+    print(
+        f"  Other documents held to the ledger:        "
+        f"{compared} of {len(CROSS_DOCUMENT_SITES)}"
+    )
     print(
         f"  {YELLOW}Dated readings in other documents are deliberately not "
         f"checked; a reading that names its own commit is supposed to keep "
