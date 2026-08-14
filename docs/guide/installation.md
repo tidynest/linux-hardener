@@ -1,6 +1,6 @@
 # Installation Guide
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-10
 
 ## Requirements
 

@@ -624,4 +624,4 @@ Compares the workspace version in `Cargo.toml` against
 (`PKGBUILD`, the RPM spec, `debian/changelog`) are outside its reach. Also
 invoked by `validate_all.py`, as its first entry.
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-08

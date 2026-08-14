@@ -1,6 +1,6 @@
 # Coverage Baseline
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-11
 
 This is a map, not a scorecard. Coverage says which lines no test *reaches*. It
 says nothing about whether the tests that do reach a line *check* anything, and
