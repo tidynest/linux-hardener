@@ -78,6 +78,35 @@ done
 # nspawn's fixed name for the container end of the veth pair.
 ip addr replace "$HOST_IP/30" dev "$IFACE"
 ip link set "$IFACE" up
+
+# A registered machine is not a reachable one. The loop above waits for the
+# veth interface to appear in `machinectl status`, and every command below
+# reaches into the container through `systemd-run --machine=`, which needs its
+# dbus. Those are two different events and the gap between them is real: on
+# 2026-08-14 the same fixture booted cleanly at 18:32 and lost this race at
+# 20:52, dying on the very next line with "Failed to connect to system scope
+# bus via machine transport: No such file or directory" and, under `set -e`,
+# printing nothing else. That is indistinguishable from a container that never
+# came up, and the walk ran its whole ssh tier against the corpse.
+#
+# So wait for the thing actually depended on. `true` is the cheapest probe that
+# proves the transport carries a command, and it is idempotent, so retrying it
+# costs nothing on a container that was ready all along.
+echo "waiting for the container's dbus transport..."
+TRANSPORT_UP=false
+for _ in $(seq 1 30); do
+    if systemd-run --machine="$MACHINE" --wait --pipe --quiet /usr/bin/true 2> /dev/null; then
+        TRANSPORT_UP=true
+        break
+    fi
+    sleep 2
+done
+[[ "$TRANSPORT_UP" == true ]] || {
+    echo "machine registered but its dbus transport never accepted a command" >&2
+    diagnose
+    exit 1
+}
+
 systemd-run --machine="$MACHINE" --wait --pipe --quiet /usr/bin/sh -c \
     "ip addr replace $CONTAINER_IP/30 dev host0 && ip link set host0 up"
 

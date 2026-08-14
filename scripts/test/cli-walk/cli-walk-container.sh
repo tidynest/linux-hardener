@@ -279,11 +279,28 @@ if [[ "$RUN_SSH" == true ]]; then
         echo "  Run as: sudo --preserve-env=SSH_AUTH_SOCK $0"
         echo "  with the fixture key loaded: ssh-add ~/.ssh/hardener_test_ed25519"
     else
-        "$PROJECT_DIR/scripts/containers/boot-ssh-test-container.sh" hardener-test
-        SSH_TARGET="${SSH_TEST_USER:-root}@${SSH_TEST_HOST:-10.242.117.2}"
-        [[ -n "${SSH_TEST_PORT:-}" ]] && SSH_TARGET="$SSH_TARGET:$SSH_TEST_PORT"
-        run_ssh_tier "$SSH_TARGET"
-        machinectl stop hardener-test 2>/dev/null || true
+        # The boot script's exit status was discarded here, and on 2026-08-14
+        # that cost a whole run: the fixture died on a dbus race, and the tier
+        # walked six recipes against a host that was never up. Every one of
+        # them exited 2 and captured "No route to host", which is a truthful
+        # rendering of an untruthful situation, and the summary still read
+        # "arch: exit 0". A capture directory that looks like a result is worse
+        # than no capture at all, because someone reads it.
+        #
+        # Skipped with a reason, matching the SUDO_USER branch above, rather
+        # than aborting: the container tiers have already run and their
+        # captures are good.
+        if "$PROJECT_DIR/scripts/containers/boot-ssh-test-container.sh" hardener-test; then
+            SSH_TARGET="${SSH_TEST_USER:-root}@${SSH_TEST_HOST:-10.242.117.2}"
+            [[ -n "${SSH_TEST_PORT:-}" ]] && SSH_TARGET="$SSH_TARGET:$SSH_TEST_PORT"
+            run_ssh_tier "$SSH_TARGET"
+            machinectl stop hardener-test 2>/dev/null || true
+        else
+            echo -e "${RED}Skipped: the SSH fixture did not come up.${NC}"
+            echo "  The boot script's own diagnostics are above. No ssh-tier"
+            echo "  captures were written, so nothing here reads as a result."
+            rm -rf "$CAPTURE_PARENT/arch-ssh"
+        fi
     fi
 fi
 
