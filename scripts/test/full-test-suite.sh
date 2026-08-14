@@ -743,14 +743,6 @@ scan_finding_count() {
     grep -o '"finding_id"' "$1" | wc -l
 }
 
-# Which way a finding count moved, as one word, leaving the caller to say what
-# that means where it is asking.
-#
-# Four outcomes and no default arm. `void` comes first because a reading that is
-# not a reading has no direction, and two of them would otherwise compare equal
-# and report that nothing moved. What this replaces answered in two outcomes
-# through `-le`, which folded "unmoved" and "fell" into the passing one, so on a
-# host where nothing can move the comparison had no reachable false branch.
 # The checkpoint an apply took, off the apply's own result document, or `none`.
 #
 # `ApplyResult::apply_checkpoint_id` is the tool's record of the checkpoint that
@@ -791,6 +783,14 @@ apply_real_change_count() {
     printf '%s' "$count"
 }
 
+# Which way a finding count moved, as one word, leaving the caller to say what
+# that means where it is asking.
+#
+# Four outcomes and no default arm. `void` comes first because a reading that is
+# not a reading has no direction, and two of them would otherwise compare equal
+# and report that nothing moved. What this replaces answered in two outcomes
+# through `-le`, which folded "unmoved" and "fell" into the passing one, so on a
+# host where nothing can move the comparison had no reachable false branch.
 finding_count_verdict() {
     local before="$1" after="$2"
     if [[ "$before" == "no-document" || "$after" == "no-document" ]]; then
