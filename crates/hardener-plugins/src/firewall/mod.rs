@@ -594,6 +594,34 @@ fn ruleset_refusal(rules: &[Rule], session_is_remote: bool) -> Option<String> {
     }
 }
 
+/// Builds the result for a ruleset refused before the backend installed
+/// anything.
+///
+/// The reason goes on both the change and the result. It used to go only on the
+/// change, leaving `apply_error: None` on the one branch of eight in this crate
+/// that failed without saying why, which reads downstream as a plugin that
+/// failed for no stated reason.
+fn refusal_result(
+    apply_plugin_id: PluginId,
+    mut apply_changes: Vec<Change>,
+    apply_checkpoint_id: Option<String>,
+    reason: String,
+) -> ApplyResult {
+    apply_changes.push(Change {
+        change_description: format!("Refused to apply the firewall ruleset: {reason}"),
+        change_type: ChangeType::FirewallRule,
+        change_success: false,
+        change_error: Some(reason.clone()),
+    });
+    ApplyResult {
+        apply_plugin_id,
+        apply_success: false,
+        apply_changes,
+        apply_checkpoint_id,
+        apply_error: Some(reason),
+    }
+}
+
 /// A directive's value as this tool READ it, rather than as it was spelled.
 ///
 /// Only `port` is rewritten, and the reason is that two readers of the same
@@ -1521,19 +1549,12 @@ impl HardeningPlugin for FirewallHardeningPlugin {
         // and a `?` would throw all of it away along with the explanation.
         if let Some(reason) = ruleset_refusal(&rules, ctx.executor().is_remote()) {
             warn!("Refusing to apply the firewall ruleset: {reason}");
-            apply_changes.push(Change {
-                change_description: format!("Refused to apply the firewall ruleset: {reason}"),
-                change_type: ChangeType::FirewallRule,
-                change_success: false,
-                change_error: Some(reason),
-            });
-            return Ok(ApplyResult {
+            return Ok(refusal_result(
                 apply_plugin_id,
-                apply_success: false,
                 apply_changes,
-                apply_checkpoint_id: checkpoint_id,
-                apply_error: None,
-            });
+                checkpoint_id,
+                reason,
+            ));
         }
 
         let rules_error = match backend.apply_rules(ctx, &rules).await {

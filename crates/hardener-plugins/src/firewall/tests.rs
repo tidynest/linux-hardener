@@ -2891,3 +2891,25 @@ fn every_covered_firewall_control_can_be_reported_unchecked() {
         &[],
     );
 }
+
+/// A refusal is a failure, and a failure with no reason is the defect this
+/// envelope work exists to stop. The reason is already computed here and was
+/// written only into the change list, so `apply_error` was `None` on the one
+/// branch that most needed it.
+#[test]
+fn a_refused_ruleset_carries_its_reason_on_the_result() {
+    let reason = "loopback rule would be dropped".to_string();
+    let result = refusal_result(
+        PluginId::new("firewall-configuration"),
+        Vec::new(),
+        None,
+        reason.clone(),
+    );
+
+    assert!(!result.apply_success, "a refusal is not a success");
+    assert_eq!(
+        result.apply_error.as_deref(),
+        Some(reason.as_str()),
+        "the reason must reach the result, not only the change list"
+    );
+}
