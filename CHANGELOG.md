@@ -1697,7 +1697,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   `ApplyStatus::Applied` now carries `plugins: Vec<PluginOutcome>`, one row per
   plugin that returned a result, naming it, whether it succeeded, how many
-  changes applied and failed, and its reason where it did not succeed. A
+  changes applied and failed, and its reason where it did not succeed. The
+  reason prefers the plugin's own `apply_error` and falls back to what its
+  failed changes recorded about themselves, because `pam` and `ssh` set
+  `apply_success` from a computed boolean with `apply_error: None` beside it
+  while each failed change underneath carried a usable `change_error`. That
+  fallback lives in `ApplyResult::failure_reason` rather than in the eight
+  plugins, so the next plugin to compute its success does not start out
+  silent. It was found by reading the first fleet capture that carried the
+  rows, which named three failures and gave reasons for one. A
   plugin whose `apply()` errors outright never produces a result, so it has
   no row; a host where every selected plugin fails that way now reports
   `Failed` rather than `Applied { ok: 0, failed: 0, plugins: [] }`, which

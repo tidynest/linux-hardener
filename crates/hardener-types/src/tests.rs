@@ -217,6 +217,68 @@ mod apply_change_tests {
 mod plugin_outcome_tests {
     use crate::*;
 
+    /// A plugin that computed its own failure still says why.
+    ///
+    /// Measured, not imagined: the first fleet capture to carry per-plugin rows
+    /// rendered two of three failures as "no reason given". `pam` and `ssh` set
+    /// `apply_success` from a computed boolean with `apply_error: None` beside
+    /// it, while each failed change underneath carried a usable `change_error`.
+    ///
+    /// The three cases are asserted together because they are the three ways
+    /// this can go wrong: an explicit plugin error must still win, a computed
+    /// failure must fall back to its changes, and a success must stay silent so
+    /// the fallback cannot invent a reason where there was no failure.
+    #[test]
+    fn a_computed_failure_reports_the_reasons_its_changes_recorded() {
+        let failed_change = |error: Option<&str>| Change {
+            change_description: "a change".to_string(),
+            change_type: ChangeType::ConfigFile,
+            change_success: false,
+            change_error: error.map(str::to_string),
+        };
+        let result = |apply_success, apply_error: Option<&str>, apply_changes| ApplyResult {
+            apply_plugin_id: PluginId::new("pam-hardening"),
+            apply_success,
+            apply_changes,
+            apply_checkpoint_id: None,
+            apply_error: apply_error.map(str::to_string),
+        };
+
+        assert_eq!(
+            result(
+                false,
+                None,
+                vec![
+                    failed_change(Some("pam_pwquality.so is not loaded")),
+                    failed_change(Some("pam_pwhistory.so is not loaded")),
+                ],
+            )
+            .failure_reason()
+            .as_deref(),
+            Some("pam_pwquality.so is not loaded; pam_pwhistory.so is not loaded"),
+            "a computed failure falls back to what its changes recorded"
+        );
+
+        assert_eq!(
+            result(
+                false,
+                Some("the plugin's own reason"),
+                vec![failed_change(Some("a change reason"))]
+            )
+            .failure_reason()
+            .as_deref(),
+            Some("the plugin's own reason"),
+            "an explicit plugin error still wins over the fallback"
+        );
+
+        assert!(
+            result(true, None, vec![failed_change(Some("never reached"))])
+                .failure_reason()
+                .is_none(),
+            "a success has no reason, whatever its change list holds"
+        );
+    }
+
     /// The conversion must count through the helpers, not through the length of
     /// the change list.
     ///

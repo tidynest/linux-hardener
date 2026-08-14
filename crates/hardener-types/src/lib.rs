@@ -768,6 +768,46 @@ impl ApplyResult {
     pub fn skipped_change_count(&self) -> usize {
         self.apply_changes.iter().filter(|c| c.is_skipped()).count()
     }
+
+    /// Why this plugin failed, in one line, for a caller that has room for one
+    /// line and cannot go and read the host.
+    ///
+    /// Prefers the plugin's own [`apply_error`](Self::apply_error) and falls
+    /// back to the reasons its failed changes recorded about themselves.
+    /// Neither invents anything: the fallback text is already in the struct.
+    ///
+    /// The fallback exists because the first fleet capture to carry per-plugin
+    /// rows rendered two of three failures as "no reason given". `pam` and
+    /// `ssh` set `apply_success` from a computed boolean with
+    /// `apply_error: None` beside it, while each failed change underneath
+    /// carried a perfectly good `change_error`. A grep for the literal
+    /// `apply_success: false` cannot see a computed one, which is why the
+    /// per-plugin sweep that preceded this reported itself complete.
+    ///
+    /// Derived here rather than in the eight plugins so the next plugin to
+    /// compute its success does not start out silent again.
+    pub fn failure_reason(&self) -> Option<String> {
+        if let Some(error) = &self.apply_error {
+            return Some(error.clone());
+        }
+        if self.apply_success {
+            return None;
+        }
+        let reasons: Vec<&str> = self
+            .apply_changes
+            .iter()
+            .filter(|c| !c.is_skipped() && !c.is_checkpoint() && !c.change_success)
+            .filter_map(|c| c.change_error.as_deref())
+            .collect();
+        // A failure whose changes all succeeded, or whose failures recorded no
+        // reason of their own, genuinely has nothing to say here. `None` lets
+        // the renderer print its own honest placeholder rather than an empty
+        // string that reads like a plugin which failed for no reason.
+        match reasons.is_empty() {
+            true => None,
+            false => Some(reasons.join("; ")),
+        }
+    }
 }
 
 /// Represents a single change made during hardening.
@@ -1359,7 +1399,7 @@ impl From<&ApplyResult> for PluginOutcome {
             success: result.apply_success,
             applied: result.applied_change_count(),
             failed: result.failed_change_count(),
-            error: result.apply_error.clone(),
+            error: result.failure_reason(),
         }
     }
 }
