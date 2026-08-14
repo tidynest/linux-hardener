@@ -142,20 +142,66 @@ class DocumentationUpdater:
                         filepath.write_text(new_content)
                     self.log_update("dates", f"{rel_path}: {doc_date} → {git_date}")
 
+    # A diff line that only moves the stamp this tool writes.
+    STAMP_LINE = re.compile(r'^[+-]\*\*Last Updated\*\*:\s*\d{4}-\d{2}-\d{2}\s*$')
+
     def _get_git_date(self, filepath: Path) -> str | None:
-        """Get last git commit date for a file."""
+        """Date of the last commit that changed this file's *content*.
+
+        Not simply `git log -1`. A commit that only rewrites the `Last Updated`
+        header is this tool's own output, and taking it as the answer made
+        every stamp stale the instant it was committed: writing 2026-08-10 into
+        a file made that file's last commit 2026-08-14, so the next run
+        demanded 2026-08-14 for a document nobody had edited (#172). Six
+        documents were in that state, and a second `--apply` would have written
+        six false dates that the `doc_date < git_date` guard then makes
+        permanent.
+
+        Skipping those commits converges by construction: a commit that only
+        stamps a date can never become the source of a later stamp.
+        """
         try:
-            result = subprocess.run(
-                ["git", "log", "-1", "--format=%cs", "--", str(filepath)],
+            log = subprocess.run(
+                ["git", "log", "--format=%H %cs", "--", str(filepath)],
                 capture_output=True, text=True, check=True,
                 cwd=self.root
             )
-            date_str = result.stdout.strip()
-            if re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
-                return date_str
         except subprocess.CalledProcessError:
-            pass
+            return None
+
+        for line in log.stdout.splitlines():
+            sha, _, date_str = line.partition(" ")
+            if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+                continue
+            if self._changed_more_than_the_stamp(sha, filepath):
+                return date_str
         return None
+
+    def _changed_more_than_the_stamp(self, sha: str, filepath: Path) -> bool:
+        """Whether `sha` changed anything in `filepath` beyond its stamp.
+
+        `git show` rather than a diff against `<sha>^`, so a root commit
+        answers instead of failing on a parent it does not have.
+        """
+        try:
+            diff = subprocess.run(
+                ["git", "show", "--format=", "--unified=0", sha,
+                 "--", str(filepath)],
+                capture_output=True, text=True, check=True,
+                cwd=self.root
+            )
+        except subprocess.CalledProcessError:
+            # Unreadable, so this commit is not skipped: failing towards
+            # counting a commit keeps a real edit, failing the other way
+            # silently drops one.
+            return True
+
+        changed = [
+            line for line in diff.stdout.splitlines()
+            if line.startswith(("+", "-"))
+            and not line.startswith(("+++", "---"))
+        ]
+        return any(not self.STAMP_LINE.match(line) for line in changed)
 
     # -------------------------------------------------------------------------
     # 2. file-map.md Stub Entries
@@ -494,7 +540,95 @@ class DocumentationUpdater:
         return 0
 
 
+def _selftest() -> int:
+    """Prove `_get_git_date` ignores commits that only stamp a date (#172).
+
+    Drives a real throwaway repository rather than a mocked `git log`, because
+    the defect was in what the command was asked, not in how its output was
+    parsed. A mock would have reproduced the parsing faithfully and the bug not
+    at all.
+    """
+    import os
+    import tempfile
+
+    failures: list[str] = []
+
+    def check(label: str, got, want):
+        if got == want:
+            print(f"  {GREEN}✓{NC} {label}: {got}")
+            return
+        failures.append(f"{label}: got {got}, want {want}")
+        print(f"  {RED}✗{NC} {label}: got {got}, want {want}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        def git(*args, when: str | None = None):
+            env = dict(os.environ)
+            if when:
+                stamp = f"{when}T12:00:00+00:00"
+                env["GIT_AUTHOR_DATE"] = stamp
+                env["GIT_COMMITTER_DATE"] = stamp
+            subprocess.run(
+                ["git", *args], cwd=root, check=True, capture_output=True, env=env
+            )
+
+        git("init", "-q")
+        git("config", "user.email", "selftest@example.invalid")
+        git("config", "user.name", "selftest")
+
+        doc = root / "doc.md"
+        untouched = root / "root-only.md"
+
+        body = "# Doc\n\n**Last Updated**: {stamp}\n\n{body}\n"
+        doc.write_text(body.format(stamp="2026-01-01", body="Body one."))
+        untouched.write_text("# Root only\n\n**Last Updated**: 2026-01-01\n")
+        git("add", "-A")
+        git("commit", "-qm", "initial", when="2026-01-01")
+
+        # A file whose only commit is the root commit still has to answer,
+        # which is the case a `<sha>^` diff would crash on.
+        updater = DocumentationUpdater(root)
+        check("root commit only", updater._get_git_date(untouched), "2026-01-01")
+
+        doc.write_text(body.format(stamp="2026-01-01", body="Body two."))
+        git("commit", "-qam", "a real content change", when="2026-03-05")
+        check("after a content change", updater._get_git_date(doc), "2026-03-05")
+
+        # The defect. This commit is the tool's own output, and taking it as
+        # the answer is what made every stamp stale the moment it landed.
+        doc.write_text(body.format(stamp="2026-03-05", body="Body two."))
+        git("commit", "-qam", "stamp only", when="2026-06-20")
+        check("after a stamp-only commit", updater._get_git_date(doc), "2026-03-05")
+
+        # Two stamp-only commits in a row must not creep forward either.
+        doc.write_text(body.format(stamp="2026-06-20", body="Body two."))
+        git("commit", "-qam", "stamp only again", when="2026-07-11")
+        check("after two stamp-only commits", updater._get_git_date(doc), "2026-03-05")
+
+        # A commit that touches the stamp AND the body is a real change and
+        # must count, or the skip becomes a way to hide edits.
+        doc.write_text(body.format(stamp="2026-07-11", body="Body three."))
+        git("commit", "-qam", "stamp and content together", when="2026-09-02")
+        check("stamp plus content", updater._get_git_date(doc), "2026-09-02")
+
+        # A file git has never seen has no answer, and must not borrow one.
+        check("untracked file", updater._get_git_date(root / "absent.md"), None)
+
+    print()
+    if failures:
+        print(f"{RED}Self-test failed ({len(failures)}):{NC}")
+        for f in failures:
+            print(f"  {RED}✗{NC} {f}")
+        return 1
+    print(f"{GREEN}Self-test passed: 6 of 6{NC}")
+    return 0
+
+
 def main():
+    if "--selftest" in sys.argv:
+        sys.exit(_selftest())
+
     apply_mode = "--apply" in sys.argv
     root = find_project_root()
 

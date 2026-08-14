@@ -1684,6 +1684,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`update_all_docs.py`'s `Last Updated` dates never converged, because its
+  own writes reset them.** The date came from `git log -1 -- <file>`, the last
+  commit that touched the file for any reason, and a date bump is such a
+  commit. So `--apply` wrote `docs/guide/installation.md` its honest
+  `2026-08-10`, and by writing it made that file's last commit `2026-08-14`;
+  the next run demanded `2026-08-14` for a document whose content had not
+  changed since the 10th. Six documents were in that state, and applying a
+  second pass would have written six false dates into a field whose entire
+  purpose is to be true, which the `doc_date < git_date` guard then makes
+  permanent. The date now comes from the last commit whose diff for that file
+  touches something other than the `Last Updated` line, which converges by
+  construction: a commit that only stamps a date can never become the source of
+  a later stamp. `git show` rather than a diff against `<sha>^`, so a root
+  commit answers instead of failing on a parent it does not have. Proved by
+  `--selftest`, which builds a throwaway repository and drives real commits
+  rather than mocking `git log`, on the grounds that the defect was in what the
+  command was asked and not in how its output was parsed: a mock would have
+  reproduced the parsing faithfully and the bug not at all. Six cases, and the
+  two that matter were watched failing against the old derivation first. This
+  also mattered beyond tidiness, because release gate G7's mechanical clause is
+  read off this tool printing "All documentation is up to date", and that line
+  was reachable only by writing dates that were wrong (#172).
+
 - **`audit-hardening` reported `Some changes failed` and discarded the reasons
   its own changes had recorded.** `ApplyResult::failure_reason` prefers
   `apply_error` and derives from the change list only where that field is

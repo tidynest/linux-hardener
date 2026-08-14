@@ -743,12 +743,24 @@ Tauri command validation failed
 
 # Apply changes
 ./scripts/validate/update_all_docs.py --apply
+
+# Prove the date derivation against a throwaway repository
+./scripts/validate/update_all_docs.py --selftest
 ```
+
+**Idempotency is enforced rather than asserted.** It did not hold until
+2026-08-14: the date came from the last commit touching a file for any reason,
+including the tool's own stamp, so `--apply` made every file it wrote stale
+again and a second run demanded a newer date for a document nobody had edited
+(#172). `--selftest` builds a real repository, commits a content change, then a
+stamp-only change, and fails if the second is taken as the answer. Six cases,
+including a root commit, two stamp-only commits in a row, and a commit that
+moves the stamp *and* the body, which must count.
 
 **What It Auto-Fixes**:
 | Category | Action |
 |----------|--------|
-| Last Updated dates | Syncs to git commit dates |
+| Last Updated dates | Syncs to the last commit that changed the file's content, ignoring commits that only move the stamp |
 | file-map.md | Adds stub entries for new source files |
 | Compliance counts | Updates framework control counts |
 | Tauri signatures | Regenerates command signatures |
