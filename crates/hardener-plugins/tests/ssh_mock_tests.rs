@@ -16,6 +16,8 @@ use hardener_types::{DeclineReason, UncheckedBlocker};
 use std::path::Path;
 use std::sync::Arc;
 
+mod common;
+
 /// Creates a mock executor with a typical secure SSH config.
 ///
 /// Includes strong crypto directives so the baseline scan reports no findings.
@@ -3116,6 +3118,55 @@ async fn apply_writes_only_the_dropin_on_a_vendor_only_host() {
         result.apply_success,
         "the host is hardened through the drop-in, so apply succeeds: {:?}",
         result.apply_changes
+    );
+}
+
+/// A checkpoint may only capture what a rollback is allowed to put back.
+///
+/// The vendor file is not: `edit_target` sends every managed directive to the
+/// drop-in where the vendor copy is in force, and `DEFAULT_ROLLBACK_PREFIXES`
+/// covers `/etc` alone. Capturing `/usr/etc/ssh/sshd_config` recorded a restore
+/// obligation the rollback then refused by design, so on openSUSE every ssh
+/// rollback exited 1 with "some files were not restored" having restored
+/// everything that was ever changed. Five distributions keep sshd_config under
+/// `/etc` and showed nothing wrong; the first booted six-distribution walk
+/// found it as the single exit-code disagreement across 119 slugs.
+///
+/// Asserted on the checkpoint's own contents rather than on the executor's read
+/// log, because the scan reads the vendor file too and a read proves nothing
+/// about what was captured.
+#[tokio::test]
+async fn the_checkpoint_captures_no_path_a_rollback_would_refuse() {
+    let executor = dropin_apply_commands(opensuse_ssh_executor());
+    let manager = common::test_checkpoint_manager().await;
+    let mut ctx =
+        Context::with_executor_and_checkpoint(Arc::new(executor.clone()), manager.clone());
+
+    let result = SshHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply must not abort on a host whose sshd_config is under /usr/etc");
+
+    let checkpoint_id = result
+        .apply_checkpoint_id
+        .expect("the apply writes the drop-in, so it is not a no-op and takes a checkpoint");
+    let (_, files) = manager
+        .get_checkpoint(&hardener_state::CheckpointId::new(checkpoint_id))
+        .await
+        .expect("the checkpoint the apply reported must be readable");
+
+    let captured: Vec<&str> = files.iter().map(|f| f.file_path.as_str()).collect();
+    assert!(
+        !captured.iter().any(|p| p.starts_with("/usr/etc/")),
+        "the rollback allow-list covers /etc alone, so capturing a vendor path \
+         promises a restore that will be refused, captured: {captured:?}"
+    );
+    // The other direction, or the assertion above passes on a checkpoint that
+    // captured nothing at all and the rollback has nothing to undo.
+    assert!(
+        captured.contains(&"/etc/ssh/sshd_config.d/00-hardener.conf"),
+        "the drop-in is the only thing this apply writes, so the checkpoint must \
+         hold it or the rollback cannot undo the hardening, captured: {captured:?}"
     );
 }
 

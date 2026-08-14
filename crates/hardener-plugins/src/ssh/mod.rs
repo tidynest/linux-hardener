@@ -2117,12 +2117,28 @@ impl HardeningPlugin for SshHardeningPlugin {
         // it is what the operator asked for, and protecting it would leave the
         // hardening in place after a rollback. Same precedent as the kernel
         // plugin's sysctl.d drop-in.
-        let checkpoint_id = crate::create_checkpoint_for_apply(
-            ctx,
-            "ssh-hardening-pre-apply",
-            &[Path::new(config_path), Path::new(dropin::DROPIN_PATH)],
-        )
-        .await?;
+        // A checkpoint captures what a rollback can put back, which here is
+        // what this apply can write. The vendor file is neither: `edit_target`
+        // sends every managed directive to the drop-in where the vendor copy is
+        // the one in force, and `DEFAULT_ROLLBACK_PREFIXES` covers `/etc` alone.
+        // Capturing `/usr/etc/ssh/sshd_config` therefore recorded a restore
+        // obligation the rollback refuses by design, and on openSUSE that made
+        // every ssh rollback exit 1 reporting files it had not restored, having
+        // restored everything that was ever changed. Five distributions keep it
+        // under /etc and showed nothing. The legacy backup below already skips
+        // the vendor file for the same reason; this is that rule, applied to
+        // the capture it was missing from.
+        // One expression, both arms visible: `writing_main` is the same
+        // predicate that guards the write of `config_path` below, so the file is
+        // captured exactly when it can be written, and never otherwise.
+        let capture_paths: Vec<&Path> = if writing_main {
+            vec![Path::new(config_path), Path::new(dropin::DROPIN_PATH)]
+        } else {
+            vec![Path::new(dropin::DROPIN_PATH)]
+        };
+        let checkpoint_id =
+            crate::create_checkpoint_for_apply(ctx, "ssh-hardening-pre-apply", &capture_paths)
+                .await?;
         committed.extend(crate::checkpoint_change(&checkpoint_id));
 
         // The legacy backup sits beside the file it copies, so it is taken only

@@ -1684,6 +1684,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every SSH rollback on openSUSE reported a failure it had not had.** The
+  pre-apply checkpoint captured the resolved main config, which on openSUSE is
+  the vendor copy at `/usr/etc/ssh/sshd_config`. `DEFAULT_ROLLBACK_PREFIXES`
+  covers `/etc` alone, by design, so the rollback refused that path and exited
+  1 with `Rollback completed with errors: some files were not restored` having
+  restored everything that was ever changed. The apply never writes the vendor
+  file: `edit_target` sends every managed directive to the drop-in where the
+  vendor copy is in force, because creating `/etc/ssh/sshd_config` would make
+  sshd stop reading the vendor config and discard its Include lines. So the
+  capture recorded a restore obligation nothing could ever meet, and an
+  operator was told a rollback had failed when it had not.
+
+  The checkpoint now captures the main config only where it is the
+  administrator's, which is the rule the legacy backup eleven lines below
+  already followed and for the same stated reason. The five distributions that
+  keep sshd_config under `/etc` are unaffected, and their capture is unchanged.
+
+  Found by the first booted six-distribution CLI walk, as the single exit-code
+  disagreement across 119 slugs. That section of the diff pointer leads the file
+  because content differences named 51 of 73 slugs and were useless; this is the
+  first defect it has caught.
+
 - **The CLI walk's index pointed away from its own best rows.** Its `Bytes`
   column counted stdout alone, so a command whose entire output was a message
   on stderr read as `0` and looked like one that had produced nothing. On the
