@@ -312,14 +312,27 @@ mod fleet_mutation_tests {
         ));
         let applied: ApplyStatus =
             serde_json::from_str(r#"{"state":"applied","ok":2,"failed":1}"#).unwrap();
-        assert!(matches!(
-            applied,
+        match applied {
             ApplyStatus::Applied {
                 ok: 2,
                 failed: 1,
-                ..
+                plugins,
+            } => {
+                // A payload with no `plugins` key falls back to
+                // `#[serde(default)]` rather than failing to parse, so this is
+                // a producer that predates the field, not a genuine
+                // zero-plugin host. Checked explicitly so the fallback is a
+                // behaviour this test can catch losing, not a side effect
+                // nobody is watching.
+                assert!(
+                    plugins.is_empty(),
+                    "a payload with no plugins key must default to an empty list: {plugins:?}"
+                );
             }
-        ));
+            other => {
+                panic!("state=applied with ok=2 failed=1 must deserialise to Applied: {other:?}")
+            }
+        }
     }
 
     #[test]

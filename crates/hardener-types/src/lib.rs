@@ -1430,6 +1430,12 @@ pub enum ApplyStatus {
     /// because the text renderer and the GUI cells both read them directly,
     /// and because a consumer wanting only the headline should not have to
     /// walk the list to get it.
+    ///
+    /// Wire contract: for anything this version emits, `plugins.len() == ok +
+    /// failed`. `#[serde(default)]` lets an older producer's payload, one
+    /// with no `plugins` key at all, still parse, so an empty list beside a
+    /// non-zero count means the producer predates this field rather than a
+    /// genuine zero-plugin host.
     Applied {
         ok: usize,
         failed: usize,

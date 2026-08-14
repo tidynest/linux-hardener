@@ -1788,22 +1788,37 @@ fn render_apply_text_validation_states() {
     );
 }
 
+/// The per-plugin rows are the reason the `plugins` field exists at all: a
+/// consumer reading `batch apply --format json` needs to see which plugin an
+/// "ok"/"failed" count is about, not just the two totals. Built with one
+/// non-empty row so this test cannot pass against a renderer, or a fixture,
+/// that drops the rows on the way to JSON.
 #[test]
 fn render_apply_json_has_state_tags() {
     let out = render_apply_json(&[ApplyOutcome {
         name: "web".into(),
         target: "root@web".into(),
         status: ApplyStatus::Applied {
-            ok: 5,
+            ok: 1,
             failed: 0,
-            plugins: Vec::new(),
+            plugins: vec![PluginOutcome {
+                plugin: PluginId::new("ssh-hardening"),
+                success: true,
+                applied: 3,
+                failed: 0,
+                error: None,
+            }],
         },
     }]);
     assert!(
         out.contains("\"state\": \"applied\""),
         "json tags the status state: {out}"
     );
-    assert!(out.contains("\"ok\": 5"));
+    assert!(out.contains("\"ok\": 1"));
+    assert!(
+        out.contains("\"ssh-hardening\""),
+        "a plugin row must reach the rendered JSON, not just the ok/failed counts: {out}"
+    );
 }
 
 #[tokio::test]
