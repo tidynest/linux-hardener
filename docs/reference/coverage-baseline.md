@@ -1,6 +1,6 @@
 # Coverage Baseline
 
-**Last Updated**: 2026-08-11
+**Last Updated**: 2026-08-14
 
 This is a map, not a scorecard. Coverage says which lines no test *reaches*. It
 says nothing about whether the tests that do reach a line *check* anything, and
@@ -421,15 +421,25 @@ Three readings repeat, and are stated once here rather than 40 times below:
   these 58 rows, and had to treat this section as a head start rather than an
   inventory.
 
-  **What is done and what is left.** Issue #127 ran that search and deleted
-  both `hardener-distro` entries: the 5 files of `package/` with their test
-  file, and `adapter.rs` with its own, 875 lines in all. The search found
-  nothing else in that crate, and it confirmed the prediction above: the file
-  this method could not see is exactly the one that needed a search to find.
-  `crates/hardener-ui/src/utils/mock_data.rs` is the remaining entry and is
-  untouched, so 103 of the 503 lines and 1 of the 6 files are still open. No
+  **What is done.** Issue #127 ran that search and deleted both
+  `hardener-distro` entries: the 5 files of `package/` with their test file,
+  and `adapter.rs` with its own, 875 lines in all. The search found nothing
+  else in that crate, and it confirmed the prediction above: the file this
+  method could not see is exactly the one that needed a search to find. No
   dependency left `crates/hardener-distro/Cargo.toml` with the module: both
   `hardener-common` and `serde` are still used by `lib.rs`.
+
+  `crates/hardener-ui/src/utils/mock_data.rs` went on 2026-08-11 with its `mod`
+  line, which the row for it in the table above already records. **All 6 files
+  and all 503 lines are gone, so Phase 3's inherited list is closed.**
+
+  This paragraph said the opposite until 2026-08-14, that the file was
+  untouched and 103 of the 503 lines still open, contradicting its own table
+  from four screens away. Measured rather than reasoned:
+  `crates/hardener-ui/src/utils/` holds `mod.rs`, `tests.rs`, `theme.rs` and
+  `theme/`, and `grep -r mock_data` over `crates/` and `src-tauri/` returns
+  nothing. A summary that restates a table is a second place for the same fact
+  to be wrong, and nothing here checks one against the other.
 - **Phase 4** takes the five genuine gaps named above. Two of them,
   `hardener-compliance/src/output/mod.rs` and `hardener-cli/src/output.rs`, are
   rendering paths a user sees on every run, and both are cheap to reach.
