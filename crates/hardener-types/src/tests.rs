@@ -214,6 +214,84 @@ mod apply_change_tests {
         assert_eq!(result.skipped_change_count(), 0);
     }
 }
+mod plugin_outcome_tests {
+    use crate::*;
+
+    /// The conversion must count through the helpers, not through the length of
+    /// the change list.
+    ///
+    /// The mixed result below is the whole point: one real success, one real
+    /// failure, one `Skipped` no-op and one `Checkpoint` bookkeeping entry. Any
+    /// implementation reaching for `apply_changes.len()` produces 4 and fails
+    /// here, which is the arithmetic the rule at lib.rs:747 exists to forbid.
+    #[test]
+    fn a_plugin_outcome_counts_real_changes_only() {
+        let change = |description: &str, change_type: ChangeType, change_success: bool| Change {
+            change_description: description.to_string(),
+            change_type,
+            change_success,
+            change_error: None,
+        };
+
+        let result = ApplyResult {
+            apply_plugin_id: PluginId::new("ssh-hardening"),
+            apply_success: false,
+            apply_changes: vec![
+                change("set PermitRootLogin", ChangeType::ConfigFile, true),
+                change("restart sshd", ChangeType::Service, false),
+                change("no MAC system present", ChangeType::Skipped, true),
+                change("checkpoint", ChangeType::Checkpoint, true),
+            ],
+            apply_checkpoint_id: Some("cp_1".to_string()),
+            apply_error: Some("Failed to restart SSH service".to_string()),
+        };
+
+        let outcome = PluginOutcome::from(&result);
+
+        assert_eq!(outcome.plugin, PluginId::new("ssh-hardening"));
+        assert!(!outcome.success);
+        assert_eq!(
+            outcome.applied, 1,
+            "the Skipped and Checkpoint entries are not applied changes"
+        );
+        assert_eq!(
+            outcome.failed, 1,
+            "the Skipped and Checkpoint entries are not failures either"
+        );
+        assert_eq!(
+            outcome.error.as_deref(),
+            Some("Failed to restart SSH service")
+        );
+    }
+
+    /// A clean plugin carries no error, and its counts must not borrow from the
+    /// failure case.
+    ///
+    /// Asserted separately because a conversion that always reports one failure
+    /// would pass the test above on its `failed` assertion alone.
+    #[test]
+    fn a_clean_plugin_outcome_carries_no_error() {
+        let result = ApplyResult {
+            apply_plugin_id: PluginId::new("kernel-hardening"),
+            apply_success: true,
+            apply_changes: vec![Change {
+                change_description: "net.ipv4.conf.all.log_martians".to_string(),
+                change_type: ChangeType::KernelParameter,
+                change_success: true,
+                change_error: None,
+            }],
+            apply_checkpoint_id: None,
+            apply_error: None,
+        };
+
+        let outcome = PluginOutcome::from(&result);
+
+        assert!(outcome.success);
+        assert_eq!(outcome.applied, 1);
+        assert_eq!(outcome.failed, 0);
+        assert!(outcome.error.is_none());
+    }
+}
 mod fleet_mutation_tests {
     use crate::*;
 

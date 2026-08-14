@@ -1324,6 +1324,46 @@ impl From<&ControlResult> for ControlOutcome {
     }
 }
 
+/// One plugin's outcome from a fleet apply, slim enough to carry for every
+/// plugin on every host.
+///
+/// The counterpart to [`ControlOutcome`] on the apply path, and deliberately
+/// the same shape of decision: the fleet response carries the rows for every
+/// plugin rather than a count plus a way to fetch the rest, because the second
+/// round trip to a fleet is the expensive one.
+///
+/// What it does not carry is the change list. `batch apply` reported
+/// `5 ok, 3 failed` and nothing else, so an operator could not tell a benign
+/// failure (`pam_pwquality.so is not loaded`, so nothing reads the file the
+/// plugin would write) from a host left half-hardened. The plugin name, the
+/// two counts and the error answer that; the individual changes do not, and
+/// carrying them would multiply the payload by the size of the fleet.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PluginOutcome {
+    /// Which plugin this row is for.
+    pub plugin: PluginId,
+    /// Whether the plugin reported overall success.
+    pub success: bool,
+    /// Real changes applied, excluding skipped no-ops and checkpoint entries.
+    pub applied: usize,
+    /// Real changes attempted and failed, on the same exclusions.
+    pub failed: usize,
+    /// The plugin's own reason for failing, where it gave one.
+    pub error: Option<String>,
+}
+
+impl From<&ApplyResult> for PluginOutcome {
+    fn from(result: &ApplyResult) -> PluginOutcome {
+        PluginOutcome {
+            plugin: result.apply_plugin_id.clone(),
+            success: result.apply_success,
+            applied: result.applied_change_count(),
+            failed: result.failed_change_count(),
+            error: result.apply_error.clone(),
+        }
+    }
+}
+
 /// One framework's compliance posture for a fleet host: the summary, plus one
 /// verdict per control so the count can be drilled into.
 ///
