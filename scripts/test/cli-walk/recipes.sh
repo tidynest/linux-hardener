@@ -59,6 +59,50 @@ skip() {
     SKIP_REASONS+=("$2")
 }
 
+# --- What the runners can give -----------------------------------------------
+# A recipe's tier states what it NEEDS. These state what each runner can GIVE,
+# and the runners read them rather than carrying their own copy: the
+# orchestrator hands WALK_CONTAINER_TIERS to the inner script and the host walk
+# filters on WALK_HOST_TIERS.
+#
+# They live here because coverage.sh has to compare the two sets and had no way
+# to. It counted a command covered the moment any recipe named it, so the four
+# `booted` verbs read as covered while no runner could reach them, and the
+# report ended "All discovered commands are covered" about a surface no walk had
+# ever touched. The orchestrator holding its tier list as a literal is what let
+# the two drift without anything noticing.
+WALK_CONTAINER_TIERS="unprivileged,root"
+WALK_HOST_TIERS="unprivileged"
+WALK_SSH_TIERS="ssh"
+
+# Their union: every tier that some runner can give. Derived here rather than
+# recomposed by the caller, so "reachable" has one definition and adding a
+# runner cannot leave a second copy behind.
+# shellcheck disable=SC2034  # read by coverage.sh, which sources this file
+WALK_REACHABLE_TIERS="$WALK_CONTAINER_TIERS,$WALK_HOST_TIERS,$WALK_SSH_TIERS"
+
+# unreachable_tier TIER REASON
+# A tier no runner can give. Declaring one does NOT make the gap quiet, which is
+# the whole point: coverage.sh lists every command the tier strands, prints this
+# reason beside them, and refuses to report the run as fully covered. It is the
+# `skip` escape hatch applied to a tier rather than a command, and it keeps the
+# information a `skip` would destroy, since these commands do have recipes and
+# lack only a runner.
+#
+# Checked in both directions. A tier declared here that some runner CAN reach
+# fails the report, because a stale declaration would hide a tier that started
+# working, and a tier some recipe names that is neither reachable nor declared
+# here fails it too.
+UNREACHABLE_TIERS=()
+UNREACHABLE_REASONS=()
+unreachable_tier() {
+    UNREACHABLE_TIERS+=("$1")
+    UNREACHABLE_REASONS+=("$2")
+}
+
+unreachable_tier booted \
+    "no runner boots a container: cli-walk-container.sh launches every container with --pipe, and cli-walk-host.sh refuses every tier but unprivileged"
+
 # --- Read-only core ----------------------------------------------------------
 # Every verb rendering both formats is captured twice, under adjacent slugs.
 # The pairing is a detector and not a convenience: `report --format json`

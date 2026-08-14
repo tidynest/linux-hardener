@@ -1663,6 +1663,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The CLI walk's coverage report counted recipes registered, not recipes
+  anything could run.** It ended "All discovered commands are covered" while
+  `daemon start`, `systemd install`, `systemd status` and `systemd uninstall`
+  had never been executed by any walk. Their recipes exist and declare the
+  `booted` tier; no runner gives it, because `cli-walk-container.sh` launches
+  every container with `--pipe` and passed its tier list as a hardcoded
+  literal, and `cli-walk-host.sh` refuses every tier but `unprivileged`. Each
+  walk skipped the five affected recipes by name, honestly, and the coverage
+  report contradicted them without either side noticing.
+
+  What a runner can give is now stated once, in `recipes.sh`, and the runners
+  read those definitions instead of carrying their own copy, which is what let
+  the two drift. A command reachable by no runner is reported under REGISTERED
+  BUT UNREACHABLE with its tier and a declared reason, and the summary now
+  reads "24 of 28 discovered commands are covered by a tier a runner can give"
+  rather than claiming all of them. The tier declaration is checked in both
+  directions: an unreachable tier nobody declared fails the report, and a tier
+  declared unreachable that a runner can in fact reach fails it too, so the
+  declaration cannot become cover for a tier that started working. Both
+  directions were confirmed by mutation, as was the pre-existing uncovered-
+  command path, which still fires.
+
+  Same shape as the defect above it and as the seven before that: something
+  confirmed to exist without being confirmed to work, and the silence read as
+  success. Found while verifying a `--tier booted` invocation before publishing
+  it in a handoff, where it would have exited 2 on an unknown option.
+
 - **A lifecycle check reported an apply with no way back as one that had
   nothing to do.** Section 23 of the full test suite reads the checkpoint each
   plugin's apply recorded, and where the document held none it skipped the

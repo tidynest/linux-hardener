@@ -138,7 +138,7 @@ run_single_distro() {
         --bind="$PROJECT_DIR:/project" \
         "${TARGET_BIND[@]}" \
         --pipe \
-        /bin/bash /project/scripts/test/cli-walk/cli-walk-inner.sh "$distro" "unprivileged,root"
+        /bin/bash /project/scripts/test/cli-walk/cli-walk-inner.sh "$distro" "$WALK_CONTAINER_TIERS"
     # Written from a plain run above, never through a pipe.
     echo $? > "$CAPTURE_PARENT/.$distro.exit"
 }
@@ -165,7 +165,7 @@ run_ssh_tier() {
     walk_init "$capture"
 
     for i in "${!RECIPE_SLUGS[@]}"; do
-        [[ "${RECIPE_TIERS[$i]}" == "ssh" ]] || continue
+        [[ ",$WALK_SSH_TIERS," == *",${RECIPE_TIERS[$i]},"* ]] || continue
         slug="${RECIPE_SLUGS[$i]}"
         local -a argv resolved
         mapfile -t argv <<< "${RECIPE_ARGV[$i]}"

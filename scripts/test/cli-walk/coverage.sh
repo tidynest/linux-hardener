@@ -47,8 +47,36 @@ for cmd in "${TOP[@]}"; do
     fi
 done
 
-covered() {
-    local target="$1" i argv first second cmd_idx
+# The tiers some runner can give, padded for substring membership. The set
+# itself is composed in recipes.sh beside the per-runner lists, so this file
+# cannot come to disagree with them about what "reachable" means.
+REACHABLE=" ${WALK_REACHABLE_TIERS//,/ } "
+tier_reachable() { [[ "$REACHABLE" == *" $1 "* ]]; }
+
+tier_declared_unreachable() {
+    local t
+    [[ ${#UNREACHABLE_TIERS[@]} -eq 0 ]] && return 1
+    for t in "${UNREACHABLE_TIERS[@]}"; do
+        [[ "$t" == "$1" ]] && return 0
+    done
+    return 1
+}
+
+unreachable_reason() {
+    local i
+    for i in "${!UNREACHABLE_TIERS[@]}"; do
+        [[ "${UNREACHABLE_TIERS[$i]}" == "$1" ]] || continue
+        printf '%s' "${UNREACHABLE_REASONS[$i]}"
+        return
+    done
+}
+
+# Every tier whose recipes name this command, space separated and deduplicated,
+# or nothing at all. This replaces a predicate that returned at the first match:
+# knowing a command is covered says nothing useful once the question is whether
+# anything can run what covers it.
+covering_tiers() {
+    local target="$1" i argv first second cmd_idx tiers=" "
     # Value-taking global flags are explicit to avoid guessing whether a flag
     # takes a value. Stacking, boolean flags, and new flags all handled by this
     # loop walk.
@@ -74,19 +102,55 @@ covered() {
 
         first="${argv[$cmd_idx]:-}"
         second="${argv[$((cmd_idx + 1))]:-}"
-        [[ "$target" == "$first" ]] && return 0
-        [[ "$target" == "$first $second" ]] && return 0
+        if [[ "$target" == "$first" || "$target" == "$first $second" ]]; then
+            local t="${RECIPE_TIERS[$i]}"
+            [[ "$tiers" == *" $t "* ]] || tiers+="$t "
+        fi
     done
+    tiers="${tiers# }"
+    printf '%s' "${tiers% }"
+}
+
+command_skipped() {
     local s
+    [[ ${#SKIP_SLUGS[@]} -eq 0 ]] && return 1
     for s in "${SKIP_SLUGS[@]}"; do
-        [[ "$target" == "$s" ]] && return 0
+        [[ "$1" == "$s" ]] && return 0
     done
     return 1
 }
 
+# A tier no runner gives and nobody declared, and a declaration that has gone
+# stale, are both this file lying about what it measured. Neither is tolerated,
+# because the whole defect being fixed here was a report that overstated.
+bad_tiers=()
+for i in "${!RECIPE_TIERS[@]}"; do
+    t="${RECIPE_TIERS[$i]}"
+    tier_reachable "$t" && continue
+    tier_declared_unreachable "$t" && continue
+    [[ " ${bad_tiers[*]:-} " == *" $t "* ]] || bad_tiers+=("$t")
+done
+
+stale_tiers=()
+if [[ ${#UNREACHABLE_TIERS[@]} -gt 0 ]]; then
+    for t in "${UNREACHABLE_TIERS[@]}"; do
+        tier_reachable "$t" && stale_tiers+=("$t")
+    done
+fi
+
 missing=()
+stranded=()
 for c in "${COMMANDS[@]}"; do
-    covered "$c" || missing+=("$c")
+    tiers="$(covering_tiers "$c")"
+    if [[ -z "$tiers" ]]; then
+        command_skipped "$c" || missing+=("$c")
+        continue
+    fi
+    # Covered, but only counts as covered if something can run one of them.
+    for t in $tiers; do
+        tier_reachable "$t" && continue 2
+    done
+    stranded+=("$c|$tiers")
 done
 
 echo "Commands discovered: ${#COMMANDS[@]}"
@@ -98,11 +162,51 @@ if [[ ${#SKIP_SLUGS[@]} -gt 0 ]]; then
     done
 fi
 
+if [[ ${#stranded[@]} -gt 0 ]]; then
+    echo ""
+    echo "REGISTERED BUT UNREACHABLE (a recipe exists; no runner can run it):"
+    for entry in "${stranded[@]}"; do
+        cmd="${entry%%|*}"
+        tiers="${entry#*|}"
+        echo "  $cmd [tier: $tiers]"
+    done
+    for t in "${UNREACHABLE_TIERS[@]}"; do
+        echo "  tier '$t': $(unreachable_reason "$t")"
+    done
+fi
+
+fail=0
+if [[ ${#bad_tiers[@]} -gt 0 ]]; then
+    echo ""
+    echo "UNDECLARED TIER (no runner gives it and nothing says so):"
+    printf '  %s\n' "${bad_tiers[@]}"
+    echo "  Add it to a runner's tier list, or declare it with unreachable_tier."
+    fail=1
+fi
+if [[ ${#stale_tiers[@]} -gt 0 ]]; then
+    echo ""
+    echo "STALE DECLARATION (declared unreachable, but a runner reaches it):"
+    printf '  %s\n' "${stale_tiers[@]}"
+    echo "  Drop the unreachable_tier line; it is now hiding a tier that works."
+    fail=1
+fi
 if [[ ${#missing[@]} -gt 0 ]]; then
     echo ""
     echo "UNCOVERED (add a recipe, or a skip with a reason):"
     printf '  %s\n' "${missing[@]}"
-    exit 1
+    fail=1
+fi
+[[ $fail -eq 1 ]] && exit 1
+
+# The summary line the fix exists for. It said "All discovered commands are
+# covered" while four of them were covered only by a tier no runner could give,
+# which is the same overstatement the walk itself keeps finding: registration
+# confirmed, execution not, silence read as coverage.
+if [[ ${#stranded[@]} -gt 0 ]]; then
+    echo ""
+    echo "$(( ${#COMMANDS[@]} - ${#stranded[@]} )) of ${#COMMANDS[@]} discovered commands are covered by a tier a runner can give."
+    echo "${#stranded[@]} are registered against an unreachable tier and have never been executed by a walk."
+    exit 0
 fi
 echo "All discovered commands are covered."
 exit 0

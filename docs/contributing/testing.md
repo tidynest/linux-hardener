@@ -1376,7 +1376,24 @@ pass produces no commit.
 
 `coverage.sh` recurses `--help` and fails if any discovered command has neither
 a recipe nor a written skip, so a new subcommand cannot be added and walked
-past silently. It proves every COMMAND has a recipe and says nothing about
+past silently.
+
+**A recipe existing is not the same as a walk being able to run it.** A recipe
+declares the tier it needs; each runner declares the tiers it can give
+(`WALK_CONTAINER_TIERS`, `WALK_HOST_TIERS`, `WALK_SSH_TIERS` in `recipes.sh`,
+which the runners read rather than copy). A command covered only by recipes of
+a tier no runner gives is reported under **REGISTERED BUT UNREACHABLE**, with
+the tier and the declared reason, and the summary says how many of the
+discovered commands a runner can actually reach. It used to end "All discovered
+commands are covered" while the four `booted` verbs had never been executed by
+any walk, which is the overstatement this split exists to stop.
+
+A tier no runner gives must be declared with `unreachable_tier TIER REASON`,
+and the check runs both ways: an undeclared unreachable tier fails, and a tier
+declared unreachable that a runner *can* reach fails too, so the declaration
+cannot rot into cover for a tier that started working.
+
+It proves every COMMAND has a recipe and says nothing about
 whether a recipe's ARGUMENTS parse, which cannot be known without running them.
 That gap is covered at run time instead: `run_recipe` flags a clap parse error
 in the index as `RECIPE BUG`, because such a row is a fact about `recipes.sh`

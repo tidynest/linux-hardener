@@ -59,7 +59,10 @@ echo ""
 for i in "${!RECIPE_SLUGS[@]}"; do
     tier="${RECIPE_TIERS[$i]}"
     slug="${RECIPE_SLUGS[$i]}"
-    if [[ "$tier" != "unprivileged" ]]; then
+    # Membership in the runner's declared tier set rather than a literal, so
+    # coverage.sh's picture of what this runner can give cannot drift from what
+    # it actually gives.
+    if [[ ",$WALK_HOST_TIERS," != *",$tier,"* ]]; then
         continue
     fi
     mapfile -t argv <<< "${RECIPE_ARGV[$i]}"
