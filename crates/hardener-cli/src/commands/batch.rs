@@ -366,9 +366,24 @@ pub struct FrameworkPosture {
     ///
     /// The CLI half of the same decision `FleetFrameworkPosture` took for the
     /// GUI: the rows ride along rather than being fetched, because a second
-    /// round trip to a fleet is the expensive one. Slim rows, so the payload
-    /// grows by about a fifth rather than tripling; a consumer wanting the
-    /// evidence joins the findings it already holds by their own
+    /// round trip to a fleet is the expensive one.
+    ///
+    /// Measured on real captures, not #50's figure: one host's `batch report
+    /// --format json` (66 controls across CIS and STIG) was 883 bytes before
+    /// this field existed, and these slim rows run about 240 bytes each,
+    /// roughly 16 KB per host, about 19x rather than the "+19%" #50 measured
+    /// for the GUI's `FleetHostScan` (that was against a 122 KB
+    /// `scan_results` baseline this envelope does not carry). In absolute
+    /// terms a 20-host fleet report grows from about 18 KB to about 330 KB,
+    /// against a local single-host `report --format json` that is already
+    /// 205 KB on its own.
+    ///
+    /// What does still transfer from #50 is the ordering: slim rows like
+    /// these are still roughly 10x cheaper than carrying full
+    /// `ControlResult`s, which is why the always-carry decision holds even
+    /// though the fraction does not. Also unlike `FleetHostScan`, `batch
+    /// report --format json` carries no findings at all, so there is
+    /// nothing here for a consumer to join these rows against by their own
     /// `finding_compliance` mappings.
     pub controls: Vec<ControlOutcome>,
 }
@@ -1281,6 +1296,17 @@ fn status_from_result(execute: bool, result: &super::apply::ApplyHostResult) -> 
             .iter()
             .map(|(_, r)| PluginOutcome::from(r))
             .collect();
+        // Every plugin's `apply()` opens with a checkpoint capture, so one
+        // remote checkpoint failure can error every plugin before any of
+        // them produces a result: `results` stays empty and `had_failure`
+        // is the only trace. Reporting that as `Applied { ok: 0, failed: 0 }`
+        // is indistinguishable from a host that genuinely needed nothing.
+        if plugins.is_empty() && result.had_failure {
+            return ApplyStatus::Failed {
+                error: "every plugin errored before producing a result; nothing was applied"
+                    .to_string(),
+            };
+        }
         let ok = plugins.iter().filter(|p| p.success).count();
         ApplyStatus::Applied {
             ok,

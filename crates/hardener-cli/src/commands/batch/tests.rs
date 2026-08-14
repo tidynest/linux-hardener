@@ -14,7 +14,7 @@
 //! so `super` still resolves to `crate::commands::batch` and every import carried
 //! across unchanged, private items included.
 //!
-//! 2417 lines across 83 tests, the largest inline block anywhere in the workspace and the reason this crate was left until last.
+//! 2447 lines across 84 tests, the largest inline block anywhere in the workspace and the reason this crate was left until last.
 
 use super::*;
 use hardener_common::types::{
@@ -103,6 +103,36 @@ fn a_host_whose_config_disabled_every_plugin_is_not_a_clean_apply() {
             "the error must name what was skipped: {error}"
         ),
         other => panic!("a run that applied nothing must not report success: {other:?}"),
+    }
+}
+
+/// Every plugin's `apply()` opens with a checkpoint capture, so one remote
+/// checkpoint failure errors every plugin before any of them produces a
+/// result: `results` stays empty, `skipped` stays empty (the config did not
+/// disable anything), and `had_failure` is the only trace. Unguarded, that
+/// reads as `Applied { ok: 0, failed: 0, plugins: [] }`, exit code 0 - a
+/// fleet apply that did nothing at all would read as complete success.
+///
+/// `skipped` is deliberately empty here so `nothing_ran()` is false and the
+/// fixture reaches the guard under test rather than the earlier early
+/// return: `nothing_ran()` requires a non-empty `skipped`.
+#[test]
+fn a_host_where_every_plugin_errored_before_a_result_is_not_a_clean_apply() {
+    let result = super::super::apply::ApplyHostResult {
+        results: vec![],
+        validation_reports: vec![],
+        had_failure: true,
+        skipped: vec![],
+    };
+
+    match status_from_result(true, &result) {
+        ApplyStatus::Failed { error } => assert!(
+            !error.is_empty(),
+            "the error must say something happened, not just be present"
+        ),
+        other => panic!(
+            "a host where every plugin errored before a result must not report success: {other:?}"
+        ),
     }
 }
 

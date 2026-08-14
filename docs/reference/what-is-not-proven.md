@@ -518,7 +518,7 @@ workspace suite skips, 27 need `SSH_TEST_HOST` and a booted fixture from
 `scripts/containers/boot-ssh-test-container.sh`. A regression in the SSH
 transport is therefore invisible to `cargo test`.
 
-**The 69 in-crate `batch` tests never open a connection.** They are target
+**The 84 in-crate `batch` tests never open a connection.** They are target
 parsing, output shaping and refusal policy over fixtures. Multi-host behaviour
 against real hosts, partial failure part-way across a fleet, and a privilege
 refusal from a host that genuinely refuses are unproven against anything live.

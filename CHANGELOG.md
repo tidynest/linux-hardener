@@ -1696,13 +1696,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   precisely where they cannot go and look at the machine directly.
 
   `ApplyStatus::Applied` now carries `plugins: Vec<PluginOutcome>`, one row per
-  plugin naming it, whether it succeeded, how many changes applied and failed,
-  and its reason where it did not succeed. The `ok` count is now summed
-  through those rows rather than tracked alongside them, so the headline and
-  the list cannot disagree. The text renderer names every failing plugin and
-  its reason, four-space indented under the summary line; a clean fleet's
-  output is unchanged, because there is nothing to list and the successes stay
-  a single count exactly as before. `batch report`'s per-host posture gained
+  plugin that returned a result, naming it, whether it succeeded, how many
+  changes applied and failed, and its reason where it did not succeed. A
+  plugin whose `apply()` errors outright never produces a result, so it has
+  no row; a host where every selected plugin fails that way now reports
+  `Failed` rather than `Applied { ok: 0, failed: 0, plugins: [] }`, which
+  used to read as a clean fleet apply that had in fact applied nothing at
+  all. The `ok` count is now summed through those rows rather than tracked
+  alongside them, so the headline and the list cannot disagree. The text
+  renderer names every failing plugin and its reason, four-space indented
+  under the summary line; a clean fleet's output is unchanged, because there
+  is nothing to list and the successes stay a single count exactly as
+  before. `batch report`'s per-host posture gained
   the matching detail: `FrameworkPosture` now carries a `controls` row per
   control, the same shape the local `report` command already returned, so a
   fleet-wide compliance JSON names every control id and verdict instead of a

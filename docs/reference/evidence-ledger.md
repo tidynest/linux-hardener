@@ -32,13 +32,13 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 2047 passed, 42 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2053 passed, 0 failed, 49 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 2048 passed, 42 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2054 passed, 0 failed, 49 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 61 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 25 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2089 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2089 across 299 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2090 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2090 across 299 files |
 
 Three of these rows are re-derived from the tree on every `validate_all.py` run
 by `scripts/validate/validate_test_counts.py`: the annotation count, the
@@ -51,7 +51,7 @@ The rows a build produces are not re-measured there, and are not therefore
 unchecked: they are pinned to each other by the identities this section states,
 so a figure edited alone fails even though nothing about it was measured.
 
-The gap between 2089 annotations and 2047 executions is exactly 42, and all 42
+The gap between 2090 annotations and 2048 executions is exactly 42, and all 42
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -59,14 +59,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2089, and they are meant to be: the check globs every `.rs`
+are the same number, 2090, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 2047 + 6 = 2053 and 42 + 7 = 49.
+covers. 2048 + 6 = 2054 and 42 + 7 = 49.
 
 ---
 
@@ -944,7 +944,7 @@ These are stated once here rather than repeated in every cell below.
 
 | Claim | Evidence | Command | Ceiling |
 |---|---|---|---|
-| `batch scan`, `report`, `apply` and `rollback` reach every host in the inventory, default to a dry run, and refuse a host whose privilege probe fails | `crates/hardener-cli/src/commands/batch/tests.rs` (69 run, 1 `#[ignore]`d eyeball helper), `crates/hardener-cli/src/ssh_config/tests.rs` (4 tests), `crates/hardener-cli/tests/ssh_refusal.rs` (12 tests) | `cargo nextest run -p hardener-cli commands::batch` | The 69 in-crate tests are target parsing, output shaping and refusal policy over fixtures. None of them opens a connection, so multi-host behaviour against real hosts, partial failure across a fleet, and a privilege refusal from a host that genuinely refuses are all unproven at grade 3. |
+| `batch scan`, `report`, `apply` and `rollback` reach every host in the inventory, default to a dry run, and refuse a host whose privilege probe fails | `crates/hardener-cli/src/commands/batch/tests.rs` (83 run, 1 `#[ignore]`d eyeball helper), `crates/hardener-cli/src/ssh_config/tests.rs` (4 tests), `crates/hardener-cli/tests/ssh_refusal.rs` (12 tests) | `cargo nextest run -p hardener-cli commands::batch` | The 83 in-crate tests are target parsing, output shaping and refusal policy over fixtures. None of them opens a connection, so multi-host behaviour against real hosts, partial failure across a fleet, and a privilege refusal from a host that genuinely refuses are all unproven at grade 3. |
 | Each of the four fleet verbs completes against a live remote host | `crates/hardener-cli/tests/batch_ssh_integration.rs` (4 tests, all 4 `#[ignore]`d behind `SSH_TEST_HOST`), `scripts/containers/boot-ssh-test-container.sh` | `cargo test -p hardener-cli --test batch_ssh_integration -- --ignored`, after running `scripts/containers/boot-ssh-test-container.sh` under `sudo` and then, in your own shell, exporting the variables it prints and running the `ssh-add` it prints. The script prints those lines rather than exporting them, so a reader who skipped the paste has `SSH_TEST_HOST` unset; the run then aborts by name rather than reporting four passes. | Four tests, one happy path per verb, and **none of them runs in the default suite or in CI**: all four are `#[ignore]`d and every one needs a booted fixture container, so no `cargo test` and no CI job produces a single live reading of any fleet verb. What has changed is what a green reading is worth, not how much is covered. The shared `target()` helper in that file panics with `SSH_TEST_HOST not set` where it used to return early, so a run against no host now fails instead of exiting 0 with "4 passed", matching the two SSH suites in the executor row. That closed a silent pass and left the gap beneath it exactly where it was: four happy paths, one per verb, against one container, started by hand. |
 
 ---

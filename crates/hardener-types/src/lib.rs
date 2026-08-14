@@ -1424,12 +1424,20 @@ pub enum ApplyStatus {
         failed: usize,
     },
     /// Execute: `ok` plugins applied, `failed` did not, and one
-    /// [`PluginOutcome`] row per plugin naming which was which.
+    /// [`PluginOutcome`] row per plugin that returned a result, naming which
+    /// was which.
     ///
     /// The counts are kept beside the rows rather than derived from them
     /// because the text renderer and the GUI cells both read them directly,
     /// and because a consumer wanting only the headline should not have to
     /// walk the list to get it.
+    ///
+    /// Ceiling: a plugin whose `apply()` returns `Err` outright never reaches
+    /// `results`, so it gets no row here either. When every selected plugin
+    /// fails that way, there is nothing to build a row from at all; the fleet
+    /// path reports `Failed` rather than `Applied { ok: 0, failed: 0,
+    /// plugins: [] }` for that case, so an empty list is never how a fleet
+    /// apply that did nothing reads as success.
     ///
     /// Wire contract: for anything this version emits, `plugins.len() == ok +
     /// failed`. `#[serde(default)]` lets an older producer's payload, one

@@ -1,6 +1,6 @@
 # Linux Hardener - Data Flow Documentation
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-14
 **Version:** 1.5.1
 
 This document describes the data flow for all major operations in the system.
@@ -1476,7 +1476,7 @@ pub struct ApplyOutcome {
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum ApplyStatus {
     Validated { plugins: usize, would_change: usize, compliant: usize, failed: usize },
-    Applied   { ok: usize, failed: usize },
+    Applied   { ok: usize, failed: usize, plugins: Vec<PluginOutcome> },
     Failed    { error: String },
 }
 
@@ -1513,4 +1513,4 @@ compares the two behaviours, not two separate screens.
 
 ---
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-14
