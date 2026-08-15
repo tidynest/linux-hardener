@@ -1684,6 +1684,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A scheduled scan ignored its own plugin selection and recorded it anyway.**
+  `ScanRunner` computed `plugins_to_scan` and passed it to `create_session` and
+  to nothing else; `PluginManager::execute_scan` took no selection at all and
+  ran the full `execution_order()`, narrowed only by the global config's enable
+  flags. Selecting a subset therefore scanned every plugin while the history row
+  claimed the subset, and every consumer of that row (trends, regressions, the
+  fleet view) read it as the truth. The default is unaffected: with no selection
+  the computed list is already every enabled plugin. `execute_scan` now takes
+  the selection and one value drives both the row and the run, which is what the
+  `scannable_plugins` doc comment had claimed since it was written. An empty
+  selection still means every plugin, asserted beside the narrowing test,
+  because inverting that would make a scan of nothing indistinguishable from a
+  clean result. The same shape was fixed one layer down when this loop learned
+  to honour `is_plugin_enabled`; the schedule's own list sat above it and was
+  missed.
+
+- **The Scheduler screen wrote plugin ids no plugin answers to.** Its checkbox
+  group hardcoded `kernel`, `ssh`, `firewall` and so on, while the plugins
+  declare `kernel-hardening`, `ssh-hardening`, `firewall-hardening`. Nothing
+  rejected them because `HardenerConfig::is_plugin_enabled` returns true for an
+  unknown id, so a schedule saved from that screen recorded plugins that do not
+  exist. Corrected to the declared ids, which also collapses the third of three
+  naming schemes the same eight plugins carried across three screens. Because
+  this had masked the defect above, `scannable_plugins` now **refuses** an id no
+  plugin declares rather than dropping it: a stale config naming `kernel` would
+  otherwise have started selecting nothing and scanning nothing, silently, the
+  moment the selection began to be honoured.
+
 - **Daywatch's warning and accent colours failed WCAG AA as text on all four of
   its surfaces, and nothing had ever been able to see it.** The first run of the
   contrast sweep after its flattener was fixed reported four failing pairings,

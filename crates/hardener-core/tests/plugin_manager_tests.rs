@@ -196,7 +196,7 @@ async fn test_execute_scan_workflow() {
     let config = HardenerConfig::default();
 
     // Execute scan
-    let results = manager.execute_scan(&ctx, &config).await.unwrap();
+    let results = manager.execute_scan(&ctx, &config, &[]).await.unwrap();
 
     // Verify all 3 plugins were scanned
     assert_eq!(
@@ -266,7 +266,7 @@ async fn test_execute_scan_honours_directive_override() {
     // Default config carries no directives, so the plugin's (mock)
     // baseline-compliant value has nothing stricter to fail against.
     let baseline = manager
-        .execute_scan(&ctx, &HardenerConfig::default())
+        .execute_scan(&ctx, &HardenerConfig::default(), &[])
         .await
         .unwrap();
     assert_eq!(baseline.len(), 1, "the one registered plugin should scan");
@@ -283,7 +283,10 @@ async fn test_execute_scan_honours_directive_override() {
         .directives
         .insert("mock-directive".to_string(), "strict-value".to_string());
 
-    let strict = manager.execute_scan(&ctx, &strict_config).await.unwrap();
+    let strict = manager
+        .execute_scan(&ctx, &strict_config, &[])
+        .await
+        .unwrap();
     assert_eq!(strict.len(), 1, "the one registered plugin should scan");
     assert_eq!(
         strict[0].scan_findings.len(),
@@ -397,7 +400,7 @@ async fn execute_scan_skips_a_plugin_the_config_disables() {
     let mut config = HardenerConfig::default();
     config.kernel.enabled = Some(false);
 
-    let results = manager.execute_scan(&ctx, &config).await.unwrap();
+    let results = manager.execute_scan(&ctx, &config, &[]).await.unwrap();
 
     let scanned: Vec<String> = results
         .iter()
@@ -410,5 +413,48 @@ async fn execute_scan_skips_a_plugin_the_config_disables() {
     assert!(
         scanned.contains(&"ssh-hardening".to_string()),
         "an enabled plugin must still be scanned: {scanned:?}"
+    );
+}
+
+/// A scheduled scan may name a subset of plugins, and that selection had
+/// nowhere to go: this method derived what ran from the execution order alone,
+/// so the scheduler's list reached the history row and nothing else. The row
+/// then claimed a subset while every plugin had in fact run, and the operator's
+/// selection did nothing at all.
+///
+/// The empty case is asserted beside it deliberately. Empty means every plugin,
+/// which is the documented default; narrowing on an empty list would turn
+/// "scan everything" into "scan nothing", which is the worst failure a scanner
+/// has because it looks exactly like a clean result.
+#[tokio::test]
+async fn execute_scan_honours_an_explicit_selection() {
+    let registry = PluginRegistry::new();
+    registry
+        .register(Box::new(MockPlugin::new("kernel-hardening")))
+        .unwrap();
+    registry
+        .register(Box::new(MockPlugin::new("ssh-hardening")))
+        .unwrap();
+
+    let mut manager = PluginManager::new(registry);
+    manager.resolve_dependencies().unwrap();
+    let ctx = Context::new();
+    let config = HardenerConfig::default();
+
+    let picked = manager
+        .execute_scan(&ctx, &config, &["ssh-hardening".to_string()])
+        .await
+        .unwrap();
+    let scanned: Vec<String> = picked
+        .iter()
+        .map(|r| r.scan_plugin_id.to_string())
+        .collect();
+    assert_eq!(scanned, vec!["ssh-hardening".to_string()]);
+
+    let all = manager.execute_scan(&ctx, &config, &[]).await.unwrap();
+    assert_eq!(
+        all.len(),
+        2,
+        "an empty selection still means every plugin, not none"
     );
 }

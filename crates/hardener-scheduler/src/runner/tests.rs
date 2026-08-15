@@ -33,9 +33,46 @@ fn the_recorded_plugin_list_covers_only_what_the_config_enables() {
     let recorded = scannable_plugins(
         vec!["ssh-hardening".to_string(), "kernel-hardening".to_string()],
         &config,
-    );
+        &registered(),
+    )
+    .unwrap();
 
     assert_eq!(recorded, vec!["ssh-hardening".to_string()]);
+}
+
+/// The ids a real registry answers to, which is what an explicit schedule is
+/// checked against.
+fn registered() -> Vec<String> {
+    [
+        "kernel-hardening",
+        "ssh-hardening",
+        "firewall-hardening",
+        "pam-hardening",
+        "service-minimisation",
+        "audit-hardening",
+        "permissions-hardening",
+        "mac-hardening",
+    ]
+    .iter()
+    .map(|id| (*id).to_string())
+    .collect()
+}
+
+/// `is_plugin_enabled` answers `true` for an id no plugin declares, so an
+/// unknown id used to pass the filter, reach the history row as covered, and
+/// then match no plugin when the scan ran. Refused rather than dropped: a
+/// dropped id turns a stale schedule into a scan of nothing that reads exactly
+/// like a scan of everything.
+#[test]
+fn an_unregistered_plugin_id_is_refused_rather_than_dropped() {
+    let config = HardenerConfig::default();
+
+    let err = scannable_plugins(vec!["kernel".to_string()], &config, &registered())
+        .expect_err("an id no plugin declares must not pass silently");
+
+    let message = err.to_string();
+    assert!(message.contains("kernel"), "got {message}");
+    assert!(message.contains("kernel-hardening"), "got {message}");
 }
 
 /// An explicitly scheduled plugin list is narrowed by the same rule: naming
@@ -46,7 +83,8 @@ fn an_explicit_schedule_list_is_narrowed_by_the_config_too() {
     let mut config = HardenerConfig::default();
     config.global.disabled_plugins = vec!["ssh-hardening".to_string()];
 
-    let recorded = scannable_plugins(vec!["ssh-hardening".to_string()], &config);
+    let recorded =
+        scannable_plugins(vec!["ssh-hardening".to_string()], &config, &registered()).unwrap();
 
     assert!(recorded.is_empty(), "got {recorded:?}");
 }

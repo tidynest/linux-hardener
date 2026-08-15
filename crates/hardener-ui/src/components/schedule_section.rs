@@ -9,15 +9,21 @@ use crate::utils::SCHEDULE_PRESETS;
 use leptos::prelude::*;
 
 /// All available plugin ids for the checkbox group.
+///
+/// These are the ids the plugins actually declare, which is what the scheduler
+/// stores and now checks its selection against. They were short names here
+/// (`kernel`, `ssh`) that no plugin answers to; nothing rejected them, because
+/// `is_plugin_enabled` returns true for an unknown id, so a schedule saved from
+/// this screen recorded plugins that do not exist.
 const PLUGIN_IDS: &[&str] = &[
-    "kernel",
-    "ssh",
-    "firewall",
-    "pam",
-    "services",
-    "audit",
-    "permissions",
-    "mac",
+    "kernel-hardening",
+    "ssh-hardening",
+    "firewall-hardening",
+    "pam-hardening",
+    "service-minimisation",
+    "audit-hardening",
+    "permissions-hardening",
+    "mac-hardening",
 ];
 
 #[component]

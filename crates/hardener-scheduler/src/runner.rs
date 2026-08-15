@@ -26,11 +26,33 @@ use tracing::{debug, error, info, warn};
 /// so it must be derived from the rule the scan itself obeys. Anything looser
 /// files a history row claiming plugins that never ran, and their absent
 /// findings then read as a clean result.
-fn scannable_plugins(selected: Vec<String>, config: &HardenerConfig) -> Vec<String> {
-    selected
+///
+/// An id no plugin declares is refused rather than dropped. Dropping it would
+/// reproduce the failure this function exists to prevent, one step earlier:
+/// `is_plugin_enabled` answers `true` for an unknown id, so a stale schedule
+/// naming `kernel` rather than `kernel-hardening` used to pass straight
+/// through, be recorded as covered, and select no plugin at all. Silence there
+/// is a scan of nothing that reads as a scan of something.
+fn scannable_plugins(
+    selected: Vec<String>,
+    config: &HardenerConfig,
+    registered: &[String],
+) -> Result<Vec<String>> {
+    if let Some(unknown) = selected
+        .iter()
+        .find(|id| !registered.iter().any(|known| known == *id))
+    {
+        return Err(HardeningError::Config(format!(
+            "Scheduled plugin '{unknown}' is not a registered plugin. \
+             Registered plugins: {}",
+            registered.join(", ")
+        )));
+    }
+
+    Ok(selected
         .into_iter()
         .filter(|id| config.is_plugin_enabled(id))
-        .collect()
+        .collect())
 }
 
 /// Trigger source for a scan session.
@@ -268,18 +290,21 @@ impl ScanRunner {
             Default::default()
         });
 
-        // Determines which plugins to scan
+        // Determines which plugins to scan. The registered set is read once and
+        // serves twice: it is the whole run when no selection is configured,
+        // and it is what an explicit selection is checked against.
+        let registered: Vec<String> = plugin_manager
+            .execution_order()
+            .map_err(|e| HardeningError::Plugin(e.to_string()))?
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect();
         let selected: Vec<String> = if self.plugins.is_empty() {
-            plugin_manager
-                .execution_order()
-                .map_err(|e| HardeningError::Plugin(e.to_string()))?
-                .into_iter()
-                .map(|id| id.to_string())
-                .collect()
+            registered.clone()
         } else {
             self.plugins.clone()
         };
-        let plugins_to_scan = scannable_plugins(selected, &hardener_config);
+        let plugins_to_scan = scannable_plugins(selected, &hardener_config, &registered)?;
 
         // Create database session
         let session_id = self
@@ -288,7 +313,11 @@ impl ScanRunner {
             .await?;
 
         debug!("Created scan session {}", session_id);
-        let scan_results = match plugin_manager.execute_scan(ctx, &hardener_config).await {
+        // One value drives both the row and the run, so the two cannot disagree.
+        let scan_results = match plugin_manager
+            .execute_scan(ctx, &hardener_config, &plugins_to_scan)
+            .await
+        {
             Ok(results) => results,
             Err(e) => {
                 error!("Scan execution failed: {}", e);

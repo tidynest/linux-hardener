@@ -175,6 +175,7 @@ impl PluginManager {
     /// # Arguments
     /// * `ctx` - Execution context containing system information
     /// * `config` - Configuration used to look up each plugin's settings
+    /// * `selection` - Plugin ids this run covers; empty covers every plugin
     ///
     /// # Errors
     /// Returns an error if dependency resolution fails or no plugins are registered.
@@ -186,13 +187,14 @@ impl PluginManager {
     /// manager.resolve_dependencies()?;
     /// let ctx = Context::new();
     /// let config = HardenerConfig::default();
-    /// let results = manager.execute_scan(&ctx, &config).await?;
+    /// let results = manager.execute_scan(&ctx, &config, &[]).await?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub async fn execute_scan(
         &self,
         ctx: &Context,
         config: &HardenerConfig,
+        selection: &[String],
     ) -> Result<Vec<ScanResult>> {
         info!("Starting scan execution");
 
@@ -203,6 +205,19 @@ impl PluginManager {
         let mut all_scan_results = Vec::new();
 
         for plugin_id in execution_order {
+            // A scheduled scan may name a subset of plugins. That selection
+            // used to reach the history row and nothing else, so the row
+            // claimed a subset while every plugin ran.
+            //
+            // Empty means every plugin, which is the documented default of the
+            // caller's own `plugins` field. Narrowing on an empty list would
+            // turn "scan everything" into "scan nothing", and a scan that
+            // silently covers nothing is indistinguishable from a clean one.
+            if !selection.is_empty() && !selection.iter().any(|id| id == plugin_id.as_str()) {
+                debug!("Skipping unselected plugin: {}", plugin_id);
+                continue;
+            }
+
             // The config decides which plugins run, not merely how they behave.
             // This loop resolved each plugin's settings without ever asking
             // whether the config enables it, so a scheduled scan ran plugins
