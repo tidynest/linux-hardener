@@ -1684,6 +1684,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Daywatch's warning and accent colours failed WCAG AA as text on all four of
+  its surfaces, and nothing had ever been able to see it.** The first run of the
+  contrast sweep after its flattener was fixed reported four failing pairings,
+  all in this one theme: `#d97706` at 2.73:1 and 2.95:1 as the score and
+  compliance figures, `#0d9488` at 3.21:1 and 3.47:1 as `.activity-link` and
+  `.timeline-latest-pill`. Against this theme's darkest surface, `--bg-tertiary
+  #e8e3db`, which is the worst case rather than the page background, they read
+  2.49:1 and 2.93:1 against a 4.5 bar. **This is the third instalment of a sweep
+  whose first two are described in the comments beside them**: `--color-good`
+  and `--color-critical` were corrected for exactly this, and these two were
+  left out of both. `--color-warning` becomes `#8e4e04` (5.07:1) and
+  `--color-accent` becomes `#096961` (5.13:1), each holding its own hue and
+  saturation with only lightness lowered, so the palette keeps its amber and
+  teal rather than adopting stock shades. Both land level with the pairs above
+  rather than clearing the bar by as much as possible, which is the standard
+  this theme already set so that no state shouts over another. **The two
+  emphasis partners were also inverted**, `#f59e0b` and `#14b8a6` being lighter
+  than their bases: on a light ground that makes the emphasis state the weaker
+  one, and they now darken to `#794203` and `#085a53`. The same change clears a
+  second class of failure the sweep cannot see, because both tokens are also
+  backgrounds under white text, in 2 and 7 rules, where they read 3.19:1 and
+  3.74:1 and now read 6.48:1 and 6.55:1. `--color-accent-bg` and `--color-focus`
+  keep the original triplet deliberately: they are tints and rings rather than
+  text, and darkening a 12 per cent wash would only reduce the contrast of what
+  sits on it.
+
 - **The computed-cascade contrast sweep measured nothing, on every
   distribution, from the day it was written.** `gui-tests/tests/contrast.spec.js`
   flattens a stylesheet's rules with `if (rule.cssRules) recurse; else if

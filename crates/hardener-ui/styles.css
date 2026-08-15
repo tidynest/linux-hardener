@@ -263,8 +263,30 @@
        so "bright" is the darker of the pair here. */
     --color-good: #036b52;
     --color-good-bright: #065f46;
-    --color-warning: #d97706;
-    --color-warning-bright: #f59e0b;
+    /* The third instalment of the sweep the two comments around this one
+       describe, and the pair they both left out. Found by measurement rather
+       than by reading: `T-CONTRAST` collected 0 pairings on every distribution
+       until #173 fixed its rule flattener, and the first run that could see
+       anything reported these as text below the bar (#d97706 at 2.73:1 on
+       --bg-secondary and 2.95:1 on --bg-primary).
+
+       #d97706 measured 2.49:1 on this theme's darkest surface, --bg-tertiary
+       #e8e3db, which is the worst case rather than the page background.
+       #8e4e04 holds 5.07:1 there and #794203 holds 6.34:1, level with the good
+       and critical pairs above, so no state shouts over another. Hue and
+       saturation are unchanged and only lightness moved, so the palette keeps
+       its own amber rather than adopting a stock one.
+
+       The bright partner is also inverted here, as it was for critical: it was
+       #f59e0b, LIGHTER than its base, which on a light ground makes the
+       emphasis state the weaker one. Emphasis goes darker here.
+
+       This token is a background under white text in 2 rules as well, where
+       #d97706 read 3.19:1. #8e4e04 reads 6.48:1, so the same change clears a
+       second failure that this test cannot see and validate_contrast.py
+       weighs instead. */
+    --color-warning: #8e4e04;
+    --color-warning-bright: #794203;
     /* Both of these are read as TEXT on this theme's four surfaces, and the
        darkest of those is --bg-tertiary #e8e3db, not the page background. The
        previous pair failed there: #dc2626 measured 3.78:1 and #ef4444 measured
@@ -280,8 +302,26 @@
     --color-critical-bright: #991b1b;
     --color-info: #0891b2;
     --color-pending: #a8a29e;
-    --color-accent: #0d9488;
-    --color-accent-hover: #14b8a6;
+    /* The same correction, same reason, same measurement. #0d9488 read 3.21:1
+       on --bg-secondary and 3.47:1 on --bg-primary as the text of
+       `.activity-link` and `.timeline-latest-pill`, and 2.93:1 on
+       --bg-tertiary, the worst case. #096961 holds 5.13:1 there and #085a53
+       holds 6.33:1, again level with the pairs above. Hue and saturation held,
+       lightness lowered.
+
+       `-hover` rather than `-bright` for the partner, but it plays the same
+       role and had the same inversion: #14b8a6 was lighter than its base, so
+       hovering a link made it recede. It now darkens.
+
+       Accent is a background under white text in 7 rules, the most of any
+       token here, where #0d9488 read 3.74:1. #096961 reads 6.55:1.
+
+       --color-accent-bg and --color-focus below still carry the original rgb
+       triplet on purpose: both are tints and rings rather than text, the hue
+       is unchanged by this edit, and darkening a 12 per cent wash would only
+       reduce the contrast of the text sitting on it. */
+    --color-accent: #096961;
+    --color-accent-hover: #085a53;
     --color-focus: rgba(13, 148, 136, 0.3);
     --border: #d6d3d1;
     --border-strong: #a8a29e;
