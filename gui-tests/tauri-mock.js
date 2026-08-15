@@ -565,10 +565,22 @@
     'fedramp': makeComplianceReport('FedRAMP', 63.0, 19, 9, 2),
   };
 
+  // `completed_at` is `Option<String>` on `ScanSessionInfo`, so omitting it
+  // deserialises to None rather than failing, and the fixture validator passes
+  // it deliberately: treating an Option as required would report a mock that
+  // works. It carried `status: 'completed'` with no completion time, which is a
+  // state the backend cannot produce, and `last_scanned_label` correctly read
+  // it as never scanned. Both page subtitles therefore rendered "Not scanned
+  // yet" above a score of 60/100 and eight findings, in all seven themes and
+  // all 222 screenshots, and nothing failed because nothing asserted on them.
+  //
+  // The failed session keeps it null on purpose: that is the honest shape for a
+  // scan that did not finish, and it keeps the None branch reachable.
   const SCAN_HISTORY = [
     {
       session_id: 'session-001',
       started_at: '2026-02-23 10:30:00 UTC',
+      completed_at: '2026-02-23 10:30:42 UTC',
       status: 'completed',
       total_findings: 8,
       total_plugins: 6,
@@ -576,6 +588,7 @@
     {
       session_id: 'session-002',
       started_at: '2026-02-22 15:45:00 UTC',
+      completed_at: '2026-02-22 15:45:31 UTC',
       status: 'completed',
       total_findings: 5,
       total_plugins: 4,
@@ -583,6 +596,7 @@
     {
       session_id: 'session-003',
       started_at: '2026-02-21 09:00:00 UTC',
+      completed_at: null,
       status: 'failed',
       total_findings: 0,
       total_plugins: 2,

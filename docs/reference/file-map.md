@@ -945,9 +945,9 @@ tree on **2026-08-14**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 1987. The eleventh
+The table covers the ten crates under `crates/` and sums to 1989. The eleventh
 workspace member, `src-tauri`, carries 107 more, which is why the tree total the
-evidence ledger records is 2094 and not this table's sum.
+evidence ledger records is 2096 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -960,7 +960,7 @@ evidence ledger records is 2094 and not this table's sum.
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 859 |
 | hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 193 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 63 |
-| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 117 |
+| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 119 |
 
 ### Executor and Mock Test Files
 
@@ -979,7 +979,7 @@ counts measured the same way and on the same date as the table above.
 
 ## GUI Tests (Playwright + Desktop)
 
-114 Playwright tests target the Web UI across every distro in `DISTRO_ORDER`. **Green on all six on 2026-08-08**, 114 of 114 each, in 1.7 to 2.4 minutes against the 600 s ceiling the whole investigation began with the suite exceeding. That reading replaces a 113 figure from 2026-06-29 which had gone stale in both directions: the suite had been rewritten, and it failed on all six on 2026-08-07 for reasons that were environmental rather than about the interface. Those are recorded in [distribution-validation.md](distribution-validation.md#gui-test-suite-2026-08-08) and in issue #48. **The 114 figure is itself now stale.** `gui-tests/tests/settings.spec.js` (T-SET-01..08, 8 tests) and the `gui-tests/output-dir.js` helper landed later, in `dddb7651`, and `hardening.spec.js` gained its `T-DIVG-*` divergence tests (`3b3dc293`) after the 2026-08-08 reading as well. `npx playwright test --list` against the working tree now reports **152 tests in 11 files**; that count has not been run on any container, and is not a substitute for the 114-of-114 result above until it is. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
+114 Playwright tests target the Web UI across every distro in `DISTRO_ORDER`. **Green on all six on 2026-08-08**, 114 of 114 each, in 1.7 to 2.4 minutes against the 600 s ceiling the whole investigation began with the suite exceeding. That reading replaces a 113 figure from 2026-06-29 which had gone stale in both directions: the suite had been rewritten, and it failed on all six on 2026-08-07 for reasons that were environmental rather than about the interface. Those are recorded in [distribution-validation.md](distribution-validation.md#gui-test-suite-2026-08-08) and in issue #48. **The 114 figure is itself now stale.** `gui-tests/tests/settings.spec.js` (T-SET-01..08, 8 tests) and the `gui-tests/output-dir.js` helper landed later, in `dddb7651`, and `hardening.spec.js` gained its `T-DIVG-*` divergence tests (`3b3dc293`) after the 2026-08-08 reading as well. `npx playwright test --list` against the working tree now reports **154 tests in 11 files**; that count has not been run on any container, and is not a substitute for the 114-of-114 result above until it is. 95 desktop tests validate the Tauri app via Hyprland keyboard/screenshot automation. 21 Node.js tests validate desktop UX features via Playwright.
 
 ### Test Files
 

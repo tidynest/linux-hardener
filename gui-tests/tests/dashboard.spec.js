@@ -1,5 +1,5 @@
 // =============================================================================
-// DASHBOARD TESTS (T-DASH-01..09) - Linux Hardener GUI Tests
+// DASHBOARD TESTS (T-DASH-01..10) - Linux Hardener GUI Tests
 // =============================================================================
 //
 // The redesign renamed the heading, replaced the numeric score panel with a
@@ -25,9 +25,25 @@ test.describe('Dashboard', () => {
   // Was `.score-value` reading '--' beside a `.score-max` of '/100'. The score
   // is now a bar that is simply absent until there is something to plot, so the
   // placeholder it used to assert no longer exists to be checked.
+  // Asserts the score hero by class rather than by text through `.first()`.
+  // Two unrelated elements read "Not scanned yet", the hero and the header
+  // subtitle, so `.first()` silently decided which one this test was about and
+  // would have passed on either. The subtitle is T-DASH-10's subject and says
+  // something different; this one is only about the hero.
   test('T-DASH-02: initial state reports nothing scanned', async ({ page }) => {
-    await expect(page.getByText('Not scanned yet').first()).toBeVisible();
+    await expect(page.locator('.score-empty-title')).toHaveText('Not scanned yet');
     await expect(page.getByRole('status')).toHaveCount(0);
+  });
+
+  // T-DASH-10: The header subtitle names the last completed scan
+  //
+  // Its populated branch had never rendered. `last_scanned_label` reads
+  // `completed_at`, which the mock omitted while claiming `status: 'completed'`,
+  // so the subtitle showed the empty-state string over a scanned page in all
+  // seven themes and no test looked at it. The subtitle is history-backed and
+  // the hero is session-backed, so this holds on a freshly loaded page.
+  test('T-DASH-10: header subtitle names the last completed scan', async ({ page }) => {
+    await expect(page.locator('.dashboard-subtitle')).toHaveText(/^Last scanned \S/);
   });
 
   // T-DASH-03: Run Scan button visible and enabled

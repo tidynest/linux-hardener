@@ -89,7 +89,7 @@ const PROFILES: &[(&str, &str)] = &[
     ("custom", "Custom"),
 ];
 
-/// Maps a dry-run decision's plugin id to its `PLUGINS` display name.
+/// Maps a plugin id to its `PLUGINS` display name.
 ///
 /// The backend echoes back the FULL registry id (e.g. `"kernel-hardening"`),
 /// not the short id this file sends it (`"kernel"`) - `src-tauri`'s own
@@ -97,7 +97,11 @@ const PROFILES: &[(&str, &str)] = &[
 /// prefix-of-the-full-id relationship, so matching via `starts_with` here is
 /// the existing convention, not a new one. Falls back to a plain label only
 /// if the backend ever reports a plugin this build does not know about.
-fn plugin_display_name(plugin_id: &str) -> &'static str {
+///
+/// `pub(super)` for `schedule_section`, which listed the same eight areas and
+/// rendered their raw ids as labels, so the Scheduler said `mac-hardening`
+/// where this screen says "MAC System". One table of names, both screens.
+pub(super) fn plugin_display_name(plugin_id: &str) -> &'static str {
     PLUGINS
         .iter()
         .find(|p| plugin_id.starts_with(p.id))

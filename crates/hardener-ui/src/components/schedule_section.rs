@@ -3,6 +3,7 @@
 //! custom cron lives behind an Advanced disclosure and overrides the preset
 //! when non-empty (see `utils::effective_schedule_cron`).
 
+use crate::components::configure_section::plugin_display_name;
 use crate::components::form_helpers;
 use crate::state::SchedulerForm;
 use crate::utils::SCHEDULE_PRESETS;
@@ -15,6 +16,11 @@ use leptos::prelude::*;
 /// (`kernel`, `ssh`) that no plugin answers to; nothing rejected them, because
 /// `is_plugin_enabled` returns true for an unknown id, so a schedule saved from
 /// this screen recorded plugins that do not exist.
+///
+/// These are values, not labels: the checkbox text comes from
+/// [`plugin_display_name`], so this screen and Hardening name the same eight
+/// areas the same way. `tests::every_plugin_id_resolves_to_a_display_name` is
+/// what fails if the two tables drift apart.
 const PLUGIN_IDS: &[&str] = &[
     "kernel-hardening",
     "ssh-hardening",
@@ -91,7 +97,12 @@ pub fn ScheduleSection(form: SchedulerForm) -> impl IntoView {
                                         }
                                         on:change=move |_| toggle_plugin(id_toggle.clone())
                                     />
-                                    {id_owned}
+                                    // The id is the VALUE, never the label. It
+                                    // was both, so this screen read
+                                    // `service-minimisation` where Hardening
+                                    // reads "Service Minimisation" for the same
+                                    // checkbox. Shared table, one set of names.
+                                    {plugin_display_name(&id_owned)}
                                 </label>
                             }
                         })
@@ -144,5 +155,45 @@ pub fn ScheduleSection(form: SchedulerForm) -> impl IntoView {
                 </Show>
             </div>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The two tables are keyed differently on purpose: `PLUGIN_IDS` holds full
+    /// registry ids and `PLUGINS` holds short prefixes, joined by `starts_with`.
+    /// A rename on either side leaves the join silently returning the fallback,
+    /// which renders as "Unknown area" on a live checkbox and is exactly what a
+    /// green suite would otherwise let through.
+    #[test]
+    fn every_plugin_id_resolves_to_a_display_name() {
+        // Top level, and not merely a guard against the loop running zero
+        // times: eight is what the registry declares, so a short list is a
+        // hardening area an operator can no longer schedule at all.
+        assert_eq!(PLUGIN_IDS.len(), 8, "the registry declares eight areas");
+        for id in PLUGIN_IDS {
+            assert_ne!(
+                plugin_display_name(id),
+                "Unknown area",
+                "{id} has no entry in configure_section::PLUGINS"
+            );
+        }
+    }
+
+    /// Two ids collapsing onto one name would give the group two identical
+    /// checkboxes, which reads as a duplicate rather than as a broken join, so
+    /// the check above cannot see it.
+    #[test]
+    fn display_names_are_distinct() {
+        let mut names: Vec<&str> = PLUGIN_IDS
+            .iter()
+            .map(|id| plugin_display_name(id))
+            .collect();
+        names.sort_unstable();
+        let total = names.len();
+        names.dedup();
+        assert_eq!(total, names.len(), "two plugin ids share a display name");
     }
 }

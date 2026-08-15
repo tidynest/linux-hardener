@@ -1,5 +1,5 @@
 // =============================================================================
-// ANALYSIS TESTS - Findings (T-FIND-01..11) + Compliance (T-COMP-01..08)
+// ANALYSIS TESTS - Findings (T-FIND-01..12) + Compliance (T-COMP-01..08)
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
@@ -135,6 +135,17 @@ test.describe('Findings', () => {
     await expect(page.getByRole('tab', { name: 'Scan History' }))
       .toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('tabpanel', { name: 'Scan History' })).toBeVisible();
+  });
+
+  // T-FIND-12: The header subtitle names the last completed scan
+  //
+  // The Dashboard's twin is T-DASH-10, and both had the same hole: the fixture
+  // claimed `status: 'completed'` while omitting `completed_at`, which is an
+  // Option and so deserialised to None, and `last_scanned_label` correctly
+  // reported never-scanned. This page fetches once on construction and again in
+  // its scan handler, so the populated subtitle is there on load.
+  test('T-FIND-12: header subtitle names the last completed scan', async ({ page }) => {
+    await expect(page.locator('.header-subtitle')).toHaveText(/^Last scanned \S/);
   });
 
   // T-FIND-11: A declined exception is named on the finding it failed to cover

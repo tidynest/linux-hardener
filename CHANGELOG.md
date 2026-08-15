@@ -1684,6 +1684,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Scheduler named eight hardening areas by their raw registry ids.** The
+  checkbox group rendered the id itself as its label, so that screen read
+  `mac-hardening` and `service-minimisation` where Hardening reads "MAC System"
+  and "Service Minimisation" for the same eight areas. The ids were correct and
+  are unchanged: they are the values, and the labels now come from
+  `plugin_display_name`, the table Hardening already uses. Two tests hold the
+  join between the two tables, one for a rename leaving a checkbox reading
+  "Unknown area" and one for two ids collapsing onto a single name, which the
+  first cannot see. Both were watched failing before being kept.
+
+- **The Dashboard and Analysis subtitles read "Not scanned yet" over a scanned
+  page**, in all seven themes and every one of the 222 theme screenshots. The
+  fault was in the Playwright fixture rather than either page:
+  `gui-tests/tauri-mock.js` claimed `status: 'completed'` while omitting
+  `completed_at`, which is an `Option<String>` and so deserialised to `None`,
+  and `last_scanned_label` correctly reported never-scanned. The fixture
+  validator passes an absent `Option` deliberately, since calling it required
+  would report a mock that works, so nothing contradicted it. **The populated
+  branch of that label had never rendered in any test or any screenshot**, and
+  it is the one element on each page whose job is to say how current the rest
+  of it is. The fixture now carries a completion time for the two completed
+  sessions and null for the failed one, and both subtitles are asserted
+  (T-DASH-10, T-FIND-12). T-DASH-02 was tightened at the same time: it matched
+  "Not scanned yet" through `.first()`, which silently chose between two
+  unrelated elements saying the same thing, and now names the score hero.
+
 - **A scheduled scan ignored its own plugin selection and recorded it anyway.**
   `ScanRunner` computed `plugins_to_scan` and passed it to `create_session` and
   to nothing else; `PluginManager::execute_scan` took no selection at all and
