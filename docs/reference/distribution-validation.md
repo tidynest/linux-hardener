@@ -125,6 +125,18 @@ replaced them never was a result.** That figure came from `npx playwright test
 recreated first: 152 of 152 on every distribution, none failed, none skipped,
 none flaky, 37 screenshots each.**
 
+**Superseded 2026-08-16 against `hardener 1.5.1 (5b715039)`, all six containers
+recreated first: 154 of 154 on every distribution, none failed, none skipped,
+none flaky, 3.3 to 3.8 minutes each.** The suite grew by two, `T-DASH-10` and
+`T-FIND-12`, which assert the Dashboard and Analysis header subtitles. Their
+subject is the reason this reading was taken rather than inherited: the
+populated branch of `last_scanned_label` had never rendered in any test or any
+of the 222 screenshots, because the Playwright fixture claimed a completed scan
+while omitting its completion time, and both pages therefore printed "Not
+scanned yet" over a score of 60/100. **That is a defect no count in this
+document could have caught**, found by reading the captures rather than the
+results, and the captures at `5b715039` show the subtitle populated.
+
 That run is also the first in which `tests/contrast.spec.js` measured anything
 at all. It landed on 2026-08-13, after every reading above, and its rule
 flattener dropped every style rule it was given, so it collected 0 pairings and
