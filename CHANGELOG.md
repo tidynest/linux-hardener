@@ -1684,6 +1684,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The computed-cascade contrast sweep measured nothing, on every
+  distribution, from the day it was written.** `gui-tests/tests/contrast.spec.js`
+  flattens a stylesheet's rules with `if (rule.cssRules) recurse; else if
+  (rule.style) push`. Since CSS nesting, a plain `CSSStyleRule` carries a
+  `cssRules` collection of its own: empty, but an object, and therefore truthy.
+  Every style rule took the recursion branch into nothing and none was ever
+  pushed, so the sweep collected **0 pairings** and its own vacuity guard
+  failed all seven theme cases with "too few to be a real page". Measured in
+  Chromium against a page with two plain rules and one inside `@media`: the old
+  order collected 0, the corrected order collects all of them, and the check now
+  runs against the shipped function rather than a transcription of it. The fix
+  is to do both, in order, rather than one or the other: a grouping rule has no
+  `.style` and contributes only its children, while a nested rule contributes
+  itself and its children. **The suite was 145 of 152 on all six
+  distributions**, and the seven failures were this one test, so nothing about
+  the colours themselves was in question: `validate_contrast.py` weighs the
+  rules that declare both colours and passed throughout, and the two checks are
+  deliberately disjoint. What was dark is the half that reads the computed
+  cascade in a browser. The spec was added on 2026-08-13 and the last green GUI
+  reading predates it, so this was its first execution in a container (#173).
+
 - **`update_all_docs.py`'s `Last Updated` dates never converged, because its
   own writes reset them.** The date came from `git log -1 -- <file>`, the last
   commit that touched the file for any reason, and a date bump is such a

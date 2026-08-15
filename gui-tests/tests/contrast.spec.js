@@ -102,10 +102,20 @@ async function collectPairs(page, routeName) {
     // Flatten @media and @supports, whose rules are nested one or more levels
     // down. A theme's overrides commonly live inside one, so a walk that read
     // only top-level rules would miss precisely the interesting ones.
+    // Both, in this order, and not an if/else (#173). Since CSS nesting, a
+    // plain CSSStyleRule carries a `cssRules` of its own: empty, but an object,
+    // and therefore truthy. Testing it first sent every style rule down the
+    // recursion into nothing and pushed none of them, so this sweep collected
+    // exactly 0 pairings on all six distributions and its vacuity guard was the
+    // only thing that noticed. Measured in Chromium on the same page: the old
+    // order collected 0 of 2 rules, this one collects 2.
+    //
+    // A grouping rule (@media, @keyframes) has no `.style`, so it contributes
+    // only its children; a nested rule contributes itself and its children.
     const flatten = (rules, out = []) => {
       for (const rule of rules) {
+        if (rule.style) out.push(rule);
         if (rule.cssRules) flatten(Array.from(rule.cssRules), out);
-        else if (rule.style) out.push(rule);
       }
       return out;
     };
