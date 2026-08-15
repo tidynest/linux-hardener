@@ -117,13 +117,21 @@ The on-disk `/etc/resolv.conf` differs per container, 22 bytes naming
 nspawn overrides the file at runtime and both see `127.0.0.53`, which works
 because no `--private-network` means the container shares the host's loopback.
 
-**Both 134-of-134 readings above are now stale.** `gui-tests/tests/settings.spec.js`
-(T-SET-01..08, 8 tests) and the `gui-tests/output-dir.js` helper landed in
-`dddb7651`, after both the `7c81c491` and the `dd85255f` readings. `npx
-playwright test --list` against the working tree now reports **142 tests in 10
-files**. That figure has not been read on any container or in any run; it is a
-static count, not a measured result, and must not be presented as one until a
-suite run against the current tree produces it.
+**Both 134-of-134 readings above are superseded, and the 142 static count that
+replaced them never was a result.** That figure came from `npx playwright test
+--list` against the working tree and had been read on no container.
+
+**Measured 2026-08-15 against `hardener 1.5.1 (4284612d)`, all six containers
+recreated first: 152 of 152 on every distribution, none failed, none skipped,
+none flaky, 37 screenshots each.**
+
+That run is also the first in which `tests/contrast.spec.js` measured anything
+at all. It landed on 2026-08-13, after every reading above, and its rule
+flattener dropped every style rule it was given, so it collected 0 pairings and
+its own vacuity guard failed all seven theme cases (#173, fixed in `05510893`).
+The first repaired run then failed 1 of 152 on a real defect, four Daywatch
+pairings below the WCAG bar, fixed in `4284612d`. **A green suite is not
+evidence of contrast, and for two days this one was green about nothing.**
 
 Two suites in that run did not pass, and neither reading is about a distribution.
 The package suite failed one check on all six, which was a `pipefail` and `grep -q`
