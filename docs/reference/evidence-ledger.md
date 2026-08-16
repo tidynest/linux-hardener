@@ -118,11 +118,18 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 263 | 8 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
 | **Total, 2026-08-11** | **580** | **10** | **2% of viable** |
 
-**That is not the current figure.** Four of those 10 were killed afterwards and
-**6 survive today**, each recorded below as equivalent or unreachable. This row
-read "Total now" until 2026-08-16, while the paragraph 35 lines down already
-said four more had gone: a "now" in a document that keeps being appended to
-dates itself the moment the next entry lands.
+**That is not the current figure.** Three of those 10 were killed afterwards and
+**7 survive today**, each recorded below as equivalent, unreachable or
+acceptable. This row read "Total now" until 2026-08-16, while the paragraph 35
+lines down already said more had gone: a "now" in a document that keeps being
+appended to dates itself the moment the next entry lands.
+
+**The 7 is an enumeration of the survivors recorded below, not a fresh reading.**
+The last measured pass is the 2026-08-12 one, and only a re-run confirms this
+number. It is stated because the alternative is a figure nobody can reconstruct:
+count the survivors this document describes and there are seven, three in
+`executor/ssh.rs` and one each in `file_utils.rs`, `config_loader.rs`,
+`testing.rs` and `logging.rs`.
 
 ### Confirmed by a full re-run under a wider scope, 2026-08-12
 
@@ -150,7 +157,12 @@ minutes: 583 caught, 10 missed, 109 unviable, 0 timeouts.**
 `hardener-core` reads 266 rather than 263 against 321 mutants rather than 319,
 which is source drift since `56245cc7`, not a change in what the tests catch.
 
-**Four of those 10 have since been killed**, leaving 6, of which every one is equivalent or unreachable. Two were in `inventory.rs`, one was the XOR in `parse_stat_fields`, and one was a mutant introduced by the seam added to pin the root half of the user-config rule.
+**Three of those 10 have since been killed**, leaving 7. Two were in
+`inventory.rs` and one was the XOR in `parse_stat_fields`. A fourth kill belongs
+to the same day and is counted nowhere here, because the mutant it removed was
+**introduced** by the seam added to pin the root half of the user-config rule:
+a mutant that did not exist when the 10 were counted cannot reduce them.
+Counting it is how this paragraph used to reach 6.
 `save -> Ok(())` and `load -> Ok(Default::default())` survived because the unit
 tests exercised `save_to` and `load_from` while the front ends call the
 wrappers, and a wrapper is not its inner function. Re-running the file reports
@@ -202,7 +214,7 @@ No timeouts anywhere, so no verdict here is a stalled build reported as a
 survivor. The per-crate survivor lists are the runner's own `missed.txt`, kept
 outside the tree because they are a measurement rather than a document.
 
-**The remaining 10 are identified, not resolved.** G4 asks for each to be
+**The remaining 10 as the 2026-08-12 pass read them, identified rather than resolved.** Three have been killed since, so the current column below sums to 7; the was-column is the pass's own reading and is left as taken. G4 asks for each to be
 killed by a test or recorded with the reason it is acceptable, and for these
 only the first half of that, the identification, is done. Where they sit, and
 what the Phase 4 triage rule makes of them:
@@ -211,13 +223,13 @@ what the Phase 4 triage rule makes of them:
 |---|---|---|
 | `hardener-core/executor/local.rs` | 0, was 20 | **Resolved.** All twenty killed; see below. |
 | `hardener-common/file_utils.rs` | 1, was 14 | **Resolved.** Thirteen killed; the survivor is recorded as acceptable below. |
-| `hardener-core/executor/ssh.rs` | 4, was 25 | **The stated ceiling was wrong, and measuring it is what showed that.** "No SSH host" was recorded as the reason twenty survived; running the pass with the fixture booted and `--run-ignored=all` killed **eleven of them outright, with tests that already existed**. Nobody had ever run the mutation pass against a live container. Two new `#[ignore]`d tests took five more. The four left are described below and none is an ordinary gap: two are unreachable, one is provably equivalent, one needs a change to the container image. |
+| `hardener-core/executor/ssh.rs` | 3, was 25 | **The stated ceiling was wrong, and measuring it is what showed that.** "No SSH host" was recorded as the reason twenty survived; running the pass with the fixture booted and `--run-ignored=all` killed **eleven of them outright, with tests that already existed**. Nobody had ever run the mutation pass against a live container. Two new `#[ignore]`d tests took five more. Three are left and none is an ordinary gap: two are unreachable and one needs a change to the container image. A fourth was recorded as provably equivalent and has since been killed, the equivalence having held only for well-formed `stat` output. |
 | `hardener-common/executor/mock.rs` | 0, was 19 | **Resolved.** `MockExecutor` itself, so the rule called these notes, and **the rule was the wrong reading**: a mock whose `command_exists` returns either answer unnoticed is a fixture that cannot fail, and a fixture bounds what every test above it can detect. All nineteen killed; see below. |
 | `hardener-core/config_loader.rs` | 1, was 16 | **Resolved.** Fifteen killed, three of them by giving the loader a path seam. The one left is **provably equivalent**: `is_running_as_root` replaced by `false`, which is what the real function already returns on a non-root runner. |
 | `hardener-core/context.rs`, `config_validation.rs` | 0, was 24 | **Resolved.** The rule called these notes because neither reaches disk or a host, but `context.rs` is what tells every plugin which distribution and kernel it is running on, and `config_validation.rs` is a guard against path traversal. All twenty-four killed; see below. |
 | `hardener-common/executor/mod.rs` | 0, was 11 | **Resolved.** Reaches a host, so a bug by the rule throughout. All eleven killed; see below. |
 | `hardener-state/signing.rs` | 0, was 7 | A signature, so a bug by the rule, and the sharpest finding of the pass. **All seven killed**; see below. |
-| Remainder | 4, was 25 | **`hardener-state`'s twelve are resolved**, which clears that crate outright: `manager.rs` 5, `audit.rs` 4 and `scan_manager.rs` 3, all reaching disk and so bugs by the rule. **`hardener-core`'s and `hardener-common`'s nine are resolved too**: `plugin.rs` 3, `error.rs` 3, and one each in `config.rs`, `registry.rs` and `inventory.rs`. Four stay, all recorded below: `inventory.rs`'s `load` and `save`, `testing.rs`'s mock, and `logging.rs`'s process-global logger init. |
+| Remainder | 2, was 25 | **`hardener-state`'s twelve are resolved**, which clears that crate outright: `manager.rs` 5, `audit.rs` 4 and `scan_manager.rs` 3, all reaching disk and so bugs by the rule. **`hardener-core`'s and `hardener-common`'s nine are resolved too**: `plugin.rs` 3, `error.rs` 3, and one each in `config.rs`, `registry.rs` and `inventory.rs`. Two stay, both recorded below: `testing.rs`'s mock and `logging.rs`'s process-global logger init. `inventory.rs`'s `load` and `save` were here until they were killed; see the corrected entry below. |
 
 **The two that were killed, and why these first.** `session_is_root` survived
 replacement of the whole function with **both** `true` and `false`, meaning the
@@ -298,7 +310,7 @@ separates them is the sentinel's meaning: `-1` says no exit code exists, while
 `1` is a status a program can genuinely return. A shell told to kill itself is
 the test.
 
-**The `config_loader.rs` twelve, and the four that stay.** This file decides
+**The `config_loader.rs` twelve, and the four that stayed.** This file decides
 which configuration the whole tool believes, and it reaches disk, so the triage
 rule calls its survivors bugs. Twelve are dead and the five tests that killed
 them stand in `crates/hardener-core/src/config_loader/tests.rs`.
@@ -352,16 +364,26 @@ returns `false` there, so no assertion can separate them. Killing it would need
 the suite to run as root, which would change what every other test in the tree
 is asking.
 
-**`inventory`'s `load` and `save` stay, for a structural reason worth stating.**
-Each is a two-line wrapper: resolve the ambient location, then delegate.
-`default_path` is pinned, and `load_from` and `save_to` are pinned by a
-round-trip and a missing-file case, so the composition is covered piecewise; what
-is not pinned is the composition itself, and it cannot be without controlling
-the ambient location. `load()` and `save()` take no arguments by design, and
-three callers depend on that, the CLI's `batch` and two Tauri commands. Giving
-them the seam `ConfigLoader` just got means changing a signature across the CLI
-and the desktop IPC, which is a larger change than two mutants justify while a
-release is pending. Recorded as a deliberate ceiling, with the fix named.
+**`inventory`'s `load` and `save` were killed, and the route was not the one this
+paragraph used to predict.** Each is a two-line wrapper: resolve the ambient
+location, then delegate. `default_path` is pinned, and `load_from` and `save_to`
+are pinned by a round-trip and a missing-file case, so the composition was
+covered piecewise while the composition itself was not.
+
+This section previously recorded them as a permanent ceiling, on the grounds that
+pinning them meant giving `load()` and `save()` the seam `ConfigLoader` got, which
+would change a signature across the CLI's `batch` and two Tauri commands. **That
+was wrong, and it was wrong about the only thing that mattered: no signature
+changed.** `crates/hardener-core/tests/inventory_shared_path.rs` controls the
+ambient location instead, redirecting the config root for the duration of the
+call, so the argument-free wrappers are asked exactly as the front ends call
+them. Re-running the file reports 6 mutants, 6 caught.
+
+It is an integration binary rather than a unit test on purpose: reaching the
+wrappers means moving `XDG_CONFIG_HOME`, and writing an environment variable
+races every other thread in the same binary that reads one. **A ceiling recorded
+without trying the work is a prediction, not a measurement**, which is the same
+lesson `executor/ssh.rs`'s "no SSH host" taught below.
 
 **The host-free four in `ssh.rs`, and the one that indicted the code.**
 `unique_delimiter` survived being replaced by `String::new()` and by
@@ -387,12 +409,26 @@ short line indexes past the end. A three-field line, an empty line, and a
 complete line as the control kill it; the control is not optional, because a
 guard that refused everything would satisfy the first two on its own.
 
-**One stays, and it is equivalent.** `|` becoming `^` in `mode: type_bit |
-permission_bits` agrees with the original in every reachable case: `type_bit` is
-`0o040000` or `0o100000` and `permission_bits` comes from `%a`, which is at most
-`0o7777`, so the operands never share a bit. Only a malformed `stat` line
-carrying an oversized mode field separates them, and pinning that would be
-pinning nonsense.
+**One was recorded as equivalent and is not.** `|` becoming `^` in
+`mode: type_bit | permission_bits` was filed here as agreeing with the original
+in every reachable case: `type_bit` is `0o040000` or `0o100000` and
+`permission_bits` comes from `%a`, which is at most `0o7777`, so the operands
+never share a bit. Only a malformed `stat` line carrying an oversized mode field
+separates them, and pinning that was called pinning nonsense.
+
+**The word doing the work in that argument is "reachable", and it was assumed
+rather than established.** `parse_stat_fields` reads text from the remote host,
+not a trusted structure, so what the mode field holds is whatever arrived. Feed
+it a field that overlaps the type bits and the two operators diverge: under XOR
+they cancel, `mode` becomes `0`, and checkpoint rollback reads mode `0` as "did
+not exist at capture" and **deletes a path that exists**. That is the same
+sentinel conflation this project has already paid for once.
+
+`the_type_bit_is_never_cancelled_by_the_permission_field` in
+`crates/hardener-core/src/executor/ssh/tests.rs` asks exactly that, with
+`"regular file 100000 1234 0 42"`, and the mutant is dead. The contract it pins
+is "an existing path never reports mode 0", which has to hold for whatever
+arrives rather than only for well-formed output.
 
 **The other was not a gap in the tests but a bug in the code, and it is fixed.**
 `||` becoming `&&` in `is_file: file_type.contains("regular") ||
@@ -493,11 +529,13 @@ Both `audit.rs` and `scan_manager.rs` needed a new `tests.rs` beside them,
 because `recover_chain`, `QueryFilter::matches` and `current_timestamp` are all
 private and the existing integration tests cannot reach any of them.
 
-**The last nine of the remainder, and the four that stay.** Verified per file:
+**The last nine of the remainder, and the two that stay.** Verified per file:
 `plugin.rs` 3 mutants 3 caught, `config.rs` 59/54 with 5 unviable, `error.rs`
 18/16 with 2 unviable, `registry.rs` 17/7 with 10 unviable, `inventory.rs` 6/4
 with 2 missed, `testing.rs` 16/1 with 14 unviable and 1 missed, `logging.rs`
-1 mutant and 1 missed.
+1 mutant and 1 missed. **`inventory.rs`'s two were killed after that reading and
+it now reports 6 of 6**; the figure above is left as the pass took it rather than
+rewritten, so the two readings can be told apart.
 
 `plugin.rs`'s two rollback hooks are **provided** trait methods, so the rule
 from `executor/mod.rs` applies again: only an implementor that overrides
@@ -537,15 +575,20 @@ directory and absoluteness, rather than on the whole string, because the prefix
 is the operator's own config directory and naming it would pin this machine
 instead of the contract.
 
-**`load` and `save` beside it stay, and it is the same ceiling as
-`config_loader`'s.** Both resolve through `default_path`, so both read
-`dirs::config_dir()` and therefore the environment. `load` returning
+**`load` and `save` beside it are dead too**, and the reasoning this paragraph
+used to carry is worth keeping as a corrected example. Both resolve through
+`default_path`, so both read `dirs::config_dir()` and therefore the environment.
+That was recorded as making them unpinnable: `load` returning
 `Ok(Default::default())` is indistinguishable from the real thing whenever the
 operator has no inventory file, which is the state of any test runner, and
-pinning `save` would mean a test writing over the maintainer's own
-`hosts.toml`. The injectable pair `load_from` and `save_to` already exists and
-is what the tests use; making `load` and `save` askable means the same path
-injection #155's sibling gap needs.
+pinning `save` was said to mean a test writing over the maintainer's own
+`hosts.toml`.
+
+**Both objections dissolve once the environment is the thing under control
+rather than the obstacle.** `crates/hardener-core/tests/inventory_shared_path.rs`
+points the config root at a directory the test owns, so the runner *does* have an
+inventory file and `save` writes nowhere near a real `hosts.toml`. See the
+`inventory` entry above for the full reading.
 
 `testing.rs`'s survivor is `MockPlugin::divergences_after_rollback`, which is
 test infrastructure and a note by the rule. It is worth one sentence anyway,
@@ -691,8 +734,11 @@ the process, so a signal-killed child really does report no exit code;
 death into a status. Identical code, identical mutant, killable in one executor
 and impossible in the other.
 
-One is **provably equivalent**: `|` becoming `^` in `mode: type_bit |
-permission_bits`, already recorded above.
+One was recorded here as **provably equivalent**, `|` becoming `^` in
+`mode: type_bit | permission_bits`. **It is not, and it is dead**: the
+equivalence held only for well-formed `stat` output, and this parser reads
+whatever the remote host sends. See the corrected entry above. That leaves
+**three** in this file, not four.
 
 One needs a **change to the fixture, not to the tests**.
 `legacy_description -> None` is only observable on a *bare* target, one that
@@ -858,7 +904,7 @@ These are stated once here rather than repeated in every cell below.
   `cargo test --workspace $WORKSPACE_EXCLUDE`, where `WORKSPACE_EXCLUDE` is
   `--exclude linux-hardener-desktop --exclude hardener-ui`. It executes no
   `#[ignore]`d test and no shell suite, and those two exclusions make CI's set
-  strictly smaller than the 1991 recorded above, so a green CI run is a weaker
+  strictly smaller than the 2060 recorded above, so a green CI run is a weaker
   reading than that number. Every grade-3 result in this ledger was produced by
   a person starting a root session, since 2026-08-07 through
   `scripts/test/release-readiness-root.sh`, which batches every root-only suite
@@ -918,14 +964,14 @@ These are stated once here rather than repeated in every cell below.
 
 | Claim | Evidence | Command | Ceiling |
 |---|---|---|---|
-| `audit-hardening` reports the auditd state its checks describe, and its apply writes the rules it names | `crates/hardener-plugins/tests/audit_mock_tests.rs` (41 tests), `crates/hardener-plugins/src/audit/tests.rs` (14 tests), `crates/hardener-plugins/tests/audit_tests.rs` (4 run, 1 `#[ignore]`d behind root), `scripts/test/full-test-suite.sh` (section 12A: the rules file the apply writes, the compiled `audit.rules` line count, and the whole `/etc/audit` tree diffed pre-apply against post-rollback) | `cargo nextest run -p hardener-plugins --test audit_mock_tests` | **Mock only for the scan.** `auditctl` and `augenrules` are asked in no test and in no script in this tree, and `audit-hardening` is absent from the differential suite's plugin list, so every claim about what this plugin *reports* is the plugin agreeing with a fixture it was handed. The apply is better placed: section 12A of `scripts/test/full-test-suite.sh` runs it on a real host and then judges the filesystem rather than the exit status, requiring that the rules file appeared, that a rollback removed it, that `/etc/audit` diffs identical to its pre-apply state, and that the compiled `audit.rules` line count came back. That runs only inside a container, as root, by hand, behind the suite's `--apply` flag, and only in a container no earlier `--apply` run has touched: where the rules file is already present the section reports the reading void rather than passing it. The single real-host Rust test is `#[ignore]`d because it modifies system audit configuration, so a default `cargo test` still asserts nothing about auditd at all. |
+| `audit-hardening` reports the auditd state its checks describe, and its apply writes the rules it names | `crates/hardener-plugins/tests/audit_mock_tests.rs` (44 tests), `crates/hardener-plugins/src/audit/tests.rs` (14 tests), `crates/hardener-plugins/tests/audit_tests.rs` (4 run, 1 `#[ignore]`d behind root), `scripts/test/full-test-suite.sh` (section 12A: the rules file the apply writes, the compiled `audit.rules` line count, and the whole `/etc/audit` tree diffed pre-apply against post-rollback) | `cargo nextest run -p hardener-plugins --test audit_mock_tests` | **Mock only for the scan.** `auditctl` and `augenrules` are asked in no test and in no script in this tree, and `audit-hardening` is absent from the differential suite's plugin list, so every claim about what this plugin *reports* is the plugin agreeing with a fixture it was handed. The apply is better placed: section 12A of `scripts/test/full-test-suite.sh` runs it on a real host and then judges the filesystem rather than the exit status, requiring that the rules file appeared, that a rollback removed it, that `/etc/audit` diffs identical to its pre-apply state, and that the compiled `audit.rules` line count came back. That runs only inside a container, as root, by hand, behind the suite's `--apply` flag, and only in a container no earlier `--apply` run has touched: where the rules file is already present the section reports the reading void rather than passing it. The single real-host Rust test is `#[ignore]`d because it modifies system audit configuration, so a default `cargo test` still asserts nothing about auditd at all. |
 | `firewall-hardening` reports the active backend's rules, and its apply installs the rules it names | `crates/hardener-plugins/tests/firewall_mock_tests.rs` (62 tests), `crates/hardener-plugins/src/firewall/tests.rs` (74 tests), `crates/hardener-plugins/tests/firewall_tests.rs` (6 run, 4 `#[ignore]`d), `scripts/test/differential-suite.sh` (3 firewall rows against `nft list ruleset`), `scripts/containers/nftables-fixture.sh` | `cargo nextest run -p hardener-plugins --test firewall_mock_tests` | Three backends are supported (nftables, firewalld, ufw) and the live oracle asks only the one the fixture container installs, which is nftables. The firewalld and ufw paths are `#[ignore]`d on "only run on systems with that backend installed" and have grade-1 evidence only. A fixture container can also boot the wrong distribution and still pass, so a live result is worth nothing until `/etc/os-release` has been read over the connection that produced it. |
 | `kernel-hardening` reports the sysctl values it names, and its apply leaves the running kernel enforcing them | `crates/hardener-plugins/tests/kernel_mock_tests.rs` (61 tests), `crates/hardener-plugins/src/kernel/tests.rs` (8 tests), `crates/hardener-plugins/src/kernel/persistence/tests.rs` (18 tests), `crates/hardener-plugins/tests/kernel_tests.rs` (4 run, 1 `#[ignore]`d behind root), `scripts/test/differential-suite.sh` (11 parameters read back with `sysctl`, plus 10 seeded looser-than-target controls and 1 seeded stricter-than-baseline control) | `cargo nextest run -p hardener-plugins --test kernel_mock_tests` | The default suite is grade 1 throughout: `/proc/sys` is never touched. The only oracle is the differential suite, and all 11 of its kernel rows are recorded unaskable unless the run holds its own network namespace, because otherwise `/proc/sys/net` belongs to the host and is read-only. **The namespace is the whole of the requirement and a boot is not part of it** (#137): this row said "booted with its own network namespace" until 2026-08-09, and `systemd-nspawn --private-network --pipe` was measured on 2026-08-08 to make `/proc/sys/net` writable with no `--boot` anywhere. Both paths of `run-cross-distro-tests.sh` now declare the namespace, so an unbooted `--pipe` differential run asks all 11 rows rather than recording them unaskable; the boot signal is still required for the services rows, which need systemd as PID 1, and the two are separate signals. **Read on both paths on 2026-08-09, against containers created immediately beforehand: 81 of 81 under `--pipe --private-network` on arch, and booted across all six distributions 86 of 86 on arch with 88 of 88 on each of the other five. Not one kernel row was unaskable in either.** The load-bearing line of that reading is the pre-apply control, which found 10 of the 11 parameters away from target beforehand: the suite's looser-than-baseline seeds were written into `/proc/sys/net` and stood there, which is what a namespace that only claimed to be writable could not produce. A further 7 parameters are declared permanently unaskable and are proven nowhere, because `/proc/sys` outside `/proc/sys/net` is the host's and read-only whatever the namespace. |
-| `mac-hardening` reports whether SELinux or AppArmor is enforcing, and its apply raises the mode it names | `crates/hardener-plugins/tests/mac_mock_tests.rs` (32 tests), `crates/hardener-plugins/src/mac/tests.rs` (18 tests), `crates/hardener-plugins/tests/mac_tests.rs` (4 run, 1 `#[ignore]`d behind root) | `cargo nextest run -p hardener-plugins --test mac_mock_tests` | **No oracle anywhere reads MAC ENFORCEMENT back, and one now reads its no-op case.** `scripts/test/differential-suite.sh` compares this plugin for what it must NOT do: the kernel's LSM registry says this host carries neither SELinux nor AppArmor, and the suite digests `/etc/selinux`, `/etc/apparmor` and `/etc/apparmor.d` either side of the apply to prove nothing was written there. That catches the plugin configuring a MAC system the host does not have. It says nothing about enforcement, and where the registry does name a system the rows are declared unaskable rather than passed. Live runs do exist: `crates/hardener-plugins/tests/mac_tests.rs` scans the host by default, and `scripts/test/full-test-suite.sh` scans, dry-runs and applies this plugin inside a container, so `getenforce` and `aa-status` are reached through the real executor on any host carrying them. Every one of those runs judges an exit status, a plugin id, a non-zero duration or the tool's own result document, and none holds what those tools answer against what the plugin reported. The enforcing comparison would live in the differential suite, and cannot: loading an LSM policy is host-global, so a container cannot be given the question (#18). The mock decides which of the two systems is present by planting `/sys/fs/selinux` metadata, so the detection logic is proven against a fixture and never against a host that actually runs either one. |
-| `pam-hardening` reports the password and lockout policy the stack will enforce, including inline overrides | `crates/hardener-plugins/tests/pam_mock_tests.rs` (80 tests), `crates/hardener-plugins/src/pam/tests.rs` (20 tests), `crates/hardener-plugins/src/pam/layer_drift/tests.rs` (8 tests), `crates/hardener-plugins/src/pam/login_defs/tests.rs` (2 tests), `crates/hardener-plugins/tests/pam_tests.rs` (4 run, 1 `#[ignore]`d behind root), `scripts/test/differential-suite.sh` (3 login.defs rows via `chage` and `passwd -S`, 2 pwquality enforcement rows: `module-loaded`, which offers no password at all and holds the PAM stack text against the tool's own minlen findings, and `weak-password-refused`, which carries both probes in the one check and requires the weak password refused and the strong one accepted) | `cargo nextest run -p hardener-plugins --test pam_mock_tests` | Apply deliberately refuses to edit `/etc/pam.d/*` and reports a manual action instead, so the strongest claim available for the stack files is that the tool told the truth about what a person must do, not that it did it. `PASS_MIN_DAYS` is unaskable on Arch, whose shadow is built without the field, so that row is absent from a run on the project's own development distribution. The pwquality oracle needs the module actually loaded, which is a booted container, and neither probe password ever reaches the live PAM stack: both are piped to `pwscore`, libpwquality's own CLI, which applies the same configuration file the module would. That makes the file's consumer the thing answering rather than a second parser, and it leaves the path from a real authentication attempt through PAM to a refusal tested nowhere. |
+| `mac-hardening` reports whether SELinux or AppArmor is enforcing, and its apply raises the mode it names | `crates/hardener-plugins/tests/mac_mock_tests.rs` (34 tests), `crates/hardener-plugins/src/mac/tests.rs` (18 tests), `crates/hardener-plugins/tests/mac_tests.rs` (4 run, 1 `#[ignore]`d behind root) | `cargo nextest run -p hardener-plugins --test mac_mock_tests` | **No oracle anywhere reads MAC ENFORCEMENT back, and one now reads its no-op case.** `scripts/test/differential-suite.sh` compares this plugin for what it must NOT do: the kernel's LSM registry says this host carries neither SELinux nor AppArmor, and the suite digests `/etc/selinux`, `/etc/apparmor` and `/etc/apparmor.d` either side of the apply to prove nothing was written there. That catches the plugin configuring a MAC system the host does not have. It says nothing about enforcement, and where the registry does name a system the rows are declared unaskable rather than passed. Live runs do exist: `crates/hardener-plugins/tests/mac_tests.rs` scans the host by default, and `scripts/test/full-test-suite.sh` scans, dry-runs and applies this plugin inside a container, so `getenforce` and `aa-status` are reached through the real executor on any host carrying them. Every one of those runs judges an exit status, a plugin id, a non-zero duration or the tool's own result document, and none holds what those tools answer against what the plugin reported. The enforcing comparison would live in the differential suite, and cannot: loading an LSM policy is host-global, so a container cannot be given the question (#18). The mock decides which of the two systems is present by planting `/sys/fs/selinux` metadata, so the detection logic is proven against a fixture and never against a host that actually runs either one. |
+| `pam-hardening` reports the password and lockout policy the stack will enforce, including inline overrides | `crates/hardener-plugins/tests/pam_mock_tests.rs` (83 tests), `crates/hardener-plugins/src/pam/tests.rs` (20 tests), `crates/hardener-plugins/src/pam/layer_drift/tests.rs` (8 tests), `crates/hardener-plugins/src/pam/login_defs/tests.rs` (2 tests), `crates/hardener-plugins/tests/pam_tests.rs` (4 run, 1 `#[ignore]`d behind root), `scripts/test/differential-suite.sh` (3 login.defs rows via `chage` and `passwd -S`, 2 pwquality enforcement rows: `module-loaded`, which offers no password at all and holds the PAM stack text against the tool's own minlen findings, and `weak-password-refused`, which carries both probes in the one check and requires the weak password refused and the strong one accepted) | `cargo nextest run -p hardener-plugins --test pam_mock_tests` | Apply deliberately refuses to edit `/etc/pam.d/*` and reports a manual action instead, so the strongest claim available for the stack files is that the tool told the truth about what a person must do, not that it did it. `PASS_MIN_DAYS` is unaskable on Arch, whose shadow is built without the field, so that row is absent from a run on the project's own development distribution. The pwquality oracle needs the module actually loaded, which is a booted container, and neither probe password ever reaches the live PAM stack: both are piped to `pwscore`, libpwquality's own CLI, which applies the same configuration file the module would. That makes the file's consumer the thing answering rather than a second parser, and it leaves the path from a real authentication attempt through PAM to a refusal tested nowhere. |
 | `permissions-hardening` reports the modes and ownership on the paths it names, and its apply sets them | `crates/hardener-plugins/tests/permissions_mock_tests.rs` (40 tests), `crates/hardener-plugins/src/permissions/tests.rs` (14 tests), `crates/hardener-plugins/tests/permissions_tests.rs` (4 run, 1 `#[ignore]`d behind root), `scripts/test/differential-suite.sh` (9 permission rows read back with `stat`) | `cargo nextest run -p hardener-plugins --test permissions_mock_tests` | The live oracle asks `stat` about 9 paths, which covers modes and nothing else: no oracle anywhere reads back ownership or an ACL after an apply. The remote path, where this plugin runs through `SshExecutor`, has grade-1 evidence only. Shadow and gshadow use a no-loosen mask, so a host already stricter than the target is left alone, and the oracle rows are written to accept that rather than to demand equality. |
-| `service-minimisation` reports which units systemd will start at boot, and its apply disables or masks the units it names | `crates/hardener-plugins/tests/services_mock_tests.rs` (21 tests), `crates/hardener-plugins/src/services/tests.rs` (10 tests), `crates/hardener-plugins/tests/services_tests.rs` (4 run, 1 `#[ignore]`d behind root), `scripts/test/differential-suite.sh` (3 rows via `systemctl is-enabled`, `is-active` and `readlink`), `scripts/test/full-test-suite.sh` (section 12B: the mask symlink read off the filesystem after an apply and after a rollback, booted hosts only) | `cargo nextest run -p hardener-plugins --test services_mock_tests` | The smallest mock suite of the eight, at 21 tests against 80 for pam. Under `--pipe` this plugin's scan errors and its apply does nothing, so it joins the compared set only in a booted run; the differential suite declares its rows unaskable rather than letting an empty reading compare equal to an empty reading and pass. `systemctl mask` leaves a link into `/dev/null`, which is the case the rollback guard finds hardest, so this plugin and the checkpoint row below share a failure mode; section 12B of `scripts/test/full-test-suite.sh` is the reading that can catch it, and it needs a booted container run with the suite's `--apply` flag. |
-| `ssh-hardening` reports the effective sshd configuration, including drop-ins and includes, and its apply leaves sshd serving what it reported | `crates/hardener-plugins/tests/ssh_mock_tests.rs` (82 tests), `crates/hardener-plugins/src/ssh/include/tests.rs` (10 tests), `crates/hardener-plugins/src/ssh/dropin/tests.rs` (2 tests), `crates/hardener-plugins/tests/ssh_tests.rs` (7 run, 1 `#[ignore]`d behind root), `scripts/test/differential-suite.sh` (7 rows read back through `sshd -T` itself, plus seeded no-loosen rows and a reload cycle) | `cargo nextest run -p hardener-plugins --test ssh_mock_tests` | The best-evidenced plugin in the tree, because sshd is its own oracle and `sshd -T` cannot be satisfied by this project's parser agreeing with this project's writer. The ceiling is availability, not depth: that oracle runs only inside a container, as root, started by hand. The crypto allow-lists are intersected with `ssh -Q` at runtime, so what a given host ends up offering depends on its OpenSSH build and is not pinned by any test. |
+| `service-minimisation` reports which units systemd will start at boot, and its apply disables or masks the units it names | `crates/hardener-plugins/tests/services_mock_tests.rs` (23 tests), `crates/hardener-plugins/src/services/tests.rs` (10 tests), `crates/hardener-plugins/tests/services_tests.rs` (4 run, 1 `#[ignore]`d behind root), `scripts/test/differential-suite.sh` (3 rows via `systemctl is-enabled`, `is-active` and `readlink`), `scripts/test/full-test-suite.sh` (section 12B: the mask symlink read off the filesystem after an apply and after a rollback, booted hosts only) | `cargo nextest run -p hardener-plugins --test services_mock_tests` | The smallest mock suite of the eight, at 23 tests against 83 for pam. Under `--pipe` this plugin's scan errors and its apply does nothing, so it joins the compared set only in a booted run; the differential suite declares its rows unaskable rather than letting an empty reading compare equal to an empty reading and pass. `systemctl mask` leaves a link into `/dev/null`, which is the case the rollback guard finds hardest, so this plugin and the checkpoint row below share a failure mode; section 12B of `scripts/test/full-test-suite.sh` is the reading that can catch it, and it needs a booted container run with the suite's `--apply` flag. |
+| `ssh-hardening` reports the effective sshd configuration, including drop-ins and includes, and its apply leaves sshd serving what it reported | `crates/hardener-plugins/tests/ssh_mock_tests.rs` (92 tests), `crates/hardener-plugins/src/ssh/include/tests.rs` (10 tests), `crates/hardener-plugins/src/ssh/dropin/tests.rs` (2 tests), `crates/hardener-plugins/tests/ssh_tests.rs` (7 run, 1 `#[ignore]`d behind root), `scripts/test/differential-suite.sh` (7 rows read back through `sshd -T` itself, plus seeded no-loosen rows and a reload cycle) | `cargo nextest run -p hardener-plugins --test ssh_mock_tests` | The best-evidenced plugin in the tree, because sshd is its own oracle and `sshd -T` cannot be satisfied by this project's parser agreeing with this project's writer. The ceiling is availability, not depth: that oracle runs only inside a container, as root, started by hand. The crypto allow-lists are intersected with `ssh -Q` at runtime, so what a given host ends up offering depends on its OpenSSH build and is not pinned by any test. |
 
 ### The two executors
 
