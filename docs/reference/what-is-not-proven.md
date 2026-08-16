@@ -601,12 +601,22 @@ all. It read **134 of 134 on all six distributions on 2026-08-11** against
 configure, history and apply, fleet, scheduler, errors, the `/remote` redirect
 and all seven themes. **That reading is now stale and has not been repeated.**
 `gui-tests/tests/settings.spec.js` (8 tests, covering the Appearance and About
-panes) was added on 2026-08-12 at `dddb7651`, growing the suite to 142 tests
-per distribution, 134 plus those 8 (`npx playwright test --list` inside
-`gui-tests/` confirms 142 today). Nobody has yet run the grown suite across all
-six distributions: the 134-of-134 figure describes the suite as it stood when
-it was measured, not the suite as it now stands, and 142 is a count, not a
-result.
+panes) was added on 2026-08-12 at `dddb7651`, growing the suite to 142 tests per
+distribution.
+
+**The grown suite has since been run, twice, and this paragraph's own caveat is
+discharged.** 152 of 152 on all six distributions on 2026-08-15 at `4284612d`,
+then **154 of 154 on all six on 2026-08-16 at `5b715039`**, none failed, none
+skipped, none flaky, with all six containers destroyed and recreated first.
+`npx playwright test --list` reports 154 in 11 files, and that count is now a
+result rather than a count. Recorded in
+[distribution-validation.md](distribution-validation.md).
+
+The first of those runs is worth keeping in view here, because it is the case
+this document exists for: `contrast.spec.js` had shipped on 2026-08-13 and its
+rule flattener dropped every rule it was given, so it measured **0** colour
+pairings and passed its own vacuity guard's failure. A suite can be green about
+nothing, and for two days this one was.
 
 **What that suite drives is not the desktop application.** It serves the same
 wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of
@@ -620,7 +630,7 @@ failing loudly.
 
 **The mock and the real command set are not the same set.**
 `src-tauri/src/commands.rs` carries 32 `#[tauri::command]` functions;
-`gui-tests/tauri-mock.js` carries 33 `case` labels, and the two lists differ in
+`gui-tests/tauri-mock.js` carries 37 `case` labels, and the two lists differ in
 both directions. `get_host_history` and `run_deep_scan` are real commands the
 frontend calls (`crates/hardener-ui/src/tauri_bindings.rs`, from
 `components/host_panel.rs` and the deep-scan action), and neither has a mock
@@ -632,16 +642,31 @@ are simply untouched by the browser suite.
 `export_report`, `run_scan_filtered` and `run_scan_with_options` run the other
 way: all three have a mock case and none exists in `commands.rs`, so they
 answer a command the frontend never sends. `scripts/validate/validate_gui_mock_fixtures.py`,
-the one validator that reads the mock's payload shapes at all, invokes only 8
-of the 32 real commands (`run_scan`, `run_apply`, `list_plugins`,
-`run_rollback`, `run_fleet_scan`, `generate_compliance_report`,
-`add_policy_exception`, `remove_policy_exception`) to do it, so it neither
-catches the two uncovered real commands nor the three dead mock ones.
+the one validator that reads the mock's payload shapes at all, invokes 11 of the
+32 real commands (`run_scan`, `run_apply`, `list_plugins`, `run_rollback`,
+`run_fleet_scan`, `generate_compliance_report`, `add_policy_exception`,
+`remove_policy_exception`, `get_checkpoints`, `get_checkpoint_detail`,
+`get_scan_history`) to do it, so it neither catches the two uncovered real
+commands nor the three dead mock ones.
 
 The practical reading for an operator: the command-line tool is the surface this
 release has the deepest evidence for; the desktop's interface is now exercised
 automatically against a stubbed backend, and the path from a button to a
 privileged command is still checked by eye.
+
+**That eye-check was carried out on 2026-08-16**, driving the real desktop app
+against the real backend in a headless compositor, and it is worth recording
+what it changes and what it does not. It found five interface defects the
+154-test suite could not: three of them on the Scheduler and Fleet Apply
+screens, which no screenshot in the corpus covers, and one of those was a
+plugin naming inconsistency that a green suite had rendered past for months. It
+also produced one **retracted** finding, where the instrument rather than the
+application was at fault.
+
+None of that moves the paragraphs above. A person driving the application once
+is not coverage, the evidence ledger still has no desktop row, and CI still
+excludes both crates. What it does establish is that the eye-check named here is
+a thing that has actually happened rather than an intention.
 
 ---
 
