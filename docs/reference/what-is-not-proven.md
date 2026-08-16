@@ -482,8 +482,8 @@ Leap container does not present, both being in the allowlist. That is thirteen
 identifiers no container has ever run, against the six that one has.
 
 **No hardware variation is covered and no kernel variation is covered.** Every
-container is `systemd-nspawn`, which shares the host's kernel, so five
-distributions on one machine are five userlands on one kernel. Nothing has been
+container is `systemd-nspawn`, which shares the host's kernel, so six
+distributions on one machine are six userlands on one kernel. Nothing has been
 run on a different CPU, a different kernel version, a different kernel
 configuration, a hardened or vendor kernel, a virtual machine of a different
 hypervisor, or bare metal other than the development machine. The packages

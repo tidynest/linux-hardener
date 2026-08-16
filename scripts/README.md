@@ -1366,9 +1366,12 @@ virtual machine and is issue #18, not a gap in this suite.
 It needs a container that has never been hardened, because that pre-apply
 control requires findings to exist, and it needs `jq` (the suite refuses
 loudly if it is missing). `differential-suite.sh --self-test` runs the pure
-text extractors and every refusal path with no root and no container, 584
-assertions in all, and it reports the same result whether or not the
-environment declares the run booted.
+text extractors and every refusal path with no root and no container, and it
+reports the same result whether or not the environment declares the run booted.
+Its assertion count is deliberately not restated here: it grows with every
+extractor check added and nothing reads it, so it rots unnoticed. Read it off
+the run itself with `--self-test 2>/dev/null | grep -c '^ *ok '`, which was 588
+on 2026-08-16. The 584 that stood here before had gone stale exactly that way.
 
 **How It Works**:
 

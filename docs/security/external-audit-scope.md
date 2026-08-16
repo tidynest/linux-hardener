@@ -138,7 +138,7 @@ security-relevant OSS, a credible funding route given the tool's nature.
 - Verification harnesses: `scripts/test/full-test-suite.sh` and
   `scripts/test/differential-suite.sh`, the latter judging every checked setting
   by asking its real consumer (`sshd -T`, `chage -l`, `stat -c %a`) rather than
-  this project's own parser, driven across the five container distributions by
+  this project's own parser, driven across the six container distributions by
   `scripts/test/run-cross-distro-tests.sh --differential`
 
 ## Logistics decisions (owner: maintainer)

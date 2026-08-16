@@ -590,7 +590,7 @@ and each would otherwise have produced a check that passes on broken code:
 - **`iptables -S` cannot see firewalld.** After a successful apply on Fedora it
   prints three policy lines and nothing else, because every rule firewalld wrote
   lives in `table inet firewalld`. An `iptables -S` oracle matches nothing on
-  three of five distributions, and matching nothing is this suite's pass
+  three of six distributions, and matching nothing is this suite's pass
   condition. Its policy lines are still read, because ufw expresses its default
   disposition there and nowhere else.
 - **Presence is not evidence, because the baseline is not empty.** Fedora's
@@ -606,10 +606,12 @@ and each would otherwise have produced a check that passes on broken code:
 - **A ruleset carries nothing about the next boot.** A firewall started by hand
   renders identically to one that comes back after a reboot, so both rules-based
   rows stayed green against the Arch container whose `ufw` unit had no
-  `multi-user.target.wants` symlink at all. Measured, by comparing the run
-  before the repair existed against the run after it: all 68 assertion lines
-  are byte-identical on all five distributions, so nothing in the suite would
-  have caught the repair regressing. `boot-persistence` asks `systemctl
+  `multi-user.target.wants` symlink at all. Measured when the repair was made,
+  by comparing the run before it existed against the run after, across the five
+  distributions the suite ran at the time: all 68 assertion lines were
+  byte-identical on every one of them, so nothing in the suite would have caught
+  the repair regressing. Not re-measured since Ubuntu joined `DISTRO_ORDER` on
+  2026-08-07, and the conclusion does not depend on the count. `boot-persistence` asks `systemctl
   is-enabled` instead, either side of the apply, and judges on systemd's word
   rather than its exit status: `enabled-runtime` and `static` both exit zero and
   neither survives a reboot.
@@ -659,7 +661,7 @@ work.
 
 **The firewall plugin's pre-apply control is not the finding-count one** the
 other three get. Its only finding is `{backend}-disabled`, and firewalld is
-already active in three of the five containers, so a finding-count control would
+already active in three of the six containers, so a finding-count control would
 fail there against a tool behaving correctly. It asks the stronger question
 instead: was inbound traffic already dropped before the apply? If it was, the
 post-apply check proves nothing whatever it reports.
@@ -667,10 +669,11 @@ post-apply check proves nothing whatever it reports.
 **A reading satisfying a requirement is not always string equality**, which is
 why `requirement_satisfied` carries a direction. `/etc/shadow` and `/etc/gshadow`
 are compared against an allowed-bits mask of `0640`: a stricter mode sets no bit
-the mask disallows and is compliant, so Arch's `0600` and RHEL's `0000` are both
-correct and the tool deliberately leaves them alone. An equality oracle would
-have reported a defect on three of the five distributions against a tool behaving
-exactly as designed. The comparison lives in one place for the same reason the
+the mask disallows and is compliant, so Arch's `0600` and the `0000` of RHEL and
+Fedora are all correct and the tool deliberately leaves them alone. An equality
+oracle would have reported a defect on three of the six distributions against a
+tool behaving exactly as designed. Measured on the 2026-08-15 run: Arch `600`,
+Fedora and RHEL `0`, and Debian, Ubuntu and openSUSE `640`. The comparison lives in one place for the same reason the
 product side keeps its own in `strictness.rs`: a second copy behind the verdict
 question would answer differently for precisely the readings the mask exists for.
 
