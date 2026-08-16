@@ -170,11 +170,13 @@ passed 26; both are described below. **Five dated runs rather than a habit**,
 at 11, 18, 21, 23 and 26 checks: nothing runs this without a person.
 
 **A rollback can now say what it left diverged, and that capability is itself
-unproven by a container run.** Two of the eight plugins, kernel and firewall,
-ask their own subsystem after the reload whether the running host still
-disagrees with what was restored: a managed sysctl that no surviving file
-names, and a `ufw` still enforcing over a restored `/etc/ufw/ufw.conf` that says
-`ENABLED=no`, or the reverse. `RollbackResult.rollback_divergences` carries one
+unproven by a container run.** Kernel and firewall were the first two of the
+eight plugins to ask their own subsystem after the reload whether the running
+host still disagrees with what was restored: a managed sysctl that no surviving
+file names, and a `ufw` still enforcing over a restored `/etc/ufw/ufw.conf` that
+says `ENABLED=no`, or the reverse. **All eight answer now (#142)**, which the
+paragraphs below take up one plugin at a time; the reading in this paragraph was
+taken while only those two did. `RollbackResult.rollback_divergences` carries one
 row per subject a probe examined, and distinguishes a measured disagreement
 (`Diverged`) from a probe that could not answer at all (`Unverifiable`), so an
 empty vector means everything checkable came back rather than that nobody
@@ -182,8 +184,12 @@ looked. The CLI, the GUI rollback modal and the fleet summary all render it,
 the fleet summary as two separate counts. **This is reporting, not
 reconciliation.** No rollback behaviour, exit code or `rollback_success` value
 changed to add it: nothing is restarted, stopped or re-enabled because of what
-the probe found. **The other six plugins are asked nothing**, because no probe
-has been written for them, not because nothing there could diverge.
+the probe found. **The other six were asked nothing when this was written**,
+because no probe had been written for them, not because nothing there could
+diverge. That is no longer the ceiling: the trait method carries no default body,
+so all eight plugins implement it and a ninth could not inherit silence. What
+each of the six actually earned, and which of their answers are ceilings rather
+than readings, is set out below.
 `scripts/test/verify-rollback.sh` gained an eighth arm, TEST 8, which removes
 TEST 1's own baseline-drop-in workaround so that a surviving file does not name
 the seeded parameter, then requires the rollback's own JSON to carry it as
@@ -457,7 +463,8 @@ eight in a booted run.
 Arch rolling, Debian 13 "Trixie", Ubuntu 24.04 LTS "Noble", Fedora 44, Rocky
 Linux 10 and openSUSE Leap 16.0, all built by
 `scripts/containers/create-container.sh`, and the last full cross-distribution
-run was 2026-08-07 with the containers recreated first. Every
+run was 2026-08-14 with the containers recreated first, all six VALIDATED at
+149 declared, 147 passed, 0 failed and 8 skipped. Every
 result and every per-distribution difference is in
 [distribution-validation.md](distribution-validation.md). Four families, not
 five: `DistroFamily` in `crates/hardener-distro/src/lib.rs` has exactly the
@@ -523,8 +530,9 @@ parsing, output shaping and refusal policy over fixtures. Multi-host behaviour
 against real hosts, partial failure part-way across a fleet, and a privilege
 refusal from a host that genuinely refuses are unproven against anything live.
 
-**The remote executor's own default coverage is three tests of fifteen**, and
-those three assert configuration shape and description formatting.
+**The remote executor's own default coverage is three tests of seventeen**, and
+those three assert configuration shape and description formatting. The other
+fourteen are `#[ignore]`d behind `SSH_TEST_HOST`.
 
 Two things bound the risk rather than adding to it. Authentication is key and
 agent based with no password path anywhere in the code, so there is no password
@@ -595,7 +603,9 @@ holds.
 
 **`src-tauri/src/commands.rs` is the single largest uncovered file in the
 workspace**, at 26.60 per cent line coverage with 1115 lines missed across
-thirty command bodies. Its neighbour `src-tauri/src/validation.rs` reaches 91.39
+thirty-two command bodies. The percentage and the missed-line count are the
+2026-08-14 coverage reading; the body count is measured from the file, which
+carries 32 `#[tauri::command]` functions. Its neighbour `src-tauri/src/validation.rs` reaches 91.39
 per cent, so the split is clean and deliberate: the pure validation layer is
 tested and the command bodies that need a Tauri runtime and `pkexec` are not.
 
@@ -713,11 +723,14 @@ and the date of the last such run is in
 [distribution-validation.md](distribution-validation.md).
 
 **A green CI run is a weaker reading than the workspace suite**, because the two
-crate exclusions above make CI's set strictly smaller than the 1991 tests
-`cargo nextest run --workspace` passed on 2026-08-12. That is the same figure
-[evidence-ledger.md](evidence-ledger.md) records for the CI ceiling. Earlier
-readings of the same growing suite were 1693 on 2026-08-07 and 1815 on
-2026-08-08; re-measure this figure rather than copying it forward again.
+crate exclusions above make CI's set strictly smaller than the workspace total.
+CI runs `cargo test`, whose comparable figure is **2060 passed, measured
+2026-08-14**, which is what [evidence-ledger.md](evidence-ledger.md)'s baseline
+records; `cargo nextest run --workspace` read 2054 the same day, the difference
+being the six doctests nextest does not run. Earlier readings of the same growing
+suite were 1693 on 2026-08-07, 1815 on 2026-08-08 and 1991 on 2026-08-12. **The
+1991 stood here, and in the ledger, after the baseline had moved on**;
+re-measure this figure rather than copying it forward again.
 
 **The 42 tests the workspace suite skips, and what each needs:**
 
@@ -761,21 +774,33 @@ file misread `stat` output entirely under a non-English locale
 `dabbb1fe`). Full detail, cluster by cluster, is in
 [evidence-ledger.md](evidence-ledger.md).
 
-**Ten survivors remain, identified but not resolved.**
+**Seven survivors remain, identified but not resolved.**
 `hardener-common/file_utils.rs` keeps one, recorded acceptable because a
 comment can never match a directive name. `hardener-common/logging.rs` keeps
 one, recorded acceptable because the process-global logger it installs panics
 if called twice, so a test exercising it would poison every other test in the
-binary. `hardener-core/executor/ssh.rs` keeps four: two are unreachable over a
+binary. `hardener-core/executor/ssh.rs` keeps three: two are unreachable over a
 real connection, because a signal-killed remote command exits through the
-local ssh client, which never reports the sentinel the mutant touches; one is
-provably equivalent; and one needs a change to the test fixture rather than to
-the code. `hardener-core/config_loader.rs` keeps one, provably equivalent
-under a non-root test runner. `hardener-core/inventory.rs` keeps two, `load`
-and `save`, because pinning them needs a signature change reaching the CLI and
-two Tauri commands, judged a larger change than two mutants justify while a
-release is pending. `hardener-core/testing.rs` keeps one, a test double's own
-method, provably equivalent.
+local ssh client, which never reports the sentinel the mutant touches; and one
+needs a change to the test fixture rather than to the code.
+`hardener-core/config_loader.rs` keeps one, provably equivalent under a non-root
+test runner. `hardener-core/testing.rs` keeps one, a test double's own method,
+provably equivalent.
+
+**This paragraph read "ten" until 2026-08-16, and the three it lost are worth
+naming, because each was recorded here with a reason that turned out to be
+wrong rather than merely old.** `hardener-core/inventory.rs`'s `load` and `save`
+were said to need "a signature change reaching the CLI and two Tauri commands,
+judged a larger change than two mutants justify"; no signature changed, and
+`crates/hardener-core/tests/inventory_shared_path.rs` pins both by controlling
+the ambient config root instead. The fourth in `executor/ssh.rs` was recorded as
+provably equivalent, which held only for well-formed `stat` output, and this
+parser reads whatever a remote host sends. Full detail in
+[evidence-ledger.md](evidence-ledger.md).
+
+**The seven is an enumeration of the survivors described above and in the
+ledger, not a fresh reading.** The last measured pass is 2026-08-12; only a
+`cargo mutants` re-run confirms it.
 
 **Seven of the eleven workspace crates have never been mutation-tested at
 all:** `hardener-plugins` (all eight plugins), `hardener-compliance` (the
