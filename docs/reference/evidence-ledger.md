@@ -108,15 +108,21 @@ integrity-critical crates, `-j 1` throughout, 24 minutes of wall clock:
 | `hardener-core` | 319 | 178 | 94 | 47 | 0 | 35% |
 | **Total as the pass read it** | **700** | **430** | **161** | **109** | **0** | **27%** |
 
-**A hundred and fifty-one of those 161 have since been killed**, all on 2026-08-11, so the
-tree as it stands reads:
+**A hundred and fifty-one of those 161 have since been killed**, all on
+2026-08-11, so the reading at the end of that day was:
 
 | Crate | Caught | Missed | Change |
 |---|---|---|---|
 | `hardener-common` | 152 | 2 | both `session_is_root`, 13 of the 14 in `file_utils.rs`, and all nine left in `executor/mod.rs` |
 | `hardener-state` | 165 | 0 | all seven in `signing.rs`, and the twelve left across `manager.rs`, `audit.rs` and `scan_manager.rs` |
 | `hardener-core` | 263 | 8 | all twenty in `executor/local.rs`, 12 of the 16 in `config_loader.rs`, and the pure functions in `executor/ssh.rs`, one of them by fixing the code the mutant indicted |
-| **Total now** | **580** | **10** | **2% of viable** |
+| **Total, 2026-08-11** | **580** | **10** | **2% of viable** |
+
+**That is not the current figure.** Four of those 10 were killed afterwards and
+**6 survive today**, each recorded below as equivalent or unreachable. This row
+read "Total now" until 2026-08-16, while the paragraph 35 lines down already
+said four more had gone: a "now" in a document that keeps being appended to
+dates itself the moment the next entry lands.
 
 ### Confirmed by a full re-run under a wider scope, 2026-08-12
 
