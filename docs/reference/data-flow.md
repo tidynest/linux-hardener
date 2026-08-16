@@ -698,13 +698,13 @@ command is added or removed: `src/main.rs` (`generate_handler!`), `build.rs`
 | `get_latest_scan` | None | `Option<Vec<ScanResult>>` |
 | `run_apply` | `plugin_ids: Vec<String>`, `config_path: Option<String>` | `Vec<ApplyResult>` |
 | `run_apply_dry_run` | `plugin_ids: Vec<String>`, `config_path: Option<String>` | `Vec<ValidationReport>` |
-| `run_rollback` | `checkpoint_id: String`, `config_path: Option<String>` | `RollbackResult` |
+| `run_rollback` | `checkpoint_id: String` | `RollbackResult` |
 
 **Checkpoints**
 
 | Command | Parameters | Returns |
 |---------|------------|---------|
-| `get_checkpoints` | None | `Vec<CheckpointInfo>` |
+| `get_checkpoints` | None | `CheckpointList` (`checkpoints: Vec<CheckpointInfo>` plus `system_unreadable`, so an unprivileged caller can tell "no privileged checkpoints exist" from "the system database could not be read") |
 | `create_checkpoint` | `name: String` | `String` (checkpoint ID) |
 | `delete_checkpoint` | `checkpoint_id: String` | `bool` |
 | `get_checkpoint_detail` | `checkpoint_id: String` | `CheckpointDetail` |
@@ -715,6 +715,18 @@ command is added or removed: `src/main.rs` (`generate_handler!`), `build.rs`
 |---------|------------|---------|
 | `generate_compliance_report` | `frameworks: Vec<String>` | `Vec<ComplianceReport>` |
 | `export_compliance_report` | `frameworks: Vec<String>`, `format: String`, `output_path: Option<String>` | `String` (file path) |
+
+**Policy exceptions**
+
+Both are pkexec-elevated and are fired by the Accept/Remove control on a finding
+row (`components/findings_tab.rs`). The desktop sends nothing describing the
+host: the CLI re-reads it and pins the value it observes, and refuses a key no
+live finding carries, which is why neither command needs an allow-list here.
+
+| Command | Parameters | Returns |
+|---------|------------|---------|
+| `add_policy_exception` | `plugin_id: String`, `exception_key: String`, `reason: String`, `approved_by: Option<String>`, `ticket: Option<String>`, `expires: Option<String>` | `WrittenException` |
+| `remove_policy_exception` | `plugin_id: String`, `exception_key: String` | `()` |
 
 **History**
 
@@ -1409,9 +1421,12 @@ pub struct Daemon {
 │  │   "Not scanned yet" until a FleetHostScan arrives for it  │
 │  ├─ Severity tally badges (critical / high / medium / low)   │
 │  ├─ Framework score strip, one cell per compliance framework │
-│  └─ Expand row → HostPanel: Compliance detail (per-          │
-│     framework score + pass/fail/manual/NA counts) and        │
-│     collapsible Findings grouped by severity                 │
+│  └─ Expand row → HostPanel, four sections: Compliance        │
+│     detail (per-framework score + pass/fail/manual/NA        │
+│     counts); one collapsible control list per framework      │
+│     (FleetFrameworkPosture::controls); Findings grouped      │
+│     by severity; and the per-host Scan history timeline,     │
+│     read from scheduler.db via get_host_history              │
 └────────┬─────────────────────────────────────────────────────┘
          │
          ▼
@@ -1443,12 +1458,16 @@ impl SeverityTallies {
     pub fn from_results(results: &[ScanResult]) -> Self;
 }
 
-/// Per-framework compliance posture for a fleet host (summary only, no
-/// per-control detail, which already travels in `FleetHostScan::scan_results`).
+/// Per-framework compliance posture for a fleet host: the summary, plus one
+/// verdict per control so the count can be drilled into. The findings behind
+/// each verdict are NOT here - they already travel in
+/// `FleetHostScan::scan_results`, and `ControlOutcome` says how to join the two.
 pub struct FleetFrameworkPosture {
     pub framework: ComplianceFramework,
     /// Score percentage plus pass/fail/manual/NA control counts.
     pub summary: ComplianceSummary,
+    /// One verdict per control the summary counted, in the generator's order.
+    pub controls: Vec<ControlOutcome>,
 }
 
 /// Result for one host in a fleet scan.
