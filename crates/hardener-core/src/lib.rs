@@ -1,7 +1,14 @@
 //! Core crate for the Linux system hardener.
 //!
-//! Provides the plugin trait, executor abstraction, configuration system,
-//! plugin registry, and dependency-ordered plugin manager.
+//! Provides the plugin trait, the configuration system, the plugin registry,
+//! the dependency-ordered plugin manager, and the two real executors,
+//! [`LocalExecutor`] and [`SshExecutor`].
+//!
+//! **It does not define the executor abstraction.** `SystemExecutor` and
+//! `MockExecutor` live in `hardener-common`; this crate implements the trait
+//! and re-exports it beside its implementations, which is why a consumer can
+//! take everything executor-shaped from here. The header used to claim the
+//! abstraction itself, which pointed a reader at the wrong crate.
 
 // Core modules that work without system dependencies
 pub mod plugin;

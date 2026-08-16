@@ -1,3 +1,20 @@
+//! The eight hardening plugins, and the coverage set they declare.
+//!
+//! Each module implements `HardeningPlugin` for one area: [`kernel`], [`ssh`],
+//! [`firewall`], [`pam`], [`services`], [`audit`], [`permissions`] and [`mac`].
+//!
+//! **Every plugin declares its own per-control coverage**, aggregated by
+//! [`compliance_coverage`], and that declaration is what decides whether a
+//! compliance control can be reported at all: a control no plugin covers is
+//! reported as `ManualReview` rather than passed. A plugin that declares a
+//! control must also be able to record an `unchecked` entry when host state
+//! makes the finding unreachable, or the generator reads the silence as
+//! compliance. Five instances of exactly that were found and fixed, and every
+//! plugin now asserts the invariant in its own tests.
+//!
+//! `divergences_after_rollback` has no trait default on purpose, so a ninth
+//! plugin cannot inherit silence about what a rollback left behind.
+
 pub mod audit;
 pub mod firewall;
 pub mod kernel;

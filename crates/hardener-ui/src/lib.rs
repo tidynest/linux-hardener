@@ -1,3 +1,19 @@
+//! The Leptos/WASM desktop frontend.
+//!
+//! Compiled to WASM by trunk and embedded in the Tauri shell; it reaches the
+//! backend only through [`tauri_bindings`], never directly. Seven routes:
+//! Dashboard at `/`, then `analysis`, `hardening`, `fleet`, `fleet-apply`,
+//! `scheduler` and `settings`, with `remote` kept as a redirect to `fleet` so
+//! older links still land.
+//!
+//! **The markup lives in this crate and the styling does not.** Rules are in
+//! `styles.css` beside it, and `cargo build` does not run trunk, so a change to
+//! either is invisible to the desktop app until `trunk build` has rebuilt
+//! `dist/`, which is gitignored and absent from a fresh clone.
+//!
+//! Types shared with the backend come from `hardener-types` rather than being
+//! mirrored here, so there is one definition of each and no copy to drift.
+
 use leptos::prelude::*;
 use leptos_router::{
     NavigateOptions, StaticSegment,

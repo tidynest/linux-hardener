@@ -1,3 +1,17 @@
+//! The Tauri desktop shell: the only bridge between the WASM frontend and the
+//! hardening engine.
+//!
+//! Every capability the GUI has is a command registered here and listed in
+//! [`commands`]. **Adding one means three edits, not one**: the handler in
+//! `commands.rs`, the name in `build.rs`'s COMMANDS list, and an entry in
+//! `capabilities/default.json`. Miss the third and the command exists but is
+//! refused at runtime by its own ACL, which is what the per-command ACLs in
+//! `acl_tests` exist to catch.
+//!
+//! Privileged work is not done in this process. It shells out to the `hardener`
+//! CLI through pkexec, so the desktop app itself never runs as root, and
+//! [`validation`] is the boundary that decides what may be passed across.
+
 #[cfg(test)]
 mod acl_tests;
 mod commands;

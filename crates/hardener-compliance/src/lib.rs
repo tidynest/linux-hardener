@@ -3,7 +3,7 @@
 //! This crate provides:
 //! - Compliance framework definitions (CIS, STIG, NIST, etc.)
 //! - Report generation from scan findings
-//! - Multiple output formats (text, JSON, CSV, HTML)
+//! - Multiple output formats (text, JSON, CSV, HTML, PDF)
 //!
 //! # Architecture
 //!
