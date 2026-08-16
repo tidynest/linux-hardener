@@ -590,7 +590,7 @@ pub enum SystemdAction {
         #[arg(long, value_name = "PATH")]
         binary: Option<std::path::PathBuf>,
 
-        /// Schedule in systemd calendar format (e.g., "dail", "*-*-* 02:00:00").
+        /// Schedule in systemd calendar format (e.g., "daily", "*-*-* 02:00:00").
         #[arg(short, long, default_value = "daily")]
         schedule: String,
     },
