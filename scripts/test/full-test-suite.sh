@@ -537,7 +537,7 @@ test_scan_output_formats() {
 }
 
 test_reports_all_frameworks() {
-    log_header "5. COMPLIANCE REPORTS - ALL FRAMEWORKS"
+    log_header "5. COMPLIANCE REPORTS - 7 OF THE 10 FRAMEWORKS"
 
     for framework in "${FRAMEWORKS[@]}"; do
         run_test "Report --framework $framework" "\"$BINARY\" report --framework \"$framework\""

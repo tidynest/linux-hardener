@@ -503,9 +503,9 @@ sum to 149. Sections run in the order listed, which is not numeric order:
 | 2 | Scan All Plugins | 10 | Full scan, each of the 8 plugins individually, and a multi-plugin scan |
 | 3 | Scan Filters | 8 | All 5 severity levels, --audit, --exit-code, --quiet |
 | 4 | Scan Output Formats | 5 | text and json rendered, csv and html refused at the parse, plus a JSON structure check |
-| 5 | Reports All Frameworks | 7 | cis, stig, nist, pcidss, hipaa, gdpr, iso27001 |
+| 5 | Reports, 7 of the 10 Frameworks | 7 | cis, stig, nist, pcidss, hipaa, gdpr, iso27001. soc2, nist800171 and fedramp are rendered by no run |
 | 6 | Reports All Scenarios | 7 | server, workstation, government, healthcare, financial, gdpr, all |
-| 7 | Report Output Formats | 12 | text, json, csv, html and pdf for CIS, plus a PDF for each of the 7 frameworks |
+| 7 | Report Output Formats | 12 | text, json, csv, html and pdf for CIS, plus a PDF for each of the 7 frameworks the suite covers, not each of the 10 that exist |
 | 8 | Dry-Run All Plugins | 9 | --dry-run for all 8 plugins, plus --all |
 | 9 | Checkpoint Operations | 5 | list, create, list again, show, delete |
 | 10 | Daemon Commands | 2 | status, run-once (daemon start is skipped) |
