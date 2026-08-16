@@ -261,8 +261,10 @@ fn get_firewall_compliance_mappings() -> Vec<ComplianceMapping> {
         // SSG: service_firewalld_enabled
         // refs: nist AC-4/CM-7(b)/CA-3(5)/SC-7(21)/CM-6(a), stigid@ol8
         // OL08-00-040101. SSG carries no pcidss ref; PCI-DSS v4.0 1.4.1 is the
-        // network-security-controls requirement a host firewall satisfies (see
-        // hardener-compliance/src/frameworks/pci.rs).
+        // network-security-controls requirement a host firewall satisfies. That
+        // reading is made here rather than looked up: PCI-DSS ships no curated
+        // catalogue, so this mapping is the definition. The file this line used
+        // to cite, hardener-compliance/src/frameworks/pci.rs, does not exist.
         ComplianceMapping {
             compliance_framework: ComplianceFramework::STIG,
             compliance_control_id: "RHEL-08-040101".to_string(),
@@ -934,7 +936,7 @@ fn not_at_boot_unchecked(backend: &dyn FirewallBackend) -> UncheckedCheck {
 /// Asks systemd to want `backend`'s unit at boot, and reports what that took.
 ///
 /// A unit already wanted at boot is recorded as a skipped no-op rather than as
-/// work done, which is what `docs/development/plugin-authoring.md` and
+/// work done, which is what `docs/contributing/plugin-authoring.md` and
 /// `docs/reference/cli.md` promise of a setting already at its target.
 ///
 /// An undeterminable answer runs the enable anyway: `systemctl enable` is

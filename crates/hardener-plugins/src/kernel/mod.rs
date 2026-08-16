@@ -391,8 +391,15 @@ impl PlannedParameter<'_> {
     }
 }
 
-/// Builds a NIST 800-53 Rev 5 mapping. Title/section follow the project's
-/// authoritative definitions in `hardener-compliance/src/frameworks/nist.rs`.
+/// Builds a NIST 800-53 Rev 5 mapping.
+///
+/// There is no curated NIST catalogue to follow, and there is not meant to be:
+/// `frameworks::curated_controls` returns `Some` only for CIS and ISO 27001,
+/// and every other framework's catalogue is derived from plugin coverage at
+/// report time. **The mapping written here is therefore the source**, not a
+/// copy of one. This comment used to name a nist module in the compliance
+/// crate's frameworks directory as the authority; no such module exists, and
+/// pointing at one inverts which way the definition flows.
 fn nist(id: &str, title: &str, section: &str) -> ComplianceMapping {
     ComplianceMapping {
         compliance_framework: ComplianceFramework::NIST,
@@ -413,8 +420,11 @@ fn stig(id: &str, title: &str) -> ComplianceMapping {
     }
 }
 
-/// Builds a PCI-DSS v4.0 mapping. Control id/title/section follow the project's
-/// authoritative definitions in `hardener-compliance/src/frameworks/pci.rs`.
+/// Builds a PCI-DSS v4.0 mapping.
+///
+/// Same as `nist` above: PCI-DSS ships no curated catalogue, so the id, title
+/// and section written here are the definition rather than a restatement of
+/// one. The pci module this used to cite does not exist either.
 fn pcidss(id: &str, title: &str, section: &str) -> ComplianceMapping {
     ComplianceMapping {
         compliance_framework: ComplianceFramework::PCIDSS,
