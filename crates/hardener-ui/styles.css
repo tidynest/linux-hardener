@@ -3774,8 +3774,15 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .score-honesty {
   margin: var(--space-md) 0 0 0;
-  font-size: var(--font-size-sm);
-  color: var(--text-muted);
+  /* Was --font-size-sm in --text-muted, which made it the smallest, faintest
+     text on a screen headlining a large green number and a "Good" pill. It is
+     the load-bearing sentence of the hero: the score is an average over
+     controls, and a control nobody could verify still contributes 80 of 100 to
+     it (`calculate_framework_score`, deliberately, "slight penalty for
+     uncertainty"). A reader who takes the 87 and not this line has the wrong
+     picture, so weight follows consequence rather than length. */
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 .link-button {
