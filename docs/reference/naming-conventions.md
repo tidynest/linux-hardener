@@ -177,9 +177,21 @@ as new code.
   [Crate Names](#crate-names)). The match is a whole word and case insensitive,
   so `param_name` passes while `param:` does not, and `/etc/pam.d/password-auth`
   reads as the word `auth`.
-- **American spellings**: `authorize`, `color`, `organization`, `initialize`,
+- **American spellings**: `authorize`, `organization`, `initialize`,
   `serialize`, `finalize`, less the verbatim-external exceptions in Core
-  Principle 4.
+  Principle 4. **`color` is in the validator's list but can never warn**: the
+  external-crate branch returns before the issue is recorded, unconditionally
+  (`validate_naming.py`, `check_british_english`), not only on a `printpdf::`,
+  `Rgb::` or `Color::` line. Nothing else on this list is exempt that way:
+  `serialize` is waived only inside a `derive`, a `serde(` line or beside the
+  capitalised trait name.
+
+Both word checks match whole words, so Core Principle 4's own bad example,
+`pub struct ColorScheme`, is out of reach twice over: `\bcolor\b` does not match
+inside `ColorScheme` at all, and the unconditional exemption above would drop it
+even if it did. The same boundary rule is why `authorize_user` passes while a
+bare `authorize` warns. Compound identifiers built on an American stem are
+enforced by review alone.
 - **A trait name ending in `Trait`.**
 
 Both word checks read the whole line, not just the identifier, so a trailing
@@ -189,8 +201,13 @@ skipped entirely.
 ### How test context is decided
 
 The scanner walks each file line by line, keeps a running brace depth, and
-enters test context at `#[cfg(test)]`, `#[test]`, `#[tokio::test]` or a line
-containing `mod tests`, recording the brace depth at that point. It leaves test
+enters test context at `#![cfg(test)]`, `#[cfg(test)]`, `#[test]`,
+`#[tokio::test]` or a line containing `mod test` (which is a substring of
+`mod tests`, so both forms trigger), recording the brace depth at that point.
+The inner `#![cfg(test)]` is checked first and on purpose: it is how a test
+module split out into its own file is gated, and it does not contain the string
+`#[cfg(test)]`, so testing only for the outer form would read such a file as
+production code from its first line. It leaves test
 context when the depth falls back below that mark. Each warning is then counted
 as production or test.
 
@@ -207,9 +224,12 @@ Two consequences are worth knowing before reading a count:
 
 ### The warning count is known noise
 
-Measured 2026-08-02: **0 errors, 108 production warnings, 192 test warnings.**
-Every one of them is an abbreviation; there are currently no British English
-warnings.
+Measured 2026-08-16 on a clean tree: **0 errors, 122 production warnings, 212
+test warnings.** Every one of them is an abbreviation; there were no British
+English warnings at that measurement. The previous reading here, 108 and 192 on
+2026-08-02, is what a fortnight of drift looks like, which is the point of the
+next paragraph: the totals move, so a stale one read as current invents a
+regression that is not there.
 
 They are pre-existing names, plus, in the `auth` group, the PAM configuration
 filenames `system-auth`, `password-auth` and `common-auth`. Those are filenames
@@ -329,8 +349,8 @@ throughout the codebase:
 - `distro` -- Domain term for a Linux distribution (e.g. `distro_name`, `DistroFamily`, `hardener-distro`)
 
 The exemption is per line and per context, not per word. `scripts/validate/validate_naming.py`
-waives one of these four only where the line also matches its allowlist: `#[cfg(`
-or `cfg!` for `cfg`; a `ctx` parameter, binding or field access for `ctx`;
+waives one of these four only where the line also matches its allowlist: `#[cfg(`,
+`#![cfg(` or `cfg!` for `cfg`; a `ctx` parameter, binding or field access for `ctx`;
 `execute_command`, `CommandOutput`, `firewall_cmd` or a `cmd` binding for `cmd`;
 `distro_`, `DistroFamily` or `hardener-distro` for `distro`. The same word
 elsewhere still warns, which is most of the noise described under
@@ -446,12 +466,6 @@ PluginId::new("service_hardening") // Wrong case (use kebab-case, not snake_case
 ```rust
 // Pattern: <Technology><Type>
 
-// ✅ GOOD (Package Managers):
-pub struct AptPackageManager { }
-pub struct DnfPackageManager { }
-pub struct PacmanPackageManager { }
-pub struct ZypperPackageManager { }
-
 // ✅ GOOD (Firewall Backends):
 pub struct FirewalldBackend { }
 pub struct UfwBackend { }
@@ -464,6 +478,13 @@ pub struct NftablesFirewall { }  // Redundant (backend implies firewall context)
 pub struct Firewalld { }         // Missing Backend suffix (inconsistent)
 ```
 
+The firewall backends are the only implementations of this pattern in the tree.
+A matching set of package managers (`AptPackageManager`, `DnfPackageManager`,
+`PacmanPackageManager`, `ZypperPackageManager`) was listed here until it was
+found to be unreferenced and deleted in `3e22d29e` on 2026-08-07. The pattern
+still governs any `<Technology><Type>` adapter added later; there simply is no
+second family of them today.
+
 **Result/Data Structs**:
 ```rust
 // Pattern: Descriptive noun
@@ -475,7 +496,6 @@ pub struct ValidationReport { }
 pub struct Finding { }
 pub struct Change { }
 pub struct Rule { }              // Firewall rule (domain-specific)
-pub struct Package { }           // Package information
 
 // ❌ BAD:
 pub struct ScanRes { }           // Abbreviation
@@ -584,12 +604,12 @@ pub enum Error {              // Too generic
 
 **Core Traits**:
 ```rust
-// ✅ GOOD:
+// ✅ GOOD (every trait the workspace declares):
 pub trait HardeningPlugin { }
-pub trait PackageManager { }
 pub trait FirewallBackend { }       // Firewall backend abstraction
-pub trait DistributionAdapter { }
 pub trait SystemExecutor { }        // Local or SSH command execution
+pub trait ReportFormatter { }       // One compliance output format
+pub trait Notifier { }              // One scheduler notification channel
 
 // ❌ BAD:
 pub trait HardeningPluginTrait { }  // Redundant "Trait" suffix
@@ -702,7 +722,6 @@ pub async fn verify_checkpoint(&self, checkpoint_id: &CheckpointId) -> Result<()
 
 // ✅ GOOD (Domain-specific helpers):
 async fn execute_firewall_cmd(&self, ctx: &Context, args: &[&str]) -> Result<String> { }
-fn execute_apt(&self, args: &[&str]) -> Result<String> { }
 fn build_nft_rule_args(&self, rule: &Rule) -> Vec<String> { }
 fn parse_input_chain_rules(chain_output: &str) -> Vec<Vec<String>> { }
 async fn get_default_zone(&self, ctx: &Context) -> Result<String> { }
@@ -773,12 +792,13 @@ for p in plugins {              // Too short, unclear
 pub fn set_config_directive(content: &str, directive_name: &str, value: &str,
                             format: ConfigFormat, case_sensitive: bool,
                             duplicates: Duplicates) -> String { }
-pub fn validate_package_name(package_name: &str, rules: PackageNameRules) -> Result<()> { }
+pub async fn validate_sshd_config(executor: &dyn SystemExecutor, candidate: &str) -> Result<()> { }
 pub fn select_algorithms(desired: &[&str], supported: &[String]) -> Vec<String> { }
 
 // ❌ BAD:
 pub fn set_config_directive(c: &str, d: &str, v: &str, f: ConfigFormat) -> String { }  // Abbreviations
-pub fn validate_package_name(name: &str, rules: PackageNameRules) -> Result<()> { }    // Ambiguous
+pub async fn validate_sshd_config(executor: &dyn SystemExecutor, config: &str) -> Result<()> { }
+                                  // Ambiguous: the running config, or the one being proposed?
 pub fn select_algorithms(a: &[&str], b: &[String]) -> Vec<String> { }                  // Meaningless
 ```
 
@@ -1359,42 +1379,6 @@ impl HashChain {
 }
 ```
 
-### Package Management Domain
-
-```rust
-// Trait:
-pub trait PackageManager { }
-
-// Structs:
-pub struct AptPackageManager { }
-pub struct DnfPackageManager { }
-pub struct PacmanPackageManager { }
-pub struct ZypperPackageManager { }
-
-pub struct Package {
-    pub package_name: String,
-    pub package_version: String,
-    pub package_architecture: String,
-    pub package_is_security_update: bool,
-}
-
-// Methods:
-impl PackageManager for AptPackageManager {
-    fn update(&self) -> Result<()> { }
-    fn install(&self, packages: &[&str]) -> Result<()> { }
-    fn remove(&self, packages: &[&str]) -> Result<()> { }
-    fn list_installed(&self) -> Result<Vec<Package>> { }
-    fn is_installed(&self, package: &str) -> Result<bool> { }
-    fn security_updates(&self) -> Result<Vec<Package>> { }
-}
-
-// Helper functions:
-fn execute_apt(&self, args: &[&str]) -> Result<String> { }
-pub fn execute_command(command: &str, args: &[&str]) -> Result<String> { }
-pub fn validate_package_name(package_name: &str, rules: PackageNameRules) -> Result<()> { }
-pub fn validate_package_names(packages: &[&str], rules: PackageNameRules) -> Result<()> { }
-```
-
 ### Firewall Management Domain
 
 ```rust
@@ -1827,7 +1811,7 @@ When naming any identifier in this project, verify:
 
 ---
 
-**Last Updated**: 2026-08-07
+## Recent Additions
 
 ### 2025-12-05 (GUI Styling)
 
@@ -1836,8 +1820,6 @@ When naming any identifier in this project, verify:
 - CSS Variables for colours, typography, spacing (e.g., `--bg-primary`, `--accent-green`, `--font-mono`)
 - Component class naming: `kebab-case` (e.g., `.security-score`, `.nav-links`, `.severity-badge`)
 - State class naming: `<component>-<state>` (e.g., `.score-good`, `.score-warning`, `.score-critical`, `.score-pending`)
-
-## Recent Additions
 
 ### 2025-12-05 (WASM Fix)
 
@@ -1961,3 +1943,7 @@ When naming any identifier in this project, verify:
 - Service directive fields: All fields prefixed with `service_` for clarity
 - MAC system enum naming: Direct technology names (SELinux, AppArmor) without prefixes
 - Comprehensive examples added for all new domains
+
+---
+
+**Last Updated**: 2026-08-07
