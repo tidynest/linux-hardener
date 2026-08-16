@@ -838,9 +838,9 @@ hardener batch apply (--all | --host a,b | --ssh user@host) [FLAGS]
 
 Tiered exit codes: `0` = clean; `1` = apply or validation failure; `2` = connect, privilege, or usage error.
 The usage errors refused before any connection are: no hosts selected, an
-unknown `--host` name, a `--config` that will not load under `--execute`, and a
+unknown `--host` name, a `--config` that will not load under `--execute`, a
 selection whose hosts share one checkpoint host key, and an `--output` path whose
-extension contradicts `--format`. All four are judged before anything is
+extension contradicts `--format`. All five are judged before anything is
 contacted, so a refused run costs no fleet work. A fleet report is text or JSON
 only, so a path naming CSV, HTML or PDF contradicts it whichever way `--format`
 is set.
@@ -881,9 +881,13 @@ hosts with nothing to roll back; `1` = at least one checkpoint failed to
 restore, or restored cleanly but whose plugin failed to reload; `2` = at
 least one host-level error, which covers a failed connection, a host without
 root or passwordless sudo, a checkpoint store that could not be read, and a
-rollback task that did not finish. `2` also covers the selection refusals, which
-happen before any connection: no hosts selected, an unknown `--host` name, and a
-selection whose hosts would file their checkpoints under one host key.
+rollback task that did not finish. `2` also covers the refusals that happen
+before any connection: an `--output` path whose extension contradicts `--format`,
+which is judged first of all, no hosts selected, an unknown `--host` name, and a
+selection whose hosts would file their checkpoints under one host key. The last
+of those is judged only under `--execute`, as it is for `batch apply`; a dry-run
+preview takes no checkpoints and so cannot collide. There is no `--config`
+refusal here, because `batch rollback` reads no `config.toml`.
 
 **What a rollback left diverged is reported per host, in full.** Where a
 plugin's probe finds the running system still disagreeing with the
