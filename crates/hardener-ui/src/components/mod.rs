@@ -36,6 +36,9 @@ pub use clipboard::CopyButton;
 pub use compliance_tab::ComplianceTab;
 pub use config_file_card::ConfigFileCard;
 pub use configure_section::ConfigureSection;
+// The module itself stays private; `pages::fleet_apply_page` needs this one
+// helper so the eight areas are named the same on every screen that lists them.
+pub(crate) use configure_section::plugin_display_name;
 pub use confirm_delete::ConfirmDeleteButton;
 pub use exception_modal::{ExceptionDraft, ExceptionModal};
 pub use findings_tab::FindingsTab;

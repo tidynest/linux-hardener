@@ -98,10 +98,17 @@ const PROFILES: &[(&str, &str)] = &[
 /// the existing convention, not a new one. Falls back to a plain label only
 /// if the backend ever reports a plugin this build does not know about.
 ///
-/// `pub(super)` for `schedule_section`, which listed the same eight areas and
-/// rendered their raw ids as labels, so the Scheduler said `mac-hardening`
-/// where this screen says "MAC System". One table of names, both screens.
-pub(super) fn plugin_display_name(plugin_id: &str) -> &'static str {
+/// `pub(crate)` for `schedule_section` and `fleet_apply_page`, which both
+/// listed the same eight areas and rendered their raw ids as labels, so the
+/// Scheduler said `mac-hardening` and Fleet Apply said `audit-hardening` where
+/// this screen says "MAC System" and "Audit Rules". One table of names, three
+/// screens.
+///
+/// Fleet Apply reaches its plugins as `PluginMetadata`, which carries a
+/// `plugin_name` of its own, and that is NOT used: the registry calls them
+/// "Audit Rules Hardening" and "MAC System Hardening", so rendering it would
+/// have replaced a third naming scheme with a fourth rather than removing one.
+pub(crate) fn plugin_display_name(plugin_id: &str) -> &'static str {
     PLUGINS
         .iter()
         .find(|p| plugin_id.starts_with(p.id))

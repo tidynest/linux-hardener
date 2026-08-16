@@ -21,7 +21,9 @@ fn selection_key(
     (mode.to_string(), h, a, p)
 }
 
-use crate::components::{AdhocHostInput, Card, FleetOutcomeRow, Modal, SegmentedControl};
+use crate::components::{
+    AdhocHostInput, Card, FleetOutcomeRow, Modal, SegmentedControl, plugin_display_name,
+};
 use crate::tauri_bindings::{
     invoke_fleet_apply, invoke_fleet_rollback, invoke_list_plugins, invoke_list_remote_hosts,
 };
@@ -231,11 +233,23 @@ pub fn FleetApplyPage() -> impl IntoView {
                     <fieldset class="fleet-plugin-select">
                         <legend>"Plugins (none selected = all)"</legend>
                         {move || {
-                            plugins
+                            // Sorted by the name shown, not by the id sent. The
+                            // ids arrive alphabetical, so labelling them without
+                            // re-sorting would have left the list looking
+                            // unordered the moment it stopped reading like ids.
+                            let mut listed: Vec<(String, &'static str)> = plugins
                                 .get()
                                 .into_iter()
                                 .map(|p| {
                                     let id = p.plugin_id.to_string();
+                                    let name = plugin_display_name(&id);
+                                    (id, name)
+                                })
+                                .collect();
+                            listed.sort_by_key(|(_, name)| *name);
+                            listed
+                                .into_iter()
+                                .map(|(id, name)| {
                                     let i2 = id.clone();
                                     let checked = move || sel_plugins.get().contains(&i2);
                                     let on_toggle = {
@@ -249,7 +263,7 @@ pub fn FleetApplyPage() -> impl IntoView {
                                                 prop:checked=checked
                                                 on:change=on_toggle
                                             />
-                                            {id}
+                                            {name}
                                         </label>
                                     }
                                 })
