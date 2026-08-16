@@ -5,7 +5,7 @@
 `docs/security/archive/2026-02-25-internal-audit/REMEDIATION_TRACKER.md`), which is precisely the right time to buy outside
 eyes.
 
-**Last Updated**: 2026-08-01
+**Last Updated**: 2026-08-16
 
 ---
 
@@ -40,7 +40,9 @@ Tauri desktop backend at `src-tauri/` (package `linux-hardener-desktop`):
 ## In scope
 
 - **The privilege boundary:** pkexec/polkit policy
-  (`packaging/assets/com.tidynest.linux-hardener.policy`), Tauri IPC surface (30 commands,
+  (`packaging/assets/com.tidynest.linux-hardener.policy`), Tauri IPC surface (32
+  commands, the authority being `COMMANDS` in `src-tauri/build.rs` and the
+  `generate_handler!` block in `src-tauri/src/main.rs`, which must agree;
   `src-tauri/src/commands.rs`, `PrivilegedOpGuard`), CLI-as-root paths
   (`apply`, `rollback`, `checkpoint`).
 - **SSH executor and batch paths:** remote command construction and quoting
