@@ -102,8 +102,11 @@ scan does not raise a false HIGH "insecure permissions" finding and apply does
 not attempt a futile change: /boot is reported as an "unchecked" entry with
 fstab guidance instead. Harden the mount rather than the mode - add mask
 options to the /boot line in `/etc/fstab`, for example `fmask=0077,dmask=0077`,
-then remount. The same handling covers msdos, exfat, ntfs, iso9660 and udf
-mounts.
+then remount. The same handling covers msdos, exfat, ntfs, ntfs3, iso9660 and
+udf mounts, which with vfat is the whole of `NON_POSIX_FSTYPES` at
+`crates/hardener-plugins/src/permissions/mod.rs:202`. `ntfs3` was missing from
+this list until 2026-08-16; it is the in-kernel NTFS driver and the one a
+current kernel actually mounts with.
 
 ## Scan reports a permissions finding under /usr/etc, and apply changes nothing
 
