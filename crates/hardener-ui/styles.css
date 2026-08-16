@@ -3286,8 +3286,15 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .plugin-checkboxes {
-  display: flex;
-  flex-wrap: wrap;
+  /* Was flex-wrap with content-sized items, so the eight areas wrapped on their
+     own label widths and landed six-then-two with the second row's remainder
+     empty. A grid gives them shared column edges, which is the whole difference
+     between a list that wrapped and a list that was laid out. auto-fill rather
+     than a hard four, so a narrow window drops to fewer columns instead of
+     squashing eight labels; 11rem clears the longest of them, "Service
+     Minimisation". */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
   gap: 0.75rem;
 }
 
