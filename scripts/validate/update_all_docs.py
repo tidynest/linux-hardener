@@ -81,6 +81,70 @@ def find_project_root() -> Path:
     sys.exit(1)
 
 
+# A diff line that only moves the stamp this tool writes.
+STAMP_LINE = re.compile(r'^[+-]\*\*Last Updated\*\*:\s*\d{4}-\d{2}-\d{2}\s*$')
+
+
+def changed_more_than_the_stamp(root: Path, sha: str, filepath: Path) -> bool:
+    """Whether `sha` changed anything in `filepath` beyond its stamp.
+
+    `git show` rather than a diff against `<sha>^`, so a root commit answers
+    instead of failing on a parent it does not have.
+    """
+    try:
+        diff = subprocess.run(
+            ["git", "show", "--format=", "--unified=0", sha, "--", str(filepath)],
+            capture_output=True, text=True, check=True, cwd=root
+        )
+    except subprocess.CalledProcessError:
+        # Unreadable, so this commit is not skipped: failing towards counting a
+        # commit keeps a real edit, failing the other way silently drops one.
+        return True
+
+    changed = [
+        line for line in diff.stdout.splitlines()
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+    ]
+    return any(not STAMP_LINE.match(line) for line in changed)
+
+
+def git_content_date(root: Path, filepath: Path) -> str | None:
+    """Date of the last commit that changed this file's *content*.
+
+    Not simply `git log -1`. A commit that only rewrites the `Last Updated`
+    header is this tool's own output, and taking it as the answer made every
+    stamp stale the instant it was committed: writing 2026-08-10 into a file
+    made that file's last commit 2026-08-14, so the next run demanded
+    2026-08-14 for a document nobody had edited (#172). Six documents were in
+    that state, and a second `--apply` would have written six false dates that
+    the `doc_date < git_date` guard then makes permanent.
+
+    Skipping those commits converges by construction: a commit that only stamps
+    a date can never become the source of a later stamp.
+
+    **This is the project's one definition of the field**, module level so that
+    `validate_last_updated.py` asks the same question rather than approximating
+    it. That validator used the naive `git log -1` with a seven-day tolerance,
+    which is why it passed while this tool disagreed with itself, and why five
+    stamps sat stale through a green run on 2026-08-16.
+    """
+    try:
+        log = subprocess.run(
+            ["git", "log", "--format=%H %cs", "--", str(filepath)],
+            capture_output=True, text=True, check=True, cwd=root
+        )
+    except subprocess.CalledProcessError:
+        return None
+
+    for line in log.stdout.splitlines():
+        sha, _, date_str = line.partition(" ")
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+            continue
+        if changed_more_than_the_stamp(root, sha, filepath):
+            return date_str
+    return None
+
+
 class DocumentationUpdater:
     def __init__(self, root: Path, apply: bool = False):
         self.root = root
@@ -142,66 +206,10 @@ class DocumentationUpdater:
                         filepath.write_text(new_content)
                     self.log_update("dates", f"{rel_path}: {doc_date} → {git_date}")
 
-    # A diff line that only moves the stamp this tool writes.
-    STAMP_LINE = re.compile(r'^[+-]\*\*Last Updated\*\*:\s*\d{4}-\d{2}-\d{2}\s*$')
-
     def _get_git_date(self, filepath: Path) -> str | None:
-        """Date of the last commit that changed this file's *content*.
-
-        Not simply `git log -1`. A commit that only rewrites the `Last Updated`
-        header is this tool's own output, and taking it as the answer made
-        every stamp stale the instant it was committed: writing 2026-08-10 into
-        a file made that file's last commit 2026-08-14, so the next run
-        demanded 2026-08-14 for a document nobody had edited (#172). Six
-        documents were in that state, and a second `--apply` would have written
-        six false dates that the `doc_date < git_date` guard then makes
-        permanent.
-
-        Skipping those commits converges by construction: a commit that only
-        stamps a date can never become the source of a later stamp.
-        """
-        try:
-            log = subprocess.run(
-                ["git", "log", "--format=%H %cs", "--", str(filepath)],
-                capture_output=True, text=True, check=True,
-                cwd=self.root
-            )
-        except subprocess.CalledProcessError:
-            return None
-
-        for line in log.stdout.splitlines():
-            sha, _, date_str = line.partition(" ")
-            if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
-                continue
-            if self._changed_more_than_the_stamp(sha, filepath):
-                return date_str
-        return None
-
-    def _changed_more_than_the_stamp(self, sha: str, filepath: Path) -> bool:
-        """Whether `sha` changed anything in `filepath` beyond its stamp.
-
-        `git show` rather than a diff against `<sha>^`, so a root commit
-        answers instead of failing on a parent it does not have.
-        """
-        try:
-            diff = subprocess.run(
-                ["git", "show", "--format=", "--unified=0", sha,
-                 "--", str(filepath)],
-                capture_output=True, text=True, check=True,
-                cwd=self.root
-            )
-        except subprocess.CalledProcessError:
-            # Unreadable, so this commit is not skipped: failing towards
-            # counting a commit keeps a real edit, failing the other way
-            # silently drops one.
-            return True
-
-        changed = [
-            line for line in diff.stdout.splitlines()
-            if line.startswith(("+", "-"))
-            and not line.startswith(("+++", "---"))
-        ]
-        return any(not self.STAMP_LINE.match(line) for line in changed)
+        """Thin wrapper: the definition is module level so the validator
+        can import it rather than reimplement it."""
+        return git_content_date(self.root, filepath)
 
     # -------------------------------------------------------------------------
     # 2. file-map.md Stub Entries

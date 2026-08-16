@@ -14,8 +14,11 @@ Exit codes:
 import re
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from update_all_docs import git_content_date  # noqa: E402
 
 # ANSI colour codes
 RED = "\033[0;31m"
@@ -24,8 +27,11 @@ YELLOW = "\033[1;33m"
 BLUE = "\033[0;34m"
 NC = "\033[0m"  # No colour
 
-# Tolerance: dates within this many days are considered current
-STALE_THRESHOLD_DAYS = 7
+# No tolerance. A stamp is either the date its content last changed or it is
+# wrong, which is the question `update_all_docs.py` has always asked and can
+# always answer. Seven days of slack was here so a run a few days after an edit
+# would not nag; what it actually bought was five stamps reported current while
+# the updater was ready to correct every one of them.
 
 
 def find_project_root() -> Path:
@@ -40,21 +46,19 @@ def find_project_root() -> Path:
 
 
 def get_git_last_modified(filepath: Path) -> datetime | None:
-    """Get the last git commit date for a file."""
-    try:
-        result = subprocess.run(
-            ["git", "log", "-1", "--format=%cs", "--", str(filepath)],
-            capture_output=True,
-            text=True,
-            check=True,
-            env={**subprocess.os.environ, "GIT_PAGER": "", "NO_COLOR": "1"},
-        )
-        date_str = result.stdout.strip()
-        # Validate format before parsing
-        if date_str and re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
-            return datetime.strptime(date_str, "%Y-%m-%d")
-    except subprocess.CalledProcessError:
-        pass
+    """The date this file's *content* last changed, per `update_all_docs.py`.
+
+    Imported rather than reimplemented, because two implementations of one
+    field is what went wrong. This asked `git log -1` and allowed seven days of
+    slack; the updater asks for the last commit that changed something other
+    than the stamp and allows none. So the two disagreed by construction, and
+    on 2026-08-16 five stamps were a day behind their own content while this
+    validator reported every one of them current. A tolerance cannot be
+    reconciled with an exact answer; it can only hide it.
+    """
+    date_str = git_content_date(find_project_root(), filepath)
+    if date_str:
+        return datetime.strptime(date_str, "%Y-%m-%d")
     return None
 
 
@@ -221,9 +225,6 @@ def main():
 
     print(f"Found {GREEN}{len(markdown_files)}{NC} markdown files to check\n")
 
-    today = datetime.now()
-    threshold = timedelta(days=STALE_THRESHOLD_DAYS)
-
     stale_files = []
     missing_dates = []
     current_files = []
@@ -256,7 +257,17 @@ def main():
         # than one (header + footer), and each is an independent claim about
         # when the file was last updated.
         for line_no, date_str, doc_date in markers:
-            if git_date > doc_date + threshold:
+            # Archived documents are frozen, and `update_all_docs.py` refuses to
+            # rewrite their stamps. Holding them to a git date the sanctioned
+            # tool will not correct produces a red with no green path, which is
+            # the state this validator was in the moment the tolerance came off:
+            # three archived plans, all moved on 2026-08-01 by a reorganisation
+            # that changed no word in them. The two tools now agree on scope as
+            # well as on the question.
+            if is_archived(rel_path):
+                current_files.append((rel_path, line_no, date_str, "archived"))
+                continue
+            if git_date > doc_date:
                 stale_files.append({
                     "path": rel_path,
                     "line": line_no,
