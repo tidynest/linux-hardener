@@ -622,11 +622,13 @@ drops ssh has locked the operator out, and no other check would notice.
 
 **`boot-persistence` says in its own message whether its row is
 discriminating.** Only Arch is load-bearing there: Fedora, RHEL and openSUSE
-ship firewalld already enabled, and Debian's `ufw` package enables the unit at
-install, so four of the five would read `enabled` without the repair. The
-pass message therefore compares against the pre-apply reading and names which
-case it is, because a wording that read the same on all five would make one row
-of evidence look like five.
+ship firewalld already enabled, and the `ufw` package enables the unit at
+install on Debian and Ubuntu alike, so five of the six read `enabled` without
+the repair. The pass message therefore compares against the pre-apply reading
+and names which case it is, because a wording that read the same on all six
+would make one row of evidence look like six. Measured on the 2026-08-15 run,
+where Arch alone reported that the apply is what enabled the unit and the other
+five reported agreement with a unit already enabled.
 
 **That pre-apply reading asks every candidate unit, and not the one the
 pre-apply ruleset names.** Deriving it from the ruleset was a defect of exactly

@@ -2619,12 +2619,16 @@ run_firewall_checks() {
                     before_found=1
                 fi
                 # Which of the two things a pass may claim. Measured on the
-                # 2026-07-30 run: fedora, rhel and openSUSE ship firewalld
-                # already enabled and debian's ufw package enables the unit at
-                # install, so four of five distributions read `enabled` here
-                # with the repair reverted and only arch is load-bearing. One
-                # wording for all five would make a single row of evidence look
-                # like five rows of it.
+                # 2026-08-15 run: fedora, rhel and openSUSE ship firewalld
+                # already enabled and the ufw package enables the unit at
+                # install on debian and ubuntu alike, so five of six
+                # distributions read `enabled` here with the repair reverted and
+                # only arch is load-bearing. One wording for all six would make
+                # a single row of evidence look like six rows of it.
+                #
+                # The 2026-07-30 reading this replaced said four of five, taken
+                # when the suite ran five distributions. Ubuntu joined
+                # DISTRO_ORDER on 2026-08-07 and reads the same as debian.
                 if [[ -z "$FIREWALL_BOOT_BEFORE" ]]; then
                     before_phrase="no reading was taken before apply, so this row cannot say whether the apply is what did it"
                 elif (( before_found == 0 )); then
