@@ -1613,7 +1613,7 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 
 **Script**: `run-gui-tests.sh`
 
-**Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. Counted directly from `gui-tests/tests/*.spec.js` at commit `dddb7651`: 142 tests (107 literal `test(` call sites, minus the 2 sites that each generate multiple tests at runtime through a loop, plus the 37 tests those two loops generate: `themes.spec.js` over 7 themes x 5 states = 35, and `hardening.spec.js`'s T-DIVG-03 over 2 viewport widths = 2). This has not yet been observed in an actual run; the Ubuntu container has never been run either. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
+**Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. The suite is **154 tests in 11 files**, and that is a result rather than a static count: it ran 154 of 154 on all six distributions on 2026-08-16 at `5b715039`, none failed, skipped or flaky, with every container destroyed and recreated first, Ubuntu included. Recorded in [distribution-validation.md](../docs/reference/distribution-validation.md). The count is still mostly generated rather than literal, which is why `npx playwright test --list` is the way to read it: `themes.spec.js` produces 35 from 7 themes x 5 states, and `hardening.spec.js`'s T-DIVG-03 produces 2 from two viewport widths. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
 
 **Usage**:
 ```bash
