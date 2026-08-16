@@ -570,14 +570,15 @@ not the same as "cannot hurt anyone".**
 architecture it is running on. All five detectors survived `Ok("xyzzy")`, so a
 constant distribution turns distribution-specific hardening into a coin flip
 and a constant kernel version defeats every version-gated check. Each is now
-compared against a **second, independent way of asking**: `/proc/sys/kernel/
-osrelease` against `uname(2)`, `/proc/sys/kernel/hostname` against the hostname
-syscall, the standard library's own `ARCH` constant, a hand-parse of
-`/etc/os-release` against the parser under test. Comparing a detector with
-itself would agree under any constant body, which is exactly what let these
-survive. `read_os_release` survived five constant bodies and is pinned by the
-assignment count, which no single-entry map can match, and `log_audit` survived
-`Ok(())`, reporting every entry as recorded while recording none.
+compared against a **second, independent way of asking**:
+`/proc/sys/kernel/osrelease` against `uname(2)`, `/proc/sys/kernel/hostname`
+against the hostname syscall, the standard library's own `ARCH` constant, a
+hand-parse of `/etc/os-release` against the parser under test. Comparing a
+detector with itself would agree under any constant body, which is exactly what
+let these survive. `read_os_release` survived five constant bodies and is
+pinned by the assignment count, which no single-entry map can match, and
+`log_audit` survived `Ok(())`, reporting every entry as recorded while
+recording none.
 
 **One of those tests was itself vacuous on the first attempt, and the runner
 caught it.** The two distribution detectors were asserted inside `if let
