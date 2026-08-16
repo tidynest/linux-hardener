@@ -14,7 +14,8 @@
 //! so `super` still resolves to `crate::notification::webhook` and every import carried
 //! across unchanged, private items included.
 //!
-//! 33 tests, the largest block in this crate.
+//! The largest test block in this crate. No count is stated here on purpose:
+//! see the note in `hardener-cli`'s `crate::cli::tests`.
 
 use super::*;
 

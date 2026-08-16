@@ -14,7 +14,9 @@
 //! so `super` still resolves to `crate::output` and every import carried
 //! across unchanged, private items included.
 //!
-//! 408 test lines covering the renderers, which are the surface every CLI verdict reaches the operator through.
+//! Covers the renderers, which are the surface every CLI verdict reaches the
+//! operator through. No line count is stated here on purpose: see the note in
+//! `crate::cli::tests`.
 
 use super::*;
 use hardener_core::Finding;

@@ -14,7 +14,7 @@
 //! so `super` still resolves to `crate::db` and every import carried
 //! across unchanged, private items included.
 //!
-//! 289 test lines over the host-aware scan history, the database batch and scheduled scans write.
+//! Covers the host-aware scan history, the database batch and scheduled scans write.
 
 use super::*;
 use tempfile::tempdir;

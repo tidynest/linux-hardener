@@ -14,7 +14,10 @@
 //! so `super` still resolves to `crate::cli` and every import carried
 //! across unchanged, private items included.
 //!
-//! 451 test lines of argument parsing, the second largest block in the crate.
+//! Argument parsing, and one of the larger test blocks in this crate. No line
+//! or test count is stated here on purpose: the figure this header carried was
+//! the file's size on the day it was split out, and the file has grown by two
+//! thirds since without anything noticing.
 
 use super::*;
 use clap::Parser;

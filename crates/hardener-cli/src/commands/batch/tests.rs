@@ -14,7 +14,11 @@
 //! so `super` still resolves to `crate::commands::batch` and every import carried
 //! across unchanged, private items included.
 //!
-//! 2447 lines across 84 tests, the largest inline block anywhere in the workspace and the reason this crate was left until last.
+//! The largest test block in this crate by a wide margin, and the reason this
+//! crate was left until last. It claimed to be the largest in the workspace
+//! until 2026-08-16, which it no longer is: `hardener-plugins`' firewall block
+//! and `hardener-state`'s manager block are both bigger. No line count is
+//! stated here on purpose: see the note in `crate::cli::tests`.
 
 use super::*;
 use hardener_common::types::{
