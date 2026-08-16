@@ -57,6 +57,24 @@ pub fn ScheduleSection(form: SchedulerForm) -> impl IntoView {
                 <span class="toggle-switch-label">"Enable scheduled scanning"</span>
             </label>
 
+            // Everything below is fully interactive while scanning is off, with
+            // nothing to say so. The note deliberately states what the toggle
+            // does NOT: that the settings survive being saved in this state, so
+            // an operator configuring a paused schedule knows the work is kept.
+            //
+            // Two tidier-looking fixes were rejected. `disabled` on these
+            // controls is the honest semantics and is exempt from the contrast
+            // rules, but it makes adjusting a paused schedule mean enabling it
+            // first, and leaving scanning switched on by accident is a worse
+            // outcome than an untidy form. Dimming them lowers the real
+            // contrast of text that is still editable, which trades one
+            // accessibility problem for another.
+            <Show when=move || !form.enabled.get()>
+                <p class="scheduler-override-note">
+                    "These settings are saved, but not used while scanning is off."
+                </p>
+            </Show>
+
             <div class="form-row">
                 <label class="form-label">"Schedule"</label>
                 <select
