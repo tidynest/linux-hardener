@@ -212,7 +212,7 @@ DE testing under v0.4.0 §D, names its issue.
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/containers/create-container.sh` | Create/manage test containers (arch/debian/fedora/rhel/opensuse) |
+| `scripts/containers/create-container.sh` | Create/manage test containers (arch/debian/ubuntu/fedora/rhel/opensuse/arch-nftables) |
 | `scripts/test/root-test-suite.sh` | Comprehensive root test suite |
 | `scripts/test/gui/run-gui-tests.sh` | Web UI Playwright test orchestrator (5 distros) |
 | `scripts/test/gui/gui-test-inner.sh` | Container inner script (HTTP + headless Playwright; dynamically generates index.html from dist/) |

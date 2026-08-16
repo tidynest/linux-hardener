@@ -707,8 +707,10 @@ counterpart: the value after apply must be the value before it. The tool claims
 nothing about these, so any change at all is damage whatever the new value is,
 and the check is written as that invariant rather than as an expected value.
 Hardcoding one would make it distribution-specific for no gain: the same run
-reads `$y$` on four distributions and `$6$` on openSUSE, `0022` on four and
-`0002` on debian.
+reads `$y$` on five distributions and `$6$` on openSUSE, `0022` on four and
+`0002` on debian and ubuntu. Measured on the 2026-08-15 run. Only the first of
+those counts moved when ubuntu joined: it reads `$y$` like debian, but `0002`
+like debian too, so the `0022` group is still arch, fedora, rhel and openSUSE.
 
 **The run applies twice**, and one assertion per reading in
 `IDEMPOTENCE_CHECKS` says the second apply changed nothing: every managed
@@ -881,16 +883,22 @@ The second reader exists because Arch cannot answer `PASS_MIN_DAYS` through
 `chage` at all. Its shadow build has no minimum-days field: `chage -l` prints no
 such line, `chage --help` offers no `-m`, and the word appears nowhere in the
 binary, which rules out a translated label and a privilege difference alike.
-Measured on `shadow 4.20.0.arch1-1`. The other four distributions report the
-label and go on using it.
+Measured on `shadow 4.20.0.arch1-1`, against the five distributions the suite
+ran at the time. The others report the label and go on using it. Ubuntu joined
+on 2026-08-07 and has not been read for this one, and it does not need to be:
+the second reader is consulted wherever the first comes up empty, not on a
+distribution the code names, so a shadow build without the field is handled
+whichever distribution ships it.
 
 Two properties of that arrangement are deliberate.
 
 **The fallback is per directive, not a replacement.** `passwd -S` reports all
 three values and could have replaced `chage` outright, which would be the
-smaller diff. It was not taken: `chage` is proven against four distributions and
-`passwd -S` against none, so swapping the reader would have put four passing
-runs at risk to fix the one that could not pass. The row that needs the second
+smaller diff. It was not taken: `chage` is proven against every distribution the
+suite runs but Arch, and `passwd -S` against none, so swapping the reader would
+have put every passing run at risk to fix the one that could not pass. The
+counts are deliberately not stated: they move with `DISTRO_ORDER` and the
+argument does not. The row that needs the second
 reader uses it; the rows that do not, do not.
 
 **A fallback that answered everything would be invisible**, because it would

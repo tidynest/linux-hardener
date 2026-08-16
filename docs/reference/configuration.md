@@ -183,9 +183,11 @@ distribution reaches it through an `/etc/sysctl.d/99-sysctl.conf` symlink was
 measured false on 2026-08-08: of arch, Debian 13 trixie, Fedora, RHEL and
 openSUSE, none ships such a symlink and only Fedora ships `/etc/sysctl.conf` at
 all. Fedora's copy assigns nothing: it is a comment block that directs the
-reader to `/etc/sysctl.d/`, read 2026-08-08. **No tested distribution ships a
-value in that file**, so the parameter named only there is one an operator
-wrote by hand. What does read it is the procps `sysctl` binary, which
+reader to `/etc/sysctl.d/`, read 2026-08-08. **None of those five ships a value
+in that file**, so the parameter named only there is one an operator wrote by
+hand. The claim is deliberately not written as "no tested distribution": Ubuntu
+joined the matrix on 2026-08-07, the day before this reading, and was not among
+the five put to the question. What does read it is the procps `sysctl` binary, which
 names those four directories plus `/etc/sysctl.conf` and reads the file **last**,
 so an operator running `sysctl --system` by hand, or this tool's own rollback
 reload, lets that file override `99-hardener.conf`. Nothing applies it at boot on

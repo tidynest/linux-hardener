@@ -1007,6 +1007,7 @@ To reproduce the full cross-distro validation from scratch:
 1. **Set up containers** -- `scripts/containers/create-container.sh <distro>` creates each one, at `/var/lib/machines/<container name>`:
    - `sudo ./scripts/containers/create-container.sh arch` (Arch rolling via pacstrap)
    - `sudo ./scripts/containers/create-container.sh debian` (Debian 13 Trixie via debootstrap)
+   - `sudo ./scripts/containers/create-container.sh ubuntu` (Ubuntu 24.04 LTS Noble via debootstrap)
    - `sudo ./scripts/containers/create-container.sh fedora` (Fedora 44 via podman export)
    - `sudo ./scripts/containers/create-container.sh rhel` (Rocky Linux 10 via podman export)
    - `sudo ./scripts/containers/create-container.sh opensuse` (openSUSE Leap 16.0 via podman export)
@@ -1157,7 +1158,13 @@ calls is 113 and understates the suite by 41.
 ### Per-Distro Notes
 
 Recorded on the previous container set. The Chromium package names and paths have
-not been re-checked against Debian 13, Fedora 44, Rocky 10 or Leap 16.0.
+not been re-checked against Debian 13, Fedora 44, Rocky 10 or Leap 16.0, and
+**Ubuntu has never been recorded here at all**: it joined `DISTRO_ORDER` on
+2026-08-07, after this table was taken, and the GUI suite has run green on it
+since without its Chromium path ever being written down. Nothing reads this
+table: `gui-test-inner.sh:225` walks a candidate list and takes the first usable
+binary, falling back to Playwright's own download, which is why six
+distributions pass against a five-row table.
 
 | Distribution | Chromium Path | Notes |
 |--------------|--------------|-------|
