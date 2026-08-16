@@ -1,6 +1,6 @@
 # Evidence Ledger
 
-**Last Updated**: 2026-08-15
+**Last Updated**: 2026-08-16
 
 This release does not claim to be proven bug-free. It claims something narrower
 and checkable: every capability it advertises carries a named piece of evidence
