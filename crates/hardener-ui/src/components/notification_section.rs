@@ -27,6 +27,24 @@ pub fn NotificationSection(form: SchedulerForm) -> impl IntoView {
 
     view! {
         <div class="notification-section">
+            // The two toggles sit on one screen and neither referenced the
+            // other, so this section offered to deliver the results of a
+            // scanner that is switched off, with a recipient and a From address
+            // configured and nothing remarking on it.
+            //
+            // The claim is checked rather than assumed: `Daemon::start` returns
+            // `Config("Scheduler is disabled in configuration")` before it
+            // builds a scheduler, so with this off nothing reaches a dispatcher
+            // on its own. Test Notification is an explicit user action and does
+            // still send, which is why the note says so instead of claiming
+            // these settings do nothing.
+            <Show when=move || !form.enabled.get()>
+                <p class="scheduler-override-note">
+                    "Scheduled scanning is off, so these are not sent automatically. \
+                     Test Notification still sends."
+                </p>
+            </Show>
+
             <h3 class="subsection-title">"Email"</h3>
             <label class="toggle-switch">
                 <input
