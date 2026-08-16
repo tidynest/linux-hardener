@@ -643,15 +643,36 @@ failing loudly.
 
 **The mock and the real command set are not the same set.**
 `src-tauri/src/commands.rs` carries 32 `#[tauri::command]` functions;
-`gui-tests/tauri-mock.js` carries 37 `case` labels, and the two lists differ in
-both directions. `get_host_history` and `run_deep_scan` are real commands the
-frontend calls (`crates/hardener-ui/src/tauri_bindings.rs`, from
+`gui-tests/tauri-mock.js` carries 33 distinct commands over 37 `case` labels,
+four of them appearing in both of the mock's two switch blocks
+(`get_checkpoints`, `run_apply`, `run_apply_dry_run`, `run_scan`). The two lists
+differ in both directions. `get_host_history` and `run_deep_scan` are real
+commands the frontend calls (`crates/hardener-ui/src/tauri_bindings.rs`, from
 `components/host_panel.rs` and the deep-scan action), and neither has a mock
-case: a Playwright run that reached either path would fall through to the
-mock's `default:` arm, which throws an "Unknown command" error naming the
-command it could not answer. No spec file under `gui-tests/` mentions either
-command name, so no test reaches that path to trigger the throw either; both
-are simply untouched by the browser suite.
+case: a Playwright run that reaches either path falls through to the mock's
+`default:` arm, which throws an "Unknown command" error naming the command it
+could not answer.
+
+**The two are not in the same position, and this paragraph said they were until
+2026-08-16.** It claimed no spec file mentions either command name, "so no test
+reaches that path to trigger the throw either; both are simply untouched by the
+browser suite". The premise is true and **the inference does not hold**: a spec
+never names an IPC command that a component fires for it.
+
+- `run_deep_scan` is genuinely untouched. It sits behind a button no spec
+  clicks, and both call sites `match` on the result, so a run that did reach it
+  would surface an error rather than silence.
+- **`get_host_history` is reached on every fleet row expand**, which
+  `T-FLEET-05`, `T-FLEET-08` and `T-FLEET-09` all perform. `HostPanel` fires it
+  from a `spawn_local` on mount and takes the result through
+  `.unwrap_or_default()` at `host_panel.rs:85`, so the mock's throw becomes an
+  empty `Vec` and the panel renders its no-history state. **The per-host history
+  panel is entered by three tests and asserted on by none**, and the throw it
+  provokes is swallowed rather than reported.
+
+The correction matters beyond the one command: "no spec mentions it" was being
+used as a proxy for "no test reaches it", and for anything a component invokes
+on mount the two are unrelated questions.
 `export_report`, `run_scan_filtered` and `run_scan_with_options` run the other
 way: all three have a mock case and none exists in `commands.rs`, so they
 answer a command the frontend never sends. `scripts/validate/validate_gui_mock_fixtures.py`,

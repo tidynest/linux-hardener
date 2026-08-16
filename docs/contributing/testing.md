@@ -116,12 +116,19 @@ sudo ./scripts/containers/create-container.sh arch clean         # Remove contai
 | `opensuse` | `hardener-test-opensuse` |
 | `arch-nftables` (fixture variant, not in `DISTRO_ORDER`) | `hardener-test-nftables` |
 
-**The Ubuntu container is the newest entry and no suite has been run inside it.**
+**The Ubuntu container is the newest entry and is now validated like the rest.**
 It takes the Debian family's code path and the same `debootstrap` bootstrap,
 with `universe` enabled because Ubuntu splits its archive where Debian does not.
-A container existing is not a container that has been run: until a dated result
-appears in [distribution-validation.md](../reference/distribution-validation.md),
-Ubuntu is family-routed rather than validated.
+[distribution-validation.md](../reference/distribution-validation.md) records it
+VALIDATED on 2026-08-14, 149 checks declared and recorded, 147 passed, 0 failed,
+8 skipped, identical to the other five, and green in the GUI suite on the same
+six-distribution runs.
+
+This paragraph said "no suite has been run inside it" until 2026-08-16, and it
+named its own falsification condition in the next sentence: "until a dated
+result appears in distribution-validation.md". The result appeared on 2026-08-07
+and again on 2026-08-14. **A claim that states how to falsify it is only worth
+anything if someone runs the test**, and for nine days nobody did.
 
 Enabling `sshd`, `auditd` and `bluetooth` is a required step, not a best-effort
 one: if it fails the script reports what the service manager said and refuses to
@@ -1458,8 +1465,9 @@ sudo ./scripts/test/run-cross-distro-tests.sh --apply       # Destructive, all d
 
 Iterates through all 6 container types (Arch, Debian, Ubuntu, Fedora, Rocky,
 openSUSE), copies the musl binary into each, and runs the full test suite.
-Ubuntu is in the iteration order but no run against it is dated anywhere, so a
-result from it is a first reading rather than a comparison.
+All six have dated runs, Ubuntu included: 2026-08-07 first, then 2026-08-14 with
+every container recreated beforehand. A result from any of them is a comparison
+rather than a first reading.
 
 ### Single distribution
 
