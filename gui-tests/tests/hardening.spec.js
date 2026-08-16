@@ -1,5 +1,7 @@
 // =============================================================================
-// HARDENING TESTS - Configure (T-CONF-01..10) + History (T-HIST-01..06)
+// HARDENING TESTS - Configure (T-CONF-01..10) + History (T-HIST-01..06,
+// T-HIST-11..13) + Apply (T-APPLY-01..04) + Divergence (T-DIVG-01..05, of
+// which T-DIVG-03 runs once per viewport width, so 5 ids over 6 tests)
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');

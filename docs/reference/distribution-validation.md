@@ -1035,13 +1035,19 @@ To reproduce the full cross-distro validation from scratch:
 
 ## GUI Testing (Web UI -- Playwright)
 
-In addition to CLI testing, the Web UI is validated with Playwright across all 5 distributions.
+In addition to CLI testing, the Web UI is validated with Playwright across all
+six distributions.
 
-> **The GUI figures in this section are older than the CLI ones above.** The last
-> recorded run is 2026-06-29, on the previous container versions, and the
-> Playwright suite has not been re-run since the desktop redesign landed. The
-> spec inventory below is read off the tree and is current; the pass counts are
-> not. Treat this section as a record, not as a present-tense claim.
+> **The current reading is not in this section.** It is the 2026-08-16 run
+> recorded in [Summary](#summary) above: **154 of 154 on every distribution**
+> against `hardener 1.5.1 (5b715039)`, all six containers recreated first, none
+> failed, none skipped, none flaky. Everything below is either infrastructure
+> read off the tree or a dated record kept for its failure analysis.
+>
+> This block previously claimed the last run was 2026-06-29 and that the suite
+> had not been re-run since the desktop redesign. Both were true when written
+> and neither is now, which is the hazard of a second place to record one fact:
+> the Summary was corrected and this copy was not.
 
 ### Summary
 
@@ -1053,23 +1059,26 @@ In addition to CLI testing, the Web UI is validated with Playwright across all 5
 | Rocky Linux | Red Hat | 9 | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
 | openSUSE | SUSE | Leap 15.6 | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
 
-The suite has grown since that baseline, and has since been rewritten. The
-current reading is under
-[GUI Test Suite, 2026-08-08](#gui-test-suite-2026-08-08) below: **114 tests
-across 9 specs, green on all six distributions**. The 2026-06-29 figure of 113
-across five, recorded under
-[v1.1.0 Re-validation](#v110-re-validation-2026-06-28), is superseded and is not
-comparable: the specs were rewritten in between, so the two numbers count
-different tests rather than measuring growth.
+The suite has grown since that baseline, and has since been rewritten. Every
+figure in the table above is superseded by the 2026-08-16 reading in
+[Summary](#summary): **154 tests across 11 specs, 154 of 154 on all six
+distributions**. None of the intermediate figures is comparable to it or to
+each other, because the specs were rewritten between several of them, so the
+numbers count different tests rather than measuring growth:
 
-**Fedora alone has been re-read since, at 121 on 2026-08-09**, the suite having
-grown by the five `T-DIVG-*` tests that #143 added over the rollback modal's
-divergence section. That is deliberately not written into the table above: it is
-one distribution, and a six-distribution row carrying a one-distribution reading
-is the error this document exists to avoid. The other five stand at their
-2026-08-08 figures and have not been asked since. The tests added are
-distribution-independent, being a mock payload and a computed layout, so there
-is no reason to expect them to differ, and no reading says they do not.
+| Reading | Tests | Distributions | Standing |
+|---------|-------|---------------|----------|
+| 2026-02-23 | 84 | 5 | v0.3.3 baseline, table above |
+| 2026-06-29 | 113 | 5 | superseded, specs rewritten after it |
+| 2026-08-08 | 114 | 6 | superseded, [below](#gui-test-suite-2026-08-08) |
+| 2026-08-09 | 121 | Fedora only | superseded, never a six-distribution reading |
+| 2026-08-15 | 152 | 6 | superseded |
+| **2026-08-16** | **154** | **6** | **current** |
+
+The Fedora-only row is kept because it records a rule rather than a result: it
+was deliberately never written into the table, since a six-distribution row
+carrying a one-distribution reading is the error this document exists to avoid.
+The 2026-08-16 run asked all six and settled it.
 
 ### GUI Test Suite, 2026-08-08
 
@@ -1116,31 +1125,34 @@ pointed somewhere other than its cause:
 - **Virtual Display**: none. Xvfb was removed rather than repaired: the config sets `headless: true`, and Fedora's `headless_shell` cannot talk to X at all yet ran the suite, which is the proof that no display was ever wanted. A **font** is required instead, and `require_a_font` refuses to start without one
 - **SPA Server**: `gui-tests/spa-server.py` -- Python HTTP server on port 8787 with client-side routing support (all non-file paths return `index.html`)
 - **Test Index Generation**: `scripts/test/gui/gui-test-inner.sh` dynamically generates the served `index.html` at test-time by reading `dist/index.html`, stripping SRI `integrity` attributes, and injecting `<script src="/tauri-mock.js"></script>` before the first `<script type="module">` tag
-- **Tauri IPC Mock**: `gui-tests/tauri-mock.js` -- JavaScript mock of `window.__TAURI__` injected before WASM loads, covering 31 IPC commands: `run_scan`, `run_scan_filtered`, `run_scan_with_options`, `get_latest_scan`, `run_apply`, `run_apply_dry_run`, `get_checkpoints`, `create_checkpoint`, `delete_checkpoint`, `run_rollback`, `generate_compliance_report`, `export_report`, `export_compliance_report`, `get_scan_history`, `get_scan_session`, `list_plugins`, `get_checkpoint_detail`, `list_remote_hosts`, `save_remote_host`, `delete_remote_host`, `connect_remote`, `disconnect_remote`, `run_remote_scan`, `get_scheduler_config`, `save_scheduler_config`, `test_notification`, `run_fleet_scan`, `run_fleet_apply`, `run_fleet_rollback`, `validate_config`, `pick_config_file`
+- **Tauri IPC Mock**: `gui-tests/tauri-mock.js` -- JavaScript mock of `window.__TAURI__` injected before WASM loads, covering 33 IPC commands: `add_policy_exception`, `connect_remote`, `create_checkpoint`, `delete_checkpoint`, `delete_remote_host`, `disconnect_remote`, `export_compliance_report`, `export_report`, `generate_compliance_report`, `get_checkpoint_detail`, `get_checkpoints`, `get_latest_scan`, `get_scan_history`, `get_scan_session`, `get_scheduler_config`, `list_plugins`, `list_remote_hosts`, `pick_config_file`, `remove_policy_exception`, `run_apply`, `run_apply_dry_run`, `run_fleet_apply`, `run_fleet_rollback`, `run_fleet_scan`, `run_remote_scan`, `run_rollback`, `run_scan`, `run_scan_filtered`, `run_scan_with_options`, `save_remote_host`, `save_scheduler_config`, `test_notification`, `validate_config`. Counted off the mock's `case` labels, not maintained by hand; the two that were missing from this list until 2026-08-16, `add_policy_exception` and `remove_policy_exception`, had been in the mock since the exception controls landed. **This set is not `src-tauri/build.rs`'s `COMMANDS`, and should not be read as it:** the mock answers what the frontend calls, so it carries `run_scan_filtered`, `run_scan_with_options` and `export_report`, which are not registered commands, and omits `get_host_history` and `run_deep_scan`. Registered set: 32, mock set: 33, overlap 30. **Those two omissions are not symmetric, and one of them is a hole in the suite.** `run_deep_scan` sits behind a button no spec clicks, and both its call sites match on the result, so an unmocked call would surface as an error rather than as silence. `get_host_history` is fired unconditionally by `HostPanel` on every row expand, which `T-FLEET-05`, `T-FLEET-08` and `T-FLEET-09` all do; the mock's `default` branch throws `Unknown command`, `host_panel.rs:85` takes it through `.unwrap_or_default()`, and the panel renders its empty-history state with nothing asserting otherwise. The per-host history panel is therefore exercised by three tests and checked by none of them. `validate_gui_mock_fixtures.py` cannot see this: it compares payload shapes for a hand-chosen `PROBES` list, so a command the mock never implements is invisible to it
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (9 Specs, 114 Tests)
+### Spec Inventory (11 Specs, 154 Tests)
 
-Counted off `gui-tests/tests/` on 2026-08-08: 84 tests written out, plus 30 the
-theme spec generates at collection time (5 states x 6 themes). The 2026-08-07
-suite repair rewrote most of these, so the per-spec figures here are a fresh
-count and not the 2026-08-01 one they replace.
-
-This matches the six-distribution reading above, which was re-run at 114 once
-`T-APPLY-01..04` landed.
+Counted off `npx playwright test --list` on 2026-08-16, which is the same count
+the container run of that date executed. **113 `test()` call sites produce 154
+cases**, because three of the sites are parameterised and generate their cases
+at collection time: `themes.spec.js:152` produces 35 screenshots (5 states x 7
+themes), `contrast.spec.js:221` produces one case per theme, and
+`hardening.spec.js:479` produces one per viewport width. Reading the runner
+rather than grepping the sources is therefore deliberate: a count of `test(`
+calls is 113 and understates the suite by 41.
 
 | Spec | Test IDs | Tests | Description |
 |------|----------|-------|-------------|
-| `dashboard.spec.js` | T-DASH-01..09 | 9 | Score display, scan trigger, navigation, activity feed |
-| `analysis.spec.js` | T-FIND-01..11, T-COMP-01..08 | 19 | Findings grouping and detail expander, declined exceptions, framework selection, report generation |
-| `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06, T-APPLY-01..04 | 20 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback; what an executed apply produces |
-| `themes.spec.js` | T-THEME-01..07 | 7 + 30 | 6 of the 7 themes verified, High Contrast not covered at the time of this reading. Closed on 2026-08-11 by T-THEME-08 and T-THEME-09, taking this row to 9 + 35; the live description is in [file-map.md](file-map.md). The 30 screenshot tests are generated as 5 states x 6 themes |
+| `themes.spec.js` | T-THEME-01..09 | 9 + 35 | All seven themes verified. The 35 screenshot tests are generated as 5 states x 7 themes |
+| `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 and 11..13, T-APPLY-01..04, T-DIVG-01..05 | 29 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, signature verification and unread sources; what an executed apply produces; the rollback modal's divergence section. T-DIVG-03 runs once per viewport width, so this spec has 28 ids over 29 tests, and T-HIST-07..10 do not exist |
+| `analysis.spec.js` | T-FIND-01..12, T-COMP-01..08, T-EXC-01..05 | 25 | Findings grouping and detail expander, framework selection, report generation, the per-finding accept/remove exception controls |
+| `dashboard.spec.js` | T-DASH-01..10 | 10 | Score display, scan trigger, navigation, activity feed, the header subtitle's scanned state |
+| `fleet.spec.js` | T-FLEET-01..09 | 9 | Fleet scan view, per-host results, row expander, delete confirmation |
+| `fleet-apply.spec.js` | T-FAPPLY-01..09 | 9 | Fleet Apply mode toggle, selection, confirm modal |
+| `settings.spec.js` | T-SET-01..08 | 8 | Settings page |
+| `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries a vacuity guard, because a sweep that collects nothing would otherwise pass |
+| `scheduler.spec.js` | T-SCHED-01..06 | 6 | Scheduler and notification configuration |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
-| `fleet.spec.js` | - | 7 | Fleet scan view |
-| `fleet-apply.spec.js` | - | 9 | Fleet Apply mode toggle, selection, confirm modal |
 | `remote.spec.js` | T-REMOTE-01..03 | 3 | The `/remote` redirect, the saved host list, the Add Host form |
-| `scheduler.spec.js` | - | 6 | Scheduler and notification configuration |
 
 ### Per-Distro Notes
 
