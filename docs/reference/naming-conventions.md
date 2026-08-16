@@ -1511,7 +1511,9 @@ pub struct GlobalConfig {
 
 // Per-Plugin Config (uniform for all plugins):
 pub struct PluginConfig {
-    pub enabled: bool,
+    /// `None` means the source did not mention the key, which is not the same
+    /// as mentioning it as `true`. Read it through `is_enabled()`.
+    pub enabled: Option<bool>,
     pub directives: HashMap<String, String>,
     pub exceptions: HashMap<String, PolicyException>,
 }
