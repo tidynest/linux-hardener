@@ -538,7 +538,7 @@ pub struct ScanRunner {
 | `src/utils/tests.rs` | Unit tests for `src/utils/mod.rs` | Test-only; that file *is* the module `utils`, so its tests go in the directory it already owns |
 | `src/utils/theme/tests.rs` | Unit tests for `src/utils/theme.rs` | Test-only; `super` resolves to `crate::utils::theme` |
 | `src/pages/mod.rs` | Pages module exports | `DashboardPage`, `AnalysisPage`, `HardeningPage`, `HostsPage`, `SchedulerPage`, `SettingsPage`, `FleetApplyPage` |
-| `src/components/mod.rs` | Components module exports | All component re-exports, `Card`, `CardVariant`, `HeadingLevel` |
+| `src/components/mod.rs` | Components module exports | All component re-exports, `Card`, `HeadingLevel` |
 
 ### Pages (7-page architecture)
 
@@ -570,7 +570,7 @@ pub struct ScanRunner {
 | `src/components/history_section.rs` | Apply results and checkpoint management with refresh button | `HistorySection` |
 | `src/components/modal.rs` | Shared modal shell used by every dialog: backdrop, Escape and backdrop-click dismissal, dialog ARIA, and focus-on-mount. Swallows Escape so dismissing a dialog cannot also advance the global `keyboard.rs` priority chain and discard a pending apply review | `Modal` |
 | `src/components/rollback_modal.rs` | Rollback confirmation modal for the Hardening History timeline (confirm, restoring, and per-file result stages) | `RollbackModal` |
-| `src/components/card.rs` | Reusable card container component | `Card`, `CardVariant`, `HeadingLevel` |
+| `src/components/card.rs` | Reusable card container component | `Card`, `HeadingLevel` |
 | `src/components/theme_toggle.rs` | Theme quick-switch `<select>` in the sidebar, bound to the shared `AppState.theme` signal (presentational only; the App `Effect` applies/persists it) | `ThemeToggle` |
 | `src/components/theme_picker.rs` | Settings page theme swatch grid: WAI-ARIA radiogroup of live-coloured preview cards, one per `THEMES` entry | `ThemePicker` |
 | `src/components/status_icons.rs` | Shared status/flag inline SVG icon set (applied/failed/manual/skipped plus the help affordance), declared through a `status_icon!` macro and re-exported from `components/mod.rs` | `IconCheck`, `IconInfo`, `IconX`, `IconWrench`, `IconMinus` |

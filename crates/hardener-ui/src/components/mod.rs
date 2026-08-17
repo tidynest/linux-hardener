@@ -29,8 +29,6 @@ mod theme_picker;
 mod theme_toggle;
 
 pub use adhoc_host_input::AdhocHostInput;
-#[allow(unused_imports)]
-pub use card::CardVariant;
 pub use card::{Card, HeadingLevel};
 pub use clipboard::CopyButton;
 pub use compliance_tab::ComplianceTab;

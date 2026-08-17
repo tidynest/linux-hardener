@@ -262,7 +262,7 @@ sudo ./scripts/test/root-test-suite.sh --apply      # Full tests (apply + rollba
 - [x] Utility classes in `styles.css`: `.flex`, `.flex-col`, `.grid`, `.gap-*`, `.items-*`, `.justify-*`
 - [x] Viewport testing complete: 320px, 640px, 1920px
 - [x] Touch targets: 44px minimum via `@media (pointer: coarse)`
-- [x] Card component in `card.rs` with `Card`, `CardVariant`, `HeadingLevel`
+- [x] Card component in `card.rs` with `Card`, `HeadingLevel` (a `CardVariant` enum shipped alongside them and was removed on 2026-08-17: its two non-default variants emitted CSS classes `styles.css` never defined, and no caller ever passed the prop)
 - [x] All section components refactored to use Card component
 
 #### C. Theme & Accessibility (Session 3) ✅

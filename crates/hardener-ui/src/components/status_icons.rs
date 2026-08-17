@@ -19,9 +19,11 @@
 //! rollback modal). `#[allow(dead_code)]` per-item does not reliably
 //! suppress dead-code warnings, because Leptos's `#[component]` macro
 //! expands each icon into a function plus a separate Props struct that does
-//! not inherit an outer attribute; a module-level allow covers both, the
-//! same way `card.rs` allows `dead_code` on `CardVariant`'s not-yet-used
-//! variants.
+//! not inherit an outer attribute; a module-level allow covers both. The
+//! comparison this used to draw, to `card.rs` allowing `dead_code` on
+//! `CardVariant`, is gone: those variants were deleted for being unreachable,
+//! which is the other answer to the same question and the right one whenever
+//! the code is genuinely unused rather than awkward to annotate.
 #![allow(dead_code)]
 
 use leptos::prelude::*;

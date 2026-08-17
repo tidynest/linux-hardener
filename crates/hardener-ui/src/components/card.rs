@@ -1,19 +1,5 @@
 use leptos::prelude::*;
 
-/// Card container variants for different visual contexts.
-/// Note: Some variants are defined for future use and API consistency.
-#[derive(Default, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
-pub enum CardVariant {
-    /// Standard card with full padding (sections, panels).
-    #[default]
-    Default,
-    /// Smaller padding and radius for nested cards.
-    Compact,
-    /// Dashed border for empty state.
-    Empty,
-}
-
 /// Heading level for card titles.
 /// Note: All levels defined for semantic HTML flexibility.
 #[derive(Default, Clone, Copy, PartialEq)]
@@ -31,12 +17,12 @@ pub enum HeadingLevel {
 /// - `card`            - Base styling (bg-secondary, border, `--border-radius`
 ///   8px, `--space-lg` 16px padding, plus a hover border-colour transition)
 /// - `card-title`      - Title text styling (`--font-size-head` 18px, 600 weight)
-/// - `card--compact`   - Emitted by `CardVariant::Compact`
-/// - `card--empty`     - Emitted by `CardVariant::Empty`
 ///
-/// The last two have **no rule in `styles.css`**, the only stylesheet, so both
-/// variants currently render identically to `Default`. Neither is constructed
-/// anywhere, which is why nothing has noticed; see `CardVariant` above.
+/// A `CardVariant` enum used to sit here, emitting `card--compact` and
+/// `card--empty` for a nested and an empty-state look. Neither class has ever
+/// had a rule in `styles.css`, the only stylesheet, and no caller ever passed
+/// the prop, so both variants rendered exactly as the default. Deleted rather
+/// than styled: the look nobody asked for is cheaper to add back than to carry.
 #[component]
 pub fn Card(
     /// Optional title displayed in card header.
@@ -45,28 +31,17 @@ pub fn Card(
     /// Additional CSS classes to apply.
     #[prop(into, optional)]
     class: Option<String>,
-    /// Card variant: Default, Compact, or Empty
-    #[prop(optional)]
-    variant: Option<CardVariant>,
     /// Heading level for the title: H2, H3 (default), or H4.
     #[prop(optional)]
     title_level: Option<HeadingLevel>,
     /// Card content.
     children: Children,
 ) -> impl IntoView {
-    let variant = variant.unwrap_or_default();
     let title_level = title_level.unwrap_or_default();
 
-    let variant_class = match variant {
-        CardVariant::Default => "",
-        CardVariant::Compact => "card--compact",
-        CardVariant::Empty => "card--empty",
-    };
-
     let combined_class = match class {
-        Some(c) => format!("card {} {}", variant_class, c),
-        None if variant_class.is_empty() => "card".to_string(),
-        None => format!("card {}", variant_class),
+        Some(c) => format!("card {c}"),
+        None => "card".to_string(),
     };
 
     let title_view = title.map(|t| match title_level {

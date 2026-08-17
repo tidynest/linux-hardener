@@ -1755,12 +1755,12 @@ pub fn meets_severity_threshold(summary: &ScanSummary, min_severity: Severity) -
 pub fn Card(
     #[prop(into, optional)] title: Option<String>,
     #[prop(into, optional)] class: Option<String>,
-    #[prop(optional)] variant: Option<CardVariant>,
+    #[prop(optional)] title_level: Option<HeadingLevel>,
 ) -> impl IntoView { }
 
 // ❌ BAD:
 #[component]
-pub fn Card(#[prop(optional)] cfg: Option<CardVariant>) -> impl IntoView { }  // Abbreviation
+pub fn Card(#[prop(optional)] cfg: Option<HeadingLevel>) -> impl IntoView { }  // Abbreviation
 
 // UI State Signals:
 // Pattern: Descriptive names describing what they hold
