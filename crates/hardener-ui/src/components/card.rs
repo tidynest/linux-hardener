@@ -28,10 +28,15 @@ pub enum HeadingLevel {
 /// Reusable card container component.
 ///
 /// CSS classes used:
-/// - `card`            - Base styling (bg-secondary, border, 8px radius,1.5rem padding)
-/// - `card-title`      - Title text styling (1.125rem, 600 weight)
-/// - `card--compact`   - Nested variant (bg-tertiary, 6px radius, 1rem padding)
-/// - `card--empty`     - Empty state (dashed border, centred text)
+/// - `card`            - Base styling (bg-secondary, border, `--border-radius`
+///   8px, `--space-lg` 16px padding, plus a hover border-colour transition)
+/// - `card-title`      - Title text styling (`--font-size-head` 18px, 600 weight)
+/// - `card--compact`   - Emitted by `CardVariant::Compact`
+/// - `card--empty`     - Emitted by `CardVariant::Empty`
+///
+/// The last two have **no rule in `styles.css`**, the only stylesheet, so both
+/// variants currently render identically to `Default`. Neither is constructed
+/// anywhere, which is why nothing has noticed; see `CardVariant` above.
 #[component]
 pub fn Card(
     /// Optional title displayed in card header.

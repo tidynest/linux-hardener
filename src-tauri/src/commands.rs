@@ -980,8 +980,10 @@ pub async fn create_checkpoint(name: String) -> Result<String, String> {
 
 /// Deletes a checkpoint by ID.
 ///
-/// Tries the user database first, then the system database.
-/// Does not require root privileges.
+/// Tries the user database first, which needs no privilege. A row it does not
+/// hold escalates through `pkexec` unless the system database is readable and
+/// positively lacks the id; see `resolve_delete` for why absence of an answer
+/// still escalates.
 #[tauri::command]
 pub async fn delete_checkpoint(checkpoint_id: String) -> Result<bool, String> {
     let _guard = PrivilegedOpGuard::acquire()?;
