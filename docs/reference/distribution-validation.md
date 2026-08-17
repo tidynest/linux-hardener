@@ -25,8 +25,10 @@ of the time (Debian 12, Fedora 41, Rocky 9, openSUSE Leap 15.6).
 > version a container happens to carry is the version validated and not the
 > boundary of what is supported.
 
-> **What is historical here.** The 2026-08-07 summary immediately below is the
-> current reading. Everything under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28)
+> **What is historical here.** The 2026-08-14 summary immediately below is the
+> current reading. This callout said 2026-08-07 until 2026-08-17, after the
+> opening line above had already been corrected to 2026-08-14: one copy moved and
+> this one did not, which is the defect this document keeps recording. Everything under [v1.1.0 Re-validation](#v110-re-validation-2026-06-28)
 > and every per-distro breakdown after it is a dated record kept for its failure
 > analysis and its per-plugin detail, not a statement about the containers as they
 > stand today.
@@ -145,7 +147,10 @@ The first repaired run then failed 1 of 152 on a real defect, four Daywatch
 pairings below the WCAG bar, fixed in `4284612d`. **A green suite is not
 evidence of contrast, and for two days this one was green about nothing.**
 
-Two suites in that run did not pass, and neither reading is about a distribution.
+Two suites in the **2026-08-07** release-readiness run did not pass, and neither
+reading is about a distribution. That run is named explicitly because the
+paragraphs above it now describe later ones, and "that run" had come to point at
+the 2026-08-16 reading, which passed 154 of 154.
 The package suite failed one check on all six, which was a `pipefail` and `grep -q`
 SIGPIPE inversion in the harness rather than a product defect, fixed in `6a82a5b`
 and re-measured on arch at 28 passed, 0 failed, 2 skipped. The GUI suite failed on
@@ -183,7 +188,9 @@ gap on the other three; both are recorded on issue #48.
 
 > **Note on family coverage:** Each validated distribution covers its entire family:
 > - **Arch** covers Manjaro, EndeavourOS, Garuda
-> - **Debian** covers Ubuntu, Linux Mint, Pop!_OS, elementary OS
+> - **Debian** covers Linux Mint, Pop!\_OS and elementary OS. **Ubuntu is no
+>   longer covered by proxy**: it joined `DISTRO_ORDER` on 2026-08-07 and has its
+>   own container and its own dated readings
 > - **Fedora** covers RHEL, CentOS, AlmaLinux, Oracle Linux
 > - **Rocky Linux** explicitly validates RHEL binary-compatible distributions (Rocky, AlmaLinux, CentOS Stream)
 > - **openSUSE** covers SLES (SUSE Linux Enterprise Server)
@@ -1073,6 +1080,8 @@ numbers count different tests rather than measuring growth:
 | 2026-06-29 | 113 | 5 | superseded, specs rewritten after it |
 | 2026-08-08 | 114 | 6 | superseded, [below](#gui-test-suite-2026-08-08) |
 | 2026-08-09 | 121 | Fedora only | superseded, never a six-distribution reading |
+| 2026-08-11 | 134 | 6 | superseded, against `7c81c491` |
+| 2026-08-12 | 134 | 6 | superseded, against `dd85255f` after a `trunk build --release` |
 | 2026-08-15 | 152 | 6 | superseded |
 | **2026-08-16** | **154** | **6** | **current** |
 
