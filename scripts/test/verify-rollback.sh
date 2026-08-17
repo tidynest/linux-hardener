@@ -872,7 +872,11 @@ fi
 #
 # The file is created here rather than relied upon. Of the five distributions
 # measured 2026-08-08 only fedora ships one, and a fixture that depends on
-# which container it lands in decides a different thing on every run.
+# which container it lands in decides a different thing on every run. That
+# reading is five of six: ubuntu joined DISTRO_ORDER on 2026-08-07, the day
+# before, and was not among them. Creating the file rather than relying on it
+# is what makes the gap harmless here, which is not true of the same
+# measurement quoted in crates/hardener-plugins/src/kernel/persistence.rs.
 #
 # Counting: this arm adds THREE checks to the total on the path where every
 # check runs (state, the claim it must not make, the file it must name), so a

@@ -64,7 +64,12 @@ use std::{
 /// such symlink was found on any of the five distributions measured
 /// 2026-08-08 (arch, debian 13, fedora, rhel, opensuse); fedora ships the file
 /// as a real file and the rest ship nothing. The conclusion held, its stated
-/// evidence did not. Fedora's copy assigns nothing either, being a comment
+/// evidence did not. **Those five were not the whole matrix**: ubuntu joined
+/// `DISTRO_ORDER` on 2026-08-07, the day before, and was not among them, so
+/// this reading is five of six and the derivative most likely to ship a
+/// debian-style symlink is the one it did not ask. Debian 13 itself was read
+/// and ships nothing, which is why the gap is recorded rather than treated as
+/// a reason to doubt the conclusion. Fedora's copy assigns nothing either, being a comment
 /// block pointing at `/etc/sysctl.d/`, so a parameter reaching
 /// [`legacy_sysctl_conf`] with a value is one an operator wrote by hand.
 ///
