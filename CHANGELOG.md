@@ -1289,6 +1289,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The two owed Playwright assertions are written, and neither has been run.**
+  `T-SCHED-07` covers the notes added in `a5ca6d03` and `3fcc75a8`, which appear
+  only while scheduled scanning is off; both directions are asserted, because a
+  note that rendered unconditionally would pass a presence check and one that
+  never rendered would pass an absence check. `T-FLEET-10` covers the per-host
+  history rail, and is the assertion whose absence let the missing mock handler
+  above go unnoticed through three tests that expand a row. The declared suite is
+  now **156** (`npx playwright test --list`, which needs no container) against a
+  last result of **154 of 154** on 2026-08-16. Those are different kinds of
+  number and are recorded as such everywhere they appear: the suite runs only
+  inside the nspawn containers, no run has happened since the two were written,
+  and a declared case that has never executed proves nothing.
+
 - **The Playwright Tauri mock answers `get_host_history`.** `HostPanel` fires it
   on every fleet row expand, the mock had no case for it, and
   `host_panel.rs:85` takes the result through `.unwrap_or_default()`, so the

@@ -1,5 +1,5 @@
 // =============================================================================
-// SCHEDULER TESTS (T-SCHED-01..06) - Linux Hardener GUI Tests
+// SCHEDULER TESTS (T-SCHED-01..07) - Linux Hardener GUI Tests
 // =============================================================================
 // Scheduled-scan config, notification config, save, and test-notification.
 
@@ -63,6 +63,38 @@ test.describe('Scheduler', () => {
   test('T-SCHED-05: notification subsections present', async ({ page }) => {
     await expect(page.getByRole('heading', { name: 'Email' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Webhook' })).toBeVisible();
+  });
+
+  // T-SCHED-07: The two paused-schedule notes appear only while scanning is off
+  //
+  // Both notes render behind a `<Show when=!enabled>` and both carry
+  // `.scheduler-override-note`, which the page's "Custom schedule active" note
+  // uses as well, so they are reached by their text rather than by that class.
+  //
+  // Both directions are asserted because either alone is vacuous: a note that
+  // rendered unconditionally would pass a presence check with the toggle in any
+  // state, and a note that never rendered at all would pass an absence check.
+  // Only the flip distinguishes a note that is bound to the toggle from one
+  // that merely exists.
+  //
+  // The initial state is normalised rather than assumed. The mock ships the
+  // scheduler disabled, but a fixture change that flipped that default would
+  // otherwise turn this into a test of the enabled state alone, silently.
+  test('T-SCHED-07: paused-schedule notes appear only while scanning is off', async ({ page }) => {
+    const toggle = page.getByRole('checkbox', { name: /Enable scheduled scanning/i });
+    const label = page.getByText('Enable scheduled scanning');
+    const kept = page.getByText(/These settings are saved, but not used while scanning is off/i);
+    const notSent = page.getByText(/so these are not sent automatically/i);
+
+    if (await toggle.isChecked()) await label.click();
+    await expect(toggle).not.toBeChecked();
+    await expect(kept).toBeVisible();
+    await expect(notSent).toBeVisible();
+
+    await label.click();
+    await expect(toggle).toBeChecked();
+    await expect(kept).toHaveCount(0);
+    await expect(notSent).toHaveCount(0);
   });
 
   // T-SCHED-06: Sending a test notification reports success

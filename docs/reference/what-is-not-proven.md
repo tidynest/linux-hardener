@@ -631,9 +631,16 @@ distribution.
 discharged.** 152 of 152 on all six distributions on 2026-08-15 at `4284612d`,
 then **154 of 154 on all six on 2026-08-16 at `5b715039`**, none failed, none
 skipped, none flaky, with all six containers destroyed and recreated first.
-`npx playwright test --list` reports 154 in 11 files, and that count is now a
-result rather than a count. Recorded in
+`npx playwright test --list` reported 154 in 11 files that day, and that count
+was a result rather than a count. Recorded in
 [distribution-validation.md](distribution-validation.md).
+
+**It reports 156 as of 2026-08-18 and that figure is a count again**, which is
+the distinction this document is for. `T-FLEET-10` and `T-SCHED-07` were written
+then and neither has been executed once: the suite runs only inside the nspawn
+containers and no run has happened since. The 154 remains the last result. **A
+declared case that has never run proves nothing at all**, and until the next
+container run these two are exactly that.
 
 The first of those runs is worth keeping in view here, because it is the case
 this document exists for: `contrast.spec.js` had shipped on 2026-08-13 and its

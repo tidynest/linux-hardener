@@ -1052,6 +1052,14 @@ six distributions.
 > failed, none skipped, none flaky. Everything below is either infrastructure
 > read off the tree or a dated record kept for its failure analysis.
 >
+> **That run is now behind the tree by two cases and the gap is deliberate.**
+> `T-FLEET-10` and `T-SCHED-07` were added on 2026-08-18, taking the declared
+> count to 156 (`npx playwright test --list`, which needs no container). Neither
+> has ever been executed: the suite runs only inside the nspawn containers, and
+> no run has happened since they were written. **156 is a declaration and 154 is
+> a result**, and the two are not the same kind of number. The next container
+> run replaces both.
+>
 > This block previously claimed the last run was 2026-06-29 and that the suite
 > had not been re-run since the desktop redesign. Both were true when written
 > and neither is now, which is the hazard of a second place to record one fact:
@@ -1139,16 +1147,17 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (11 Specs, 154 Tests)
+### Spec Inventory (11 Specs, 156 Tests)
 
-Counted off `npx playwright test --list` on 2026-08-16, which is the same count
-the container run of that date executed. **113 `test()` call sites produce 154
-cases**, because three of the sites are parameterised and generate their cases
-at collection time: `themes.spec.js:152` produces 35 screenshots (5 states x 7
-themes), `contrast.spec.js:221` produces one case per theme, and
-`hardening.spec.js:479` produces one per viewport width. Reading the runner
-rather than grepping the sources is therefore deliberate: a count of `test(`
-calls is 113 and understates the suite by 41.
+Counted off `npx playwright test --list` on 2026-08-18. **This is what the suite
+declares, not what a run executed**: the last container run was 2026-08-16 and
+executed 154, before `T-FLEET-10` and `T-SCHED-07` were written. **115 `test()`
+call sites produce 156 cases**, because three of the sites are parameterised and
+generate their cases at collection time: `themes.spec.js:152` produces 35
+screenshots (5 states x 7 themes), `contrast.spec.js:221` produces one case per
+theme, and `hardening.spec.js:479` produces one per viewport width. Reading the
+runner rather than grepping the sources is therefore deliberate: a count of
+`test(` calls is 115 and understates the suite by 41.
 
 | Spec | Test IDs | Tests | Description |
 |------|----------|-------|-------------|
@@ -1156,11 +1165,11 @@ calls is 113 and understates the suite by 41.
 | `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 and 11..13, T-APPLY-01..04, T-DIVG-01..05 | 29 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, signature verification and unread sources; what an executed apply produces; the rollback modal's divergence section. T-DIVG-03 runs once per viewport width, so this spec has 28 ids over 29 tests, and T-HIST-07..10 do not exist |
 | `analysis.spec.js` | T-FIND-01..12, T-COMP-01..08, T-EXC-01..05 | 25 | Findings grouping and detail expander, framework selection, report generation, the per-finding accept/remove exception controls |
 | `dashboard.spec.js` | T-DASH-01..10 | 10 | Score display, scan trigger, navigation, activity feed, the header subtitle's scanned state |
-| `fleet.spec.js` | T-FLEET-01..09 | 9 | Fleet scan view, per-host results, row expander, delete confirmation |
+| `fleet.spec.js` | T-FLEET-01..10 | 10 | Fleet scan view, per-host results, row expander, delete confirmation, the expanded host's persisted history rail. T-FLEET-10 has never been run |
 | `fleet-apply.spec.js` | T-FAPPLY-01..09 | 9 | Fleet Apply mode toggle, selection, confirm modal |
 | `settings.spec.js` | T-SET-01..08 | 8 | Settings page |
 | `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries a vacuity guard, because a sweep that collects nothing would otherwise pass |
-| `scheduler.spec.js` | T-SCHED-01..06 | 6 | Scheduler and notification configuration |
+| `scheduler.spec.js` | T-SCHED-01..07 | 7 | Scheduler and notification configuration, and the two notes that appear only while scheduled scanning is off. T-SCHED-07 has never been run |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 | `remote.spec.js` | T-REMOTE-01..03 | 3 | The `/remote` redirect, the saved host list, the Add Host form |
 

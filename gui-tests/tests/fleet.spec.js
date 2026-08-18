@@ -1,5 +1,5 @@
 // =============================================================================
-// FLEET SCAN TESTS (T-FLEET-01..09) - Linux Hardener GUI Tests
+// FLEET SCAN TESTS (T-FLEET-01..10) - Linux Hardener GUI Tests
 // =============================================================================
 // Read-only multi-host scan: host selection, per-host results, expandable rows,
 // and the failed-host path.
@@ -126,6 +126,48 @@ test.describe('Fleet Scan', () => {
     // The other host is asserted too: a delete that emptied the list would
     // pass the line above while doing something far worse than the bug.
     await expect(selectHost(page, 'db-01')).toBeVisible();
+  });
+
+  // T-FLEET-10: An expanded host renders its persisted scan history
+  //
+  // This is the assertion the mock's missing `get_host_history` case hid.
+  // `HostPanel` fires that command from a `spawn_local` on mount and takes the
+  // result through `.unwrap_or_default()` at `host_panel.rs:85`, so a rejected
+  // invoke renders exactly the no-history state a host with no persisted scans
+  // renders. T-FLEET-05, T-FLEET-08 and T-FLEET-09 all expand a row and none of
+  // them could tell those two apart.
+  //
+  // web-01 carries the assertion for that reason. The empty state passes
+  // whether or not the command answered, so only a host with rows separates a
+  // working handler from a swallowed rejection: run this against a mock without
+  // the `get_host_history` case and the count is 0.
+  //
+  // db-01 is checked second and deliberately has no rows in the fixture, so the
+  // empty-state branch is reached from a real answer. Without it a fixture that
+  // returned rows for every host would make the first half pass for the wrong
+  // reason and leave the branch an operator sees on a fresh install untested.
+  //
+  // The panel is behind a `<Show>`, so collapsing removes it rather than hiding
+  // it, and the count assertion between the two halves is what stops db-01's
+  // reading from being web-01's panel still on the page.
+  test('T-FLEET-10: an expanded host renders its persisted scan history', async ({ page }) => {
+    const nodes = page.locator('.host-panel .timeline-node');
+    const web = expandHost(page, 'web-01');
+
+    await web.click();
+    await expect(nodes).toHaveCount(3);
+    // The newest session: eight findings, and worse than the one before it.
+    // `direction` is an Option<String> and the only nullable field in the
+    // payload, so it is the one a mock drift drops silently.
+    await expect(nodes.first()).toContainText('8 findings');
+    await expect(nodes.first()).toContainText('worse');
+
+    await web.click();
+    await expect(page.locator('.host-panel')).toHaveCount(0);
+
+    await expandHost(page, 'db-01').click();
+    await expect(page.getByText(/No persisted history for this host/i)).toBeVisible();
+    await expect(nodes).toHaveCount(0);
   });
 
   // T-FLEET-09: The armed state is reversible, and reverting it deletes nothing
