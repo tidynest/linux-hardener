@@ -58,6 +58,26 @@ hardener \- comprehensive Linux security automation tool with multi-distribution
 .I KEY
 .
 .br
+.B hardener scope exclude
+.I FRAMEWORK
+.I CONTROL
+.B \-\-reason
+.I REASON
+.RB [ \-\-approved\-by
+.IR NAME ]
+.RB [ \-\-ticket
+.IR REF ]
+.RB [ \-\-review\-by
+.IR DATE ]
+.RB [ \-\-host
+.IR HOST ]
+.
+.br
+.B hardener scope include
+.I FRAMEWORK
+.I CONTROL
+.
+.br
 .B hardener report
 .RB [ \-s
 .IR SCENARIO ]
@@ -215,6 +235,30 @@ it edits this host's own configuration file, the file this host's
 reads; an exception for a remote host is written on that host.
 See
 .BR "Exception Options" .
+.TP
+.B scope
+Declare a compliance control not applicable to this system, so it leaves the
+compliance score's denominator instead of counting against it.
+Subcommands:
+.BR exclude ,
+.BR include .
+Distinct from
+.BR exception ,
+which documents a deviation the engine found: a scope exclusion covers a
+control the engine cannot assess at all, and can never mute a failing control,
+because a live finding, an unchecked control and an assessed control are all
+decided before exclusions are consulted.
+Refuses
+.BR \-\-ssh ,
+since it edits this host's own configuration file. That file is also the policy
+the controller evaluates the fleet against, so an exclusion written here reaches
+every host a
+.B batch
+verb touches unless
+.B \-\-host
+narrows it.
+See
+.BR "Scope Options" .
 .TP
 .B report
 Generate compliance reports against industry security frameworks.
@@ -633,6 +677,59 @@ takes only
 .I PLUGIN_ID
 and
 .IR KEY ;
+none of the flags above apply to it.
+.
+.SS Scope Options
+These apply to
+.BR "scope exclude" .
+.TP
+.BI \-\-reason " TEXT"
+Why the control does not apply. Required: an exclusion raises the score by
+leaving its denominator, and an unexplained one raises it for no stated cause.
+.TP
+.BI \-\-approved\-by " NAME"
+Who approved it.
+.TP
+.BI \-\-ticket " REF"
+Approval ticket or issue reference.
+.TP
+.BI \-\-review\-by " DATE"
+Date the exclusion must be reviewed again (ISO 8601, e.g.
+.IR 2027\-08\-18 ).
+Absent means twelve months, which is every framework's interval here. Four
+publish one that bears on a scope determination (PCI DSS Req 12.5.2, FedRAMP
+CA-2, SOC 2's Type II period, and 32 CFR 170.22's annual affirmation for NIST
+800-171) and the other six publish none, naming a change trigger instead, so
+twelve months is this project's default rather than a framework requirement.
+.B "PCI DSS service providers must set six months by hand"
+under Req 12.5.2.1; the tool cannot know which an operator is.
+.TP
+.BI \-\-host " HOST"
+A host the exclusion covers, repeatable. Matched case-insensitively against a
+saved profile's name, its hostname, or its
+.IR user@host:port
+target. Absent means every host, which is the common case.
+.PP
+.I approved_date
+is always written and is not a flag: without it the configuration layer treats
+the exclusion as having no usable date and refuses to apply it, so an omitted
+date would write a declaration that silently never took effect.
+.PP
+An empty reason and an unknown framework id are both refused, and both refusals
+are written to the audit log, since a log recording only successes could not
+show an operator attempting an exclusion they should not have.
+.PP
+Only CIS and ISO/IEC 27001 ship a curated control catalogue. Every other
+framework's catalogue is derived from what the engine can already assess, so an
+exclusion against one of those cannot take effect;
+.B "scope exclude"
+still writes and still audits it, and warns on standard error.
+.PP
+.B "scope include"
+takes only
+.I FRAMEWORK
+and
+.IR CONTROL ;
 none of the flags above apply to it.
 .
 .SS Report Options

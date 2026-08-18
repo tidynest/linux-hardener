@@ -566,6 +566,89 @@ would be a third code path restating both.
 
 ---
 
+## scope
+
+Declare a compliance control not applicable to this system, so it leaves the
+score's denominator instead of counting against it. Writes or removes one
+`[compliance.not_applicable.<framework>."<control>"]` table, leaving every
+other line of `config.toml` as it was, and writes an audit entry.
+
+An `exception` documents a deviation the engine found. A `scope` exclusion
+covers a control the engine cannot assess at all, such as an ISO 27001 Annex A
+control about premises on a host with no premises. **The two are not
+interchangeable: an exclusion can never mute a failing control.** The report
+generator decides a live finding, an unchecked control and an assessed control
+before it looks at exclusions, so an exclusion can only ever convert a control
+that would otherwise read Manual Review.
+
+**It refuses `--ssh`**, like `exception`, because it edits this host's own
+configuration file. Unlike `exception`, that file is also the policy the
+controller evaluates the whole fleet against, so an exclusion written here
+reaches every host a `batch` verb touches. Use `--host` to narrow it.
+
+### scope exclude
+
+```
+hardener scope exclude <FRAMEWORK> <CONTROL> --reason <REASON> [OPTIONS]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `FRAMEWORK` | Framework the control belongs to, as `report --framework` names it |
+| `CONTROL` | Control id, as the compliance report prints it |
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--reason <TEXT>` | Why the control does not apply. Required: an exclusion raises the score by leaving its denominator, and an unexplained one raises it for no stated cause | |
+| `--approved-by <NAME>` | Who approved it | none |
+| `--ticket <REF>` | Approval ticket or issue reference | none |
+| `--review-by <DATE>` | Date the exclusion must be reviewed again (ISO 8601) | the framework's own interval, below |
+| `--host <HOST>` | A host the exclusion covers, repeatable. Matched against a saved profile's name, hostname, or `user@host:port` target, case-insensitively | every host |
+
+`approved_date` is always written, and is not a flag. Without it the config
+layer treats the exclusion as having no usable date and refuses to apply it, so
+an omitted date would write a declaration that silently never took effect.
+
+An empty reason and an unknown framework id are both refused, and both refusals
+are written to the audit log. A log that recorded only successes could not show
+an operator attempting to exclude something they should not have.
+
+### The review interval comes from the framework owner
+
+`--review-by` defaults to **twelve months** for every framework. Four publish
+an interval that bears on a scope determination and the rest publish none,
+naming a change trigger instead:
+
+| Framework | Basis for twelve months |
+|---|---|
+| PCI DSS | Req 12.5.2, explicit. **Service providers must set six months by hand** under 12.5.2.1; the tool cannot know which an operator is, so it does not guess |
+| FedRAMP | CA-2, annual independent assessment |
+| SOC 2 | Type II observation period, scoping re-decided per engagement |
+| NIST 800-171 | 32 CFR 170.22, annual affirmation of continuing compliance. The three-year figure often quoted is the certification assessment cycle, which is a different obligation |
+| ISO 27001, NIST 800-53, HIPAA, GDPR, CIS, STIG | No published interval. Twelve months is this project's default, not a framework requirement |
+
+The date is a backstop rather than the mechanism. Six of the ten frameworks
+name a change trigger instead of an interval, in near-identical language, and
+the machine-detectable one is that a plugin has gained the ability to assess an
+excluded control. That supersedes the declaration on the next scan without
+waiting for the review date, because the engine's answer beats a human's
+estimate of what the engine cannot do.
+
+An exclusion whose `review_by` has passed, or which carries no parseable date
+at all, returns the control to Manual Review. It never returns it to Pass.
+
+### scope include
+
+```
+hardener scope include <FRAMEWORK> <CONTROL>
+```
+
+Removes the declaration and returns the control to the score. It appends a
+second audit entry rather than erasing the first: the log is append-only and
+hash-chained, so an exclusion's history is the sequence, not the current state.
+
+---
+
 ## report
 
 Generate compliance reports against security frameworks.

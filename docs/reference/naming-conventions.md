@@ -551,6 +551,7 @@ pub enum ActionType {
     ConfigChange,
     CheckpointCreate,
     CheckpointDelete,
+    ScopeExclusion,
 }
 
 // ❌ BAD:
@@ -1354,6 +1355,7 @@ pub enum ActionType {
     ConfigChange,
     CheckpointCreate,
     CheckpointDelete,
+    ScopeExclusion,
 }
 
 pub enum ActionResult {
