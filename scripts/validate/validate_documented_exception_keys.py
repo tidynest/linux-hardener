@@ -43,8 +43,16 @@ NC = "\033[0m"
 # The reference section that publishes the keys. Bounded at both ends so the
 # scan cannot wander into unrelated backticked prose and start reporting
 # ordinary words as missing keys.
+#
+# The end is the next top-level heading, not a named one. Pinning it to
+# `## Environment variables` assumed nothing would ever be inserted in between,
+# and on 2026-08-18 `## [compliance]` was: the scan swallowed the scope-exclusion
+# schema and reported `reason`, `review_by`, `hosts`, `approved_by`,
+# `approved_date`, `ticket` and four framework ids as exception keys that exist
+# nowhere. They exist nowhere because they are not exception keys. Ending at the
+# next `## ` makes the bound follow the document instead of a copy of it.
 SECTION_START = "The exception key is check-specific"
-SECTION_END = "## Environment variables"
+SECTION_END = re.compile(r"^## ", re.MULTILINE)
 
 
 def find_project_root() -> Path:
@@ -61,10 +69,12 @@ def documented_keys(reference: str) -> set[str]:
     and they should exist for the same reason the rest should.
     """
     start = reference.find(SECTION_START)
-    end = reference.find(SECTION_END, start)
-    if start == -1 or end == -1:
+    if start == -1:
         return set()
-    return set(re.findall(r"`([a-z0-9][a-z0-9_-]*)`", reference[start:end]))
+    following = SECTION_END.search(reference, start)
+    if following is None:
+        return set()
+    return set(re.findall(r"`([a-z0-9][a-z0-9_-]*)`", reference[start : following.start()]))
 
 
 def main() -> int:

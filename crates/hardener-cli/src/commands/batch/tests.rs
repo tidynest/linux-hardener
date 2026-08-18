@@ -936,14 +936,20 @@ fn assess_outcomes_applies_an_untargeted_exclusion_to_every_host() {
         &cis_exclusion("5.1.8", &[]),
     );
 
-    for report in &reports {
-        assert_eq!(
-            cis_posture(report).not_applicable,
-            1,
-            "{} must honour an estate-wide declaration",
-            report.name
-        );
-    }
+    // Counted rather than looped, so that both assertions are unconditional.
+    // The host count is the one that carries the weight: a run that assessed
+    // no host at all would satisfy any per-host claim made inside a loop.
+    assert_eq!(reports.len(), 2, "both hosts were assessed");
+    let honouring: Vec<&str> = reports
+        .iter()
+        .filter(|report| cis_posture(report).not_applicable == 1)
+        .map(|report| report.name.as_str())
+        .collect();
+    assert_eq!(
+        honouring.len(),
+        reports.len(),
+        "every host must honour an estate-wide declaration; only {honouring:?} did"
+    );
 }
 
 #[test]

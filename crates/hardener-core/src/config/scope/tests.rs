@@ -31,14 +31,22 @@ fn exclusion(review_by: Option<&str>) -> ScopeExclusion {
 /// framework cannot join without being counted here.
 #[test]
 fn review_intervals_follow_the_framework_owners() {
-    for framework in ComplianceFramework::ALL {
-        assert_eq!(
-            default_review_months(framework),
-            12,
-            "{} defaults to 12 months",
-            framework.id()
-        );
-    }
+    let intervals: Vec<(&str, u32)> = ComplianceFramework::ALL
+        .iter()
+        .map(|framework| (framework.id(), default_review_months(*framework)))
+        .collect();
+
+    // Both assertions sit at the top level, and the first is the one that
+    // matters: a loop over an empty set proves nothing while looking green.
+    assert!(
+        !intervals.is_empty(),
+        "ComplianceFramework::ALL is empty, so nothing below was measured"
+    );
+    let deviating: Vec<&(&str, u32)> = intervals.iter().filter(|(_, m)| *m != 12).collect();
+    assert!(
+        deviating.is_empty(),
+        "every framework defaults to 12 months; these do not: {deviating:?}"
+    );
 }
 
 #[test]
