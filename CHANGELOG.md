@@ -730,6 +730,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`hardener scope exclude|include`, declaring a compliance control not
+  applicable so it leaves the score's denominator.** ISO 27001 ships the whole
+  93-control Annex A, most of it about policy, personnel, suppliers and physical
+  premises, and a configuration scanner can never assess those. On a cloud host
+  with no premises they are not unmeasured, they do not apply, and the tool had
+  no way to say so: measured at root on the arch host, ISO 27001 read 8.6 per
+  cent with 82 of 93 controls unassessable, a ceiling of 11/93 that no amount of
+  hardening could lift.
+  **An exclusion can never hide a failure.** The generator decides a live
+  finding, then a check that could not run, then a control it assessed, and only
+  then exclusions, so an exclusion converts a Manual Review and nothing else.
+  That arm order is the feature's security property rather than a detail: moving
+  the arm to first position turns two guard tests red at NotApplicable against
+  Fail and against Pass, which was measured, not argued. The same ordering
+  supplies the change trigger most frameworks actually specify: when a plugin
+  gains the ability to assess an excluded control, the engine's answer
+  supersedes the declaration on the next scan without waiting for a review date.
+  **Review intervals come from the framework owners.** Twelve months
+  everywhere. Four publish an interval bearing on a scope determination (PCI DSS
+  Req 12.5.2, FedRAMP CA-2, SOC 2's Type II period, and 32 CFR 170.22's annual
+  affirmation for NIST 800-171); the other six publish none and name a change
+  trigger instead, so twelve months there is this project's default and is
+  documented as such. PCI DSS service providers must set six months by hand
+  under Req 12.5.2.1, because the tool cannot know which an operator is.
+  **Exclusions are authored on the controller and reach the fleet**, matched per
+  host against a saved profile's name, hostname or `user@host:port` target, so a
+  narrowed exclusion raises the score of the hosts it names and no others. The
+  controller's own local report honours an untargeted exclusion and never a
+  targeted one, so narrowing cannot quietly raise the score of the machine the
+  declaration was written on. **This changes existing behaviour:** the desktop
+  fleet view now applies the controller's exclusions where it applied none, so a
+  remote host's score can rise on the next scan with no change to that host.
+  **The declaration is written to the tamper-evident audit log**, which is why
+  the verb exists at all rather than the config being hand-edited: a hand edit
+  runs no code and can log nothing. A refusal is logged too, since a record of
+  successes alone cannot show an operator attempting an exclusion they should
+  not have.
+  Three inputs are refused before anything is written: an empty reason, an
+  unknown framework, and a control id belonging to no catalogue. The last was
+  found by running the binary rather than by the suite, and it mattered more
+  than it looks: every published example and every pre-existing test used
+  `A.7.1`, the ISO 27001:2022 Annex A notation, where this catalogue holds bare
+  clause numbers and the control is `7.1`. The verb accepted it, wrote the
+  config, filed an audit entry recording a declaration, and changed no report.
+  **It has no effect for eight of the ten frameworks**, and says so. Only CIS
+  and ISO 27001 ship a curated catalogue; the rest derive theirs from what the
+  engine can already assess, so they list no control an exclusion could apply
+  to. The verb still writes and audits such a declaration, in case a framework
+  gains a catalogue later, and warns that it cannot take effect.
+
 - **`cli-walk-container.sh --booted`**, which boots each container under its own
   systemd and is the only way to reach the walk's `booted` tier. Its five
   recipes, behind `daemon start`, `systemd install`, `systemd status` and
