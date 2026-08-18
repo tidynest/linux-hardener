@@ -1627,9 +1627,12 @@ cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 
 `cargo audit` runs in CI as a 5-attempt retry loop rather than a single call.
 
-There is a seventh job, `msrv`, that none of the above reproduces: every job
-listed installs `@stable`, so a tree that starts needing a newer toolchain
-compiles everywhere else in CI and fails only for the person on the floor.
+`ci.yml` holds one more job that none of the above reproduces, `msrv`. The
+commands above are the other seven between them (`check`, `test`, `clippy`,
+`fmt`, `security-audit`, `wasm-check` and `build`, whose two `cargo build
+--release` lines are one job), and every one of them installs `@stable`, so a
+tree that starts needing a newer toolchain compiles everywhere else in CI and
+fails only for the person on the floor.
 That happened: the declared minimum read 1.85 from 2026-02 until 2026-08-05
 while the tree needed 1.88 for let-chains, and nothing above caught it. `msrv`
 builds on the version `Cargo.toml` declares instead:
