@@ -743,12 +743,21 @@ pub fn host_report(outcome: HostOutcome, generator: &ReportGenerator) -> HostRep
 }
 
 /// Assesses every outcome with a generator carrying that host's own resolved
-/// profile, or the fleet-wide `--profile` override when one was given. The
-/// per-host generator (and coverage clone) is cheap at fleet scale.
+/// profile, or the fleet-wide `--profile` override when one was given, and its
+/// own identity so the operator's exclusions resolve per host. The per-host
+/// generator (and coverage clone) is cheap at fleet scale.
+///
+/// `exclusions` is the controller's `[compliance]` section: one file
+/// describing a fleet. `ScopeExclusion` carries a `hosts` list precisely
+/// because an exclusion is a claim about particular systems, so the set is
+/// handed over whole and the generator decides per host. An untargeted
+/// declaration is a claim about the estate and applies everywhere; a targeted
+/// one reaches only the hosts it names.
 fn assess_outcomes(
     outcomes: Vec<HostOutcome>,
     scenario: Scenario,
     override_profile: Option<ComplianceProfile>,
+    exclusions: &ComplianceConfig,
 ) -> Vec<HostReport> {
     let coverage = hardener_plugins::compliance_coverage();
     outcomes
@@ -757,6 +766,11 @@ fn assess_outcomes(
             if let Some(profile) = override_profile {
                 outcome.profile = profile;
             }
+            // The canonical target is what the outcome carries, and it is the
+            // form `RemoteHostProfile::target()` produced, so re-parsing it
+            // recovers the bare hostname without widening `HostOutcome` (and
+            // so without changing the JSON `batch scan` emits).
+            let hostname = RemoteHostProfile::from_target(&outcome.target, 22, None, true).hostname;
             let generator = ReportGenerator::new(
                 ReportConfig {
                     scenario: scenario.clone(),
@@ -765,13 +779,9 @@ fn assess_outcomes(
                     profile: outcome.profile,
                 },
                 coverage.clone(),
-                // No exclusions on the fleet path. `ScopeExclusion` carries a
-                // `hosts` list precisely because an exclusion is a claim about
-                // one system, and the generator does not yet filter by host, so
-                // applying the controller's local set to every remote host
-                // would raise scores for hosts nobody made the claim about.
-                ComplianceConfig::default(),
-            );
+                exclusions.clone(),
+            )
+            .for_host(outcome.target.clone(), hostname, outcome.name.clone());
             host_report(outcome, &generator)
         })
         .collect()
@@ -840,12 +850,14 @@ pub async fn run_report(opts: BatchReportOptions) -> anyhow::Result<()> {
         opts.global_timeout,
         opts.global_no_verify,
         "Assessing",
-        config,
+        config.clone(),
         opts.config.as_ref(),
     )
     .await;
 
-    let reports = assess_outcomes(outcomes, scenario, override_profile);
+    // The same declared-not-applicable set the local `report` command uses.
+    // Each host is matched against it individually inside `assess_outcomes`.
+    let reports = assess_outcomes(outcomes, scenario, override_profile, &config.compliance);
 
     let rendered = match opts.format {
         CliOutputFormat::Json => render_report_json(&reports),

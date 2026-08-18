@@ -220,11 +220,90 @@ fn persisted_scan_source_falls_back_when_no_session_exists() {
     assert!(persisted_scan_source(None).is_none());
 }
 
+/// One CIS exclusion for `control_id`, covering `hosts` (empty means every
+/// host), with a review date far enough out to be irrelevant to the assertion.
+fn cis_exclusion(control_id: &str, hosts: &[&str]) -> ComplianceConfig {
+    let mut controls = std::collections::HashMap::new();
+    controls.insert(
+        control_id.to_string(),
+        hardener_core::config::scope::ScopeExclusion {
+            reason: "No physical premises".into(),
+            approved_by: Some("eric".into()),
+            approved_date: Some("2026-08-18".into()),
+            ticket: None,
+            review_by: Some("2999-01-01".into()),
+            hosts: hosts.iter().map(|h| (*h).to_string()).collect(),
+        },
+    );
+    let mut frameworks = std::collections::HashMap::new();
+    frameworks.insert("cis".to_string(), controls);
+    ComplianceConfig {
+        not_applicable: frameworks,
+    }
+}
+
+/// How many CIS controls one host's posture reports as not applicable.
+fn cis_not_applicable(posture: &[FleetFrameworkPosture]) -> usize {
+    posture
+        .iter()
+        .find(|p| p.framework == ComplianceFramework::CIS)
+        .expect("CIS is a fleet framework")
+        .summary
+        .summary_not_applicable
+}
+
+/// The fleet view is scored from the controller's own `[compliance]` section,
+/// which is one file describing a fleet. An empty set cost every remote host
+/// its operator's untargeted declarations; the whole set applied ungated would
+/// raise the score of hosts nobody made the claim about. The generator is
+/// built per host, so it is told which host it is about.
+///
+/// CIS 5.1.8 is a curated control no plugin covers, so it is `ManualReview`
+/// and therefore the only status an exclusion can convert. Should a plugin
+/// gain coverage for it, the assessed arm wins and this test fails rather than
+/// passing on a control that moved.
+#[test]
+fn fleet_posture_resolves_exclusions_against_the_host_it_is_about() {
+    let web = RemoteHostProfile::from_target("ops@web-01:22", 22, None, true);
+    let db = RemoteHostProfile::from_target("ops@db-01:22", 22, None, true);
+    let posture_with = |exclusions: ComplianceConfig, host: &RemoteHostProfile| {
+        let generator = fleet_report_generator(
+            ComplianceProfile::Generic,
+            hardener_plugins::compliance_coverage(),
+            exclusions,
+            host,
+        );
+        posture_for_findings(&generator, &[], &[])
+    };
+
+    let targeted = cis_exclusion("5.1.8", &["web-01"]);
+    assert_eq!(
+        cis_not_applicable(&posture_with(targeted.clone(), &web)),
+        1,
+        "the named host's own declaration leaves its denominator"
+    );
+    assert_eq!(
+        cis_not_applicable(&posture_with(targeted, &db)),
+        0,
+        "a claim about web-01 must not raise db-01's score"
+    );
+
+    let estate_wide = cis_exclusion("5.1.8", &[]);
+    assert_eq!(
+        cis_not_applicable(&posture_with(estate_wide.clone(), &web)),
+        1,
+        "an untargeted declaration is a claim about the estate"
+    );
+    assert_eq!(cis_not_applicable(&posture_with(estate_wide, &db)), 1);
+}
+
 #[test]
 fn posture_for_findings_returns_one_per_framework() {
     let generator = fleet_report_generator(
         ComplianceProfile::Generic,
         hardener_plugins::compliance_coverage(),
+        ComplianceConfig::default(),
+        &RemoteHostProfile::from_target("web-01", 22, None, true),
     );
     let scores = posture_for_findings(&generator, &[], &[]);
     assert_eq!(scores.len(), FLEET_FRAMEWORKS.len());
@@ -643,6 +722,8 @@ fn the_fleet_posture_carries_one_outcome_per_control() {
     let generator = fleet_report_generator(
         ComplianceProfile::Generic,
         hardener_plugins::compliance_coverage(),
+        ComplianceConfig::default(),
+        &RemoteHostProfile::from_target("web-01", 22, None, true),
     );
 
     let posture = posture_for_findings(&generator, &[], &[]);

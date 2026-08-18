@@ -838,6 +838,114 @@ fn report_config_server() -> ReportConfig {
     }
 }
 
+/// A scanned host with nothing to report, for the exclusion-resolution tests.
+fn clean_outcome(name: &str) -> HostOutcome {
+    HostOutcome {
+        name: name.into(),
+        target: format!("ops@{name}:22"),
+        profile: ComplianceProfile::Generic,
+        status: HostStatus::Scanned {
+            counts: SeverityCounts::default(),
+            findings: vec![],
+            unchecked: vec![],
+        },
+    }
+}
+
+/// One CIS exclusion for `control_id`, covering `hosts` (empty means every
+/// host), with a review date far enough out to be irrelevant to the assertion.
+fn cis_exclusion(control_id: &str, hosts: &[&str]) -> ComplianceConfig {
+    let mut controls = std::collections::HashMap::new();
+    controls.insert(
+        control_id.to_string(),
+        hardener_core::config::scope::ScopeExclusion {
+            reason: "No physical premises".into(),
+            approved_by: Some("eric".into()),
+            approved_date: Some("2026-08-18".into()),
+            ticket: None,
+            review_by: Some("2999-01-01".into()),
+            hosts: hosts.iter().map(|h| (*h).to_string()).collect(),
+        },
+    );
+    let mut frameworks = std::collections::HashMap::new();
+    frameworks.insert("cis".to_string(), controls);
+    ComplianceConfig {
+        not_applicable: frameworks,
+    }
+}
+
+/// The CIS posture of one assessed host report.
+fn cis_posture(report: &HostReport) -> &FrameworkPosture {
+    let HostReportStatus::Assessed { frameworks } = &report.status else {
+        panic!("scanned host should be assessed");
+    };
+    frameworks
+        .iter()
+        .find(|f| f.framework == ComplianceFramework::CIS.to_string())
+        .expect("CIS posture present")
+}
+
+/// The controller's `[compliance]` section is one file describing a fleet, so
+/// the fleet path has to resolve each exclusion against the host being
+/// assessed. Passing an empty set instead cost every remote host its
+/// operator's untargeted declarations; passing the whole set ungated would
+/// raise the score of hosts nobody made the claim about.
+///
+/// CIS 5.1.8 is a curated control no plugin covers, so it is `ManualReview`
+/// and therefore the only status an exclusion can convert. Should a plugin
+/// gain coverage for it, the assessed arm wins and this test fails rather than
+/// passing on a control that moved.
+#[test]
+fn assess_outcomes_resolves_a_targeted_exclusion_against_each_host() {
+    let scenario = Scenario::Custom(vec![ComplianceFramework::CIS]);
+    let reports = assess_outcomes(
+        vec![clean_outcome("web-01"), clean_outcome("db-01")],
+        scenario,
+        None,
+        &cis_exclusion("5.1.8", &["web-01"]),
+    );
+
+    let web = cis_posture(&reports[0]);
+    let db = cis_posture(&reports[1]);
+
+    assert_eq!(
+        web.not_applicable, 1,
+        "the named host's own declaration leaves its denominator"
+    );
+    assert_eq!(
+        db.not_applicable, 0,
+        "a claim about web-01 must not raise db-01's score"
+    );
+    assert_eq!(
+        db.manual_review,
+        web.manual_review + 1,
+        "exactly one control moved, and only on the host it names"
+    );
+}
+
+/// The other half: a declaration naming no host is a claim about the estate,
+/// so it applies to every host the fleet assesses. This is what the empty set
+/// was costing.
+#[test]
+fn assess_outcomes_applies_an_untargeted_exclusion_to_every_host() {
+    let scenario = Scenario::Custom(vec![ComplianceFramework::CIS]);
+    let reports = assess_outcomes(
+        vec![clean_outcome("web-01"), clean_outcome("db-01")],
+        scenario,
+        None,
+        &cis_exclusion("5.1.8", &[]),
+    );
+
+    for report in &reports {
+        assert_eq!(
+            cis_posture(report).not_applicable,
+            1,
+            "{} must honour an estate-wide declaration",
+            report.name
+        );
+    }
+}
+
 #[test]
 fn host_report_assesses_scanned_and_passes_failures_through() {
     let generator = ReportGenerator::new(
@@ -1376,7 +1484,12 @@ async fn scan_resolves_rocky_10_profile_and_report_carries_it() {
 
     // Without an override the host's own profile rides into its report
     // row, and the JSON document exposes it per host.
-    let reports = assess_outcomes(vec![outcome], Scenario::Server, None);
+    let reports = assess_outcomes(
+        vec![outcome],
+        Scenario::Server,
+        None,
+        &ComplianceConfig::default(),
+    );
     assert_eq!(reports[0].profile, ComplianceProfile::Rhel10);
     let json = render_report_json(&reports);
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -1392,6 +1505,7 @@ async fn batch_report_profile_override_forces_every_host() {
         vec![outcome],
         Scenario::Server,
         Some(ComplianceProfile::Generic),
+        &ComplianceConfig::default(),
     );
     assert_eq!(
         reports[0].profile,

@@ -85,17 +85,53 @@ fn config_with_profile(framework: ComplianceFramework, profile: ComplianceProfil
 /// Builds the single report for one framework with an operator exclusion set
 /// applied. `config_for` supplies the report config so the scenario, formats and
 /// profile are defined once for every test in this file.
+///
+/// The report is about the local host, which is what every caller outside the
+/// fleet path reports on. [`report_for_with_exclusions_on_host`] is the same
+/// thing with a host named.
 fn report_for_with_exclusions(
     framework: ComplianceFramework,
     coverage: Vec<ComplianceMapping>,
     findings: &[Finding],
     exclusions: ComplianceConfig,
 ) -> ComplianceReport {
-    ReportGenerator::new(config_for(framework), coverage, exclusions)
+    report_for_with_exclusions_on_host(framework, coverage, findings, exclusions, None)
+}
+
+/// [`report_for_with_exclusions`] with the host the report is about named as
+/// `(target, hostname, name)`, which is the three spellings
+/// `ScopeExclusion::covers_host` matches against. `None` is the local host.
+fn report_for_with_exclusions_on_host(
+    framework: ComplianceFramework,
+    coverage: Vec<ComplianceMapping>,
+    findings: &[Finding],
+    exclusions: ComplianceConfig,
+    host: Option<(&str, &str, &str)>,
+) -> ComplianceReport {
+    let generator = ReportGenerator::new(config_for(framework), coverage, exclusions);
+    let generator = match host {
+        Some((target, hostname, name)) => {
+            generator.for_host(target.to_string(), hostname.to_string(), name.to_string())
+        }
+        None => generator,
+    };
+    generator
         .generate(findings, &[])
         .into_iter()
         .next()
         .expect("one report")
+}
+
+/// The status a report gives one control. Panics when the control is absent,
+/// because every caller here is asserting about a control it expects listed.
+fn status_of(report: &ComplianceReport, control_id: &str) -> ControlStatus {
+    report
+        .report_controls
+        .iter()
+        .find(|c| c.control_id == control_id)
+        .expect("control present")
+        .control_status
+        .clone()
 }
 
 /// Builds a `ComplianceConfig` holding one exclusion for one control.
@@ -117,6 +153,23 @@ fn one_exclusion(framework_id: &str, control_id: &str) -> ComplianceConfig {
     ComplianceConfig {
         not_applicable: frameworks,
     }
+}
+
+/// [`one_exclusion`] narrowed to a host list. An empty list is what
+/// `one_exclusion` already produces, so this is only ever used to target.
+fn one_exclusion_for_hosts(
+    framework_id: &str,
+    control_id: &str,
+    hosts: &[&str],
+) -> ComplianceConfig {
+    let mut cfg = one_exclusion(framework_id, control_id);
+    cfg.not_applicable
+        .get_mut(framework_id)
+        .expect("framework present")
+        .get_mut(control_id)
+        .expect("control present")
+        .hosts = hosts.iter().map(|h| (*h).to_string()).collect();
+    cfg
 }
 
 #[test]
@@ -246,6 +299,87 @@ fn an_exclusion_naming_nothing_real_is_inert() {
         report.report_summary.summary_not_applicable,
         baseline.report_summary.summary_not_applicable
     );
+}
+
+/// An exclusion is scoped to the framework it was declared under.
+///
+/// The control id here is a real one in the CIS catalogue, declared under
+/// STIG. Framework numbering schemes overlap, so a lookup that ignored the
+/// framework key would take an operator's CIS declaration and quietly drop the
+/// same-numbered control from a STIG or ISO 27001 report nobody made a claim
+/// about. `an_exclusion_naming_nothing_real_is_inert` cannot see that: its
+/// control id is fake as well, so it proves only that a fake control is inert.
+#[test]
+fn an_exclusion_under_another_framework_does_not_reach_a_real_control() {
+    let report = report_for_with_exclusions(
+        ComplianceFramework::CIS,
+        vec![],
+        &[],
+        one_exclusion("stig", "1.5.1"),
+    );
+
+    assert_eq!(
+        status_of(&report, "1.5.1"),
+        ControlStatus::ManualReview,
+        "a STIG declaration says nothing about the CIS control of the same number"
+    );
+    assert_eq!(report.report_summary.summary_not_applicable, 0);
+}
+
+/// Every other parser in this tool resolves a framework id through
+/// `ComplianceFramework::from_id`, which is case insensitive and accepts the
+/// documented aliases. The generator matched the config key exactly, so a
+/// hand-written `[compliance.not_applicable.CIS]` or `.nist-800-171` was
+/// silently inert: accepted by the config loader, ignored by the report, with
+/// nothing anywhere pointing at the spelling.
+#[test]
+fn an_accepted_spelling_of_the_framework_key_resolves() {
+    for spelling in ["CIS", "Cis"] {
+        let report = report_for_with_exclusions(
+            ComplianceFramework::CIS,
+            vec![],
+            &[],
+            one_exclusion(spelling, "1.5.1"),
+        );
+        assert_eq!(
+            status_of(&report, "1.5.1"),
+            ControlStatus::NotApplicable,
+            "{spelling:?} names CIS everywhere else in the tool"
+        );
+    }
+
+    // An alias rather than a case variant. ISO 27001 is the other framework
+    // with a curated catalogue, so it is the other one where an exclusion has
+    // anything to convert: a derived catalogue is assessed by definition, and
+    // the assessed arm sits above the exclusion arm.
+    let report = report_for_with_exclusions(
+        ComplianceFramework::ISO27001,
+        vec![],
+        &[],
+        one_exclusion("iso-27001", "7.1"),
+    );
+    assert_eq!(
+        status_of(&report, "7.1"),
+        ControlStatus::NotApplicable,
+        "iso-27001 is an accepted alias of iso27001"
+    );
+}
+
+/// The other half: normalising the key must not turn an unresolvable one into
+/// a match. A key naming no framework has no interval to measure a review
+/// deadline against, so it stays inert, which is the existing fail-closed
+/// behaviour and the only safe answer for a mechanism that raises a score.
+#[test]
+fn a_framework_key_naming_nothing_known_stays_inert() {
+    let report = report_for_with_exclusions(
+        ComplianceFramework::CIS,
+        vec![],
+        &[],
+        one_exclusion("ciss", "1.5.1"),
+    );
+
+    assert_eq!(status_of(&report, "1.5.1"), ControlStatus::ManualReview);
+    assert_eq!(report.report_summary.summary_not_applicable, 0);
 }
 
 #[test]
@@ -806,19 +940,101 @@ fn gaining_coverage_supersedes_an_exclusion_without_waiting_for_review() {
         cfg,
     );
 
-    let status_of = |r: &ComplianceReport| {
-        r.report_controls
-            .iter()
-            .find(|c| c.control_id == "1.5.1")
-            .expect("control present")
-            .control_status
-            .clone()
-    };
-
-    assert_eq!(status_of(&before), ControlStatus::NotApplicable);
+    assert_eq!(status_of(&before, "1.5.1"), ControlStatus::NotApplicable);
     assert_eq!(
-        status_of(&after),
+        status_of(&after, "1.5.1"),
         ControlStatus::Pass,
         "coverage supersedes the declaration; review_by is 2999 and irrelevant"
     );
+}
+
+/// An exclusion naming no host is a claim about the estate, so it applies
+/// wherever the report is generated, remote hosts included.
+#[test]
+fn an_untargeted_exclusion_applies_to_every_host() {
+    let report = report_for_with_exclusions_on_host(
+        ComplianceFramework::CIS,
+        vec![],
+        &[],
+        one_exclusion("cis", "1.5.1"),
+        Some(("web-01:22", "web-01", "web-01")),
+    );
+
+    assert_eq!(status_of(&report, "1.5.1"), ControlStatus::NotApplicable);
+}
+
+/// The point of the host list: a claim made about one system must not raise
+/// any other system's score, and must not silently raise the controller's own.
+#[test]
+fn a_targeted_exclusion_leaves_other_hosts_alone() {
+    let cfg = one_exclusion_for_hosts("cis", "1.5.1", &["web-01"]);
+
+    let matching = report_for_with_exclusions_on_host(
+        ComplianceFramework::CIS,
+        vec![],
+        &[],
+        cfg.clone(),
+        Some(("web-01:22", "web-01", "web-01")),
+    );
+    let other = report_for_with_exclusions_on_host(
+        ComplianceFramework::CIS,
+        vec![],
+        &[],
+        cfg.clone(),
+        Some(("db-01:22", "db-01", "db-01")),
+    );
+    let local =
+        report_for_with_exclusions_on_host(ComplianceFramework::CIS, vec![], &[], cfg, None);
+
+    assert_eq!(status_of(&matching, "1.5.1"), ControlStatus::NotApplicable);
+    assert_eq!(status_of(&other, "1.5.1"), ControlStatus::ManualReview);
+    assert_eq!(
+        status_of(&local, "1.5.1"),
+        ControlStatus::ManualReview,
+        "a targeted exclusion must not silently alter the controller's own report"
+    );
+}
+
+/// The three spellings the generator carries are all matched, so an operator
+/// who wrote the canonical target, the bare hostname or the inventory display
+/// name gets the same answer.
+#[test]
+fn the_canonical_target_form_matches_as_well_as_the_bare_hostname() {
+    let host = Some(("ops@web-01:2222", "web-01", "web-01-prod"));
+
+    for spelling in ["ops@web-01:2222", "web-01", "web-01-prod"] {
+        let report = report_for_with_exclusions_on_host(
+            ComplianceFramework::CIS,
+            vec![],
+            &[],
+            one_exclusion_for_hosts("cis", "1.5.1", &[spelling]),
+            host,
+        );
+        assert_eq!(
+            status_of(&report, "1.5.1"),
+            ControlStatus::NotApplicable,
+            "the spelling {spelling:?} names this host"
+        );
+    }
+}
+
+/// A targeted exclusion is still only ever able to convert a `ManualReview`.
+/// The host gate is an extra condition on the last arm, never a way past the
+/// arms above it, so the matching host still fails on a live finding.
+#[test]
+fn a_matching_host_still_cannot_silence_a_failing_control() {
+    let report = report_for_with_exclusions_on_host(
+        ComplianceFramework::CIS,
+        vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        &[mapped_finding(
+            ComplianceFramework::CIS,
+            "1.5.1",
+            Severity::High,
+        )],
+        one_exclusion_for_hosts("cis", "1.5.1", &["web-01"]),
+        Some(("web-01:22", "web-01", "web-01")),
+    );
+
+    assert_eq!(status_of(&report, "1.5.1"), ControlStatus::Fail);
+    assert_eq!(report.report_summary.summary_not_applicable, 0);
 }

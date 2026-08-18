@@ -723,6 +723,10 @@ hosts = ["web-01", "web-02"]
 | `review_by` | When it must be re-examined (ISO 8601) | twelve months from `approved_date` |
 | `hosts` | Hosts it covers. Matched case-insensitively against a saved profile's name, its hostname, or its `user@host:port` target | empty, meaning every host |
 
+The framework key accepts any spelling `--framework` accepts, so `iso27001`,
+`ISO27001` and `iso-27001` are one key, as are `nist800171` and `nist-800-171`.
+A key naming no framework the tool knows is inert, per "It never applied" below.
+
 Prefer `hardener scope exclude` over hand-editing. The verb validates before it
 writes and records the declaration in the audit log; **a hand-edited entry is
 honoured but produces no audit record**, because nothing runs to write one.
@@ -765,11 +769,18 @@ guess.
 
 ### It reaches the fleet
 
-`batch` evaluates every remote host against the controller's config, not the
-host's own, so an exclusion written here applies fleet-wide unless `hosts`
-narrows it. That is deliberate and predates this section: policy belongs where
-the operator maintains it, and a target that supplied its own could otherwise
-weaken the audit reporting on itself.
+`batch report` and the desktop fleet view both evaluate every remote host
+against the controller's config, not the host's own, so an exclusion written
+here applies fleet-wide unless `hosts` narrows it. That is deliberate and
+predates this section: policy belongs where the operator maintains it, and a
+target that supplied its own could otherwise weaken the audit reporting on
+itself.
+
+Each host is matched against `hosts` individually, so a narrowed exclusion
+raises the score of the hosts it names and no others. The controller's own
+local report is not a host in that sense: it honours an exclusion with an empty
+`hosts` list and never one that names hosts, so narrowing an exclusion cannot
+quietly raise the score of the machine you wrote it on.
 
 ### It has no effect for eight of the ten frameworks
 

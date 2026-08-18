@@ -9,10 +9,10 @@ use crate::profiles;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
 use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, ControlStatus};
-use hardener_core::config::scope::ComplianceConfig;
+use hardener_core::config::scope::{ComplianceConfig, ScopeExclusion};
 use hardener_core::plugin::{Finding, UncheckedCheck};
 use hardener_types::ExceptionOutcome;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Generates compliance reports from scan findings.
 pub struct ReportGenerator {
@@ -24,6 +24,15 @@ pub struct ReportGenerator {
     /// The operator's declared-not-applicable set, from the controller's
     /// `[compliance]` config section.
     exclusions: ComplianceConfig,
+    /// The host this report is about, as `(target, hostname, name)`: the
+    /// canonical `RemoteHostProfile::target()`, the bare hostname and the
+    /// inventory display name, which are the spellings
+    /// [`ScopeExclusion::covers_host`] matches against.
+    ///
+    /// `None` is the local host. It matches an untargeted exclusion and never
+    /// matches a targeted one, so naming hosts cannot change the controller's
+    /// own report by accident.
+    host: Option<(String, String, String)>,
 }
 
 impl ReportGenerator {
@@ -47,7 +56,21 @@ impl ReportGenerator {
             config,
             coverage,
             exclusions,
+            host: None,
         }
+    }
+
+    /// Names the host this report is about, so host-targeted exclusions
+    /// resolve. `target` is the canonical `RemoteHostProfile::target()`,
+    /// `hostname` the bare hostname and `name` the inventory display name.
+    ///
+    /// A setter rather than a fourth `new` parameter because every caller
+    /// outside the fleet path reports on the local host and would pass the
+    /// same three empty strings. Leaving it unset is the local host, so those
+    /// call sites stay unchanged and the fleet path says what it is doing.
+    pub fn for_host(mut self, target: String, hostname: String, name: String) -> Self {
+        self.host = Some((target, hostname, name));
+        self
     }
 
     /// Generates compliance reports for all frameworks in the configured scenario.
@@ -90,6 +113,18 @@ impl ReportGenerator {
                 self.generate_for_framework(framework, &findings, &unchecked, &coverage)
             })
             .collect()
+    }
+
+    /// Whether `exclusion` covers the host this report is about.
+    ///
+    /// With no host named the report is about the local system, and only an
+    /// untargeted exclusion covers it: a declaration made about named remote
+    /// hosts must never raise the controller's own score.
+    fn covers_this_host(&self, exclusion: &ScopeExclusion) -> bool {
+        match &self.host {
+            Some((target, hostname, name)) => exclusion.covers_host(target, hostname, name),
+            None => exclusion.hosts.is_empty(),
+        }
     }
 
     /// Generates a compliance report for a single framework from
@@ -143,9 +178,27 @@ impl ReportGenerator {
         // The operator's declared-not-applicable set for this framework, and the
         // day each exclusion's review deadline is measured against. Resolved
         // once rather than per control.
+        //
+        // Config keys are normalised through `ComplianceFramework::from_id`,
+        // which is what every other parser in this tool accepts, so a
+        // hand-written `[compliance.not_applicable.CIS]` or `.nist-800-171`
+        // resolves rather than being silently inert. A key naming no known
+        // framework resolves to nothing and stays inert, which is the existing
+        // fail-closed behaviour: there is no interval to measure its review
+        // deadline against, and this mechanism only ever raises a score.
+        //
+        // Every key that resolves to this framework contributes, rather than an
+        // arbitrary first match, so two spellings of one framework in the same
+        // file do not make the result depend on hash order.
         let today = Utc::now().date_naive();
         let framework_id = framework.id();
-        let excluded = self.exclusions.not_applicable.get(framework_id);
+        let excluded: HashMap<&str, &ScopeExclusion> = self
+            .exclusions
+            .not_applicable
+            .iter()
+            .filter(|(key, _)| ComplianceFramework::from_id(key) == Some(*framework))
+            .flat_map(|(_, controls)| controls.iter().map(|(id, e)| (id.as_str(), e)))
+            .collect();
 
         // Map each control to a result. A mapped finding always fails the control,
         // even one the check could not evaluate this run: Fail still wins over
@@ -169,14 +222,15 @@ impl ReportGenerator {
                     ControlStatus::ManualReview
                 } else if assessed.contains(control.compliance_control_id.as_str()) {
                     ControlStatus::Pass
-                } else if let Some(exclusion) =
-                    excluded.and_then(|m| m.get(control.compliance_control_id.as_str()))
+                } else if let Some(exclusion) = excluded.get(control.compliance_control_id.as_str())
                     && exclusion.is_valid_on(framework_id, today)
+                    && self.covers_this_host(exclusion)
                 {
                     // Last arm on purpose. A live finding, an unchecked control
                     // and an assessed control are all decided above, so this can
                     // only ever convert a ManualReview. An exclusion is never a
-                    // way to mute a failure.
+                    // way to mute a failure. The host gate is one more condition
+                    // on this arm, never a way around the three above it.
                     //
                     // The unchecked arm sitting above this one means a control
                     // whose check could not run this session stays ManualReview

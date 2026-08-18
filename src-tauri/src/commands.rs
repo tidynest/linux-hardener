@@ -1837,12 +1837,21 @@ const FLEET_FRAMEWORKS: [ComplianceFramework; 9] = [
 ];
 
 /// Builds the report generator used for fleet compliance scoring (all
-/// `FLEET_FRAMEWORKS` in one pass) under one host's resolved profile.
-/// Built per host: profiles differ across a mixed fleet, so callers fetch
-/// coverage once and clone it per host (cheap at fleet scale).
+/// `FLEET_FRAMEWORKS` in one pass) under one host's resolved profile and
+/// identity. Built per host: profiles differ across a mixed fleet, so callers
+/// fetch coverage once and clone it per host (cheap at fleet scale).
+///
+/// `exclusions` is this controller's `[compliance]` section: one file
+/// describing a fleet. `ScopeExclusion` carries a `hosts` list precisely
+/// because an exclusion is a claim about particular systems, so the set is
+/// handed over whole and `host` decides which of its entries reach this
+/// report. An untargeted declaration is a claim about the estate and applies
+/// everywhere; a targeted one reaches only the hosts it names.
 fn fleet_report_generator(
     profile: ComplianceProfile,
     coverage: Vec<ComplianceMapping>,
+    exclusions: ComplianceConfig,
+    host: &RemoteHostProfile,
 ) -> ReportGenerator {
     let config = ReportConfig {
         scenario: Scenario::Custom(FLEET_FRAMEWORKS.to_vec()),
@@ -1850,12 +1859,11 @@ fn fleet_report_generator(
         output_dir: None,
         profile,
     };
-    // No exclusions on the fleet path. `ScopeExclusion` carries a `hosts` list
-    // precisely because an exclusion is a claim about one system, and the
-    // generator does not yet filter by host, so applying this controller's
-    // local set to every remote host would raise scores for hosts nobody made
-    // the claim about.
-    ReportGenerator::new(config, coverage, ComplianceConfig::default())
+    ReportGenerator::new(config, coverage, exclusions).for_host(
+        host.target(),
+        host.hostname.clone(),
+        host.name.clone(),
+    )
 }
 
 /// Derives slim per-framework posture for one host's findings and the checks
@@ -1912,14 +1920,29 @@ pub async fn run_fleet_scan(
         validate_ipc_string(name, "host_name")?;
     }
     let adhoc = adhoc.unwrap_or_default();
-    let mut adhoc_profiles = std::collections::HashMap::new();
+
+    // One profile lookup, keyed the way the rows are named: inventory hosts by
+    // their profile name, ad-hoc ones by the full target string. Built once and
+    // shared, because the scan closure takes ownership of what it captures and
+    // the compliance pass below needs the same identities to resolve
+    // host-targeted exclusions.
+    let config = load_hosts_config()?;
+    let mut profiles: std::collections::HashMap<String, RemoteHostProfile> = config
+        .hosts
+        .into_iter()
+        .map(|h| (h.name.clone(), h))
+        .collect();
     for target in &adhoc {
-        adhoc_profiles.insert(target.clone(), adhoc_profile(target)?);
+        // `or_insert` and not `insert`: an inventory host keeps precedence over
+        // an ad-hoc target that happens to spell its name, which is the order
+        // the lookup this replaced already had.
+        let profile = adhoc_profile(target)?;
+        profiles.entry(target.clone()).or_insert(profile);
     }
 
-    let config = load_hosts_config()?;
     let plugin_ids = std::sync::Arc::new(plugin_ids);
-    let adhoc_profiles = std::sync::Arc::new(adhoc_profiles);
+    let profiles = std::sync::Arc::new(profiles);
+    let scan_profiles = profiles.clone();
 
     // Ad-hoc rows keep the full target string as their display name.
     let all_names: Vec<String> = host_names.into_iter().chain(adhoc).collect();
@@ -1941,12 +1964,7 @@ pub async fn run_fleet_scan(
     let mut results = scan_fleet(
         all_names,
         move |name| {
-            let profile = config
-                .hosts
-                .iter()
-                .find(|h| h.name == name)
-                .or_else(|| adhoc_profiles.get(&name))
-                .cloned();
+            let profile = scan_profiles.get(&name).cloned();
             let plugin_ids = plugin_ids.clone();
             async move {
                 let profile =
@@ -1983,8 +2001,10 @@ pub async fn run_fleet_scan(
 
     // Derive each host's compliance posture from the findings already scanned:
     // in-memory, no extra SSH. Each host gets a generator carrying its own
-    // resolved profile; the coverage set is fetched once and cloned per host.
+    // resolved profile and its own identity; the coverage set and the
+    // declared-not-applicable set are read once and cloned per host.
     let coverage = hardener_plugins::compliance_coverage();
+    let exclusions = local_exclusions();
     for (profile, host) in &mut results {
         if matches!(host.status, FleetHostStatus::Ok) {
             let findings: Vec<Finding> = host
@@ -1997,7 +2017,16 @@ pub async fn run_fleet_scan(
                 .iter()
                 .flat_map(|r| r.scan_unchecked.iter().cloned())
                 .collect();
-            let generator = fleet_report_generator(*profile, coverage.clone());
+            // The row exists because this map produced the profile it was
+            // scanned with, so the lookup resolves. Should it ever not, the
+            // display name alone still gates the arm rather than leaving it
+            // ungated.
+            let identity = profiles
+                .get(&host.host_name)
+                .cloned()
+                .unwrap_or_else(|| RemoteHostProfile::from_target(&host.host_name, 22, None, true));
+            let generator =
+                fleet_report_generator(*profile, coverage.clone(), exclusions.clone(), &identity);
             host.compliance = posture_for_findings(&generator, &findings, &unchecked);
         }
     }
