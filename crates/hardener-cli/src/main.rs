@@ -9,7 +9,7 @@ use anyhow::Result;
 use clap::Parser;
 use cli::{
     BatchAction, CheckpointAction, Cli, Command, DaemonAction, ExceptionAction, HistoryAction,
-    OutputFormat, SystemdAction,
+    OutputFormat, ScopeAction, SystemdAction,
 };
 use commands::scan::ScanOptions;
 use hardener_core::{LocalExecutor, SshExecutor, executor::SystemExecutor};
@@ -172,6 +172,32 @@ async fn main() -> Result<()> {
                     quiet: cli.quiet,
                 })
                 .await
+            }
+        },
+        Command::Scope { action } => match action {
+            ScopeAction::Exclude {
+                framework,
+                control,
+                reason,
+                approved_by,
+                ticket,
+                review_by,
+                host,
+            } => {
+                commands::scope::run_exclude(
+                    &framework,
+                    &control,
+                    &reason,
+                    approved_by.as_deref(),
+                    ticket.as_deref(),
+                    review_by.as_deref(),
+                    &host,
+                    cli.config.as_deref(),
+                )
+                .await
+            }
+            ScopeAction::Include { framework, control } => {
+                commands::scope::run_include(&framework, &control, cli.config.as_deref()).await
             }
         },
         Command::Report {

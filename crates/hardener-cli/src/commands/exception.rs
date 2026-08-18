@@ -23,6 +23,9 @@ use std::sync::Arc;
 /// root (`crates/hardener-core/src/config_loader.rs:61`), and apply runs as
 /// root, so an exception written under `~/.config` would be shown by the
 /// desktop and ignored by the apply it was created to change.
+///
+/// `hardener scope` writes the same file for the same reason, which is why the
+/// three helpers below are `pub(crate)` rather than private.
 const SYSTEM_CONFIG_PATH: &str = "/etc/linux-hardener/config.toml";
 
 pub struct AddOptions<'a> {
@@ -105,7 +108,7 @@ pub async fn add(opts: AddOptions<'_>) -> Result<()> {
         expires: opts.expires.map(str::to_string),
     };
 
-    let path = write_path(opts.config_path);
+    let path = write_path(opts.config_path.map(PathBuf::as_path));
     let existing = read_or_empty(&path)?;
     let written = document::upsert_exception(&existing, section, opts.key, &exception)?;
     write_atomically(&path, &written)?;
@@ -125,7 +128,7 @@ pub async fn add(opts: AddOptions<'_>) -> Result<()> {
 
 pub async fn remove(opts: RemoveOptions<'_>) -> Result<()> {
     let section = section_for(opts.plugin_id)?;
-    let path = write_path(opts.config_path);
+    let path = write_path(opts.config_path.map(PathBuf::as_path));
     let existing = read_or_empty(&path)?;
     let written = document::remove_exception(&existing, section, opts.key)?;
     write_atomically(&path, &written)?;
@@ -162,15 +165,15 @@ fn section_for(plugin_id: &str) -> Result<&'static str> {
     })
 }
 
-fn write_path(config_path: Option<&PathBuf>) -> PathBuf {
+pub(crate) fn write_path(config_path: Option<&Path>) -> PathBuf {
     config_path
-        .cloned()
+        .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from(SYSTEM_CONFIG_PATH))
 }
 
 /// A config file that does not exist yet is an empty document, not an error:
 /// the first exception on a host may be the first line of its config.
-fn read_or_empty(path: &Path) -> Result<String> {
+pub(crate) fn read_or_empty(path: &Path) -> Result<String> {
     match std::fs::read_to_string(path) {
         Ok(text) => Ok(text),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
@@ -181,7 +184,7 @@ fn read_or_empty(path: &Path) -> Result<String> {
 /// Write to a sibling temporary file and rename over the target, so an
 /// interrupted write cannot leave a half-written config that root then fails to
 /// parse on the next scan.
-fn write_atomically(path: &Path, contents: &str) -> Result<()> {
+pub(crate) fn write_atomically(path: &Path, contents: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| anyhow!("Cannot create {}: {e}", parent.display()))?;

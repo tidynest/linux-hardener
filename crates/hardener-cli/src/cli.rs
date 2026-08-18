@@ -153,6 +153,12 @@ pub enum Command {
         action: ExceptionAction,
     },
 
+    /// Declare a compliance control not applicable, or withdraw that.
+    Scope {
+        #[command(subcommand)]
+        action: ScopeAction,
+    },
+
     /// Generate compliance reports.
     Report {
         /// Use case scenario (server, workstation, government, healthcare, financial, gdpr, all).
@@ -432,6 +438,12 @@ impl Command {
                  this host's apply reads; an exception for a remote host is \
                  written on that host",
             ),
+            Command::Scope { .. } => refuse(
+                "scope",
+                "it edits this host's own configuration file, which is the file \
+                 the controller evaluates the fleet against; the declaration is \
+                 written where the operator maintains policy",
+            ),
             Command::Daemon { action } => match action {
                 DaemonAction::Start => refuse(
                     "daemon start",
@@ -559,6 +571,49 @@ pub enum ExceptionAction {
         plugin_id: String,
         /// Exception key.
         key: String,
+    },
+}
+
+/// What `hardener scope` does to one compliance control.
+///
+/// The pair is `exclude` and `include` rather than `add` and `remove`, because
+/// the withdrawal is not the deletion of a record: it returns the control to
+/// the score it was taken out of, and the audit trail keeps both acts.
+#[derive(Subcommand)]
+pub enum ScopeAction {
+    /// Declare a control not applicable to this system.
+    Exclude {
+        /// Framework the control belongs to, as `report --framework` names it.
+        framework: String,
+        /// Control id, as the compliance report prints it.
+        control: String,
+        /// Why the control does not apply. Required: an exclusion raises the
+        /// score by leaving its denominator, and an unexplained one raises it
+        /// for no stated cause.
+        #[arg(long)]
+        reason: String,
+        /// Who approved it.
+        #[arg(long, value_name = "NAME")]
+        approved_by: Option<String>,
+        /// Approval ticket or issue reference.
+        #[arg(long, value_name = "REF")]
+        ticket: Option<String>,
+        /// Date the exclusion must be reviewed again (ISO 8601, e.g.
+        /// 2027-08-18). Absent means the framework's own default interval.
+        #[arg(long, value_name = "DATE")]
+        review_by: Option<String>,
+        /// A host the exclusion covers, repeatable. Absent means every host,
+        /// which is the common case.
+        #[arg(long, value_name = "HOST")]
+        host: Vec<String>,
+    },
+    /// Withdraw a not-applicable declaration, returning the control to the
+    /// score.
+    Include {
+        /// Framework the control belongs to.
+        framework: String,
+        /// Control id.
+        control: String,
     },
 }
 

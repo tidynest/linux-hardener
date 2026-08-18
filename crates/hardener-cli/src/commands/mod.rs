@@ -12,6 +12,7 @@ pub(crate) mod privilege;
 pub mod report;
 pub mod report_wizard;
 pub mod scan;
+pub mod scope;
 pub mod state;
 pub mod systemd;
 

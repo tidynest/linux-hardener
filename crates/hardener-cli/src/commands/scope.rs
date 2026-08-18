@@ -1,0 +1,449 @@
+//! `hardener scope`: declare a compliance control not applicable, or withdraw
+//! that declaration.
+//!
+//! Writes one `[compliance.not_applicable.<framework>."<control>"]` table and
+//! one audit entry. Every other line of the file is left as it was, through
+//! `toml_edit`, for the reason `exception/document.rs` records: a round trip
+//! through a typed struct discards the operator's comments, their section order
+//! and every key the struct does not model.
+//!
+//! **Validation happens before the write.** An exclusion raises a compliance
+//! score by leaving its denominator, and unlike a finding exception there is no
+//! live finding to check it against, so the framework id and the reason are all
+//! the tool can insist on.
+//!
+//! **Why this verb exists at all.** The same declaration could be typed into
+//! the configuration file by hand, and the generator would honour it. What a
+//! hand edit cannot produce is the audit entry: a file edited by an editor runs
+//! no code, so nothing records who raised the score, when, or on what grounds.
+
+use super::exception::{read_or_empty, write_atomically, write_path};
+use super::state::effective_user;
+use anyhow::{Context as _, Result, anyhow};
+use hardener_core::config::scope::ScopeExclusion;
+use hardener_state::audit::{ActionResult, ActionType, AuditLogger};
+use hardener_types::ComplianceFramework;
+use std::collections::HashMap;
+use std::path::Path;
+use toml_edit::{Array, DocumentMut, Item, Table, value};
+
+/// The nesting the exclusion tables live under, above the framework id.
+const SCOPE_PATH: [&str; 2] = ["compliance", "not_applicable"];
+
+/// One `exclude` request, as the two entry points below hand it on.
+///
+/// A struct rather than eight further parameters on the shared implementation:
+/// the two wrappers differ only in where the audit entry is written, and every
+/// other value passes through untouched.
+struct ExcludeRequest<'a> {
+    framework: &'a str,
+    control: &'a str,
+    reason: &'a str,
+    approved_by: Option<&'a str>,
+    ticket: Option<&'a str>,
+    review_by: Option<&'a str>,
+    hosts: &'a [String],
+    config_path: Option<&'a Path>,
+}
+
+/// Declares `control` not applicable, recording the act in this host's audit
+/// log.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_exclude(
+    framework: &str,
+    control: &str,
+    reason: &str,
+    approved_by: Option<&str>,
+    ticket: Option<&str>,
+    review_by: Option<&str>,
+    hosts: &[String],
+    config_path: Option<&Path>,
+) -> Result<()> {
+    let request = ExcludeRequest {
+        framework,
+        control,
+        reason,
+        approved_by,
+        ticket,
+        review_by,
+        hosts,
+        config_path,
+    };
+    exclude(request, super::state::get_audit_logger().await).await
+}
+
+/// [`run_exclude`] with the audit log named, so a test writes neither
+/// `/var/log` nor the operator's own data directory.
+///
+/// Compiled for tests alone. The production entry point resolves its log
+/// through [`super::state::get_audit_logger`], which also creates the directory
+/// and restricts its mode, and a second public way in would be a second answer
+/// to where this host's audit trail lives.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub async fn run_exclude_to(
+    framework: &str,
+    control: &str,
+    reason: &str,
+    approved_by: Option<&str>,
+    ticket: Option<&str>,
+    review_by: Option<&str>,
+    hosts: &[String],
+    config_path: Option<&Path>,
+    audit_log_path: &str,
+) -> Result<()> {
+    let request = ExcludeRequest {
+        framework,
+        control,
+        reason,
+        approved_by,
+        ticket,
+        review_by,
+        hosts,
+        config_path,
+    };
+    exclude(request, logger_at(audit_log_path).await).await
+}
+
+/// Withdraws a not-applicable declaration, returning the control to the score.
+pub async fn run_include(framework: &str, control: &str, config_path: Option<&Path>) -> Result<()> {
+    include(
+        framework,
+        control,
+        config_path,
+        super::state::get_audit_logger().await,
+    )
+    .await
+}
+
+/// [`run_include`] with the audit log named. Tests only, as
+/// [`run_exclude_to`] is.
+#[cfg(test)]
+pub async fn run_include_to(
+    framework: &str,
+    control: &str,
+    config_path: Option<&Path>,
+    audit_log_path: &str,
+) -> Result<()> {
+    include(
+        framework,
+        control,
+        config_path,
+        logger_at(audit_log_path).await,
+    )
+    .await
+}
+
+#[cfg(test)]
+async fn logger_at(audit_log_path: &str) -> Option<AuditLogger> {
+    match AuditLogger::new(audit_log_path).await {
+        Ok(logger) => Some(logger),
+        Err(e) => {
+            tracing::warn!("audit logging unavailable at {audit_log_path}: {e}");
+            None
+        }
+    }
+}
+
+async fn exclude(request: ExcludeRequest<'_>, logger: Option<AuditLogger>) -> Result<()> {
+    let reason = request.reason.trim();
+    let raw_target = format!("{}:{}", request.framework, request.control);
+
+    if reason.is_empty() {
+        return refuse(
+            logger.as_ref(),
+            raw_target,
+            format!(
+                "--reason is empty, so control '{}' was not excluded. An exclusion \
+                 raises the compliance score by leaving its denominator, and an \
+                 unexplained one raises it for no stated cause.",
+                request.control
+            ),
+        )
+        .await;
+    }
+
+    let Some(framework) = ComplianceFramework::from_id(request.framework) else {
+        return refuse(
+            logger.as_ref(),
+            raw_target,
+            format!(
+                "Unknown compliance framework '{}', so control '{}' was not \
+                 excluded. Run `hardener report --help` for the ids this binary \
+                 carries.",
+                request.framework, request.control
+            ),
+        )
+        .await;
+    };
+
+    // The canonical id, not the spelling given: `from_id` accepts `ISO-27001`
+    // and `iso27001` alike, and two spellings of one framework would otherwise
+    // write two tables, of which the generator reads one.
+    let framework_id = framework.id();
+    let exclusion = ScopeExclusion {
+        reason: reason.to_string(),
+        approved_by: request.approved_by.map(str::to_string),
+        // Written now rather than left absent, because `review_deadline` falls
+        // back to the day it is *evaluated* when there is no approval date:
+        // an exclusion with neither date would have its deadline recomputed
+        // from today on every run and so would never come up for review.
+        approved_date: Some(chrono::Utc::now().date_naive().to_string()),
+        ticket: request.ticket.map(str::to_string),
+        review_by: request.review_by.map(str::to_string),
+        hosts: request.hosts.to_vec(),
+    };
+
+    let path = write_path(request.config_path);
+    let existing = read_or_empty(&path)?;
+    let written = upsert_exclusion(&existing, framework_id, request.control, &exclusion)?;
+    write_atomically(&path, &written)?;
+
+    let mut details = HashMap::from([
+        ("operation".to_string(), "exclude".to_string()),
+        ("reason".to_string(), exclusion.reason.clone()),
+    ]);
+    for (key, field) in [
+        ("approved_by", &exclusion.approved_by),
+        ("approved_date", &exclusion.approved_date),
+        ("ticket", &exclusion.ticket),
+        ("review_by", &exclusion.review_by),
+    ] {
+        if let Some(text) = field {
+            details.insert(key.to_string(), text.clone());
+        }
+    }
+    if !exclusion.hosts.is_empty() {
+        details.insert("hosts".to_string(), exclusion.hosts.join(","));
+    }
+
+    record(
+        logger.as_ref(),
+        format!("{framework_id}:{}", request.control),
+        details,
+    )
+    .await;
+
+    println!(
+        "Excluded '{}' from {} as not applicable. Written to {}.",
+        request.control,
+        framework,
+        path.display()
+    );
+    Ok(())
+}
+
+async fn include(
+    framework: &str,
+    control: &str,
+    config_path: Option<&Path>,
+    logger: Option<AuditLogger>,
+) -> Result<()> {
+    let raw_target = format!("{framework}:{control}");
+    let Some(known) = ComplianceFramework::from_id(framework) else {
+        return refuse(
+            logger.as_ref(),
+            raw_target,
+            format!(
+                "Unknown compliance framework '{framework}', so nothing was \
+                 withdrawn. Run `hardener report --help` for the ids this binary \
+                 carries."
+            ),
+        )
+        .await;
+    };
+
+    let framework_id = known.id();
+    let path = write_path(config_path);
+    let existing = read_or_empty(&path)?;
+    let written = match remove_exclusion(&existing, framework_id, control) {
+        Ok(written) => written,
+        Err(e) => {
+            return refuse(
+                logger.as_ref(),
+                format!("{framework_id}:{control}"),
+                e.to_string(),
+            )
+            .await;
+        }
+    };
+    write_atomically(&path, &written)?;
+
+    record(
+        logger.as_ref(),
+        format!("{framework_id}:{control}"),
+        HashMap::from([("operation".to_string(), "include".to_string())]),
+    )
+    .await;
+
+    println!(
+        "Withdrew the exclusion of '{control}' from {known}; it counts towards \
+         the score again. Written to {}.",
+        path.display()
+    );
+    Ok(())
+}
+
+/// Records a granted or withdrawn exclusion, with its context inside the hash
+/// chain.
+///
+/// A logging failure does not fail the command: the declaration is already in
+/// the file, and reporting the write as failed would be the worse lie. It is
+/// said out loud, though, because an operator who believes the act was recorded
+/// and finds nothing at the audit is in a worse position than one who was told.
+async fn record(logger: Option<&AuditLogger>, target: String, details: HashMap<String, String>) {
+    let Some(logger) = logger else {
+        return;
+    };
+    if let Err(e) = logger
+        .log_action_with_details(
+            ActionType::ScopeExclusion,
+            effective_user(),
+            target,
+            ActionResult::Success,
+            details,
+        )
+        .await
+    {
+        tracing::warn!("the scope change was written but not audited: {e}");
+        eprintln!("W  The change was written, but the audit entry failed: {e}");
+    }
+}
+
+/// Records a refused attempt and returns the error the operator sees.
+///
+/// **`log_failure`, not `log_action_with_details`.**
+/// [`AuditLogger::verify_integrity`] verifies a failure entry through a branch
+/// of its own that hashes the single `error` detail and nothing else
+/// (`crates/hardener-state/src/audit.rs:507`), so any further detail written on
+/// a failure entry would sit outside the hash chain and could be altered
+/// without detection. The cause therefore goes into the error message, which is
+/// hashed, and the control it was refused for goes into the target, which is
+/// also hashed.
+async fn refuse(logger: Option<&AuditLogger>, target: String, message: String) -> Result<()> {
+    if let Some(logger) = logger
+        && let Err(e) = logger
+            .log_failure(
+                ActionType::ScopeExclusion,
+                effective_user(),
+                target,
+                message.clone(),
+            )
+            .await
+    {
+        tracing::warn!("a refused scope change was not audited: {e}");
+    }
+    Err(anyhow!(message))
+}
+
+/// Writes `exclusion` at `[compliance.not_applicable.<framework>."<control>"]`,
+/// replacing any table already there, and returns the whole document as text.
+///
+/// The optional fields are written only when set: an empty `approved_by` in the
+/// file would say the exclusion was approved by nobody, which is not what an
+/// unapproved exclusion means. An empty `hosts` is likewise left out, because
+/// there it means every host rather than none.
+fn upsert_exclusion(
+    document_text: &str,
+    framework_id: &str,
+    control: &str,
+    exclusion: &ScopeExclusion,
+) -> Result<String> {
+    let mut document = parse(document_text)?;
+
+    let mut entry = Table::new();
+    entry["reason"] = value(exclusion.reason.as_str());
+    for (name, field) in [
+        ("approved_by", &exclusion.approved_by),
+        ("approved_date", &exclusion.approved_date),
+        ("ticket", &exclusion.ticket),
+        ("review_by", &exclusion.review_by),
+    ] {
+        if let Some(text) = field {
+            entry[name] = value(text.as_str());
+        }
+    }
+    if !exclusion.hosts.is_empty() {
+        entry["hosts"] = value(Array::from_iter(exclusion.hosts.iter().map(String::as_str)));
+    }
+
+    table_at(&mut document, &framework_path(framework_id))?[control] = Item::Table(entry);
+
+    Ok(document.to_string())
+}
+
+/// Removes one control's table, and the tables above it when they are left
+/// empty, so that exclude followed by include is a round trip rather than a
+/// file gaining an empty header each time.
+///
+/// An absent control is an error, for the reason `remove_exception` gives: a
+/// typo against a hand-edited file would otherwise read as done.
+fn remove_exclusion(document_text: &str, framework_id: &str, control: &str) -> Result<String> {
+    let mut document = parse(document_text)?;
+
+    let controls = table_at(&mut document, &framework_path(framework_id))?;
+    if controls.remove(control).is_none() {
+        return Err(anyhow!(
+            "No exclusion of '{control}' under '{framework_id}' to withdraw."
+        ));
+    }
+    if !controls.is_empty() {
+        return Ok(document.to_string());
+    }
+
+    // The framework's own table is now empty, and so may be each table above
+    // it. Pruned from the innermost outwards, stopping at the first that still
+    // holds something.
+    let mut path: Vec<&str> = framework_path(framework_id);
+    while let Some(leaf) = path.pop() {
+        let parent = table_at(&mut document, &path)?;
+        parent.remove(leaf);
+        if !parent.is_empty() {
+            break;
+        }
+    }
+
+    Ok(document.to_string())
+}
+
+fn framework_path(framework_id: &str) -> Vec<&str> {
+    let mut path = SCOPE_PATH.to_vec();
+    path.push(framework_id);
+    path
+}
+
+fn parse(document_text: &str) -> Result<DocumentMut> {
+    document_text
+        .parse::<DocumentMut>()
+        .context("The configuration file is not valid TOML, so it was not written")
+}
+
+/// The table at `path`, creating any missing level on the way.
+///
+/// Every level created here is marked implicit, because none of them ever
+/// carries a value directly: only the control table at the end does. An
+/// implicit table contributes no header line of its own, so a first exclusion
+/// on an empty file adds exactly one header, the one that holds the data.
+fn table_at<'a>(document: &'a mut DocumentMut, path: &[&str]) -> Result<&'a mut Table> {
+    let mut current = document.as_table_mut();
+    for (depth, name) in path.iter().enumerate() {
+        current = current
+            .entry(name)
+            .or_insert_with(|| {
+                let mut table = Table::new();
+                table.set_implicit(true);
+                Item::Table(table)
+            })
+            .as_table_mut()
+            .ok_or_else(|| {
+                anyhow!(
+                    "[{}] is not a table in this configuration file",
+                    path[..=depth].join(".")
+                )
+            })?;
+    }
+    Ok(current)
+}
+
+#[cfg(test)]
+mod tests;

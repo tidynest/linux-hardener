@@ -649,6 +649,26 @@ fn the_commands_that_never_reach_a_host_refuse_ssh() {
             ],
             "exception",
         ),
+        (
+            vec![
+                "hardener",
+                "--ssh",
+                "web-01",
+                "scope",
+                "exclude",
+                "iso27001",
+                "A.7.1",
+                "--reason",
+                "no physical premises",
+            ],
+            "scope",
+        ),
+        (
+            vec![
+                "hardener", "--ssh", "web-01", "scope", "include", "iso27001", "A.7.1",
+            ],
+            "scope",
+        ),
     ];
 
     for (argv, name) in refused {
