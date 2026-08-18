@@ -255,6 +255,20 @@ async fn get_latest_scan_breaks_a_same_second_tie_by_insertion_order() {
         .await
         .unwrap();
 
+    // The tie is the case under test, and nothing so far has established that
+    // one happened: two `start_session` calls microseconds apart almost always
+    // share a second, but a run that straddles a boundary would be decided by
+    // `started_at` alone and pass without the tiebreak ever being consulted.
+    // Refusing that run is the difference between a test that checks the
+    // ordering and one that checks the clock.
+    let sessions = manager.list_sessions(10).await.unwrap();
+    let started_at: Vec<i64> = sessions.iter().map(|s| s.session_started_at).collect();
+    assert_eq!(
+        started_at[0], started_at[1],
+        "this run straddled a second boundary, so it never exercised the tie \
+         it is named for; re-run rather than reading it as a pass"
+    );
+
     let (session, _) = manager.get_latest_scan().await.unwrap().unwrap();
     assert_eq!(session.session_id, second_id);
 }
