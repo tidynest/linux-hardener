@@ -134,12 +134,72 @@ fn test_policy_exception_expired() {
     assert!(!exception.is_valid());
 }
 
+/// Every field of a `HardenerConfig` must survive TOML, not only the one field
+/// somebody wrote an assertion for.
+///
+/// This asserted `config.ssh.enabled == parsed.ssh.enabled` over a
+/// `default()` config, and so could not fail for any of the other eight
+/// sections, nor for `[global]`, nor for directives or exceptions in the
+/// section it did name. Both halves were weak: a per-field assertion reaches
+/// only the field it was written for, and an all-default fixture serialises
+/// most keys to nothing, so a field dropped on the way through compares equal
+/// to a field that was never there.
+///
+/// Re-serialising the parsed config and comparing the TOML text needs no
+/// per-field assertion and no `PartialEq`: a section lost on parse changes the
+/// text. Every value below is a distinct marker for the same reason
+/// `scan_manager_tests.rs` uses them, so a field rebuilt as a default cannot
+/// match the fixture by coincidence.
 #[test]
 fn test_config_serialization() {
-    let config = HardenerConfig::default();
+    let marked = |enabled: bool, directive: &str, exception_key: &str| {
+        let mut plugin = PluginConfig {
+            enabled: Some(enabled),
+            ..Default::default()
+        };
+        plugin.directives.insert(
+            format!("directive-{directive}"),
+            format!("value-{directive}"),
+        );
+        plugin.exceptions.insert(
+            exception_key.to_string(),
+            PolicyException {
+                value: format!("value-{exception_key}"),
+                allowed: true,
+                reason: format!("reason-{exception_key}"),
+                approved_by: Some(format!("approver-{exception_key}")),
+                approved_date: Some("2026-08-18".to_string()),
+                ticket: Some(format!("ticket-{exception_key}")),
+                expires: Some("2027-08-18".to_string()),
+            },
+        );
+        plugin
+    };
+
+    let config = HardenerConfig {
+        global: hardener_core::GlobalConfig {
+            enabled_plugins: vec!["ssh-hardening".to_string()],
+            disabled_plugins: vec!["mac-hardening".to_string()],
+        },
+        ssh: marked(true, "ssh", "PermitRootLogin"),
+        kernel: marked(false, "kernel", "net.ipv4.ip_forward"),
+        firewall: marked(true, "firewall", "default-policy"),
+        pam: marked(false, "pam", "minlen"),
+        audit: marked(true, "audit", "rules-file"),
+        mac: marked(false, "mac", "enforcing"),
+        permissions: marked(true, "permissions", "/etc/shadow"),
+        services: marked(false, "services", "cups"),
+    };
+
     let toml_str = toml::to_string(&config).unwrap();
     let parsed: HardenerConfig = toml::from_str(&toml_str).unwrap();
-    assert_eq!(config.ssh.enabled, parsed.ssh.enabled);
+
+    assert_eq!(
+        toml_str,
+        toml::to_string(&parsed).unwrap(),
+        "a config must come back exactly as it went in: a section, directive or \
+         exception field lost on the way through shows up here as a difference"
+    );
 }
 
 #[test]
