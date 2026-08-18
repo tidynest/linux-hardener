@@ -24,7 +24,7 @@ has not been thought about hard enough.
 
 ---
 
-## Baseline, as measured on 2026-08-14
+## Baseline, as measured on 2026-08-18
 
 Numbers taken from commands rather than from prose. Re-measure before amending
 them; do not copy a figure from an older document.
@@ -32,13 +32,13 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 2054 passed, 42 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2060 passed, 0 failed, 49 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 2046 passed, 42 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2052 passed, 0 failed, 49 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 61 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 25 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2096 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2096 across 299 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2088 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2088 across 299 files |
 
 Three of these rows are re-derived from the tree on every `validate_all.py` run
 by `scripts/validate/validate_test_counts.py`: the annotation count, the
@@ -51,7 +51,7 @@ The rows a build produces are not re-measured there, and are not therefore
 unchecked: they are pinned to each other by the identities this section states,
 so a figure edited alone fails even though nothing about it was measured.
 
-The gap between 2096 annotations and 2054 executions is exactly 42, and all 42
+The gap between 2088 annotations and 2046 executions is exactly 42, and all 42
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -59,14 +59,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2096, and they are meant to be: the check globs every `.rs`
+are the same number, 2088, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 2054 + 6 = 2060 and 42 + 7 = 49.
+covers. 2046 + 6 = 2052 and 42 + 7 = 49.
 
 ---
 
@@ -904,7 +904,7 @@ These are stated once here rather than repeated in every cell below.
   `cargo test --workspace $WORKSPACE_EXCLUDE`, where `WORKSPACE_EXCLUDE` is
   `--exclude linux-hardener-desktop --exclude hardener-ui`. It executes no
   `#[ignore]`d test and no shell suite, and those two exclusions make CI's set
-  strictly smaller than the 2060 recorded above, so a green CI run is a weaker
+  strictly smaller than the 2052 recorded above, so a green CI run is a weaker
   reading than that number. Every grade-3 result in this ledger was produced by
   a person starting a root session, since 2026-08-07 through
   `scripts/test/release-readiness-root.sh`, which batches every root-only suite
@@ -1017,7 +1017,7 @@ tables above, and a citation that resolves is all that check can ask for.
 
 | Claim | Evidence | Command | Ceiling |
 |---|---|---|---|
-| An error the tool surfaces renders a message naming its category and its cause | `crates/hardener-common/tests/error_tests.rs` (12 tests) | `cargo nextest run -p hardener-common --test error_tests` | **Three of `HardeningError`'s 14 variants have no Display test: `Executor`, `NotFound` and `Serialisation`.** The two that matter most are in that three. `Executor` is what `From<anyhow::Error>` produces for every error that fails to downcast, so it is the rendering an operator sees whenever nothing more specific was known. `NotFound` exists *because* a message sent an operator to the wrong place, which its own doc comment records: rolling back to a checkpoint id that was never created reported `Database error: no rows returned...`, naming neither what was missing nor what to do, and the variant was added to say so instead. Nothing asserts that it now does. A fourth variant, `System`, looked untested to a sweep over variant names and is not: `test_error_from_io_error` reaches it through `.into()` from `std::io::Error`, which is why that sweep missed it. Its assertion is weaker than the other ten, though, being `contains` on the payload rather than `assert_eq!` on the whole rendering, so a deleted or misspelt `System error: ` prefix passes it. Closing this costs one test and moves four interlocking counts in the baseline above, which is why it is recorded here rather than fixed in passing; an **exhaustive match** is the way to write it, so that a fifteenth variant fails to compile rather than silently joining the untested three. Nothing here reads a message as it reaches a terminal: every assertion is on `format!`, so what the CLI and the desktop actually print, including any wrapping or truncation, is proven by no test in this row.
+| An error the tool surfaces renders a message naming its category and its cause | `crates/hardener-common/tests/error_tests.rs` (4 tests) | `cargo nextest run -p hardener-common --test error_tests` | **All 14 `HardeningError` variants are now asserted whole**, `assert_eq!` on the complete rendering rather than `contains` on the payload, so a deleted or misspelt category prefix fails. That closed three variants that had no Display test at all (`Executor`, `NotFound`, `Serialisation`) and one, `System`, whose assertion was weak enough that the misspelling `Sytem error: ` passed it; the control run that proves the new assertion fires used exactly that misspelling. `Serialisation` and `System` are reached through their `#[from]` conversions rather than constructed, because that is the only way either is ever reached, and both `From<anyhow::Error>` paths are covered: a chain carrying a `HardeningError` keeps its own variant, and one that does not renders as `Executor`. The eleven near-identical single-variant tests this replaced are gone, which is why the row's test count fell while its coverage rose. **The exhaustiveness guarantee forces an arm, not a case.** A fifteenth variant fails to compile in `expected_rendering`, verified by adding one; nothing then forces it into `one_of_each_variant()`, and the discriminant assertion catches a variant listed twice rather than one left out. The compile error is the prompt to add the case, not the proof that it was added. Nothing here reads a message as it reaches a terminal: every assertion is on `to_string()`, so what the CLI and the desktop actually print, including any wrapping or truncation, is proven by no test in this row. The payloads are fixtures too, so that `NotFound` renders its payload is proven and that the code puts a remedy in that payload at each call site is not. |
 
 ---
 

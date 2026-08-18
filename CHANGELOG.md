@@ -1289,6 +1289,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every `HardeningError` variant is now asserted whole, and a fifteenth will
+  not compile untested.** `error_tests.rs` had eleven near-identical tests
+  covering eleven of the fourteen variants; `Executor`, `NotFound` and
+  `Serialisation` had no Display test at all, and `System` was reached only
+  through `.into()` with a `contains` on the payload, weak enough that the
+  misspelling `Sytem error: ` passed it. One parameterised test now asserts the
+  complete rendering of all fourteen, and the match that supplies the expected
+  strings is exhaustive, so a new variant fails to compile here rather than
+  joining an untested set nobody is counting. Both controls were run before the
+  change was kept: the misspelling to prove the assertion fires, a fifteenth
+  variant to prove the match refuses it. Both `From<anyhow::Error>` paths are
+  covered too, the chain that carries a `HardeningError` and the one that does
+  not. The ceiling is in the evidence ledger: the compile error is the prompt to
+  add the new case, not the proof that it was added.
+
 - **`rollback --help` now states that a whole-system apply has no whole-system
   undo.** `apply --all` records one checkpoint per plugin rather than one for
   the run, and `rollback` restores exactly one id, so reverting a full harden

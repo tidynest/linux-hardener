@@ -724,9 +724,9 @@ and the date of the last such run is in
 
 **A green CI run is a weaker reading than the workspace suite**, because the two
 crate exclusions above make CI's set strictly smaller than the workspace total.
-CI runs `cargo test`, whose comparable figure is **2060 passed, measured
-2026-08-14**, which is what [evidence-ledger.md](evidence-ledger.md)'s baseline
-records; `cargo nextest run --workspace` read 2054 the same day, the difference
+CI runs `cargo test`, whose comparable figure is **2052 passed, measured
+2026-08-18**, which is what [evidence-ledger.md](evidence-ledger.md)'s baseline
+records; `cargo nextest run --workspace` read 2046 the same day, the difference
 being the six doctests nextest does not run. Earlier readings of the same growing
 suite were 1693 on 2026-08-07, 1815 on 2026-08-08 and 1991 on 2026-08-12. **The
 1991 stood here, and in the ledger, after the baseline had moved on**;

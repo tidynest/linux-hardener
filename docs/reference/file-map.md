@@ -944,18 +944,18 @@ purpose-named directories.
 Unit tests sit beside the source file they exercise, in a `#[cfg(test)]` module of their own file rather than inside it: `foo.rs` is accompanied by `foo/tests.rs`, and a `foo/mod.rs` by `foo/tests.rs` in the directory it already owns. They are still child modules, so they still read private items; only their location changed. Integration tests, which see the public API only, remain in each crate's `tests/` directory. The **Unit Tests** column below names the source files under test, not the files the tests live in.
 
 The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
-tree on **2026-08-14**, not a run total: a run also executes doctests and, for
+tree on **2026-08-18**, not a run total: a run also executes doctests and, for
 `hardener-ui`, `wasm_bindgen_test` cases that no annotation count here covers.
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 1989. The eleventh
+The table covers the ten crates under `crates/` and sums to 1981. The eleventh
 workspace member, `src-tauri`, carries 107 more, which is why the tree total the
-evidence ledger records is 2096 and not this table's sum.
+evidence ledger records is 2088 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
-| hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 136 |
+| hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 128 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 90 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 131 |
 | hardener-distro | `lib.rs` | - | 5 |
