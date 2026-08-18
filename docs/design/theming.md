@@ -89,10 +89,18 @@ User selects theme
 
 ## Colour Variable Categories
 
-The theme system defines six categories of themed variable. Every one of the six
-override themes sets the same 24 variables, so a new theme that sets fewer will
+The theme system defines six categories of themed variable. Five of the six
+override themes set the same 24 variables, so a new theme that sets fewer will
 inherit the default's value for the rest and look subtly wrong rather than
 obviously broken.
+
+**High Contrast sets 26**, and the two extra are the point of it rather than an
+inconsistency: `--danger-fill` and `--danger-on-fill` are defined in the default
+block and overridden by that theme alone, because a destructive button carrying
+the shared token sat at 1.9:1 there. They are the seventh category in all but
+name, and a theme aiming at AAA has to consider them. Re-read the counts with
+the block-scoped variable list rather than by eye; `grep` over the whole file
+gives one number for every theme.
 
 ### 1. Background Colours
 
@@ -190,7 +198,8 @@ never overridden per theme.
 
 ### Theme Overrides
 
-Each theme overrides the same 24 base variables:
+Each theme overrides the same 24 base variables, and High Contrast overrides two
+more (`--danger-fill`, `--danger-on-fill`):
 
 | Theme | id | Identity | Accent Colour | Background Family |
 |-------|----|----------|---------------|-------------------|
@@ -228,7 +237,11 @@ Design a palette with:
 
 Add your theme to `styles.css` after the existing themes, at the end of section
 1b. Set all 24 variables. Leaving one out silently inherits the default theme's
-value, which is the failure mode that is hardest to spot.
+value, which is the failure mode that is hardest to spot. If the theme targets
+AAA, or simply darkens the palette far from the default, check `.btn-danger`
+against `--danger-fill`/`--danger-on-fill` and override those two as well: they
+are not in the 24, they live in the default block, and High Contrast is the only
+theme that currently needs its own.
 
 ```css
 /* Your Theme Name - Brief description */
@@ -393,17 +406,32 @@ All interactive elements must have visible focus indicators:
 
 ### Testing Checklist
 
+- [ ] `python3 scripts/validate/validate_contrast.py` passes
 - [ ] All text meets 4.5:1 contrast against its background
 - [ ] Severity badges are distinguishable (not just by colour)
 - [ ] Focus rings are visible on all interactive elements
 - [ ] Theme works with browser zoom (100%, 150%, 200%)
 - [ ] No information is conveyed by colour alone
 
+**The first item is a gate, not advice.** `validate_contrast.py` runs inside
+`validate_all.py`, so a new theme that fails it fails the documentation gate.
+**Know what it does and does not read**: it checks every foreground and
+background pair `styles.css` declares *together in one rule*, across all seven
+themes. It deliberately does not test every token against every surface, because
+that pairing was tried, reported five themes failing on combinations that may
+never render, and contradicted the screenshots. So a pair the stylesheet never
+states in one rule is unchecked, which is how a High Contrast `.btn-danger` sat
+at 1.9:1 through eight reviewers and is why `--danger-fill` exists. **The
+remaining items on this list are the half that check cannot make**, and the
+screenshot is still the evidence for them.
+
 ---
 
 ## Theme Variable Reference
 
-The 24 variables every theme sets:
+The 24 variables every override theme sets. High Contrast sets these plus
+`--danger-fill` and `--danger-on-fill`, which the default block defines and the
+other five inherit:
 
 ```css
 /* Background tiers */

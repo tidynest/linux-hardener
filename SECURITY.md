@@ -99,8 +99,23 @@ This tool is designed to harden systems against common attack vectors, but is **
 
 4. **Audit Logging**
    - All operations are logged
-   - Hash chain prevents log tampering
-   - Logs can be verified for integrity
+   - A SHA-256 hash chain makes a modified or reordered entry **detectable**. It
+     prevents nothing: an attacker who can write the file can still write it,
+     and what the chain gives you is that the edit does not verify afterwards
+   - `verify_integrity` walks from a 32-zero-byte genesis and stops at
+     end-of-file, holding no expected length and no anchor outside the file, so
+     **a prefix of a valid chain is itself a valid chain and truncation of the
+     tail is not detected**. Measured 2026-08-18: deleting the last of three
+     entries left it returning `true`; deleting the first returned `false`,
+     because the survivor no longer links to the genesis. An operator who needs
+     the record of what the tool last did has to protect the file
+   - When not running as root the log is written to
+     `~/.local/share/linux-hardener/audit.log`, **where the same user the
+     entries describe can rewrite the chain from genesis**. The root path
+     (`/var/log/linux-hardener/audit.log`, 0700 directory) is the one with a
+     privilege boundary under it
+   - Both ceilings, and the evidence behind them, are in
+     [evidence-ledger.md](docs/reference/evidence-ledger.md)
 
 ### Known Limitations
 
