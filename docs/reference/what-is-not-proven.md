@@ -558,6 +558,34 @@ crate would notice. The curated catalogues are CIS and ISO 27001:2022; the other
 eight frameworks are derived from coverage, so a mapping error in a derived
 framework is a data defect no test can see.
 
+**ISO 27001 cannot score above 11.8 per cent, on any host, at root.** Measured
+2026-08-18 on the arch capture host with a privileged scan: 93 controls, 11
+assessable, 82 `ManualReview`. The ceiling is `11 / 93`, so that row can never
+leave the critical colour band however well a machine is hardened. This is a
+*measured* ceiling and not an inference from the catalogue's size: an
+unprivileged run of the same scan left 86 unassessed, and root moved only four
+of them, which is what separates the two causes. The 82 are Annex A controls
+about policy, personnel, supplier relationships and physical security, and no
+configuration scanner can assess them; adding plugins raises the ceiling only
+as far as the technological subset of Annex A reaches.
+
+**The comparison the dashboard invites is therefore not one the numbers
+support.** A curated framework's denominator is the whole published standard
+and a derived framework's is only what the engine assesses, so ISO 27001's 8.6
+per cent and SOC 2's 60 per cent from the same privileged scan are answering
+different questions. The per-framework row states its unassessed count beside
+the score, which makes each row honest read alone; nothing stops a reader
+ranking one row against another, and on this evidence a ranking would be wrong.
+Whether curated and derived frameworks should share one list, one colour scale
+or one screen is an open design question, recorded here rather than decided.
+
+**SOC 2's unassessed controls were entirely a privilege artefact**, by
+contrast, and the same run proves it: 3 of 5 `ManualReview` unprivileged, 0 of
+5 at root, with both failures unchanged. So an unassessed count is not one
+thing. On a derived framework it usually means a check could not run; on a
+curated one it usually means no check exists. The report's coverage note
+distinguishes them only in the first case.
+
 **No rendered report is ever parsed back by the consumer that will read it.**
 The JSON is handed to no deserialiser, the CSV to no CSV reader, the HTML to no
 parser, and the PDF row checks only that the output starts with `%PDF-` and
