@@ -211,7 +211,7 @@ The finding prints the command that copies the file into `/etc` for you. See the
   <img src="docs/assets/screenshots/analysis-findings.png" alt="Security Analysis: findings grouped by severity" width="49%">
 </p>
 
-<p align="center"><sub>Desktop application (Tauri and Leptos) on the Midnight Teal theme, from a live scan. The Hosts and Scheduler screens are in <a href="docs/assets/screenshots/">docs/assets/screenshots</a>.</sub></p>
+<p align="center"><sub>Desktop application (Tauri and Leptos) on the Midnight Teal theme, from a live unprivileged scan, captured at 1.5.1 (653b4ff1). The Hosts and Scheduler screens are in <a href="docs/assets/screenshots/">docs/assets/screenshots</a>, along with the states these five do not reach: the finding detail expander, the per-control compliance view, the checkpoint timeline and its rollback confirmation, the expanded host panel, and the two Scheduler notes that appear only while scheduled scanning is off.</sub></p>
 
 ---
 

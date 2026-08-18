@@ -730,49 +730,49 @@ is not coverage, the evidence ledger still has no desktop row, and CI still
 excludes both crates. What it does establish is that the eye-check named here is
 a thing that has actually happened rather than an intention.
 
-**The screenshots on the README are the oldest evidence in this project,
-nothing checks their age, and they are stale.** They were last written on
-2026-07-27 (`3cb7d762`), and 54 commits to `crates/hardener-ui/src` and 20 to
-`styles.css` have landed since. **They are also not the Playwright captures**:
-that corpus photographs six subjects and none of them is Hosts, Fleet Apply,
-Scheduler or Settings, four of which the README embeds. So the 222 captures
-refreshed at `653b4ff1` said nothing about whether the front page shows the
-interface this release ships, and no validator could:
-`validate_markdown_links.py` asks that the file resolves, and an image that
-resolves is not an image that is current.
+**The screenshots were the oldest evidence in this project and nothing checks
+their age. They were replaced on 2026-08-18.** The previous set dated from
+2026-07-27 (`3cb7d762`), with 54 commits to `crates/hardener-ui/src` and 20 to
+`styles.css` in between, and two of them were substantively wrong rather than
+merely old: Fleet Apply and Scheduler both listed plugins by raw identifier,
+which is the naming inconsistency the 2026-08-16 eye-check found and this
+release fixed, so the front page advertised a defect that was gone.
 
-**Measured on 2026-08-18** by driving the desktop app at `653b4ff1` in the
-headless sandbox and capturing those four routes, on the same Midnight Teal
-theme the README caption names. Two of the four differ in ways a reader would
-act on:
+All seven subjects were re-captured at `653b4ff1` by driving the desktop app in
+the headless sandbox, and **sixteen further images record states no single view
+reaches**: the finding detail expander, the per-control compliance view, the
+scan-history timeline, the hardening advanced override, the dry-run preview,
+the checkpoint timeline and its detail and rollback confirmation, the expanded
+host panel, the armed delete, the add-host and ad-hoc forms, the Fleet Apply
+rollback tab, and the Scheduler with its custom-cron field, its notification
+channels, and the toggle both on and off.
 
-- **Fleet Apply lists plugins by raw identifier** in the shipped image
-  (`audit-hardening`, `firewall-hardening`, and six more). The application
-  lists display names (`Audit Rules`, `File Permissions`, `Firewall`, and so
-  on). That identifier list **is the naming inconsistency the 2026-08-16
-  eye-check found and the release then fixed**, so the front page advertises a
-  defect this release does not have.
-- **Scheduler shows the plugin checkboxes as one cramped row of short ids**
-  (`kernel ssh firewall pam services audit permissions mac`), which
-  `6a47498a` replaced with a laid-out grid of display names. The shipped image
-  also predates both paused-schedule notes, so it shows a disabled scheduler
-  saying nothing about being disabled, which is the state `a5ca6d03` and
-  `3fcc75a8` exist to correct.
+**Three things this does not establish, and one it does.**
 
-The other two differ only in the product name (`Linux System Hardener` against
-the `Linux Hardener` the application now uses, which is the unresolved naming
-question, not a defect in the shot), the version and build line, and the
-Daywatch swatches, which carry the pre-D5 palette.
+- **The rollback result stage is not photographed.** Its divergence rows render
+  only after a restore actually executes, which on the capture host means
+  overwriting `/etc/ssh/sshd_config` for a screenshot. The confirm stage is
+  captured; the stage the `T-DIVG-*` tests assert on is not.
+- **The dry-run preview reads "Nothing to apply"** on both the Secure and the
+  High profile, because the capture host is already hardened and PAM findings
+  are manual-only by design. That is an honest reading of that host and not a
+  demonstration of the feature.
+- **Nothing checks any of this next time.** `validate_markdown_links.py` asks
+  that the path resolves, and an image that resolves is not an image that is
+  current. The same drift starts accumulating from today.
+- What it does establish is the Scheduler notes from `a5ca6d03` and `3fcc75a8`,
+  seen present with scheduled scanning off and absent with it on, in the real
+  application against the real backend rather than through the Playwright mock.
 
-Two further readings came out of the same pass and are recorded because nothing
-else would find them. **The images are not internally consistent**:
-`settings.png` and `fleet.png` show build `06c679b` and `scheduler.png` shows
-`1fdd539`, so the set was captured across at least two commits and reads as one
-sitting. And **`3cb7d762`, whose whole purpose was to put a placeholder address
-in the Scheduler shot, reached one of the two fields**: Recipients reads
-`admin@example.com` and From address still reads a real personal address. That
-is the same shape as every other finding in this document, a fix that reached
-the site someone thought about and not the one they did not.
+**The capture procedure changed, and the reason is a defect in the old one.**
+The app reads `~/.config/linux-hardener/config.toml`, so the Scheduler's
+Notifications section renders whatever addresses that file holds. `3cb7d762`
+tried to handle this by editing the recipient in the running app, and reached
+Recipients while leaving a real personal address in From address, where it has
+sat in the published image ever since. The new captures were taken against a
+scratch `XDG_CONFIG_HOME`, so the file holding personal data is never read and
+every address on screen is the field's own placeholder. **Replacing the image
+does not remove the old one from git history**, which is a separate decision.
 
 ---
 

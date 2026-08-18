@@ -1289,6 +1289,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Every screenshot replaced, and sixteen states added that no single view
+  reaches.** The published set dated from 2026-07-27 and two of the seven were
+  substantively wrong rather than old: Fleet Apply and Scheduler listed plugins
+  by raw identifier, the naming inconsistency the eye-check found and this
+  release fixed, so the front page advertised a defect that is gone. The
+  Scheduler shot also predated the checkbox layout and both paused-schedule
+  notes. All seven were re-captured at `653b4ff1`, joined by the finding detail
+  expander, the per-control compliance view, the scan-history timeline, the
+  advanced override, the dry-run preview, the checkpoint timeline with its
+  detail and rollback confirmation, the expanded host panel, the armed delete,
+  the add-host and ad-hoc forms, the Fleet Apply rollback tab, and the Scheduler
+  with its cron field, notification channels and toggle in both positions. The
+  capture procedure changed too: the app is now driven against a scratch
+  `XDG_CONFIG_HOME`, so the config holding personal data is never read and every
+  address on screen is a placeholder. `3cb7d762` had tried to do that by editing
+  the running app and reached one of the two email fields.
+
 - **The two owed Playwright assertions are written, and neither has been run.**
   `T-SCHED-07` covers the notes added in `a5ca6d03` and `3fcc75a8`, which appear
   only while scheduled scanning is off; both directions are asserted, because a
