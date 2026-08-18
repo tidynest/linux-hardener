@@ -96,7 +96,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/state/tests.rs` | Unit tests for `src/commands/state.rs` | Test-only; `super` resolves to `crate::commands::state`, so its imports carried across unchanged |
 | `src/commands/privilege/tests.rs` | Unit tests for `src/commands/privilege.rs` | Test-only; `super` resolves to `crate::commands::privilege`, so its imports carried across unchanged |
 | `src/commands/exception/document/tests.rs` | Unit tests for `src/commands/exception/document.rs`, 9 tests | Test-only; `super` resolves to `crate::commands::exception::document`, so its imports carried across unchanged |
-| `src/commands/scope/tests.rs` | Unit tests for `src/commands/scope.rs`, 14 tests: the write preserving the rest of the file, `include` removing only the control it names, the four refusals (empty reason, unknown framework, unknown control under a curated catalogue, withdrawing a declaration that is not there), the stderr advisory a derived-catalogue framework earns while still being written and audited, and what reaches the audit log in each case, granted and refused alike, read back out of the hash chain | Test-only; `super` resolves to `crate::commands::scope`. The tests drive the `_to` variants, which exist so the audit log and the config can be pointed at a temporary directory; `run_exclude`/`run_include` differ from them only in resolving those paths |
+| `src/commands/scope/tests.rs` | Unit tests for `src/commands/scope.rs`, 19 tests: the write preserving the rest of the file, `include` removing only the control it names, the five refusals (empty reason, unknown framework, unknown control under a curated catalogue, an unparseable `--review-by`, withdrawing a declaration that is not there), a failed write reaching the log too, the stderr advisory a derived-catalogue framework earns while still being written and audited, and what reaches the audit log in each case, granted and refused alike, read back out of the hash chain | Test-only; `super` resolves to `crate::commands::scope`. The tests drive the `_to` variants, which exist so the audit log and the config can be pointed at a temporary directory; `run_exclude`/`run_include` differ from them only in resolving those paths |
 | `src/commands/exception/tests.rs` | Unit tests for `src/commands/exception.rs`, 11 tests: `pin_from_findings()`, `parse_expiry()` (including a malformed `--expires` refused before `add` ever scans or writes), `write_atomically()`, and `add()`/`remove()` end to end against a temporary config and a `MockExecutor` scan, re-scanning afterwards to prove the pinned value is one the plugin's own comparison then accepts (one value-comparing plugin, one presence plugin) | Test-only; `super` resolves to `crate::commands::exception`, so its imports carried across unchanged |
 
 ---
@@ -953,22 +953,22 @@ tree on **2026-08-18**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2046. The eleventh
+The table covers the ten crates under `crates/` and sums to 2065. The eleventh
 workspace member, `src-tauri`, carries 108 more, which is why the tree total the
-evidence ledger records is 2154 and not this table's sum.
+evidence ledger records is 2173 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 128 |
-| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 106 |
-| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 138 |
+| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 113 |
+| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 140 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 107 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 306 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 312 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 859 |
-| hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 212 |
+| hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 213 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 63 |
-| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 122 |
+| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 125 |
 
 ### Executor and Mock Test Files
 
