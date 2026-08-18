@@ -81,16 +81,27 @@ provide, and it does not skip them quietly when the fixture is missing:
 | Prerequisite | Count | What it unlocks |
 |---|---:|---|
 | Root privileges only | 7 | One apply test per plugin except kernel (firewall, permissions, PAM, services, audit, SSH, MAC) that modifies the host; `sudo` is sufficient |
-| `SSH_TEST_HOST` (booted container) | 28 | The SSH executor tests and the batch SSH integration suite; **panics, rather than skips, without the variable set**, naming the fixture script |
-| `NFTABLES_LIVE_APPLY_HOST` | 2 | The live nftables apply tests in `ssh_integration_tests.rs` |
+| `SSH_TEST_HOST` (booted container) | 27 | The SSH executor tests and the batch SSH integration suite; **panics, rather than skips, without the variable set**, naming the fixture script |
+| `NFTABLES_LIVE_APPLY_HOST` | 3 | The live nftables apply tests in `ssh_integration_tests.rs` |
 | A named firewall backend installed | 3 | `firewall_tests.rs`'s firewalld-only, UFW-only and nftables-only cases |
 | A visual eyeball, run manually | 1 | `batch/tests.rs`'s formatting helper, `--ignored --nocapture` |
 | Run manually | 1 | `kernel_tests.rs`'s `kernel_apply`, `sudo cargo test kernel_apply -- --ignored --nocapture` |
 
-For the 28 that need `SSH_TEST_HOST`, use the "SSH integration fixture (booted
+For the 27 that need `SSH_TEST_HOST`, use the "SSH integration fixture (booted
 container)" steps below rather than running `sudo cargo test -- --ignored`
-bare; a run without the fixture fails on all 28 rather than reporting nothing
+bare; a run without the fixture fails on all 27 rather than reporting nothing
 to do.
+
+The three `NFTABLES_LIVE_APPLY_HOST` tests are gated on their own variable
+rather than on `SSH_TEST_HOST`, and deliberately: two of them apply live
+firewall rules over the connection they arrived on, and the third seeds and
+then flushes the boot ruleset, so sharing the scan tests' variable would let
+anyone running the whole file against a host they care about have its
+`/etc/nftables.conf` overwritten. **The split is the reason this row and the
+one above it are easy to get wrong**, and they were: the two counts were
+written as 28 and 2 on 2026-08-12, a week after the third live test landed on
+2026-08-05, and because the pair still summed to 42 the arithmetic below the
+table reconciled with one test in the wrong bucket.
 
 ---
 
@@ -1086,11 +1097,15 @@ of 88 on each of the other five**, with 10 unaskable on arch and 8 elsewhere,
 and the header reading `1` on both signals. The 88 rather than 89 is the
 `services not-running` row, unaskable on all six because bluez was installed and
 enabled but not running; the arch 86 is that 88 less its two `PASS_MIN_DAYS`
-rows. **Not one kernel row was unaskable in either path.** The same invocation before the split
-was sized at 68 by the arithmetic above, the difference being the 11 kernel
-rows, the stricter-seeded row and the kernel plugin's pre-apply control, all
-three declared unaskable there; that is what `expected_check_total` says of the
-two configurations and not a second container reading. What makes this one a
+rows. **Not one kernel row was unaskable in either path.** The same invocation
+before the split was sized at 68, the difference being the 11 kernel rows, the
+stricter-seeded row and the kernel plugin's pre-apply control, all three
+declared unaskable there; that is what `expected_check_total` said of the two
+configurations **on the day of this run** and not a second container reading.
+Every figure in this paragraph is a reading of 2026-08-09 and none of them is
+the size of a run today: the audit and MAC oracles landed later the same day and
+raised each declared total by ten, so the arithmetic above no longer produces
+68 or 81 and is not meant to. What makes this one a
 reading of the namespace rather
 than of the flag is the pre-apply control, which found 10 of the 11 parameters
 away from target: the looser-than-baseline seeds were written into
@@ -1103,13 +1118,24 @@ Booted, systemd as PID 1 (services oracle): 0
 ```
 
 **The totals move with the modes, and both kernel tables are pinned.** With the
-shadow field present a run records **70 checks with neither signal, 83 with the
-namespace alone, and 89 booted** where the services unit was running, 88 where
-it was not; less two on a host whose shadow has no minimum-password-age field
-(see below), so **68, 81 and 87 or 86 on Arch**. The fourth combination, a boot
-declared without a namespace, is **76**: no runner produces it, and it is pinned
-so that a missing `--setenv` costs coverage rather than producing a total
-nothing can meet. `expected_check_total` is one expression with a term per
+shadow field present and a kernel the MAC oracle covers, a run records **80
+checks with neither signal, 93 with the namespace alone, and 99 booted** where
+the services unit was running, 98 where it was not; less two on a host whose
+shadow has no minimum-password-age field (see below), so **78, 91 and 97 or 96
+on Arch**. The fourth combination, a boot declared without a namespace, is
+**86**: no runner produces it, and it is pinned so that a missing `--setenv`
+costs coverage rather than producing a total nothing can meet.
+
+**Three independent facts move these totals, not two**, and only two of them are
+signals a runner declares. `RUN_NETNS` and `RUN_BOOTED` are properties of the
+invocation, in the table above. `SHADOW_MIN_DAYS` and `MAC_ASKABLE` are
+properties of the host, probed by the suite before any check runs, and each
+costs two rows when it answers no: the shadow field's two `PASS_MIN_DAYS` rows,
+and, for a kernel carrying a MAC system this no-op oracle does not cover, the
+MAC row together with the MAC plugin's own pre-apply control, because one reason
+disqualifies both. The subtractions stack rather than replace one another, which
+is what the self-test asserts by taking them one after the other off the same
+full total. `expected_check_total` is one expression with a term per
 signal rather than an arm per mode, because four combinations cannot each keep
 their own copy of the arithmetic in step. The 11 kernel rows and the
 stricter-seeded row are checks the tables ask for only where they can be asked
@@ -1178,7 +1204,15 @@ would silently miss. `jq` is the only external command it needs.
 The idempotency family is proven here too, because its readings want root and a
 container: the fragment listing against a temporary directory that is missing,
 empty and then populated, the refusal of an unknown reading key, and each of the
-four ways a baseline can fail to describe what one apply produced. The
+four ways a baseline can fail to describe what one apply produced. **Those four
+are `idempotence_baseline`'s own refusals** and not every refusal in the family,
+which is why the number is four rather than six: the accessor refuses a baseline
+never captured, one stamped at any generation but the first apply's, one asked
+for before a second apply has happened, and one held for no such key, while
+`first_apply_idempotence_init` refuses a capture taken at the wrong generation
+and one that came back empty, and `idempotence_reading` refuses the unknown key
+listed separately above. Counting across all three gives six and describes
+something the sentence is not about. The
 comparison itself is driven through a stubbed reading and watched in both
 directions, since a reading compared against itself passes whatever the tool
 did.
@@ -1218,8 +1252,8 @@ Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
 seven directives`), the total the run is sized at, which `expected_check_total`
-computes at **68** unbooted and **81** booted, and the number of directives the
-pre-apply control covers (`19`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
+computes at **80** with neither signal and **93** with the namespace alone, and
+the number of directives the pre-apply control covers (`19`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
 `PWQUALITY_ENFORCEMENT_CHECKS` are sized the same way, and contribute one check
 each rather than two. Every one of them fails loudly, over two `--self-test` runs,
 because the total is counted off the constant and only moves once the constant
@@ -1236,9 +1270,21 @@ firewall tables are meant to: with `FIREWALL_CHECKS_EXPECTED` left at 2 the
 self-test reads `got '55', want '56'` and `require_check_tables` refuses the
 three-entry table beside it. The preview-agreement oracle and the
 introduced-finding registry then did it twice more, six checks each and neither
-of them affected by the mode. The per-distribution total now stands at **68** for
-a run that is not booted and **81** for one that is, both pinned as literals in
-`--self-test`.
+of them affected by the mode. The per-distribution total now stands at **80** for
+a run holding neither signal and **93** for one holding its own network
+namespace, both pinned as literals in `--self-test`, with **99** and **86** for
+the other two combinations pinned beside them.
+
+Those two figures read **68** and **81** until 2026-08-18, and the pair is worth
+knowing about because of *how* they went wrong rather than by how much. They
+were written on 2026-08-01, when this suite had two modes and "unbooted" and
+"booted" named them exhaustively; #137 then split the boot signal from the
+namespace signal, so 81 became the size of an **unbooted** run holding a
+namespace while the sentence still called it the booted one. The numbers went
+stale separately and on one day: `7c8bedab` and `2cd5fe73`, both 2026-08-09,
+added the audit and MAC oracles and moved every one of the five declared totals
+by exactly ten. **Five counts moving by the same delta had one cause**, and the
+paragraph above them was written earlier that same day, correct when written.
 
 ### What a failure means
 
