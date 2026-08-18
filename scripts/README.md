@@ -949,7 +949,7 @@ sudo ./scripts/containers/create-container.sh arch clean --no-confirm
 
 ### Distribution Containers
 
-`create-container.sh` covers all six distributions the cross-distribution runner iterates; the per-distro bootstrap mechanics differ. Five of them have a dated result; the Ubuntu container was added on 2026-08-07 and no suite has been run inside it:
+`create-container.sh` covers all six distributions the cross-distribution runner iterates; the per-distro bootstrap mechanics differ. **All six have a dated result**, Ubuntu included: it joined on 2026-08-07 and was recorded VALIDATED on 2026-08-14, 149 declared and recorded, 147 passed, 0 failed, 8 skipped, identical to the other five. See [distribution-validation.md](../docs/reference/distribution-validation.md). This sentence said "no suite has been run inside it" until 2026-08-18, eleven days after the first result appeared and two days after the same claim was corrected in [testing.md](../docs/contributing/testing.md); one fact in two places, and only one of them was fixed:
 
 | Distro argument | Distribution | Package Manager |
 |-----------------|--------------|-----------------|
@@ -1749,13 +1749,24 @@ sudo ./scripts/test/gui/run-tauri-gui-tests.sh
 **What It Tests**:
 | Category | Tests | Description |
 |----------|-------|-------------|
-| UX Tests | 49 | Page navigation (Ctrl+1-5), theme cycling (Alt+T), tab keyboard nav, findings grid, skip link, fullscreen (F11) |
+| UX Tests | 43 | Page navigation (Ctrl+1-5), theme cycling (Alt+T), tab keyboard nav, findings grid, skip link, fullscreen (F11) |
 | Functional Tests | 46 | Security scan, compliance reports, checkpoint create, remote host form, scheduler config, error handling |
+
+These are the `pass` assertions in `gui/tauri-ux-test.sh` and
+`gui/tauri-functional-test.sh` (`grep -cE '^\s*pass ' <script>`), and they sum to
+the 89 desktop checks [file-map.md](../docs/reference/file-map.md) states.
+**Do not read them off the screenshots**, which is a different count: the UX
+script takes 42, one fewer than it asserts, so `ux-*.png` and the row above it
+are meant to disagree by one. The row said **49** from 2026-02-28 until
+2026-08-18 and was **never true** on either metric: `tauri-ux-test.sh` was not
+created until 2026-07-18, four and a half months after the number describing it
+was written, and it has never held a `ux-43` screenshot. The correction to 43
+reached file-map.md on 2026-08-16 and did not reach here.
 
 **Output**:
 ```
 test-results/desktop/    Desktop test screenshots
-  ux-*.png               UX test screenshots (49 files)
+  ux-*.png               UX test screenshots (42 files)
   fn-*.png               Functional test screenshots (46 files)
 /tmp/test-grouped/       Working directory for test output
 ```

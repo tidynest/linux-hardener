@@ -494,7 +494,7 @@ User clicks "Apply"
 | CopyButton | Async Clipboard API for compliance reports | Medium | ✅ Complete |
 | ConfirmDelete | Inline delete confirmation | Medium | ✅ Complete |
 | Findings grid keyboard | Arrow/Enter/Space navigation for findings | Medium | ✅ Complete |
-| Desktop test suites | 95 tests (49 UX + 46 functional) + 21 Node.js | High | ✅ Complete |
+| Desktop test suites | 89 tests (43 UX + 46 functional) + 29 Node.js | High | ✅ Complete |
 
 ---
 

@@ -153,7 +153,10 @@ not a figure to quote against a run today.
 - **Documentation** (2026-02-27): SECURITY.md updated, docs/guide/installation.md created for 5 distro families
 - **v1.0.3 parallel test runners** (2026-02-28): parallel variants of the GUI and cross-distro runners (since merged into `--parallel` flags on the base scripts, 2026-07-18), `run-desktop-tests.sh`, `run-all-tests-parallel.sh`
 - **v1.0.2 merged branches** (2026-02-28): `cli-ux-perfection` (CLI crash fixes, stderr routing, idempotent dirs, user-mode systemd) + `feature/desktop-testing-ux` (keyboard nav, ARIA, clipboard, TabBar migration, 95 desktop tests)
-- **Desktop tests**: 49 UX tests + 46 functional tests + 21 Node.js tests all passing
+- **Desktop tests**: 43 UX tests + 46 functional tests + 29 Node.js tests, counted
+  from the sources rather than from a run: **no dated run of any of the three is
+  recorded anywhere in this repository**, which is what file-map.md says of the
+  same figures and is the honest status of them
 - **660 unit/integration tests pass**, clippy clean, native + WASM builds clean
 
 ### Trait refactor summary (commits `81c13ad`, `d029629`, `b87fb1c`):
