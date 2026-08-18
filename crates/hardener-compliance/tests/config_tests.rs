@@ -55,20 +55,17 @@ fn test_scenario_gdpr_frameworks() {
     assert_eq!(frameworks.len(), 1);
 }
 
+/// `Scenario::All` is the catalogue itself, so this cannot fail against the
+/// current implementation. It is a guard against a future edit re-hardcoding
+/// the list: a literal drifts silently from `ComplianceFramework::ALL`, and
+/// that is precisely how ISO 27001 came to be missing from a scenario named
+/// "All Frameworks" while nine `contains` assertions stayed green. Equality
+/// rather than membership, so a framework added to `ALL` and not reaching
+/// `All` is caught by the same line.
 #[test]
 fn test_scenario_all_frameworks() {
     let scenario = Scenario::All;
-    let frameworks = scenario.frameworks();
-    assert_eq!(frameworks.len(), 9);
-    assert!(frameworks.contains(&ComplianceFramework::CIS));
-    assert!(frameworks.contains(&ComplianceFramework::STIG));
-    assert!(frameworks.contains(&ComplianceFramework::NIST));
-    assert!(frameworks.contains(&ComplianceFramework::PCIDSS));
-    assert!(frameworks.contains(&ComplianceFramework::HIPAA));
-    assert!(frameworks.contains(&ComplianceFramework::GDPR));
-    assert!(frameworks.contains(&ComplianceFramework::SOC2));
-    assert!(frameworks.contains(&ComplianceFramework::NIST800171));
-    assert!(frameworks.contains(&ComplianceFramework::FedRAMP));
+    assert_eq!(scenario.frameworks(), ComplianceFramework::ALL.to_vec());
 }
 
 #[test]

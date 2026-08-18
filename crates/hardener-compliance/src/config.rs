@@ -42,32 +42,22 @@ impl Scenario {
             Scenario::Healthcare => vec![ComplianceFramework::HIPAA, ComplianceFramework::NIST],
             Scenario::Financial => vec![ComplianceFramework::PCIDSS, ComplianceFramework::CIS],
             Scenario::Gdpr => vec![ComplianceFramework::GDPR],
-            // Nine of the ten frameworks in `ComplianceFramework::ALL`.
-            // **ISO 27001 is omitted, and `name()` still calls this "All
-            // Frameworks"**, so `hardener report --scenario all` renders nine
-            // and says nothing about the tenth. Measured against the release
-            // binary 2026-08-18: nine reports, no ISO 27001 anywhere in the
-            // output. `tests/config_tests.rs` asserts `len() == 9`, so the
-            // suite pins the omission rather than catching it.
+            // The catalogue itself, so a framework added to
+            // `ComplianceFramework::ALL` reaches `--scenario all` without a
+            // second edit. This was a hand-written list of nine until
+            // 2026-08-18 and had drifted: ISO 27001 was missing while
+            // `name()` returned "All Frameworks", so the scenario rendered
+            // nine reports and said nothing about the tenth. A literal here
+            // is a second copy of `ALL` and drifted exactly as a second copy
+            // does.
             //
-            // Whether that is right is a product decision, not an oversight to
-            // patch here: ISO 27001 is one of only two curated catalogues
-            // (CIS being the other), so it is among the better-evidenced
-            // frameworks rather than a thin derived one. Adding it changes
-            // every `--scenario all` report. `FLEET_FRAMEWORKS` in
-            // `src-tauri/src/commands.rs` omits the same framework and says so
-            // in one line; this list said nothing at all until now.
-            Scenario::All => vec![
-                ComplianceFramework::CIS,
-                ComplianceFramework::STIG,
-                ComplianceFramework::NIST,
-                ComplianceFramework::PCIDSS,
-                ComplianceFramework::HIPAA,
-                ComplianceFramework::GDPR,
-                ComplianceFramework::SOC2,
-                ComplianceFramework::NIST800171,
-                ComplianceFramework::FedRAMP,
-            ],
+            // Deliberately NOT the same decision as `FLEET_FRAMEWORKS` in
+            // `src-tauri/src/commands.rs`, which still omits ISO 27001: that
+            // one adds a column to the fleet table, and ISO 27001's ceiling
+            // is a measured 11.8 per cent, so the column can never leave the
+            // critical band however well a host is hardened. A report the
+            // operator asked for by name is not a column they did not.
+            Scenario::All => ComplianceFramework::ALL.to_vec(),
             Scenario::Custom(frameworks) => frameworks.clone(),
         }
     }

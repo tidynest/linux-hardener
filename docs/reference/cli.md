@@ -723,14 +723,25 @@ hardener report --interactive                # Step-by-step wizard
 hardener report --scenario all --output report.json --report-format json
 ```
 
-**`--scenario all` is nine of ten frameworks.** `Scenario::All` in
-`crates/hardener-compliance/src/config.rs` hardcodes CIS, STIG, NIST 800-53,
-PCI-DSS, HIPAA, GDPR, SOC 2, NIST 800-171 and FedRAMP, and **omits ISO 27001**,
-while `Scenario::name()` returns "All Frameworks". Measured against the release
-binary on 2026-08-18: nine reports rendered, no ISO 27001 anywhere in the
-output. `crates/hardener-compliance/tests/config_tests.rs` asserts the length is
-nine, so the suite pins this rather than catching it. To include ISO 27001 today,
-name it: `--framework iso27001`, or list the frameworks you want explicitly.
+**`--scenario all` is all ten frameworks**, because `Scenario::All` in
+`crates/hardener-compliance/src/config.rs` returns `ComplianceFramework::ALL`
+rather than a list of its own. A framework added to `ALL` reaches this scenario
+without a second edit.
+
+**It rendered nine until 2026-08-18**, omitting ISO 27001 while
+`Scenario::name()` returned "All Frameworks", and
+`crates/hardener-compliance/tests/config_tests.rs` asserted the length was nine,
+so the suite pinned the omission rather than catching it. The hand-written list
+was a second copy of `ALL` and drifted the way a second copy does. Recorded
+because a report that silently omits a framework is indistinguishable from one
+where that framework had nothing to say.
+
+**The desktop fleet table is a different decision and still scores nine.**
+`FLEET_FRAMEWORKS` in `src-tauri/src/commands.rs` omits ISO 27001 deliberately:
+it is a column rather than a report, and ISO 27001's measured ceiling is 11.8
+per cent, so the column could never leave the critical band however well a host
+is hardened. Per-host ISO 27001 remains available through `--framework
+iso27001`.
 
 ---
 

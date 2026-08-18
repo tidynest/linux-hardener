@@ -1339,6 +1339,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`hardener report --scenario all` now renders all ten frameworks, where it
+  rendered nine.** ISO 27001 was missing from a scenario whose own
+  `Scenario::name()` returns "All Frameworks", so the command silently omitted
+  the second of the project's only two curated catalogues, and a report that
+  omits a framework is indistinguishable from one where that framework had
+  nothing to say. The cause was a hand-written list of nine in
+  `Scenario::All`: a second copy of `ComplianceFramework::ALL` that drifted the
+  way a second copy does. It is now `ComplianceFramework::ALL.to_vec()`, so a
+  framework added to the catalogue reaches this scenario without a second edit.
+  The suite had asserted the length was nine, pinning the omission rather than
+  catching it; that assertion is now equality against `ALL`, which is what
+  catches drift in either direction. Confirmed against the release binary: ten
+  reports, ISO 27001 among them with its 93 controls, in catalogue order. **The
+  desktop fleet table is deliberately not changed** and still scores nine:
+  `FLEET_FRAMEWORKS` omits ISO 27001 because that is a column rather than a
+  report, and ISO 27001's measured ceiling of 11.8 per cent would leave the
+  column pinned to the critical band however well a host is hardened.
+
 - **Every screenshot replaced, and sixteen states added that no single view
   reaches.** The published set dated from 2026-07-27 and two of the seven were
   substantively wrong rather than old: Fleet Apply and Scheduler listed plugins
