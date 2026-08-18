@@ -613,6 +613,21 @@ An empty reason and an unknown framework id are both refused, and both refusals
 are written to the audit log. A log that recorded only successes could not show
 an operator attempting to exclude something they should not have.
 
+A control id belonging to no catalogue is refused the same way, for the reason
+`exception add` refuses a key the scan did not produce: it is also the input
+validation for a caller reaching this over IPC rather than a terminal. Written
+instead, the typo would be inert twice over, changing no report while leaving
+both the configuration and the audit log stating that a control had been
+excluded. Notation differs between catalogues, so the refusal names the
+framework and points at `hardener report --framework <id>`, which prints every
+control with the id to give here. ISO/IEC 27001 is the trap: this catalogue
+holds the bare clause numbers, so `7.1` is the control and `A.7.1`, the Annex A
+notation, is refused. Only CIS and ISO/IEC 27001 can be checked at all. The
+other eight frameworks derive their catalogue from live plugin coverage at
+report time, so no catalogue exists at the moment of the write, and an exclusion
+for one of them cannot take effect whatever it names, which the warning above
+already says.
+
 ### The review interval comes from the framework owner
 
 `--review-by` defaults to **twelve months** for every framework. Four publish

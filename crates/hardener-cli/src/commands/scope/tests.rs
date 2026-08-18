@@ -51,7 +51,7 @@ async fn exclude_writes_the_table_and_preserves_the_rest_of_the_file() {
 
     run_exclude_to(
         "iso27001",
-        "A.7.1",
+        "7.1",
         "No physical premises",
         Some("eric"),
         Some("SEC-412"),
@@ -72,7 +72,7 @@ async fn exclude_writes_the_table_and_preserves_the_rest_of_the_file() {
         written.contains("disabled_plugins"),
         "unrelated sections survive"
     );
-    assert!(written.contains(r#"[compliance.not_applicable.iso27001."A.7.1"]"#));
+    assert!(written.contains(r#"[compliance.not_applicable.iso27001."7.1"]"#));
     assert!(written.contains("SEC-412"));
 }
 
@@ -82,7 +82,7 @@ async fn an_empty_reason_is_refused() {
 
     let result = run_exclude_to(
         "iso27001",
-        "A.7.1",
+        "7.1",
         "   ",
         None,
         None,
@@ -109,7 +109,7 @@ async fn an_unknown_framework_is_refused() {
 
     let result = run_exclude_to(
         "not-a-framework",
-        "A.7.1",
+        "7.1",
         "reason",
         None,
         None,
@@ -124,6 +124,135 @@ async fn an_unknown_framework_is_refused() {
     assert!(
         !scratch.written().contains("not_applicable"),
         "nothing was written"
+    );
+}
+
+/// A control id belonging to no catalogue is a typo, and a typo written to the
+/// file is worse than a refusal: the exclusion is inert, the report never
+/// moves, and the audit log carries a declaration that a control was excluded
+/// when none was. `A.7.1` is the ISO 27001:2022 Annex A notation; this
+/// catalogue uses the bare clause numbers, so the real id is `7.1`.
+#[tokio::test]
+async fn an_unknown_control_id_is_refused_under_a_curated_framework() {
+    let scratch = Scratch::seeded("[global]\n");
+
+    let result = run_exclude_to(
+        "iso27001",
+        "A.7.1",
+        "No physical premises",
+        None,
+        None,
+        None,
+        &[],
+        Some(&scratch.config),
+        scratch.log_path(),
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "'A.7.1' is in no ISO/IEC 27001 catalogue, so excluding it could only \
+         ever be a silent no-op"
+    );
+    assert!(
+        !scratch.written().contains("not_applicable"),
+        "and nothing was written"
+    );
+
+    let message = format!("{:#}", result.expect_err("refused"));
+    assert!(
+        message.contains("A.7.1"),
+        "the refusal names the id given: {message}"
+    );
+    assert!(
+        message.contains("ISO"),
+        "and the framework it was refused for, because the notation differs \
+         between catalogues: {message}"
+    );
+    assert!(
+        message.contains("report --framework iso27001"),
+        "and says how to list the real ids, which is the question a refusal \
+         otherwise leaves the operator with: {message}"
+    );
+}
+
+/// The control that proves the case above is not vacuous. The same call with
+/// the catalogue's own spelling of that very control has to succeed and write,
+/// or the refusal above would pass equally well against a verb that refused
+/// every id.
+#[tokio::test]
+async fn the_catalogues_own_spelling_of_that_control_still_succeeds() {
+    let scratch = Scratch::seeded("[global]\n");
+
+    run_exclude_to(
+        "iso27001",
+        "7.1",
+        "No physical premises",
+        None,
+        None,
+        None,
+        &[],
+        Some(&scratch.config),
+        scratch.log_path(),
+    )
+    .await
+    .expect("'7.1' is a real ISO/IEC 27001:2022 Annex A clause number");
+
+    assert!(
+        scratch
+            .written()
+            .contains(r#"[compliance.not_applicable.iso27001."7.1"]"#),
+        "the real id is written"
+    );
+}
+
+/// An attempt to exclude a control that does not exist is exactly the attempt
+/// an auditor wants on the record, and it goes through `log_failure` like every
+/// other refusal, so its cause sits in the one detail the verifier hashes.
+#[tokio::test]
+async fn a_refused_unknown_control_is_logged_as_a_failure() {
+    let scratch = Scratch::seeded("[global]\n");
+
+    let _ = run_exclude_to(
+        "cis",
+        "1.1.1",
+        "Not applicable to this host",
+        None,
+        None,
+        None,
+        &[],
+        Some(&scratch.config),
+        scratch.log_path(),
+    )
+    .await;
+
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry_result, ActionResult::Failure);
+    assert_eq!(entries[0].entry_action_type, ActionType::ScopeExclusion);
+    assert_eq!(
+        entries[0].entry_target, "cis:1.1.1",
+        "the target names the framework and the id that was refused"
+    );
+    let error = entries[0]
+        .entry_details
+        .get("error")
+        .expect("the cause is in the one hashed detail");
+    assert!(
+        error.contains("1.1.1"),
+        "the logged cause names the id: {error}"
+    );
+    assert_eq!(
+        entries[0].entry_details.len(),
+        1,
+        "no second detail, because only 'error' is hashed on a failure entry"
+    );
+
+    assert!(
+        AuditLogger::verify_integrity(scratch.log_path())
+            .await
+            .expect("verify"),
+        "and the chain still verifies with the refusal in it"
     );
 }
 
@@ -181,7 +310,7 @@ async fn a_derived_framework_is_warned_about_yet_still_written_and_audited() {
 /// not assess and an exclusion of one does reach the generator's exclusion arm.
 #[tokio::test]
 async fn a_curated_framework_is_not_warned_about() {
-    for (framework, control) in [("cis", "1.1.1"), ("iso27001", "A.7.1")] {
+    for (framework, control) in [("cis", "1.5.1"), ("iso27001", "7.1")] {
         let scratch = Scratch::seeded("[global]\n");
 
         let advisory = run_exclude_to(
@@ -210,7 +339,7 @@ async fn a_curated_framework_is_not_warned_about() {
 async fn include_removes_only_the_named_control() {
     let scratch = Scratch::seeded("[global]\n");
 
-    for control in ["A.7.1", "A.7.2"] {
+    for control in ["7.1", "7.2"] {
         run_exclude_to(
             "iso27001",
             control,
@@ -226,18 +355,13 @@ async fn include_removes_only_the_named_control() {
         .expect("exclude");
     }
 
-    run_include_to(
-        "iso27001",
-        "A.7.1",
-        Some(&scratch.config),
-        scratch.log_path(),
-    )
-    .await
-    .expect("include");
+    run_include_to("iso27001", "7.1", Some(&scratch.config), scratch.log_path())
+        .await
+        .expect("include");
 
     let written = scratch.written();
-    assert!(!written.contains(r#""A.7.1""#), "the named control is gone");
-    assert!(written.contains(r#""A.7.2""#), "its neighbour is untouched");
+    assert!(!written.contains(r#""7.1""#), "the named control is gone");
+    assert!(written.contains(r#""7.2""#), "its neighbour is untouched");
 }
 
 /// A log of successes only cannot show an operator trying to exclude something
@@ -248,7 +372,7 @@ async fn a_refused_exclusion_is_still_logged() {
 
     let _ = run_exclude_to(
         "not-a-framework",
-        "A.7.1",
+        "7.1",
         "reason",
         None,
         None,
@@ -263,7 +387,7 @@ async fn a_refused_exclusion_is_still_logged() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].entry_result, ActionResult::Failure);
     assert_eq!(entries[0].entry_action_type, ActionType::ScopeExclusion);
-    assert_eq!(entries[0].entry_target, "not-a-framework:A.7.1");
+    assert_eq!(entries[0].entry_target, "not-a-framework:7.1");
 }
 
 /// The refusal is written through `log_failure`, whose single `error` detail is
@@ -277,7 +401,7 @@ async fn a_refusal_carries_its_reason_inside_the_hash_chain() {
 
     run_exclude_to(
         "iso27001",
-        "A.7.1",
+        "7.1",
         "sound reason",
         None,
         None,
@@ -290,7 +414,7 @@ async fn a_refusal_carries_its_reason_inside_the_hash_chain() {
     .expect("exclude succeeds");
     let _ = run_exclude_to(
         "iso27001",
-        "A.7.2",
+        "7.2",
         "  ",
         None,
         None,
@@ -341,7 +465,7 @@ async fn a_granted_exclusion_records_who_approved_it_and_why() {
 
     run_exclude_to(
         "iso27001",
-        "A.7.1",
+        "7.1",
         "No physical premises",
         Some("eric"),
         Some("SEC-412"),
@@ -358,7 +482,7 @@ async fn a_granted_exclusion_records_who_approved_it_and_why() {
     let entry = &entries[0];
     assert_eq!(entry.entry_result, ActionResult::Success);
     assert_eq!(entry.entry_action_type, ActionType::ScopeExclusion);
-    assert_eq!(entry.entry_target, "iso27001:A.7.1");
+    assert_eq!(entry.entry_target, "iso27001:7.1");
 
     let detail = |key: &str| entry.entry_details.get(key).map(String::as_str);
     assert_eq!(detail("operation"), Some("exclude"));
@@ -384,7 +508,7 @@ async fn withdrawing_an_exclusion_is_logged_too() {
 
     run_exclude_to(
         "iso27001",
-        "A.7.1",
+        "7.1",
         "reason",
         None,
         None,
@@ -395,19 +519,14 @@ async fn withdrawing_an_exclusion_is_logged_too() {
     )
     .await
     .expect("exclude");
-    run_include_to(
-        "iso27001",
-        "A.7.1",
-        Some(&scratch.config),
-        scratch.log_path(),
-    )
-    .await
-    .expect("include");
+    run_include_to("iso27001", "7.1", Some(&scratch.config), scratch.log_path())
+        .await
+        .expect("include");
 
     let entries = scratch.entries().await;
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[1].entry_result, ActionResult::Success);
-    assert_eq!(entries[1].entry_target, "iso27001:A.7.1");
+    assert_eq!(entries[1].entry_target, "iso27001:7.1");
     assert_eq!(
         entries[1]
             .entry_details
@@ -439,13 +558,7 @@ async fn withdrawing_an_exclusion_is_logged_too() {
 async fn withdrawing_an_exclusion_that_is_not_there_is_refused() {
     let scratch = Scratch::seeded("[global]\n");
 
-    let result = run_include_to(
-        "iso27001",
-        "A.7.1",
-        Some(&scratch.config),
-        scratch.log_path(),
-    )
-    .await;
+    let result = run_include_to("iso27001", "7.1", Some(&scratch.config), scratch.log_path()).await;
 
     assert!(result.is_err(), "there was nothing to withdraw");
     let entries = scratch.entries().await;

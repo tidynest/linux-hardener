@@ -8,9 +8,11 @@
 //! and every key the struct does not model.
 //!
 //! **Validation happens before the write.** An exclusion raises a compliance
-//! score by leaving its denominator, and unlike a finding exception there is no
-//! live finding to check it against, so the framework id and the reason are all
-//! the tool can insist on.
+//! score by leaving its denominator, so the framework id, the reason and, where
+//! there is a catalogue to check it against, the control id are all insisted on
+//! first. Unlike a finding exception there is no live finding to reconcile
+//! against, so for the eight frameworks whose catalogue is derived at report
+//! time the id cannot be checked at all. See `unknown_control_refusal`.
 //!
 //! **An exclusion is inert for eight of the ten frameworks.** Only CIS and
 //! ISO/IEC 27001 have a hand-curated catalogue; the rest derive theirs from the
@@ -199,6 +201,16 @@ async fn exclude(
     // and `iso27001` alike, and two spellings of one framework would otherwise
     // write two tables, of which the generator reads one.
     let framework_id = framework.id();
+
+    if let Some(message) = unknown_control_refusal(&framework, request.control) {
+        return refuse(
+            logger.as_ref(),
+            format!("{framework_id}:{}", request.control),
+            message,
+        )
+        .await;
+    }
+
     let exclusion = ScopeExclusion {
         reason: reason.to_string(),
         approved_by: request.approved_by.map(str::to_string),
@@ -254,6 +266,49 @@ async fn exclude(
         eprintln!("W  {text}");
     }
     Ok(advisory)
+}
+
+/// The refusal an unknown control id warrants, or `None` when the id can be
+/// excluded.
+///
+/// **Why refuse rather than warn.** An exclusion naming a control no catalogue
+/// carries is inert: the report never changes, and yet the configuration gains
+/// an entry and the audit log gains a signed declaration that a control was
+/// excluded when none was. A typo is the common case, so the quiet outcome is
+/// the likely one. `exception add` refuses a key the scan did not produce for
+/// the same reason, and with the same second benefit: this is the input
+/// validation for a caller reaching the verb over IPC rather than through a
+/// terminal.
+///
+/// **Only a curated framework can be checked.** [`curated_controls`] answers
+/// `None` for the eight frameworks whose catalogue is derived from live plugin
+/// coverage at report time, and this process holds no such catalogue at the
+/// moment of the write. An exclusion for one of those cannot take effect at all,
+/// whatever it names, and [`inert_exclusion_advisory`] already says so, so
+/// nothing is gained by inventing a second check there.
+///
+/// **Why the message names the framework and the listing command.** The
+/// notation differs between catalogues, and this one refuses ISO 27001's own
+/// Annex A prefix (`A.7.1`) because the catalogue holds the bare clause number
+/// (`7.1`). A refusal that only said "unknown control" would leave the operator
+/// guessing at exactly that.
+fn unknown_control_refusal(framework: &ComplianceFramework, control: &str) -> Option<String> {
+    let catalogue = curated_controls(framework)?;
+    if catalogue
+        .iter()
+        .any(|mapping| mapping.compliance_control_id == control)
+    {
+        return None;
+    }
+    Some(format!(
+        "'{control}' is not a control in the {framework} catalogue, so nothing was \
+         excluded. Written as it stands it would change no report, while the \
+         configuration and the audit log would both record a control as excluded \
+         that no catalogue carries. Catalogues differ in notation, so run \
+         `hardener report --framework {}` for every control this one holds, each \
+         printed with the id to give here.",
+        framework.id()
+    ))
 }
 
 /// The warning an exclusion for `framework` warrants, or `None` when the
