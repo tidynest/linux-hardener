@@ -399,14 +399,23 @@ git checkout -b hotfix/0.1.1 v0.1.0
 vim src/...
 git commit -m "fix(cli): critical bug description"
 
-# 3. Bump patch version
-./scripts/release/release.sh patch
+# 3. Bump patch version and tag, publishing nothing
+./scripts/release/release.sh patch --no-push
 
 # 4. Merge back to main
 git checkout main
 git merge hotfix/0.1.1
 git push origin main --tags
 ```
+
+`--no-push` is not optional here either. A hotfix is the case where the
+temptation to skip the gap between tagging and publishing is strongest and the
+cost of a retraction is highest, and the reasoning under
+[Release Checklist](#release-checklist) applies unchanged: the gates read the
+tagged commit, so the tag has to exist before they run and stay unpublished
+until they pass. This step read `release.sh patch` until 2026-08-18, which
+tagged and pushed in one run and contradicted the instruction at the top of this
+document.
 
 ---
 
@@ -520,7 +529,15 @@ cargo install cargo-audit
 
 ### Recommended Git Hooks
 
-The project includes a pre-commit hook for naming conventions. Additional hooks can be added:
+**The project ships no git hook.** `.git/hooks/` is not tracked and git never
+clones hooks, so a fresh clone runs no naming validation on commit and nothing
+in this repository installs one. Any hook is hand-installed and personal; see
+[scripts/README.md](../../scripts/README.md) for the one-liner that runs
+`validate_naming.py`. This sentence read "The project includes a pre-commit
+hook" until 2026-08-18, which told a new contributor that naming was enforced
+for them when it was not.
+
+Additional hooks can be added the same way:
 
 ```bash
 # .git/hooks/pre-push (example)
