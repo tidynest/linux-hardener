@@ -1,5 +1,5 @@
 // =============================================================================
-// DASHBOARD TESTS (T-DASH-01..10) - Linux Hardener GUI Tests
+// DASHBOARD TESTS (T-DASH-01..11) - Linux Hardener GUI Tests
 // =============================================================================
 //
 // The redesign renamed the heading, replaced the numeric score panel with a
@@ -111,5 +111,47 @@ test.describe('Dashboard', () => {
     expect(value).toBeLessThanOrEqual(100);
     // The mock scores 60, which is the middle band.
     await expect(page.getByText('Needs attention')).toBeVisible();
+  });
+
+  // T-DASH-11: The compliance row annotates excluded controls, and only where
+  // there are some
+  //
+  // The row renders "<n> excluded by policy" behind `fs.excluded != 0`, and
+  // until now nothing could reach it: the mock returned
+  // `summary_not_applicable: 0` for all ten frameworks, so the branch was dead
+  // to Playwright and to the contrast measurement alike. GDPR is the one
+  // framework the fixture gives exclusions to.
+  //
+  // Both directions are asserted deliberately. A test that only looked for the
+  // pill would pass just as happily against markup that rendered it
+  // unconditionally, which is the defect this annotation exists to prevent: an
+  // operator has to be able to tell a score raised by an exclusion from one
+  // raised by the host improving. CIS is the control, carrying the same row
+  // shape and an "unassessed" count but no exclusions, and its row is asserted
+  // to exist before its pill is asserted absent, so the negative half cannot
+  // pass by the row having disappeared.
+  test('T-DASH-11: only a framework with exclusions carries the excluded annotation', async ({ page }) => {
+    await runScan(page);
+    // The list lives in a collapsed disclosure, so nothing inside it is visible
+    // until the summary is clicked. Asserting on closed content would read the
+    // text straight out of the DOM and call a hidden pill rendered.
+    await page.locator('.compliance-disclosure > summary').click();
+
+    // `has:` takes a page-rooted locator. Built from the scoped row instead it
+    // matches nothing, and every assertion downstream passes vacuously.
+    const frameworkRow = (name) =>
+      page.locator('.compliance-item').filter({
+        has: page.locator('.compliance-name', { hasText: new RegExp(`^${name}$`) }),
+      });
+
+    const gdpr = frameworkRow('GDPR');
+    await expect(gdpr).toHaveCount(1);
+    await expect(gdpr.locator('.compliance-excluded')).toBeVisible();
+    await expect(gdpr.locator('.compliance-excluded')).toHaveText('6 excluded by policy');
+
+    const cis = frameworkRow('CIS');
+    await expect(cis).toHaveCount(1);
+    await expect(cis.locator('.compliance-manual')).toBeVisible();
+    await expect(cis.locator('.compliance-excluded')).toHaveCount(0);
   });
 });

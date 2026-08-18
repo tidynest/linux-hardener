@@ -493,8 +493,34 @@
     },
   ];
 
-  function makeComplianceReport(framework, score, passing, failing, manualReview) {
-    const total = passing + failing + manualReview;
+  // `notApplicable` defaults to 0, so every call site that predates scope
+  // exclusion keeps the report it always produced.
+  //
+  // The summary has to agree with itself, because the two counts it carries
+  // move the dashboard row in opposite directions and the Rust side derives
+  // one from the other:
+  //
+  //   summary_total_controls   = passing + failing + manualReview + notApplicable
+  //   summary_score_percentage = passing / (total - notApplicable) * 100
+  //
+  // An excluded control leaves the denominator, so adding exclusions to a
+  // framework raises nothing and moves no existing number: the denominator is
+  // `passing + failing + manualReview` either way. What it does change is
+  // `summary_total_controls` and the count the dashboard renders as the
+  // "excluded by policy" pill, which is exactly the branch this parameter
+  // exists to make reachable.
+  function makeComplianceReport(framework, score, passing, failing, manualReview, notApplicable = 0) {
+    const total = passing + failing + manualReview + notApplicable;
+    // One control row per excluded control, so the Compliance tab's per-control
+    // list and the summary count cannot disagree. A summary claiming exclusions
+    // over a list containing none is a fixture that contradicts itself.
+    const excludedControls = Array.from({ length: notApplicable }, (_, index) => ({
+      control_id: `${framework}-8.${index + 1}`,
+      control_title: 'Control declared not applicable for this host',
+      control_section: '8. Scope Exclusions',
+      control_status: 'NotApplicable',
+      control_findings: [],
+    }));
     return {
       report_framework: framework,
       report_generated_at: new Date().toISOString(),
@@ -520,13 +546,14 @@
           control_status: manualReview > 0 ? 'ManualReview' : 'Pass',
           control_findings: [],
         },
+        ...excludedControls,
       ],
       report_summary: {
         summary_total_controls: total,
         summary_passing: passing,
         summary_failing: failing,
         summary_manual_review: manualReview,
-        summary_not_applicable: 0,
+        summary_not_applicable: notApplicable,
         summary_score_percentage: score,
       },
     };
@@ -558,7 +585,19 @@
     'nist': makeComplianceReport('NIST', 88.0, 44, 4, 2),
     'pci-dss': makeComplianceReport('PCIDSS', 55.0, 11, 7, 2),
     'hipaa': makeComplianceReport('HIPAA', 65.0, 13, 5, 2),
-    'gdpr': makeComplianceReport('GDPR', 78.0, 18, 4, 1),
+    // GDPR is the one framework carrying scope exclusions, so the dashboard's
+    // "excluded by policy" pill has somewhere to render and the contrast
+    // measurement has a pill to measure. It is deliberately not CIS: CIS is the
+    // Compliance tab's default selection and the framework the fleet posture
+    // fixture mirrors, so anything given to CIS is seen by the most tests.
+    // GDPR is named by no assertion outside the framework picker, which reads
+    // the toggle labels rather than any report.
+    //
+    // The score is written as the quotient rather than a rounded literal
+    // because the invariant above has to hold exactly: 18 passing over a
+    // denominator of 23 (the six exclusions having left it) is 78.26%, which
+    // still renders as "78%" through the `{:.0}` in both consumers.
+    'gdpr': makeComplianceReport('GDPR', (18 / 23) * 100, 18, 4, 1, 6),
     'iso27001': makeComplianceReport('ISO27001', 74.0, 20, 6, 1),
     'soc2': makeComplianceReport('SOC2', 69.0, 16, 6, 2),
     '800-171': makeComplianceReport('NIST800171', 81.0, 27, 5, 1),
