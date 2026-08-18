@@ -1,6 +1,41 @@
 //! Security score calculation based on compliance reports.
 //!
 //! Computes weighted scores per framework and an overall average.
+//!
+//! # This is not the score the compliance report prints
+//!
+//! Two functions score the same `ComplianceReport` and they disagree, in one
+//! direction. [`calculate_framework_score`] below is the desktop dashboard's
+//! headline. `ComplianceSummary::from_controls` in `hardener-types` is what the
+//! CLI `report` command, the fleet posture columns and the compliance tab's own
+//! per-framework figures use, and it is simply
+//! `passing / (total - not_applicable)`.
+//!
+//! Every state except `Pass` and `NotApplicable` is scored differently:
+//!
+//! | Control state | here | `from_controls` |
+//! |---|---|---|
+//! | `Pass` | 100 | counts as passing |
+//! | `ManualReview` | **80** | **0**, denominator only |
+//! | `Fail`, worst finding `Info` | **90** | **0** |
+//! | `Fail`, worst finding `Low` | **75** | **0** |
+//! | `Fail`, worst finding `Medium` | **50** | **0** |
+//! | `Fail`, worst finding `High` | **25** | **0** |
+//! | `Fail`, worst finding `Critical` | 0 | 0 |
+//! | `NotApplicable` | excluded | excluded |
+//!
+//! **So this score is always greater than or equal to the report's, and can be
+//! far greater.** A framework whose controls all fail on `Low` findings reads
+//! 75 here and 0 in the report for the same scan. One `Pass` plus one
+//! `ManualReview` reads 90 here and 50 there.
+//!
+//! Neither is obviously wrong: a graded score is more useful on a dashboard
+//! than a binary one, and the report's is the one an auditor wants. What is
+//! wrong is that nothing said so, and an operator reading both sees two numbers
+//! for one host with no explanation. Reconciling them is a product decision
+//! (see the maintainer-decision list in `docs/NEXT-SESSION-PROMPT.md`), not a
+//! thing to quietly change here, because either edit moves every score the
+//! application has ever shown.
 
 use crate::state::{AppState, unchecked_tally};
 use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report, invoke_scan};
