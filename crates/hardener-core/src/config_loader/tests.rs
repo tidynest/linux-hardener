@@ -252,11 +252,11 @@ fn a_user_exclusion_does_not_discard_the_sites_other_exclusions() {
     };
 
     let base = HardenerConfig {
-        compliance: framework([("A.7.1", excluded("no premises"))]),
+        compliance: framework([("7.1", excluded("no premises"))]),
         ..Default::default()
     };
     let overlay = HardenerConfig {
-        compliance: framework([("A.7.2", excluded("no on-site staff"))]),
+        compliance: framework([("7.2", excluded("no on-site staff"))]),
         ..Default::default()
     };
 
@@ -268,13 +268,13 @@ fn a_user_exclusion_does_not_discard_the_sites_other_exclusions() {
         .expect("the framework survives the merge");
 
     assert_eq!(
-        iso.get("A.7.1").map(|e| e.reason.as_str()),
+        iso.get("7.1").map(|e| e.reason.as_str()),
         Some("no premises"),
         "the system config's exclusion must survive a user config that names \
          only a different control of the same framework"
     );
     assert_eq!(
-        iso.get("A.7.2").map(|e| e.reason.as_str()),
+        iso.get("7.2").map(|e| e.reason.as_str()),
         Some("no on-site staff"),
         "while the user config's own exclusion is of course added"
     );
@@ -290,7 +290,7 @@ fn a_user_exclusion_replaces_the_same_control() {
         .entry("iso27001".to_string())
         .or_default()
         .insert(
-            "A.7.1".to_string(),
+            "7.1".to_string(),
             ScopeExclusion {
                 reason: "no premises".to_string(),
                 ..Default::default()
@@ -303,7 +303,7 @@ fn a_user_exclusion_replaces_the_same_control() {
         .entry("iso27001".to_string())
         .or_default()
         .insert(
-            "A.7.1".to_string(),
+            "7.1".to_string(),
             ScopeExclusion {
                 reason: "premises are leased and out of scope".to_string(),
                 ..Default::default()
@@ -316,7 +316,7 @@ fn a_user_exclusion_replaces_the_same_control() {
             .compliance
             .not_applicable
             .get("iso27001")
-            .and_then(|f| f.get("A.7.1"))
+            .and_then(|f| f.get("7.1"))
             .map(|e| e.reason.as_str()),
         Some("premises are leased and out of scope")
     );
@@ -465,6 +465,53 @@ fn the_exception_limit_admits_the_maximum_and_refuses_one_more() {
     assert!(
         err.to_string().contains("exception limit"),
         "and refused for the reason it was, not some other failure: {err}"
+    );
+}
+
+/// The same ceiling reading for compliance exclusions, which `merge_compliance`
+/// had no cap on at all while `merge_plugin` capped both of its maps.
+///
+/// Split across the two sources rather than piled into one, because the cap is
+/// checked after the merge: two files each comfortably inside the limit can add
+/// up to one map past it, and a per-source check would let them.
+#[test]
+fn the_exclusion_limit_admits_the_maximum_and_refuses_one_more() {
+    let split_at = |n: usize| {
+        let exclusions = |range: std::ops::Range<usize>| {
+            let mut config = ComplianceConfig::default();
+            config.not_applicable.insert(
+                "iso27001".to_string(),
+                range
+                    .map(|i| {
+                        (
+                            format!("7.{i}"),
+                            ScopeExclusion {
+                                reason: "fixture".to_string(),
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect(),
+            );
+            config
+        };
+        let half = n / 2;
+        ConfigLoader::merge_compliance(exclusions(0..half), exclusions(half..n))
+    };
+
+    let at_limit = split_at(ConfigLoader::MAX_EXCLUSIONS_PER_FRAMEWORK)
+        .expect("exactly the maximum is within the limit");
+    assert_eq!(
+        at_limit.not_applicable["iso27001"].len(),
+        ConfigLoader::MAX_EXCLUSIONS_PER_FRAMEWORK
+    );
+
+    let err = split_at(ConfigLoader::MAX_EXCLUSIONS_PER_FRAMEWORK + 1)
+        .expect_err("one exclusion past the maximum is refused");
+    assert!(
+        err.to_string().contains("exclusion limit for 'iso27001'"),
+        "and refused for the reason it was, naming the framework that \
+         overflowed: {err}"
     );
 }
 

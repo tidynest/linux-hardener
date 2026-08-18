@@ -138,6 +138,82 @@ fn an_excluded_control_is_named_so_the_score_explains_its_own_denominator() {
     );
 }
 
+/// A three-control CIS report: one passing, one failing, and `excluded` of the
+/// third status. `ControlStatus::NotApplicable` for the third gives a report
+/// whose scoring denominator (2) and catalogue size (3) are different numbers,
+/// which is the whole point of the clause under test; any other status gives
+/// the control case where they are the same.
+fn three_control_report(third: ControlStatus) -> ComplianceReport {
+    let controls = vec![
+        ControlResult {
+            control_id: "1.5.1".to_string(),
+            control_title: "Ensure ASLR is enabled".to_string(),
+            control_section: "Initial Setup".to_string(),
+            control_status: ControlStatus::Pass,
+            control_findings: vec![],
+        },
+        ControlResult {
+            control_id: "1.5.2".to_string(),
+            control_title: "Ensure ptrace is restricted".to_string(),
+            control_section: "Initial Setup".to_string(),
+            control_status: ControlStatus::Fail,
+            control_findings: vec![],
+        },
+        ControlResult {
+            control_id: "7.1".to_string(),
+            control_title: "Physical entry controls".to_string(),
+            control_section: "Physical".to_string(),
+            control_status: third,
+            control_findings: vec![],
+        },
+    ];
+    ComplianceReport {
+        report_framework: ComplianceFramework::CIS,
+        report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
+        report_generated_at: Utc::now(),
+        report_summary: ComplianceSummary::from_controls(&controls),
+        report_controls: controls,
+    }
+}
+
+/// The spec's second rendering requirement. An artefact that publishes a score
+/// whose denominator a human reduced must say so beside the figure, or an
+/// auditor reads a number with no way to tell a declaration from a
+/// measurement.
+///
+/// It also resolves the conflation the summary block otherwise leaves: `Total
+/// Controls` is the catalogue size and does not move on exclusion, while the
+/// score is computed over `total - not_applicable`. The clause names both.
+#[test]
+fn the_score_line_says_a_human_reduced_its_denominator() {
+    let output = TextFormatter::new().format(&three_control_report(ControlStatus::NotApplicable));
+
+    assert!(
+        output.contains("Total Controls: 3"),
+        "the catalogue size is still published, got:\n{output}"
+    );
+    assert!(
+        output.contains("Score measured against 2 of 3 controls"),
+        "the clause must name the scoring denominator beside the catalogue \
+         size, or the two numbers stay ambiguous, got:\n{output}"
+    );
+    assert!(
+        output.contains("an operator declared 1 not applicable"),
+        "and must make plain that a human moved it, got:\n{output}"
+    );
+}
+
+/// The negative control. With nothing excluded there is no clause, so the
+/// sentence cannot be read as boilerplate that appears on every report.
+#[test]
+fn a_report_with_no_exclusions_carries_no_scope_clause() {
+    let output = TextFormatter::new().format(&three_control_report(ControlStatus::ManualReview));
+
+    assert_eq!(output.matches("Score measured against").count(), 0);
+    assert!(output.contains("Total Controls: 3"));
+}
+
 /// An empty STIG report under the given profile.
 fn stig_report(profile: ComplianceProfile) -> ComplianceReport {
     ComplianceReport {

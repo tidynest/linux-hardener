@@ -813,3 +813,111 @@ async fn a_failure_result_is_refused_by_log_action() {
         "a refused write must leave no entry behind"
     );
 }
+
+/// A `Failure` entry hashes the legacy six-tuple ending in the `error` string,
+/// so every other key of its details map sits outside the hash. Adding one on
+/// disk changes what `query` returns while leaving the chain arithmetic intact:
+/// an appended `"approved_by": "security-team"` would read back as authentic on
+/// a refusal that granted nothing.
+///
+/// No writer can produce a second key - `log_failure` writes exactly `error`
+/// and `log_action_with_details` refuses a `Failure` outright - so the shape
+/// itself is the evidence, and `verify_integrity` refuses it without needing to
+/// hash it.
+#[tokio::test]
+async fn a_failure_entry_with_a_key_outside_the_hash_fails_verification() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    logger
+        .log_failure(
+            ActionType::ScopeExclusion,
+            "eric".to_string(),
+            "iso27001:A.7.1".to_string(),
+            "reason must not be empty".to_string(),
+        )
+        .await
+        .expect("logged");
+    drop(logger);
+
+    // The untouched refusal verifies, so the assertion below cannot pass for
+    // some unrelated reason.
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "a log_failure entry must verify before it is tampered with"
+    );
+
+    let original = std::fs::read_to_string(&path).expect("read");
+    let tampered = original.replace(
+        r#""entry_details":{"error":"#,
+        r#""entry_details":{"approved_by":"security-team","error":"#,
+    );
+    assert_ne!(original, tampered, "the injection actually fired");
+    std::fs::write(&path, tampered).expect("write");
+
+    let entries = AuditLogger::query(path_str, QueryFilter::new())
+        .await
+        .expect("query");
+    assert_eq!(
+        entries[0]
+            .entry_details
+            .get("approved_by")
+            .map(String::as_str),
+        Some("security-team"),
+        "the fixture must really carry the injected key, or the guard is \
+         being tested against nothing"
+    );
+
+    assert!(
+        !AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "a Failure entry carrying a key outside the hash must not verify"
+    );
+}
+
+/// The other half of the guard above: it must reject a shape no writer emits
+/// without rejecting the shape every writer does emit. `log_failure` is the
+/// only path to a `Failure` entry, its map holds exactly `error`, and a
+/// released log is full of them.
+#[tokio::test]
+async fn an_untouched_failure_entry_still_verifies() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    for target in ["sshd", "iso27001:A.7.1"] {
+        logger
+            .log_failure(
+                ActionType::Apply,
+                "eric".to_string(),
+                target.to_string(),
+                "permission denied".to_string(),
+            )
+            .await
+            .expect("logged");
+    }
+
+    let entries = AuditLogger::query(path_str, QueryFilter::new())
+        .await
+        .expect("query");
+    assert_eq!(entries.len(), 2);
+    assert!(
+        entries
+            .iter()
+            .all(|e| e.entry_details.keys().collect::<Vec<_>>() == vec!["error"]),
+        "the writer emits exactly one detail key, which is what the guard allows"
+    );
+
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "the guard must not reject a log this program wrote"
+    );
+}

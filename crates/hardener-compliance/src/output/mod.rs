@@ -16,7 +16,7 @@ pub use json::JsonFormatter;
 pub use pdf::PdfFormatter;
 pub use text::TextFormatter;
 
-use crate::report::ComplianceReport;
+use crate::report::{ComplianceReport, ComplianceSummary};
 
 /// Trait for formatting compliance reports.
 pub trait ReportFormatter {
@@ -47,6 +47,38 @@ pub(crate) fn report_title(report: &ComplianceReport) -> String {
         Some(label) => format!("{base} ({label})"),
         None => base,
     }
+}
+
+/// The score line's exclusion clause, or `None` when nothing was excluded.
+///
+/// A score whose denominator a human reduced must say so beside the figure. An
+/// exclusion is a declaration rather than a measurement, and without this
+/// sentence an auditor reading the artefact sees only a number that moved.
+///
+/// It also settles which of the two published counts the score used. `Total
+/// Controls` is the catalogue size and does not move on exclusion; the scoring
+/// denominator is `total - not_applicable` and does, so a report could print
+/// `Total Controls: 93` beside a score computed over 92 with nothing naming
+/// the difference. The clause names both numbers rather than leaving a reader
+/// to work out which one is which.
+///
+/// Composed once, here beside the other shared renderer helpers, so the three
+/// human-readable formats cannot drift into telling an auditor three different
+/// things. The machine formats carry `summary_not_applicable` as a field and
+/// need no prose.
+pub(crate) fn exclusion_note(summary: &ComplianceSummary) -> Option<String> {
+    let excluded = summary.summary_not_applicable;
+    if excluded == 0 {
+        return None;
+    }
+    let total = summary.summary_total_controls;
+    let scored = total.saturating_sub(excluded);
+    Some(format!(
+        "Score measured against {scored} of {total} controls: an operator \
+         declared {excluded} not applicable, and a control declared not \
+         applicable leaves the denominator rather than counting against the \
+         score."
+    ))
 }
 
 /// Compares dotted control IDs numerically (e.g. "1.5.2" < "1.10.1").

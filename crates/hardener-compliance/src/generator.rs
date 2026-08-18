@@ -47,6 +47,13 @@ impl ReportGenerator {
     /// controller's `[compliance]` config section. Taken as a parameter for the
     /// same reason `coverage` is: the compliance crate does not reach out for
     /// its inputs.
+    ///
+    /// An exclusion is inert for the eight frameworks with no curated
+    /// catalogue. Their catalogue *is* `coverage`, so every control they list
+    /// is one the engine assesses, and the assessed arm decides it one arm
+    /// above the exclusion arm. Only CIS and ISO 27001, the two curated
+    /// catalogues, list controls no plugin covers, and so only those two have
+    /// anything for a declaration to convert.
     pub fn new(
         config: ReportConfig,
         coverage: Vec<ComplianceMapping>,

@@ -56,7 +56,14 @@ pub fn default_review_months(framework: ComplianceFramework) -> u32 {
 ///
 /// One helper for both dates so the two call sites cannot drift into
 /// disagreeing about what a date is.
-fn parse_iso_date(value: &str) -> Option<NaiveDate> {
+/// The one definition of the date format this section accepts.
+///
+/// `pub` because `hardener scope` must refuse a `--review-by` this cannot
+/// parse, and it briefly held its own copy of the format string to do so. Two
+/// copies would diverge in the one direction that matters: a verb accepting a
+/// spelling the config layer then rejects writes an exclusion that is silently
+/// inert, which is the defect the control-id refusal exists to prevent.
+pub fn parse_iso_date(value: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()
 }
 
@@ -85,10 +92,16 @@ fn strip_port(target: &str) -> &str {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct ScopeExclusion {
-    /// Why the control does not apply. Mandatory in practice: an exclusion
-    /// with an empty reason is rejected by the verb and reported by the
-    /// generator, because an unexplained exclusion raises a score for no
-    /// stated cause.
+    /// Why the control does not apply. `hardener scope exclude` refuses an
+    /// empty one and logs the refusal, because an unexplained exclusion raises
+    /// a score for no stated cause.
+    ///
+    /// **The verb is the only enforcement.** The generator never reads this
+    /// field: it decides on the framework key, the control id, the review
+    /// deadline and the host list alone. So an exclusion hand-edited into the
+    /// config file with `reason = ""` applies in full, leaves the control out
+    /// of the score's denominator, and nothing anywhere reports that it came
+    /// with no justification.
     pub reason: String,
     /// Who approved it.
     pub approved_by: Option<String>,

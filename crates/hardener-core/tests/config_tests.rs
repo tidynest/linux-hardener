@@ -201,14 +201,14 @@ fn test_config_serialization() {
             not_applicable: HashMap::from([(
                 "iso27001".to_string(),
                 HashMap::from([(
-                    "A.7.1".to_string(),
+                    "7.1".to_string(),
                     ScopeExclusion {
-                        reason: "reason-A.7.1".to_string(),
-                        approved_by: Some("approver-A.7.1".to_string()),
+                        reason: "reason-7.1".to_string(),
+                        approved_by: Some("approver-7.1".to_string()),
                         approved_date: Some("2026-08-18".to_string()),
-                        ticket: Some("ticket-A.7.1".to_string()),
+                        ticket: Some("ticket-7.1".to_string()),
                         review_by: Some("2027-08-18".to_string()),
-                        hosts: vec!["host-A.7.1".to_string()],
+                        hosts: vec!["host-7.1".to_string()],
                     },
                 )]),
             )]),

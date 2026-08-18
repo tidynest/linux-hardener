@@ -500,6 +500,204 @@ async fn a_granted_exclusion_records_who_approved_it_and_why() {
     );
 }
 
+/// A `--review-by` the report path cannot parse is refused before anything is
+/// written.
+///
+/// `ScopeExclusion::review_deadline` fails closed on an unparseable
+/// `review_by`: it returns `None`, `is_valid_on` is false on every day, and the
+/// control stays `ManualReview`. Written unvalidated, the operator would get a
+/// success message, a table in their configuration and an audit entry recording
+/// a granted declaration, for a report that never moves. That is the same shape
+/// as the unknown-control defect, so it earns the same refusal.
+#[tokio::test]
+async fn an_unparseable_review_by_is_refused() {
+    for spelling in [
+        "next August",
+        "2027/08/18",
+        "18-08-2027",
+        "2027-13-01",
+        "2027-08-18T00:00:00Z",
+        "",
+    ] {
+        let scratch = Scratch::seeded("[global]\n");
+
+        let result = run_exclude_to(
+            "iso27001",
+            "7.1",
+            "No physical premises",
+            None,
+            None,
+            Some(spelling),
+            &[],
+            Some(&scratch.config),
+            scratch.log_path(),
+        )
+        .await;
+
+        let Err(error) = result else {
+            panic!("'{spelling}' is no date the report can read, so it must be refused");
+        };
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("YYYY-MM-DD"),
+            "the refusal states the spelling wanted: {message}"
+        );
+        assert!(
+            !scratch.written().contains("not_applicable"),
+            "and nothing was written for '{spelling}'"
+        );
+
+        let entries = scratch.entries().await;
+        assert_eq!(entries.len(), 1, "the attempt is on the record");
+        assert_eq!(entries[0].entry_result, ActionResult::Failure);
+        assert_eq!(entries[0].entry_target, "iso27001:7.1");
+        assert!(
+            AuditLogger::verify_integrity(scratch.log_path())
+                .await
+                .expect("verify"),
+            "and the chain still verifies with the refusal in it"
+        );
+    }
+}
+
+/// The control that keeps the case above from passing against a verb that
+/// refused every `--review-by`. An ISO 8601 date is written through and lands in
+/// the file under its own key.
+#[tokio::test]
+async fn an_iso_8601_review_by_is_written_through() {
+    let scratch = Scratch::seeded("[global]\n");
+
+    run_exclude_to(
+        "iso27001",
+        "7.1",
+        "No physical premises",
+        None,
+        None,
+        Some("2027-08-18"),
+        &[],
+        Some(&scratch.config),
+        scratch.log_path(),
+    )
+    .await
+    .expect("a parseable date is not a refusal");
+
+    assert!(
+        scratch.written().contains(r#"review_by = "2027-08-18""#),
+        "the date reaches the file: {}",
+        scratch.written()
+    );
+}
+
+/// A refusal is filed under the canonical framework id, not the spelling the
+/// operator typed.
+///
+/// `from_id` accepts `ISO-27001` and `iso27001` alike. An auditor filtering
+/// their log for `iso27001:7.1` would otherwise see the granted exclusions and
+/// miss a refusal filed as `ISO-27001:7.1`, which is precisely the entry they
+/// were looking for.
+#[tokio::test]
+async fn a_refusal_is_filed_under_the_canonical_framework_id() {
+    let scratch = Scratch::seeded("[global]\n");
+
+    let _ = run_exclude_to(
+        "ISO-27001",
+        "7.1",
+        "   ",
+        None,
+        None,
+        None,
+        &[],
+        Some(&scratch.config),
+        scratch.log_path(),
+    )
+    .await;
+
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].entry_target, "iso27001:7.1",
+        "the canonical id, not the operator's spelling of it"
+    );
+}
+
+/// A write that fails is an attempt that left no trace of itself, which is the
+/// one outcome this module argues at length must be on the record.
+///
+/// The realistic cause is an unprivileged operator against
+/// `/etc/linux-hardener/config.toml`. Here the temporary file the atomic write
+/// needs is a directory instead, which fails the same way for every user and so
+/// does not turn on whether the suite happens to run as root.
+#[tokio::test]
+async fn a_failed_write_is_audited() {
+    let scratch = Scratch::seeded("[global]\n");
+    std::fs::create_dir(scratch.config.with_extension("toml.new")).expect("block the write");
+
+    let result = run_exclude_to(
+        "iso27001",
+        "7.1",
+        "No physical premises",
+        None,
+        None,
+        None,
+        &[],
+        Some(&scratch.config),
+        scratch.log_path(),
+    )
+    .await;
+
+    assert!(result.is_err(), "the write failed, so the command failed");
+    assert!(
+        !scratch.written().contains("not_applicable"),
+        "and the configuration is as it was"
+    );
+
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 1, "the failed attempt is on the record");
+    assert_eq!(entries[0].entry_result, ActionResult::Failure);
+    assert_eq!(entries[0].entry_target, "iso27001:7.1");
+    assert!(
+        AuditLogger::verify_integrity(scratch.log_path())
+            .await
+            .expect("verify"),
+        "and the chain still verifies with it in"
+    );
+}
+
+/// A withdrawal that fails to write is as much an untraced attempt as a grant
+/// that does, and is refused and logged the same way.
+#[tokio::test]
+async fn a_failed_withdrawal_write_is_audited() {
+    let scratch = Scratch::seeded("[global]\n");
+
+    run_exclude_to(
+        "iso27001",
+        "7.1",
+        "No physical premises",
+        None,
+        None,
+        None,
+        &[],
+        Some(&scratch.config),
+        scratch.log_path(),
+    )
+    .await
+    .expect("exclude");
+    std::fs::create_dir(scratch.config.with_extension("toml.new")).expect("block the write");
+
+    let result = run_include_to("iso27001", "7.1", Some(&scratch.config), scratch.log_path()).await;
+
+    assert!(result.is_err(), "the write failed, so the command failed");
+    assert!(
+        scratch.written().contains("not_applicable"),
+        "and the exclusion is still there"
+    );
+
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 2, "the grant, then the failed withdrawal");
+    assert_eq!(entries[1].entry_result, ActionResult::Failure);
+    assert_eq!(entries[1].entry_target, "iso27001:7.1");
+}
+
 /// Withdrawing an exclusion lowers the score again, so it is as much an
 /// auditable act as granting one.
 #[tokio::test]

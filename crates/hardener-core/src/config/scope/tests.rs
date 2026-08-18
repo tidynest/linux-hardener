@@ -211,7 +211,7 @@ fn a_host_the_exclusion_does_not_name_is_not_covered() {
 #[test]
 fn the_config_section_parses_from_toml() {
     let toml = r#"
-[compliance.not_applicable.iso27001."A.7.1"]
+[compliance.not_applicable.iso27001."7.1"]
 reason = "No physical premises; all infrastructure is cloud-hosted"
 approved_by = "eric"
 approved_date = "2026-08-18"
@@ -224,7 +224,7 @@ hosts = ["web-01.example.net"]
         .compliance
         .not_applicable
         .get("iso27001")
-        .and_then(|f| f.get("A.7.1"))
+        .and_then(|f| f.get("7.1"))
         .expect("the exclusion is present");
     assert_eq!(entry.ticket.as_deref(), Some("SEC-412"));
     assert_eq!(entry.hosts, vec!["web-01.example.net".to_string()]);

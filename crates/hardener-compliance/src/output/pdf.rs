@@ -2,7 +2,7 @@
 //!
 //! Produces PDF compliance reports using the krilla library.
 
-use super::{group_controls_by_section, report_title};
+use super::{exclusion_note, group_controls_by_section, report_title};
 use crate::output::ReportFormatter;
 use crate::report::ComplianceReport;
 use hardener_common::types::ControlStatus;
@@ -37,6 +37,14 @@ const SMALL_SIZE: f32 = 8.0;
 
 /// Line heights (multiplier of font size).
 const LINE_HEIGHT: f32 = 1.4;
+
+/// Characters per line when wrapping prose at [`SMALL_SIZE`].
+///
+/// NotoSans averages a little under half its point size per character, so 100
+/// characters of 8pt text stays inside [`CONTENT_WIDTH`] with room to spare.
+/// Deliberately conservative: krilla gives no measured advance here, and a
+/// short line is a cosmetic flaw where an over-long one runs off the page.
+const WRAP_CHARS: usize = 100;
 
 /// Colours (RGB).
 fn colour_black() -> color::rgb::Color {
@@ -485,6 +493,54 @@ fn draw_summary_box(
     );
 
     y.advance(box_height);
+
+    // Directly under the box holding the figure, because it is that figure the
+    // sentence qualifies. The PDF is the artefact an auditor is handed, and it
+    // used to state a score whose denominator a human had reduced with no
+    // sentence anywhere saying so. `Total` in the box above is the catalogue
+    // size and does not move on exclusion, which is the conflation this
+    // resolves.
+    let Some(note) = exclusion_note(&report.report_summary) else {
+        return;
+    };
+    surface.set_fill(Some(Fill {
+        paint: colour_dark_grey().into(),
+        opacity: NormalizedF32::ONE,
+        rule: FillRule::default(),
+    }));
+    y.advance(SMALL_SIZE);
+    for line in wrap_text(&note, WRAP_CHARS) {
+        surface.draw_text(
+            Point::from_xy(MARGIN_LEFT, y.y() + SMALL_SIZE),
+            font_regular.clone(),
+            SMALL_SIZE,
+            &line,
+            false,
+            TextDirection::LeftToRight,
+        );
+        y.advance(SMALL_SIZE * LINE_HEIGHT);
+    }
+}
+
+/// Breaks `text` into lines of at most `max_chars` characters, splitting on
+/// whitespace.
+///
+/// A word longer than `max_chars` gets a line of its own rather than being
+/// cut: everything reaching this is prose the report composed, so an over-long
+/// word means a control id or a hostname, and a truncated identifier is worse
+/// than an over-long line.
+fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        match lines.last_mut() {
+            Some(line) if line.chars().count() + 1 + word.chars().count() <= max_chars => {
+                line.push(' ');
+                line.push_str(word);
+            }
+            _ => lines.push(word.to_string()),
+        }
+    }
+    lines
 }
 
 /// Draws a single control entry.

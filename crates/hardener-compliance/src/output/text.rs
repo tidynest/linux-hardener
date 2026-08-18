@@ -2,7 +2,7 @@
 //!
 //! Produces human-readable compliance reports for terminal output.
 
-use crate::output::{ReportFormatter, report_title};
+use crate::output::{ReportFormatter, exclusion_note, report_title};
 use crate::report::ComplianceReport;
 use hardener_common::types::ControlStatus;
 
@@ -141,8 +141,16 @@ impl ReportFormatter for TextFormatter {
             report.report_summary.summary_score_percentage
         ));
 
-        // Directly under the score, because it is the score the caveat is
-        // about: the checks that could not run are in its denominator, so a
+        // Both caveats sit directly under the score, because it is the score
+        // they are about, and the exclusion clause comes first because it is
+        // the stronger one: a human moved that denominator deliberately.
+        // `Total Controls` above is the catalogue size and did not move with
+        // it, which is the conflation this sentence resolves.
+        if let Some(note) = exclusion_note(&report.report_summary) {
+            output.push_str(&format!("\n  {note}\n"));
+        }
+
+        // The checks that could not run are in the score's denominator, so a
         // privileged re-run produces a different number. The report used to
         // publish the figure and say nothing, and the report is the artefact
         // an operator keeps (#161).

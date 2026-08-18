@@ -721,7 +721,7 @@ hosts = ["web-01", "web-02"]
 | `approved_date` | When it was approved (ISO 8601) | written by the verb |
 | `ticket` | Approval ticket or issue reference | none |
 | `review_by` | When it must be re-examined (ISO 8601) | twelve months from `approved_date` |
-| `hosts` | Hosts it covers. Matched case-insensitively against a saved profile's name, its hostname, or its `user@host:port` target | empty, meaning every host |
+| `hosts` | Hosts it covers. Matched case-insensitively against a saved profile's name, its hostname, its `user@host:port` target, or that target with the port dropped (`user@host`) | empty, meaning every host |
 
 The framework key accepts any spelling `--framework` accepts, so `iso27001`,
 `ISO27001` and `iso-27001` are one key, as are `nist800171` and `nist-800-171`.

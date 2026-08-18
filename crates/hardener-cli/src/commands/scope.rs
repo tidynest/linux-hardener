@@ -8,11 +8,18 @@
 //! and every key the struct does not model.
 //!
 //! **Validation happens before the write.** An exclusion raises a compliance
-//! score by leaving its denominator, so the framework id, the reason and, where
-//! there is a catalogue to check it against, the control id are all insisted on
-//! first. Unlike a finding exception there is no live finding to reconcile
-//! against, so for the eight frameworks whose catalogue is derived at report
-//! time the id cannot be checked at all. See `unknown_control_refusal`.
+//! score by leaving its denominator, so the framework id, the reason, the
+//! review date and, where there is a catalogue to check it against, the control
+//! id are all insisted on first. Unlike a finding exception there is no live
+//! finding to reconcile against, so for the eight frameworks whose catalogue is
+//! derived at report time the id cannot be checked at all. See
+//! `unknown_control_refusal`.
+//!
+//! **Every failed attempt is audited, not only every refused one.** A write
+//! that fails, most plausibly because an unprivileged operator reached for
+//! `/etc/linux-hardener/config.toml`, otherwise left no trace at all: the
+//! validation refusals were on the record and the one attempt that touched the
+//! filesystem was not. See `refuse`.
 //!
 //! **An exclusion is inert for eight of the ten frameworks.** Only CIS and
 //! ISO/IEC 27001 have a hand-curated catalogue; the rest derive theirs from the
@@ -167,12 +174,29 @@ async fn exclude(
     logger: Option<AuditLogger>,
 ) -> Result<Option<String>> {
     let reason = request.reason.trim();
-    let raw_target = format!("{}:{}", request.framework, request.control);
+
+    // Resolved ahead of the first refusal so that every entry this call can
+    // file names the framework the same way. The canonical id, not the spelling
+    // given: `from_id` accepts `ISO-27001` and `iso27001` alike, two spellings
+    // of one framework would otherwise write two tables of which the generator
+    // reads one, and an auditor filtering their log for `iso27001:7.1` would
+    // miss a refusal filed as `ISO-27001:7.1`.
+    let resolved = ComplianceFramework::from_id(request.framework);
+
+    // A name that resolves to nothing falls back to the operator's own
+    // spelling, on purpose: there is no canonical form for a framework this
+    // tool does not know, and what the audit trail owes for one is what was
+    // actually attempted.
+    let target = format!(
+        "{}:{}",
+        resolved.as_ref().map_or(request.framework, |f| f.id()),
+        request.control
+    );
 
     if reason.is_empty() {
         return refuse(
             logger.as_ref(),
-            raw_target,
+            target,
             format!(
                 "--reason is empty, so control '{}' was not excluded. An exclusion \
                  raises the compliance score by leaving its denominator, and an \
@@ -183,10 +207,10 @@ async fn exclude(
         .await;
     }
 
-    let Some(framework) = ComplianceFramework::from_id(request.framework) else {
+    let Some(framework) = resolved else {
         return refuse(
             logger.as_ref(),
-            raw_target,
+            target,
             format!(
                 "Unknown compliance framework '{}', so control '{}' was not \
                  excluded. Run `hardener report --help` for the ids this binary \
@@ -197,16 +221,27 @@ async fn exclude(
         .await;
     };
 
-    // The canonical id, not the spelling given: `from_id` accepts `ISO-27001`
-    // and `iso27001` alike, and two spellings of one framework would otherwise
-    // write two tables, of which the generator reads one.
     let framework_id = framework.id();
 
     if let Some(message) = unknown_control_refusal(&framework, request.control) {
+        return refuse(logger.as_ref(), target, message).await;
+    }
+
+    if let Some(review_by) = request.review_by
+        && !is_iso_date(review_by)
+    {
         return refuse(
             logger.as_ref(),
-            format!("{framework_id}:{}", request.control),
-            message,
+            target,
+            format!(
+                "--review-by '{review_by}' is not an ISO 8601 date (YYYY-MM-DD), so \
+                 control '{}' was not excluded. `ScopeExclusion::review_deadline` \
+                 fails closed on a date it cannot read: the exclusion would have no \
+                 deadline, would apply on no day, and the control would stay under \
+                 manual review while the configuration and the audit log both said \
+                 it had been excluded.",
+                request.control
+            ),
         )
         .await;
     }
@@ -214,10 +249,14 @@ async fn exclude(
     let exclusion = ScopeExclusion {
         reason: reason.to_string(),
         approved_by: request.approved_by.map(str::to_string),
-        // Written now rather than left absent, because `review_deadline` falls
-        // back to the day it is *evaluated* when there is no approval date:
-        // an exclusion with neither date would have its deadline recomputed
-        // from today on every run and so would never come up for review.
+        // Written now rather than left absent, because `review_deadline` has
+        // no fallback base date: with neither `approved_date` nor a parseable
+        // `review_by` it returns `None`, `is_valid_on` is then false on every
+        // day, and the exclusion applies never rather than forever. Deleting
+        // this line makes every exclusion this verb writes inert. It once did
+        // fall back to the day of evaluation, which made a dateless exclusion
+        // valid forever; `91ebe8e6` removed that, inverting the consequence
+        // without changing what has to be written here.
         approved_date: Some(chrono::Utc::now().date_naive().to_string()),
         ticket: request.ticket.map(str::to_string),
         review_by: request.review_by.map(str::to_string),
@@ -225,9 +264,17 @@ async fn exclude(
     };
 
     let path = write_path(request.config_path);
-    let existing = read_or_empty(&path)?;
-    let written = upsert_exclusion(&existing, framework_id, request.control, &exclusion)?;
-    write_atomically(&path, &written)?;
+    if let Err(e) = read_or_empty(&path)
+        .and_then(|existing| upsert_exclusion(&existing, framework_id, request.control, &exclusion))
+        .and_then(|written| write_atomically(&path, &written))
+    {
+        return refuse(
+            logger.as_ref(),
+            target,
+            format!("Control '{}' was not excluded: {e:#}", request.control),
+        )
+        .await;
+    }
 
     let mut details = HashMap::from([
         ("operation".to_string(), "exclude".to_string()),
@@ -247,12 +294,7 @@ async fn exclude(
         details.insert("hosts".to_string(), exclusion.hosts.join(","));
     }
 
-    record(
-        logger.as_ref(),
-        format!("{framework_id}:{}", request.control),
-        details,
-    )
-    .await;
+    record(logger.as_ref(), target, details).await;
 
     println!(
         "Excluded '{}' from {} as not applicable. Written to {}.",
@@ -311,6 +353,19 @@ fn unknown_control_refusal(framework: &ComplianceFramework, control: &str) -> Op
     ))
 }
 
+/// Whether `value` is a date the report path will read back.
+///
+/// Whether `value` is a date the config layer will actually parse.
+///
+/// Calls the same function the stored `review_by` is read back through, rather
+/// than restating its format string. A verb that accepted a spelling the config
+/// layer then rejected would write an exclusion audited as granted that never
+/// applies, which is the defect this check exists to prevent, so the two must
+/// not be able to drift apart.
+fn is_iso_date(value: &str) -> bool {
+    hardener_core::config::scope::parse_iso_date(value).is_some()
+}
+
 /// The warning an exclusion for `framework` warrants, or `None` when the
 /// framework carries a hand-curated catalogue and the declaration can take
 /// effect.
@@ -360,19 +415,22 @@ async fn include(
 
     let framework_id = known.id();
     let path = write_path(config_path);
-    let existing = read_or_empty(&path)?;
-    let written = match remove_exclusion(&existing, framework_id, control) {
-        Ok(written) => written,
-        Err(e) => {
-            return refuse(
-                logger.as_ref(),
-                format!("{framework_id}:{control}"),
-                e.to_string(),
-            )
-            .await;
-        }
-    };
-    write_atomically(&path, &written)?;
+
+    // One refusal for every way the withdrawal can fail to land: an unreadable
+    // file, an exclusion that was never there, and a write that cannot be made.
+    // The last of those is the one an unprivileged operator meets, and leaving
+    // it to `?` filed no audit entry for an attempt on this host's policy.
+    if let Err(e) = read_or_empty(&path)
+        .and_then(|existing| remove_exclusion(&existing, framework_id, control))
+        .and_then(|written| write_atomically(&path, &written))
+    {
+        return refuse(
+            logger.as_ref(),
+            format!("{framework_id}:{control}"),
+            format!("{e:#}"),
+        )
+        .await;
+    }
 
     record(
         logger.as_ref(),
@@ -415,7 +473,17 @@ async fn record(logger: Option<&AuditLogger>, target: String, details: HashMap<S
     }
 }
 
-/// Records a refused attempt and returns the error the operator sees.
+/// Records an attempt that did not take effect and returns the error the
+/// operator sees.
+///
+/// Used for the validation refusals and for a write that fails, which is an
+/// attempt on this host's compliance policy just as much as a refused one and
+/// was previously the only one leaving no trace.
+///
+/// **A failure to audit never masks the failure being audited.** The log may
+/// well be unwritable in the same circumstances that made the configuration
+/// unwritable, so a logging error is warned about and dropped, and the error
+/// returned to the caller is always the original cause.
 ///
 /// **`log_failure`, not `log_action_with_details`.**
 /// [`AuditLogger::verify_integrity`] verifies a failure entry through a branch

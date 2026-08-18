@@ -546,12 +546,16 @@ impl AuditLogger {
     /// removed from the end verifies exactly as a whole one does. See the module
     /// header for what that leaves to the deployment.
     ///
+    /// A `Failure` entry is additionally rejected if its details map carries
+    /// any key other than `error`, because only `error` is inside that entry's
+    /// hash. See the comment on the failure branch below.
+    ///
     /// # Arguments
     /// * `log_path` - Path to the audit log file to verify
     ///
     /// # Returns
     /// `true` if every entry present links correctly, `false` if one was altered,
-    /// reordered, or removed from the front
+    /// reordered, removed from the front, or carries a detail outside its own hash
     pub async fn verify_integrity(log_path: &str) -> Result<bool> {
         // Open file for reading
         let file = tokio::fs::File::open(log_path).await?;
@@ -569,6 +573,25 @@ impl AuditLogger {
             // Serialise entry data (without hash) for verification
             // Must match the serialisation used when creating the hash
             let serialised_data = if entry.entry_result == ActionResult::Failure {
+                // A Failure hashes the legacy six-tuple whose last element is
+                // the `error` string, so every OTHER key of the details map
+                // sits outside the hash and could be added or edited on disk
+                // with the chain arithmetic still checking out. `query` would
+                // return an appended `"approved_by": "security-team"` as part
+                // of an authentic refusal.
+                //
+                // The shape is the evidence. No writer can emit a second key:
+                // `log_failure` builds the map with exactly `error` and
+                // `log_action_with_details` refuses a `Failure` outright. So an
+                // entry carrying one did not come from this program, and the
+                // log is not intact. This is the cheap guard, not the repair -
+                // the repair is hashing the whole map behind a format version,
+                // deferred on `log_action_with_details` where released logs
+                // make it a migration rather than a change.
+                if entry.entry_details.keys().any(|k| k.as_str() != "error") {
+                    return Ok(false);
+                }
+
                 // For failures, include the error message (matches log_failure)
                 let error_msg = entry
                     .entry_details

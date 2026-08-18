@@ -13,14 +13,16 @@
 //! in the operator's own data directory.
 
 use std::process::{Command, Output};
+use tempfile::TempDir;
 
-fn scratch_home(label: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "hardener-scope-tests-{}-{label}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).expect("a scratch state directory");
-    dir
+/// A scratch `HOME` that removes itself when the test ends.
+///
+/// A hand-built `temp_dir()` path leaked one directory per case per run and,
+/// being keyed on the pid, handed a run whose pid the kernel had recycled the
+/// previous run's configuration file. `TempDir` is what the rest of the suite
+/// uses and has neither problem.
+fn scratch_home() -> TempDir {
+    tempfile::tempdir().expect("a scratch state directory")
 }
 
 fn run_in(home: &std::path::Path, args: &[&str]) -> Output {
@@ -34,20 +36,23 @@ fn run_in(home: &std::path::Path, args: &[&str]) -> Output {
 }
 
 /// A scratch home holding a seeded `config.toml`, returned with its path.
-fn seeded(label: &str) -> (std::path::PathBuf, std::path::PathBuf) {
-    let home = scratch_home(label);
-    let config = home.join("config.toml");
+///
+/// The directory is returned rather than only its path because dropping it
+/// deletes it, so the caller has to hold it for the length of the test.
+fn seeded() -> (TempDir, std::path::PathBuf) {
+    let home = scratch_home();
+    let config = home.path().join("config.toml");
     std::fs::write(&config, "[global]\ndisabled_plugins = [\"mac\"]\n").expect("seed config");
     (home, config)
 }
 
 #[test]
 fn exclude_writes_the_config_the_flag_named() {
-    let (home, config) = seeded("exclude");
+    let (home, config) = seeded();
     let path = config.to_str().expect("utf-8 path");
 
     let output = run_in(
-        &home,
+        home.path(),
         &[
             "--config",
             path,
@@ -80,11 +85,11 @@ fn exclude_writes_the_config_the_flag_named() {
 
 #[test]
 fn an_unknown_framework_exits_one_and_writes_nothing() {
-    let (home, config) = seeded("unknown-framework");
+    let (home, config) = seeded();
     let path = config.to_str().expect("utf-8 path");
 
     let output = run_in(
-        &home,
+        home.path(),
         &[
             "--config",
             path,
@@ -118,11 +123,11 @@ fn an_unknown_framework_exits_one_and_writes_nothing() {
 /// score and an audit entry that claimed it had.
 #[test]
 fn an_unknown_control_id_exits_one_and_writes_nothing() {
-    let (home, config) = seeded("unknown-control");
+    let (home, config) = seeded();
     let path = config.to_str().expect("utf-8 path");
 
     let output = run_in(
-        &home,
+        home.path(),
         &[
             "--config",
             path,
@@ -150,13 +155,55 @@ fn an_unknown_control_id_exits_one_and_writes_nothing() {
     assert!(!written.contains("not_applicable"), "nothing was written");
 }
 
+/// A `--review-by` the report path cannot parse is refused by the binary, not
+/// merely by the module.
+///
+/// This one is here rather than only beside the module because that is how it
+/// was found: the unit suite was green while `--review-by "next August"` exited
+/// zero, printed success, wrote the table and filed an audit entry recording a
+/// declaration the report would never honour.
 #[test]
-fn scope_refuses_ssh_before_it_edits_this_host() {
-    let (home, config) = seeded("ssh-refusal");
+fn an_unparseable_review_by_exits_one_and_writes_nothing() {
+    let (home, config) = seeded();
     let path = config.to_str().expect("utf-8 path");
 
     let output = run_in(
-        &home,
+        home.path(),
+        &[
+            "--config",
+            path,
+            "scope",
+            "exclude",
+            "iso27001",
+            "7.1",
+            "--reason",
+            "No physical premises",
+            "--review-by",
+            "next August",
+        ],
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "an exclusion that could never apply is a failure, not a quiet success"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("next August") && stderr.contains("YYYY-MM-DD"),
+        "the message names the value and the spelling wanted: {stderr}"
+    );
+    let written = std::fs::read_to_string(&config).expect("read back");
+    assert!(!written.contains("not_applicable"), "nothing was written");
+}
+
+#[test]
+fn scope_refuses_ssh_before_it_edits_this_host() {
+    let (home, config) = seeded();
+    let path = config.to_str().expect("utf-8 path");
+
+    let output = run_in(
+        home.path(),
         &[
             "--ssh",
             "nobody@127.0.0.1",

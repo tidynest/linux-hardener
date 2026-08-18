@@ -49,6 +49,15 @@
   --color-warning-bg: rgba(245, 158, 11, .15);
   --color-critical-bg: rgba(239, 68, 68, .15);
   --color-accent-bg: rgba(34, 211, 238, .12);
+  /* The neutral pill fill: a human accepted this, so it is not a severity and
+     not a band. Two rules share it - .severity_exception (an accepted finding)
+     and .compliance-excluded (a control declared not applicable) - and they
+     shared it as two copies of the same literal until this property existed.
+     Deliberately not overridden per theme, unlike the four tints above: the
+     rules it serves are neutral by intent, and the theme blocks never carried
+     the literal either, so themeing it here would change six themes at once
+     under the guise of a refactor. */
+  --pill-muted-bg: rgba(148, 163, 184, 0.14);
 
   /* Interactive colors - teal accent */
   --color-accent: #22d3ee;
@@ -1061,7 +1070,7 @@ tbody tr:hover {
 /* A documented deviation is not a severity. It reads as neutral rather than
    ranked, so it cannot be mistaken for the bottom rung of the severity scale
    it sits below. */
-.severity_exception { background-color: rgba(148, 163, 184, 0.14); color: var(--text-muted); }
+.severity_exception { background-color: var(--pill-muted-bg); color: var(--text-muted); }
 
 /* ============================================================
    14. ANALYSIS PAGE
@@ -3866,16 +3875,28 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 /* Reuses the muted pill the app already gives a finding a human accepted
-   (.severity_exception, section 13): this is the same claim in a different
-   place. Deliberately not the plain italic of .compliance-manual, because the
-   two counts move the score in opposite directions - unassessed stays in the
-   denominator and lowers it, excluded leaves it and raises it - and so must not
-   read as one category. */
+   (.severity_exception, section 13) through --pill-muted-bg: this is the same
+   claim in a different place, and the shared property is what makes that reuse
+   mechanical rather than two literals that happen to agree. Deliberately not
+   the plain italic of .compliance-manual, because the two counts move the score
+   in opposite directions - unassessed stays in the denominator and lowers it,
+   excluded leaves it and raises it - and so must not read as one category. */
 .compliance-excluded {
-  background-color: rgba(148, 163, 184, 0.14);
+  background-color: var(--pill-muted-bg);
   color: var(--text-muted);
   border-radius: var(--radius-sm);
   padding: 0 0.4em;
+}
+
+/* A framework whose every control was excluded carries no score, so it carries
+   no band either: score-critical would paint an unmeasured framework as a
+   failing one, which is the misreading the row exists to prevent. Muted italic
+   is the same shape .compliance-manual uses for the other kind of thing nobody
+   measured. */
+.compliance-item.compliance-unscored .compliance-score {
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: 500;
 }
 
 /* The legacy bare .score-good/.score-warning/.score-critical rules (old circular

@@ -2,7 +2,7 @@
 //!
 //! Produces styled HTML compliance reports for web viewing and sharing.
 
-use crate::output::{ReportFormatter, report_title};
+use crate::output::{ReportFormatter, exclusion_note, report_title};
 use crate::report::ComplianceReport;
 use hardener_common::types::ControlStatus;
 
@@ -65,7 +65,19 @@ impl ReportFormatter for HtmlFormatter {
                 report.report_summary.summary_not_applicable
             ));
         }
-        html.push_str("</div>\n</div>\n");
+        html.push_str("</div>\n");
+
+        // Inside the summary box and under the figure, because it is that
+        // figure the sentence qualifies: an auditor who reads only the box
+        // must still learn that a human reduced the denominator.
+        if let Some(note) = exclusion_note(&report.report_summary) {
+            html.push_str(&format!(
+                "<p class=\"scope-note\">{}</p>\n",
+                html_escape(&note)
+            ));
+        }
+
+        html.push_str("</div>\n");
 
         let sections_vec = super::group_controls_by_section(report);
 
@@ -187,6 +199,13 @@ const HTML_HEADER: &str = r#"<!DOCTYPE html>
           .stats .pass { background: #d4edda; color: #155724; }
           .stats .fail { background: #f8d7da; color: #721c24; }
           .stats .na { background: #e2e3e5; color: #383d41; }
+          .scope-note {
+              margin: 15px 0 0;
+              padding-top: 12px;
+              border-top: 1px solid #e2e3e5;
+              color: #5d6d7e;
+              font-size: 0.9em;
+          }
           table {
               width: 100%;
               border-collapse: collapse;

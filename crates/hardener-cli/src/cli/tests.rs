@@ -657,7 +657,7 @@ fn the_commands_that_never_reach_a_host_refuse_ssh() {
                 "scope",
                 "exclude",
                 "iso27001",
-                "A.7.1",
+                "7.1",
                 "--reason",
                 "no physical premises",
             ],
@@ -665,7 +665,7 @@ fn the_commands_that_never_reach_a_host_refuse_ssh() {
         ),
         (
             vec![
-                "hardener", "--ssh", "web-01", "scope", "include", "iso27001", "A.7.1",
+                "hardener", "--ssh", "web-01", "scope", "include", "iso27001", "7.1",
             ],
             "scope",
         ),

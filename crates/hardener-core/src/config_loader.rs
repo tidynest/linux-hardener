@@ -201,6 +201,14 @@ impl ConfigLoader {
     const MAX_DIRECTIVES_PER_PLUGIN: usize = 500;
     /// Maximum exceptions per plugin section.
     const MAX_EXCEPTIONS_PER_PLUGIN: usize = 200;
+    /// Maximum exclusions per framework in `[compliance.not_applicable]`.
+    ///
+    /// The same guard `MAX_DIRECTIVES_PER_PLUGIN` gives a plugin section, and
+    /// the same figure, because the sections are the same shape: an operator
+    /// map merged across every source. Comfortably above the largest catalogue
+    /// this tool renders, so it bounds config bloat without bounding any real
+    /// declaration.
+    const MAX_EXCLUSIONS_PER_FRAMEWORK: usize = 500;
 
     /// Load configuration from a TOML file.
     fn load_from_file(path: &Path) -> Result<HardenerConfig> {
@@ -248,7 +256,7 @@ impl ConfigLoader {
             mac: Self::merge_plugin(base.mac, overlay.mac)?,
             permissions: Self::merge_plugin(base.permissions, overlay.permissions)?,
             services: Self::merge_plugin(base.services, overlay.services)?,
-            compliance: Self::merge_compliance(base.compliance, overlay.compliance),
+            compliance: Self::merge_compliance(base.compliance, overlay.compliance)?,
         })
     }
 
@@ -258,7 +266,14 @@ impl ConfigLoader {
     /// one control of a framework discard every other exclusion the earlier
     /// source declared for that same framework, silently returning those
     /// controls to the score.
-    fn merge_compliance(base: ComplianceConfig, overlay: ComplianceConfig) -> ComplianceConfig {
+    ///
+    /// Size-limited like [`Self::merge_plugin`], and after the merge rather
+    /// than per source, because the merge is where two sources within the cap
+    /// can add up to one map beyond it.
+    fn merge_compliance(
+        base: ComplianceConfig,
+        overlay: ComplianceConfig,
+    ) -> Result<ComplianceConfig> {
         let mut not_applicable = base.not_applicable;
         for (framework, controls) in overlay.not_applicable {
             not_applicable
@@ -266,7 +281,19 @@ impl ConfigLoader {
                 .or_default()
                 .extend(controls);
         }
-        ComplianceConfig { not_applicable }
+
+        for (framework, controls) in &not_applicable {
+            if controls.len() > Self::MAX_EXCLUSIONS_PER_FRAMEWORK {
+                return Err(HardeningError::Config(format!(
+                    "Compliance config exceeds exclusion limit for '{}' ({} > {})",
+                    framework,
+                    controls.len(),
+                    Self::MAX_EXCLUSIONS_PER_FRAMEWORK
+                )));
+            }
+        }
+
+        Ok(ComplianceConfig { not_applicable })
     }
 
     /// Merge global configs.

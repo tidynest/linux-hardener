@@ -641,6 +641,24 @@ removed from the denominator, so the effect is visible in the artefact; that is
 a mitigation and it is not the log. An estate that needs the log has to reach
 the declarations through the verb, and nothing in this tool enforces that.
 
+**The report names the controls an exclusion removed from the score and never
+says why any of them was removed.** Every format marks such a control `N/A` in
+its per-control table, the text report gives them a "Not applicable" listing of
+their own, and the score line states that exclusions are in force, so the effect
+is visible. The reason the operator gave is in none of it. It lives in the
+`[compliance.not_applicable]` table and in the audit entry `hardener scope
+exclude` files beside it, and `ControlResult`, which is what a rendered report
+carries, has no field to put it in; adding one is a change to a type the
+backend, the compliance renderers and the desktop all share, and it was judged
+out of scope for the branch that added exclusions rather than attempted. The
+practical shape of the gap is this: an operator can reduce the denominator of a
+compliance score, and the artefact an auditor is handed lists the controls that
+left it and offers no justification for a single one of them. **The information
+is not lost, it is in the wrong document.** The audit log holds each reason with
+the person who declared it and the date, so an estate that reached its
+declarations through the verb can produce them; the report does not, and does
+not say where to look.
+
 **The advisory that an exclusion is inert goes to stderr and is not audited.**
 Only CIS and ISO 27001:2022 have a curated catalogue; for the other eight
 frameworks the catalogue is derived from live plugin coverage at report time,

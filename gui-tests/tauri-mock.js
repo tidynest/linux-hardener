@@ -512,8 +512,12 @@
   function makeComplianceReport(framework, score, passing, failing, manualReview, notApplicable = 0) {
     const total = passing + failing + manualReview + notApplicable;
     // One control row per excluded control, so the Compliance tab's per-control
-    // list and the summary count cannot disagree. A summary claiming exclusions
-    // over a list containing none is a fixture that contradicts itself.
+    // list and `summary_not_applicable` cannot disagree. A summary claiming
+    // exclusions over a list containing none is a fixture that contradicts
+    // itself. The agreement is about that one count: the list is these rows
+    // plus a fixed three, and it has never summed to `summary_total_controls`,
+    // which the fixtures set far higher on purpose so that a framework reads
+    // like a published catalogue rather than like three controls.
     const excludedControls = Array.from({ length: notApplicable }, (_, index) => ({
       control_id: `${framework}-8.${index + 1}`,
       control_title: 'Control declared not applicable for this host',

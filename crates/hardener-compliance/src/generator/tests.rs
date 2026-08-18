@@ -259,6 +259,53 @@ fn an_exclusion_cannot_override_an_assessed_pass() {
     assert_eq!(report.report_summary.summary_not_applicable, 0);
 }
 
+/// The third arm of the same rule, and the one nothing pinned: `unchecked`
+/// sits above the exclusion arm, so a control whose covering check could not
+/// run this session stays `ManualReview` even when an operator declared it out
+/// of scope.
+///
+/// Moving the exclusion arm above `unchecked` left every other test in the
+/// workspace green while changing a real score: the control would leave the
+/// denominator on the strength of a run-time privilege accident rather than on
+/// the declaration the report is meant to be about. Privilege is a property of
+/// the run, not of applicability, so the conservative answer wins and this
+/// test is what says so.
+#[test]
+fn an_unchecked_control_stays_manual_review_even_when_excluded() {
+    // 1.5.1 is covered, so on a clean run it would Pass. This run could not
+    // evaluate the covering check, and the operator has also declared the
+    // control not applicable. Both facts are true at once, and the uncertainty
+    // outranks the declaration.
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        one_exclusion("cis", "1.5.1"),
+    );
+    let unchecked = vec![UncheckedCheck {
+        unchecked_check_id: "pam-minlen".to_string(),
+        unchecked_title: "PAM setting: minlen".to_string(),
+        unchecked_category: FindingCategory::Authentication,
+        unchecked_reason: "requires root".to_string(),
+        unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
+        unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+    }];
+    let report = generator
+        .generate(&[], &unchecked)
+        .pop()
+        .expect("one report");
+
+    assert_eq!(
+        status_of(&report, "1.5.1"),
+        ControlStatus::ManualReview,
+        "a check that could not run this session cannot be answered by a \
+         declaration; the exclusion arm must stay below the unchecked arm"
+    );
+    assert_eq!(
+        report.report_summary.summary_not_applicable, 0,
+        "and so the control is still in the score's denominator"
+    );
+}
+
 #[test]
 fn an_expired_exclusion_falls_back_to_manual_review_not_to_pass() {
     let mut cfg = one_exclusion("cis", "1.5.1");

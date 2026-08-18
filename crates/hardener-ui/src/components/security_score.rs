@@ -46,8 +46,14 @@ use leptos::prelude::*;
 #[derive(Clone)]
 pub struct FrameworkScore {
     pub name: String,
-    pub score: f64,
+    /// `None` when every control of the framework was declared not applicable,
+    /// so nothing was measured and no percentage tells the truth. The option is
+    /// the honesty: a bare `f64` can only say 0 or 100 here, and both are
+    /// claims about a host nobody assessed.
+    pub score: Option<f64>,
     pub passing: usize,
+    /// Applicable controls, that is the scoring denominator. Zero exactly when
+    /// [`score`](Self::score) is `None`.
     pub total: usize,
     /// Controls the engine has no check for. Not a judgement about the host,
     /// so the row renders it beside the score rather than letting an operator
@@ -61,41 +67,62 @@ pub struct FrameworkScore {
 /// Calculates scores for all frameworks and returns overall average.
 /// Returns (overall_score, framework_scores) tuple.
 ///
-/// A framework with no applicable controls is dropped rather than rendered.
-/// `ComplianceSummary::from_controls` used to score an empty denominator as
-/// full compliance and now scores it 0, because an operator can reach that
-/// state by excluding every control and a report claiming 100% with nothing
-/// assessed is the one reading this project forbids. Neither number belongs on
-/// a row: 100 overstates, and 0 reads as a failing framework when the truth is
-/// that none of it was measured. So the row is dropped and the count of
-/// excluded controls carries the explanation instead.
+/// # A framework with no applicable controls keeps its row and is not scored
+///
+/// An operator can exclude every control of a framework from configuration,
+/// each exclusion audited and legitimate on its own. That row used to be
+/// dropped, which was the worst of the three options available: the disclosure
+/// lost the framework entirely, so the `excluded by policy` count that exists
+/// to explain the state had no row to print itself on, and the hero - a mean
+/// over the surviving rows - rose by losing a term. A framework scoring 20 per
+/// cent could be scoped out of existence and lift the headline number.
+///
+/// The other two options are the numbers themselves, and neither is true.
+/// `ComplianceSummary::from_controls` scores this state 0 rather than 100
+/// because overstating compliance is the reading this project forbids, but on
+/// a dashboard row 0 reads as a *failing* framework, which is a different claim
+/// from "nobody measured this one". So the row is rendered with
+/// [`FrameworkScore::score`] as `None`, printed as `Not scored`, and it carries
+/// its excluded count like any other row.
+///
+/// # The hero denominator
+///
+/// An unscored framework contributes no term to the mean. Contributing 0 would
+/// drag the headline down as though the host failed those controls and
+/// contributing 100 would lift it as though the host met them; both invent a
+/// measurement. Leaving the denominator is the only arithmetic that adds
+/// nothing.
+///
+/// When *no* framework is scored the mean has no terms at all and the hero
+/// reads 0, the same direction `from_controls` takes for one framework: given a
+/// choice between a number that overstates compliance and one that understates
+/// it, this project takes the understating one. Every row beneath it says
+/// `Not scored`, so the zero arrives explained.
 pub fn calculate_all_scores(reports: &[ComplianceReport]) -> (i32, Vec<FrameworkScore>) {
     let framework_scores: Vec<FrameworkScore> = reports
         .iter()
-        .filter_map(|report| {
+        .map(|report| {
             let summary = &report.report_summary;
             let total = summary
                 .summary_total_controls
                 .saturating_sub(summary.summary_not_applicable);
-            if total == 0 {
-                return None;
-            }
-            Some(FrameworkScore {
+            FrameworkScore {
                 name: format!("{:?}", report.report_framework),
-                score: summary.summary_score_percentage,
+                score: (total != 0).then_some(summary.summary_score_percentage),
                 passing: summary.summary_passing,
                 total,
                 manual_review: summary.summary_manual_review,
                 excluded: summary.summary_not_applicable,
-            })
+            }
         })
         .collect();
 
-    if framework_scores.is_empty() {
-        return (0, vec![]);
+    let scored: Vec<f64> = framework_scores.iter().filter_map(|f| f.score).collect();
+    if scored.is_empty() {
+        return (0, framework_scores);
     }
 
-    let avg = framework_scores.iter().map(|f| f.score).sum::<f64>() / framework_scores.len() as f64;
+    let avg = scored.iter().sum::<f64>() / scored.len() as f64;
     (avg.round() as i32, framework_scores)
 }
 
@@ -227,12 +254,33 @@ pub fn SecurityScore() -> impl IntoView {
                     <summary>"Compliance by framework"</summary>
                     <ul class="compliance-list">
                         {move || framework_scores().into_iter().map(|fs| {
-                            let cls = score_band_class(score_band(fs.score.round() as i32));
+                            // No band colour for an unmeasured framework: the
+                            // bands say how the host is doing, and nobody
+                            // looked. Painting it critical would say it failed.
+                            let cls = match fs.score {
+                                Some(score) => score_band_class(score_band(score.round() as i32)),
+                                None => "compliance-unscored",
+                            };
+                            let (score_text, detail) = match fs.score {
+                                Some(score) => (
+                                    format!("{score:.0}%"),
+                                    format!("{}/{}", fs.passing, fs.total),
+                                ),
+                                None => (
+                                    "Not scored".to_string(),
+                                    "no applicable controls".to_string(),
+                                ),
+                            };
+                            let score_title = fs.score.is_none().then_some(
+                                "Every control of this framework was declared not applicable, so nothing was measured. It is left out of the overall score rather than counted as failing."
+                            );
                             view! {
                                 <li class=format!("compliance-item {}", cls)>
                                     <span class="compliance-name">{fs.name}</span>
-                                    <span class="compliance-score">{format!("{:.0}%", fs.score)}</span>
-                                    <span class="compliance-detail">{format!("{}/{}", fs.passing, fs.total)}</span>
+                                    <span class="compliance-score" title=score_title>
+                                        {score_text}
+                                    </span>
+                                    <span class="compliance-detail">{detail}</span>
                                     // Without this an unassessed control is
                                     // indistinguishable from a failing one, and
                                     // the score counts both against the host.
@@ -312,7 +360,11 @@ mod tests {
         ])]);
 
         let row = rows.first().expect("one framework");
-        assert_eq!(row.score, 50.0, "one of two assessable controls passes");
+        assert_eq!(
+            row.score,
+            Some(50.0),
+            "one of two assessable controls passes"
+        );
         assert_eq!((row.passing, row.total), (1, 2));
     }
 
@@ -334,7 +386,7 @@ mod tests {
         assert_eq!((row.passing, row.total), (3, 4), "NotApplicable excluded");
         assert_eq!(
             row.score,
-            row.passing as f64 / row.total as f64 * 100.0,
+            Some(row.passing as f64 / row.total as f64 * 100.0),
             "the percentage must equal the fraction printed beside it"
         );
         assert_eq!(overall, 75, "the hero is the mean of those same numbers");
@@ -360,6 +412,84 @@ mod tests {
         );
         assert_eq!(row.manual_review, 1);
         assert_eq!(row.excluded, 2);
-        assert_eq!(row.score, 50.0);
+        assert_eq!(row.score, Some(50.0));
+    }
+
+    /// An operator can exclude every control of a framework, one legitimate
+    /// exclusion at a time. The row used to vanish, taking the `excluded by
+    /// policy` count with it, so the one state that most needs an explanation
+    /// was the one state with nowhere to print it.
+    ///
+    /// The row survives and carries no score. `None` is the whole point: there
+    /// is no number that tells the truth here, because nothing was measured.
+    #[test]
+    fn a_fully_excluded_framework_keeps_a_row_and_is_not_scored() {
+        let (_, rows) = calculate_all_scores(&[report_of(&[
+            ControlStatus::NotApplicable,
+            ControlStatus::NotApplicable,
+        ])]);
+
+        let row = rows.first().expect("the framework must keep its row");
+        assert_eq!(
+            row.score, None,
+            "nothing was measured, so nothing is scored"
+        );
+        assert_eq!(row.total, 0, "no control remained in the denominator");
+        assert_eq!(row.excluded, 2, "the row carries the explanation");
+    }
+
+    /// The hero is a mean, so what a framework contributes to it matters as
+    /// much as whether it appears. An unmeasured framework leaves the
+    /// denominator: contributing 0 would drag the mean down as though the host
+    /// failed, and contributing 100 would lift it as though the host passed.
+    ///
+    /// The three numbers are deliberately far apart. With 20% and 100% beside
+    /// one fully excluded framework, the honest mean is 60; a contributed 0
+    /// gives 40 and a contributed 100 gives 73, so no arithmetic accident can
+    /// satisfy this assertion.
+    #[test]
+    fn a_fully_excluded_framework_leaves_the_hero_denominator() {
+        let (hero, rows) = calculate_all_scores(&[
+            report_of(&[
+                ControlStatus::Pass,
+                ControlStatus::Fail,
+                ControlStatus::Fail,
+                ControlStatus::Fail,
+                ControlStatus::Fail,
+            ]),
+            report_of(&[ControlStatus::Pass, ControlStatus::Pass]),
+            report_of(&[
+                ControlStatus::NotApplicable,
+                ControlStatus::NotApplicable,
+                ControlStatus::NotApplicable,
+            ]),
+        ]);
+
+        assert_eq!(rows.len(), 3, "every framework is still listed");
+        assert_eq!(rows[0].score, Some(20.0));
+        assert_eq!(rows[1].score, Some(100.0));
+        assert_eq!(rows[2].score, None);
+        assert_eq!(
+            hero, 60,
+            "the mean of the two measured frameworks, not of three"
+        );
+    }
+
+    /// The degenerate end of the same case: every framework fully excluded, so
+    /// the mean has no terms at all. It reads 0 rather than 100, which is the
+    /// choice `ComplianceSummary::from_controls` already made for one
+    /// framework - between a number that overstates compliance and one that
+    /// understates it, this project takes the understating one. Every row says
+    /// `Not scored` beside it, so the zero is explained rather than bare.
+    #[test]
+    fn an_entirely_excluded_set_scores_zero_rather_than_full_marks() {
+        let (hero, rows) = calculate_all_scores(&[
+            report_of(&[ControlStatus::NotApplicable]),
+            report_of(&[ControlStatus::NotApplicable]),
+        ]);
+
+        assert_eq!(rows.len(), 2, "neither framework disappears");
+        assert!(rows.iter().all(|r| r.score.is_none()));
+        assert_eq!(hero, 0, "an unmeasured host must never publish 100");
     }
 }
