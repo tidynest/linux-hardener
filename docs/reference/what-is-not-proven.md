@@ -730,19 +730,49 @@ is not coverage, the evidence ledger still has no desktop row, and CI still
 excludes both crates. What it does establish is that the eye-check named here is
 a thing that has actually happened rather than an intention.
 
-**The five screenshots on the README are the oldest evidence in this project
-and nothing checks their age.** They were last written on 2026-07-27
-(`3cb7d762`), and 54 commits to `crates/hardener-ui/src` and 20 to
-`styles.css` have landed since, `6a47498a`'s plugin-checkbox layout fix and the
-D5 colour change among them. **They are also not the Playwright captures**: that
-corpus photographs six subjects and none of them is Hosts, Fleet Apply,
+**The screenshots on the README are the oldest evidence in this project,
+nothing checks their age, and they are stale.** They were last written on
+2026-07-27 (`3cb7d762`), and 54 commits to `crates/hardener-ui/src` and 20 to
+`styles.css` have landed since. **They are also not the Playwright captures**:
+that corpus photographs six subjects and none of them is Hosts, Fleet Apply,
 Scheduler or Settings, four of which the README embeds. So the 222 captures
-refreshed at `653b4ff1` say nothing about whether the front page shows the
-interface this release ships. No validator can: `validate_markdown_links.py`
-asks that the file resolves, and an image that resolves is not an image that is
-current. Whether they are stale is unmeasured, which is the honest word for it,
-and measuring it means capturing those four routes rather than reasoning about
-the commit count.
+refreshed at `653b4ff1` said nothing about whether the front page shows the
+interface this release ships, and no validator could:
+`validate_markdown_links.py` asks that the file resolves, and an image that
+resolves is not an image that is current.
+
+**Measured on 2026-08-18** by driving the desktop app at `653b4ff1` in the
+headless sandbox and capturing those four routes, on the same Midnight Teal
+theme the README caption names. Two of the four differ in ways a reader would
+act on:
+
+- **Fleet Apply lists plugins by raw identifier** in the shipped image
+  (`audit-hardening`, `firewall-hardening`, and six more). The application
+  lists display names (`Audit Rules`, `File Permissions`, `Firewall`, and so
+  on). That identifier list **is the naming inconsistency the 2026-08-16
+  eye-check found and the release then fixed**, so the front page advertises a
+  defect this release does not have.
+- **Scheduler shows the plugin checkboxes as one cramped row of short ids**
+  (`kernel ssh firewall pam services audit permissions mac`), which
+  `6a47498a` replaced with a laid-out grid of display names. The shipped image
+  also predates both paused-schedule notes, so it shows a disabled scheduler
+  saying nothing about being disabled, which is the state `a5ca6d03` and
+  `3fcc75a8` exist to correct.
+
+The other two differ only in the product name (`Linux System Hardener` against
+the `Linux Hardener` the application now uses, which is the unresolved naming
+question, not a defect in the shot), the version and build line, and the
+Daywatch swatches, which carry the pre-D5 palette.
+
+Two further readings came out of the same pass and are recorded because nothing
+else would find them. **The images are not internally consistent**:
+`settings.png` and `fleet.png` show build `06c679b` and `scheduler.png` shows
+`1fdd539`, so the set was captured across at least two commits and reads as one
+sitting. And **`3cb7d762`, whose whole purpose was to put a placeholder address
+in the Scheduler shot, reached one of the two fields**: Recipients reads
+`admin@example.com` and From address still reads a real personal address. That
+is the same shape as every other finding in this document, a fix that reached
+the site someone thought about and not the one they did not.
 
 ---
 
