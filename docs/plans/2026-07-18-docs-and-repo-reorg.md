@@ -1,6 +1,6 @@
 # Documentation and Repository Reorganisation Plan
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-18
 **Status**: **Complete.** All four phases were executed on 2026-07-18 (branches
 `chore/docs-reorg-phase1`, `chore/scripts-consolidate`, `chore/scripts-regroup`,
 `chore/docs-phase2-content`, `chore/packaging-layout`), with one maintainer
