@@ -691,6 +691,95 @@ on being honoured when the same policy reaches a host running firewalld.
 
 ---
 
+## [compliance]
+
+Declares compliance controls that do not apply to this system, so they leave
+the score's denominator instead of counting against it.
+
+**This is not the same mechanism as a policy exception**, and the difference is
+what keeps it safe. An exception documents a finding the engine raised. An
+exclusion covers a control the engine cannot assess at all: ISO 27001 Annex A
+is a published catalogue of 93 controls, most of them about policy, personnel,
+suppliers and physical premises, and a configuration scanner can never answer
+those. On a cloud host with no premises they are not unmeasured, they do not
+apply.
+
+```toml
+[compliance.not_applicable.iso27001."7.1"]
+reason = "No physical premises; all infrastructure is cloud-hosted"
+approved_by = "eric"
+approved_date = "2026-08-18"
+ticket = "SEC-412"
+review_by = "2027-08-18"
+hosts = ["web-01", "web-02"]
+```
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `reason` | Why the control does not apply. An exclusion raises the score, so an unexplained one raises it for no stated cause | required |
+| `approved_by` | Who approved it | none |
+| `approved_date` | When it was approved (ISO 8601) | written by the verb |
+| `ticket` | Approval ticket or issue reference | none |
+| `review_by` | When it must be re-examined (ISO 8601) | twelve months from `approved_date` |
+| `hosts` | Hosts it covers. Matched case-insensitively against a saved profile's name, its hostname, or its `user@host:port` target | empty, meaning every host |
+
+Prefer `hardener scope exclude` over hand-editing. The verb validates before it
+writes and records the declaration in the audit log; **a hand-edited entry is
+honoured but produces no audit record**, because nothing runs to write one.
+
+### An exclusion can never hide a failure
+
+The report generator decides a control's status in a fixed order: a live
+finding first, then a check that could not run, then a control the engine
+assessed, and only then exclusions. So an exclusion can convert a Manual Review
+and nothing else. Declaring a failing control not applicable does not change
+its Fail, and declaring an assessed control not applicable does not change its
+Pass.
+
+The same ordering supplies the change trigger most frameworks actually ask for.
+When a plugin gains the ability to assess an excluded control, the engine's
+answer supersedes the declaration on the next scan, without waiting for
+`review_by`.
+
+### Two ways an exclusion stops applying
+
+**It expires.** `review_by`, or twelve months from `approved_date` when absent.
+
+**It never applied.** An entry with no parseable `review_by` and no parseable
+`approved_date` is invalid rather than permanent, and so is one naming a
+framework the tool does not know. Both fail closed: the control returns to
+counting against the score. An expired or invalid exclusion returns a control
+to Manual Review, never to Pass.
+
+### The interval comes from the framework owner
+
+Twelve months for every framework. Four publish an interval bearing on a scope
+determination: PCI DSS Req 12.5.2, FedRAMP CA-2, SOC 2's Type II observation
+period, and 32 CFR 170.22's annual affirmation for NIST 800-171. The other six
+publish none and name a change trigger instead, so twelve months there is this
+project's default rather than a framework requirement.
+
+**PCI DSS service providers must set six months by hand** under Req 12.5.2.1.
+The tool cannot know whether an operator is a service provider, so it does not
+guess.
+
+### It reaches the fleet
+
+`batch` evaluates every remote host against the controller's config, not the
+host's own, so an exclusion written here applies fleet-wide unless `hosts`
+narrows it. That is deliberate and predates this section: policy belongs where
+the operator maintains it, and a target that supplied its own could otherwise
+weaken the audit reporting on itself.
+
+### It has no effect for eight of the ten frameworks
+
+Only CIS and ISO 27001 ship a curated catalogue. Every other framework's
+catalogue is derived from what the engine can already assess, so it lists no
+control an exclusion could apply to. `hardener scope exclude` still writes and
+audits such a declaration, and warns that it cannot take effect.
+
+---
+
 ## Environment variables
 
 | Variable | Effect |

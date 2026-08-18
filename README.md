@@ -254,9 +254,9 @@ sudo hardener exception add mac-hardening mac-present --reason "no MAC system on
 sudo hardener exception remove mac-hardening mac-present
 
 # Scope: declare a control not applicable, so it leaves the score's denominator
-sudo hardener scope exclude iso27001 A.7.1 --reason "no premises; cloud-hosted"
-sudo hardener scope exclude iso27001 A.7.1 --reason "..." --host web-01 --host web-02
-sudo hardener scope include iso27001 A.7.1
+sudo hardener scope exclude iso27001 7.1 --reason "no premises; cloud-hosted"
+sudo hardener scope exclude iso27001 7.1 --reason "..." --host web-01 --host web-02
+sudo hardener scope include iso27001 7.1
 
 # Scheduled scanning: daemon and systemd timer
 hardener daemon start                   # Blocks; run-once and status also available
