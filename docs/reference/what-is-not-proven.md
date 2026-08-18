@@ -771,8 +771,18 @@ tried to handle this by editing the recipient in the running app, and reached
 Recipients while leaving a real personal address in From address, where it has
 sat in the published image ever since. The new captures were taken against a
 scratch `XDG_CONFIG_HOME`, so the file holding personal data is never read and
-every address on screen is the field's own placeholder. **Replacing the image
-does not remove the old one from git history**, which is a separate decision.
+every address on screen is the field's own placeholder.
+
+**Replacing the image does not remove the old one from git history, and the
+decision on 2026-08-18 was to leave it.** One blob carries it, the one
+`3cb7d762` was written to replace, reachable from 33 commits and from both the
+`v1.5.0` and `v1.5.1` tags. Stripping it rewrites 871 commits, and this corpus
+cites SHAs in nearly every document, so the cure changes more facts than the
+disease. A force-push would not finish the job either: unreachable objects stay
+fetchable by hash on both forges until support purges them. The exposure is
+pixels in an image rather than text, so no code search reaches it. **This is
+recorded as a decision taken rather than an oversight**, so a later session does
+not rediscover the blob and rewrite history for it.
 
 ---
 
