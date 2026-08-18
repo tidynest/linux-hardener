@@ -1289,6 +1289,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Playwright Tauri mock answers `get_host_history`.** `HostPanel` fires it
+  on every fleet row expand, the mock had no case for it, and
+  `host_panel.rs:85` takes the result through `.unwrap_or_default()`, so the
+  rejection became an empty `Vec` and every host rendered the no-history state
+  whatever the backend would have returned. `T-FLEET-05`, `T-FLEET-08` and
+  `T-FLEET-09` all expand a row and none noticed. `web-01` now has three
+  sessions and `db-01` deliberately none, so both the timeline and the empty
+  state are reachable from a real answer. The probe in
+  `validate_gui_mock_fixtures.py` was added first and watched fail, which
+  exposed a second defect: the harness writes its reason to stdout and the
+  Python side reported stderr alone, so the whole message was "could not run
+  the mock" and a blank line. Both streams are printed now. No Playwright case
+  was added, so the suite total does not move; an assertion on the history rail
+  is still owed, and is recorded as such.
+
 - **Every `HardeningError` variant is now asserted whole, and a fifteenth will
   not compile untested.** `error_tests.rs` had eleven near-identical tests
   covering eleven of the fourteen variants; `Executor`, `NotFound` and

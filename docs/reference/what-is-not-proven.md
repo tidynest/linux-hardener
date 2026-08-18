@@ -653,15 +653,16 @@ failing loudly.
 
 **The mock and the real command set are not the same set.**
 `src-tauri/src/commands.rs` carries 32 `#[tauri::command]` functions;
-`gui-tests/tauri-mock.js` carries 33 distinct commands over 37 `case` labels,
+`gui-tests/tauri-mock.js` carries 34 distinct commands over 38 `case` labels,
 four of them appearing in both of the mock's two switch blocks
 (`get_checkpoints`, `run_apply`, `run_apply_dry_run`, `run_scan`). The two lists
 differ in both directions. `get_host_history` and `run_deep_scan` are real
 commands the frontend calls (`crates/hardener-ui/src/tauri_bindings.rs`, from
-`components/host_panel.rs` and the deep-scan action), and neither has a mock
-case: a Playwright run that reaches either path falls through to the mock's
-`default:` arm, which throws an "Unknown command" error naming the command it
-could not answer.
+`components/host_panel.rs` and the deep-scan action), and until 2026-08-18
+neither had a mock case: a Playwright run that reaches either path falls
+through to the mock's `default:` arm, which throws an "Unknown command" error
+naming the command it could not answer. `get_host_history` now has one, so
+`run_deep_scan` is the only real command the mock cannot answer.
 
 **The two are not in the same position, and this paragraph said they were until
 2026-08-16.** It claimed no spec file mentions either command name, "so no test
@@ -675,10 +676,15 @@ never names an IPC command that a component fires for it.
 - **`get_host_history` is reached on every fleet row expand**, which
   `T-FLEET-05`, `T-FLEET-08` and `T-FLEET-09` all perform. `HostPanel` fires it
   from a `spawn_local` on mount and takes the result through
-  `.unwrap_or_default()` at `host_panel.rs:85`, so the mock's throw becomes an
-  empty `Vec` and the panel renders its no-history state. **The per-host history
-  panel is entered by three tests and asserted on by none**, and the throw it
-  provokes is swallowed rather than reported.
+  `.unwrap_or_default()` at `host_panel.rs:85`, so the mock's throw became an
+  empty `Vec` and the panel rendered its no-history state whatever the backend
+  would have returned. The mock now answers it, with rows for `web-01` and
+  none for `db-01` so both branches are reachable from a real answer. **What
+  has not changed is the reason it went unnoticed: the per-host history panel
+  is entered by three tests and asserted on by none.** Adding the handler adds
+  no case, so the suite total does not move; the assertion that would make the
+  rail visible to a run is still owed, and until it exists a mock that stopped
+  answering would be swallowed exactly as the throw was.
 
 The correction matters beyond the one command: "no spec mentions it" was being
 used as a proxy for "no test reaches it", and for anything a component invokes
@@ -686,12 +692,15 @@ on mount the two are unrelated questions.
 `export_report`, `run_scan_filtered` and `run_scan_with_options` run the other
 way: all three have a mock case and none exists in `commands.rs`, so they
 answer a command the frontend never sends. `scripts/validate/validate_gui_mock_fixtures.py`,
-the one validator that reads the mock's payload shapes at all, invokes 11 of the
+the one validator that reads the mock's payload shapes at all, invokes 12 of the
 32 real commands (`run_scan`, `run_apply`, `list_plugins`, `run_rollback`,
 `run_fleet_scan`, `generate_compliance_report`, `add_policy_exception`,
 `remove_policy_exception`, `get_checkpoints`, `get_checkpoint_detail`,
-`get_scan_history`) to do it, so it neither catches the two uncovered real
-commands nor the three dead mock ones.
+`get_scan_history`, `get_host_history`) to do it, so it does not catch the one
+uncovered real command or the three dead mock ones. It is what caught this one:
+the probe was added before the handler and reported `Unknown command:
+get_host_history`, which is the only reading in this document produced by a
+check written to fail first.
 
 The practical reading for an operator: the command-line tool is the surface this
 release has the deepest evidence for; the desktop's interface is now exercised

@@ -83,6 +83,11 @@ PROBES = [
         "rollback_divergences[]",
         "RollbackDivergence",
     ),
+    # The host expander's history rail. `HostPanel` fires this on every row
+    # expand and swallows the failure with `.unwrap_or_default()`, so a mock
+    # that has never answered it renders the same empty state as a host with no
+    # persisted scans, and three GUI tests expand a row without noticing.
+    ("get_host_history", {"host": "web-01", "limit": 10}, "[]", "HostSessionInfo"),
     ("run_fleet_scan", {"hostNames": ["web-01"], "adhoc": []}, "[]", "FleetHostScan"),
     (
         "run_fleet_scan",
@@ -237,7 +242,12 @@ def mock_payloads(commands) -> list:
         ["node", "-e", script], capture_output=True, text=True, cwd=PROJECT
     )
     if result.returncode != 0:
-        raise SystemExit(f"could not run the mock:\n{result.stderr.strip()}")
+        # The harness catches a rejected invoke and writes `{"error": ...}` to
+        # stdout before exiting 3, so reporting stderr alone printed the header
+        # and nothing else: a mock missing a probed command said only "could
+        # not run the mock". Both streams go out, whichever carried the reason.
+        detail = "\n".join(s for s in (result.stdout.strip(), result.stderr.strip()) if s)
+        raise SystemExit(f"could not run the mock:\n{detail}")
     return json.loads(result.stdout)
 
 

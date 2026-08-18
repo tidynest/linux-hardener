@@ -548,6 +548,15 @@ missing, which is the direction that would condemn a mock that works. An extra
 field is reported as well as a missing one, because a rename arrives as both
 and naming only the missing half describes half the problem.
 
+A command the mock has no case for is a different failure, and it used to be an
+illegible one. The harness catches the rejected `invoke`, writes
+`{"error": ...}` to stdout and exits 3; the Python side reported stderr alone,
+so the whole message was `could not run the mock:` and an empty line. Both
+streams are now printed, whichever carried the reason. It matters because that
+is the failure a new probe produces on purpose: `get_host_history` was probed
+before the mock could answer it, and the point of writing the probe first is to
+read what the check says when the thing it checks is absent.
+
 ### .SRCINFO
 
 ```bash

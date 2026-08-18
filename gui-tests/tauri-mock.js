@@ -603,6 +603,31 @@
     },
   ];
 
+  // Mirrors HostSessionInfo, keyed by the scheduler-db history key the host
+  // expander sends (inventory name, or the canonical target for an ad-hoc
+  // host). `started` is display-ready, `%Y-%m-%d %H:%M` local, because
+  // `sessions_to_info` formats it backend-side and `checkpoint_time` splits on
+  // the space to show the clock alone.
+  //
+  // Only `web-01` has rows. `db-01` deliberately has none, so the "No persisted
+  // history for this host" branch stays reachable from a real answer rather
+  // than from the mock refusing the command, which is what it used to be: the
+  // mock had no case at all, `HostPanel` swallowed the rejection through
+  // `.unwrap_or_default()`, and both hosts rendered the empty state whatever
+  // the backend would have returned.
+  //
+  // `direction` is absent on the oldest row on purpose: the backend fetches one
+  // extra session to compute it and has nothing older to compare the last one
+  // against.
+  const HOST_HISTORY = {
+    'web-01': [
+      { started: '2026-02-23 10:30', status: 'completed', total_findings: 8, critical: 0, high: 2, medium: 4, low: 2, info: 0, direction: 'worse' },
+      { started: '2026-02-22 15:45', status: 'completed', total_findings: 5, critical: 0, high: 1, medium: 3, low: 1, info: 0, direction: 'better' },
+      { started: '2026-02-21 09:00', status: 'completed', total_findings: 9, critical: 1, high: 2, medium: 4, low: 2, info: 0, direction: null },
+    ],
+    'db-01': [],
+  };
+
   // Mirrors PluginMetadata exactly: plugin_category, plugin_description,
   // plugin_id, plugin_name, plugin_version. It carried a plugin_dependencies
   // the type does not have and lacked plugin_version, which serde requires, so
@@ -755,6 +780,12 @@
 
       case 'get_scan_history':
         return SCAN_HISTORY;
+
+      case 'get_host_history': {
+        const rows = HOST_HISTORY[args && args.host] || [];
+        const cap = (args && args.limit) || rows.length;
+        return rows.slice(0, cap);
+      }
 
       case 'get_scan_session':
         return SCAN_RESULTS;
