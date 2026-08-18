@@ -27,6 +27,9 @@ and stay at the repository root.
 | [reference/file-map.md](reference/file-map.md) | Find which source file implements what |
 | [reference/data-flow.md](reference/data-flow.md) | Trace how data moves through the system, and its sources of truth |
 | [reference/distribution-validation.md](reference/distribution-validation.md) | See which distro versions were validated end-to-end |
+| [reference/evidence-ledger.md](reference/evidence-ledger.md) | Check what evidence backs a capability, and the ceiling on what that evidence proves |
+| [reference/what-is-not-proven.md](reference/what-is-not-proven.md) | Find out what the test suite does **not** establish, before relying on it |
+| [reference/coverage-baseline.md](reference/coverage-baseline.md) | Read the dated line-coverage measurement and what was deleted as dead |
 
 ## Architecture
 

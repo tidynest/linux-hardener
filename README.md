@@ -221,7 +221,7 @@ The commands you will use most:
 hardener plugins                        # List available security plugins
 hardener scan                           # Scan the system for security issues
 hardener scan --format json             # Machine-readable scan output
-hardener report --framework cis         # Compliance report, ten frameworks
+hardener report --framework cis         # Compliance report for one framework of ten
 sudo hardener apply --dry-run --all     # Preview hardening without changing anything
 sudo hardener apply --all               # Apply all recommended hardening
 sudo hardener checkpoint list           # List rollback checkpoints
