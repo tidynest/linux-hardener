@@ -152,6 +152,13 @@ impl ReportGenerator {
         // unchecked. With no finding, an unchecked control cannot auto-pass
         // either; only a control the engine both assesses and could actually
         // evaluate this run passes on the mere absence of a finding.
+        //
+        // Arm order is load-bearing and is the feature's security property.
+        // `assessed` sits above the exclusion arm, so a plugin gaining coverage
+        // for an excluded control supersedes the declaration on the next scan
+        // rather than at its review date. Six of the ten frameworks state a
+        // change trigger and no interval, so this is the mechanism they name;
+        // the review date is the backstop for changes the tool cannot see.
         let mut controls: Vec<ControlResult> = catalogue
             .iter()
             .map(|control| {

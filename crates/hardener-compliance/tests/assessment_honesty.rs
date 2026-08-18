@@ -18,7 +18,9 @@ use hardener_common::types::{
     Severity,
 };
 use hardener_compliance::config::OutputFormat;
-use hardener_compliance::{ComplianceReport, ReportConfig, ReportGenerator, Scenario};
+use hardener_compliance::{
+    ComplianceReport, ComplianceSummary, ControlResult, ReportConfig, ReportGenerator, Scenario,
+};
 use hardener_core::config::scope::ComplianceConfig;
 use hardener_core::plugin::Finding;
 use hardener_types::ExceptionOutcome;
@@ -74,6 +76,50 @@ fn report_for(
     .into_iter()
     .next()
     .expect("one report")
+}
+
+/// A control result carrying nothing but the status the score is computed from.
+fn control(id: &str, status: ControlStatus) -> ControlResult {
+    ControlResult {
+        control_id: id.to_string(),
+        control_title: format!("Control {id}"),
+        control_section: "Fixture".to_string(),
+        control_status: status,
+        control_findings: Vec::new(),
+    }
+}
+
+#[test]
+fn wholesale_exclusion_does_not_score_as_full_compliance() {
+    // An operator can now declare controls not applicable in configuration, so
+    // an all-excluded framework is reachable from input rather than impossible.
+    // Nothing was assessed, and of the two readings available for an empty
+    // denominator the one that claims full compliance is the forbidden one.
+    let controls = vec![
+        control("1.1", ControlStatus::NotApplicable),
+        control("1.2", ControlStatus::NotApplicable),
+        control("1.3", ControlStatus::NotApplicable),
+    ];
+
+    let summary = ComplianceSummary::from_controls(&controls);
+
+    assert_eq!(summary.summary_total_controls, 3);
+    assert_eq!(summary.summary_not_applicable, 3);
+    assert_ne!(
+        summary.summary_score_percentage, 100.0,
+        "every control excluded means nothing was assessed; the report, the PDF \
+         and the CSV must not print full compliance"
+    );
+}
+
+#[test]
+fn a_genuinely_empty_report_still_scores_full() {
+    // The guard above must not spread to the empty report, where there are no
+    // controls at all and so nothing to overstate.
+    let summary = ComplianceSummary::from_controls(&[]);
+
+    assert_eq!(summary.summary_total_controls, 0);
+    assert_eq!(summary.summary_score_percentage, 100.0);
 }
 
 #[test]

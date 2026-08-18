@@ -790,3 +790,35 @@ fn a_partial_scan_says_so_in_the_report() {
         complete.report_coverage_note
     );
 }
+
+/// The change trigger the frameworks actually specify. When a plugin gains
+/// coverage for an excluded control, the engine's answer supersedes the
+/// operator's declaration immediately, without waiting for `review_by`.
+#[test]
+fn gaining_coverage_supersedes_an_exclusion_without_waiting_for_review() {
+    let cfg = one_exclusion("cis", "1.5.1");
+
+    let before = report_for_with_exclusions(ComplianceFramework::CIS, vec![], &[], cfg.clone());
+    let after = report_for_with_exclusions(
+        ComplianceFramework::CIS,
+        vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        &[],
+        cfg,
+    );
+
+    let status_of = |r: &ComplianceReport| {
+        r.report_controls
+            .iter()
+            .find(|c| c.control_id == "1.5.1")
+            .expect("control present")
+            .control_status
+            .clone()
+    };
+
+    assert_eq!(status_of(&before), ControlStatus::NotApplicable);
+    assert_eq!(
+        status_of(&after),
+        ControlStatus::Pass,
+        "coverage supersedes the declaration; review_by is 2999 and irrelevant"
+    );
+}
