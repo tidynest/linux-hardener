@@ -576,7 +576,7 @@ hardener report [FLAGS]
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-s`, `--scenario <SCENARIO>` | Use case preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all` | `server` |
+| `-s`, `--scenario <SCENARIO>` | Use case preset: `server`, `workstation`, `government`, `healthcare`, `financial`, `gdpr`, `all`. **`all` is nine of the ten frameworks: ISO 27001 is not among them.** See the note below. | `server` |
 | `--framework <FRAMEWORK>` | Specific framework: `cis`, `stig`, `nist`, `pcidss`, `hipaa`, `gdpr`, `iso27001`, `soc2`, `800-171`, `fedramp` | |
 | `--profile <PROFILE>` | Compliance ID profile: `generic`, `rhel10` | auto-detect |
 | `--report-format <FORMAT>` | Report format: `text` (or `txt`), `json`, `csv`, `html`, `pdf`. This is the only flag that reaches the CSV, HTML and PDF formatters, none of which the global `--format` renders | `text` |
@@ -624,6 +624,15 @@ hardener report --framework stig --profile rhel10   # Force RHEL 10 STIG V1R1 ID
 hardener report --interactive                # Step-by-step wizard
 hardener report --scenario all --output report.json --report-format json
 ```
+
+**`--scenario all` is nine of ten frameworks.** `Scenario::All` in
+`crates/hardener-compliance/src/config.rs` hardcodes CIS, STIG, NIST 800-53,
+PCI-DSS, HIPAA, GDPR, SOC 2, NIST 800-171 and FedRAMP, and **omits ISO 27001**,
+while `Scenario::name()` returns "All Frameworks". Measured against the release
+binary on 2026-08-18: nine reports rendered, no ISO 27001 anywhere in the
+output. `crates/hardener-compliance/tests/config_tests.rs` asserts the length is
+nine, so the suite pins this rather than catching it. To include ISO 27001 today,
+name it: `--framework iso27001`, or list the frameworks you want explicitly.
 
 ---
 

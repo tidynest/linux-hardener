@@ -42,6 +42,21 @@ impl Scenario {
             Scenario::Healthcare => vec![ComplianceFramework::HIPAA, ComplianceFramework::NIST],
             Scenario::Financial => vec![ComplianceFramework::PCIDSS, ComplianceFramework::CIS],
             Scenario::Gdpr => vec![ComplianceFramework::GDPR],
+            // Nine of the ten frameworks in `ComplianceFramework::ALL`.
+            // **ISO 27001 is omitted, and `name()` still calls this "All
+            // Frameworks"**, so `hardener report --scenario all` renders nine
+            // and says nothing about the tenth. Measured against the release
+            // binary 2026-08-18: nine reports, no ISO 27001 anywhere in the
+            // output. `tests/config_tests.rs` asserts `len() == 9`, so the
+            // suite pins the omission rather than catching it.
+            //
+            // Whether that is right is a product decision, not an oversight to
+            // patch here: ISO 27001 is one of only two curated catalogues
+            // (CIS being the other), so it is among the better-evidenced
+            // frameworks rather than a thin derived one. Adding it changes
+            // every `--scenario all` report. `FLEET_FRAMEWORKS` in
+            // `src-tauri/src/commands.rs` omits the same framework and says so
+            // in one line; this list said nothing at all until now.
             Scenario::All => vec![
                 ComplianceFramework::CIS,
                 ComplianceFramework::STIG,
