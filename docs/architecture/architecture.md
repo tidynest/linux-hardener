@@ -12,7 +12,7 @@ Linux Hardener is a modular security hardening tool for Linux systems, providing
 - Checkpoint/rollback functionality for safe changes
 - Compliance framework mapping (CIS, NIST, STIG, HIPAA, PCI-DSS, GDPR, ISO 27001:2022, SOC 2, NIST SP 800-171, FedRAMP)
 - Multiple interfaces: CLI, GUI (Tauri/Leptos), and programmatic APIs
-- Cryptographically signed audit logs and tamper-proof state management
+- Cryptographically signed audit logs and tamper-evident state management
 
 ---
 
@@ -499,7 +499,7 @@ that decides.
 | Component | Root location | Unprivileged location | Purpose |
 |-----------|---------------|-----------------------|---------|
 | Checkpoints | `/var/lib/linux-hardener/checkpoints.db` (0755 dir) | `~/.local/share/linux-hardener/checkpoints.db` | System state snapshots |
-| Audit Log | `/var/log/linux-hardener/audit.log` (0700 dir) | `~/.local/share/linux-hardener/audit.log` | Tamper-proof action history (JSONL) |
+| Audit Log | `/var/log/linux-hardener/audit.log` (0700 dir) | `~/.local/share/linux-hardener/audit.log` | Tamper-evident action history (JSONL) |
 | Signing Keys | `/etc/linux-hardener/signing.key` (0700 dir, 0400 key) | `~/.local/share/linux-hardener/signing.key` | Ed25519 keys |
 
 `hardener-state` carries its own defaults for the root paths:

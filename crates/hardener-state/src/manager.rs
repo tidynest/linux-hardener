@@ -501,7 +501,7 @@ impl CheckpointManager {
     /// The signature covers checkpoint metadata and hashes of all file contents.
     ///
     /// # Security Implications
-    /// This creates a tamper-proof record. Any modification to checkpoint data
+    /// This creates a tamper-evident record. Any modification to checkpoint data
     /// or file contents will cause signature verification to fail.
     fn generate_signature(
         &self,

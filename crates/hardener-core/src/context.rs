@@ -34,7 +34,7 @@ pub struct Context {
 /// Plugin audit log entry for tracking plugin operations in context.
 ///
 /// Records plugin operations for in-memory tracking during execution.
-/// For persistent tamper-proof auditing, see hardener_state::audit::AuditEntry.
+/// For persistent tamper-evident auditing, see hardener_state::audit::AuditEntry.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PluginAuditEntry {
     /// Timestamp when the operation occurred (Unix timestamp in seconds).

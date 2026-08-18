@@ -1,4 +1,17 @@
-//! Audit logging with tamper-proof hash chain.
+//! Audit logging with tamper-evident hash chain.
+//!
+//! Evident, not proof: the chain detects a change to a recorded entry, it does
+//! not prevent one. It also does not detect every change. [`AuditLogger::
+//! verify_integrity`] walks from a fixed genesis and holds no expected length
+//! and no anchor outside the file, so **a prefix of a valid chain is itself a
+//! valid chain** and deleting entries from the end is undetectable. Deleting
+//! them from the front is caught, because the survivor no longer links to the
+//! genesis. Both measured 2026-08-18, `true` and `false` respectively.
+//!
+//! Protecting the tail is the deployment's job, not this module's: as root the
+//! log sits in a 0700 directory, but an unprivileged run writes it under the
+//! user's own data directory, where the user the entries describe can rewrite
+//! the whole chain from genesis.
 
 use crate::HashChain;
 use chrono::{DateTime, Utc};
@@ -36,7 +49,7 @@ pub enum ActionResult {
     Failure,
 }
 
-/// A single entry in the tamper-proof audit log
+/// A single entry in the tamper-evident audit log
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AuditEntry {
     /// When the action occurred (UTC)
@@ -213,7 +226,7 @@ impl QueryFilter {
     }
 }
 
-/// Tamper-proof audit logger using hash chain.
+/// Tamper-evident audit logger using hash chain.
 pub struct AuditLogger {
     /// Append-only audit log file
     file: tokio::sync::Mutex<tokio::fs::File>,
@@ -359,15 +372,21 @@ impl AuditLogger {
         Ok(())
     }
 
-    /// Verifies the integrity of the entire audit log.
+    /// Verifies that every entry still links to the one before it.
     ///
-    /// Reads all entries and recalculates the hash chain to detect tampering.
+    /// Reads all entries and recalculates the hash chain. `true` means no
+    /// recorded entry was altered or reordered; it does **not** mean the log is
+    /// complete. Verification starts from a fixed genesis and stops at
+    /// end-of-file, comparing against no expected length, so a log with entries
+    /// removed from the end verifies exactly as a whole one does. See the module
+    /// header for what that leaves to the deployment.
     ///
     /// # Arguments
     /// * `log_path` - Path to the audit log file to verify
     ///
     /// # Returns
-    /// `true` if the log is intact, `false` if tampering detected
+    /// `true` if every entry present links correctly, `false` if one was altered,
+    /// reordered, or removed from the front
     pub async fn verify_integrity(log_path: &str) -> Result<bool> {
         // Open file for reading
         let file = tokio::fs::File::open(log_path).await?;

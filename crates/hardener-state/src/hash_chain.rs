@@ -1,4 +1,4 @@
-//! SHA-256 hash chain for tamper-proof audit logging.
+//! SHA-256 hash chain for tamper-evident audit logging.
 //!
 //! Each entry's hash depends on the previous entry, making it computationally
 //! infeasible to modify historical entries without detection.
@@ -6,7 +6,7 @@
 use ring::digest::{SHA256, digest};
 use serde::{Deserialize, Serialize};
 
-/// Maintains a cryptographic hash chain for tamper-proof audit logging.
+/// Maintains a cryptographic hash chain for tamper-evident audit logging.
 ///
 /// Each entry in the chain depends on the previous entry's hash, making it
 /// computationally infeasible to modify historical entries without detection.

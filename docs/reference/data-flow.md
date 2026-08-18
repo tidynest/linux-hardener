@@ -834,6 +834,18 @@ The audit log uses a hash chain for tamper detection:
 
 If any entry is modified, the hash chain breaks and tampering is detected.
 
+**Modification is detected; truncation of the tail is not.** Verification starts
+from the `0x00 * 32` genesis above and stops at end-of-file, holding no expected
+length and no anchor outside the file, so a prefix of a valid chain is itself a
+valid chain. Measured 2026-08-18: deleting the last of three entries left
+`verify_integrity` returning `true` and the log reporting 2 entries. Deleting the
+first returned `false`, because the survivor no longer links to the genesis.
+Keeping the tail honest is the deployment's job: as root the log sits in a 0700
+directory, but an unprivileged run writes it under the user's own data directory,
+where the user the entries describe can rewrite the chain from genesis. The
+ceiling is recorded in
+[evidence-ledger.md](evidence-ledger.md).
+
 ---
 
 ## File Locations Summary
