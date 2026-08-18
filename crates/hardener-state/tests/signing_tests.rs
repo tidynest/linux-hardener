@@ -164,7 +164,9 @@ fn test_key_file_permissions() {
 
     let _signer = CheckpointSigner::new_with_path(&key_path).unwrap();
 
-    // Check permissions (0600)
+    // 0400, not 0600: `signing.rs` opens the key with `.mode(0o400)` at both
+    // write sites, so it is read-only even to its owner. This comment said 0600
+    // while the assertion below said 0400; the assertion was the correct one.
     use std::os::unix::fs::PermissionsExt;
     let perms = fs::metadata(&key_path).unwrap().permissions();
     assert_eq!(perms.mode() & 0o777, 0o400);
