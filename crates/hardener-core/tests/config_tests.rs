@@ -1,4 +1,6 @@
+use hardener_core::config::scope::{ComplianceConfig, ScopeExclusion};
 use hardener_core::{HardenerConfig, PluginConfig, PolicyException};
+use std::collections::HashMap;
 
 #[test]
 fn test_default_config() {
@@ -189,7 +191,28 @@ fn test_config_serialization() {
         mac: marked(false, "mac", "enforcing"),
         permissions: marked(true, "permissions", "/etc/shadow"),
         services: marked(false, "services", "cups"),
-        compliance: Default::default(),
+        compliance: ComplianceConfig {
+            // Not `Default::default()`. An empty map round-trips whatever the
+            // field definitions say, so `ScopeExclusion`'s `Serialize` was
+            // exercised by nothing at all: every field of it could have been
+            // dropped and this test would still have passed. One fully
+            // populated exclusion, every field a distinct marker, is what puts
+            // the type inside the guarantee the test claims to give.
+            not_applicable: HashMap::from([(
+                "iso27001".to_string(),
+                HashMap::from([(
+                    "A.7.1".to_string(),
+                    ScopeExclusion {
+                        reason: "reason-A.7.1".to_string(),
+                        approved_by: Some("approver-A.7.1".to_string()),
+                        approved_date: Some("2026-08-18".to_string()),
+                        ticket: Some("ticket-A.7.1".to_string()),
+                        review_by: Some("2027-08-18".to_string()),
+                        hosts: vec!["host-A.7.1".to_string()],
+                    },
+                )]),
+            )]),
+        },
     };
 
     let toml_str = toml::to_string(&config).unwrap();

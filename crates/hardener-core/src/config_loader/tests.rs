@@ -16,6 +16,7 @@
 
 use super::*;
 use crate::config::PolicyException;
+use crate::config::scope::ScopeExclusion;
 use std::collections::HashMap;
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -221,6 +222,103 @@ fn a_section_mentioned_without_enabled_does_not_revive_a_disabled_plugin() {
         Some("enforcing"),
         "while the directive it did carry is still merged, or the fix would have \
          cost the file its actual purpose"
+    );
+}
+
+/// A user config that excludes one control of a framework must not discard the
+/// other exclusions the system config declared for that same framework.
+///
+/// `merge_compliance` merges per control rather than per framework for exactly
+/// this reason, and nothing asserted it. A plain `extend` of the outer map
+/// would replace the whole `iso27001` entry, silently returning every other
+/// control the site had excluded to the score's denominator: a change that
+/// *lowers* a score and so is not noticed as a security defect, but which
+/// makes the two sources disagree about what was decided.
+#[test]
+fn a_user_exclusion_does_not_discard_the_sites_other_exclusions() {
+    let excluded = |reason: &str| ScopeExclusion {
+        reason: reason.to_string(),
+        approved_date: Some("2026-08-18".to_string()),
+        ..Default::default()
+    };
+    let framework = |controls: [(&str, ScopeExclusion); 1]| {
+        let mut config = ComplianceConfig::default();
+        config
+            .not_applicable
+            .entry("iso27001".to_string())
+            .or_default()
+            .extend(controls.map(|(id, e)| (id.to_string(), e)));
+        config
+    };
+
+    let base = HardenerConfig {
+        compliance: framework([("A.7.1", excluded("no premises"))]),
+        ..Default::default()
+    };
+    let overlay = HardenerConfig {
+        compliance: framework([("A.7.2", excluded("no on-site staff"))]),
+        ..Default::default()
+    };
+
+    let merged = ConfigLoader::merge_configs(base, overlay).expect("the sources merge");
+    let iso = merged
+        .compliance
+        .not_applicable
+        .get("iso27001")
+        .expect("the framework survives the merge");
+
+    assert_eq!(
+        iso.get("A.7.1").map(|e| e.reason.as_str()),
+        Some("no premises"),
+        "the system config's exclusion must survive a user config that names \
+         only a different control of the same framework"
+    );
+    assert_eq!(
+        iso.get("A.7.2").map(|e| e.reason.as_str()),
+        Some("no on-site staff"),
+        "while the user config's own exclusion is of course added"
+    );
+}
+
+/// The other half of the same rule: a later source naming the same control
+/// does replace it, or a site exclusion could never be corrected.
+#[test]
+fn a_user_exclusion_replaces_the_same_control() {
+    let mut base = HardenerConfig::default();
+    base.compliance
+        .not_applicable
+        .entry("iso27001".to_string())
+        .or_default()
+        .insert(
+            "A.7.1".to_string(),
+            ScopeExclusion {
+                reason: "no premises".to_string(),
+                ..Default::default()
+            },
+        );
+    let mut overlay = HardenerConfig::default();
+    overlay
+        .compliance
+        .not_applicable
+        .entry("iso27001".to_string())
+        .or_default()
+        .insert(
+            "A.7.1".to_string(),
+            ScopeExclusion {
+                reason: "premises are leased and out of scope".to_string(),
+                ..Default::default()
+            },
+        );
+
+    let merged = ConfigLoader::merge_configs(base, overlay).expect("the sources merge");
+    assert_eq!(
+        merged
+            .compliance
+            .not_applicable
+            .get("iso27001")
+            .and_then(|f| f.get("A.7.1"))
+            .map(|e| e.reason.as_str()),
+        Some("premises are leased and out of scope")
     );
 }
 
