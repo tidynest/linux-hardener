@@ -127,6 +127,85 @@ async fn an_unknown_framework_is_refused() {
     );
 }
 
+/// Eight of the ten frameworks have no curated catalogue: theirs is derived at
+/// report time from the live plugin coverage set, so every control it lists is
+/// one the engine assesses and the generator settles as `Pass` or `Fail` before
+/// it ever reaches the exclusion arm. An exclusion for such a framework is
+/// therefore inert. It is still written and still audited, because a framework
+/// may gain a curated catalogue later and the entry is harmless meanwhile, but
+/// the operator is told it changes no report today rather than left believing a
+/// score moved.
+#[tokio::test]
+async fn a_derived_framework_is_warned_about_yet_still_written_and_audited() {
+    let scratch = Scratch::seeded("[global]\n");
+
+    let advisory = run_exclude_to(
+        "soc2",
+        "CC6.1",
+        "Handled by the hosting provider",
+        None,
+        None,
+        None,
+        &[],
+        Some(&scratch.config),
+        scratch.log_path(),
+    )
+    .await
+    .expect("a derived framework is warned about, not refused");
+
+    let advisory = advisory.expect("an inert exclusion is flagged to the operator");
+    assert!(
+        advisory.contains("CC6.1"),
+        "the advisory names the control it concerns: {advisory}"
+    );
+    assert!(
+        advisory.contains("SOC 2"),
+        "and the framework it cannot take effect for: {advisory}"
+    );
+
+    assert!(
+        scratch
+            .written()
+            .contains(r#"[compliance.not_applicable.soc2."CC6.1"]"#),
+        "the declaration is written all the same"
+    );
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 1, "and audited all the same");
+    assert_eq!(entries[0].entry_result, ActionResult::Success);
+    assert_eq!(entries[0].entry_target, "soc2:CC6.1");
+}
+
+/// The other direction, without which the case above would pass just as well
+/// against a verb that warned on every framework. CIS and ISO/IEC 27001 carry
+/// hand-curated catalogues, so their catalogues list controls the engine does
+/// not assess and an exclusion of one does reach the generator's exclusion arm.
+#[tokio::test]
+async fn a_curated_framework_is_not_warned_about() {
+    for (framework, control) in [("cis", "1.1.1"), ("iso27001", "A.7.1")] {
+        let scratch = Scratch::seeded("[global]\n");
+
+        let advisory = run_exclude_to(
+            framework,
+            control,
+            "Not applicable to this host",
+            None,
+            None,
+            None,
+            &[],
+            Some(&scratch.config),
+            scratch.log_path(),
+        )
+        .await
+        .expect("exclude succeeds");
+
+        assert!(
+            advisory.is_none(),
+            "{framework} has a curated catalogue, so the exclusion takes effect \
+             and there is nothing to warn about: {advisory:?}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn include_removes_only_the_named_control() {
     let scratch = Scratch::seeded("[global]\n");

@@ -12,6 +12,14 @@
 //! live finding to check it against, so the framework id and the reason are all
 //! the tool can insist on.
 //!
+//! **An exclusion is inert for eight of the ten frameworks.** Only CIS and
+//! ISO/IEC 27001 have a hand-curated catalogue; the rest derive theirs from the
+//! live plugin coverage set, so every control listed is one the engine assesses
+//! and the generator settles it before reaching the arm that honours an
+//! exclusion. Such a declaration is still written and still audited, because a
+//! framework may gain a curated catalogue later, but it is written with a
+//! warning on stderr rather than in silence. See `inert_exclusion_advisory`.
+//!
 //! **Why this verb exists at all.** The same declaration could be typed into
 //! the configuration file by hand, and the generator would honour it. What a
 //! hand edit cannot produce is the audit entry: a file edited by an editor runs
@@ -20,6 +28,7 @@
 use super::exception::{read_or_empty, write_atomically, write_path};
 use super::state::effective_user;
 use anyhow::{Context as _, Result, anyhow};
+use hardener_compliance::frameworks::curated_controls;
 use hardener_core::config::scope::ScopeExclusion;
 use hardener_state::audit::{ActionResult, ActionType, AuditLogger};
 use hardener_types::ComplianceFramework;
@@ -69,7 +78,9 @@ pub async fn run_exclude(
         hosts,
         config_path,
     };
-    exclude(request, super::state::get_audit_logger().await).await
+    exclude(request, super::state::get_audit_logger().await)
+        .await
+        .map(|_advisory| ())
 }
 
 /// [`run_exclude`] with the audit log named, so a test writes neither
@@ -79,6 +90,10 @@ pub async fn run_exclude(
 /// through [`super::state::get_audit_logger`], which also creates the directory
 /// and restricts its mode, and a second public way in would be a second answer
 /// to where this host's audit trail lives.
+///
+/// Returns whatever advisory [`exclude`] printed, which the production entry
+/// point discards: stderr cannot be read back inside the process that wrote it,
+/// so this is how a test observes which frameworks are warned about.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub async fn run_exclude_to(
@@ -91,7 +106,7 @@ pub async fn run_exclude_to(
     hosts: &[String],
     config_path: Option<&Path>,
     audit_log_path: &str,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let request = ExcludeRequest {
         framework,
         control,
@@ -145,7 +160,10 @@ async fn logger_at(audit_log_path: &str) -> Option<AuditLogger> {
     }
 }
 
-async fn exclude(request: ExcludeRequest<'_>, logger: Option<AuditLogger>) -> Result<()> {
+async fn exclude(
+    request: ExcludeRequest<'_>,
+    logger: Option<AuditLogger>,
+) -> Result<Option<String>> {
     let reason = request.reason.trim();
     let raw_target = format!("{}:{}", request.framework, request.control);
 
@@ -230,7 +248,39 @@ async fn exclude(request: ExcludeRequest<'_>, logger: Option<AuditLogger>) -> Re
         framework,
         path.display()
     );
-    Ok(())
+
+    let advisory = inert_exclusion_advisory(&framework, request.control);
+    if let Some(text) = &advisory {
+        eprintln!("W  {text}");
+    }
+    Ok(advisory)
+}
+
+/// The warning an exclusion for `framework` warrants, or `None` when the
+/// framework carries a hand-curated catalogue and the declaration can take
+/// effect.
+///
+/// Only CIS and ISO/IEC 27001 are curated. Every other framework's catalogue is
+/// derived at report time from the live plugin coverage set, so each control it
+/// lists is one the engine assesses, and the generator settles an assessed
+/// control one arm above the arm that honours an exclusion. Such an exclusion
+/// can therefore never fire, whatever it names.
+///
+/// The question is asked of [`curated_controls`], not of a list of two
+/// framework names kept here: the compliance crate already owns that fact, and
+/// a copy of it would say the wrong thing on the day a ninth catalogue is
+/// curated.
+fn inert_exclusion_advisory(framework: &ComplianceFramework, control: &str) -> Option<String> {
+    if curated_controls(framework).is_some() {
+        return None;
+    }
+    Some(format!(
+        "'{control}' was written and audited, but it cannot take effect for {framework}. \
+         That framework's control catalogue is derived from what this engine can already \
+         assess, so it lists no control an exclusion could apply to, and the report will \
+         not change. The declaration is kept in case {framework} gains a curated \
+         catalogue later."
+    ))
 }
 
 async fn include(
@@ -320,7 +370,7 @@ async fn record(logger: Option<&AuditLogger>, target: String, details: HashMap<S
 /// without detection. The cause therefore goes into the error message, which is
 /// hashed, and the control it was refused for goes into the target, which is
 /// also hashed.
-async fn refuse(logger: Option<&AuditLogger>, target: String, message: String) -> Result<()> {
+async fn refuse<T>(logger: Option<&AuditLogger>, target: String, message: String) -> Result<T> {
     if let Some(logger) = logger
         && let Err(e) = logger
             .log_failure(
