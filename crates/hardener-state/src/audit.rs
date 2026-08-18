@@ -17,7 +17,7 @@ use crate::HashChain;
 use chrono::{DateTime, Utc};
 use hardener_common::error::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use tokio::{
     fs::OpenOptions,
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -38,6 +38,12 @@ pub enum ActionType {
     CheckpointCreate,
     /// Checkpoint deletion
     CheckpointDelete,
+    /// A compliance control declared not applicable, or that declaration
+    /// withdrawn. Kept distinct from `ConfigChange` because an auditor's
+    /// question is "which exclusions were in force and who set them", and a
+    /// filter over a variant shared with every other configuration edit
+    /// cannot answer it.
+    ScopeExclusion,
 }
 
 /// Result of an audited action.
@@ -298,8 +304,11 @@ impl AuditLogger {
         // Compute timestamp ONCE for both hash and entry
         let now = Utc::now();
 
-        let entry_data = (now.timestamp(), action_type, &user, &target, result);
-        let serialised_data = serde_json::to_vec(&entry_data)?;
+        // Routed through the same helper the details-bearing writer and
+        // verification use, so one function is the only definition of what a
+        // success entry hashes over.
+        let serialised_data =
+            Self::hashable(now, action_type, &user, &target, result, &HashMap::new())?;
 
         let hash = chain.next_hash(&serialised_data);
 
@@ -318,6 +327,98 @@ impl AuditLogger {
         chain.update(hash);
 
         Ok(())
+    }
+
+    /// Logs an action that carries structured details, with those details
+    /// inside the hash.
+    ///
+    /// Details are serialised through a `BTreeMap` because `HashMap` iteration
+    /// order is not stable and an unstable order would produce a different hash
+    /// for identical content, breaking verification at random.
+    ///
+    /// They join the hashed tuple **only when non-empty**. Every success entry
+    /// written before this method existed carries an empty map and was hashed
+    /// as a five-tuple, so an unconditional sixth element would invalidate
+    /// every historical log.
+    ///
+    /// # Arguments
+    /// * `action_type` - Type of action being logged
+    /// * `user`        - Username performing the action
+    /// * `target`      - Target of the action
+    /// * `result`      - Whether the action succeeded or failed
+    /// * `details`     - Structured context recorded inside the hash chain
+    ///
+    /// # Returns
+    /// Ok(()) if logged successfully, or an error
+    pub async fn log_action_with_details(
+        &self,
+        action_type: ActionType,
+        user: String,
+        target: String,
+        result: ActionResult,
+        details: HashMap<String, String>,
+    ) -> Result<()> {
+        let mut chain = self.hash_chain.lock().await;
+        let now = Utc::now();
+
+        let serialised_data = Self::hashable(now, action_type, &user, &target, result, &details)?;
+        let hash = chain.next_hash(&serialised_data);
+
+        let entry = AuditEntry {
+            entry_timestamp: now,
+            entry_action_type: action_type,
+            entry_user: user,
+            entry_target: target,
+            entry_result: result,
+            entry_details: details,
+            entry_hash: hash.clone(),
+        };
+
+        let mut entry_json = serde_json::to_vec(&entry)?;
+        entry_json.push(b'\n');
+
+        let mut file = self.file.lock().await;
+        file.write_all(&entry_json).await?;
+        file.flush().await?;
+
+        chain.update(hash);
+        Ok(())
+    }
+
+    /// The bytes a success entry hashes over.
+    ///
+    /// One function so the writer and [`verify_integrity`](Self::verify_integrity)
+    /// cannot drift. They did not share one before, which is exactly how a
+    /// details-bearing entry would have hashed one way and verified another.
+    fn hashable(
+        timestamp: DateTime<Utc>,
+        action_type: ActionType,
+        user: &str,
+        target: &str,
+        result: ActionResult,
+        details: &HashMap<String, String>,
+    ) -> Result<Vec<u8>> {
+        if details.is_empty() {
+            return Ok(serde_json::to_vec(&(
+                timestamp.timestamp(),
+                action_type,
+                user,
+                target,
+                result,
+            ))?);
+        }
+        let ordered: BTreeMap<&str, &str> = details
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        Ok(serde_json::to_vec(&(
+            timestamp.timestamp(),
+            action_type,
+            user,
+            target,
+            result,
+            &ordered,
+        ))?)
     }
 
     /// Logs a failed action with an error message.
@@ -420,14 +521,17 @@ impl AuditLogger {
                     error_msg,
                 ))?
             } else {
-                // For successes, don't include error message (matches log_action)
-                serde_json::to_vec(&(
-                    entry.entry_timestamp.timestamp(),
+                // Successes hash through the same helper the writer uses, so a
+                // details-bearing entry verifies and a detail-free one keeps
+                // its original five-tuple hash.
+                Self::hashable(
+                    entry.entry_timestamp,
                     entry.entry_action_type,
                     &entry.entry_user,
                     &entry.entry_target,
                     entry.entry_result,
-                ))?
+                    &entry.entry_details,
+                )?
             };
 
             // Verify this entry's hash

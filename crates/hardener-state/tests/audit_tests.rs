@@ -1,5 +1,6 @@
 use hardener_state::audit::QueryFilter;
 use hardener_state::{ActionResult, ActionType, AuditLogger};
+use std::collections::HashMap;
 use tempfile::NamedTempFile;
 
 #[tokio::test]
@@ -553,4 +554,154 @@ async fn test_query_empty_filter_returns_all() {
 
     // Should have all 5 entries
     assert_eq!(all_entries.len(), 5);
+}
+
+fn details() -> HashMap<String, String> {
+    let mut d = HashMap::new();
+    d.insert("operation".to_string(), "exclude".to_string());
+    d.insert("reason".to_string(), "No physical premises".to_string());
+    d.insert("review_by".to_string(), "2027-08-18".to_string());
+    d
+}
+
+#[tokio::test]
+async fn a_details_bearing_entry_round_trips_and_verifies() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    logger
+        .log_action_with_details(
+            ActionType::ScopeExclusion,
+            "eric".to_string(),
+            "iso27001:A.7.1".to_string(),
+            ActionResult::Success,
+            details(),
+        )
+        .await
+        .expect("logged");
+
+    let entries = AuditLogger::query(path_str, QueryFilter::new())
+        .await
+        .expect("query");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry_action_type, ActionType::ScopeExclusion);
+    assert_eq!(entries[0].entry_target, "iso27001:A.7.1");
+    assert_eq!(
+        entries[0].entry_details.get("reason").map(String::as_str),
+        Some("No physical premises")
+    );
+
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "a details-bearing success entry must still verify"
+    );
+}
+
+/// The regression this task exists for. Details are inside the hash, so
+/// rewriting a reason after the fact must break verification.
+#[tokio::test]
+async fn tampering_with_details_is_detected() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    logger
+        .log_action_with_details(
+            ActionType::ScopeExclusion,
+            "eric".to_string(),
+            "iso27001:A.7.1".to_string(),
+            ActionResult::Success,
+            details(),
+        )
+        .await
+        .expect("logged");
+    drop(logger);
+
+    let original = std::fs::read_to_string(&path).expect("read");
+    let tampered = original.replace("No physical premises", "Approved by management");
+    assert_ne!(original, tampered, "the replacement actually fired");
+    std::fs::write(&path, tampered).expect("write");
+
+    assert!(
+        !AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "an altered reason must fail verification"
+    );
+}
+
+/// Backwards compatibility. An entry written before details existed carries an
+/// empty map and was hashed as a five-tuple; it must still verify.
+#[tokio::test]
+async fn a_detail_free_success_entry_still_verifies() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    logger
+        .log_action(
+            ActionType::Scan,
+            "eric".to_string(),
+            "localhost".to_string(),
+            ActionResult::Success,
+        )
+        .await
+        .expect("logged");
+
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "the pre-existing five-tuple hash must not be invalidated"
+    );
+}
+
+/// Both shapes in one chain, since a real log will interleave them.
+#[tokio::test]
+async fn a_mixed_chain_verifies_end_to_end() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    logger
+        .log_action(
+            ActionType::Scan,
+            "eric".into(),
+            "localhost".into(),
+            ActionResult::Success,
+        )
+        .await
+        .expect("logged");
+    logger
+        .log_action_with_details(
+            ActionType::ScopeExclusion,
+            "eric".into(),
+            "iso27001:A.7.1".into(),
+            ActionResult::Success,
+            details(),
+        )
+        .await
+        .expect("logged");
+    logger
+        .log_failure(
+            ActionType::Apply,
+            "eric".into(),
+            "sshd".into(),
+            "denied".into(),
+        )
+        .await
+        .expect("logged");
+
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify")
+    );
 }
