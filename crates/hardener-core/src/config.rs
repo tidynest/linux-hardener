@@ -3,6 +3,8 @@
 //! This module provides the configuration structures that control plugin behaviour
 //! and policy exceptions. Configuration annotates findings; it never hides them.
 
+pub mod scope;
+
 use hardener_types::{DeclineReason, ExceptionOutcome, FindingExceptionDeclined};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -31,6 +33,8 @@ pub struct HardenerConfig {
     pub permissions: PluginConfig,
     /// Services hardening plugin configuration.
     pub services: PluginConfig,
+    /// Compliance reporting policy, including declared-not-applicable controls.
+    pub compliance: scope::ComplianceConfig,
 }
 
 /// Global configuration settings.

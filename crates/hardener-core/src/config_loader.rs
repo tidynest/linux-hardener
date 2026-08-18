@@ -8,6 +8,7 @@
 //! 4. CLI-specified config (`--config` flag)
 //! 5. Environment variables (`HARDENER_*` prefix)
 
+use crate::config::scope::ComplianceConfig;
 use crate::config::{GlobalConfig, HardenerConfig, PluginConfig};
 use hardener_common::error::{HardeningError, Result};
 use std::path::{Path, PathBuf};
@@ -247,7 +248,25 @@ impl ConfigLoader {
             mac: Self::merge_plugin(base.mac, overlay.mac)?,
             permissions: Self::merge_plugin(base.permissions, overlay.permissions)?,
             services: Self::merge_plugin(base.services, overlay.services)?,
+            compliance: Self::merge_compliance(base.compliance, overlay.compliance),
         })
+    }
+
+    /// Merge compliance configs, per control rather than per framework.
+    ///
+    /// A plain `extend` of the outer map would let a later source that excludes
+    /// one control of a framework discard every other exclusion the earlier
+    /// source declared for that same framework, silently returning those
+    /// controls to the score.
+    fn merge_compliance(base: ComplianceConfig, overlay: ComplianceConfig) -> ComplianceConfig {
+        let mut not_applicable = base.not_applicable;
+        for (framework, controls) in overlay.not_applicable {
+            not_applicable
+                .entry(framework)
+                .or_default()
+                .extend(controls);
+        }
+        ComplianceConfig { not_applicable }
     }
 
     /// Merge global configs.

@@ -189,6 +189,7 @@ fn test_config_serialization() {
         mac: marked(false, "mac", "enforcing"),
         permissions: marked(true, "permissions", "/etc/shadow"),
         services: marked(false, "services", "cups"),
+        compliance: Default::default(),
     };
 
     let toml_str = toml::to_string(&config).unwrap();
