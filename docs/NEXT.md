@@ -396,7 +396,7 @@ test proven red→green).
 | Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |
 | External security audit | Third-party review; scope in [security/external-audit-scope.md](security/external-audit-scope.md) | ⬜ Open, issue #19 |
 | Real desktop-environment polkit runs | GNOME/KDE/XFCE pkexec sessions; the tooling ships, the runs need live sessions | ⬜ Open, issue #18 |
-| Release checklist for the next tag | The 189 unreleased commits need a tagged release; the man page also has no `/usr/etc` text | ⬜ Open, issue #53 |
+| Release checklist for the next tag | The unreleased work needs a tagged release; the man page also has no `/usr/etc` text. **No count here**, per this file's own opening rule: the figure read 189 from 2026-08-02 and was 778 by 2026-08-18. Read it live with `git rev-list --count --no-merges v1.5.1..main` | ⬜ Open, issue #53 |
 | Performance optimisation | Scan speed improvements; `scan --timings` shipped | ✅ Done, issue #20 closed 2026-07-17 |
 
 ---
@@ -466,8 +466,10 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
   quoting it, this number moves most weeks
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
 - **Current Version**: 1.5.1 (code, tag and repo packaging; AUR bump follows the
-  tag). `main` is 189 commits past that tag, 178 excluding merges, and
-  unreleased
+  tag). `main` is a long way past that tag and unreleased. **No count here**,
+  per this file's own opening rule: the pair read "189 commits, 178 excluding
+  merges" from 2026-08-02 and measured 819 and 778 on 2026-08-18. Read it live
+  with `git rev-list --count --no-merges v1.5.1..main`
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).
