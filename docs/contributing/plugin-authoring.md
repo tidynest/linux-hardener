@@ -188,9 +188,16 @@ let out = ctx.executor().execute_command("sysctl", &["-n", "kernel.sysrq"]).awai
 ```
 
 The trait offers `read_file`, `read_file_optional`, `write_file`,
-`path_exists`, `file_metadata`, `read_dir`, `execute_command`, and
-`command_exists`. Because the executor is the only system boundary, the same
-plugin code runs locally (`LocalExecutor`), against remote `--ssh` targets
+`path_exists`, `file_metadata`, `read_dir`, `read_link`, `execute_command`,
+`command_exists` and `link_target_as_writer`, alongside `description`,
+`legacy_description` and `is_remote`, which describe the executor rather than
+reach the system. `read_link`, `link_target_as_writer` and `command_exists` are
+provided rather than required, and their default bodies still route through this
+executor's own `execute_command`, so local and remote cannot come to ask
+different questions: `read_link` shells out to `readlink` where a local-only
+`std::fs::read_link` would answer "not a symlink" for every path on a remote
+host it never looked at. Because the executor is the only system boundary, the
+same plugin code runs locally (`LocalExecutor`), against remote `--ssh` targets
 (`SshExecutor`), and in unit tests (`MockExecutor`) with zero changes. A
 direct `std::fs` call would silently read the local machine while scanning a
 remote host: that is the bug this rule exists to prevent.
@@ -439,8 +446,16 @@ fields `change_*`. Plugin IDs are kebab-case (`kernel-hardening`,
 ## Registration
 
 Add the plugin to `create_plugin_registry()` in
-`crates/hardener-plugins/src/lib.rs`, alongside a `pub use` for the type and
-its `coverage()` entry in `compliance_coverage()`. The registry is the single
+`crates/hardener-plugins/src/lib.rs`, alongside a `pub use` for the type and a
+row pairing its plugin id with its `coverage()` in **`coverage_table()`**, in
+the same file. That table is where the per-plugin rows live, not
+`compliance_coverage()`, which reads them: `compliance_coverage` and
+`coverage_for` both fold over the one table so they can never disagree about
+which plugin assesses which control. The table's return type is a fixed-size
+array, `[(&'static str, Vec<ComplianceMapping>); 8]`, so a ninth plugin has to
+widen the arity as well as add the row; the compiler says so, and the
+`every_registered_plugin_declares_its_coverage` test fails for a plugin
+registered without one. The registry is the single
 factory used by the CLI, the Tauri backend, and tests, so one registration
 makes the plugin visible everywhere (`hardener plugins`, scan, apply, the
 desktop plugin list). Also give the plugin a config section: a field on

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Release script for Linux Hardener
-# Usage: ./scripts/release/release.sh [patch|minor|major] [--dry-run]
+# Usage: ./scripts/release/release.sh [patch|minor|major] [--dry-run] [--no-push]
 #        ./scripts/release/release.sh --verify
+#
+# The release checklist requires --no-push: the G1-G8 gates are read AT the
+# tagged commit, and a tag that is already published cannot be gated, only
+# retracted. Run --help for the full option list.
 
 set -euo pipefail
 
@@ -139,7 +143,8 @@ fi
 # Validate bump type
 if [[ -z "$BUMP_TYPE" ]]; then
     echo -e "${RED}Error: Please specify version bump type (patch, minor, or major)${NC}"
-    echo "Usage: $0 [patch|minor|major] [--dry-run]"
+    echo "Usage: $0 [patch|minor|major] [--dry-run] [--no-push]"
+    echo "       $0 --verify"
     exit 1
 fi
 

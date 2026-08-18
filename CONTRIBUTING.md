@@ -329,7 +329,8 @@ linux-hardener/
 │   ├── hardener-cli/         # Command-line interface (binary "hardener")
 │   └── hardener-ui/          # Leptos WASM frontend
 ├── src-tauri/                # Desktop app backend (package linux-hardener-desktop)
-├── gui-tests/                # Playwright end-to-end suite (stale, see issue #48)
+├── gui-tests/                # Playwright end-to-end suite; runs only inside a
+│                             # container, via scripts/test/gui/run-gui-tests.sh
 ├── packaging/                # PKGBUILD, RPM spec, Debian, polkit policy, man page
 ├── scripts/                  # Development utilities
 ├── docs/                     # Documentation

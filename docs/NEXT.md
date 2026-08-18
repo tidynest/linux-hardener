@@ -205,10 +205,17 @@ new Settings page; every phase was final-reviewed and eyeballed clean across
 all seven themes. The GUI/CLI/backend contract was unchanged throughout. See
 "Current State" above.
 
-Still open from that arc, now **issue #48**: the E2E Playwright suite under
-`gui-tests/` is stale against the redesign (`remote.spec.js` targets a screen
-that no longer exists, there are no Hosts or Settings specs, and redesigned
-selectors broke others). It needs its own rewrite.
+**Done (issue #48, closed 2026-08-08):** the E2E Playwright suite under
+`gui-tests/` was stale against the redesign (`remote.spec.js` targeted a screen
+that no longer exists, there were no Hosts or Settings specs, and redesigned
+selectors broke others) and has been rewritten against it, covering the Hosts
+and Settings pages, the Fleet Apply acknowledgement gate and all ten compliance
+frameworks. Two guards were added with it: `run-gui-tests.sh` refuses a `dist/`
+older than the frontend source, and the runner refuses a container with no font,
+both of which had previously let a run pass against the wrong interface. Do not
+quote a test count from this file; read it with `npx playwright test --list`.
+Two cases the rewrite deliberately left uncovered were filed rather than guessed
+at, issues #135 and #136, and both have since closed.
 
 ### P0: Compliance assessment coverage (phase 2)
 
@@ -348,10 +355,12 @@ host, `listen_event` binding + pending/finished/failed list on the Fleet page),
 ~~per-host history in the GUI~~ (shipped 2026-07-16, `get_host_history` over
 the scheduler db, history table + trend arrows in the fleet row expander; GUI
 fleet scans remain in-memory, CLI batch/scheduled scans populate the history).
-One Fleet follow-up is still open, **issue #50**: the per-host compliance count
-cannot be drilled into, because no `get_fleet_host_compliance_detail` IPC
-command exists and `ControlResult` is reduced to a total before it reaches the
-frontend. Emergency
+The last Fleet follow-up, **issue #50**, closed on 2026-08-04, and it shipped by
+rejecting what it asked for: no `get_fleet_host_compliance_detail` IPC command
+was added. `FleetFrameworkPosture` gained `controls: Vec<ControlOutcome>`
+alongside the summary it already carried, so the per-host compliance count
+drills into the verdicts in the payload the frontend already receives, and the
+consumer joins them against the findings it already has. Emergency
 per-host rollback remains available via `sudo hardener --ssh <host> rollback`.
 Per-host CIS score columns plus a per-framework breakdown in the row expander
 shipped 2026-06-24. (Superseded 2026-07 by the GUI/UX redesign: the

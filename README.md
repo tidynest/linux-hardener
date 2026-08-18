@@ -482,9 +482,13 @@ apply through an oracle independent of the tool. Both are described in
 [testing.md](docs/contributing/testing.md) and
 [scripts/README.md](scripts/README.md).
 
-The browser-level end-to-end suite is stale against the redesigned interface and
-is being rewritten
-([#48](https://github.com/tidynest/linux-hardener/issues/48)).
+The browser-level end-to-end suite was rewritten against the redesigned
+interface ([#48](https://github.com/tidynest/linux-hardener/issues/48), closed
+2026-08-08). It last ran green on all six distributions on 2026-08-16, and runs
+only inside the containers, through `scripts/test/gui/run-gui-tests.sh`, which
+refuses a `dist/` older than the frontend source so that a stale bundle cannot
+pass tests written for a change. Dated readings of it are in
+[what-is-not-proven.md](docs/reference/what-is-not-proven.md).
 
 A test count says how much ran, not what it asked. What each capability's
 evidence actually asks, and the grade of that evidence, is in the

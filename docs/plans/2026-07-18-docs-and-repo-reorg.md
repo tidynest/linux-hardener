@@ -43,11 +43,11 @@ relocation landed with them: the validators live in `scripts/validate/`.
 
 | Proposal | State |
 |---|---|
-| `linux-hardener` vs `linux-system-hardener` naming (open question 2) | Open, **issue #51**. Still breaking for installed unit and action ids, so still needs its own scoped change. |
+| `linux-hardener` vs `linux-system-hardener` naming (open question 2) | Resolved, **issue #51**, closed 2026-08-06. Not taken as this plan proposed it: the repository and the package moved instead, so no installed unit id, action id or runtime path changed. See the naming update above. |
 | Move `crates/hardener-compliance/src/fonts/NotoSans-*.ttf` out of `src/` | Not done; the two font files are still under `src/fonts/`, and the OFL notice this plan asked for is still absent: a search of the tree finds no licence text for them anywhere. No issue filed. |
 | Factor the shared body out of `gui-test-inner.sh` and `tauri-gui-test-inner.sh` | Not done; both scripts still exist separately under `scripts/test/gui/`. |
-| Retire the web-UI (non-Tauri) GUI test path (open question 4) | Undecided. The Playwright suite under `gui-tests/` is stale against the redesigned GUI and its rewrite is **issue #48**, which is where the question gets settled. |
-| Runtime verification of the consolidated container script | `create-container.sh <distro>` is the documented and only path to the five containers the cross-distro suite runs against, so every suite run exercises it, but no verification run is recorded in this file. Needs sudo. |
+| Retire the web-UI (non-Tauri) GUI test path (open question 4) | Settled by **issue #48**, closed 2026-08-08, and settled the other way: the path was kept and the suite rewritten against the redesigned GUI rather than retired. |
+| Runtime verification of the consolidated container script | `create-container.sh <distro>` is the documented and only path to the containers the cross-distro suite runs against, the six in `DISTRO_ORDER` (`scripts/lib/common.sh`) plus `arch-nftables`, so every suite run exercises it, but no verification run is recorded in this file. Needs sudo. |
 | Runtime verification of the consolidated polkit script | Still needs live GNOME/KDE/XFCE sessions, **issue #18**. |
 
 Open questions 1 and 3 are answered by what shipped: `ROADMAP.md` and `NEXT.md`
