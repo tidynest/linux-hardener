@@ -662,6 +662,77 @@ async fn a_detail_free_success_entry_still_verifies() {
     );
 }
 
+/// A `Failure` through the details-bearing writer is refused, because the
+/// failure branch of `verify_integrity` hashes the legacy six-tuple ending in
+/// the `error` string and never reaches `hashable`. No details map makes the
+/// two agree, and the log is append-only, so one such entry would fail
+/// verification for the whole file permanently.
+#[tokio::test]
+async fn a_failure_result_is_refused_by_the_details_writer() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    let refused = logger
+        .log_action_with_details(
+            ActionType::ScopeExclusion,
+            "eric".to_string(),
+            "iso27001:A.7.1".to_string(),
+            ActionResult::Failure,
+            details(),
+        )
+        .await;
+
+    let error = refused.expect_err("a Failure must be rejected, not written");
+    assert!(
+        error.to_string().contains("log_failure"),
+        "the refusal must name the correct method, got: {error}"
+    );
+
+    // Nothing was written, so the chain is untouched and still verifies.
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("read"),
+        "",
+        "a refused call must not append an entry"
+    );
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify")
+    );
+}
+
+/// A success entry written by the v1.5.1 code, captured verbatim from a
+/// throwaway run at commit 9725dcb5 (the parent of the details work) and
+/// hard-coded here including its `entry_hash` bytes.
+///
+/// Reconstructing this line with the current code would prove nothing: writer
+/// and verifier would agree by construction whatever `hashable` emits. Only a
+/// fixture the pre-change binary produced can catch a change to the five-tuple
+/// success hash, which every released `audit.log` depends on.
+const V1_5_1_SUCCESS_ENTRY: &str = r#"{"entry_timestamp":"2026-08-18T18:20:01.601580572Z","entry_action_type":"Scan","entry_user":"eric","entry_target":"localhost","entry_result":"Success","entry_details":{},"entry_hash":[87,228,192,248,62,138,232,146,196,188,119,150,140,158,47,228,6,70,37,108,204,213,34,104,178,52,179,251,164,139,96,182]}"#;
+
+/// Backwards compatibility against an already-released binary, which the
+/// write-then-verify test above cannot check. Removing the `details.is_empty()`
+/// guard in `hashable` leaves that one green and turns this one red.
+#[tokio::test]
+async fn a_v1_5_1_entry_still_verifies() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    std::fs::write(&path, format!("{V1_5_1_SUCCESS_ENTRY}\n")).expect("write fixture");
+
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "a log written by v1.5.1 must still verify: the five-tuple success hash \
+         is a released format, not an internal detail"
+    );
+}
+
 /// Both shapes in one chain, since a real log will interleave them.
 #[tokio::test]
 async fn a_mixed_chain_verifies_end_to_end() {

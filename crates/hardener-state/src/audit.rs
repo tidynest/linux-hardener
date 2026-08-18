@@ -15,7 +15,7 @@
 
 use crate::HashChain;
 use chrono::{DateTime, Utc};
-use hardener_common::error::Result;
+use hardener_common::error::{HardeningError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use tokio::{
@@ -341,15 +341,41 @@ impl AuditLogger {
     /// as a five-tuple, so an unconditional sixth element would invalidate
     /// every historical log.
     ///
+    /// # Successes only, and the restriction must stay
+    ///
+    /// `result` must be [`ActionResult::Success`]; a `Failure` is rejected with
+    /// [`HardeningError::Validation`] and belongs in
+    /// [`log_failure`](Self::log_failure). This is not tidiness. The failure
+    /// branch of [`verify_integrity`](Self::verify_integrity) never reaches
+    /// [`hashable`](Self::hashable): it hashes a fixed six-tuple whose last
+    /// element is the `error` detail as a **string**, and it takes that branch
+    /// on `entry_result == Failure` alone. This writer hashes through
+    /// `hashable`, which branches on whether `details` is empty and never on
+    /// `result`, so no input exists for which the two agree. Empty details give
+    /// a five-tuple against the verifier's six; any details at all give a JSON
+    /// object in the sixth slot against the verifier's bare string, `{"error":
+    /// "..."}` included. The log is append-only, so one such entry would make
+    /// `verify_integrity` return `false` for the whole file forever.
+    ///
+    /// Relaxing this by emitting the legacy error-only six-tuple here is the
+    /// wrong repair: it would drop `reason`, `review_by`, `approved_by` and
+    /// `ticket` out of the hash, which is precisely the defect this method
+    /// exists to remove. Logging a details-bearing failure needs the verifier
+    /// taught the new shape first, with a format version to keep released logs
+    /// verifying.
+    ///
     /// # Arguments
     /// * `action_type` - Type of action being logged
     /// * `user`        - Username performing the action
     /// * `target`      - Target of the action
-    /// * `result`      - Whether the action succeeded or failed
+    /// * `result`      - Must be `ActionResult::Success`
     /// * `details`     - Structured context recorded inside the hash chain
     ///
     /// # Returns
     /// Ok(()) if logged successfully, or an error
+    ///
+    /// # Errors
+    /// [`HardeningError::Validation`] if `result` is `ActionResult::Failure`.
     pub async fn log_action_with_details(
         &self,
         action_type: ActionType,
@@ -358,6 +384,15 @@ impl AuditLogger {
         result: ActionResult,
         details: HashMap<String, String>,
     ) -> Result<()> {
+        if result == ActionResult::Failure {
+            return Err(HardeningError::Validation(
+                "a failed action cannot be logged with structured details: verify_integrity \
+                 hashes every Failure entry as the legacy six-tuple ending in the `error` string, \
+                 so such an entry could never verify. Use log_failure instead."
+                    .to_string(),
+            ));
+        }
+
         let mut chain = self.hash_chain.lock().await;
         let now = Utc::now();
 
@@ -390,6 +425,18 @@ impl AuditLogger {
     /// One function so the writer and [`verify_integrity`](Self::verify_integrity)
     /// cannot drift. They did not share one before, which is exactly how a
     /// details-bearing entry would have hashed one way and verified another.
+    ///
+    /// Successes only. `result` is here because it is an element of the hashed
+    /// tuple, not because this helper handles both outcomes: a failure hashes
+    /// the six-tuple built in [`log_failure`](Self::log_failure), which the
+    /// failure branch of `verify_integrity` mirrors without ever calling this.
+    ///
+    /// The `details.is_empty()` guard is load-bearing compatibility, not a
+    /// micro-optimisation. Deleting it changes the hash of every detail-free
+    /// success entry, so every `audit.log` written by a released binary would
+    /// report `verify_integrity == false`. The golden-fixture test
+    /// `a_v1_5_1_entry_still_verifies` holds a line emitted by the pre-change
+    /// code and goes red if the guard is removed.
     fn hashable(
         timestamp: DateTime<Utc>,
         action_type: ActionType,
