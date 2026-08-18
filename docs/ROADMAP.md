@@ -728,6 +728,18 @@ The compliance module (`hardener-compliance`) is designed for reuse:
 ### Supported Compliance Frameworks
 
 The "Controls" column is the size of each framework's control **catalogue**.
+For CIS and ISO 27001 that is the curated file's own size. For the other eight
+it is the coverage-derived catalogue, so the number is the count of distinct
+control ids `hardener_plugins::compliance_coverage()` supplies for that
+framework and moves whenever a plugin gains or loses a mapping. **Five of these
+rows carried the sizes of catalogue files that no longer exist** until
+2026-08-18: `stig.rs`, `nist.rs`, `pci.rs`, `hipaa.rs` and `gdpr.rs` were
+deleted when coverage-derived catalogues landed, and the figures written here on
+2026-06-20 outlived them. Re-read them from the tool rather than from a file:
+`hardener report --framework <id> --format json | jq '.[0].report_controls | length'`.
+The CIS row stays the curated file's 41 by the definition above; that same
+command renders **44** for CIS, because the generator folds plugin coverage into
+the curated catalogue, and the two numbers answer different questions.
 "Assessed" indicates whether plugin findings are mapped to the framework so
 controls genuinely pass/fail. All 10 frameworks are finding-mapped and use
 plugin-declared per-control coverage (Option B): an assessed control reports
@@ -736,11 +748,11 @@ plugin-declared per-control coverage (Option B): an assessed control reports
 | Framework | Controls | Assessed | Description |
 |-----------|----------|----------|-------------|
 | CIS | 41 | ✅ Yes | Center for Internet Security Benchmarks |
-| STIG | 20 | ✅ Yes | DISA Security Technical Implementation Guides |
-| NIST 800-53 | 20 | ✅ Yes | US Federal security controls (Rev 5) |
-| PCI-DSS | 22 | ✅ Yes | Payment Card Industry standards (v4.0) |
-| HIPAA | 14 | ✅ Yes | Healthcare security requirements |
-| GDPR | 12 | ✅ Yes | EU data protection (Article 32) |
+| STIG | 22 | ✅ Yes | DISA Security Technical Implementation Guides |
+| NIST 800-53 | 19 | ✅ Yes | US Federal security controls (Rev 5) |
+| PCI-DSS | 8 | ✅ Yes | Payment Card Industry standards (v4.0) |
+| HIPAA | 8 | ✅ Yes | Healthcare security requirements |
+| GDPR | 6 | ✅ Yes | EU data protection (Article 32) |
 | ISO/IEC 27001:2022 | 93 | ✅ Yes | Information security management (Annex A, 4 themes) |
 | SOC 2 | 5 | ✅ Yes | AICPA Trust Services Criteria (2017, CC-series; coverage-derived) |
 | NIST SP 800-171 | 14 | ✅ Yes | Revision 3 CUI requirements, crosswalked from 800-53 (coverage-derived) |

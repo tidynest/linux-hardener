@@ -165,8 +165,12 @@ identifiers automatically; `--profile` overrides that.
 distribution, 149 checks, recorded in
 [distribution-validation.md](docs/reference/distribution-validation.md). Ubuntu
 joined that list on 2026-08-07, when its container ran the cross-distro suite
-under `--apply --booted` and the differential suite, both passing, with counts
-identical to the other five.
+under `--apply --booted` and the differential suite, both passing. Its
+cross-distro counts are identical to the other five; its differential counts
+match the other four but not Arch, which records two fewer askable rows because
+its shadow build has no minimum-password-age field. **That is a property of
+Arch, not a shortfall of Ubuntu**, and this sentence said "identical to the
+other five" of both suites until 2026-08-18.
 
 Support is **family-based**: any release of the Debian, Red Hat, Arch or SUSE
 families maps to the same hardening behaviour, so current releases are covered
