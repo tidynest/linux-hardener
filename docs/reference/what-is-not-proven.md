@@ -730,6 +730,20 @@ is not coverage, the evidence ledger still has no desktop row, and CI still
 excludes both crates. What it does establish is that the eye-check named here is
 a thing that has actually happened rather than an intention.
 
+**The five screenshots on the README are the oldest evidence in this project
+and nothing checks their age.** They were last written on 2026-07-27
+(`3cb7d762`), and 54 commits to `crates/hardener-ui/src` and 20 to
+`styles.css` have landed since, `6a47498a`'s plugin-checkbox layout fix and the
+D5 colour change among them. **They are also not the Playwright captures**: that
+corpus photographs six subjects and none of them is Hosts, Fleet Apply,
+Scheduler or Settings, four of which the README embeds. So the 222 captures
+refreshed at `653b4ff1` say nothing about whether the front page shows the
+interface this release ships. No validator can: `validate_markdown_links.py`
+asks that the file resolves, and an image that resolves is not an image that is
+current. Whether they are stale is unmeasured, which is the honest word for it,
+and measuring it means capturing those four routes rather than reasoning about
+the commit count.
+
 ---
 
 ## What runs automatically, and what needed a person?
