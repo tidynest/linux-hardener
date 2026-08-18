@@ -1748,6 +1748,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Dashboard scored compliance differently from the compliance report, and
+  one row printed both.** `calculate_framework_score` in
+  `components/security_score.rs` graded a control - `Pass` 100, `ManualReview`
+  80, a failure 25 to 90 by worst live finding severity - while
+  `ComplianceSummary::from_controls`, which the CLI `report`, every export
+  format and the fleet columns use, is `passing / (total - not_applicable)`.
+  The graded number was therefore always greater than or equal to the report's
+  for the same scan, and could be far greater: a framework whose controls all
+  fail on `Low` findings read 75 against the report's 0. Worse,
+  `FrameworkScore` carried both, so the per-framework row rendered a graded
+  percentage beside a binary fraction and a single line could read `91%` next
+  to `30/44`, which is 68 per cent. The graded scorer and its
+  `severity_to_weight` helper are deleted; the dashboard and its hero now read
+  `summary_score_percentage`, so the percentage equals the fraction printed
+  beside it by construction and no screen can read softer than the artefact an
+  auditor keeps. **The tie was not broken on preference.** Three existing
+  decisions already answered the question the graded scorer reopened, and all
+  three agree that an unassessed control stays in the denominator with its
+  count stated beside the score: `assessment_honesty.rs` pins that an
+  unassessed framework must not read as compliant, the text report prints
+  `Manual Review: N` immediately above the score, and `report_coverage_note`
+  exists (#161) to say in the document that the checks which could not run are
+  in the score's denominator. Grading contradicted all three silently.
+  **The cost is answered by rendering rather than by arithmetic:**
+  `ManualReview` means this build has no check for that control, which is a
+  statement about coverage and not about the host, and it scores zero, so a
+  coverage-derived framework reads low. The row now carries the unassessed
+  count beside the score, as the compliance tab and the text report already
+  did, so a low number reads "unassessed" rather than "failing"; pricing that
+  uncertainty at 80 hid it. Two tests were watched failing first, at 90 against
+  50 and 95 against 75 - the two figures the module header had predicted in
+  prose without anything asserting them - and they are the first assertions
+  anywhere on `ManualReview`'s contribution to a score. **Every compliance
+  figure the desktop displays moves down**, and
+  `docs/assets/screenshots/dashboard.png` is stale as a result, recorded in
+  `what-is-not-proven.md`.
+
 - **The Scheduler named eight hardening areas by their raw registry ids.** The
   checkbox group rendered the id itself as its label, so that screen read
   `mac-hardening` and `service-minimisation` where Hardening reads "MAC System"

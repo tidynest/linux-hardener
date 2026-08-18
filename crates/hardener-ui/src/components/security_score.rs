@@ -1,132 +1,83 @@
 //! Security score calculation based on compliance reports.
 //!
-//! Computes weighted scores per framework and an overall average.
-//!
-//! # This is not the score the compliance report prints
-//!
-//! Two functions score the same `ComplianceReport` and they disagree, in one
-//! direction. [`calculate_framework_score`] below is the desktop dashboard's
-//! headline. `ComplianceSummary::from_controls` in `hardener-types` is what the
-//! CLI `report` command, the fleet posture columns and the compliance tab's own
-//! per-framework figures use, and it is simply
+//! Reads the per-framework score off each report and averages them for the
+//! hero. **There is one scoring function in this project and it is not here**:
+//! `ComplianceSummary::from_controls` in `hardener-types`, which is simply
 //! `passing / (total - not_applicable)`.
 //!
-//! Every state except `Pass` and `NotApplicable` is scored differently:
+//! # Why this module no longer scores anything itself
 //!
-//! | Control state | here | `from_controls` |
-//! |---|---|---|
-//! | `Pass` | 100 | counts as passing |
-//! | `ManualReview` | **80** | **0**, denominator only |
-//! | `Fail`, worst finding `Info` | **90** | **0** |
-//! | `Fail`, worst finding `Low` | **75** | **0** |
-//! | `Fail`, worst finding `Medium` | **50** | **0** |
-//! | `Fail`, worst finding `High` | **25** | **0** |
-//! | `Fail`, worst finding `Critical` | 0 | 0 |
-//! | `NotApplicable` | excluded | excluded |
+//! It used to hold a second, graded scorer - `Pass` 100, `ManualReview` 80, a
+//! failing control 25 to 90 by worst live finding severity. That score was
+//! always greater than or equal to the report's for the same scan and could be
+//! far greater, so the dashboard and the compliance report published two
+//! numbers for one host. Worse, `FrameworkScore` carried both and the row
+//! rendered them together, so a single line read `91%` beside `30/44`, which
+//! is 68 per cent. It contradicted itself without needing a second screen.
 //!
-//! **So this score is always greater than or equal to the report's, and can be
-//! far greater.** A framework whose controls all fail on `Low` findings reads
-//! 75 here and 0 in the report for the same scan. One `Pass` plus one
-//! `ManualReview` reads 90 here and 50 there.
+//! The tie was not broken on taste. The project had already answered the
+//! question the graded scorer reopened, in three places that all agree:
+//! `assessment_honesty.rs` pins that an unassessed framework must not read as
+//! compliant, the text report prints `Manual Review: N` immediately above the
+//! score, and `report_coverage_note` exists (#161) to say in the artefact that
+//! the checks which could not run are in the score's denominator. Unassessed
+//! stays in the denominator and the count is shown beside the number.
 //!
-//! Neither is obviously wrong: a graded score is more useful on a dashboard
-//! than a binary one, and the report's is the one an auditor wants. What is
-//! wrong is that nothing said so, and an operator reading both sees two numbers
-//! for one host with no explanation. Reconciling them is a product decision
-//! (see the maintainer-decision list in `docs/NEXT-SESSION-PROMPT.md`), not a
-//! thing to quietly change here, because either edit moves every score the
-//! application has ever shown.
+//! Grading contradicted all three silently: it priced a coverage gap at 80 and
+//! a `High` failure at 25 with no count and no caveat, so a framework where
+//! every control fails could publish 25 per cent with nothing passing.
+//!
+//! **The cost of the binary score is real and is answered by rendering, not by
+//! arithmetic.** `ManualReview` means the engine has no check for that control,
+//! which is a statement about this tool's coverage rather than about the host,
+//! and it scores zero. So the row carries [`FrameworkScore::manual_review`] and
+//! prints it: a low number reads "unassessed", not "failing". Pricing that
+//! uncertainty at 80 hid it instead.
 
 use crate::state::{AppState, unchecked_tally};
 use crate::tauri_bindings::{invoke_deep_scan, invoke_generate_report, invoke_scan};
-use crate::types::{ComplianceReport, ControlStatus, Severity};
+use crate::types::ComplianceReport;
 use crate::utils::{
     is_auth_cancelled, score_band, score_band_class, score_band_label, unchecked_honesty_line,
 };
 use leptos::prelude::*;
-use std::cmp::Ordering;
 
-/// Converts finding severity to a score weight for failed controls.
-///
-/// Higher severity findings result in lower scores:
-/// - Critical: 0 points (complete failure)
-/// - High: 25 points (major issue)
-/// - Medium: 50 points (moderate issue)
-/// - Low: 75 points (minor issue)
-/// - Info: 90 points (informational only)
-fn severity_to_weight(severity: &Severity) -> f64 {
-    match severity {
-        Severity::Critical => 0.0,
-        Severity::High => 25.0,
-        Severity::Medium => 50.0,
-        Severity::Low => 75.0,
-        Severity::Info => 90.0,
-    }
-}
-
-/// Calculates the weighted score for a single compliance framework.
-///
-/// Each control contributes to the score based on its status:
-/// - Pass: 100 points
-/// - NotApplicable: excluded from calculation
-/// - ManualReview: 80 points (slight penalty for uncertainty)
-/// - Fail: weighted by worst finding severity
-fn calculate_framework_score(report: &ComplianceReport) -> Option<f64> {
-    let applicable_controls: Vec<_> = report
-        .report_controls
-        .iter()
-        .filter(|c| c.control_status != ControlStatus::NotApplicable)
-        .collect();
-
-    if applicable_controls.is_empty() {
-        return None; // No applicable controls for this framework
-    }
-
-    let total_score: f64 = applicable_controls
-        .iter()
-        .map(|control| match control.control_status {
-            ControlStatus::Pass => 100.0,
-            ControlStatus::NotApplicable => 0.0, // Excluded above
-            ControlStatus::ManualReview => 80.0,
-            ControlStatus::Fail => {
-                // Use worst (lowest) severity weight from the live findings. A
-                // failing control can also carry an excepted finding as
-                // evidence; a documented deviation must not weigh on the score.
-                control
-                    .control_findings
-                    .iter()
-                    .filter(|f| !f.is_policy_excepted())
-                    .map(|f| severity_to_weight(&f.finding_severity))
-                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
-                    .unwrap_or(50.0) // Default to Medium if no findings
-            }
-        })
-        .sum();
-
-    Some(total_score / applicable_controls.len() as f64)
-}
-
-/// Holds the calculated score for a single framework.
+/// Holds the score for a single framework, as the report scores it.
 #[derive(Clone)]
 pub struct FrameworkScore {
     pub name: String,
     pub score: f64,
     pub passing: usize,
     pub total: usize,
+    /// Controls the engine has no check for. Not a judgement about the host,
+    /// so the row renders it beside the score rather than letting an operator
+    /// read a low number as failure.
+    pub manual_review: usize,
 }
 
 /// Calculates scores for all frameworks and returns overall average.
 /// Returns (overall_score, framework_scores) tuple.
+///
+/// A framework with no applicable controls is dropped rather than shown at
+/// 100%: [`ComplianceSummary::from_controls`] scores an empty denominator as
+/// full compliance, which is true arithmetic and a false claim on a dashboard.
 pub fn calculate_all_scores(reports: &[ComplianceReport]) -> (i32, Vec<FrameworkScore>) {
     let framework_scores: Vec<FrameworkScore> = reports
         .iter()
         .filter_map(|report| {
-            calculate_framework_score(report).map(|score| FrameworkScore {
+            let summary = &report.report_summary;
+            let total = summary
+                .summary_total_controls
+                .saturating_sub(summary.summary_not_applicable);
+            if total == 0 {
+                return None;
+            }
+            Some(FrameworkScore {
                 name: format!("{:?}", report.report_framework),
-                score,
-                passing: report.report_summary.summary_passing,
-                total: report.report_summary.summary_total_controls
-                    - report.report_summary.summary_not_applicable,
+                score: summary.summary_score_percentage,
+                passing: summary.summary_passing,
+                total,
+                manual_review: summary.summary_manual_review,
             })
         })
         .collect();
@@ -273,6 +224,14 @@ pub fn SecurityScore() -> impl IntoView {
                                     <span class="compliance-name">{fs.name}</span>
                                     <span class="compliance-score">{format!("{:.0}%", fs.score)}</span>
                                     <span class="compliance-detail">{format!("{}/{}", fs.passing, fs.total)}</span>
+                                    // Without this an unassessed control is
+                                    // indistinguishable from a failing one, and
+                                    // the score counts both against the host.
+                                    <Show when=move || fs.manual_review != 0>
+                                        <span class="compliance-manual" title="Controls this build has no check for. Counted as unmet, not as failed.">
+                                            {format!("{} unassessed", fs.manual_review)}
+                                        </span>
+                                    </Show>
                                 </li>
                             }
                         }).collect::<Vec<_>>()}
@@ -280,5 +239,84 @@ pub fn SecurityScore() -> impl IntoView {
                 </details>
             </Show>
         </section>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{ComplianceSummary, ControlResult, ControlStatus};
+    use serde_json::json;
+
+    /// Builds a report whose summary is derived from its own controls.
+    ///
+    /// The summary is computed by [`ComplianceSummary::from_controls`] rather
+    /// than written out, so the fixture cannot state a percentage its controls
+    /// disagree with - which is the whole defect these tests are about. The
+    /// report is assembled through JSON because `report_generated_at` is a
+    /// `DateTime<Utc>` and this crate has no chrono; that is also the path the
+    /// running application takes, since the UI only ever deserialises reports.
+    fn report_of(statuses: &[ControlStatus]) -> ComplianceReport {
+        let controls: Vec<ControlResult> = statuses
+            .iter()
+            .enumerate()
+            .map(|(i, status)| ControlResult {
+                control_id: format!("1.{i}"),
+                control_title: format!("Control {i}"),
+                control_section: "Fixture".to_string(),
+                control_status: status.clone(),
+                control_findings: Vec::new(),
+            })
+            .collect();
+        let summary = ComplianceSummary::from_controls(&controls);
+
+        serde_json::from_value(json!({
+            "report_framework": "CIS",
+            "report_generated_at": "2026-08-18T00:00:00Z",
+            "report_controls": serde_json::to_value(&controls).expect("controls serialise"),
+            "report_summary": serde_json::to_value(&summary).expect("summary serialises"),
+        }))
+        .expect("fixture deserialises as a report")
+    }
+
+    /// A `ManualReview` control is one the engine has no check for, so it is
+    /// unassessed rather than met. The report, the PDF and the fleet columns
+    /// all count it in the denominator and not in the numerator; the dashboard
+    /// used to price it at 80, which is why one row could read 91% beside
+    /// 30/44.
+    #[test]
+    fn manual_review_weighs_as_unmet_in_the_dashboard_score() {
+        let (_, rows) = calculate_all_scores(&[report_of(&[
+            ControlStatus::Pass,
+            ControlStatus::ManualReview,
+        ])]);
+
+        let row = rows.first().expect("one framework");
+        assert_eq!(row.score, 50.0, "one of two assessable controls passes");
+        assert_eq!((row.passing, row.total), (1, 2));
+    }
+
+    /// The row prints a percentage and a fraction side by side, so the only
+    /// defensible relationship between them is equality. `NotApplicable` is
+    /// excluded from both, which is what makes the fraction's denominator 4
+    /// rather than 5.
+    #[test]
+    fn dashboard_row_percentage_equals_the_fraction_beside_it() {
+        let (overall, rows) = calculate_all_scores(&[report_of(&[
+            ControlStatus::Pass,
+            ControlStatus::Pass,
+            ControlStatus::Pass,
+            ControlStatus::ManualReview,
+            ControlStatus::NotApplicable,
+        ])]);
+
+        let row = rows.first().expect("one framework");
+        assert_eq!((row.passing, row.total), (3, 4), "NotApplicable excluded");
+        assert_eq!(
+            row.score,
+            row.passing as f64 / row.total as f64 * 100.0,
+            "the percentage must equal the fraction printed beside it"
+        );
+        assert_eq!(overall, 75, "the hero is the mean of those same numbers");
     }
 }

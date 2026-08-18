@@ -3856,6 +3856,14 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .compliance-item.score-warning .compliance-score { color: var(--color-warning); }
 .compliance-item.score-critical .compliance-score { color: var(--color-critical); }
 .compliance-detail { color: var(--text-muted); }
+/* Reads the unassessed count as an annotation on the score, not as a third
+   metric competing with it: same validated --text-muted as the fraction, set
+   in italic so the two are told apart by shape rather than by a new colour
+   that would need sweeping across all six themes. */
+.compliance-manual {
+  color: var(--text-muted);
+  font-style: italic;
+}
 
 /* The legacy bare .score-good/.score-warning/.score-critical rules (old circular
    gauge) carry a 20px glow box-shadow. The hero card and each compliance row also

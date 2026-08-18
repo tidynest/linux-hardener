@@ -760,6 +760,17 @@ channels, and the toggle both on and off.
 - **Nothing checks any of this next time.** `validate_markdown_links.py` asks
   that the path resolves, and an image that resolves is not an image that is
   current. The same drift starts accumulating from today.
+
+**And it began the same week. `dashboard.png` is known-stale, not merely
+old.** The compliance-score reconciliation landed after the capture: the
+dashboard's per-framework row used to read a graded score beside a binary
+fraction and now reads one number twice, and it carries an unassessed count
+that did not exist when the image was taken. So the published image shows a
+figure the application can no longer produce. This is a stronger claim than the
+one made about the four unphotographed routes above, which are **unmeasured**:
+here the render demonstrably changed, and the image was not recaptured because
+a capture needs the maintainer's consent. `analysis-compliance.png` is
+unaffected, since the compliance tab already read the report's score.
 - What it does establish is the Scheduler notes from `a5ca6d03` and `3fcc75a8`,
   seen present with scheduled scanning off and absent with it on, in the real
   application against the real backend rather than through the Playwright mock.
