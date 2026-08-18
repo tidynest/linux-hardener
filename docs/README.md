@@ -1,6 +1,6 @@
 # Documentation index
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-08-18
 
 Map of everything under `docs/`. Root-level files (`README.md`,
 `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`) follow GitHub convention
