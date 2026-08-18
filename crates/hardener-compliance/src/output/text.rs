@@ -82,6 +82,31 @@ impl ReportFormatter for TextFormatter {
             }
         }
 
+        // The controls a human declared out of scope, named individually. They
+        // left the score's denominator and so raised it, and a reader cannot
+        // tell that from a number that rose because the host improved unless
+        // the artefact says which controls stopped counting. The declared
+        // reason lives in the scope configuration rather than on the report, so
+        // the listing identifies each control instead of quoting it.
+        let excluded: Vec<&crate::report::ControlResult> = report
+            .report_controls
+            .iter()
+            .filter(|control| control.control_status == ControlStatus::NotApplicable)
+            .collect();
+        if !excluded.is_empty() {
+            const EXCLUDED_HEADING: &str = "Not applicable";
+            output.push_str(&format!("\n{EXCLUDED_HEADING}\n"));
+            output.push_str(&"-".repeat(EXCLUDED_HEADING.len()));
+            output.push('\n');
+            output.push_str("  Declared out of scope, so outside the score below.\n");
+            for control in excluded {
+                output.push_str(&format!(
+                    "  {} {}\n",
+                    control.control_id, control.control_title
+                ));
+            }
+        }
+
         // Summary
         output.push_str(&format!("\n{}\n", "=".repeat(60)));
         output.push_str("Summary\n");

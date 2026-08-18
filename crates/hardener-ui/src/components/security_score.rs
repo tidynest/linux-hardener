@@ -53,6 +53,9 @@ pub struct FrameworkScore {
     /// so the row renders it beside the score rather than letting an operator
     /// read a low number as failure.
     pub manual_review: usize,
+    /// Controls a human declared not applicable. Distinct from `manual_review`
+    /// because this count *raised* the score and that one lowered it.
+    pub excluded: usize,
 }
 
 /// Calculates scores for all frameworks and returns overall average.
@@ -78,6 +81,7 @@ pub fn calculate_all_scores(reports: &[ComplianceReport]) -> (i32, Vec<Framework
                 passing: summary.summary_passing,
                 total,
                 manual_review: summary.summary_manual_review,
+                excluded: summary.summary_not_applicable,
             })
         })
         .collect();
@@ -232,6 +236,17 @@ pub fn SecurityScore() -> impl IntoView {
                                             {format!("{} unassessed", fs.manual_review)}
                                         </span>
                                     </Show>
+                                    // The opposite direction to the count above:
+                                    // an exclusion left the denominator and so
+                                    // raised this score. A number that rose
+                                    // because a human said so must not render
+                                    // identically to one that rose because the
+                                    // host improved.
+                                    <Show when=move || fs.excluded != 0>
+                                        <span class="compliance-excluded" title="Controls declared not applicable in configuration. These leave the score's denominator.">
+                                            {format!("{} excluded by policy", fs.excluded)}
+                                        </span>
+                                    </Show>
                                 </li>
                             }
                         }).collect::<Vec<_>>()}
@@ -318,5 +333,28 @@ mod tests {
             "the percentage must equal the fraction printed beside it"
         );
         assert_eq!(overall, 75, "the hero is the mean of those same numbers");
+    }
+
+    /// `unassessed` and `excluded` point in opposite directions: unassessed stays
+    /// in the denominator and pushes the score down, excluded leaves it and pushes
+    /// the score up. The row carries both counts so they cannot be read as one.
+    #[test]
+    fn the_row_carries_the_excluded_count_separately_from_the_unassessed_one() {
+        let (_, rows) = calculate_all_scores(&[report_of(&[
+            ControlStatus::Pass,
+            ControlStatus::ManualReview,
+            ControlStatus::NotApplicable,
+            ControlStatus::NotApplicable,
+        ])]);
+
+        let row = rows.first().expect("one framework");
+        assert_eq!(
+            (row.passing, row.total),
+            (1, 2),
+            "excluded controls leave the denominator"
+        );
+        assert_eq!(row.manual_review, 1);
+        assert_eq!(row.excluded, 2);
+        assert_eq!(row.score, 50.0);
     }
 }

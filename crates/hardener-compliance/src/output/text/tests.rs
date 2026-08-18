@@ -118,6 +118,26 @@ fn failing_control_does_not_render_an_excepted_finding_as_a_violation() {
     assert!(output.contains("HIGH: Password auth enabled"));
 }
 
+#[test]
+fn an_excluded_control_is_named_so_the_score_explains_its_own_denominator() {
+    // Declaring a control not applicable removes it from the denominator and
+    // so raises the score. The artefact must name what stopped counting, or a
+    // score that rose because a human said so reads exactly like one that rose
+    // because the host improved.
+    let report = report_with(ControlStatus::NotApplicable, vec![]);
+    let output = TextFormatter::new().format(&report);
+
+    assert!(
+        output.contains("\nNot applicable\n"),
+        "the excluded controls need a heading of their own, distinct from the \
+         summary's `Not Applicable: N` count, got:\n{output}"
+    );
+    assert!(
+        output.contains("1.5.1 Ensure ASLR is enabled"),
+        "each excluded control is named, got:\n{output}"
+    );
+}
+
 /// An empty STIG report under the given profile.
 fn stig_report(profile: ComplianceProfile) -> ComplianceReport {
     ComplianceReport {

@@ -3865,6 +3865,19 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-style: italic;
 }
 
+/* Reuses the muted pill the app already gives a finding a human accepted
+   (.severity_exception, section 13): this is the same claim in a different
+   place. Deliberately not the plain italic of .compliance-manual, because the
+   two counts move the score in opposite directions - unassessed stays in the
+   denominator and lowers it, excluded leaves it and raises it - and so must not
+   read as one category. */
+.compliance-excluded {
+  background-color: rgba(148, 163, 184, 0.14);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  padding: 0 0.4em;
+}
+
 /* The legacy bare .score-good/.score-warning/.score-critical rules (old circular
    gauge) carry a 20px glow box-shadow. The hero card and each compliance row also
    wear those bare band classes, so suppress the inherited glow here. Higher
