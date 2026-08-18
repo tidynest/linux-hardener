@@ -635,12 +635,14 @@ skipped, none flaky, with all six containers destroyed and recreated first.
 was a result rather than a count. Recorded in
 [distribution-validation.md](distribution-validation.md).
 
-**It reports 156 as of 2026-08-18 and that figure is a count again**, which is
-the distinction this document is for. `T-FLEET-10` and `T-SCHED-07` were written
-then and neither has been executed once: the suite runs only inside the nspawn
-containers and no run has happened since. The 154 remains the last result. **A
-declared case that has never run proves nothing at all**, and until the next
-container run these two are exactly that.
+**It reports 156 as of 2026-08-18, and for one day that figure was a count
+rather than a result**, which is the distinction this document is for.
+`T-FLEET-10` and `T-SCHED-07` were written that morning and could not be run
+where they were written, the suite executing only inside the nspawn containers.
+The run came the same day: **156 of 156 on all six at `653b4ff1`**, none failed,
+none skipped, none flaky, both new cases green on every distribution. The
+distinction is recorded rather than deleted because it recurs every time a case
+is added between runs, and a declared case that has never run proves nothing.
 
 The first of those runs is worth keeping in view here, because it is the case
 this document exists for: `contrast.spec.js` had shipped on 2026-08-13 and its
@@ -717,7 +719,7 @@ privileged command is still checked by eye.
 **That eye-check was carried out on 2026-08-16**, driving the real desktop app
 against the real backend in a headless compositor, and it is worth recording
 what it changes and what it does not. It found five interface defects the
-154-test suite could not: three of them on the Scheduler and Fleet Apply
+then 154-test suite could not: three of them on the Scheduler and Fleet Apply
 screens, which no screenshot in the corpus covers, and one of those was a
 plugin naming inconsistency that a green suite had rendered past for months. It
 also produced one **retracted** finding, where the instrument rather than the

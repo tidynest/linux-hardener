@@ -1296,11 +1296,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never rendered would pass an absence check. `T-FLEET-10` covers the per-host
   history rail, and is the assertion whose absence let the missing mock handler
   above go unnoticed through three tests that expand a row. The declared suite is
-  now **156** (`npx playwright test --list`, which needs no container) against a
-  last result of **154 of 154** on 2026-08-16. Those are different kinds of
-  number and are recorded as such everywhere they appear: the suite runs only
-  inside the nspawn containers, no run has happened since the two were written,
-  and a declared case that has never executed proves nothing.
+  now **156**, and it is a result rather than a declaration: the container run
+  the same day read **156 of 156 on all six distributions** against
+  `hardener 1.5.1 (653b4ff1)`, containers destroyed and recreated first, none
+  failed, none skipped, none flaky, with both new cases green everywhere. For
+  the hours between writing them and running them the two figures were recorded
+  separately, because a declared case that has never executed proves nothing,
+  and that distinction is kept in `distribution-validation.md` rather than
+  deleted: it recurs every time a case is added between runs.
 
 - **The Playwright Tauri mock answers `get_host_history`.** `HostPanel` fires it
   on every fleet row expand, the mock had no case for it, and
@@ -1314,8 +1317,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposed a second defect: the harness writes its reason to stdout and the
   Python side reported stderr alone, so the whole message was "could not run
   the mock" and a blank line. Both streams are printed now. No Playwright case
-  was added, so the suite total does not move; an assertion on the history rail
-  is still owed, and is recorded as such.
+  was added in that change, so it moved no total on its own; the assertion on
+  the history rail followed, and `T-FLEET-10` now fails if the handler goes
+  away.
 
 - **Every `HardeningError` variant is now asserted whole, and a fifteenth will
   not compile untested.** `error_tests.rs` had eleven near-identical tests

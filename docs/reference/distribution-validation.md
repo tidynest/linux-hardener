@@ -66,12 +66,25 @@ sudo ./scripts/test/release-readiness-root.sh
 
 | Distribution | Family | Version | Test Date | Declared | Recorded | Pass | Fail | Skip | Status |
 |--------------|--------|---------|-----------|----------|----------|------|------|------|--------|
-| Arch Linux | Arch | Rolling | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
-| Debian | Debian | 13 (Trixie) | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
-| Ubuntu | Debian | 24.04 LTS (Noble) | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
-| Fedora | Red Hat | 44 | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
-| Rocky Linux | Red Hat | 10 | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
-| openSUSE | SUSE | Leap 16.0 | 2026-08-14 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| Arch Linux | Arch | Rolling | 2026-08-18 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| Debian | Debian | 13 (Trixie) | 2026-08-18 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| Ubuntu | Debian | 24.04 LTS (Noble) | 2026-08-18 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| Fedora | Red Hat | 44 | 2026-08-18 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| Rocky Linux | Red Hat | 10 | 2026-08-18 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+| openSUSE | SUSE | Leap 16.0 | 2026-08-18 | 149 | 149 | 147 | 0 | 8 | VALIDATED |
+
+**Re-measured 2026-08-18 against `hardener 1.5.1 (653b4ff1)`**, all six
+containers destroyed and recreated first, through
+`sudo ./scripts/test/release-readiness-root.sh`. Every column is identical to
+the 2026-08-14 reading, which is the result that was wanted: nothing between the
+two commits touched a plugin, and a moved figure would have said otherwise. The
+same run recorded **differential** at arch 96 of 96 with 10 unaskable and the
+other five 98 of 98 with 8, **package** at 28 of 30 with 2 skipped on all six,
+and **polkit** with its three interactive tests skipped. The unbooted rollback
+arm exits 2 ("passed, but 2 checks were not asked") because
+`release-readiness-root.sh` runs it under `--pipe`, so `systemctl mask` and
+`systemctl start` have no service manager; the booted arm measured those two
+plus audit.
 
 The pass count rose by one and the skip count fell by one against the
 2026-08-07 reading, and no check was added or removed to do it: section 23's
@@ -1046,19 +1059,19 @@ To reproduce the full cross-distro validation from scratch:
 In addition to CLI testing, the Web UI is validated with Playwright across all
 six distributions.
 
-> **The current reading is not in this section.** It is the 2026-08-16 run
-> recorded in [Summary](#summary) above: **154 of 154 on every distribution**
-> against `hardener 1.5.1 (5b715039)`, all six containers recreated first, none
-> failed, none skipped, none flaky. Everything below is either infrastructure
-> read off the tree or a dated record kept for its failure analysis.
+> **The current reading is not in this section.** It is the 2026-08-18 run:
+> **156 of 156 on every distribution** against `hardener 1.5.1 (653b4ff1)`, all
+> six containers destroyed and recreated first, none failed, none skipped, none
+> flaky, 2.7 to 3.5 minutes each, one worker and no name filter. Everything
+> below is either infrastructure read off the tree or a dated record kept for
+> its failure analysis.
 >
-> **That run is now behind the tree by two cases and the gap is deliberate.**
-> `T-FLEET-10` and `T-SCHED-07` were added on 2026-08-18, taking the declared
-> count to 156 (`npx playwright test --list`, which needs no container). Neither
-> has ever been executed: the suite runs only inside the nspawn containers, and
-> no run has happened since they were written. **156 is a declaration and 154 is
-> a result**, and the two are not the same kind of number. The next container
-> run replaces both.
+> **The 156 was a declaration for one day and is now a result.** `T-FLEET-10`
+> and `T-SCHED-07` were written on 2026-08-18 and could not be run when they
+> were written, so every site carrying the figure said which kind of number it
+> was until this run. Both executed and both passed on all six. The distinction
+> is kept in this paragraph rather than deleted, because it is the one a reader
+> needs the next time a case is added between runs.
 >
 > This block previously claimed the last run was 2026-06-29 and that the suite
 > had not been re-run since the desktop redesign. Both were true when written
@@ -1091,7 +1104,8 @@ numbers count different tests rather than measuring growth:
 | 2026-08-11 | 134 | 6 | superseded, against `7c81c491` |
 | 2026-08-12 | 134 | 6 | superseded, against `dd85255f` after a `trunk build --release` |
 | 2026-08-15 | 152 | 6 | superseded |
-| **2026-08-16** | **154** | **6** | **current** |
+| 2026-08-16 | 154 | 6 | superseded, against `5b715039` |
+| **2026-08-18** | **156** | **6** | **current**, against `653b4ff1` |
 
 The Fedora-only row is kept because it records a rule rather than a result: it
 was deliberately never written into the table, since a six-distribution row
@@ -1149,10 +1163,9 @@ pointed somewhere other than its cause:
 
 ### Spec Inventory (11 Specs, 156 Tests)
 
-Counted off `npx playwright test --list` on 2026-08-18. **This is what the suite
-declares, not what a run executed**: the last container run was 2026-08-16 and
-executed 154, before `T-FLEET-10` and `T-SCHED-07` were written. **115 `test()`
-call sites produce 156 cases**, because three of the sites are parameterised and
+Counted off `npx playwright test --list` on 2026-08-18, which is the same count
+the container run of that date executed. **115 `test()` call sites produce 156
+cases**, because three of the sites are parameterised and
 generate their cases at collection time: `themes.spec.js:152` produces 35
 screenshots (5 states x 7 themes), `contrast.spec.js:221` produces one case per
 theme, and `hardening.spec.js:479` produces one per viewport width. Reading the
@@ -1165,11 +1178,11 @@ runner rather than grepping the sources is therefore deliberate: a count of
 | `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 and 11..13, T-APPLY-01..04, T-DIVG-01..05 | 29 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, signature verification and unread sources; what an executed apply produces; the rollback modal's divergence section. T-DIVG-03 runs once per viewport width, so this spec has 28 ids over 29 tests, and T-HIST-07..10 do not exist |
 | `analysis.spec.js` | T-FIND-01..12, T-COMP-01..08, T-EXC-01..05 | 25 | Findings grouping and detail expander, framework selection, report generation, the per-finding accept/remove exception controls |
 | `dashboard.spec.js` | T-DASH-01..10 | 10 | Score display, scan trigger, navigation, activity feed, the header subtitle's scanned state |
-| `fleet.spec.js` | T-FLEET-01..10 | 10 | Fleet scan view, per-host results, row expander, delete confirmation, the expanded host's persisted history rail. T-FLEET-10 has never been run |
+| `fleet.spec.js` | T-FLEET-01..10 | 10 | Fleet scan view, per-host results, row expander, delete confirmation, the expanded host's persisted history rail |
 | `fleet-apply.spec.js` | T-FAPPLY-01..09 | 9 | Fleet Apply mode toggle, selection, confirm modal |
 | `settings.spec.js` | T-SET-01..08 | 8 | Settings page |
 | `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries a vacuity guard, because a sweep that collects nothing would otherwise pass |
-| `scheduler.spec.js` | T-SCHED-01..07 | 7 | Scheduler and notification configuration, and the two notes that appear only while scheduled scanning is off. T-SCHED-07 has never been run |
+| `scheduler.spec.js` | T-SCHED-01..07 | 7 | Scheduler and notification configuration, and the two notes that appear only while scheduled scanning is off |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 | `remote.spec.js` | T-REMOTE-01..03 | 3 | The `/remote` redirect, the saved host list, the Add Host form |
 
