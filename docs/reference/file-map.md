@@ -80,6 +80,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/privilege.rs` | Shared privilege probe for mutating commands; asks the executor session (`id -u` / `sudo -n`) so `--ssh` targets gate correctly | `is_privileged()` |
 | `src/commands/exception.rs` | `hardener exception add`/`remove`: pins the value a live scan reports for a keyed finding, then writes or removes the exception table for it via `document`. `add` refuses a key the scan did not itself produce (`pin_from_findings`), so a crafted key over IPC can never reach the file | `AddOptions`, `RemoveOptions`, `pin_from_findings()`, `add()`, `remove()` |
 | `src/commands/exception/document.rs` | Pure TOML-text edits of one `[<section>.exceptions."<key>"]` table, `toml_edit`-based so an operator's comments, formatting and unrelated sections survive the write untouched (the reason `save_scheduler_config` at `src-tauri/src/commands.rs:1978` already gives). No file IO, no scanning, no clap: those live in `exception.rs`. A freshly created `exceptions` table is marked implicit, so it contributes no empty `[<section>.exceptions]` header of its own | `upsert_exception()`, `remove_exception()` |
+| `src/commands/scope.rs` | `hardener scope exclude`/`include`: writes one `[compliance.not_applicable.<framework>."<control>"]` table through `toml_edit`, for the same reason `exception/document.rs` gives, and files one audit entry beside it. Validation runs before the write, because an exclusion raises a score by leaving its denominator: an unparseable framework id, an empty reason and, where a curated catalogue exists to check against, an unknown control id are all refused first. The verb exists for the audit entry rather than the write, since a hand edit of `config.toml` produces the same table and no record of who raised the score | `run_exclude()`, `run_exclude_to()`, `run_include()`, `run_include_to()`, `unknown_control_refusal()`, `inert_exclusion_advisory()`, `upsert_exclusion()`, `remove_exclusion()` |
 | `src/cli/tests.rs` | Unit tests for `src/cli.rs`, 40 tests of argument parsing | Test-only; `super` resolves to `crate::cli`, so its imports carried across unchanged |
 | `src/output/tests.rs` | Unit tests for `src/output.rs`, 41 tests of the renderers | Test-only; `super` resolves to `crate::output`, so its imports carried across unchanged |
 | `src/ssh_config/tests.rs` | Unit tests for `src/ssh_config.rs` | Test-only; `super` resolves to `crate::ssh_config`, so its imports carried across unchanged |
@@ -90,11 +91,12 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/systemd/tests.rs` | Unit tests for `src/commands/systemd.rs` | Test-only; `super` resolves to `crate::commands::systemd`. The four verbs shell out to `systemctl`, so what is covered is the decision each makes about what to report |
 | `src/commands/report_wizard/tests.rs` | Unit tests for `src/commands/report_wizard.rs` | Test-only; `super` resolves to `crate::commands::report_wizard`, so its imports carried across unchanged |
 | `src/commands/history/tests.rs` | Unit tests for `src/commands/history.rs` | Test-only; `super` resolves to `crate::commands::history`, so its imports carried across unchanged |
-| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 84 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
+| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 86 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
 | `src/commands/checkpoint/tests.rs` | Unit tests for `src/commands/checkpoint.rs` | Test-only; `super` resolves to `crate::commands::checkpoint`, so its imports carried across unchanged |
 | `src/commands/state/tests.rs` | Unit tests for `src/commands/state.rs` | Test-only; `super` resolves to `crate::commands::state`, so its imports carried across unchanged |
 | `src/commands/privilege/tests.rs` | Unit tests for `src/commands/privilege.rs` | Test-only; `super` resolves to `crate::commands::privilege`, so its imports carried across unchanged |
 | `src/commands/exception/document/tests.rs` | Unit tests for `src/commands/exception/document.rs`, 9 tests | Test-only; `super` resolves to `crate::commands::exception::document`, so its imports carried across unchanged |
+| `src/commands/scope/tests.rs` | Unit tests for `src/commands/scope.rs`, 14 tests: the write preserving the rest of the file, `include` removing only the control it names, the four refusals (empty reason, unknown framework, unknown control under a curated catalogue, withdrawing a declaration that is not there), the stderr advisory a derived-catalogue framework earns while still being written and audited, and what reaches the audit log in each case, granted and refused alike, read back out of the hash chain | Test-only; `super` resolves to `crate::commands::scope`. The tests drive the `_to` variants, which exist so the audit log and the config can be pointed at a temporary directory; `run_exclude`/`run_include` differ from them only in resolving those paths |
 | `src/commands/exception/tests.rs` | Unit tests for `src/commands/exception.rs`, 11 tests: `pin_from_findings()`, `parse_expiry()` (including a malformed `--expires` refused before `add` ever scans or writes), `write_atomically()`, and `add()`/`remove()` end to end against a temporary config and a `MockExecutor` scan, re-scanning afterwards to prove the pinned value is one the plugin's own comparison then accepts (one value-comparing plugin, one presence plugin) | Test-only; `super` resolves to `crate::commands::exception`, so its imports carried across unchanged |
 
 ---
@@ -109,6 +111,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/plugin_manager.rs` | Plugin orchestration | `PluginManager` |
 | `src/registry.rs` | Plugin registration | `PluginRegistry` |
 | `src/config.rs` | Configuration structs | `HardenerConfig`, `GlobalConfig`, `PluginConfig`, `PolicyException` |
+| `src/config/scope.rs` | The `[compliance]` schema: controls declared not applicable to this system, so they leave the score's denominator rather than counting against it as `ManualReview`. Holds the review-interval table (twelve months for every framework, sourced per framework in the module header), the expiry arithmetic and the host-targeting predicate. Taking `ComplianceFramework` rather than an id string in `default_review_months` is deliberate: there is no wildcard arm, so an eleventh framework is a compile error instead of a silent default | `ScopeExclusion`, `ComplianceConfig`, `default_review_months()`, `review_deadline()`, `is_valid_on()`, `covers_host()` |
 | `src/config_loader.rs` | Config loading and merging | `ConfigLoader` |
 | `src/testing.rs` | MockPlugin builder for tests | `MockPlugin` |
 | `src/config_validation.rs` | Config directive validation at load time | `validate_config()`, per-plugin validators (kernel, SSH, firewall, PAM, permissions) |
@@ -117,6 +120,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/executor/ssh.rs` | SSH remote operations | `SshExecutor`, `SshConfig` |
 | `src/inventory.rs` | Shared host-inventory persistence: the one definition of where `~/.config/linux-hardener/hosts.toml` lives, read and written by both the CLI `batch` command and the desktop backend. The `HostsConfig` it moves is defined in `hardener-types`, not here | `default_path()`, `load()`, `save()` |
 | `src/config/tests.rs` | Unit tests for `src/config.rs` | Test-only; `super` resolves to `crate::config` |
+| `src/config/scope/tests.rs` | Unit tests for `src/config/scope.rs`, 17 tests: the review interval over `ComplianceFramework::ALL` rather than over id strings, the expiry arithmetic including the deadline day itself, the four ways a date is missing or unparseable (each of which makes the exclusion invalid rather than perpetual), the host predicate in both directions and case-insensitively, and the TOML round trip with and without the section present | Test-only; `super` resolves to `crate::config::scope` |
 | `src/config_loader/tests.rs` | Unit tests for `src/config_loader.rs` | Test-only; `super` resolves to `crate::config_loader` |
 | `src/config_validation/tests.rs` | Unit tests for `src/config_validation.rs` | Test-only; `super` resolves to `crate::config_validation` |
 | `src/context/tests.rs` | Unit tests for `src/context.rs` | Test-only; `super` resolves to `crate::context`. `SystemInfo`'s detectors and `read_os_release` are private, so `tests/context_tests.rs` cannot reach them |
@@ -949,22 +953,22 @@ tree on **2026-08-18**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 1983. The eleventh
-workspace member, `src-tauri`, carries 107 more, which is why the tree total the
-evidence ledger records is 2090 and not this table's sum.
+The table covers the ten crates under `crates/` and sums to 2046. The eleventh
+workspace member, `src-tauri`, carries 108 more, which is why the tree total the
+evidence ledger records is 2154 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 128 |
-| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 90 |
-| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 131 |
+| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 106 |
+| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 138 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 107 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary) | 286 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 306 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 859 |
-| hardener-core | `config.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 193 |
+| hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 212 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 63 |
-| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 121 |
+| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 122 |
 
 ### Executor and Mock Test Files
 

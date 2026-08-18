@@ -525,10 +525,26 @@ workspace suite skips, 27 need `SSH_TEST_HOST` and a booted fixture from
 `scripts/containers/boot-ssh-test-container.sh`. A regression in the SSH
 transport is therefore invisible to `cargo test`.
 
-**The 84 in-crate `batch` tests never open a connection.** They are target
+**The 86 in-crate `batch` tests never open a connection.** They are target
 parsing, output shaping and refusal policy over fixtures. Multi-host behaviour
 against real hosts, partial failure part-way across a fleet, and a privilege
 refusal from a host that genuinely refuses are unproven against anything live.
+
+**`run_fleet_scan`, the desktop's own fleet path, is entered by no test at
+all.** It is a `#[tauri::command]` that opens one SSH connection per host, so
+nothing can reach it without live SSH, and unlike the CLI's four fleet verbs it
+has no `#[ignore]`d live test standing ready for a booted fixture either. The
+distinction worth drawing is between the pieces and the wiring: the report
+generator it builds per host is covered, by `fleet_report_generator` in
+`src-tauri/src/commands/fleet_tests.rs`, and so is the exclusion resolution that
+generator performs. What is covered by nothing is the function body that
+assembles them: the profile map that keys inventory hosts by name and ad-hoc
+targets by their full target string, the `or_insert` that decides an inventory
+host outranks an ad-hoc target spelling its name, the `local_exclusions()` read
+that loads the operator's declared-not-applicable set, and the identity handed
+to each host's generator, which is what makes a host-targeted exclusion apply to
+the right row. Every one of those is a decision, and a mutation in any of them
+would leave the whole workspace suite green.
 
 **The remote executor's own default coverage is three tests of seventeen**, and
 those three assert configuration shape and description formatting. The other
@@ -613,6 +629,30 @@ the report wizard and the desktop, and the coverage baseline records it and
 `compare_control_ids`, the comparator that orders controls in every rendered
 report, as reached by nothing.
 
+**A scope exclusion typed into `config.toml` by hand produces no audit entry.**
+`hardener scope exclude` writes the `[compliance.not_applicable]` table and
+files a signed entry beside it saying who raised the score, when and on what
+grounds. The same table typed into the file by an editor is honoured by the
+generator identically, and nothing logs it, because no code ran. This is a
+property of the mechanism rather than a defect in it: any configuration key an
+operator can write by hand has the same shape, and a config file is not a
+tamper-evident record. The rendered report does list the controls an exclusion
+removed from the denominator, so the effect is visible in the artefact; that is
+a mitigation and it is not the log. An estate that needs the log has to reach
+the declarations through the verb, and nothing in this tool enforces that.
+
+**The advisory that an exclusion is inert goes to stderr and is not audited.**
+Only CIS and ISO 27001:2022 have a curated catalogue; for the other eight
+frameworks the catalogue is derived from live plugin coverage at report time,
+so every control in it is one the engine assesses and the generator settles it
+before reaching the arm that would honour an exclusion. `hardener scope exclude`
+still writes such a declaration and still audits it, with `W  ...` on stderr
+saying it will not take effect. That warning is printed after the audit entry is
+recorded and is not among the details the entry carries, so the log cannot later
+be read to show that an exclusion was already inert at the moment it was
+granted. An operator who redirects stderr, or who reaches the verb over IPC,
+sees nothing.
+
 ---
 
 ## Does any of this cover the desktop application?
@@ -672,11 +712,50 @@ none skipped, none flaky, both new cases green on every distribution. The
 distinction is recorded rather than deleted because it recurs every time a case
 is added between runs, and a declared case that has never run proves nothing.
 
+**It reports 157 as of 2026-08-18, and the one hundred and fifty-seventh has
+never been run.** `npx playwright test --list` reports 157 in 11 files. The new
+case is `T-DASH-11` in `gui-tests/tests/dashboard.spec.js`, asserting that the
+compliance row carries the "excluded by policy" annotation for GDPR, the one
+framework the mock fixture gives exclusions to, and does not carry it for CIS.
+It was written on the `scope-exclusion` branch and could not be run where it was
+written: the Playwright suite executes only inside the nspawn containers, which
+need root. So the paragraph above repeats itself one paragraph later, exactly as
+it predicted it would. **A declared case that has never executed proves
+nothing**, and until a container run comes back the branch has no evidence that
+the annotation renders, that it renders only where there are exclusions, or that
+the assertion would fail if it did not.
+
 The first of those runs is worth keeping in view here, because it is the case
 this document exists for: `contrast.spec.js` had shipped on 2026-08-13 and its
 rule flattener dropped every rule it was given, so it measured **0** colour
 pairings and passed its own vacuity guard's failure. A suite can be green about
 nothing, and for two days this one was.
+
+**The `.compliance-excluded` pill's contrast is measured by neither contrast
+instrument, and the cause is its alpha background rather than anything about
+the containers.** The two checks are deliberately disjoint.
+`scripts/validate/validate_contrast.py` is a static parse of `styles.css`, not a
+container run at all, and it weighs only rules declaring both a text colour and
+a background; its `resolve()` returns `None` for anything it cannot pin to one
+hex value, `rgba(...)` included, on the stated principle that silence beats a
+fabricated reading. `gui-tests/tests/contrast.spec.js` is the browser half and
+weighs only rules declaring a colour *without* a background, skipping the rest
+so that one defect cannot fail two checks with two different numbers. The pill's
+rule declares `color: var(--text-muted)` and
+`background-color: rgba(148, 163, 184, 0.14)`, so the static check picks it up
+and then discards it as unresolvable, and the browser check never looks at it.
+It falls exactly between them.
+
+**The general lesson is worth more than the one rule: an alpha background is
+invisible to both contrast checks.** The static parse cannot resolve it and the
+browser check excludes any rule that declares a background at all, so every
+future `rgba(...)` fill will land in the same gap silently. A semi-transparent
+fill has no single contrast figure anyway, since its effective colour depends on
+whatever surface it composites over, which differs per theme; the browser check
+already walks a background stack to the first opaque ancestor for the
+colour-only rules, so the capability to measure this exists and is simply not
+reached by the rule that needs it. Nothing is claimed here about whether the
+pill passes or fails. It has not been weighed.
 
 **What that suite drives is not the desktop application.** It serves the same
 wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of

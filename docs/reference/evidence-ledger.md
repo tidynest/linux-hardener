@@ -32,13 +32,13 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 2048 passed, 42 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2054 passed, 0 failed, 49 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 2112 passed, 42 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2118 passed, 0 failed, 49 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
-| Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 61 |
+| Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 62 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 25 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2090 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2090 across 299 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2154 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2154 across 304 files |
 
 Three of these rows are re-derived from the tree on every `validate_all.py` run
 by `scripts/validate/validate_test_counts.py`: the annotation count, the
@@ -51,7 +51,7 @@ The rows a build produces are not re-measured there, and are not therefore
 unchecked: they are pinned to each other by the identities this section states,
 so a figure edited alone fails even though nothing about it was measured.
 
-The gap between 2090 annotations and 2048 executions is exactly 42, and all 42
+The gap between 2154 annotations and 2112 executions is exactly 42, and all 42
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -59,14 +59,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2090, and they are meant to be: the check globs every `.rs`
+are the same number, 2154, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 2048 + 6 = 2054 and 42 + 7 = 49.
+covers. 2112 + 6 = 2118 and 42 + 7 = 49.
 
 ---
 
@@ -904,7 +904,7 @@ These are stated once here rather than repeated in every cell below.
   `cargo test --workspace $WORKSPACE_EXCLUDE`, where `WORKSPACE_EXCLUDE` is
   `--exclude linux-hardener-desktop --exclude hardener-ui`. It executes no
   `#[ignore]`d test and no shell suite, and those two exclusions make CI's set
-  strictly smaller than the 2054 recorded above, so a green CI run is a weaker
+  strictly smaller than the 2118 recorded above, so a green CI run is a weaker
   reading than that number. Every grade-3 result in this ledger was produced by
   a person starting a root session, since 2026-08-07 through
   `scripts/test/release-readiness-root.sh`, which batches every root-only suite
