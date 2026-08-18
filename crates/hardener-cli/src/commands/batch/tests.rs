@@ -26,6 +26,7 @@ use hardener_common::types::{
 };
 use hardener_compliance::Scenario;
 use hardener_core::ValidationReport;
+use hardener_core::config::scope::ComplianceConfig;
 use hardener_types::{
     ApplyResult, ComplianceSummary, ControlResult, DivergenceState, ExceptionOutcome,
     RollbackDivergence,
@@ -842,6 +843,7 @@ fn host_report_assesses_scanned_and_passes_failures_through() {
     let generator = ReportGenerator::new(
         report_config_server(),
         hardener_plugins::compliance_coverage(),
+        ComplianceConfig::default(),
     );
 
     // A failed host is carried through untouched (no generator call).
@@ -896,6 +898,7 @@ fn host_report_treats_unchecked_covered_control_as_manual_review_not_pass() {
             profile: ComplianceProfile::Generic,
         },
         vec![stig_mapping.clone()],
+        ComplianceConfig::default(),
     );
 
     // A host that scanned with zero findings but flagged the minlen check as

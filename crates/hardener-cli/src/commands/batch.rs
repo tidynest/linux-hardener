@@ -11,6 +11,7 @@ use colored::Colorize;
 use hardener_common::types::{ComplianceProfile, PluginId, Severity};
 use hardener_compliance::{ReportConfig, ReportGenerator, Scenario, resolve_profile};
 use hardener_core::HardenerConfig;
+use hardener_core::config::scope::ComplianceConfig;
 use hardener_core::plugin::{Finding, UncheckedCheck};
 use hardener_core::{
     Context, PluginMetadata, ScanResult, SshExecutor,
@@ -764,6 +765,12 @@ fn assess_outcomes(
                     profile: outcome.profile,
                 },
                 coverage.clone(),
+                // No exclusions on the fleet path. `ScopeExclusion` carries a
+                // `hosts` list precisely because an exclusion is a claim about
+                // one system, and the generator does not yet filter by host, so
+                // applying the controller's local set to every remote host
+                // would raise scores for hosts nobody made the claim about.
+                ComplianceConfig::default(),
             );
             host_report(outcome, &generator)
         })

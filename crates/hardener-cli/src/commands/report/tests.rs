@@ -16,6 +16,7 @@
 
 use super::*;
 use hardener_common::types::{ControlStatus, FindingCategory, PluginId, Severity};
+use hardener_core::config::scope::ComplianceConfig;
 use hardener_core::{MockExecutor, PolicyException};
 use hardener_types::ExceptionOutcome;
 use std::sync::Arc;
@@ -168,11 +169,15 @@ async fn a_failed_plugin_scan_cannot_pass_its_compliance_controls() {
     .await
     .unwrap();
 
-    let report = ReportGenerator::new(report_config, hardener_plugins::compliance_coverage())
-        .generate(&findings, &unchecked)
-        .into_iter()
-        .next()
-        .expect("one report");
+    let report = ReportGenerator::new(
+        report_config,
+        hardener_plugins::compliance_coverage(),
+        ComplianceConfig::default(),
+    )
+    .generate(&findings, &unchecked)
+    .into_iter()
+    .next()
+    .expect("one report");
     let control = report
         .report_controls
         .iter()
@@ -273,11 +278,15 @@ async fn report_scan_path_honours_config_exceptions() {
     )
     .await
     .unwrap();
-    let report = ReportGenerator::new(report_config.clone(), coverage.clone())
-        .generate(&findings, &unchecked)
-        .into_iter()
-        .next()
-        .expect("one report");
+    let report = ReportGenerator::new(
+        report_config.clone(),
+        coverage.clone(),
+        ComplianceConfig::default(),
+    )
+    .generate(&findings, &unchecked)
+    .into_iter()
+    .next()
+    .expect("one report");
     let control = report
         .report_controls
         .iter()
@@ -308,7 +317,7 @@ async fn report_scan_path_honours_config_exceptions() {
         run_scan_with_unchecked(true, executor, &CliOutputFormat::Json, &config)
             .await
             .unwrap();
-    let report = ReportGenerator::new(report_config, coverage)
+    let report = ReportGenerator::new(report_config, coverage, ComplianceConfig::default())
         .generate(&findings, &unchecked)
         .into_iter()
         .next()

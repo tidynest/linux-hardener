@@ -125,7 +125,14 @@ pub async fn run(
 
     // Generate reports. The coverage set is what the plugins actually assess,
     // it tells the generator which controls may report Pass/Fail vs ManualReview.
-    let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
+    // The same configuration supplies the operator's declared-not-applicable
+    // set, so a control excluded in `[compliance]` leaves the denominator here
+    // rather than counting as unassessed.
+    let generator = ReportGenerator::new(
+        config,
+        hardener_plugins::compliance_coverage(),
+        hardener_config.compliance.clone(),
+    );
     let reports = generator.generate(&findings, &unchecked);
 
     // Format output

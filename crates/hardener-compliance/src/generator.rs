@@ -9,6 +9,7 @@ use crate::profiles;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
 use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, ControlStatus};
+use hardener_core::config::scope::ComplianceConfig;
 use hardener_core::plugin::{Finding, UncheckedCheck};
 use hardener_types::ExceptionOutcome;
 use std::collections::HashSet;
@@ -20,6 +21,9 @@ pub struct ReportGenerator {
     /// caller (the plugins crate's `compliance_coverage()`). A control present
     /// here can report `Pass`/`Fail`; one absent is `ManualReview`.
     coverage: Vec<ComplianceMapping>,
+    /// The operator's declared-not-applicable set, from the controller's
+    /// `[compliance]` config section.
+    exclusions: ComplianceConfig,
 }
 
 impl ReportGenerator {
@@ -29,8 +33,21 @@ impl ReportGenerator {
     /// control any plugin can assess. Callers obtain it from
     /// `hardener_plugins::compliance_coverage()`; the compliance crate stays
     /// independent of the plugins crate by taking it as a parameter.
-    pub fn new(config: ReportConfig, coverage: Vec<ComplianceMapping>) -> Self {
-        Self { config, coverage }
+    ///
+    /// `exclusions` is the operator's declared-not-applicable set, from the
+    /// controller's `[compliance]` config section. Taken as a parameter for the
+    /// same reason `coverage` is: the compliance crate does not reach out for
+    /// its inputs.
+    pub fn new(
+        config: ReportConfig,
+        coverage: Vec<ComplianceMapping>,
+        exclusions: ComplianceConfig,
+    ) -> Self {
+        Self {
+            config,
+            coverage,
+            exclusions,
+        }
     }
 
     /// Generates compliance reports for all frameworks in the configured scenario.
@@ -123,6 +140,13 @@ impl ReportGenerator {
             }
         }
 
+        // The operator's declared-not-applicable set for this framework, and the
+        // day each exclusion's review deadline is measured against. Resolved
+        // once rather than per control.
+        let today = Utc::now().date_naive();
+        let framework_id = framework.id();
+        let excluded = self.exclusions.not_applicable.get(framework_id);
+
         // Map each control to a result. A mapped finding always fails the control,
         // even one the check could not evaluate this run: Fail still wins over
         // unchecked. With no finding, an unchecked control cannot auto-pass
@@ -138,6 +162,20 @@ impl ReportGenerator {
                     ControlStatus::ManualReview
                 } else if assessed.contains(control.compliance_control_id.as_str()) {
                     ControlStatus::Pass
+                } else if let Some(exclusion) =
+                    excluded.and_then(|m| m.get(control.compliance_control_id.as_str()))
+                    && exclusion.is_valid_on(framework_id, today)
+                {
+                    // Last arm on purpose. A live finding, an unchecked control
+                    // and an assessed control are all decided above, so this can
+                    // only ever convert a ManualReview. An exclusion is never a
+                    // way to mute a failure.
+                    //
+                    // The unchecked arm sitting above this one means a control
+                    // whose check could not run this session stays ManualReview
+                    // even when excluded. That is deliberate and conservative:
+                    // privilege is a property of the run, not of applicability.
+                    ControlStatus::NotApplicable
                 } else {
                     ControlStatus::ManualReview
                 };

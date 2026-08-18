@@ -214,7 +214,11 @@ pub async fn run(
     // identifiers looks exactly like one scored against the generic set.
     eprintln!("{}", format!("Profile: {}", config.profile).dimmed());
 
-    let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
+    let generator = ReportGenerator::new(
+        config,
+        hardener_plugins::compliance_coverage(),
+        hardener_config.compliance.clone(),
+    );
     let reports = generator.generate(&findings, &unchecked);
 
     // Step 5: Output reports

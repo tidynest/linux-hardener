@@ -54,13 +54,17 @@ fn controls_passed_on_behalf_of(
         profile: ComplianceProfile::Generic,
     };
 
-    ReportGenerator::new(config, hardener_plugins::compliance_coverage())
-        .generate(findings, unchecked)
-        .into_iter()
-        .flat_map(|report| report.report_controls)
-        .filter(|c| c.control_status == ControlStatus::Pass && covered.contains(&c.control_id))
-        .map(|c| c.control_id)
-        .collect()
+    ReportGenerator::new(
+        config,
+        hardener_plugins::compliance_coverage(),
+        ComplianceConfig::default(),
+    )
+    .generate(findings, unchecked)
+    .into_iter()
+    .flat_map(|report| report.report_controls)
+    .filter(|c| c.control_status == ControlStatus::Pass && covered.contains(&c.control_id))
+    .map(|c| c.control_id)
+    .collect()
 }
 
 /// The desktop sources its compliance report from the latest persisted

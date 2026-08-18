@@ -19,7 +19,9 @@ use crate::config::{OutputFormat, Scenario};
 use hardener_common::types::{
     ComplianceProfile, FindingCategory, FindingPolicyException, Severity,
 };
+use hardener_core::config::scope::{ComplianceConfig, ScopeExclusion};
 use hardener_types::{DeclineReason, ExceptionOutcome, FindingExceptionDeclined};
+use std::collections::HashMap;
 
 /// A finding carrying a single CIS mapping for the given control id.
 fn cis_finding(control_id: &str) -> Finding {
@@ -37,6 +39,17 @@ fn cis_finding(control_id: &str) -> Finding {
         finding_compliance: vec![mapping(ComplianceFramework::CIS, control_id)],
         finding_exception: ExceptionOutcome::NotConfigured,
         finding_exception_key: None,
+    }
+}
+
+/// A finding carrying a single mapping for the given framework, control id and
+/// severity. `cis_finding` is the fixed-framework, fixed-severity shorthand for
+/// it, so the two share one finding shape rather than two copies of it.
+fn mapped_finding(framework: ComplianceFramework, control_id: &str, severity: Severity) -> Finding {
+    Finding {
+        finding_severity: severity,
+        finding_compliance: vec![mapping(framework, control_id)],
+        ..cis_finding(control_id)
     }
 }
 
@@ -69,6 +82,172 @@ fn config_with_profile(framework: ComplianceFramework, profile: ComplianceProfil
     }
 }
 
+/// Builds the single report for one framework with an operator exclusion set
+/// applied. `config_for` supplies the report config so the scenario, formats and
+/// profile are defined once for every test in this file.
+fn report_for_with_exclusions(
+    framework: ComplianceFramework,
+    coverage: Vec<ComplianceMapping>,
+    findings: &[Finding],
+    exclusions: ComplianceConfig,
+) -> ComplianceReport {
+    ReportGenerator::new(config_for(framework), coverage, exclusions)
+        .generate(findings, &[])
+        .into_iter()
+        .next()
+        .expect("one report")
+}
+
+/// Builds a `ComplianceConfig` holding one exclusion for one control.
+fn one_exclusion(framework_id: &str, control_id: &str) -> ComplianceConfig {
+    let mut controls = HashMap::new();
+    controls.insert(
+        control_id.to_string(),
+        ScopeExclusion {
+            reason: "No physical premises".to_string(),
+            approved_by: Some("eric".to_string()),
+            approved_date: Some("2026-08-18".to_string()),
+            ticket: None,
+            review_by: Some("2999-01-01".to_string()),
+            hosts: Vec::new(),
+        },
+    );
+    let mut frameworks = HashMap::new();
+    frameworks.insert(framework_id.to_string(), controls);
+    ComplianceConfig {
+        not_applicable: frameworks,
+    }
+}
+
+#[test]
+fn an_exclusion_turns_manual_review_into_not_applicable() {
+    // CIS with an empty coverage set assesses nothing, so every control is
+    // ManualReview and any one of them is eligible for exclusion.
+    let baseline = report_for_with_exclusions(
+        ComplianceFramework::CIS,
+        vec![],
+        &[],
+        ComplianceConfig::default(),
+    );
+    let target = baseline
+        .report_controls
+        .first()
+        .expect("CIS has a curated catalogue")
+        .control_id
+        .clone();
+
+    let report = report_for_with_exclusions(
+        ComplianceFramework::CIS,
+        vec![],
+        &[],
+        one_exclusion("cis", &target),
+    );
+    let control = report
+        .report_controls
+        .iter()
+        .find(|c| c.control_id == target)
+        .expect("the control is still listed");
+
+    assert_eq!(control.control_status, ControlStatus::NotApplicable);
+    assert_eq!(
+        report.report_summary.summary_not_applicable, 1,
+        "the summary counts it, so it leaves the denominator"
+    );
+    assert_eq!(
+        report.report_summary.summary_manual_review,
+        baseline.report_summary.summary_manual_review - 1,
+        "exactly one control moved, and it moved out of ManualReview"
+    );
+}
+
+/// THE CONTROLLING RULE. An exclusion must never mute a real finding. If this
+/// test ever passes with the arm in the wrong position, the feature is a
+/// blanket override for failing controls.
+#[test]
+fn an_exclusion_cannot_silence_a_failing_control() {
+    let finding = mapped_finding(ComplianceFramework::CIS, "1.5.1", Severity::High);
+    let report = report_for_with_exclusions(
+        ComplianceFramework::CIS,
+        vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        &[finding],
+        one_exclusion("cis", "1.5.1"),
+    );
+    let control = report
+        .report_controls
+        .iter()
+        .find(|c| c.control_id == "1.5.1")
+        .expect("covered control present");
+
+    assert_eq!(
+        control.control_status,
+        ControlStatus::Fail,
+        "a live finding always wins over an exclusion"
+    );
+    assert_eq!(report.report_summary.summary_not_applicable, 0);
+}
+
+/// The second half of the controlling rule: a control the engine *can* assess
+/// is answered by the engine, not by a human's declaration.
+#[test]
+fn an_exclusion_cannot_override_an_assessed_pass() {
+    let report = report_for_with_exclusions(
+        ComplianceFramework::CIS,
+        vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        &[],
+        one_exclusion("cis", "1.5.1"),
+    );
+    let control = report
+        .report_controls
+        .iter()
+        .find(|c| c.control_id == "1.5.1")
+        .expect("covered control present");
+
+    assert_eq!(control.control_status, ControlStatus::Pass);
+    assert_eq!(report.report_summary.summary_not_applicable, 0);
+}
+
+#[test]
+fn an_expired_exclusion_falls_back_to_manual_review_not_to_pass() {
+    let mut cfg = one_exclusion("cis", "1.5.1");
+    cfg.not_applicable
+        .get_mut("cis")
+        .expect("framework present")
+        .get_mut("1.5.1")
+        .expect("control present")
+        .review_by = Some("2020-01-01".to_string());
+
+    let report = report_for_with_exclusions(ComplianceFramework::CIS, vec![], &[], cfg);
+    let control = report
+        .report_controls
+        .iter()
+        .find(|c| c.control_id == "1.5.1")
+        .expect("control present");
+
+    assert_eq!(control.control_status, ControlStatus::ManualReview);
+}
+
+/// An unknown framework id in the config is ignored rather than fatal, and an
+/// exclusion for a control not in the catalogue changes nothing.
+#[test]
+fn an_exclusion_naming_nothing_real_is_inert() {
+    let baseline = report_for_with_exclusions(
+        ComplianceFramework::CIS,
+        vec![],
+        &[],
+        ComplianceConfig::default(),
+    );
+    let report = report_for_with_exclusions(
+        ComplianceFramework::CIS,
+        vec![],
+        &[],
+        one_exclusion("not-a-framework", "9.9.9"),
+    );
+    assert_eq!(
+        report.report_summary.summary_not_applicable,
+        baseline.report_summary.summary_not_applicable
+    );
+}
+
 #[test]
 fn a_declined_exception_still_fails_its_control() {
     let finding = Finding {
@@ -96,7 +275,11 @@ fn a_declined_exception_still_fails_its_control() {
 fn assessed_control_passes_on_clean_system() {
     // CIS 1.5.1 is in coverage; with no finding it must report Pass (Option B).
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let report = generator.generate(&[], &[]).pop().unwrap();
 
     let result = report
@@ -114,7 +297,11 @@ fn unchecked_control_reports_manual_review_not_pass() {
     // The absence of a finding proves nothing here, so it must not
     // auto-pass.
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let unchecked = vec![UncheckedCheck {
         unchecked_check_id: "pam-minlen".to_string(),
         unchecked_title: "PAM setting: minlen".to_string(),
@@ -139,7 +326,11 @@ fn finding_beats_unchecked_for_the_same_control() {
     // check (e.g. one of two covering checks ran and failed). The proven
     // failure outranks the uncertainty: Fail wins over ManualReview.
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let unchecked = vec![UncheckedCheck {
         unchecked_check_id: "pam-minlen".to_string(),
         unchecked_title: "PAM setting: minlen".to_string(),
@@ -164,7 +355,11 @@ fn finding_beats_unchecked_for_the_same_control() {
 #[test]
 fn mapped_finding_fails_its_control() {
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let report = generator
         .generate(&[cis_finding("1.5.1")], &[])
         .pop()
@@ -185,7 +380,11 @@ fn excepted_finding_does_not_fail_control() {
     // the value matches a valid config exception) must not drive its
     // control to Fail: the annotation is honoured, not merely recorded.
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let mut excepted = cis_finding("1.5.1");
     excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
     let report = generator.generate(&[excepted], &[]).pop().unwrap();
@@ -212,7 +411,11 @@ fn live_finding_still_fails_a_control_that_also_has_an_excepted_one() {
     // violation. The exception covers only its own finding, so the control
     // still fails, and both findings are carried as evidence.
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let mut excepted = cis_finding("1.5.1");
     excepted.finding_id = "test_excepted".to_string();
     excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
@@ -238,7 +441,11 @@ fn safe_failure_net_fails_a_mixed_uncatalogued_control() {
     let mut excepted = cis_finding("ZZ-UNCATALOGUED-9999");
     excepted.finding_id = "test_excepted".to_string();
     excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        vec![],
+        ComplianceConfig::default(),
+    );
     let report = generator
         .generate(&[excepted, cis_finding("ZZ-UNCATALOGUED-9999")], &[])
         .pop()
@@ -263,7 +470,11 @@ fn excepted_finding_on_uncatalogued_control_is_not_emitted() {
     // rather than manufacture a Fail row with an empty findings list.
     let mut excepted = cis_finding("ZZ-UNCATALOGUED-9999");
     excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        vec![],
+        ComplianceConfig::default(),
+    );
     let report = generator.generate(&[excepted], &[]).pop().unwrap();
 
     assert!(
@@ -277,7 +488,11 @@ fn excepted_finding_on_uncatalogued_control_is_not_emitted() {
 #[test]
 fn uncovered_catalogue_control_is_manual_review() {
     // A curated CIS control with no coverage entry cannot be auto-passed.
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        vec![],
+        ComplianceConfig::default(),
+    );
     let report = generator.generate(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_summary.summary_passing, 0);
@@ -290,7 +505,11 @@ fn derived_framework_lists_only_assessed_controls() {
     // STIG has no curated catalogue: its controls are derived from coverage,
     // so a clean system reports every covered control as Pass, none manual.
     let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::STIG), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::STIG),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let report = generator.generate(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_summary.summary_total_controls, 1);
@@ -307,7 +526,11 @@ fn soc2_clean_coverage_renders_pass_controls() {
         mapping(ComplianceFramework::SOC2, "CC6.1"),
         mapping(ComplianceFramework::SOC2, "CC7.2"),
     ];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::SOC2), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::SOC2),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let report = generator.generate(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_framework, ComplianceFramework::SOC2);
@@ -325,7 +548,11 @@ fn nist_800_171_clean_coverage_renders_pass_controls() {
         mapping(ComplianceFramework::NIST800171, "3.4.2"),
         mapping(ComplianceFramework::NIST800171, "3.13.1"),
     ];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::NIST800171), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::NIST800171),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let report = generator.generate(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_framework, ComplianceFramework::NIST800171);
@@ -343,7 +570,11 @@ fn fedramp_clean_coverage_renders_pass_controls() {
         mapping(ComplianceFramework::FedRAMP, "SC-7"),
         mapping(ComplianceFramework::FedRAMP, "AC-6(1)"),
     ];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::FedRAMP), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::FedRAMP),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let report = generator.generate(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_framework, ComplianceFramework::FedRAMP);
@@ -360,6 +591,7 @@ fn rhel10_finding_reports_translated_stig_id() {
     let generator = ReportGenerator::new(
         config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
         coverage,
+        ComplianceConfig::default(),
     );
     let report = generator
         .generate(&[stig_finding("RHEL-08-010430")], &[])
@@ -400,6 +632,7 @@ fn rhel10_clean_coverage_passes_translated_id() {
     let generator = ReportGenerator::new(
         config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
         coverage,
+        ComplianceConfig::default(),
     );
     let report = generator.generate(&[], &[]).pop().unwrap();
 
@@ -421,6 +654,7 @@ fn rhel10_drops_unsourced_stig_id_without_tripping_safe_net() {
     let generator = ReportGenerator::new(
         config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
         coverage,
+        ComplianceConfig::default(),
     );
     let report = generator
         .generate(&[stig_finding("RHEL-08-999999")], &[])
@@ -442,7 +676,11 @@ fn generic_profile_reports_canonical_ids_unchanged() {
     // the covered control fails on its finding and the unknown id still
     // surfaces through the safe-failure net.
     let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::STIG), coverage);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::STIG),
+        coverage,
+        ComplianceConfig::default(),
+    );
     let mut finding = stig_finding("RHEL-08-010430");
     finding
         .finding_compliance
@@ -470,7 +708,11 @@ fn noncatalogue_finding_still_surfaces_as_failure() {
     finding
         .finding_compliance
         .push(mapping(ComplianceFramework::STIG, "OL08-00-999999"));
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::STIG), vec![]);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::STIG),
+        vec![],
+        ComplianceConfig::default(),
+    );
     let report = generator.generate(&[finding], &[]).pop().unwrap();
 
     assert!(
@@ -497,7 +739,11 @@ fn noncatalogue_finding_still_surfaces_as_failure() {
 /// to offer sudo based on each entry's own blocker rather than assuming root.
 #[test]
 fn a_partial_scan_says_so_in_the_report() {
-    let generator = ReportGenerator::new(config_for(ComplianceFramework::CIS), vec![]);
+    let generator = ReportGenerator::new(
+        config_for(ComplianceFramework::CIS),
+        vec![],
+        ComplianceConfig::default(),
+    );
 
     let unchecked = vec![
         UncheckedCheck {

@@ -19,6 +19,7 @@ use hardener_common::types::{
 };
 use hardener_compliance::config::OutputFormat;
 use hardener_compliance::{ComplianceReport, ReportConfig, ReportGenerator, Scenario};
+use hardener_core::config::scope::ComplianceConfig;
 use hardener_core::plugin::Finding;
 use hardener_types::ExceptionOutcome;
 
@@ -67,6 +68,7 @@ fn report_for(
             profile: ComplianceProfile::default(),
         },
         coverage,
+        ComplianceConfig::default(),
     )
     .generate(findings, &[])
     .into_iter()

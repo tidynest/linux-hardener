@@ -6,6 +6,7 @@ use hardener_compliance::{
     },
     resolve_profile,
 };
+use hardener_core::config::scope::ComplianceConfig;
 use hardener_core::{
     ApplyResult, ConfigLoader, Context, Finding, PluginConfig, PluginMetadata, ScanResult,
     UncheckedCheck, ValidationReport,
@@ -1326,6 +1327,16 @@ fn local_profile() -> ComplianceProfile {
         .unwrap_or_default()
 }
 
+/// Reads the operator's declared-not-applicable set for the local system.
+///
+/// Same loader and same fallback as the local scan path: the desktop has no
+/// `--config` of its own, so system and user config apply, and an unreadable
+/// config leaves the set empty rather than failing a report. An empty set only
+/// ever costs score, never fabricates one.
+fn local_exclusions() -> ComplianceConfig {
+    ConfigLoader::new().load().unwrap_or_default().compliance
+}
+
 /// Generates compliance reports for the specified frameworks.
 ///
 /// Takes a list of framework names and returns compliance reports built
@@ -1344,7 +1355,11 @@ pub async fn generate_compliance_report(
         profile: local_profile(),
     };
 
-    let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
+    let generator = ReportGenerator::new(
+        config,
+        hardener_plugins::compliance_coverage(),
+        local_exclusions(),
+    );
     Ok(generator.generate(&all_findings, &unchecked))
 }
 
@@ -1379,7 +1394,11 @@ pub async fn export_compliance_report(
         profile: local_profile(),
     };
 
-    let generator = ReportGenerator::new(config, hardener_plugins::compliance_coverage());
+    let generator = ReportGenerator::new(
+        config,
+        hardener_plugins::compliance_coverage(),
+        local_exclusions(),
+    );
     let reports = generator.generate(&all_findings, &unchecked);
 
     // Format reports
@@ -1831,7 +1850,12 @@ fn fleet_report_generator(
         output_dir: None,
         profile,
     };
-    ReportGenerator::new(config, coverage)
+    // No exclusions on the fleet path. `ScopeExclusion` carries a `hosts` list
+    // precisely because an exclusion is a claim about one system, and the
+    // generator does not yet filter by host, so applying this controller's
+    // local set to every remote host would raise scores for hosts nobody made
+    // the claim about.
+    ReportGenerator::new(config, coverage, ComplianceConfig::default())
 }
 
 /// Derives slim per-framework posture for one host's findings and the checks
