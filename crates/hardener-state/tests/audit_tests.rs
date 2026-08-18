@@ -776,3 +776,40 @@ async fn a_mixed_chain_verifies_end_to_end() {
             .expect("verify")
     );
 }
+
+/// `log_action` carried the same defect as the details writer and predated it:
+/// the hash covers the caller's `result`, while `AuditEntry::new` hard-codes
+/// `entry_result: Success`. A `Failure` therefore stored one result and hashed
+/// another, and the entry could never verify. It was unreachable, because every
+/// failure path uses `log_failure`, so nothing caught it for the life of the
+/// module.
+#[tokio::test]
+async fn a_failure_result_is_refused_by_log_action() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    let refused = logger
+        .log_action(
+            ActionType::Scan,
+            "eric".to_string(),
+            "localhost".to_string(),
+            ActionResult::Failure,
+        )
+        .await;
+
+    let error = refused.expect_err("a Failure must be rejected, not written");
+    assert!(
+        error.to_string().contains("log_failure"),
+        "the refusal must name the correct method, got: {error}"
+    );
+
+    // Nothing was written, so the chain is untouched and still verifies.
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "a refused write must leave no entry behind"
+    );
+}

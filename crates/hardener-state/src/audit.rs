@@ -298,6 +298,23 @@ impl AuditLogger {
         target: String,
         result: ActionResult,
     ) -> Result<()> {
+        // The same trap the details-bearing writer refuses, and it predates
+        // both: the hash below covers the caller's `result`, while
+        // `AuditEntry::new` hard-codes `entry_result: Success`. A `Failure`
+        // passed here therefore stores one result and hashes another, and
+        // `verify_integrity` recomputes from the stored one, so the entry could
+        // never verify and the append-only log would read as tampered from that
+        // point on. Unreachable when this was written, because every failure
+        // path uses `log_failure`, which is why nothing caught it.
+        if result == ActionResult::Failure {
+            return Err(HardeningError::Validation(
+                "a failed action cannot be logged through log_action: the entry would record \
+                 Success while its hash covered Failure, so it could never verify. Use \
+                 log_failure instead."
+                    .to_string(),
+            ));
+        }
+
         // Lock the hash chain
         let mut chain = self.hash_chain.lock().await;
 
