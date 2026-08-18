@@ -761,16 +761,25 @@ channels, and the toggle both on and off.
   that the path resolves, and an image that resolves is not an image that is
   current. The same drift starts accumulating from today.
 
-**And it began the same week. `dashboard.png` is known-stale, not merely
-old.** The compliance-score reconciliation landed after the capture: the
-dashboard's per-framework row used to read a graded score beside a binary
-fraction and now reads one number twice, and it carries an unassessed count
-that did not exist when the image was taken. So the published image shows a
-figure the application can no longer produce. This is a stronger claim than the
-one made about the four unphotographed routes above, which are **unmeasured**:
-here the render demonstrably changed, and the image was not recaptured because
-a capture needs the maintainer's consent. `analysis-compliance.png` is
-unaffected, since the compliance tab already read the report's score.
+**And it began the same week, and was closed the same day.** The
+compliance-score reconciliation landed after the 2026-08-18 capture and changed
+what that screen renders: the per-framework row used to print a graded score
+beside a binary fraction and now prints one number twice, with an unassessed
+count that did not exist when the image was taken. `dashboard.png` was
+**recaptured at `b263ae10`** in the same headless sandbox and against the same
+scratch `XDG_CONFIG_HOME`, so it is current rather than known-stale. The other
+twenty-two are untouched by that change, and `analysis-compliance.png` in
+particular, because the compliance tab already read the report's score.
+
+**The recapture is also the only end-to-end evidence the fix has.** No
+Playwright case asserts the dashboard's per-framework row, so the new markup is
+covered by nothing that executes; what the image shows is ten rows whose
+percentage equals the fraction beside it, driven by the real backend rather
+than the mock. The starkest pair is worth keeping in words, because the image
+is the only place it is recorded: SOC 2 read **63 per cent beside 0/5** before
+and reads **0 per cent** after, so the old dashboard published a passing-looking
+figure for a framework where nothing passed. ISO 27001 read 80 against 4/93 and
+now reads 4 with **86 unassessed** stated beside it.
 - What it does establish is the Scheduler notes from `a5ca6d03` and `3fcc75a8`,
   seen present with scheduled scanning off and absent with it on, in the real
   application against the real backend rather than through the Playwright mock.

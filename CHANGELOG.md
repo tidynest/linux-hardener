@@ -1781,9 +1781,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   50 and 95 against 75 - the two figures the module header had predicted in
   prose without anything asserting them - and they are the first assertions
   anywhere on `ManualReview`'s contribution to a score. **Every compliance
-  figure the desktop displays moves down**, and
-  `docs/assets/screenshots/dashboard.png` is stale as a result, recorded in
-  `what-is-not-proven.md`.
+  figure the desktop displays moves down**, so
+  `docs/assets/screenshots/dashboard.png` was recaptured in the headless
+  sandbox against the same scratch `XDG_CONFIG_HOME` the rest of the corpus
+  uses. That image is the fix's only end-to-end evidence, since no Playwright
+  case asserts this row: the hero moves from `81/100 Good` to `45/100 Needs
+  attention` on the same scan, and SOC 2 moves from **63 per cent beside 0/5**
+  to 0 per cent, which is the case the graded scorer was always going to get
+  wrong - a passing-looking figure for a framework where nothing passed. ISO
+  27001 moves from 80 against 4/93 to 4 with `86 unassessed` printed beside it,
+  which is what the new count is for.
 
 - **The Scheduler named eight hardening areas by their raw registry ids.** The
   checkbox group rendered the id itself as its label, so that screen read
