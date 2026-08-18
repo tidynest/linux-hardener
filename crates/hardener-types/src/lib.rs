@@ -1280,10 +1280,17 @@ impl ComplianceSummary {
             .count();
 
         let applicable = total.saturating_sub(not_applicable);
-        let score = if applicable > 0 {
-            (passing as f64 / applicable as f64) * 100.0
-        } else {
-            100.0
+        let score = match (applicable, total) {
+            // Something was assessed: the ordinary case.
+            (applicable, _) if applicable > 0 => (passing as f64 / applicable as f64) * 100.0,
+            // Controls exist but every one of them was declared not applicable,
+            // which an operator can do from configuration. Nothing was assessed,
+            // and an empty denominator reads equally well as full compliance or
+            // as none; between those two the one that overstates compliance is
+            // the forbidden one, so a wholesale exclusion scores zero.
+            (_, total) if total > 0 => 0.0,
+            // A genuinely empty report: no controls at all, nothing to overstate.
+            _ => 100.0,
         };
 
         Self {

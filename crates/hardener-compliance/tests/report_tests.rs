@@ -115,7 +115,16 @@ fn test_summary_from_controls_all_na() {
 
     assert_eq!(summary.summary_total_controls, 2);
     assert_eq!(summary.summary_not_applicable, 2);
-    assert!((summary.summary_score_percentage - 100.0).abs() < 0.01);
+    // Was 100.0, and that assertion was the defect writing itself down. A
+    // control is only NotApplicable because an operator declared it so, and a
+    // framework whose every control was excluded has been assessed on nothing.
+    // Publishing full compliance for it is the one claim this tool must never
+    // make. See `assessment_honesty.rs` for the same property from the other
+    // side.
+    assert!(
+        (summary.summary_score_percentage - 0.0).abs() < 0.01,
+        "every control excluded means nothing was assessed"
+    );
 }
 
 #[test]

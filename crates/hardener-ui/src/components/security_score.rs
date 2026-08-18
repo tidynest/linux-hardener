@@ -61,9 +61,14 @@ pub struct FrameworkScore {
 /// Calculates scores for all frameworks and returns overall average.
 /// Returns (overall_score, framework_scores) tuple.
 ///
-/// A framework with no applicable controls is dropped rather than shown at
-/// 100%: [`ComplianceSummary::from_controls`] scores an empty denominator as
-/// full compliance, which is true arithmetic and a false claim on a dashboard.
+/// A framework with no applicable controls is dropped rather than rendered.
+/// `ComplianceSummary::from_controls` used to score an empty denominator as
+/// full compliance and now scores it 0, because an operator can reach that
+/// state by excluding every control and a report claiming 100% with nothing
+/// assessed is the one reading this project forbids. Neither number belongs on
+/// a row: 100 overstates, and 0 reads as a failing framework when the truth is
+/// that none of it was measured. So the row is dropped and the count of
+/// excluded controls carries the explanation instead.
 pub fn calculate_all_scores(reports: &[ComplianceReport]) -> (i32, Vec<FrameworkScore>) {
     let framework_scores: Vec<FrameworkScore> = reports
         .iter()
