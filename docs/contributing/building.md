@@ -15,8 +15,13 @@ value.
 there, and this page said in as many words that nothing built the tree on 1.85
 and that "code that quietly starts requiring a newer release would compile here,
 compile in CI, and fail only for someone on 1.85". That is what had happened. The
-workspace uses let-chains (`if cond && let Some(x) = opt`) in 31 places across 8
-crates, and let-chains stabilised in **1.88**: 1.87 rejects them with
+workspace uses let-chains (`if cond && let Some(x) = opt`) throughout, in 8 of
+its 11 members: 31 occurrences of `&& let` when this was measured on 2026-08-05
+and 42 on 2026-08-18, so re-read it with
+`git grep -h '&& let ' -- 'crates/**/*.rs' 'src-tauri/**/*.rs' | wc -l` rather
+than quoting either figure; most of those lines are `rustfmt`'s wrapped
+continuation of a chain rather than a chain apiece. Let-chains stabilised in
+**1.88**: 1.87 rejects them with
 `error[E0658]: 'let' expressions in this position are unstable`, and 1.88 accepts
 them. `cargo +1.88 check --workspace --all-targets` then exits 0 over the whole
 tree, desktop and WASM crates included, so 1.88 is the floor exactly and not just

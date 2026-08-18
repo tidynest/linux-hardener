@@ -286,7 +286,12 @@ the top of the sort:
   no test at all, and `trends` and `show` are whole subcommands. The cheapest
   entry on this list to improve.
 - `src-tauri/src/commands.rs` at 26.60 per cent, 1115 missed lines, the single
-  largest uncovered file in the workspace. Thirty `#[tauri::command]` bodies.
+  largest uncovered file in the workspace. 32 `#[tauri::command]` bodies, which
+  is what `COMMANDS` in `src-tauri/build.rs` and the `generate_handler!` block
+  in `src-tauri/src/main.rs` both hold. This bullet read "Thirty" until
+  2026-08-18, which is the correction the table row below already carried from
+  2026-08-16: a summary that restates a table is a second place for the same
+  fact to be wrong, exactly as "What the next phases inherit" says.
   Its neighbour `src-tauri/src/validation.rs` reaches 91.39 per cent, so the
   split is clean: the pure validation layer is tested, the command bodies that
   need a Tauri runtime and `pkexec` are not. The most expensive entry to close
