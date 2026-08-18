@@ -246,7 +246,9 @@ async fn add_then_remove_pins_the_scanned_value_for_a_value_comparing_plugin() {
 /// or executing anything else once `auditd` is confirmed absent. The rescan
 /// below is what actually reaches
 /// [`hardener_plugins::audit::exception_outcome_for_presence`] (called from
-/// `crates/hardener-plugins/src/audit/mod.rs:916`): without it, this test
+/// `crates/hardener-plugins/src/audit/mod.rs:1119`, with
+/// `AUDITD_PRESENT_EXCEPTION`, which is the `"auditd-present"` key this test
+/// passes): without it, this test
 /// asserted nothing the value-comparing test above did not already cover.
 #[tokio::test]
 async fn add_then_remove_pins_the_scanned_value_for_a_presence_plugin() {
