@@ -2,14 +2,31 @@
 
 Commands for validating and auto-updating project documentation.
 
-`scripts/validate/` holds twenty-three Python 3 scripts: the master runner
-`validate_all.py`, the auto-updater `update_all_docs.py`, the twenty
-validators `validate_all.py` runs, and `validate_naming.py`, which is
-standalone and is what a hand-installed pre-commit hook runs, if there is one.
-The one check that is not Python lives elsewhere: version consistency is
-`scripts/release/release.sh --verify`, which `validate_all.py` shells out to,
-and it is why the run reports twenty-one checks against twenty Python
-validators.
+`scripts/validate/` holds the master runner `validate_all.py`, the auto-updater
+`update_all_docs.py`, the validators `validate_all.py` runs, and
+`validate_naming.py`, which is standalone and is what a hand-installed
+pre-commit hook runs, if there is one. The one check that is not Python lives
+elsewhere: version consistency is `scripts/release/release.sh --verify`, which
+`validate_all.py` shells out to, and it is why the run reports one more check
+than there are Python validators.
+
+**No count is written here on purpose.** The figures read "twenty-three Python
+scripts, twenty validators, twenty-one checks" from 2026-08-08 until 2026-08-18,
+and by then they were 27, 24 and 25. All four numbers were exactly four low and
+internally consistent with each other, so the paragraph reconciled with itself
+while disagreeing with the directory. Read them off the tree:
+
+```bash
+ls scripts/validate/*.py | wc -l                       # every script here
+./scripts/validate/validate_all.py | tail -1           # checks the run reports
+```
+
+The count that outgrew this paragraph is the same event
+`validate_test_counts.py` was written for: two validators landing on 2026-08-12
+made the evidence ledger's own validator row false the moment they landed. That
+check re-derives the number for the ledger and **cannot see this file**, because
+its `CROSS_DOCUMENT_SITES` list holds `README.md` and `scripts/README.md` and
+nothing else.
 
 ---
 
@@ -611,6 +628,99 @@ Parses the CLI command definitions in `crates/hardener-cli/src/cli.rs` and cross
 ```
 
 Checks that every framework defined in the `ComplianceFramework` enum (`crates/hardener-types/src/lib.rs`) appears in each documented framework table (`docs/architecture/architecture.md` and `docs/ROADMAP.md`), and that no table lists a framework the code does not define. It validates the framework list rather than per-control counts, because post-rework catalogues are plugin-declared and aggregated at runtime (static per-control counts are no longer meaningful here). Grouped with the slower checks.
+
+### Ignore rules
+
+```bash
+python3 scripts/validate/validate_gitignore.py
+```
+
+Checks that every path a document says is ignored still is, and that no file is
+tracked and ignored at once without a registered reason.
+
+Some of those claims are instructions rather than description. `docs/superpowers/`
+and `.rust-sec-ci.toml` being ignored is the stated reason `git add -A` is safe
+here, so a reader following that after a rule changed would put specifications
+and a CI configuration into a release commit. The reverse state is quieter and
+one file was already in it: git honours the index, so the rule does nothing while
+every reader of `.gitignore` is told otherwise. Whether a rule is still *needed*
+is not checked, because a stale rule matching nothing is harmless and nagging
+about one gets a check turned off.
+
+### Documented exception keys
+
+```bash
+python3 scripts/validate/validate_documented_exception_keys.py
+```
+
+Checks that every exception key `docs/reference/configuration.md` publishes
+exists as a string literal in the plugins.
+
+A key matching nothing is silence rather than an error: the exception never
+fires and the host is hardened against a deviation its operator documented and
+approved. The in-code tests pin the keys against themselves, so renaming a
+constant and its test together leaves the reference promising a key that is
+gone. It checks documentation against source only, so a key that exists and is
+documented nowhere is not covered.
+
+### Version locations
+
+```bash
+python3 scripts/validate/validate_version_locations.py
+```
+
+Checks that every file stating the **current** version agrees with `Cargo.toml`,
+and fails any tracked file carrying a current-version marker that is not
+registered.
+
+`release.sh --verify` reads four such files; this reads thirteen. Historical
+mentions, changelog headings and older debian stanzas are silent by design,
+since they are supposed to keep saying what they say after a bump. It overlaps
+Doc sync targets above and does not replace it: that check asks whether the
+updater's target list is honest, this one asks whether the versions themselves
+agree.
+
+### Colour contrast
+
+```bash
+python3 scripts/validate/validate_contrast.py
+```
+
+Checks that every foreground and background pair `crates/hardener-ui/styles.css`
+declares **together in one rule** clears WCAG AA, across all seven themes.
+
+Deliberately not every token against every surface: that pairing was tried,
+reported five themes failing on combinations that may never render, and
+contradicted the screenshots. The ceiling follows directly from the scope. A
+pair the stylesheet never states in one rule is unchecked, and text whose
+background comes from an ancestor is not reached by a static parse at all, which
+is how a High Contrast `.btn-danger` sat at 1.9:1 through eight reviewers. See
+[theming.md](../design/theming.md) for what a new theme owes it.
+
+### Test counts
+
+```bash
+python3 scripts/validate/validate_test_counts.py
+```
+
+Checks the test-count figures in `docs/reference/evidence-ledger.md` against the
+tree, without running cargo.
+
+Counts a `grep` can reproduce are reproduced from the command the ledger states
+beside each reading. The rest are pinned to each other by identities the ledger
+asserts in prose, so a figure edited alone fails even though nothing about it was
+measured: the gap between annotations and executions **is** the `#[ignore]`d
+count, and the `cargo test` totals **are** the nextest totals plus the doctests.
+
+Every other validator here reads structure, so a number in a sentence was
+invisible to all of them: one count reached four values across six documents.
+
+**Its cross-document scope is a hand-maintained list and is the thing to know
+about it.** `CROSS_DOCUMENT_SITES` names `README.md` and `scripts/README.md`, so
+a count stated as current in any other tracked document is read by nothing.
+Dated readings are exempt on purpose, and that exemption is why the list cannot
+simply be widened to the whole corpus: a reading naming its own commit is
+supposed to keep saying what it says.
 
 ### Version consistency
 
