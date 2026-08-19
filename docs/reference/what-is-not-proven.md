@@ -1140,9 +1140,12 @@ a discovered blind spot:
 - **It reads quantities, not claims.** "Five distributions" is in scope. "The
   suite has never been run against a booted host" carries no number and is
   invisible to both tiers.
-- **The gate holds only what is registered.** The registry grows from
-  confirmed survivors of a sweep rather than from guessing, which is why it is
-  evidence-driven, but a fact nobody has swept for is not held.
+- **The gate holds only what is registered.** Only one of its two facts grew
+  from a confirmed survivor of a sweep: the GUI Playwright test count. The
+  compliance framework count predates `crosscheck.py` entirely, added from an
+  earlier throwaway probe, so the registry is evidence-driven only by the one
+  fact that happens to be, not by design. A fact nobody has swept for, or
+  swept for and not registered, is not held.
 - **The sweep is not scheduled.** Nothing runs it. It is run when the corpus
   has moved.
 - **A stale pointer is found only when it carries a number.** The defect it
