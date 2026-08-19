@@ -1,6 +1,6 @@
 # What This Release Does Not Prove
 
-**Last Updated**: 2026-08-19
+**Last Updated**: 2026-08-20
 
 This release does not claim to be proven bug-free, and no release of anything
 ever has been. It claims something narrower and checkable: every capability it
@@ -1154,13 +1154,19 @@ a discovered blind spot:
   up to four following words" match lets a number ending one bullet absorb the
   leading dash of the next. Measured on 2026-08-19 with `crosscheck.py`'s own
   `paragraphs`/`LABELLED`/`key_of` (a match whose span crosses a physical line,
-  and of those, the ones crossing into a line opening a new bullet): 214
-  matches cross a physical line, 24 of those cross into a new bullet, producing
-  21 contaminated keys, counting a key only when the absorbed dash itself
-  survives key_of's three-word cap rather than being truncated away, and none
-  of the 21 reaches the threshold of disagreeing across more than one file, so
-  the effect on the report today is zero. It is a latent false-positive risk
-  rather than a live defect.
+  and of those, the ones crossing into a line opening a new bullet. This
+  entry's own text sits inside the corpus it sweeps, so the self-referential
+  matches it forms about its own figures are excluded from what follows, and a
+  literal re-run of the same pipeline against the corpus as it now reads will
+  not reproduce 214 exactly. The size of that exclusion is the count of
+  self-referential matches this entry currently contains, which changes
+  whenever this entry is reworded, including by this sentence.): 214 matches
+  cross a physical line, 24 of those cross into a new bullet, producing 21
+  contaminated keys, counting a key only when the absorbed dash itself survives
+  key_of's three-word cap rather than being truncated away, and none of the 21
+  reaches the threshold of disagreeing across more than one file, so the effect
+  on the report today is zero. It is a latent false-positive risk rather than a
+  live defect.
 
 The measured noise floor when the sweep was written was roughly 60 per cent of
 clusters, which is why discovery reports rather than fails. A blame date is
