@@ -7,6 +7,8 @@
 
 use crate::config::HardenerConfig;
 use hardener_common::error::{HardeningError, Result};
+use hardener_types::ComplianceFramework;
+use tracing::warn;
 
 /// Characters that must never appear in any directive value.
 const SHELL_METACHARACTERS: &[char] = &[
@@ -51,6 +53,18 @@ pub fn validate_config(config: &HardenerConfig) -> Result<()> {
         validate_plugin_directives(section, directives, plugin_validator, &mut errors);
     }
 
+    for key in unknown_exclusion_frameworks(config) {
+        warn!(
+            "[compliance.not_applicable.{key}] names no known framework, so every \
+             exclusion under it applies to nothing. Accepted: {}",
+            ComplianceFramework::ALL
+                .iter()
+                .map(|framework| framework.id())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
@@ -59,6 +73,34 @@ pub fn validate_config(config: &HardenerConfig) -> Result<()> {
             errors.join("\n  - ")
         )))
     }
+}
+
+/// `[compliance.not_applicable]` keys that name no framework this tool knows.
+///
+/// `ReportGenerator` resolves every key through `ComplianceFramework::from_id`
+/// and drops the ones that do not resolve, so a misspelt `iso270001` excludes
+/// nothing and the score it was written to raise stays exactly where it was.
+/// That is the safe direction, and it is precisely why nothing ever reported
+/// it: the operator sees a report that looks like the one they asked to change.
+///
+/// Warned rather than refused. A key naming a framework a later version adds
+/// would otherwise stop this version loading the file at all, and the failure
+/// mode being warned about costs an unraised score rather than a weakened host.
+/// The return type is a list rather than a log call so the decision can be
+/// tested without capturing a subscriber.
+fn unknown_exclusion_frameworks(config: &HardenerConfig) -> Vec<&str> {
+    let mut unknown: Vec<&str> = config
+        .compliance
+        .not_applicable
+        .keys()
+        .filter(|key| ComplianceFramework::from_id(key).is_none())
+        .map(String::as_str)
+        .collect();
+    // Hash order is not an order. Two runs of the same config log the same
+    // lines, and the test can assert a whole list rather than whichever key the
+    // map happened to yield first.
+    unknown.sort_unstable();
+    unknown
 }
 
 /// Iterates a plugin's directives map and applies both universal and

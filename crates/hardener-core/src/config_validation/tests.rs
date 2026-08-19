@@ -288,3 +288,36 @@ fn a_permissions_mode_is_refused_on_either_side_of_its_width() {
         );
     }
 }
+
+/// A `[compliance.not_applicable]` key that resolves to no framework excludes
+/// nothing, and until 2026-08-19 nothing anywhere said so. The operator reads a
+/// report identical to the one they wrote the exclusion to change.
+///
+/// The accepted spellings are the control, and they are the point of the test
+/// rather than padding: `from_id` takes aliases as well as canonical ids, so a
+/// check written against `ComplianceFramework::id()` alone would report
+/// `pcidss` and `nist-800-171` as typos and bury the real one.
+#[test]
+fn only_a_framework_key_that_resolves_to_nothing_is_reported() {
+    let mut config = HardenerConfig::default();
+    for key in [
+        "cis",
+        "pcidss",
+        "nist-800-171",
+        "ISO27001",
+        "iso270001",
+        "sock2",
+    ] {
+        config
+            .compliance
+            .not_applicable
+            .insert(key.to_string(), std::collections::HashMap::new());
+    }
+
+    assert_eq!(
+        unknown_exclusion_frameworks(&config),
+        vec!["iso270001", "sock2"],
+        "the two typos must be reported, sorted, and the four spellings \
+         `from_id` accepts must not be"
+    );
+}

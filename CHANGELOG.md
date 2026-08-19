@@ -1816,6 +1816,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A misspelt framework key under `[compliance.not_applicable]` excluded
+  nothing and said nothing.** `ReportGenerator` resolves every key through
+  `ComplianceFramework::from_id` and drops the ones that do not resolve, so
+  `[compliance.not_applicable.iso270001]` is inert: the operator gets back
+  exactly the report they wrote the exclusion to change, with nothing in it
+  naming the spelling. Inert is the safe direction, which is why the silence
+  survived. `validate_config` now warns once per unresolvable key at load,
+  listing the ten ids that are accepted. Warned rather than refused, because
+  refusing would stop this version loading a file that names a framework a
+  later version adds, and the failure being reported costs an unraised score
+  rather than a weakened host. The check returns the offending keys sorted, so
+  the test asserts a whole list rather than whichever key the map yielded
+  first, and inverting its predicate was confirmed to fail that test.
+
 - **Three of the ten compliance frameworks were rendered on no distribution.**
   `FRAMEWORKS` in `scripts/test/full-test-suite.sh` named seven, so SOC 2, NIST
   800-171 r3 and FedRAMP were reported by the cross-distro matrix in neither

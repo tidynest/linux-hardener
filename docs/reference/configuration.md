@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-19
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -725,7 +725,18 @@ hosts = ["web-01", "web-02"]
 
 The framework key accepts any spelling `--framework` accepts, so `iso27001`,
 `ISO27001` and `iso-27001` are one key, as are `nist800171` and `nist-800-171`.
-A key naming no framework the tool knows is inert, per "It never applied" below.
+A key naming no framework the tool knows is inert, per "It never applied" below,
+and **is warned about at config load** as of 2026-08-19:
+
+```
+WARN [compliance.not_applicable.iso270001] names no known framework, so every
+     exclusion under it applies to nothing. Accepted: cis, hipaa, iso27001, ...
+```
+
+Nothing said so before that, and the silence was the whole problem. Being inert
+is the safe direction, so the report the typo produces is the report the
+operator would have got without writing the exclusion at all: identical to the
+one they wrote it to change, with nothing in it pointing at the spelling.
 
 Prefer `hardener scope exclude` over hand-editing. The verb validates before it
 writes and records the declaration in the audit log; **a hand-edited entry is
