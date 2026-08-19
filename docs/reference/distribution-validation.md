@@ -331,15 +331,25 @@ distribution, having declared 149 until 2026-08-19. Section 12A gained two: it
 creates `/etc/audit/audit.rules.prev` itself where an apply leaves none, and
 asserts its presence before the rollback and its absence after.
 
-**Measured at `99723784` on five of the six: 151 declared, 149 passed, 0
-failed.** arch, debian, ubuntu, fedora and RHEL. On all five `augenrules` wrote
-the backup during the apply and the rollback removed it, so the fallback that
-creates one never fired. **openSUSE did not complete that section** and
-recorded 143: its audit package ships the file, which the first version of the
-check refused as run residue rather than the pristine state it is, failing and
-returning. The check now removes it before taking its baseline so every
-distribution asks the same question, and **that fix has not yet run**. The
-tables below record 149 because that is what those earlier runs recorded.
+**Measured at 151 declared, 149 passed, 0 failed on all six.** arch, debian,
+ubuntu and fedora and RHEL at `99723784`; openSUSE at `c269ef84`, run on its own
+after the fix below. On every one of the six `augenrules` wrote the backup
+during the apply and the rollback removed it, so the fallback that creates one
+never fired and the removal path was exercised by the real mechanism rather than
+by a stand-in.
+
+openSUSE reached that only on the second attempt. It recorded 143 at
+`99723784`, because its audit package **ships** `/etc/audit/audit.rules.prev`
+and the first version of the check refused that as run residue rather than the
+pristine state it is, failing and returning before the other eight checks in the
+section. The check now removes the file before taking its baseline, so every
+distribution asks the same question; its log carries `This image ships
+/etc/audit/audit.rules.prev` on that host and on no other.
+
+That also corrects a measurement recorded in `audit_mock_tests.rs`, which had
+openSUSE producing no `.prev` at all. It produces one like everywhere else; the
+shipped copy meant there was never a new one to notice. The tables below record
+149 because that is what those earlier runs recorded.
 
 ### Running the Tests
 

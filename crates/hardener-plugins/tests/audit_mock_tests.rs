@@ -2192,9 +2192,16 @@ const COMPILED_RULES_PREV: &str = "/etc/audit/audit.rules.prev";
 /// /etc/audit/rules.d, so the recursive capture of the rules directory does not
 /// reach either: the only way a row exists for them is for the apply to declare
 /// them. Measured on five distributions, `.prev` was created by the apply and
-/// still there after a rollback that reported success on four of them; openSUSE
-/// simply produces no `.prev`, which is the absent-at-capture case this test
-/// describes and the one the removal half of the mechanism handles.
+/// still there after a rollback that reported success on four of them.
+///
+/// openSUSE was recorded here as producing no `.prev` at all. **That reading
+/// was confounded and is corrected: its audit package ships the file, so there
+/// was never a new one to notice.** With the shipped copy removed first, its
+/// apply leaves a `.prev` like every other distribution, measured on
+/// 2026-08-19. The absent-at-capture case this test describes is therefore
+/// reached by removing that file rather than by finding a host that never has
+/// one, which is what `full-test-suite.sh` section 12A now does before it takes
+/// its baseline.
 ///
 /// The assertion is on the stored row, because the row is what a later rollback
 /// reads. It does not prove the removal itself: that belongs to the restore

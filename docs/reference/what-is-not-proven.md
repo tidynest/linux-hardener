@@ -397,13 +397,25 @@ when it survives rather than reporting only that two directory listings differ.
 But a pass still cannot prove the intermittent case is gone, only that it did
 not occur.
 
-**openSUSE is a different reading, and the first version of this check got it
+**openSUSE needed a second attempt, and the first version of this check got it
 wrong.** Its audit package arrives with `.prev` already present, on a container
 the runner recreates moments before. The check refused that as a host state an
 earlier run must have left, failed the section and returned, costing that
 distribution the other eight checks including the tree comparison. It now
-removes the file before taking its baseline instead, so every distribution asks
-the same question. **That fix has not yet run.**
+removes the file before taking its baseline instead.
+
+**That fix ran at `c269ef84` and openSUSE passed: 151 declared, 149 passed, 0
+failed.** Its log carries the removal line on that host and on no other, then
+records `augenrules` leaving a fresh `.prev` during the apply and the rollback
+removing it. So all six distributions now exercise the removal path through the
+real mechanism, and all six pass it.
+
+**What remains open is narrow and should not be read as closed.** The
+2026-08-18 RHEL failure has been observed once and not reproduced since, under
+conditions the logs cannot distinguish from the runs that pass. The apply's
+row-recording for this path and the audit plugin's post-reload removal are still
+the two unexamined candidates. What has changed is that a recurrence would now
+be named rather than reported as two directory listings differing.
 
 Three mechanisms could produce it: the apply recording no checkpoint row for
 the path, the restore declining to act on that row, or the audit plugin's own
