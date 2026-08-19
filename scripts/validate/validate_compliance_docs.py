@@ -20,6 +20,15 @@ Exit codes:
 Checks:
     - docs/architecture/architecture.md framework table
     - docs/ROADMAP.md framework table
+    - scripts/test/full-test-suite.sh `FRAMEWORKS`, the table the cross-distro
+      matrix renders a report and a PDF for
+
+The last of those was added on 2026-08-19, after that array was found naming
+seven of the ten: soc2, 800-171 and fedramp were rendered on no distribution and
+nothing said so, because a documentation validator that reads only documentation
+cannot see a gap in a test table. It is asked as set equality against `id()`
+rather than as containment, so a renamed id fails here too instead of quietly
+falling through to the alias table `from_id` keeps for legacy spellings.
 """
 
 import re
@@ -72,6 +81,58 @@ def parse_enum_frameworks(root: Path) -> list[str]:
     return re.findall(r"^\s*([A-Z][A-Za-z0-9]+)\s*,", match.group(1), re.MULTILINE)
 
 
+def parse_enum_ids(root: Path) -> dict[str, str]:
+    """Map each variant to the request id `ComplianceFramework::id()` returns."""
+    src = (root / "crates" / "hardener-types" / "src" / "lib.rs").read_text()
+    match = re.search(r"fn id\(&self\)[^{]*\{(.*?)\n    \}", src, re.DOTALL)
+    if not match:
+        print(f"{RED}Error: ComplianceFramework::id() not found in hardener-types{NC}")
+        sys.exit(1)
+    return dict(
+        re.findall(r"ComplianceFramework::(\w+)\s*=>\s*\"([^\"]+)\"", match.group(1))
+    )
+
+
+def parse_suite_frameworks(root: Path) -> list[str]:
+    """Extract the `FRAMEWORKS` array the cross-distro suite loops over."""
+    src = (root / "scripts" / "test" / "full-test-suite.sh").read_text()
+    match = re.search(r"^FRAMEWORKS=\((.*?)\)", src, re.DOTALL | re.MULTILINE)
+    if not match:
+        print(f"{RED}Error: FRAMEWORKS array not found in full-test-suite.sh{NC}")
+        sys.exit(1)
+    return re.findall(r'"([^"]+)"', match.group(1))
+
+
+def check_suite_table(root: Path, frameworks: list[str]) -> bool:
+    """Hold the suite's FRAMEWORKS array to the enum. True on drift."""
+    rel = "scripts/test/full-test-suite.sh"
+    print(f"{BLUE}Checking {rel} FRAMEWORKS...{NC}")
+
+    ids = parse_enum_ids(root)
+    missing_ids = [fw for fw in frameworks if fw not in ids]
+    if missing_ids:
+        print(f"  {RED}Variants with no arm in id(): {', '.join(missing_ids)}{NC}\n")
+        return True
+
+    want = {ids[fw] for fw in frameworks}
+    got = set(parse_suite_frameworks(root))
+    absent, extra = sorted(want - got), sorted(got - want)
+    if not absent and not extra:
+        print(f"  {GREEN}✓ All {len(want)} frameworks rendered by the suite{NC}\n")
+        return False
+
+    for label, items in (
+        ("defined in code but rendered by no distribution", absent),
+        ("named by the suite but defined by no variant's id()", extra),
+    ):
+        if items:
+            print(f"  {RED}Frameworks {label}:{NC}")
+            for item in items:
+                print(f"    - {item}")
+    print()
+    return True
+
+
 def framework_table_rows(content: str) -> str:
     """Join the lines that look like markdown table rows for substring search."""
     return "\n".join(line for line in content.split("\n") if line.count("|") >= 3)
@@ -116,6 +177,8 @@ def main():
         else:
             print(f"  {GREEN}✓ All {len(frameworks)} frameworks documented{NC}")
         print()
+
+    has_errors |= check_suite_table(root, frameworks)
 
     if has_errors:
         print(f"{RED}Compliance documentation validation failed{NC}")

@@ -677,18 +677,23 @@ would pass. Of the fifteen output tests, ten assert on substrings of the
 rendered string, one asserts a prefix and a byte length on it, and four assert
 on a helper rather than on any rendered output.
 
-**Three of the ten frameworks are rendered on no distribution.** `FRAMEWORKS` at
-`scripts/test/full-test-suite.sh:52` names seven, `cis stig nist pcidss hipaa
-gdpr iso27001`, and `FRAMEWORKS_EXPECTED` on the next line pins the count at 7,
-so the cross-distro matrix renders a report for those seven and no others.
-**SOC 2, NIST 800-171 r3 and FedRAMP are in `ComplianceFramework::ALL` and in
-every framework picker, and no run on any of the six distributions has ever
-rendered one.** The gap is narrower than it sounds and should not be widened in
-the retelling: their coverage mappings are asserted by plugin unit tests, which
-is where a mapping error would show, and the three share the rendering path with
-the seven that are exercised. What is unproven is the rendering, per framework,
-on a real distribution, and nothing else. This document did not mention any of
-the three by name until 2026-08-16.
+**The suite now asks for all ten frameworks, and no container has answered
+yet.** `FRAMEWORKS` at `scripts/test/full-test-suite.sh:58` named seven until
+2026-08-19, `cis stig nist pcidss hipaa gdpr iso27001`, so the cross-distro
+matrix rendered a report for those seven and no others: **SOC 2, NIST 800-171 r3
+and FedRAMP were in `ComplianceFramework::ALL` and in every framework picker,
+and no run on any of the six distributions had ever rendered one.** The array
+names all ten as of that date, and `validate_compliance_docs.py` holds it to
+`ComplianceFramework::id()` by set equality so a framework added later cannot be
+left out of it in silence. **The six checks that adds, three in section 5 and
+three in section 7, have met no container.** They were exercised on the host
+against the musl binary, all six exiting 0 with a PDF between 25 and 28 KB, which
+is a reading of the rendering path and not of any distribution. Until a matrix
+run lands, the gap has moved rather than closed. It was always narrower than it
+sounds and should not be widened in the retelling: the coverage mappings of all
+three are asserted by plugin unit tests, which is where a mapping error would
+show, and the three share the rendering path with the seven long exercised.
+This document did not mention any of the three by name until 2026-08-16.
 
 **The entry point every real consumer calls is entered by no test.**
 `ReportFormatter::format_all` is the multi-report path used by `hardener report`,

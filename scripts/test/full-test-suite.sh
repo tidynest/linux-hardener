@@ -48,9 +48,18 @@ PLUGINS=(
 )
 PLUGINS_EXPECTED=8
 
-# Compliance frameworks
-FRAMEWORKS=("cis" "stig" "nist" "pcidss" "hipaa" "gdpr" "iso27001")
-FRAMEWORKS_EXPECTED=7
+# Compliance frameworks. All ten of `ComplianceFramework::ALL`, spelled as
+# `id()` spells them. Seven sat here until 2026-08-19, so soc2, 800-171 and
+# fedramp rendered on no distribution: the same defect `8ea544db` fixed in
+# `Scenario::All`, one surface later. Every entry is the id
+# `ComplianceFramework::id()` returns, never one of the aliases `from_id` also
+# accepts, so `validate_compliance_docs.py` can hold this table to the enum by
+# set equality and catch a renamed id as well as a missing framework.
+FRAMEWORKS=(
+    "cis" "stig" "nist" "pci-dss" "hipaa" "gdpr" "iso27001"
+    "soc2" "800-171" "fedramp"
+)
+FRAMEWORKS_EXPECTED=10
 
 # Deployment scenarios
 SCENARIOS=("server" "workstation" "government" "healthcare" "financial" "gdpr" "all")
@@ -437,7 +446,9 @@ preflight_checks() {
     # was written for the differential suite and lived inside it, so this one
     # ran without it. An earlier version of this comment claimed every SSH
     # check here reads through sshd; none of them do, and the run that prompted
-    # the correction passed 109 of 109 on all six distributions either way.
+    # the correction passed 109 of 109 on all six distributions either way,
+    # which was the whole of a no-apply run before the framework table was
+    # completed on 2026-08-19 and is 115 of it now.
     if ! require_sshd_privsep_dir; then
         log "${RED}ERROR: sshd has no usable privilege separation directory${NC}"
         log "  Under --apply the tool validates with sshd -t before writing, so"
@@ -537,7 +548,7 @@ test_scan_output_formats() {
 }
 
 test_reports_all_frameworks() {
-    log_header "5. COMPLIANCE REPORTS - 7 OF THE 10 FRAMEWORKS"
+    log_header "5. COMPLIANCE REPORTS - ALL 10 FRAMEWORKS"
 
     for framework in "${FRAMEWORKS[@]}"; do
         run_test "Report --framework $framework" "\"$BINARY\" report --framework \"$framework\""
@@ -2260,12 +2271,13 @@ LISTING
     # agreed on every section; section 23 then grew by nine, which is derived
     # rather than measured and has not yet met a container. The unbooted and
     # read-only figures are derived too, which is said here so nobody reads them
-    # as evidence.
-    check_eq "$(expected_test_total true true true)" "151" \
-        "a booted --apply run in a container declares the 140 five hosts recorded, section 23's nine, and 12A's two backup rows"
-    check_eq "$(expected_test_total true false true)" "145" \
+    # as evidence. So are the six the three added frameworks bring, three in
+    # section 5 and three in section 7: derived, and unmet by a container.
+    check_eq "$(expected_test_total true true true)" "157" \
+        "a booted --apply run in a container declares the 140 five hosts recorded, section 23's nine, 12A's two backup rows, and the three added frameworks twice over"
+    check_eq "$(expected_test_total true false true)" "151" \
         "an unbooted --apply run declares six fewer, the services rollback rows it cannot ask"
-    check_eq "$(expected_test_total false true true)" "109" \
+    check_eq "$(expected_test_total false true true)" "115" \
         "a run without --apply declares neither the apply sections nor the lifecycle, so 12A's two do not count here either"
 
     # The property that makes the table guard a guard rather than a mirror: the
@@ -2279,7 +2291,7 @@ LISTING
     PLUGINS=("${PLUGINS[@]:0:7}")
     check_status 1 "require_suite_tables refuses a table edited down" \
         require_suite_tables
-    check_eq "$(expected_test_total true true true)" "151" \
+    check_eq "$(expected_test_total true true true)" "157" \
         "and the expected total does not follow the table it polices"
     PLUGINS=("${saved_plugins[@]}")
     check_status 0 "require_suite_tables accepts the table once it is restored" \
@@ -2288,10 +2300,10 @@ LISTING
     # A run is refused on the count it recorded, not on the count it wanted.
     local saved_log="$LOG_FILE" saved_total="$TESTS_TOTAL"
     LOG_FILE="$workdir/self-test.log"
-    TESTS_TOTAL=151
+    TESTS_TOTAL=157
     check_status 0 "a run that recorded what the sections declare is accepted" \
         require_expected_total true true true
-    TESTS_TOTAL=150
+    TESTS_TOTAL=156
     check_status 1 "a run one check short of what the sections declare is refused" \
         require_expected_total true true true
 

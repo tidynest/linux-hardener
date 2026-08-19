@@ -197,16 +197,94 @@ def validators(root: Path) -> int:
 MEASURES = {"annotations": annotations, "ignored": ignored, "validators": validators}
 
 
-def stated(text: str, pattern: str, label: str, errors: list[str]) -> int | None:
+def stated(
+    text: str, pattern: str, label: str, errors: list[str], source: str = LEDGER
+) -> int | None:
     match = re.search(pattern, text)
     if not match:
         errors.append(
-            f"{LEDGER}: no row found for {label}. The pattern in this validator "
+            f"{source}: no row found for {label}. The pattern in this validator "
             f"no longer matches the table, which hides the figure rather than "
             f"checking it"
         )
         return None
     return int(match.group(1))
+
+
+# The three run shapes `full-test-suite.sh --self-test` pins, and the row each
+# one is written down as in the testing guide. The script's own guard holds the
+# script to its sections; nothing held the guide to the script, and it sat two
+# low on two of these rows for four days after 12A grew.
+SUITE_RUNS = [
+    ("true true true", r"`--apply` in a booted container \| \*\*(\d+)\*\*"),
+    ("true false true", r"`--apply` in an unbooted \(`--pipe`\) container \| \*\*(\d+)\*\*"),
+    ("false true true", r"without `--apply` \| \*\*(\d+)\*\*"),
+]
+SUITE = "scripts/test/full-test-suite.sh"
+SUITE_GUIDE = "docs/contributing/testing.md"
+SUITE_SECTIONS = "docs/reference/distribution-validation.md"
+
+
+def check_section_table(root: Path, booted: int, errors: list[str]) -> None:
+    """The per-section table sums to the booted `--apply` total, or it has drifted.
+
+    Written as a total rather than as a row-by-row comparison because the rows
+    carry no key this validator could match them by, and because the row that
+    was wrong when this landed, 12A at 7 after it grew to 9, is exactly the kind
+    a per-row check has to have been told about in advance to notice.
+    """
+    text = (root / SUITE_SECTIONS).read_text()
+    table = re.search(
+        r"\| Section \| Name \| Checks \| Description \|\n(?:\|[-| ]+\|\n)((?:\|.*\n)+)",
+        text,
+    )
+    if table is None:
+        errors.append(
+            f"{SUITE_SECTIONS}: the per-section table did not parse, so its rows "
+            f"were not summed. The pattern in this validator no longer matches it"
+        )
+        return
+
+    rows = re.findall(r"^\|[^|]+\|[^|]+\|\s*(\d+)\s*\|", table.group(1), re.MULTILINE)
+    total = sum(int(row) for row in rows)
+    if total == booted:
+        print(f"  {GREEN}✓{NC} {SUITE_SECTIONS}: {len(rows)} sections sum to {total}")
+        return
+    errors.append(
+        f"{SUITE_SECTIONS}: its {len(rows)} section rows sum to {total}, and a "
+        f"booted --apply run in a container declares {booted}. One row is stale, "
+        f"or a section was added to the script and not to the table"
+    )
+
+
+def check_suite_declared(root: Path, errors: list[str]) -> None:
+    """Hold the testing guide's declared-checks table to the script's own pins."""
+    script = (root / SUITE).read_text()
+    guide = (root / SUITE_GUIDE).read_text()
+
+    for args, row in SUITE_RUNS:
+        pinned = re.search(
+            rf'expected_test_total {args}\)"\s+"(\d+)"', script
+        )
+        if pinned is None:
+            errors.append(
+                f"{SUITE}: no --self-test assertion found for a `{args}` run. "
+                f"The pin this validator reads is gone, which hides the figure "
+                f"rather than checking it"
+            )
+            continue
+        written = stated(guide, row, f"the `{args}` row", errors, SUITE_GUIDE)
+        if written is None:
+            continue
+        if args == "true true true":
+            check_section_table(root, int(pinned.group(1)), errors)
+        if written == int(pinned.group(1)):
+            print(f"  {GREEN}✓{NC} {SUITE_GUIDE} agrees at {written} declared checks ({args})")
+            continue
+        errors.append(
+            f"{SUITE_GUIDE}: says {written} declared checks for a `{args}` run, "
+            f"{SUITE} pins {pinned.group(1)}"
+        )
 
 
 def check(root: Path) -> int:
@@ -295,6 +373,8 @@ def check(root: Path) -> int:
             f"{LEDGER}: {sentence}, but {claims[left]} {op} {claims[right]} "
             f"is {got} and the table says {claims[expected]}"
         )
+
+    check_suite_declared(root, errors)
 
     print()
     if errors:

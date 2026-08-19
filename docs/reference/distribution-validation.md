@@ -326,10 +326,14 @@ runner. One command runs the suite across every distribution in
 `scripts/lib/common.sh`'s `DISTRO_ORDER`, collecting pass/fail/skip counts and
 writing `test-results/summary.txt` (`test-results/differential-summary.txt`
 under `--differential`, so the two suites do not overwrite each other). On a
-booted container under `--apply` the suite **declares 151 checks** per
-distribution, having declared 149 until 2026-08-19. Section 12A gained two: it
-creates `/etc/audit/audit.rules.prev` itself where an apply leaves none, and
-asserts its presence before the rollback and its absence after.
+booted container under `--apply` the suite **declares 157 checks** per
+distribution, having declared 149 until 2026-08-19 and 151 for part of that same
+day. Section 12A gained two: it creates `/etc/audit/audit.rules.prev` itself
+where an apply leaves none, and asserts its presence before the rollback and its
+absence after. The `FRAMEWORKS` table then gained the three frameworks it had
+never named, which is six more checks, three in section 5 and three in section 7.
+**No run has yet been taken at 157**, so every reading below is a reading of a
+smaller suite and says so.
 
 **Measured at 151 declared, 149 passed, 0 failed on all six.** arch, debian,
 ubuntu and fedora and RHEL at `99723784`; openSUSE at `c269ef84`, run on its own
@@ -441,10 +445,13 @@ skips taken after the check was announced, and a check that fell out of its
 section without any verdict at all would land there too.
 
 The figures in that sample are the ones runs up to 2026-08-19 recorded. Section
-12A then gained two checks, and a clean run now reads `151 declared, 149
+12A then gained two checks, and a clean run read `151 declared, 149
 passed, 0 failed, 8 skipped (2 declared without a verdict, 6 never declared)`.
 The skip arithmetic is unaffected, neither new check being skippable. Measured
-in that shape on arch, debian, ubuntu, fedora and RHEL at `99723784`.
+in that shape on arch, debian, ubuntu, fedora and RHEL at `99723784`. The
+framework table then gained six more, so the next clean run should read `157
+declared, 155 passed`; that shape is derived from the sections and has been
+measured nowhere.
 
 A `--differential` run reports a fifth number instead. Its checks reconcile by
 construction, since a check it cannot determine is recorded as a failure rather
@@ -550,15 +557,15 @@ sum to 149. Sections run in the order listed, which is not numeric order:
 | 2 | Scan All Plugins | 10 | Full scan, each of the 8 plugins individually, and a multi-plugin scan |
 | 3 | Scan Filters | 8 | All 5 severity levels, --audit, --exit-code, --quiet |
 | 4 | Scan Output Formats | 5 | text and json rendered, csv and html refused at the parse, plus a JSON structure check |
-| 5 | Reports, 7 of the 10 Frameworks | 7 | cis, stig, nist, pcidss, hipaa, gdpr, iso27001. soc2, nist800171 and fedramp are rendered by no run |
+| 5 | Reports, All 10 Frameworks | 10 | cis, stig, nist, pci-dss, hipaa, gdpr, iso27001, soc2, 800-171, fedramp. The last three joined on 2026-08-19 and no matrix run has rendered them yet |
 | 6 | Reports All Scenarios | 7 | server, workstation, government, healthcare, financial, gdpr, all |
-| 7 | Report Output Formats | 12 | text, json, csv, html and pdf for CIS, plus a PDF for each of the 7 frameworks the suite covers, not each of the 10 that exist |
+| 7 | Report Output Formats | 15 | text, json, csv, html and pdf for CIS, plus a PDF for each of the 10 frameworks |
 | 8 | Dry-Run All Plugins | 9 | --dry-run for all 8 plugins, plus --all |
 | 9 | Checkpoint Operations | 5 | list, create, list again, show, delete |
 | 10 | Daemon Commands | 2 | status, run-once (daemon start is skipped) |
 | 11 | History Commands | 5 | list, show, export, trends, regressions |
 | 12 | Systemd Commands | 2 | generate, status (install/status/uninstall skipped in a container) |
-| 12A | Rollback Undoes The Audit Apply | 7 | Apply audit hardening, roll it back, and assert on the filesystem that the rules file is gone, that `/etc/audit` lists exactly the paths it listed beforehand, and that the compiled rule set is back at its pre-apply line count (--apply only) |
+| 12A | Rollback Undoes The Audit Apply | 9 | Apply audit hardening, roll it back, and assert on the filesystem that the rules file is gone, that `/etc/audit` lists exactly the paths it listed beforehand, and that the compiled rule set is back at its pre-apply line count. Two of the nine are the backup rows added on 2026-08-19: `/etc/audit/audit.rules.prev` present before the rollback and absent after (--apply only) |
 | 12B | Rollback Undoes The Services Apply | 7 | Apply service minimisation, roll it back, and assert on the filesystem that the mask link is gone, that the unit is enabled again, and that `/etc/systemd/system` lists exactly the paths it listed beforehand (--apply only, and 1 check on an unbooted host, where the rest cannot be asked) |
 | 13 | Apply Kernel | 1 | Apply kernel hardening |
 | 14 | Apply Other Plugins | 5 | ssh, permissions, pam, firewall, services individually (audit and mac skipped in a container) |

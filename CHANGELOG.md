@@ -1816,6 +1816,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Three of the ten compliance frameworks were rendered on no distribution.**
+  `FRAMEWORKS` in `scripts/test/full-test-suite.sh` named seven, so SOC 2, NIST
+  800-171 r3 and FedRAMP were reported by the cross-distro matrix in neither
+  section 5 nor section 7 despite being in `ComplianceFramework::ALL` and in
+  every framework picker. The array now names all ten, spelled as
+  `ComplianceFramework::id()` spells them, which changes `pcidss` to the
+  canonical `pci-dss`. This is the same defect `8ea544db` fixed in
+  `Scenario::All`, one surface later, and the reason it survived that fix is
+  that no instrument read the array: `validate_compliance_docs.py` checked two
+  documentation tables and nothing else. It now holds `FRAMEWORKS` to the enum
+  by **set equality**, so a framework added later cannot be left out of the
+  matrix in silence and a renamed id cannot fall through to the alias table
+  `from_id` keeps for legacy spellings. Both directions of the check were
+  confirmed to go red before the work was accepted. The six checks this adds
+  were exercised on the host against the musl binary, all six exiting 0 with a
+  PDF between 25 and 28 KB; **no container has run them**, so the gap has moved
+  from unrendered to unmeasured rather than closing outright.
+
+- **The declared size of a suite run was written down in three places and two
+  of them had drifted.** `--self-test` pins the three figures the sections sum
+  to, and the framework fix moves them to **157** booted, **151** unbooted and
+  **115** without `--apply`. The table in `docs/contributing/testing.md` still
+  said 149, 143 and 109: it had missed section 12A's two checks entirely and
+  sat two low for four days, because the guard the section above it describes
+  holds the *script* to its sections and has never had anything to say about a
+  number in a document. The per-section table in
+  `docs/reference/distribution-validation.md` had the same rot in a different
+  shape, listing 12A at 7 rows rather than 9. `validate_test_counts.py` now
+  reads the three `--self-test` pins and compares each to its row in the
+  guide, and sums the per-section table against the booted pin rather than
+  matching rows one at a time: the row that was wrong is exactly the kind a
+  per-row check has to have been told about in advance to notice. Both checks
+  were confirmed to go red on the stale figures.
+
 - **Eight contrast defects shipped behind a gap both contrast checks shared: a
   translucent background.** An `rgba()` fill has no single colour until it
   composites over its ancestor, and a static parse cannot know which ancestor,

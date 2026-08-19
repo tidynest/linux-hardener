@@ -422,9 +422,16 @@ run whose recorded total differs. As measured off the function itself:
 
 | Run | Declared checks |
 |-----|-----------------|
-| `--apply` in a booted container | **149** |
-| `--apply` in an unbooted (`--pipe`) container | **143** |
-| without `--apply` | **109** |
+| `--apply` in a booted container | **157** |
+| `--apply` in an unbooted (`--pipe`) container | **151** |
+| without `--apply` | **115** |
+
+Those three figures are pinned by `--self-test`, and this table said 149, 143
+and 109 until 2026-08-19: it had missed section 12A's two checks entirely and
+was two low on the first two rows for four days. It is checked against the
+script by `validate_test_counts.py` as of that date, because the mechanism the
+section above describes holds the *script* to its sections and has never had
+anything to say about a number written down here.
 
 The refusal is reported through `log_fail`, as a **counted failure**, and not by
 the exit status alone. The reason is in the runner:
@@ -1664,4 +1671,4 @@ in `build-mode: none`, on every push and pull request to `main` and on a schedul
 (Mondays, 06:00 UTC). It has no local reproduction: results go to the
 repository's security tab.
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-19
