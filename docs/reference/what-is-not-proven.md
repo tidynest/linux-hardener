@@ -1134,7 +1134,8 @@ visits.
 `validate_cross_document_facts.py` compares a fact stated in more than one
 document against the site that owns it, and `crosscheck.py`, which lives
 outside this repository in `~/Documents/DEVELOPMENT/prose-sweep/`, is what
-finds candidates for it. Five limits, all deliberate:
+finds candidates for it. Five limits, four of them deliberate and the fifth
+a discovered blind spot:
 
 - **It reads quantities, not claims.** "Five distributions" is in scope. "The
   suite has never been run against a booted host" carries no number and is
@@ -1151,11 +1152,15 @@ finds candidates for it. Five limits, all deliberate:
   lines carry no blank line between them, so `crosscheck.py` joins the wrapped
   lines of an entire list into one paragraph, and the pattern's "a number plus
   up to four following words" match lets a number ending one bullet absorb the
-  leading dash of the next. Measured on 2026-08-19: 214 matches cross a
-  physical line, 24 of those cross into a new bullet, producing 16
-  contaminated keys, and none of the 16 reaches the threshold of disagreeing
-  across more than one file, so the effect on the report today is zero. It is
-  a latent false-positive risk rather than a live defect.
+  leading dash of the next. Measured on 2026-08-19 with `crosscheck.py`'s own
+  `paragraphs`/`LABELLED`/`key_of` (a match whose span crosses a physical line,
+  and of those, the ones crossing into a line opening a new bullet): 214
+  matches cross a physical line, 24 of those cross into a new bullet, producing
+  21 contaminated keys, counting a key only when the absorbed dash itself
+  survives key_of's three-word cap rather than being truncated away, and none
+  of the 21 reaches the threshold of disagreeing across more than one file, so
+  the effect on the report today is zero. It is a latent false-positive risk
+  rather than a live defect.
 
 The measured noise floor when the sweep was written was roughly 60 per cent of
 clusters, which is why discovery reports rather than fails. A blame date is
