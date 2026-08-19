@@ -358,14 +358,19 @@ shipped copy meant there was never a new one to notice. The tables below record
 ### Running the Tests
 
 ```bash
-# Build the musl static binary first
+# Build the musl static binary first. No copy afterwards: the runner resolves
+# the target directory itself through `resolve_target_dir` and prefers the musl
+# artefact, and this machine's cargo config puts `target/` outside the tree, so
+# a `cp target/...` here copied from a path that does not exist.
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
-cp target/x86_64-unknown-linux-musl/release/hardener target/release/hardener
 
 # Recreate the containers. Sections 12A and 12B ask whether a rollback REMOVES
 # something an apply created, which can only be asked of a host where it does
-# not exist yet, and --apply hardens every container it touches.
-for d in arch debian fedora rhel opensuse; do
+# not exist yet, and --apply hardens every container it touches. The list is
+# `DISTRO_ORDER` in `scripts/lib/common.sh`; it omitted `ubuntu` here until
+# 2026-08-19, and a loop short one distribution recreates five and leaves the
+# sixth to run --apply against the previous run's leftovers.
+for d in arch debian ubuntu fedora rhel opensuse; do
     sudo ./scripts/containers/create-container.sh "$d" clean --no-confirm
     sudo ./scripts/containers/create-container.sh "$d"
 done
@@ -761,10 +766,13 @@ The standard glibc-linked binary from Arch Linux fails on Debian due to GLIBC ve
 ```bash
 # On Arch host (requires musl package)
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
-cp target/x86_64-unknown-linux-musl/release/hardener target/release/hardener
 ```
 
-The musl binary is ~13MB and works across all glibc versions.
+The musl binary is ~13MB and works across all glibc versions. **No copy into
+`target/release/` is needed**, and the `cp` that stood here until 2026-08-19
+failed on any machine whose cargo config puts the target directory outside the
+tree: the runner resolves it through `resolve_target_dir` and prefers the musl
+artefact of its own accord.
 
 ---
 
@@ -1076,8 +1084,8 @@ To reproduce the full cross-distro validation from scratch:
 2. **Build the musl static binary**:
    ```bash
    cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
-   cp target/x86_64-unknown-linux-musl/release/hardener target/release/hardener
    ```
+   No copy afterwards; see Build Notes.
 
 3. **Run the cross-distro test suite**:
    ```bash

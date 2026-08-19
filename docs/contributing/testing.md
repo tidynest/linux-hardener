@@ -463,11 +463,18 @@ recreate command, so a second `--apply` run in the same container ends red
 instead of quietly proving less:
 
 ```bash
-for d in arch debian fedora rhel opensuse; do
+for d in arch debian ubuntu fedora rhel opensuse; do
     sudo ./scripts/containers/create-container.sh "$d" clean --no-confirm
     sudo ./scripts/containers/create-container.sh "$d" || { echo "CREATE FAILED: $d"; break; }
 done
 ```
+
+That list is `DISTRO_ORDER` in `scripts/lib/common.sh`, and it omitted `ubuntu`
+until 2026-08-19, twelve days after that distribution joined. A loop short one
+distribution does not fail: it recreates five, and the sixth then runs
+`--apply` against whatever the previous run left, which is the one state
+sections 12A and 12B refuse. Copy the list from `common.sh` rather than from
+here if the two ever disagree.
 
 An undeterminable result is a failure here, never a skip. Unaskability is a
 property of the invocation, declared in advance, which is why 12B skips under
