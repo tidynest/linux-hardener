@@ -1,6 +1,6 @@
 # What This Release Does Not Prove
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-19
 
 This release does not claim to be proven bug-free, and no release of anything
 ever has been. It claims something narrower and checkable: every capability it
@@ -374,10 +374,24 @@ lines; what survives is the backup copy, not wrong hardening.
 **RHEL was the only one of the six to produce a `.prev` at all**, and the other
 five passed. `augenrules --load` saves the compiled rule set it displaces under
 that name, so the file exists only where `augenrules` runs far enough to
-compile, which inside a container it does on RHEL and does not elsewhere. The
-same run passed this check on RHEL the day before against the same code, so
-whether this is intermittent or a change in the rebuilt RHEL image is itself
-unestablished; the containers are recreated from upstream every run.
+compile.
+
+**A second run, at `16f08948`, passed on all six, and it is not evidence of
+anything.** No distribution produced a `.prev` that time, RHEL included, so the
+check never reached the state it failed in. Every other line of RHEL's audit
+block was identical across the two runs: the same six lines and seven paths
+before the apply, the same apply exiting 1, the same eighty-five written and
+thirty-one compiled, the same reload reported unavailable. The only difference
+between a red run and a green one was whether `augenrules` wrote the file at
+all.
+
+**So the trigger is uncontrolled, and this suite is a lottery ticket on this
+defect.** A green cross-distro run does not mean the backup is removed; it
+usually means no backup existed to remove. Making the check honest needs the
+test to create `/etc/audit/audit.rules.prev` deliberately before the rollback
+rather than waiting for `augenrules` to do it, which would also make the
+failure reproducible enough to attribute. Until then, treat a pass here as
+silent on the question.
 
 Three mechanisms could produce it: the apply recording no checkpoint row for
 the path, the restore declining to act on that row, or the audit plugin's own
