@@ -47,10 +47,11 @@ const { contrastRatio, flattenBackdrop, thresholdFor } = require('./contrast-mat
 // with the reason and who decides. Reported on every run; they merely do not
 // fail. Meant to be removed rather than accumulated.
 //
-// Empty at the time of writing, and that is not a claim that the interface
-// passes: this check has never been run, because gui-tests execute only inside
-// nspawn containers. The first person to run it either fixes what it finds or
-// records the decision here.
+// Empty because nothing it measures currently fails. It HAS run: #173 was its
+// first container execution, and it failed all seven theme cases on a
+// flattener bug that collected 0 pairings rather than on any colour. Keep this
+// list empty by fixing what it finds; record a decision here only when the fix
+// is a design change that is not tooling's to take.
 const DEFERRED = {};
 
 // Where to look. Not every route, because the point is coverage of the

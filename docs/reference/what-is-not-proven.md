@@ -816,31 +816,49 @@ rule flattener dropped every rule it was given, so it measured **0** colour
 pairings and passed its own vacuity guard's failure. A suite can be green about
 nothing, and for two days this one was.
 
-**The `.compliance-excluded` pill's contrast is measured by neither contrast
-instrument, and the cause is its alpha background rather than anything about
-the containers.** The two checks are deliberately disjoint.
-`scripts/validate/validate_contrast.py` is a static parse of `styles.css`, not a
-container run at all, and it weighs only rules declaring both a text colour and
-a background; its `resolve()` returns `None` for anything it cannot pin to one
-hex value, `rgba(...)` included, on the stated principle that silence beats a
-fabricated reading. `gui-tests/tests/contrast.spec.js` is the browser half and
-weighs only rules declaring a colour *without* a background, skipping the rest
-so that one defect cannot fail two checks with two different numbers. The pill's
-rule declares `color: var(--text-muted)` and
-`background-color: rgba(148, 163, 184, 0.14)`, so the static check picks it up
-and then discards it as unresolvable, and the browser check never looks at it.
-It falls exactly between them.
+**The `.compliance-excluded` pill is now weighed, and it passes on all seven
+themes.** This subsection claimed the opposite until 2026-08-19: that an alpha
+background fell between the two contrast instruments, and that nothing could be
+said about whether the pill passed or failed.
+`scripts/validate/validate_contrast.py` no longer returns `None` for an
+`rgba()` fill. `alpha_colour` reads the tint out of the declaration, or out of
+the token the declaration names; `over` composites that tint onto an opaque
+backdrop in sRGB source-over, which is what the browser does for
+`background-color`; and the check runs that compositing against every `--bg-*`
+surface the theme declares, keeping the best of the resulting ratios. The pill
+reads 5.18:1 on default, 5.26 on daywatch, 5.38 on guardian, 5.38 on sentinel,
+5.51 on command, 5.54 on fortress and 12.12 on high-contrast.
+`.severity_exception` shares `--pill-muted-bg` and measures identically, which
+is what the shared token buys. The rule declares `color: var(--text-muted)` and
+`background-color: var(--pill-muted-bg)`, a token rather than the bare literal
+this subsection used to quote; `--pill-muted-bg` is `rgba(148, 163, 184, 0.14)`
+in the default block. No theme colour changed to produce that reading: the fix
+was not the obvious one of giving the pill an opaque fill, it was widening the
+instrument.
 
-**The general lesson is worth more than the one rule: an alpha background is
-invisible to both contrast checks.** The static parse cannot resolve it and the
-browser check excludes any rule that declares a background at all, so every
-future `rgba(...)` fill will land in the same gap silently. A semi-transparent
-fill has no single contrast figure anyway, since its effective colour depends on
-whatever surface it composites over, which differs per theme; the browser check
-already walks a background stack to the first opaque ancestor for the
-colour-only rules, so the capability to measure this exists and is simply not
-reached by the rule that needs it. Nothing is claimed here about whether the
-pill passes or fails. It has not been weighed.
+**Best of every surface is a deliberate ceiling, and it is the reason these
+figures are facts rather than guesses.** A static parse cannot know which
+ancestor an `rgba()` fill composites over, so taking the best result means a
+failure holds whatever the ancestor turns out to be. The worst-case rule was
+measured too: it reports 61 failures on pairings that may never co-occur, which
+is the manufactured-defect mode that gets a check muted and is worse than no
+check. Best-case reports 8, and all 8 were real. Pairs checked went from 182 to
+322, the 140 that became measurable coming from 18 rules that declared an alpha
+background. Two of those failures were cleared by giving `.severity_medium` a
+new `--color-medium-bright` token, daywatch having read 1.77:1, and six by
+moving `.partial-row-badge-failed` and `.status-error` from `--color-critical`
+to `--color-critical-bright`, 4.07:1 to 4.49:1. `.severity_low` on daywatch, at
+3.32:1, is held open by decision rather than fixed, because no
+`--color-info-bright` token exists in any theme to move it to; it is printed on
+every run, and a deferral is not a pass.
+
+**What the widening does not do is close the gap it was cut from.** The
+best-case rule means a pair that fails on the darker surfaces but clears on one
+is still not reported, so a green line here is a claim about the most
+favourable ancestor rather than about every ancestor. And
+`gui-tests/tests/contrast.spec.js` still skips any rule declaring a background,
+so the two halves stay disjoint by design, and the browser half, the only one
+that reads the cascade a user actually sees, still never looks at this pill.
 
 **What that suite drives is not the desktop application.** It serves the same
 wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of

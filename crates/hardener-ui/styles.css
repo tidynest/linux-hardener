@@ -30,6 +30,13 @@
   --color-good-bright: #34d399;
   --color-warning: #f59e0b;
   --color-warning-bright: #fbbf24;
+  /* The medium severity badge, one rung below high, and the only severity
+     whose text colour was a literal rather than a token. That is exactly why
+     it was the one daywatch could not correct: the light theme overrides the
+     -bright tokens and had nothing to override here, so it rendered at
+     1.77:1. The default is the literal it replaces, so the six dark themes
+     do not move. */
+  --color-medium-bright: #e3b341;
   --color-critical: #ef4444;
   --color-critical-bright: #f87171;
   /* A destructive button's fill is not the same colour as destructive TEXT,
@@ -296,6 +303,17 @@
        weighs instead. */
     --color-warning: #8e4e04;
     --color-warning-bright: #794203;
+    /* Read as TEXT on the medium badge's own amber tint, which composites to
+       #efebdd over --bg-elevated and #e6e2d4 over the darkest surface. The
+       replaced literal #e3b341 measured 1.77:1 there; #7a5c00 clears 4.5 on
+       ALL four surfaces, worst 4.60 on --bg-tertiary, so it does not lean on
+       the best-case reading the validator grants an alpha background.
+       Medium and high do read alike on this theme, and that is a ceiling
+       rather than a shortcut: every amber readable on a light tint sits
+       within 1.29:1 of --color-warning-bright above. The rank is carried by
+       the badge's own word, since severity_class is always emitted beside
+       severity_label. */
+    --color-medium-bright: #7a5c00;
     /* Both of these are read as TEXT on this theme's four surfaces, and the
        darkest of those is --bg-tertiary #e8e3db, not the page background. The
        previous pair failed there: #dc2626 measured 3.78:1 and #ef4444 measured
@@ -1063,7 +1081,7 @@ tbody tr:hover {
 
 .severity_critical { background-color: rgba(239, 68, 68, 0.2); color: var(--color-critical-bright); }
 .severity_high { background-color: rgba(245, 158, 11, 0.2); color: var(--color-warning-bright); }
-.severity_medium { background-color: rgba(227, 179, 65, 0.15); color: #e3b341; }
+.severity_medium { background-color: rgba(227, 179, 65, 0.15); color: var(--color-medium-bright); }
 .severity_low { background-color: rgba(34, 211, 238, 0.15); color: var(--color-info); }
 .severity_info { background-color: rgba(100, 116, 139, 0.2); color: var(--text-secondary); }
 
@@ -2490,7 +2508,7 @@ tbody tr:hover {
 }
 
 .partial-row-badge-failed {
-  color: var(--color-critical);
+  color: var(--color-critical-bright);
   background-color: var(--color-critical-bg);
 }
 
@@ -2656,7 +2674,7 @@ tbody tr:hover {
 }
 
 .status-error {
-  color: var(--color-critical);
+  color: var(--color-critical-bright);
   background-color: rgba(239, 68, 68, 0.1);
 }
 

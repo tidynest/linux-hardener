@@ -1816,6 +1816,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Eight contrast defects shipped behind a gap both contrast checks shared: a
+  translucent background.** An `rgba()` fill has no single colour until it
+  composites over its ancestor, and a static parse cannot know which ancestor,
+  so each instrument declined it from the opposite side.
+  `validate_contrast.py` resolved it to `None` on the principle that silence
+  beats a fabricated reading, and `gui-tests/tests/contrast.spec.js` skips any
+  rule declaring a background so that one defect cannot fail two checks with
+  two different numbers. **18 rules fell exactly between them, every severity
+  badge among them**, and the worst read **1.77:1**. The static half now
+  composites a translucent fill over every opaque `--bg-*` surface its theme
+  declares and weighs the BEST of those ratios, which raises the pairs it
+  checks from 182 to 322. Best rather than worst is the whole design: a
+  failure then holds whatever the real ancestor turns out to be, so it stays a
+  fact. The worst-case rule was measured as a control and reports **61**
+  failures on pairings that may never co-occur, which is the
+  manufactured-defect mode that got the earlier wide check muted; best-case
+  reports **8**, and all 8 were real. The cost is stated rather than hidden: a
+  pair that fails on the darker surfaces but clears on one is still not
+  reported.
+
+- **`.severity_medium` was the only severity badge whose text colour was a
+  literal rather than a token, and that is precisely why Daywatch could not
+  correct it.** Its four siblings resolve `--color-critical-bright`,
+  `--color-warning-bright`, `--color-info` and `--text-secondary`; it
+  hardcoded `#e3b341`, used nowhere else in the workspace. A light theme
+  retunes the `-bright` tokens and had nothing to override here, so the badge
+  rendered at 1.77:1 on its own amber tint. It now reads a new
+  `--color-medium-bright`, defaulting to the literal it replaces so the six
+  dark themes do not move at all, with Daywatch overriding it to `#7a5c00`.
+  That value clears AA on **all four** of Daywatch's surfaces, worst 4.60:1 on
+  `--bg-tertiary`, so it does not lean on the best-case reading the check
+  grants an alpha background. A ceiling comes with it and is recorded rather
+  than papered over: on Daywatch medium and high read alike, because every
+  amber legible on a light tint sits within 1.29:1 of that theme's
+  `--color-warning-bright`. The rank is carried by the badge's own word, since
+  `severity_class` is always emitted beside `severity_label`.
+
+- **`.partial-row-badge-failed` and `.status-error` used the plain
+  `--color-critical` as text on a red tint, where the passing sibling
+  `.severity_critical` already used `--color-critical-bright` on the same
+  tint.** Six of the eight defects were that one inconsistency, measuring 4.07
+  to 4.49:1 across five dark themes. Both now use the bright token and those
+  six clear 5.54 to 6.11:1. One case is deferred rather than fixed:
+  `.severity_low` on Daywatch at 3.32:1, because no `--color-info-bright`
+  token exists in any theme, so clearing it means retuning `--color-info`
+  theme-wide rather than reaching for a brighter sibling, and that is a design
+  decision rather than tooling's to take.
+
+- **Three deferrals outlived the defect they deferred, and nothing could have
+  said so.** `validate_contrast.py` consults `DEFERRED` only once a pair has
+  already failed, so an entry whose defect was fixed goes on sitting there
+  reported by nothing at all. `.tab-badge`, `.error-page a` and
+  `.plugin-row-help:hover` deferred Daywatch's `#0d9488` accent at 3.47:1 and
+  3.74:1; `4284612d` darkened that accent to `#096961` on 2026-08-15 and they
+  now measure 6.07:1 and 6.55:1. All three are removed, and the mechanism's
+  comment now warns that a stale entry is invisible by construction. The
+  browser half's own note claiming it "has never been run" is corrected too:
+  #173 was its first container execution.
+
+- **The `.compliance-excluded` pill is now weighed, and passes.** It was
+  recorded in `what-is-not-proven.md` as measured by neither instrument, with
+  an opaque token proposed as the way to make it checkable. Widening the
+  instrument turned out to close it without touching a single theme colour:
+  the pill measures 5.18:1 on the default theme through 12.12:1 on High
+  Contrast, and `.severity_exception`, which shares `--pill-muted-bg`, reads
+  identically.
+
 - **The Dashboard scored compliance differently from the compliance report, and
   one row printed both.** `calculate_framework_score` in
   `components/security_score.rs` graded a control - `Pass` 100, `ManualReview`
@@ -6655,4 +6722,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-19

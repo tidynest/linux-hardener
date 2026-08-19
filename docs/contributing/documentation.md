@@ -698,6 +698,15 @@ python3 scripts/validate/validate_contrast.py
 Checks that every foreground and background pair `crates/hardener-ui/styles.css`
 declares **together in one rule** clears WCAG AA, across all seven themes.
 
+Translucent fills are composited rather than skipped. An `rgba()` background has
+no one colour until it lands on an ancestor, so each is weighed over every
+opaque `--bg-*` surface the theme declares and scored on the best of those
+ratios, which keeps a failure a fact whatever the real ancestor turns out to be.
+Worst-case compositing was measured too and reported 61 failures on pairings
+that may never co-occur; best case reported 8, and all 8 were real. That took
+the pairs checked from 182 to 322, the 140 new ones coming from 18 rules that
+declare an alpha background, every severity badge among them.
+
 Deliberately not every token against every surface: that pairing was tried,
 reported five themes failing on combinations that may never render, and
 contradicted the screenshots. The ceiling follows directly from the scope. A
@@ -743,4 +752,4 @@ Compares the workspace version in `Cargo.toml` against
 (`PKGBUILD`, the RPM spec, `debian/changelog`) are outside its reach. Also
 invoked by `validate_all.py`, as its first entry.
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-19

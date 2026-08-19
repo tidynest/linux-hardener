@@ -89,18 +89,22 @@ User selects theme
 
 ## Colour Variable Categories
 
-The theme system defines six categories of themed variable. Five of the six
+The theme system defines six categories of themed variable. Four of the six
 override themes set the same 24 variables, so a new theme that sets fewer will
 inherit the default's value for the rest and look subtly wrong rather than
 obviously broken.
 
-**High Contrast sets 26**, and the two extra are the point of it rather than an
-inconsistency: `--danger-fill` and `--danger-on-fill` are defined in the default
-block and overridden by that theme alone, because a destructive button carrying
-the shared token sat at 1.9:1 there. They are the seventh category in all but
-name, and a theme aiming at AAA has to consider them. Re-read the counts with
-the block-scoped variable list rather than by eye; `grep` over the whole file
-gives one number for every theme.
+**Daywatch sets 25 and High Contrast 26**, and the extras are the point of those
+two themes rather than an inconsistency. `--danger-fill` and `--danger-on-fill`
+are defined in the default block and overridden by High Contrast alone, because
+a destructive button carrying the shared token sat at 1.9:1 there.
+`--color-medium-bright` has the same shape: defined in the default block,
+overridden by Daywatch alone, because `.severity_medium` was the only severity
+badge whose text colour was a hardcoded literal rather than a token, and a
+literal is precisely what a light theme has no way to retune. They are the
+seventh category in all but name, and a theme that goes light, or aims at AAA,
+has to consider them. Re-read the counts with the block-scoped variable list
+rather than by eye; `grep` over the whole file gives one number for every theme.
 
 ### 1. Background Colours
 
@@ -130,10 +134,26 @@ For status and severity indication:
 | Variable | Purpose | Bright Variant |
 |----------|---------|---------------|
 | `--color-good` | Success, safe | `--color-good-bright` |
-| `--color-warning` | Caution, medium severity | `--color-warning-bright` |
-| `--color-critical` | Error, high severity | `--color-critical-bright` |
+| `--color-warning` | Caution; the bright variant is `.severity_high` | `--color-warning-bright` |
+| `--color-medium-bright` | `.severity_medium`, one rung below high | n/a, it is the bright variant |
+| `--color-critical` | Error; the bright variant is `.severity_critical` | `--color-critical-bright` |
 | `--color-info` | Information, low severity | - |
 | `--color-pending` | Unknown, awaiting | - |
+
+`--color-medium-bright` has no base counterpart because it is only ever read as
+text: it is the `.severity_medium` colour and nothing else. Like `--danger-fill`,
+it is declared in the default block and overridden by exactly one theme,
+Daywatch, where the literal it replaced rendered at 1.77:1 against that theme's
+own amber tint. Its four siblings resolved tokens and so were retuned with the
+rest of the palette; it could not be, which is the whole reason it exists.
+
+Daywatch's value `#7a5c00` clears WCAG AA on all four of that theme's surfaces,
+worst 4.60:1 on `--bg-tertiary` and best 5.70:1 on `--bg-elevated`. It carries a
+known and accepted ceiling: on Daywatch, medium and high badges read alike,
+because every amber readable on a light tint sits within 1.29:1 of that theme's
+`--color-warning-bright` (`#794203`). The severity rank is carried by the badge's
+text label instead, since `severity_class(sev)` is always emitted beside
+`severity_label(sev)`.
 
 ### 4. Interactive Colours
 
@@ -198,8 +218,9 @@ never overridden per theme.
 
 ### Theme Overrides
 
-Each theme overrides the same 24 base variables, and High Contrast overrides two
-more (`--danger-fill`, `--danger-on-fill`):
+Each theme overrides the same 24 base variables. Daywatch overrides one more
+(`--color-medium-bright`) and High Contrast two more (`--danger-fill`,
+`--danger-on-fill`):
 
 | Theme | id | Identity | Accent Colour | Background Family |
 |-------|----|----------|---------------|-------------------|
@@ -237,11 +258,14 @@ Design a palette with:
 
 Add your theme to `styles.css` after the existing themes, at the end of section
 1b. Set all 24 variables. Leaving one out silently inherits the default theme's
-value, which is the failure mode that is hardest to spot. If the theme targets
-AAA, or simply darkens the palette far from the default, check `.btn-danger`
-against `--danger-fill`/`--danger-on-fill` and override those two as well: they
-are not in the 24, they live in the default block, and High Contrast is the only
-theme that currently needs its own.
+value, which is the failure mode that is hardest to spot. Three further tokens
+live in the default block rather than in the 24, and each has to be checked
+separately. If the theme targets AAA, or simply darkens the palette far from the
+default, check `.btn-danger` against `--danger-fill`/`--danger-on-fill` and
+override those two as well; High Contrast is the only theme that currently needs
+its own. If the theme goes light, check `.severity_medium` against
+`--color-medium-bright` the same way; Daywatch is the only theme that currently
+needs its own.
 
 ```css
 /* Your Theme Name - Brief description */
@@ -417,21 +441,24 @@ All interactive elements must have visible focus indicators:
 `validate_all.py`, so a new theme that fails it fails the documentation gate.
 **Know what it does and does not read**: it checks every foreground and
 background pair `styles.css` declares *together in one rule*, across all seven
-themes. It deliberately does not test every token against every surface, because
-that pairing was tried, reported five themes failing on combinations that may
-never render, and contradicted the screenshots. So a pair the stylesheet never
-states in one rule is unchecked, which is how a High Contrast `.btn-danger` sat
-at 1.9:1 through eight reviewers and is why `--danger-fill` exists. **The
-remaining items on this list are the half that check cannot make**, and the
-screenshot is still the evidence for them.
+themes. Where that declared background is translucent, it composites the fill
+over every opaque `--bg-*` surface the theme declares and keeps the best
+resulting ratio, so an alpha background is now checked rather than skipped; that
+lifted the pairs checked from 182 to 322. It deliberately does not test every
+token against every surface, because that pairing was tried, reported five
+themes failing on combinations that may never render, and contradicted the
+screenshots. So a pair the stylesheet never states in one rule is unchecked,
+which is how a High Contrast `.btn-danger` sat at 1.9:1 through eight reviewers
+and is why `--danger-fill` exists. **The remaining items on this list are the
+half that check cannot make**, and the screenshot is still the evidence for
+them.
 
 ---
 
 ## Theme Variable Reference
 
-The 24 variables every override theme sets. High Contrast sets these plus
-`--danger-fill` and `--danger-on-fill`, which the default block defines and the
-other five inherit:
+The 24 variables every override theme sets, followed by the three the default
+block defines and a single theme each overrides:
 
 ```css
 /* Background tiers */
@@ -449,7 +476,7 @@ other five inherit:
 --color-good        /* Success base */
 --color-good-bright /* Success emphasis */
 --color-warning     /* Warning base */
---color-warning-bright /* Warning emphasis */
+--color-warning-bright /* Warning emphasis, high severity */
 --color-critical    /* Error base */
 --color-critical-bright /* Error emphasis */
 --color-info        /* Information */
@@ -469,6 +496,11 @@ other five inherit:
 --color-warning-bg  /* Caution fills */
 --color-critical-bg /* Error fills */
 --color-accent-bg   /* Selected surfaces */
+
+/* Default block defines these; one theme each overrides them */
+--color-medium-bright /* Medium severity text; Daywatch only */
+--danger-fill         /* Destructive button fill; High Contrast only */
+--danger-on-fill      /* Text on that fill; High Contrast only */
 ```
 
 Set once in the base block and **not** themed, so a theme block should leave
@@ -488,4 +520,4 @@ them alone:
 
 ---
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-19

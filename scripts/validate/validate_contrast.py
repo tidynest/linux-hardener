@@ -34,6 +34,21 @@ the daywatch `--color-critical` defect would not have been caught by this file.
 Widening it needs the computed cascade, which means a browser, which means the
 container GUI suite rather than a static parse.
 
+Alpha backgrounds ARE checked, and were not until 322 pairs replaced 182. An
+`rgba()` fill has no one colour until it composites over its ancestor, and a
+static parse cannot know which ancestor, so both instruments used to skip the
+whole class: this file returned None for it and the browser half skips any rule
+declaring a background. 18 rules were invisible to both, every severity badge
+among them, and one of them read 1.77:1.
+
+What makes them checkable without guessing is compositing over EVERY `--bg-*`
+surface the theme declares and taking the BEST result. A failure then holds
+whatever the ancestor turns out to be, so it is still a fact. The worst-case
+rule was measured and reports 61 failures on pairings that may never co-occur,
+which is the manufactured-defect mode described above; best-case reports 8, and
+all 8 were real. The cost is the mirror of that: a pair that fails on the darker
+surfaces but clears on one is not reported here.
+
 That browser half now exists, as `gui-tests/tests/contrast.spec.js` (#158). It
 covers the colour-only rules named above, and the two files are deliberately
 disjoint: it skips any rule declaring both a colour and a background, because
@@ -78,31 +93,34 @@ EXEMPT = (
 # into a green tick, which is the failure mode this file exists to answer. An
 # entry here is a decision someone made, not a check quietly switched off, and
 # it is meant to be removed rather than accumulated.
+# A stale entry is invisible: the lookup happens only once a pair already
+# failed, so an entry whose defect was fixed goes on sitting here reported by
+# nothing. Three did, deferring daywatch's #0d9488 accent at 3.47:1 and 3.74:1
+# after 4284612d darkened it to #096961 on 2026-08-15; they now measure 6.07:1
+# and 6.55:1 and were removed. Re-read the ratio before trusting an entry.
 DEFERRED: dict[str, str] = {
-    ".tab-badge": (
-        "daywatch, white on the #0d9488 accent at 3.47:1. Fixing it means "
-        "darkening the theme's accent colour, which changes its character. "
-        "Maintainer's design decision, deliberately not taken by tooling."
-    ),
-    ".error-page a": (
-        "daywatch, same accent and same ratio as .tab-badge; one decision "
-        "covers both."
-    ),
-    '.plugin-row-help:hover, .plugin-row-help[aria-expanded="true"]': (
-        "daywatch, the same accent as a link colour on white at 3.74:1. Third "
-        "site of the one accent decision."
+    ".severity_low": (
+        "daywatch, --color-info #0891b2 on its own cyan tint at 3.32:1. No "
+        "--color-info-bright token exists in any theme, so clearing it means "
+        "retuning --color-info theme-wide rather than picking a brighter "
+        "sibling as .severity_medium did. Maintainer's design decision."
     ),
 }
 
 HEX = re.compile(r"#[0-9a-fA-F]{6}\b")
 VAR = re.compile(r"var\(\s*(--[a-z0-9-]+)\s*(?:,[^)]*)?\)")
-TOKEN_DECL = re.compile(r"--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6})\s*;")
+TOKEN_DECL = re.compile(
+    r"--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6}|rgba?\([^)]*\))\s*;"
+)
 THEME_BLOCK = re.compile(
     r"(?::root\s*,\s*)?\[data-theme=\"([a-z-]+)\"\]\s*\{(.*?)\n\}", re.S
 )
 RULE = re.compile(r"([^{}]+)\{([^{}]*)\}", re.S)
 COLOUR_PROP = re.compile(r"(?<![-\w])color\s*:\s*([^;]+);")
 BG_PROP = re.compile(r"(?<![-\w])background(?:-color)?\s*:\s*([^;]+);")
+RGBA = re.compile(
+    r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)"
+)
 
 
 def relative_luminance(hex_colour: str) -> float:
@@ -138,11 +156,13 @@ def parse_themes(css: str) -> dict[str, dict[str, str]]:
 
 
 def resolve(value: str, tokens: dict[str, str]) -> str | None:
-    """A declaration's literal colour, or None if it is not a plain colour.
+    """A declaration's literal OPAQUE colour, or None if it is not one.
 
-    Returns None rather than guessing for gradients, rgba, transparent,
-    currentColor, keywords and anything else a static parse cannot pin to one
-    hex value. Silence beats a fabricated reading.
+    Returns None rather than guessing for gradients, transparent, currentColor,
+    keywords and anything else a static parse cannot pin to one hex value.
+    Silence beats a fabricated reading. An alpha colour also returns None here
+    and is handled by `alpha_colour` instead, because it has no one hex value
+    until it is composited over something.
     """
     value = value.strip()
     if "gradient" in value or "!important" in value.replace(" ", ""):
@@ -152,11 +172,41 @@ def resolve(value: str, tokens: dict[str, str]) -> str | None:
     match = VAR.search(value)
     if match:
         resolved = tokens.get(match.group(1)[2:])
-        return resolved
+        # TOKEN_DECL captures alpha tokens too, so a token can resolve to an
+        # rgba literal. Without this guard relative_luminance is handed
+        # "rgba(..." and dies on int("rg", 16).
+        return resolved if resolved and resolved.startswith("#") else None
     found = HEX.search(value)
     if found:
         return found.group(0)
     return None
+
+
+def alpha_colour(
+    value: str, tokens: dict[str, str]
+) -> tuple[int, int, int, float] | None:
+    """The rgb(a) a declaration names, as (r, g, b, alpha), or None."""
+    match = VAR.search(value)
+    if match:
+        value = tokens.get(match.group(1)[2:], "")
+    found = RGBA.search(value)
+    if not found:
+        return None
+    r, g, b, a = found.groups()
+    return int(r), int(g), int(b), float(a) if a is not None else 1.0
+
+
+def over(colour: tuple[int, int, int, float], backdrop: str) -> str:
+    """`colour` alpha-composited over an opaque #rrggbb backdrop.
+
+    Source-over in sRGB, which is what the browser does for background-color,
+    so the result is the rendered pixel rather than an approximation of it.
+    """
+    base = [int(backdrop[i : i + 2], 16) for i in (1, 3, 5)]
+    r, g, b, a = colour
+    return "#%02x%02x%02x" % tuple(
+        round(c * a + s * (1 - a)) for c, s in zip((r, g, b), base)
+    )
 
 
 def check(css_path: Path) -> int:
@@ -190,10 +240,29 @@ def check(css_path: Path) -> int:
             tokens = themes.get(theme, {})
             fg = resolve(fg_decl.group(1), tokens)
             bg = resolve(bg_decl.group(1), tokens)
-            if not (fg and bg):
+            if not fg:
                 continue
+            if bg:
+                ratio = contrast_ratio(fg, bg)
+            else:
+                # An alpha background composites over an ancestor a static
+                # parse cannot know, so take the BEST of every surface the
+                # theme declares: a failure then holds whatever the ancestor
+                # turns out to be, which keeps a report a fact rather than a
+                # guess. The worst-case rule was measured too and reports 61
+                # failures on pairings that may never co-occur, which is the
+                # manufactured-defect mode recorded in this file's docstring.
+                tint = alpha_colour(bg_decl.group(1), tokens)
+                surfaces = [
+                    v
+                    for k, v in tokens.items()
+                    if k.startswith("bg-") and v.startswith("#")
+                ]
+                if not (tint and surfaces):
+                    continue
+                ratio = max(contrast_ratio(fg, over(tint, s)) for s in surfaces)
+                bg = f"{bg_decl.group(1).strip()} over --bg-*"
             checked += 1
-            ratio = contrast_ratio(fg, bg)
             if ratio < need:
                 if selector in DEFERRED:
                     deferred.append((theme, selector, fg, bg, ratio))
