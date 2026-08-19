@@ -1,7 +1,7 @@
 # Naming Conventions Reference
 
 **Author**: Eric Jingryd
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-19
 **Purpose**: Complete and authoritative naming standards for all identifiers in the project
 
 ---
@@ -1008,6 +1008,15 @@ which host the checkpoint was captured from ("local", or an SSH target). Under
 the prefix rule it would be `checkpoint_host_key`; it is listed here as the code
 spells it, not as the rule would have it.
 
+**This rule is convention, not gate.** `validate_naming.py` checks case,
+abbreviations and British spelling; it has never checked field prefixes. It
+carried a `field_prefixes` table naming six of these types until 2026-08-19,
+which no method read, so the table enforced nothing while reading like
+enforcement. It was deleted rather than implemented: the tree already follows
+the rule, with the one exception above, so a struct parser and an exception
+list would find nothing today. A new field that breaks it is caught in review
+or not at all.
+
 **Result/Data Struct Fields**:
 ```rust
 // ✅ GOOD:
@@ -1950,4 +1959,4 @@ When naming any identifier in this project, verify:
 
 ---
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-19

@@ -1816,6 +1816,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`validate_naming.py` exempted `color` unconditionally, and carried a rule
+  it never applied.** The British-English check skipped the word outright,
+  justified as "From PDF/graphics libraries (printpdf crate)", which described
+  1 of the 38 lines in the tree that carry it: 35 are CSS, 2 are a webhook
+  payload field name, 1 is a crate path. So a Rust field of our own named
+  `color` was exempted by a rule written for a PDF crate. The skip is now
+  conditional on what the line actually is, and matches on the CSS **value**
+  rather than on `color:` alone, because `color: String,` is a Rust field and
+  matched the first attempt, leaving the narrowing worth nothing. Controls:
+  the tree still warns nowhere, at 122 production warnings either way, and a
+  probe declaring `pub color: String` now warns where it did not. One CSS
+  declaration in `html.rs` wraps across two lines, so its value is not on the
+  line the word is on; that has its own pattern rather than a reflowed string.
+  Separately, a `field_prefixes` table naming six types was deleted: no method
+  ever read it. The rule it describes is real and documented, the tree already
+  follows it, and `docs/reference/naming-conventions.md` now says outright that
+  it is convention rather than gate.
+
 - **A misspelt framework key under `[compliance.not_applicable]` excluded
   nothing and said nothing.** `ReportGenerator` resolves every key through
   `ComplianceFramework::from_id` and drops the ones that do not resolve, so

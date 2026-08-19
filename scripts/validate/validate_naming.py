@@ -106,8 +106,36 @@ class NamingValidator:
         # External crate terms that use American English (can't be changed)
         self.external_american_terms = {
             'serialize', 'deserialize', 'serializer', 'deserializer',
-            'color',  # From PDF/graphics libraries (printpdf crate)
+            'color',  # see external_color_patterns for what this actually means
         }
+
+        # Where `color` is not ours to spell. The exemption used to be
+        # unconditional and was justified as "from PDF/graphics libraries
+        # (printpdf crate)", which described one of the 38 lines carrying the
+        # word: 35 are CSS, 2 are a webhook payload field, 1 is a crate path.
+        # So `color` could never raise a warning anywhere, and a Rust field of
+        # our own named `color` would have been exempted by a rule written for
+        # a PDF crate. Measured 2026-08-19: with these patterns the tree still
+        # warns nowhere, and a probe declaring `pub color: String` does warn,
+        # which together say they cover the real reasons rather than replacing
+        # a blanket skip with a narrower blanket skip.
+        #
+        # The CSS pattern matches on the VALUE and not on `color:` alone. A
+        # Rust field is written `color: String,` and matched the first version
+        # of this list, so the probe above stayed silent and the narrowing
+        # bought nothing. A CSS value is a hex literal, a function or a bare
+        # keyword ending the declaration; a Rust type is neither. The second
+        # CSS pattern is there because `html.rs:249` wraps a declaration across
+        # two lines, so the value is not on the line the word is on and a
+        # line-based check sees `color:` with nothing after it.
+        self.external_color_patterns = [
+            r'--color-',        # CSS custom property names; renaming breaks the sheet
+            r'\bcolor\s*:\s*(#|var\(|rgba?\(|hsla?\(|[a-z-]+\s*;)',  # a CSS declaration
+            r'\bcolor\s*:\s*$',  # ... and one whose value wrapped to the next line
+            r'"color"',         # the field name Slack and Discord payloads require
+            r'\bcolor::',       # an external crate's module path
+            r'^\s*use\b',       # ... and the import that brings it in
+        ]
 
         # Lines containing these patterns skip British English checks entirely
         self.external_crate_patterns = [
@@ -123,15 +151,15 @@ class NamingValidator:
             r'Authorize Access to Security Functions',  # NIST SP 800-53 AC-6(1)
         ]
 
-        # Required prefixes for struct fields
-        self.field_prefixes = {
-            'Distribution': 'distro_',
-            'Plugin': 'plugin_',
-            'Checkpoint': 'checkpoint_',
-            'Package': 'package_',
-            'AuditEntry': 'entry_',
-            'FileState': 'file_',
-        }
+        # `field_prefixes` used to sit here, mapping six type names to a
+        # required struct-field prefix. No method ever read it, so it enforced
+        # nothing while reading as a rule this validator applied. Deleted
+        # 2026-08-19 rather than implemented. The rule itself is real and is
+        # written down in `docs/reference/naming-conventions.md` under Field
+        # Names; the tree already follows it, and the one field that does not,
+        # `Checkpoint::host_key`, is documented there as an exception. So
+        # implementing it would need a struct parser and an exception list to
+        # find nothing, and its absence is not what lets a bad field name in.
 
     def validate_project(self) -> int:
         """
@@ -429,8 +457,10 @@ class NamingValidator:
                     # Skip 'Serialize' and 'Deserialize' trait names entirely
                     if american in ('serialize', 'deserialize') and american.capitalize() in line:
                         continue
-                    # Skip 'color' when used with external types
-                    if american == 'color':
+                    # Skip 'color' only where the spelling is not ours to choose
+                    if american == 'color' and any(
+                        re.search(p, line) for p in self.external_color_patterns
+                    ):
                         continue
 
                 self.issues.append(ValidationIssue(
