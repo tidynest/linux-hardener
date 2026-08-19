@@ -910,6 +910,18 @@ that changed nothing about the webhook. That applies to a single hand-written
 endpoint as much as to several. Configure webhooks by file on any host where a
 webhook needs an authentication header.
 
+**A channel switched on with nowhere to send is refused at the save** as of
+2026-08-19, for webhooks with no URL and for email with no recipient. Until
+then it was accepted in silence at both ends: an endpoint with no URL is not
+written at all, so the file ended up with `enabled = true` beside an empty
+list, the desktop reported `Saved to <path>`, and the daemon's per-endpoint
+warning sits inside a loop over that empty list and so warned about nothing.
+The daemon now also says so once when webhooks are enabled and the list is
+empty, which is the case a hand-edited file reaches. **`smtp_host` is not part
+of this check**: the desktop has no field for it, so email switched on with a
+recipient and a from-address still reaches a daemon that refuses it when the
+host is missing, and that refusal is logged rather than shown.
+
 ```toml
 [scheduler]
 enabled = true

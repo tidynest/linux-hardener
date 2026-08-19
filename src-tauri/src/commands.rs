@@ -2079,6 +2079,7 @@ pub async fn save_scheduler_config(
     for recipient in &config.notifications.email.recipients {
         validate_ipc_string(recipient, "email_recipient")?;
     }
+    crate::validation::validate_notification_channels(&config.notifications)?;
 
     let write_path = writable_config_path()?;
 

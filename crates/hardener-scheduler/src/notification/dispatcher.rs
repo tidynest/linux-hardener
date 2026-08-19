@@ -40,6 +40,14 @@ impl NotificationDispatcher {
 
         // Add webhook notifiers for each endpoint
         if config.webhooks.enabled {
+            // Said here rather than inside the loop, because a loop over an
+            // empty list runs no iteration and so warns about nothing. That is
+            // the exact state a desktop save used to leave behind, and the
+            // state a hand-edited file reaches by setting `enabled = true` and
+            // writing no `[[endpoints]]` table.
+            if config.webhooks.endpoints.is_empty() {
+                warn!("Webhooks are enabled but no endpoint is configured, so none will be sent");
+            }
             for endpoint in &config.webhooks.endpoints {
                 if let Some(webhook) = WebhookNotifier::new(endpoint.clone()) {
                     debug!("Webhook '{}' notifier enabled", endpoint.name);

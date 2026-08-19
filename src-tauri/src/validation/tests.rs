@@ -328,3 +328,59 @@ fn ssh_key_rejects_absolute_outside() {
     let path = format!("{}/Documents/key.pem", test_home().display());
     assert!(validate_ssh_key_path(&path).is_err());
 }
+
+/// A channel switched on with nowhere to send is refused, and one switched off
+/// is not.
+///
+/// The off arms are the control and are the reason this is one test rather
+/// than two: a check written as "webhooks with no URL is an error" alone is
+/// satisfied by refusing every config, and the operator who has never touched
+/// notifications could then save nothing at all.
+#[test]
+fn a_notification_channel_that_cannot_notify_is_refused() {
+    use hardener_types::scheduler::NotificationUiConfig;
+
+    let mut config = NotificationUiConfig::default();
+    assert!(
+        validate_notification_channels(&config).is_ok(),
+        "the control: notifications untouched must save"
+    );
+
+    config.webhooks.enabled = true;
+    let refusal = validate_notification_channels(&config)
+        .expect_err("webhooks on with no URL sends nothing and must be refused");
+    assert!(
+        refusal.contains("endpoint URL"),
+        "the refusal must name the field to fill: {refusal}"
+    );
+
+    // Whitespace is not a URL. The form trims nothing, so a space typed into
+    // the field would otherwise satisfy a bare `is_empty` and write an
+    // endpoint list the daemon then rejects one layer down.
+    config.webhooks.url = "   ".to_string();
+    assert!(
+        validate_notification_channels(&config).is_err(),
+        "a whitespace-only URL is no URL"
+    );
+
+    config.webhooks.url = "https://hooks.example.com/services/x".to_string();
+    assert!(
+        validate_notification_channels(&config).is_ok(),
+        "the control: a webhook with a URL must save"
+    );
+
+    config.email.enabled = true;
+    config.email.recipients = vec![String::new(), "  ".to_string()];
+    let refusal = validate_notification_channels(&config)
+        .expect_err("email on with only blank recipients sends nothing and must be refused");
+    assert!(
+        refusal.contains("recipient"),
+        "the refusal must name the field to fill: {refusal}"
+    );
+
+    config.email.recipients = vec!["ops@example.com".to_string()];
+    assert!(
+        validate_notification_channels(&config).is_ok(),
+        "the control: both channels configured must save"
+    );
+}

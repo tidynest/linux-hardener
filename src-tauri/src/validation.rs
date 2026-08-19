@@ -342,5 +342,48 @@ pub fn validate_ssh_key_path(path: &str) -> Result<PathBuf, String> {
     Ok(expanded)
 }
 
+/// Refuses a notification channel switched on that cannot notify anybody.
+///
+/// The webhook case was silent at both ends. `WebhookUiConfig` writes an
+/// endpoint list, and an entry with no URL is not written at all, so a form
+/// saved with the toggle on and the URL blank produced `enabled = true` beside
+/// an empty list. The desktop then reported `Saved to <path>`, and the daemon
+/// had nothing to warn about either: its per-endpoint warning is inside a loop
+/// over a list with no entries. The operator is left believing they are being
+/// alerted, which is the failure mode worth refusing rather than logging.
+///
+/// **Email is checked on what this form can set, and that is not all of it.**
+/// `smtp_host` has no field in the desktop and is not inspected here, so email
+/// switched on with recipients and a from-address still reaches a daemon that
+/// refuses it when the host is missing from the file. That refusal is logged
+/// and not shown in the GUI, which is the same shape one layer down and is not
+/// closed by this check.
+pub fn validate_notification_channels(
+    notifications: &hardener_types::scheduler::NotificationUiConfig,
+) -> Result<(), String> {
+    if notifications.webhooks.enabled && notifications.webhooks.url.trim().is_empty() {
+        return Err(
+            "Webhook notifications are enabled but no endpoint URL is set, so nothing \
+             would be sent. Add a URL, or switch webhooks off."
+                .to_string(),
+        );
+    }
+
+    let recipients = notifications
+        .email
+        .recipients
+        .iter()
+        .filter(|recipient| !recipient.trim().is_empty());
+    if notifications.email.enabled && recipients.count() == 0 {
+        return Err(
+            "Email notifications are enabled but no recipient is set, so nothing would \
+             be sent. Add a recipient, or switch email off."
+                .to_string(),
+        );
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

@@ -1816,6 +1816,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A notification channel could be switched on with nowhere to send, and
+  nothing said so at either end.** `WebhookUiConfig` writes an endpoint list
+  and never writes an entry with no URL, so a desktop form saved with the
+  toggle on and the URL blank produced `enabled = true` beside an empty list.
+  The desktop reported `Saved to <path>`; the daemon had nothing to warn about
+  either, because its per-endpoint warning sits inside a loop over that empty
+  list. The operator is left believing they are being alerted. The IPC boundary
+  now refuses the save, for webhooks with no URL and for email with no
+  recipient, naming the field to fill, and the existing failure path in the
+  scheduler page shows the refusal rather than a success. The daemon warns once
+  when webhooks are enabled and the list is empty, which is what a hand-edited
+  file reaches. Whitespace is not a URL, and dropping the `trim` was confirmed
+  to fail the test; disabling the email arm was too. **`smtp_host` is out of
+  scope** and stated as such: the desktop has no field for it, so email with a
+  recipient and a from-address still meets a daemon refusal one layer down that
+  is logged and not shown.
+
 - **`validate_naming.py` exempted `color` unconditionally, and carried a rule
   it never applied.** The British-English check skipped the word outright,
   justified as "From PDF/graphics libraries (printpdf crate)", which described
