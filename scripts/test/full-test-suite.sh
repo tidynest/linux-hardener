@@ -890,18 +890,37 @@ test_audit_rollback_restores() {
         return
     fi
 
-    # The same rule, for the backup `augenrules` displaces a compiled rule set
-    # into. Where it already exists the checkpoint captures it with content and
-    # the restore writes those bytes back, so the removal path this section
-    # forces below is never exercised and the reading is void in exactly the way
-    # the rules file above would be. No audit package ships one: it comes into
-    # existence only by `augenrules` running, so on a container recreated for
-    # this run it should be absent, and its presence means an earlier run left
-    # it behind.
+    # The backup a compiled rule set is displaced into, made uniform rather than
+    # refused.
+    #
+    # An earlier version of this failed the section outright where
+    # $compiled_prev already existed, on the stated grounds that only
+    # `augenrules` creates it and so an earlier run must have left it. That was
+    # wrong, and openSUSE proved it on the first run: its audit package arrives
+    # with the file in place, on a container recreated by the runner moments
+    # before and never running `augenrules` in between. The guard turned a
+    # pristine host into a failure and returned, costing that distribution the
+    # other eight checks in this section, including the tree comparison this
+    # section existed for before any of this was added.
+    #
+    # The condition it identified is real, though: where the file exists at
+    # capture the checkpoint stores it with content and the restore writes those
+    # bytes back, so the removal path forced below is never exercised and that
+    # host quietly reads a different question from the rest. Removing it first
+    # makes every distribution ask the same one. It happens before the baseline
+    # snapshot, so the tree compared against never held it either, and
+    # `augenrules` writes a fresh one whenever it next compiles.
     if [[ -e "$compiled_prev" ]]; then
-        log_fail "Audit rollback: $compiled_prev exists before the apply, so this reading is void"
-        log_info "  only augenrules creates it, so an earlier run in this container left it"
-        log_info "  recreate it first: sudo ./scripts/containers/create-container.sh <distro>"
+        log_info "This image ships $compiled_prev; removing it so every host asks the same question"
+    fi
+    rm -f "$compiled_prev" 2>/dev/null
+
+    # Refused only when it cannot be removed, which is the one state that really
+    # is undeterminable: the section would go on to assert the removal of a file
+    # it never controlled.
+    if [[ -e "$compiled_prev" ]]; then
+        log_fail "Audit rollback: $compiled_prev could not be removed, so this reading is void"
+        log_info "  every other host starts this section without it, so its removal cannot be read here"
         return
     fi
 

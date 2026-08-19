@@ -371,27 +371,39 @@ apply and present after the rollback. The content is correct, and the assertion
 immediately after it passed, reading `audit.rules` back at its original six
 lines; what survives is the backup copy, not wrong hardening.
 
-**RHEL was the only one of the six to produce a `.prev` at all**, and the other
-five passed. `augenrules --load` saves the compiled rule set it displaces under
-that name, so the file exists only where `augenrules` runs far enough to
-compile.
+A second run at `16f08948` passed on all six. **It was recorded here as proving
+nothing on the grounds that no distribution had produced a `.prev` that time.
+That was wrong, and the reasoning is worth keeping because it is a trap this
+document exists to catch: `.prev` is named in a run's log only when the tree
+comparison fails and prints its diff.** A run in which every host passed had no
+reason to mention the file whether or not it existed, so reading the silence as
+absence inferred a fact from a log that was never asked the question. What that
+run actually established is weaker and real: the audit tree came back identical
+on all six.
 
-**A second run, at `16f08948`, passed on all six, and it is not evidence of
-anything.** No distribution produced a `.prev` that time, RHEL included, so the
-check never reached the state it failed in. Every other line of RHEL's audit
-block was identical across the two runs: the same six lines and seven paths
-before the apply, the same apply exiting 1, the same eighty-five written and
-thirty-one compiled, the same reload reported unavailable. The only difference
-between a red run and a green one was whether `augenrules` wrote the file at
-all.
+The third run, at `99723784`, settled it. Section 12A now says which case it is
+in, and **`augenrules` created the backup during the apply on all five
+distributions that completed, RHEL included** - the fallback that would have
+created one never fired. So the conditions of the 2026-08-18 failure were
+reproduced on the host that failed, and the rollback removed the file. The named
+assertion `Audit rollback: the compiled-rules backup is gone` passed on arch,
+debian, ubuntu, fedora and RHEL.
 
-**So the trigger is uncontrolled, and this suite is a lottery ticket on this
-defect.** A green cross-distro run does not mean the backup is removed; it
-usually means no backup existed to remove. Making the check honest needs the
-test to create `/etc/audit/audit.rules.prev` deliberately before the rollback
-rather than waiting for `augenrules` to do it, which would also make the
-failure reproducible enough to attribute. Until then, treat a pass here as
-silent on the question.
+**That leaves the original failure unexplained rather than absent.** It has now
+been observed once and not reproduced across two later runs under conditions
+that look the same from the log. The check is no longer a lottery ticket: it
+forces the file into existence when an apply leaves none, and it names the file
+when it survives rather than reporting only that two directory listings differ.
+But a pass still cannot prove the intermittent case is gone, only that it did
+not occur.
+
+**openSUSE is a different reading, and the first version of this check got it
+wrong.** Its audit package arrives with `.prev` already present, on a container
+the runner recreates moments before. The check refused that as a host state an
+earlier run must have left, failed the section and returned, costing that
+distribution the other eight checks including the tree comparison. It now
+removes the file before taking its baseline instead, so every distribution asks
+the same question. **That fix has not yet run.**
 
 Three mechanisms could produce it: the apply recording no checkpoint row for
 the path, the restore declining to act on that row, or the audit plugin's own
