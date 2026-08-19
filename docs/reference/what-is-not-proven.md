@@ -1158,12 +1158,19 @@ a discovered blind spot:
   leading dash of the next. Measured on 2026-08-19 with `crosscheck.py`'s own
   `paragraphs`/`LABELLED`/`key_of`, counting a match whose span crosses a
   physical line, and of those, the ones crossing into a line opening a new
-  bullet: 214 matches cross a physical line, 24 of those cross into a new
-  bullet, producing 21 contaminated keys, counting a key only when the absorbed
-  dash itself survives key_of's three-word cap rather than being truncated
-  away, and none of the 21 reaches the threshold of disagreeing across more
-  than one file, so the effect on the report today is zero. It is a latent
-  false-positive risk rather than a live defect. This entry's own text sits
+  bullet: 214 matches cross a physical line and 24 of those cross into a new
+  bullet. **How many contaminated keys those 24 produce is deliberately not
+  stated here.** Three independent measurements of it, taken on 2026-08-19 and
+  2026-08-20 from the same written definition, returned 16, 21 and 23: the
+  figure turns on definitional choices the sentence describing it never pinned
+  down, chiefly whether a key counts when the absorbed dash is truncated away
+  by `key_of`'s three-word cap. All three agreed on the part that carries the
+  conclusion, and it is the part worth stating: none of the contaminated keys
+  reaches the threshold of disagreeing across more than one file, so the effect
+  on the report today is zero. It is a latent false-positive risk rather than a
+  live defect. A number three careful readings cannot reproduce is not a
+  measurement, and printing one anyway would be the defect this file exists to
+  refuse. This entry's own text sits
   inside the corpus it sweeps, so the self-referential matches it forms about
   its own figures are excluded from the 214: a literal re-run of the same
   pipeline against the corpus as it now reads will not reproduce 214 exactly,
