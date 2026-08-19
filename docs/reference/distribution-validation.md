@@ -326,9 +326,15 @@ runner. One command runs the suite across every distribution in
 `scripts/lib/common.sh`'s `DISTRO_ORDER`, collecting pass/fail/skip counts and
 writing `test-results/summary.txt` (`test-results/differential-summary.txt`
 under `--differential`, so the two suites do not overwrite each other). On a
-booted container under `--apply` the suite records **149 checks** per
-distribution. The results below are the six distributions that had been run
-when they were measured.
+booted container under `--apply` the suite **declares 151 checks** per
+distribution. **It recorded 149 on every run to date**, and the two added on
+2026-08-19 have not yet met a container: section 12A now creates
+`/etc/audit/audit.rules.prev` itself rather than waiting for `augenrules` to
+leave one, and asserts its presence before the rollback and its absence after.
+The figure is therefore declared rather than measured, which is the same
+distinction this document draws for every count it carries, and the tables
+below record 149 because that is what those runs recorded. The results below
+are the six distributions that had been run when they were measured.
 
 ### Running the Tests
 
@@ -418,6 +424,13 @@ the bracket is derived as declared minus resolved, so it says what it measures
 rather than what it is usually taken to mean: on a clean run those are the
 skips taken after the check was announced, and a check that fell out of its
 section without any verdict at all would land there too.
+
+The figures in that sample are the ones every run to date recorded. **The next
+run will declare 151**, section 12A having gained two checks on 2026-08-19; the
+skip arithmetic above is unaffected, since neither is skippable. What the passed
+count becomes is deliberately not predicted here: one of the two asserts that
+the rollback removed the backup `augenrules` leaves, which is the open question
+those checks were added to ask rather than a row expected to be green.
 
 A `--differential` run reports a fifth number instead. Its checks reconcile by
 construction, since a check it cannot determine is recorded as a failure rather

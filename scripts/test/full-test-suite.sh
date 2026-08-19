@@ -319,7 +319,7 @@ suite_section_sizes() {
 
     if [[ "$apply" == "true" ]]; then
         printf '%s\n' \
-            "12A audit rollback|7" \
+            "12A audit rollback|9" \
             "12B services rollback|$services_rollback_checks" \
             "13 apply kernel|1" \
             "14 apply, the other plugins|$other_apply_checks" \
@@ -856,6 +856,7 @@ test_audit_rollback_restores() {
     local audit_tree="/etc/audit"
     local rules_file="$audit_tree/rules.d/hardening.rules"
     local compiled="$audit_tree/audit.rules"
+    local compiled_prev="$compiled.prev"
     local work="$REPORT_DIR/audit-rollback"
     mkdir -p "$work"
 
@@ -885,6 +886,21 @@ test_audit_rollback_restores() {
         log_info "  its line count reads $(line_count "$rules_file"), and it was left by an earlier run"
         log_info "  --apply hardens every container it touches and nothing here undoes the audit apply"
         log_info "  section 15 performs, so a second --apply run in the same container cannot ask this"
+        log_info "  recreate it first: sudo ./scripts/containers/create-container.sh <distro>"
+        return
+    fi
+
+    # The same rule, for the backup `augenrules` displaces a compiled rule set
+    # into. Where it already exists the checkpoint captures it with content and
+    # the restore writes those bytes back, so the removal path this section
+    # forces below is never exercised and the reading is void in exactly the way
+    # the rules file above would be. No audit package ships one: it comes into
+    # existence only by `augenrules` running, so on a container recreated for
+    # this run it should be absent, and its presence means an earlier run left
+    # it behind.
+    if [[ -e "$compiled_prev" ]]; then
+        log_fail "Audit rollback: $compiled_prev exists before the apply, so this reading is void"
+        log_info "  only augenrules creates it, so an earlier run in this container left it"
         log_info "  recreate it first: sudo ./scripts/containers/create-container.sh <distro>"
         return
     fi
@@ -937,6 +953,47 @@ test_audit_rollback_restores() {
     log_info "After the apply: $compiled holds $(line_count "$compiled") lines"
 
     # ------------------------------------------------------------------------
+    # The backup augenrules leaves, forced rather than waited for
+    # ------------------------------------------------------------------------
+    #
+    # `augenrules --load` saves the compiled rule set it displaces as
+    # $compiled_prev, so an apply that reloads leaves a file the host never had
+    # and the rollback has to remove it.
+    #
+    # Whether the apply produces one is not this suite's to decide, and waiting
+    # for it made this check a lottery ticket. On 2026-08-18 RHEL wrote one and
+    # the tree comparison below failed on it; on 2026-08-19 no distribution
+    # wrote one at all and the same comparison passed on all six without ever
+    # reaching the state it had failed in. Every other line of RHEL's reading
+    # was identical across the two runs. A green run therefore said "no backup
+    # existed" while reading like "the backup was removed", which are not the
+    # same fact and were not told apart.
+    #
+    # So the file is created here when the apply did not leave one, and the
+    # removal path is exercised on every host on every run. It is created AFTER
+    # the apply deliberately: the checkpoint was taken before it and so records
+    # the path absent, which is the case that failed and the one
+    # `rollback_deletes_the_compiled_rules_backup_augenrules_saved` covers on
+    # the restore side in hardener-state.
+    if [[ -e "$compiled_prev" ]]; then
+        log_info "The apply's reload left $compiled_prev, as augenrules does where it compiles"
+    else
+        cp "$compiled" "$compiled_prev" 2>/dev/null \
+            || printf 'stand-in for a displaced compiled rule set\n' > "$compiled_prev"
+        log_info "The apply left no $compiled_prev, so this check created one to exercise its removal"
+    fi
+
+    # Read back rather than assumed: a `cp` into an unwritable /etc/audit would
+    # otherwise leave the section asserting the removal of a file that was never
+    # there, which is the same void reading by a different route.
+    log_test "Audit rollback: the backup the rollback must remove is present"
+    if [[ ! -e "$compiled_prev" ]]; then
+        log_fail "Audit rollback: $compiled_prev could not be created, so its removal cannot be read"
+        return
+    fi
+    log_pass "Audit rollback: $compiled_prev is present before the rollback"
+
+    # ------------------------------------------------------------------------
     # Choosing the checkpoint, which is the step that has been got wrong most
     # ------------------------------------------------------------------------
     #
@@ -974,6 +1031,20 @@ test_audit_rollback_restores() {
         log_fail "Audit rollback: $rules_file survived the rollback"
     else
         log_pass "Audit rollback: $rules_file was removed by the rollback"
+    fi
+
+    # Named separately from the tree comparison below, which would also catch
+    # it, because the two fail differently: this says which file and why it
+    # matters, where the tree diff says only that two listings differ. The
+    # rules file above is asserted the same way for the same reason.
+    log_test "Audit rollback: the compiled-rules backup is gone"
+    if [[ -e "$compiled_prev" ]]; then
+        log_fail "Audit rollback: $compiled_prev survived the rollback"
+        log_info "  the checkpoint recorded it absent, so the rollback owed its removal"
+        log_info "  the restore half is covered by hardener-state's own unit test, so suspect"
+        log_info "  the apply's row for this path or the plugin's post-reload cleanup"
+    else
+        log_pass "Audit rollback: $compiled_prev was removed by the rollback"
     fi
 
     # The paths are declared unconditionally rather than narrowed to what a host
@@ -2171,12 +2242,12 @@ LISTING
     # rather than measured and has not yet met a container. The unbooted and
     # read-only figures are derived too, which is said here so nobody reads them
     # as evidence.
-    check_eq "$(expected_test_total true true true)" "149" \
-        "a booted --apply run in a container declares the 140 five hosts recorded plus section 23's nine"
-    check_eq "$(expected_test_total true false true)" "143" \
+    check_eq "$(expected_test_total true true true)" "151" \
+        "a booted --apply run in a container declares the 140 five hosts recorded, section 23's nine, and 12A's two backup rows"
+    check_eq "$(expected_test_total true false true)" "145" \
         "an unbooted --apply run declares six fewer, the services rollback rows it cannot ask"
     check_eq "$(expected_test_total false true true)" "109" \
-        "a run without --apply declares neither the apply sections nor the lifecycle"
+        "a run without --apply declares neither the apply sections nor the lifecycle, so 12A's two do not count here either"
 
     # The property that makes the table guard a guard rather than a mirror: the
     # expectation is counted off the pinned numbers, so shortening a table moves
@@ -2189,7 +2260,7 @@ LISTING
     PLUGINS=("${PLUGINS[@]:0:7}")
     check_status 1 "require_suite_tables refuses a table edited down" \
         require_suite_tables
-    check_eq "$(expected_test_total true true true)" "149" \
+    check_eq "$(expected_test_total true true true)" "151" \
         "and the expected total does not follow the table it polices"
     PLUGINS=("${saved_plugins[@]}")
     check_status 0 "require_suite_tables accepts the table once it is restored" \
@@ -2198,10 +2269,10 @@ LISTING
     # A run is refused on the count it recorded, not on the count it wanted.
     local saved_log="$LOG_FILE" saved_total="$TESTS_TOTAL"
     LOG_FILE="$workdir/self-test.log"
-    TESTS_TOTAL=149
+    TESTS_TOTAL=151
     check_status 0 "a run that recorded what the sections declare is accepted" \
         require_expected_total true true true
-    TESTS_TOTAL=148
+    TESTS_TOTAL=150
     check_status 1 "a run one check short of what the sections declare is refused" \
         require_expected_total true true true
 
