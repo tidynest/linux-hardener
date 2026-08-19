@@ -364,6 +364,35 @@ succeed. Account databases are captured metadata-only by design, which is a
 deliberate choice rather than an oversight, and the distinct `ContentAbsence`
 discriminant keeps that apart from a read that failed.
 
+**On RHEL, a rollback of the audit apply ends with a file the host never had,
+and why is not yet known.** The release-readiness run of 2026-08-19 failed one
+check on one distribution: `/etc/audit/audit.rules.prev` was absent before the
+apply and present after the rollback. The content is correct, and the assertion
+immediately after it passed, reading `audit.rules` back at its original six
+lines; what survives is the backup copy, not wrong hardening.
+
+**RHEL was the only one of the six to produce a `.prev` at all**, and the other
+five passed. `augenrules --load` saves the compiled rule set it displaces under
+that name, so the file exists only where `augenrules` runs far enough to
+compile, which inside a container it does on RHEL and does not elsewhere. The
+same run passed this check on RHEL the day before against the same code, so
+whether this is intermittent or a change in the rebuilt RHEL image is itself
+unestablished; the containers are recreated from upstream every run.
+
+Three mechanisms could produce it: the apply recording no checkpoint row for
+the path, the restore declining to act on that row, or the audit plugin's own
+post-reload cleanup missing the copy `augenrules` writes again on the way out.
+**The middle one has since been ruled out.**
+`rollback_deletes_the_compiled_rules_backup_augenrules_saved` gives the restore
+exactly that row and reads what it does: it issues `rm -f` and reports
+`Removed`. Both of its assertions were watched failing against mutated code
+before being believed, one with the path added to
+`UNDELETABLE_ROLLBACK_PATHS` and one with `recorded_absent` forced false. So
+the remaining candidates are the apply's row-recording and the plugin's
+post-reload removal, and neither has been read on a host that reproduces it.
+The checkpoint database that would answer it lived in the RHEL container, which
+is destroyed at the end of every run.
+
 What is proven, and is worth stating beside the above: a rollback takes its own
 checkpoint before it writes anything, so the undo is itself reversible, and a
 rollback aimed at a checkpoint belonging to another host is refused outright by

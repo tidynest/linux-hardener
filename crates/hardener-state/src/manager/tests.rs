@@ -338,6 +338,60 @@ async fn rollback_deletes_the_nftables_ruleset_an_apply_created() {
     );
 }
 
+/// The same rule, for the compiled-rules backup `augenrules` leaves behind.
+///
+/// `augenrules --load` writes `/etc/audit/audit.rules` and saves whatever it
+/// displaced as `/etc/audit/audit.rules.prev`, so an apply that reloads leaves
+/// a file on a host that never had one. Neither path sits in
+/// `/etc/audit/rules.d`, so the recursive capture of the rules directory does
+/// not reach either and the audit plugin declares both by name; the row stored
+/// for `.prev` is an absent one on every host where `augenrules` had not
+/// already run.
+///
+/// Written after the release-readiness run of 2026-08-19, in which the RHEL
+/// container finished a rollback with a `.prev` its pre-apply tree did not
+/// have. RHEL was the only one of the six to produce a `.prev` at all, and the
+/// other five passed. Three things could produce that: the apply recording no
+/// row, this restore declining to act on the row, or the plugin's own
+/// post-reload cleanup missing the copy `augenrules` writes again on the way
+/// out. This asks the middle one on its own.
+///
+/// It is worth keeping whatever that answer turns out to be. Nothing else pins
+/// this path outside [`UNDELETABLE_ROLLBACK_PATHS`], and its neighbour
+/// `/etc/audit/auditd.conf` IS listed there, so a later edit protecting the
+/// directory wholesale would be a one-line change with no test against it.
+#[tokio::test]
+async fn rollback_deletes_the_compiled_rules_backup_augenrules_saved() {
+    let previous = "/etc/audit/audit.rules.prev";
+    assert!(
+        !UNDELETABLE_ROLLBACK_PATHS.contains(&previous),
+        "{previous} is created by augenrules during the audit plugin's apply, \
+         so it must stay deletable"
+    );
+
+    let (result, restoring) = rollback_over_a_path_the_apply_created(previous).await;
+
+    let restoring_log = restoring.log();
+    assert!(
+        restoring_log
+            .commands_executed
+            .iter()
+            .any(|(cmd, args)| cmd == "rm" && args.iter().any(|a| a == previous)),
+        "the copy augenrules saved must be deleted, or a rollback ends with a file \
+         the host never had; the commands issued were: {:?}",
+        restoring_log.commands_executed
+    );
+    assert_eq!(
+        result.rollback_files[0].restore_action,
+        FileRestoreAction::Removed,
+        "a backup the apply's own reload created must be Removed, not Skipped"
+    );
+    assert!(
+        result.rollback_success,
+        "removing the compiled-rules backup is an ordinary success: {result:?}"
+    );
+}
+
 /// A command that ran and refused is not a command that worked.
 ///
 /// `execute_command` returns `Ok` for a process that started and exited
