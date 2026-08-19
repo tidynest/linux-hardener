@@ -638,6 +638,30 @@ Parses the CLI command definitions in `crates/hardener-cli/src/cli.rs` and cross
 
 Checks that every framework defined in the `ComplianceFramework` enum (`crates/hardener-types/src/lib.rs`) appears in each documented framework table (`docs/architecture/architecture.md` and `docs/ROADMAP.md`), and that no table lists a framework the code does not define. It validates the framework list rather than per-control counts, because post-rework catalogues are plugin-declared and aggregated at runtime (static per-control counts are no longer meaningful here). Grouped with the slower checks.
 
+### Cross-document facts
+
+```bash
+python3 scripts/validate/validate_cross_document_facts.py
+```
+
+Holds a fact stated in more than one document to the site that owns it. Each
+registered fact names a canonical source, a callable taking the project root:
+the tree, where the tree is the one that decides the fact, or one named
+document, where a measurement does.
+
+Its four failure arms are kept distinguishable rather than folded into one
+generic mismatch: a number that drifted from its canonical source, a pattern
+that matched nothing and so left the site unchecked rather than found clean,
+a pattern that matched more than one place and so would depend on file order,
+and a capture that was not an integer. Each is reported as its own error with
+its own explanation.
+
+A dated reading is never registered. A present-tense claim is expected to
+still be true today, while a reading that names its own date or commit is
+supposed to keep saying what it said, and registering one would fail the
+check the moment the fact changed even though the reading would still be
+correct history.
+
 ### Ignore rules
 
 ```bash
@@ -752,4 +776,4 @@ Compares the workspace version in `Cargo.toml` against
 (`PKGBUILD`, the RPM spec, `debian/changelog`) are outside its reach. Also
 invoked by `validate_all.py`, as its first entry.
 
-**Last Updated**: 2026-08-19
+**Last Updated**: 2026-08-20
