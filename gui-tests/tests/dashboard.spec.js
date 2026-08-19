@@ -109,8 +109,35 @@ test.describe('Dashboard', () => {
     const value = Number((await score.textContent()).split('/')[0]);
     expect(value).toBeGreaterThan(0);
     expect(value).toBeLessThanOrEqual(100);
-    // The mock scores 60, which is the middle band.
-    await expect(page.getByText('Needs attention')).toBeVisible();
+
+    // The exact number, not just a band, because the band alone is a weak
+    // assertion: two of the three bands span thirty points, so a scorer that
+    // drifted by twenty could stay green. 73 is `calculate_all_scores`'s mean
+    // over the ten frameworks the Dashboard requests (`ComplianceFramework::
+    // ALL`), taken from `summary_score_percentage` and rounded:
+    //
+    //   (82.5 + 71 + 88 + 55 + 65 + 78.26 + 74 + 69 + 81 + 63) / 10
+    //     = 72.676 -> 73, and `score_band` puts anything >= 70 in Good.
+    //
+    // GDPR's 78.26 is `(18 / 23) * 100` rather than a literal, because that
+    // framework is the one carrying exclusions and its score has to be the
+    // one its own counts imply.
+    //
+    // **This read 60 and "Needs attention" until 2026-08-19, and was wrong
+    // from `b263ae10` onward.** That commit replaced the graded scorer (Pass
+    // 100, ManualReview 80, a failure 25 to 90) with the report's own binary
+    // one, which moved the mock's hero from 60 to 73; the expectation was
+    // written for the graded scorer and nothing re-ran this suite until the
+    // release-readiness batch of 2026-08-18, so it failed on all six
+    // distributions at once. If a fixture percentage above changes, this
+    // number changes with it and the failure will say so by name.
+    //
+    // The label is read off `.score-pill`, the one element that renders
+    // `score_band_label`, rather than by text: "Good" is a substring of too
+    // much to search the page for, and a band read from the element that
+    // paints it cannot pass against a stray match elsewhere.
+    expect(value).toBe(73);
+    await expect(page.locator('.score-pill')).toHaveText('Good');
   });
 
   // T-DASH-11: The compliance row annotates excluded controls, and only where
