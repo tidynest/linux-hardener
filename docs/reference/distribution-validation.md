@@ -1144,11 +1144,15 @@ six distributions.
 | openSUSE | SUSE | Leap 15.6 | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
 
 The suite has grown since that baseline, and has since been rewritten. Every
-figure in the table above is superseded by the 2026-08-16 reading in
-[Summary](#summary): **154 tests across 11 specs, 154 of 154 on all six
-distributions**. None of the intermediate figures is comparable to it or to
-each other, because the specs were rewritten between several of them, so the
-numbers count different tests rather than measuring growth:
+figure in the table above is superseded by the reading in
+[Summary](#summary), which is **156 of 156 on all six distributions** at
+`653b4ff1` on 2026-08-18. This sentence named the 2026-08-16 reading of 154
+until 2026-08-19, two days after Summary had moved past it: the number it
+carried was a correct reading and the **pointer** to it was what went stale,
+which is the harder half of this class to see. None of the intermediate
+figures is comparable to it or to each other, because the specs were
+rewritten between several of them, so the numbers count different tests
+rather than measuring growth:
 
 | Reading | Tests | Distributions | Standing |
 |---------|-------|---------------|----------|
