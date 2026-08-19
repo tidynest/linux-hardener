@@ -47,6 +47,33 @@ def framework_count(root: Path) -> int:
     return len(variants)
 
 
+def gui_playwright_test_count(root: Path) -> int:
+    """The GUI Playwright suite's current size, read from the Reading table.
+
+    This fact has no tree definition: the count is generated at Playwright's
+    own collection time from parameterised specs, so the document is the
+    source, not the code. The Reading table in distribution-validation.md
+    keeps every superseded count alongside the current one, so the row
+    marked **current** is the one this reads, not the last row or the
+    largest number.
+    """
+    path = root / "docs" / "reference" / "distribution-validation.md"
+    try:
+        text = path.read_text()
+    except OSError as problem:
+        raise LookupError(f"cannot read {path}: {problem}") from problem
+    match = re.search(
+        r"\|\s*\*\*[\d-]+\*\*\s*\|\s*\*\*(\d+)\*\*\s*\|\s*\*\*\d+\*\*\s*\|\s*"
+        r"\*\*current\*\*",
+        text,
+    )
+    if not match:
+        raise LookupError(
+            f"{path}: no row marked '**current**' found in the Reading table"
+        )
+    return int(match.group(1))
+
+
 # (fact, canonical source callable, [(path, pattern, note)])
 #
 # The pattern must capture exactly one group and must be present-tense. A
@@ -68,6 +95,23 @@ REGISTRY = [
                 "scripts/README.md",
                 r"PDF reports for all (\d+) compliance frameworks",
                 "the Output list of the same entry, which drifted with it",
+            ),
+        ],
+    ),
+    (
+        "GUI Playwright tests",
+        gui_playwright_test_count,
+        [
+            (
+                "docs/reference/distribution-validation.md",
+                r"\*\*(\d+) of \d+ on all six distributions\*\*",
+                "the supersession pointer above the Reading table, which "
+                "restates the current count rather than only pointing at it",
+            ),
+            (
+                "scripts/README.md",
+                r"is \*\*(\d+) tests in \d+ files\*\*",
+                "the run-gui-tests.sh entry's Purpose line",
             ),
         ],
     ),

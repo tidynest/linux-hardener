@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-08-19
+**Last Updated**: 2026-08-20
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -700,13 +700,16 @@ Validating facts stated in more than one document...
   compliance frameworks: the tree says 10
     OK scripts/README.md agrees at 10
     OK scripts/README.md agrees at 10
+  GUI Playwright tests: the tree says 156
+    OK docs/reference/distribution-validation.md agrees at 156
+    OK scripts/README.md agrees at 156
 
-All 2 registered sites agree with their source
+All 4 registered sites agree with their source
   Dated readings are deliberately not registered.
 ```
 
 **Source of Truth**:
-- Named per fact in the script's `REGISTRY`; for the compliance framework count, the `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`, read via `validate_compliance_docs.py`'s `parse_enum_frameworks`
+- Named per fact in the script's `REGISTRY`; for the compliance framework count, the `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`, read via `validate_compliance_docs.py`'s `parse_enum_frameworks`; for the GUI Playwright test count, the row marked **current** in the Reading table of [distribution-validation.md](../docs/reference/distribution-validation.md)
 
 **Dependencies**:
 - Python 3.9+
