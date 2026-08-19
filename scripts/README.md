@@ -191,13 +191,14 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Markdown Links | `validate_doc_links.py` | Every markdown link in a tracked `.md` file resolves for a reader who has only the repository, including the half invisible to the maintainer: a target that sits on their own disk but is gitignored, which opens in their editor and 404s for everyone who clones. Relative targets are resolved against the linking file's own directory rather than matched as text; anchors are not resolved |
 | CLI Documentation | `validate_cli_docs.py` | Every command and subcommand in `cli.rs` appears in each reference surface, `docs/reference/cli.md` and the man page, and has a worked example in `README.md`. The reference surfaces are errors and README is a warning, because README is a tour rather than a reference. This check read README alone until 2026-08-12 while carrying a name that implied all of it: nothing had ever opened the man page, and an audit found ten defects in it, two of them an operator would act on. Reading roff needs its markup taken seriously, since subcommands sit in an `.RI [ a | b | c ]` alternation rather than beside the command and `run-once` is written `run\-once`, and a parser missing either reports documented subcommands as missing |
 | Compliance Frameworks | `validate_compliance_docs.py` | Framework list matches enum |
+| Cross-Document Facts | `validate_cross_document_facts.py` | A fact stated in more than one document against the site that owns it. Every other validator here reads structure, so a claim in a sentence in a second file was invisible to all of them, and the copy further from where the work happens is the one that goes stale. The canonical source is named per fact: the tree where the tree decides it, one named document where a measurement does. A dated reading is never registered, because a reading naming its own date is supposed to keep saying what it says; only present-tense claims are held. A registered pattern that stops matching is an error and not a skip |
 | Ignore Rules | `validate_gitignore.py` | Every path a document says is ignored still is, and no file is tracked and ignored at once without a registered reason. Some of these claims are instructions rather than description: `docs/superpowers/` and `.rust-sec-ci.toml` being ignored is the stated reason `git add -A` is safe here, and a reader following that after a rule changed would put specifications and a CI configuration into a release commit. The reverse state is quieter, and one file was already in it: git honours the index, so the rule does nothing while every reader of `.gitignore` is told otherwise. Whether an ignore rule is still needed is not checked, since a stale rule matching nothing is harmless and nagging about one gets a check turned off |
 | Colour Contrast | `validate_contrast.py` | Every foreground and background pair `crates/hardener-ui/styles.css` declares together in one rule clears WCAG AA, across all seven themes. Translucent fills are composited rather than skipped: an `rgba()` background is weighed over every opaque `--bg-*` surface the theme declares and scored on the best of those ratios, so a failure holds whatever the real ancestor turns out to be. That took the pairs checked from 182 to 322, the 140 new ones coming from 18 rules that declare an alpha background, every severity badge among them. Deliberately not every token against every surface: that pairing was tried, reported five themes failing on combinations that may never render, and contradicted the screenshots. A theme can ship its worst contrast on its most destructive control and look entirely conventional doing it, which is how a High Contrast `.btn-danger` sat at 1.9:1 through eight reviewers |
 | Version Locations | `validate_version_locations.py` | Every file stating the CURRENT version agrees with `Cargo.toml`, and any tracked file carrying a current-version marker that is not registered fails rather than passing unseen. `release.sh --verify` reads four such files; this reads thirteen. Historical mentions, changelog headings and older debian stanzas are silent by design, since they are supposed to keep saying what they say after a bump |
 | Test Counts | `validate_test_counts.py` | The test-count figures in `docs/reference/evidence-ledger.md` against the tree, without running cargo. Counts a `grep` can reproduce are reproduced; the rest are pinned to each other by the identities the ledger states in prose, so a figure edited alone fails even though nothing about it was measured. Other documents stating a count as current, rather than as a dated reading, are held to the ledger. Every other validator here reads structure, so a number in a sentence was invisible to all of them: one count reached four values across six documents, and the ledger's own validator row sat two behind the registry |
 
 **Modes**:
-- Default: Runs all 25 checks in the table above, which are 24 Python validators plus the one shell check, `release.sh --verify`
+- Default: Runs all 26 checks in the table above, which are 25 Python validators plus the one shell check, `release.sh --verify`
 - `--quick`: Skips CLI and Compliance validators (faster)
 - `--fix`: Passes `--fix` to validators that support it
 
@@ -230,7 +231,7 @@ Running: Version Synchronisation
   ✓ CLI Documentation: passed
   ✓ Compliance Framework List: passed
 
-All 25 validations passed!
+All 26 validations passed!
 ```
 
 **Integration with CI/CD**:
@@ -662,6 +663,50 @@ All compliance documentation is accurate
 
 **Source of Truth**:
 - The `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`
+
+**Dependencies**:
+- Python 3.9+
+- No external packages required (uses standard library only)
+
+---
+
+## Cross-Document Fact Validator
+
+**Script**: `validate_cross_document_facts.py`
+
+**Purpose**: Holds a fact stated in more than one document to the site that owns it. Every other validator here reads structure, so a claim in a sentence in a second file was invisible to all of them, and the copy further from where the work happens is the one that goes stale. The canonical source is named per fact: the tree where the tree decides it, one named document where a measurement does.
+
+**Usage**:
+```bash
+# Run from project root
+./scripts/validate/validate_cross_document_facts.py
+```
+
+**What It Checks**:
+- Each registered fact against its own canonical source, not against another document's copy
+- A registered pattern that matches nothing is an error, not a skip: a pattern matching nothing is what makes a validator report green while checking nothing
+- A registered pattern that matches more than one place is also an error, because which one was checked would depend on file order
+- A capture that is not an integer is reported rather than silently ignored
+- Dated readings are deliberately excluded: a reading naming its own date is supposed to keep saying what it says, so only present-tense claims are held
+
+**Exit Codes**:
+- `0`: every registered site agrees with its canonical source
+- `1`: a site has drifted, a pattern matched zero or more than one place, or a capture was not an integer
+
+**Example Output**:
+```
+Validating facts stated in more than one document...
+
+  compliance frameworks: the tree says 10
+    OK scripts/README.md agrees at 10
+    OK scripts/README.md agrees at 10
+
+All 2 registered sites agree with their source
+  Dated readings are deliberately not registered.
+```
+
+**Source of Truth**:
+- Named per fact in the script's `REGISTRY`; for the compliance framework count, the `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`, read via `validate_compliance_docs.py`'s `parse_enum_frameworks`
 
 **Dependencies**:
 - Python 3.9+

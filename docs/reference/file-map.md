@@ -829,6 +829,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/validate_all.py` | Master validation orchestrator |
 | `scripts/validate/validate_cli_docs.py` | CLI command documentation validator |
 | `scripts/validate/validate_compliance_docs.py` | Compliance framework documentation validator |
+| `scripts/validate/validate_cross_document_facts.py` | Cross-document fact validator: holds a fact stated in more than one document to the site that owns it, with the canonical source named per fact rather than always the evidence ledger. Registered from confirmed survivors of the `crosscheck.py` sweep, which lives outside this repository. Dated readings are deliberately never registered |
 | `scripts/validate/validate_doc_attachment.py` | Loose doc comment validator: an undocumented free function beside a long doc block |
 | `scripts/validate/validate_badges.py` | README badge validator |
 | `scripts/validate/validate_changelog_headings.py` | CHANGELOG heading validator: no release entry repeats a change-type heading |
