@@ -1130,6 +1130,39 @@ renderers have been mutation-tested, no figure anywhere in this project
 distinguishes, for that code, a line a test pins from a line a test merely
 visits.
 
+**Cross-document fact checking holds what is registered, and quantities only.**
+`validate_cross_document_facts.py` compares a fact stated in more than one
+document against the site that owns it, and `crosscheck.py`, which lives
+outside this repository in `~/Documents/DEVELOPMENT/prose-sweep/`, is what
+finds candidates for it. Five limits, all deliberate:
+
+- **It reads quantities, not claims.** "Five distributions" is in scope. "The
+  suite has never been run against a booted host" carries no number and is
+  invisible to both tiers.
+- **The gate holds only what is registered.** The registry grows from
+  confirmed survivors of a sweep rather than from guessing, which is why it is
+  evidence-driven, but a fact nobody has swept for is not held.
+- **The sweep is not scheduled.** Nothing runs it. It is run when the corpus
+  has moved.
+- **A stale pointer is found only when it carries a number.** The defect it
+  found on 2026-08-19 was caught because the sentence contained "154". The
+  same sentence phrased "superseded by the August reading" would be invisible.
+- **A bullet list can collapse into the paragraph before it.** Markdown bullet
+  lines carry no blank line between them, so `crosscheck.py` joins the wrapped
+  lines of an entire list into one paragraph, and the pattern's "a number plus
+  up to four following words" match lets a number ending one bullet absorb the
+  leading dash of the next. Measured on 2026-08-19: 214 matches cross a
+  physical line, 24 of those cross into a new bullet, producing 16
+  contaminated keys, and none of the 16 reaches the threshold of disagreeing
+  across more than one file, so the effect on the report today is zero. It is
+  a latent false-positive risk rather than a live defect.
+
+The measured noise floor when the sweep was written was roughly 60 per cent of
+clusters, which is why discovery reports rather than fails. A blame date is
+printed beside every hit because a stale count and a correct historical
+measurement are indistinguishable without one: `docs/ROADMAP.md:208` says "All
+6 compliance frameworks" and is right, having been written when there were six.
+
 ---
 
 ## What happens when I upgrade from the version I am on?
