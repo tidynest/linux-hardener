@@ -59,7 +59,7 @@ REGISTRY = [
         [
             (
                 "scripts/README.md",
-                r"all (\d+) compliance frameworks",
+                r"\*\*all (\d+) compliance frameworks\*\*",
                 "the full-test-suite entry's Purpose line. Said 7 of the 10 "
                 "until 2026-08-19, made false the same day by 74d0b700 and "
                 "caught by nothing",
@@ -100,25 +100,51 @@ def main() -> int:
             continue
         try:
             expected = canonical(root)
-        except LookupError as problem:
-            errors.append(f"{fact}: canonical source unreadable: {problem}")
+        except (LookupError, SystemExit) as problem:
+            # parse_enum_frameworks (in the sibling validator) exits the
+            # process directly when the enum block itself is missing, rather
+            # than raising. Catching SystemExit here as well as LookupError
+            # means that failure is reported through this registry too,
+            # instead of killing the run with the sibling's own message.
+            detail = (
+                problem
+                if isinstance(problem, LookupError)
+                else f"exited with status {problem.code}"
+            )
+            errors.append(f"{fact}: canonical source unreadable: {detail}")
             continue
         print(f"  {BLUE}{fact}{NC}: the tree says {expected}")
         for path, pattern, note in sites:
-            match = re.search(pattern, (root / path).read_text())
-            if match is None:
+            matches = list(re.finditer(pattern, (root / path).read_text()))
+            if not matches:
                 errors.append(
                     f"{path}: the pattern for '{fact}' matched nothing, so "
                     f"the site was not checked rather than found clean "
                     f"({note})"
                 )
                 continue
+            if len(matches) > 1:
+                errors.append(
+                    f"{path}: the pattern for '{fact}' matched "
+                    f"{len(matches)} places, so which one is checked would "
+                    f"depend on file order ({note})"
+                )
+                continue
+            match = matches[0]
+            try:
+                found = int(match.group(1))
+            except ValueError:
+                errors.append(
+                    f"{path}: the pattern for '{fact}' captured "
+                    f"'{match.group(1)}', which is not an integer ({note})"
+                )
+                continue
             checked += 1
-            if int(match.group(1)) == expected:
+            if found == expected:
                 print(f"    {GREEN}OK{NC} {path} agrees at {expected}")
                 continue
             errors.append(
-                f"{path}: says {match.group(1)} for '{fact}', the tree says "
+                f"{path}: says {found} for '{fact}', the tree says "
                 f"{expected} ({note})"
             )
 
