@@ -12,7 +12,7 @@ be registered there at all. This names the canonical source PER FACT: the
 tree where the tree decides the fact, and one named document where it does
 not.
 
-**A dated reading is never a registered site.** `docs/ROADMAP.md:204` says
+**A dated reading is never a registered site.** `docs/ROADMAP.md:208` says
 "All 6 compliance frameworks" and is correct, written on 2026-02-22 when there
 were six. Only present-tense claims are registered, and the note on each site
 says why it is one.
