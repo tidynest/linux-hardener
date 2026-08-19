@@ -677,8 +677,10 @@ would pass. Of the fifteen output tests, ten assert on substrings of the
 rendered string, one asserts a prefix and a byte length on it, and four assert
 on a helper rather than on any rendered output.
 
-**The suite now asks for all ten frameworks, and no container has answered
-yet.** `FRAMEWORKS` at `scripts/test/full-test-suite.sh:58` named seven until
+**All ten frameworks are now rendered on all six distributions.** This entry is
+kept rather than deleted because what it recorded was true for months and the
+shape of it is worth keeping: a gap nothing could see, in a table no instrument
+read. `FRAMEWORKS` at `scripts/test/full-test-suite.sh:58` named seven until
 2026-08-19, `cis stig nist pcidss hipaa gdpr iso27001`, so the cross-distro
 matrix rendered a report for those seven and no others: **SOC 2, NIST 800-171 r3
 and FedRAMP were in `ComplianceFramework::ALL` and in every framework picker,
@@ -686,14 +688,20 @@ and no run on any of the six distributions had ever rendered one.** The array
 names all ten as of that date, and `validate_compliance_docs.py` holds it to
 `ComplianceFramework::id()` by set equality so a framework added later cannot be
 left out of it in silence. **The six checks that adds, three in section 5 and
-three in section 7, have met no container.** They were exercised on the host
-against the musl binary, all six exiting 0 with a PDF between 25 and 28 KB, which
-is a reading of the rendering path and not of any distribution. Until a matrix
-run lands, the gap has moved rather than closed. It was always narrower than it
-sounds and should not be widened in the retelling: the coverage mappings of all
-three are asserted by plugin unit tests, which is where a mapping error would
-show, and the three share the rendering path with the seven long exercised.
-This document did not mention any of the three by name until 2026-08-16.
+three in section 7, passed on all six distributions at `5652bb45`**, containers
+recreated first, each log recording `Version: hardener 1.5.1 (5652bb45
+2026-08-19)`, and each container finishing with ten framework PDFs on disk
+between 27 and 35 KB. That closes it as a matter of measurement rather than of
+argument. The gap was always narrower than it sounds and should not be widened
+in the retelling: the coverage mappings of all three were already asserted by
+plugin unit tests, which is where a mapping error would show, and the three
+share the rendering path with the seven long exercised.
+
+**What the run does not say.** It says the report and the PDF render without
+error, which is what the checks assert. No rendered report is parsed back, here
+or anywhere, per the entry above this one, so a structurally invalid document
+no viewer could open would still pass. This document did not mention any of the
+three by name until 2026-08-16.
 
 **The entry point every real consumer calls is entered by no test.**
 `ReportFormatter::format_all` is the multi-report path used by `hardener report`,

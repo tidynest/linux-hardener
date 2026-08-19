@@ -1878,10 +1878,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by **set equality**, so a framework added later cannot be left out of the
   matrix in silence and a renamed id cannot fall through to the alias table
   `from_id` keeps for legacy spellings. Both directions of the check were
-  confirmed to go red before the work was accepted. The six checks this adds
-  were exercised on the host against the musl binary, all six exiting 0 with a
-  PDF between 25 and 28 KB; **no container has run them**, so the gap has moved
-  from unrendered to unmeasured rather than closing outright.
+  confirmed to go red before the work was accepted. **The six checks this adds
+  passed on all six distributions**, containers recreated first, each log
+  recording `Version: hardener 1.5.1 (5652bb45 2026-08-19)` and each container
+  finishing with ten framework PDFs on disk between 27 and 35 KB. The declared
+  run size moved with them: `157 declared, 155 passed, 0 failed, 8 skipped` on
+  arch, debian, ubuntu, fedora, RHEL and openSUSE.
 
 - **The declared size of a suite run was written down in three places and two
   of them had drifted.** `--self-test` pins the three figures the sections sum

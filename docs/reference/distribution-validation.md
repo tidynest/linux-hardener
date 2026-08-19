@@ -332,8 +332,19 @@ day. Section 12A gained two: it creates `/etc/audit/audit.rules.prev` itself
 where an apply leaves none, and asserts its presence before the rollback and its
 absence after. The `FRAMEWORKS` table then gained the three frameworks it had
 never named, which is six more checks, three in section 5 and three in section 7.
-**No run has yet been taken at 157**, so every reading below is a reading of a
-smaller suite and says so.
+
+**Measured at 157 declared, 155 passed, 0 failed, 8 skipped on all six**, at
+`5652bb45` on 2026-08-19, every container recreated immediately beforehand.
+Each log records `Version: hardener 1.5.1 (5652bb45 2026-08-19)`, so the reading
+is of this tree and not of a binary an earlier run left behind. All six added
+checks passed on all six distributions, `Report --framework` and `PDF:` for
+`soc2`, `800-171` and `fedramp`, and each container ended with ten framework
+PDFs on disk between 27 and 35 KB. The skip arithmetic is unmoved from the
+reading below: 8, of which 2 are declared without a verdict and 6 are never
+declared.
+
+The reading below is the one that stood before those six checks existed. It is
+kept because it is what the paragraphs after it are about.
 
 **Measured at 151 declared, 149 passed, 0 failed on all six.** arch, debian,
 ubuntu and fedora and RHEL at `99723784`; openSUSE at `c269ef84`, run on its own
@@ -454,9 +465,11 @@ The figures in that sample are the ones runs up to 2026-08-19 recorded. Section
 passed, 0 failed, 8 skipped (2 declared without a verdict, 6 never declared)`.
 The skip arithmetic is unaffected, neither new check being skippable. Measured
 in that shape on arch, debian, ubuntu, fedora and RHEL at `99723784`. The
-framework table then gained six more, so the next clean run should read `157
-declared, 155 passed`; that shape is derived from the sections and has been
-measured nowhere.
+framework table then gained six more, and a clean run now reads `157 declared,
+155 passed, 0 failed, 8 skipped (2 declared without a verdict, 6 never
+declared)`. **Measured in that shape on all six at `5652bb45`**, containers
+recreated first, which is the reading that turned the sentence this replaces
+from a derivation into a measurement.
 
 A `--differential` run reports a fifth number instead. Its checks reconcile by
 construction, since a check it cannot determine is recorded as a failure rather
