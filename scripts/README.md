@@ -1158,7 +1158,7 @@ Binary: /project/target/release/hardener v0.3.3
 
 **Script**: `full-test-suite.sh`
 
-**Purpose**: Comprehensive non-interactive test of the hardener in one automated run. Tests all commands, all 8 plugins, **7 of the 10 compliance frameworks**, all output formats, and all apply/rollback operations. It read "every single capability" and "all 7 frameworks" until 2026-08-16, which was two claims in one sentence that the `FRAMEWORKS` array does not support: SOC 2, NIST 800-171 r3 and FedRAMP are in `ComplianceFramework::ALL` and are rendered by no run of this suite. See [what-is-not-proven.md](../docs/reference/what-is-not-proven.md).
+**Purpose**: Comprehensive non-interactive test of the hardener in one automated run. Tests all commands, all 8 plugins, **all 10 compliance frameworks**, all output formats, and all apply/rollback operations. It read "every single capability" and "all 7 frameworks" until 2026-08-16, then "7 of the 10" until 2026-08-19, both of which the `FRAMEWORKS` array did not support: SOC 2, NIST 800-171 r3 and FedRAMP were in `ComplianceFramework::ALL` and rendered by no run of this suite. The array names all ten as of 2026-08-19 and all six distributions rendered them at `5652bb45`. See [what-is-not-proven.md](../docs/reference/what-is-not-proven.md).
 
 **Usage**:
 ```bash
@@ -1206,7 +1206,7 @@ under `--apply`, 143 unbooted, 109 without `--apply`):
 **Output**:
 - Detailed test log: `/tmp/hardener-full-test-TIMESTAMP.log`
 - Generated reports: `/tmp/hardener-test-reports/`
-- PDF reports for 7 of the 10 compliance frameworks
+- PDF reports for all 10 compliance frameworks
 
 **Test Modes**:
 
