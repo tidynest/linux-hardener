@@ -1156,26 +1156,28 @@ a discovered blind spot:
   lines of an entire list into one paragraph, and the pattern's "a number plus
   up to four following words" match lets a number ending one bullet absorb the
   leading dash of the next. Measured on 2026-08-19 with `crosscheck.py`'s own
-  `paragraphs`/`LABELLED`/`key_of` (a match whose span crosses a physical line,
-  and of those, the ones crossing into a line opening a new bullet. This
-  entry's own text sits inside the corpus it sweeps, so the self-referential
-  matches it forms about its own figures are excluded from what follows, and a
-  literal re-run of the same pipeline against the corpus as it now reads will
-  not reproduce 214 exactly. The size of that exclusion is the count of
+  `paragraphs`/`LABELLED`/`key_of`, counting a match whose span crosses a
+  physical line, and of those, the ones crossing into a line opening a new
+  bullet: 214 matches cross a physical line, 24 of those cross into a new
+  bullet, producing 21 contaminated keys, counting a key only when the absorbed
+  dash itself survives key_of's three-word cap rather than being truncated
+  away, and none of the 21 reaches the threshold of disagreeing across more
+  than one file, so the effect on the report today is zero. It is a latent
+  false-positive risk rather than a live defect. This entry's own text sits
+  inside the corpus it sweeps, so the self-referential matches it forms about
+  its own figures are excluded from the 214: a literal re-run of the same
+  pipeline against the corpus as it now reads will not reproduce 214 exactly,
+  and will read higher, because the size of that exclusion is the count of
   self-referential matches this entry currently contains, which changes
-  whenever this entry is reworded, including by this sentence.): 214 matches
-  cross a physical line, 24 of those cross into a new bullet, producing 21
-  contaminated keys, counting a key only when the absorbed dash itself survives
-  key_of's three-word cap rather than being truncated away, and none of the 21
-  reaches the threshold of disagreeing across more than one file, so the effect
-  on the report today is zero. It is a latent false-positive risk rather than a
-  live defect.
+  whenever this entry is reworded, including by this sentence.
 
-The measured noise floor when the sweep was written was roughly 60 per cent of
-clusters, which is why discovery reports rather than fails. A blame date is
-printed beside every hit because a stale count and a correct historical
-measurement are indistinguishable without one: `docs/ROADMAP.md:208` says "All
-6 compliance frameworks" and is right, having been written when there were six.
+The measured noise floor when the sweep was written was roughly 60 per cent:
+ARTEFACT plus SUBJECT verdicts covered 4 of the triage's 7 clusters and 16 of
+its 26 hits, against 6 of 7 clusters triaged not a defect, which is why
+discovery reports rather than fails. A blame date is printed beside every hit
+because a stale count and a correct historical measurement are
+indistinguishable without one: `docs/ROADMAP.md:208` says "All 6 compliance
+frameworks" and is right, having been written when there were six.
 
 ---
 
