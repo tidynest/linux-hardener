@@ -717,3 +717,37 @@ fn a_root_session_skips_the_user_config_an_unprivileged_one_reads() {
          lets an ordinary user disable the hardening being applied to them"
     );
 }
+
+/// The system config is read, and the seam that lets a test say where it is
+/// actually redirects the read.
+///
+/// Nothing exercised this layer before 2026-08-20. `SYSTEM_CONFIG_PATH` is a
+/// hardcoded absolute path, so on a test runner it does not exist and the
+/// branch reading it was never taken. A layer no test can reach is a layer
+/// whose removal no test would notice.
+#[test]
+fn the_system_config_is_read_from_the_path_the_seam_names() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let system = dir.path().join("system.toml");
+    std::fs::write(
+        &system,
+        "[global]\ndisabled_plugins = [\"mac-hardening\"]\n",
+    )
+    .expect("write system config");
+
+    let config = ConfigLoader::new()
+        .with_system_config(system)
+        .with_config_dir(dir.path().join("no-user-config"))
+        .with_running_as_root(false)
+        .load()
+        .expect("load");
+
+    assert!(
+        !config.is_plugin_enabled("mac-hardening"),
+        "the system config named mac-hardening in disabled_plugins and must be read"
+    );
+    assert!(
+        config.is_plugin_enabled("ssh-hardening"),
+        "the control: a plugin the system config did not name stays enabled"
+    );
+}

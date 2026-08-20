@@ -29,6 +29,15 @@ pub struct ConfigLoader {
     /// observable difference on a test runner, since neither default location
     /// exists there. See [`Self::with_config_dir`].
     config_dir: Option<PathBuf>,
+    /// Where the system config is read from.
+    ///
+    /// `None`, which every shipping caller leaves it as, resolves to
+    /// [`Self::SYSTEM_CONFIG_PATH`]. It exists because that path is absolute
+    /// and outside any directory a test may write: without a seam the system
+    /// layer is read by nothing, on any developer machine or in CI, so the
+    /// step that merges it could be deleted and no test would notice. See
+    /// [`Self::with_system_config`].
+    system_config_path: Option<PathBuf>,
     /// Whether this process counts as root for the user-config rule.
     ///
     /// `None`, which every shipping caller leaves it as, asks the real
@@ -82,6 +91,17 @@ impl ConfigLoader {
         self
     }
 
+    /// Read the system config from `path` rather than from
+    /// [`Self::SYSTEM_CONFIG_PATH`].
+    ///
+    /// Test seam, in the manner of [`Self::with_config_dir`] and
+    /// [`Self::with_running_as_root`]: every shipping caller leaves it unset.
+    #[must_use]
+    pub fn with_system_config(mut self, path: PathBuf) -> Self {
+        self.system_config_path = Some(path);
+        self
+    }
+
     /// Answer the root check with `is_root` rather than the effective UID.
     ///
     /// The same shape of seam as [`Self::with_config_dir`], for the same
@@ -115,7 +135,7 @@ impl ConfigLoader {
 
         if !self.skip_defaults {
             // 2. Load system config if it exists
-            if let Some(path) = Self::system_config_path() {
+            if let Some(path) = self.system_config_path_for() {
                 config = Self::merge_source(config, &path, false)?;
             }
             // 3. Load user config if it exists, skip when running as root
@@ -192,6 +212,14 @@ impl ConfigLoader {
             Some(dir) => Some(dir.join("linux-hardener").join("config.toml")),
             None => Self::user_config_path(),
         }
+    }
+
+    /// The system config path this load should use: the override, or the real
+    /// one.
+    fn system_config_path_for(&self) -> Option<PathBuf> {
+        self.system_config_path
+            .clone()
+            .or_else(Self::system_config_path)
     }
 
     /// Maximum config file size (1 MiB). Prevents OOM from oversized files.
