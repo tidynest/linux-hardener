@@ -308,6 +308,8 @@ SUMMARY_FILE="$RESULTS_DIR/gui-summary.txt"
         exit_code="${RESULT_EXIT[$distro]:-1}"
         if [[ "$exit_code" -eq 0 ]]; then
             status="PASS"
+        elif [[ "$exit_code" -eq 98 ]]; then
+            status="DEGRADED"
         elif [[ "$exit_code" -eq 99 ]]; then
             status="MISSING"
         else
@@ -344,6 +346,8 @@ for distro in "${DISTROS[@]}"; do
     exit_code="${RESULT_EXIT[$distro]:-1}"
     if [[ "$exit_code" -eq 0 ]]; then
         colour="$GREEN"; status="PASS"
+    elif [[ "$exit_code" -eq 98 ]]; then
+        colour="$YELLOW"; status="DEGRADED"; overall_exit=1
     elif [[ "$exit_code" -eq 99 ]]; then
         colour="$YELLOW"; status="MISSING"; overall_exit=1
     else

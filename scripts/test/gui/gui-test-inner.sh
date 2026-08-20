@@ -24,8 +24,14 @@ GUI_TESTS="$PROJECT/gui-tests"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+
+# Every required dependency step that failed, named. Reported again beside the
+# verdict, because that is where the reader looks: `[deps] install failed` lands
+# around line 7 of a 652-line log.
+DEPS_FAILED=()
 
 # =============================================================================
 # Detect distro and install packages
@@ -42,10 +48,22 @@ NC='\033[0m'
 #
 # Returns non-zero rather than aborting: a distribution missing one package can
 # still be worth attempting, and the Chromium probe below fails closed anyway.
+# It is recorded, though, and named again at the end of the run: ubuntu passed
+# its full 157-test suite while its apt install had failed, rescued by the
+# Playwright Chromium fallback, and nothing downstream of the failure said so.
+#
+# `--probe` marks a call whose failure is not a fault. The openSUSE font loop
+# tries four package names knowing at most one resolves; without this it printed
+# three red failures on a healthy run, which is how a reader learns to skip red
+# [deps] lines, and would now record three phantom degradations as well.
 run_install() {
+    local probe=0
+    [[ ${1:-} == --probe ]] && { probe=1; shift; }
     local output status=0
     output=$("$@" 2>&1) || status=$?
     [[ $status -eq 0 ]] && return 0
+    [[ $probe -eq 1 ]] && return "$status"
+    DEPS_FAILED+=("$*")
     echo -e "${RED}[deps] install failed (exit $status): $*${NC}"
     echo "$output" | tail -20
     return "$status"
@@ -98,7 +116,7 @@ install_deps() {
         # be hostage to a font name; the candidates are tried in turn for the
         # same reason.
         for font_package in dejavu-fonts google-noto-fonts noto-sans-fonts liberation-fonts; do
-            run_install zypper --non-interactive install -y "$font_package" && break
+            run_install --probe zypper --non-interactive install -y "$font_package" && break
         done
     else
         echo -e "${RED}[deps] Unknown distro: skipping package install${NC}"
@@ -306,8 +324,22 @@ start_http_server
 pw_exit=0
 run_playwright || pw_exit=$?
 
+# A failed dependency step is named here as well as where it happened. The
+# install stays non-fatal -- the fallback run it rescued was 157 real passes --
+# but a degraded container is one whose next run may not be so lucky, so the
+# verdict distinguishes it from a clean pass rather than swallowing it.
+if [[ ${#DEPS_FAILED[@]} -gt 0 ]]; then
+    echo -e "${YELLOW}[deps] ${#DEPS_FAILED[@]} required dependency step(s) failed during this run:${NC}"
+    printf "${YELLOW}       %s${NC}\n" "${DEPS_FAILED[@]}"
+    [[ $pw_exit -eq 0 ]] && pw_exit=98
+fi
+
 if [[ $pw_exit -eq 0 ]]; then
     echo -e "${GREEN}All Web UI tests passed.${NC}"
+elif [[ $pw_exit -eq 98 ]]; then
+    echo -e "${YELLOW}All Web UI tests passed, but a dependency step failed: the container${NC}"
+    echo -e "${YELLOW}is degraded and the run was rescued downstream. Repair it before${NC}"
+    echo -e "${YELLOW}trusting the next one.${NC}"
 else
     echo -e "${RED}Some Web UI tests failed (exit code: $pw_exit).${NC}"
 fi

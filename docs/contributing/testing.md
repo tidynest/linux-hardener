@@ -1593,9 +1593,43 @@ sudo ./scripts/test/gui/run-gui-tests.sh --distro arch          # Arch container
 sudo ./scripts/test/gui/run-gui-tests.sh --distro debian        # Debian container only
 ```
 
-Orchestrates Playwright tests inside nspawn containers with Xvfb (virtual display). Tests the Leptos web frontend served by Trunk.
+Orchestrates Playwright tests inside nspawn containers against the built WASM
+frontend, served over HTTP with a Tauri IPC mock. No X server is started:
+`playwright.config.js` sets `headless: true`, and Fedora's binary is
+`headless_shell`, which cannot talk to X at all and runs the suite regardless.
 
 Uses `scripts/test/gui/gui-test-inner.sh` internally (the script that runs inside the container).
+
+Each distro's row in `test-results/gui/gui-summary.txt` reports one of four
+states, from the inner script's exit code:
+
+| Status | Exit | Meaning |
+|---|---|---|
+| `PASS` | 0 | Every test passed and every dependency installed |
+| `DEGRADED` | 98 | Every test passed, but a package install failed and something downstream rescued the run |
+| `MISSING` | 99 | The container does not exist at `/var/lib/machines/<name>` |
+| `FAIL` | other | Playwright's own exit code |
+
+`DEGRADED` exists because a failed install is not fatal by design, and was
+therefore invisible. A distribution missing one package can still be worth
+attempting: `usable_chromium` tells a browser from a stub that apologises for
+not being one, and the Playwright Chromium fallback fetches a browser when the
+distribution ships none outside a snap. Ubuntu once passed its full 157-test
+suite that way while its `apt` install had failed, and the run was
+indistinguishable from a healthy one, because `[deps] install failed` prints at
+about line 7 of a 652-line log and the reader looks at the last line. The
+install stays non-fatal, since that rescued run was 157 real passes, but the
+container it leaves behind is the one whose next run hits the fatal path, so
+the verdict now names it. Repair rather than rebuild:
+
+```bash
+sudo systemd-nspawn -q -D /var/lib/machines/hardener-test-debian --pipe /bin/bash -c 'apt-get update && apt-get -y -f install && apt-get install -y python3 chromium nodejs npm'
+```
+
+Install steps that are expected to fail are exempt: `run_install --probe` marks
+a call whose failure is not a fault, which is how the openSUSE font loop tries
+four package names knowing at most one resolves without reporting three
+phantom degradations on a healthy run.
 
 ### Tauri desktop GUI tests (Arch only)
 
@@ -1678,4 +1712,4 @@ in `build-mode: none`, on every push and pull request to `main` and on a schedul
 (Mondays, 06:00 UTC). It has no local reproduction: results go to the
 repository's security tab.
 
-**Last Updated**: 2026-08-19
+**Last Updated**: 2026-08-20
