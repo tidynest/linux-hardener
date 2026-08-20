@@ -912,10 +912,33 @@ before the widening and behaviourally identical to a colour-only rule. Two are
 on these routes, so the guard could have been satisfied entirely by pairings
 the widening did not win. It now counts only fills strictly between 0 and 1.
 
-**Both fixes are unrun.** They were made after the run that validated the
-feature and change which rules are collected, so the numbers in the paragraph
-above describe the previous behaviour. Expect the per-theme count to fall by
-about two as the opaque-declared tab rules leave.
+**The second run confirmed the fix and refuted the prediction that came with
+it.** `.tab-button.tab-active` went from 7 occurrences to 0, and
+`.tab-button:hover` with it, which is exactly what reading the rule rather than
+the element was meant to do. The predicted per-theme fall of about two did not
+happen: the count went 37 to 38, daywatch 39 to 39. Diffing the two daywatch
+listings selector by selector shows why, and it is not a wash. Two entries
+left, the two opaque-declared tab rules; **two different ones arrived**, both
+`.tab-button` on `/analysis` ("Findings" at 14.99:1, "Scan History" at
+17.49:1), neither present in the first run.
+
+**Nothing in the scope fix can add a rule.** The predicate only ever removes
+them, and `.tab-button` declares `transparent` in both runs, so it was eligible
+throughout. Two mechanisms could produce this and neither has been pinned: the
+`/analysis` route may render a different number of tab buttons run to run, or
+the scratch element the resolver appends to `document.body` may be forcing a
+style and layout flush that the sweep previously ran ahead of, since collection
+is gated on `getClientRects().length`. **Either way the first run was
+under-collecting two real pairings, and neither `MINIMUM_PAIRS` nor
+`MUST_REACH` could have said so.** A sweep whose collected set varies between
+runs can lose coverage silently; that is now a known property of this check and
+not a settled one.
+
+**The widening's real reach is one pairing per theme.** Every theme reports
+exactly 1 fill strictly between 0 and 1, and it is `.compliance-excluded`. The
+guard therefore sits precisely on its floor: one rule fewer and it fails. That
+is an honest tripwire rather than a comfortable margin, and it is the strongest
+argument for the gap in the next paragraph.
 
 **What the browser half still does not reach is the class that motivated the
 whole arc.** No severity badge was measured on any theme. `.severity_critical`,
