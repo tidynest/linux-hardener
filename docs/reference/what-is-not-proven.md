@@ -997,9 +997,25 @@ hardening route, which nothing in that commit touched. The leading hypothesis
 is the pointer: Playwright leaves the mouse wherever the last click put it, so
 `:hover` matches a different element between runs and changes both which rules
 match and what colour they compute. Run 1 collected `.tab-button:hover` and no
-later run has. **Nothing currently pins the pointer**, and until something
-does, per-selector coverage varies run to run while `MINIMUM_PAIRS` and
-`MUST_REACH` stay green throughout.
+later run has.
+
+**The pointer is now parked at the viewport corner after each route's setup and
+before each sweep.** The corner is arbitrary and fixed, which is the point: it
+buys reproducibility rather than the absence of hover. **This is a hypothesis
+under test, not a diagnosis.** It is unrun, and the check that decides it is a
+fourth run whose daywatch listing should match the third's exactly; if the set
+still moves, the pointer was not the cause and the remaining candidate is
+layout timing, collection being gated on `getClientRects()`.
+
+**What neither vacuity guard can do is see this at all**, which is why three
+runs of it passed unremarked. `MINIMUM_PAIRS` answers "did the sweep collect
+nothing" and `MUST_REACH` answers "did it miss these named selectors". Drift is
+a relative property and both are absolute checks, so a different 38 reads
+exactly like the same 38. It became visible only because two listings were kept
+side by side. A within-run check comparing the selector set across the seven
+theme cases would detect it for free, and is not written, because theme blocks
+can legitimately introduce rules that match in one theme and not another, so
+plain set equality would fail for a correct reason.
 
 **What that suite drives is not the desktop application.** It serves the same
 wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of

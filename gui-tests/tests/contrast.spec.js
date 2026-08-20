@@ -308,6 +308,19 @@ test.describe('Contrast, computed cascade', () => {
         await loadApp(page, route.path);
         await selectTheme(page, theme.value);
         await route.setup(page);
+        // Park the pointer before observing. Playwright leaves the mouse where
+        // the last click put it, and `route.setup` clicks different things on
+        // different routes, so `:hover` matched a different element from run to
+        // run: which rules match at all, and what colour the matched ones
+        // compute, both moved with it. Measured across three container runs -
+        // run 1 collected `.tab-button:hover` and later ones did not, and
+        // entries came and went on routes whose commits changed nothing. Both
+        // vacuity guards stayed green throughout, because a floor and a
+        // named-selector list can see an empty sweep but not a different one.
+        //
+        // The corner is arbitrary but fixed, which is the whole point: this
+        // buys reproducibility, not the absence of hover.
+        await page.mouse.move(0, 0);
         pairs.push(...(await collectPairs(page, route.name)));
       }
 
