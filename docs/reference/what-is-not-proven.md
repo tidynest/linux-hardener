@@ -34,6 +34,7 @@ cannot see dead code that its own tests cover.
 - [Can I point it at a fleet over SSH and believe what comes back?](#can-i-point-it-at-a-fleet-over-ssh-and-believe-what-comes-back)
 - [Can I hand the compliance report to an auditor?](#can-i-hand-the-compliance-report-to-an-auditor)
 - [Does any of this cover the desktop application?](#does-any-of-this-cover-the-desktop-application)
+- [Does configuration load in the order the docs promise?](#does-configuration-load-in-the-order-the-docs-promise)
 - [What runs automatically, and what needed a person?](#what-runs-automatically-and-what-needed-a-person)
 - [What happens when I upgrade from the version I am on?](#what-happens-when-i-upgrade-from-the-version-i-am-on)
 - [Keeping this document true](#keeping-this-document-true)
@@ -1026,6 +1027,68 @@ fetchable by hash on both forges until support purges them. The exposure is
 pixels in an image rather than text, so no code search reaches it. **This is
 recorded as a decision taken rather than an oversight**, so a later session does
 not rediscover the blob and rewrite history for it.
+
+---
+
+## Does configuration load in the order the docs promise?
+
+The sequence tests added on 2026-08-20 drive `ConfigLoader::load()` through
+real files and a real seam for the first time, in
+`crates/hardener-core/src/config_loader/tests.rs` and
+`crates/hardener-core/tests/config_env_precedence.rs`. What follows is what
+they reach and what they still leave open, each measured the same day.
+
+**The real root check is never exercised.** `an_unprivileged_session_reads_the_user_config_the_root_rule_would_skip`
+and `a_root_session_skips_the_user_config_an_unprivileged_one_reads` prove the
+rule through the `with_running_as_root` seam, both directions, against a
+directory the test owns. `is_running_as_root`'s real body,
+`nix::unistd::geteuid().is_root()`, is called by no test, because the suite
+runs unprivileged and the seam exists precisely so the rule can be asked
+without it. `pkexec` running this tool as root from an unprivileged session is
+the entire reason the rule exists, and nothing here has run as the root that
+matters.
+
+**The `#[cfg(not(feature = "system"))]` branch of `is_running_as_root` returns
+`false` and is dead in every build this workspace performs.** Nothing runs
+`cargo test --no-default-features`. `hardener-compliance` is the one crate
+that builds `hardener-core` with `default-features = false`, and it never
+calls `ConfigLoader::load()`, so the branch is unreachable from a running
+program as well as from a test.
+
+**The system config's real path is still observed by no test.** The seam in
+`with_system_config` proves the layer merges, and
+`system_config_path_for_falls_back_to_the_real_path_when_unset` now guards the
+fallback from that seam to `Self::system_config_path()`, so an unset seam is
+provably still the real path rather than `None`. What neither test does is
+read `/etc/linux-hardener/config.toml` itself: nothing in this suite writes to
+that path or runs against a host where it exists, so the resolved default is
+pinned and the file it names is not.
+
+**`[compliance.not_applicable]` has no documented cross-source merge rule, so
+there is nothing to test against.** `merge_compliance` merges the table per
+control id, the same shape `merge_plugin` gives directives and exceptions:
+a later source naming one control of a framework does not discard an earlier
+source's exclusions for other controls of that framework.
+[File locations and precedence](configuration.md#file-locations-and-precedence)
+states the merge rule for directives, exceptions and `enabled`, and states
+nothing for `[compliance.not_applicable]`, so a reader has no promise to check
+the code against and no test enforces one.
+
+**The 1 MiB size cap is per file, not per merged config.** Two files each
+comfortably under `MAX_CONFIG_SIZE` that together exceed it are not caught:
+`load_from_file` stats and rejects one file at a time, before any merge runs.
+That is the opposite of the directive and exclusion caps, both of which are
+checked cumulatively after the merge for exactly this reason, and both of
+which have a test that splits its fixture across two sources to prove it
+(`two_files_each_under_the_directive_cap_are_refused_together`, driven through
+two real files and `load()`, and
+`the_exclusion_limit_admits_the_maximum_and_refuses_one_more`, split across
+`merge_compliance`'s two arguments). The exception cap is enforced the same
+cumulative way in `merge_plugin`, beside the directive cap, but its own test
+does not split across two sources the way those two do. No test splits a
+fixture across two sources for the size cap either, and none of the four
+caps' tests establishes what an operator with two large but individually
+compliant files should expect.
 
 ---
 
