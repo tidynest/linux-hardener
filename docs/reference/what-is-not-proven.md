@@ -995,6 +995,22 @@ contains only the dot; nothing had looked at the host panel. So the 4.5 bar
 was the right bar, the deferral was real, and it was fixed rather than
 dismissed: daywatch `--color-info` `#0891b2` to `#155e75`.
 
+**The consumer that justified the fix has no browser coverage, and the fix is
+verified by the static check alone.** A `--grep T-CONTRAST` run on arch against
+the rebuilt `dist/` passed on 2026-08-20 and proves nothing about it: the log
+carries **zero** occurrences of `severity_low`, of any other `severity_*`, of
+`finding-dot` or of `host-severity-label`. Two separate reasons. `.finding-dot`
+is an empty span, so there is no text to weigh and the sweep is right to skip
+it. `.host-severity-label` never rendered at all, because the five routes in
+`contrast.spec.js` are the dashboard post-scan, `/hardening` History,
+`/hardening` under `apply_mode=mixed`, and `/analysis` twice; none reaches
+`/fleet` with a host expanded. So the 5.31:1 at `--bg-tertiary` is the static
+parse's arithmetic, which is source-over in sRGB and therefore the same
+operation the browser performs, but no rendered reading of this pairing exists.
+`MUST_REACH` did not catch the absence because `.severity_low` is not in it.
+**Closing it means a sixth route and a `MUST_REACH` entry**, and until then a
+green contrast suite is not evidence about this rule.
+
 **Recorded against a repeat: a deferral whose reasoning surveys one call site
 has not been checked.** The class is applied through a helper, so the question
 is never "where does this selector appear in the CSS" but "what does every
