@@ -71,12 +71,50 @@ const {
 // with the reason and who decides. Reported on every run; they merely do not
 // fail. Meant to be removed rather than accumulated.
 //
-// Empty because nothing it measures currently fails. It HAS run: #173 was its
-// first container execution, and it failed all seven theme cases on a
-// flattener bug that collected 0 pairings rather than on any colour. Keep this
-// list empty by fixing what it finds; record a decision here only when the fix
-// is a design change that is not tooling's to take.
-const DEFERRED = {};
+// It HAS run: #173 was its first container execution, and it failed all seven
+// theme cases on a flattener bug that collected 0 pairings rather than on any
+// colour. Keep this list empty by fixing what it finds; record a decision here
+// only when the fix is a design change that is not tooling's to take.
+//
+// THE THIRTEEN BELOW ARE ALL ONE DISCOVERY AND NONE IS A REGRESSION. The
+// `fleet, host expanded` route was added on 2026-08-20 to reach
+// `.host-severity-label`, the only place `.severity_low` renders as text, and
+// nothing had ever measured that panel before. The route found four rules
+// short of 4.5 on the surface it paints: `.severity_exception` in six themes
+// of seven, `.tally-crit` in five, and one theme each for `.severity_low` and
+// `.severity_critical`. Every one is a near miss between 3.82 and 4.34, and
+// every one has been failing since the panel was written; the instrument, not
+// the product, is what changed. Retuning four semantic colours across six
+// themes is a design decision and is not tooling's to take, so they are
+// recorded here rather than fixed in the same breath as the route that found
+// them. `.tally-crit` at 3.82 in Sentinel is the worst and reads a critical
+// count, so it is the one to take first.
+const fleetPanel = (ratio) =>
+  `${ratio}:1 rendered on the fleet host panel, which no route reached until ` +
+  '2026-08-20. Pre-existing rather than a regression: the route that found it ' +
+  'is what changed. Maintainer design decision, see ' +
+  'docs/reference/what-is-not-proven.md.';
+
+const DEFERRED = {
+  // Six of seven themes. A systemic cause is likely, so read it as one
+  // question about `--pill-muted-bg` against this panel rather than as six.
+  'default .severity_exception': fleetPanel('4.21'),
+  'daywatch .severity_exception': fleetPanel('4.23'),
+  'sentinel .severity_exception': fleetPanel('4.24'),
+  'guardian .severity_exception': fleetPanel('4.28'),
+  'command .severity_exception': fleetPanel('4.34'),
+  'fortress .severity_exception': fleetPanel('4.34'),
+  // Five of seven, and the worst readings in the set.
+  'sentinel .tally-crit': fleetPanel('3.82'),
+  'fortress .tally-crit': fleetPanel('4.00'),
+  'default .tally-crit': fleetPanel('4.11'),
+  'guardian .tally-crit': fleetPanel('4.16'),
+  'command .tally-crit': fleetPanel('4.20'),
+  // One theme each. Daywatch's `.severity_low` passes here at 5.29:1, which is
+  // the 2026-08-20 --color-info fix confirmed against a rendered ancestor.
+  'sentinel .severity_critical': fleetPanel('4.18'),
+  'fortress .severity_low': fleetPanel('4.29'),
+};
 
 // Where to look. Not every route, because the point is coverage of the
 // semantic colours rather than of the router: the dashboard after a scan
@@ -158,6 +196,42 @@ const ROUTES = [
       await runScan(page);
     },
   },
+  {
+    // `.severity_low` renders as TEXT on exactly one route, and it is this one.
+    // `severity_class()` has two callers: `findings_tab.rs:221` puts it on
+    // `.finding-dot`, an empty 8px span with nothing to weigh, and
+    // `host_panel.rs:42` puts it on `.host-severity-label` around the words
+    // "Low (1)". Only the second is a text pairing, and no route here reached
+    // it, so the daywatch fix of 2026-08-20 shipped on the static parse alone
+    // while a `--grep T-CONTRAST` run passed carrying zero occurrences of
+    // `severity_low` in its log.
+    //
+    // The Low subgroup exists because the fixture's `services-002` is
+    // `finding_severity: 'Low'` and its exception is `notconfigured`, which
+    // `is_policy_excepted` does not count (only `Applied` is), so it stays
+    // live and `group_findings_by_severity` gives it a group of its own. The
+    // Findings section is `open=true`, and a `<summary>` renders even inside a
+    // closed `<details>`, so the subgroup label is visible without expanding
+    // the subgroup itself.
+    path: '/fleet',
+    name: 'fleet, host expanded',
+    setup: async (page) => {
+      await page.getByRole('checkbox', { name: 'Select web-01' }).check();
+      await page.getByRole('button', { name: /Scan Selected/i }).click();
+      // db-01 was not selected, so exactly one row stays unscanned. Waiting on
+      // the result rather than the button: the row cannot expand before the
+      // scan lands, and a blind click would expand nothing.
+      await expect(page.getByText('Not scanned yet')).toHaveCount(1);
+      const expander = page.getByRole('button', { name: 'Expand web-01' });
+      await expander.click();
+      await expect(expander).toHaveAttribute('aria-expanded', 'true');
+      // The pairing itself, not the panel around it. Asserting the panel would
+      // let the sweep run against the host's chrome while the findings were
+      // still rendering, which is how `/analysis` sat in its empty state for
+      // two runs.
+      await expect(page.locator('.host-severity-label.severity_low')).toBeVisible();
+    },
+  },
 ];
 
 // Selectors this check exists to reach. If a run measures nothing for one of
@@ -183,6 +257,12 @@ const MUST_REACH = [
   '.finding-group-count',
   '.partial-row-badge-failed',
   '.status-error',
+  // Added 2026-08-20, after a run that passed while never measuring it. It is
+  // the rule the daywatch --color-info fix of that day turned on, and its only
+  // text pairing is `.host-severity-label` on the fleet route above; the other
+  // caller draws it on an empty dot. An absence here is not a failure anywhere
+  // else, which is the whole reason this list exists.
+  '.severity_low',
 ];
 
 // A run that measures nothing passes every assertion below it. This is a floor

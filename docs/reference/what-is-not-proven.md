@@ -995,21 +995,43 @@ contains only the dot; nothing had looked at the host panel. So the 4.5 bar
 was the right bar, the deferral was real, and it was fixed rather than
 dismissed: daywatch `--color-info` `#0891b2` to `#155e75`.
 
-**The consumer that justified the fix has no browser coverage, and the fix is
-verified by the static check alone.** A `--grep T-CONTRAST` run on arch against
-the rebuilt `dist/` passed on 2026-08-20 and proves nothing about it: the log
-carries **zero** occurrences of `severity_low`, of any other `severity_*`, of
-`finding-dot` or of `host-severity-label`. Two separate reasons. `.finding-dot`
-is an empty span, so there is no text to weigh and the sweep is right to skip
-it. `.host-severity-label` never rendered at all, because the five routes in
-`contrast.spec.js` are the dashboard post-scan, `/hardening` History,
-`/hardening` under `apply_mode=mixed`, and `/analysis` twice; none reaches
-`/fleet` with a host expanded. So the 5.31:1 at `--bg-tertiary` is the static
-parse's arithmetic, which is source-over in sRGB and therefore the same
-operation the browser performs, but no rendered reading of this pairing exists.
-`MUST_REACH` did not catch the absence because `.severity_low` is not in it.
-**Closing it means a sixth route and a `MUST_REACH` entry**, and until then a
-green contrast suite is not evidence about this rule.
+**The consumer that justified the fix had no browser coverage, and the gap was
+closed the same day.** The first `--grep T-CONTRAST` run after the fix passed
+while proving nothing about it: its log carried **zero** occurrences of
+`severity_low`, of any other `severity_*`, of `finding-dot` or of
+`host-severity-label`. Two separate reasons. `.finding-dot` is an empty span,
+so there is no text to weigh and the sweep is right to skip it.
+`.host-severity-label` never rendered, because the five routes in
+`contrast.spec.js` were the dashboard post-scan, `/hardening` History,
+`/hardening` under `apply_mode=mixed` and `/analysis` twice; none reached
+`/fleet` with a host expanded. `MUST_REACH` did not report the absence because
+`.severity_low` was not in it.
+
+A sixth route was added, `fleet, host expanded`, driving a scan of `web-01` and
+expanding its row, with `.severity_low` added to `MUST_REACH` so the route
+cannot quietly stop contributing. **Daywatch now reads 5.29:1 rendered**,
+`#155e75` on `rgb(202,225,222)`, confirming the fix against the ancestor that
+actually paints. That is 0.02 below the static parse's 5.31 floor, and the
+reason is instructive: the panel's row paints a composited surface the theme
+never declares as a `--bg-*` token, so the static check cannot reason about it
+at all. Below the spread is a disagreement, and this is one, at the smallest
+scale the two instruments can disagree by.
+
+**Adding that one route turned up thirteen rendered failures in four rules,
+none of them a regression.** `.severity_exception` is short in six themes of
+seven (4.21 to 4.34), `.tally-crit` in five (3.82 to 4.20), and one theme each
+for `.severity_critical` (sentinel 4.18) and `.severity_low` (fortress 4.29).
+Every one has been failing since the panel was written; what changed is that
+something finally looked. They are recorded in `contrast.spec.js`'s `DEFERRED`
+rather than fixed alongside the route that found them, because retuning four
+semantic colours across six themes is a design decision. **`.tally-crit` at
+3.82 in Sentinel is the worst and reads a critical count**, so it is the one to
+take first. All thirteen were verified live: each key matches a pairing the run
+actually measured, so none is a dead entry excluding nothing.
+
+> **Second time a widening has paid like this.** The 2026-08-19 alpha-fill
+> widening found eight; this route found thirteen. A documented gap is a
+> choice, not a law, and the cost of looking has twice been about thirty lines.
 
 **Recorded against a repeat: a deferral whose reasoning surveys one call site
 has not been checked.** The class is applied through a helper, so the question
