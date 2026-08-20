@@ -115,7 +115,12 @@ DEFERRED: dict[str, str] = {
         "daywatch, --color-info #0891b2 on its own cyan tint at 3.32:1. No "
         "--color-info-bright token exists in any theme, so clearing it means "
         "retuning --color-info theme-wide rather than picking a brighter "
-        "sibling as .severity_medium did. Maintainer's design decision."
+        "sibling as .severity_medium did. Maintainer's design decision. "
+        "REOPEN BEFORE ACTING: this class only ever lands on an 8px dot, "
+        "whose currentColor fill overrides the tint composited above, and the "
+        "dot as rendered reads 3.41:1 against the row, clearing the 3.0 that "
+        "WCAG 1.4.11 asks of a non-text object. The retune may buy nothing. "
+        "Evidence in docs/reference/what-is-not-proven.md."
     ),
 }
 

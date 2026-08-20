@@ -950,6 +950,43 @@ wraps text anywhere in the application. A text-contrast check that requires an
 element to render its own text is therefore not missing them by fixture or by
 route; they are outside what it measures, by construction.
 
+**The one screenshot anybody took answered a question six container runs could
+not.** Nothing had eyeballed this work; on 2026-08-20 the daywatch findings
+view from the container corpus was read and its dots sampled directly. Row
+background `rgb(248,246,242)`:
+
+| group | rendered | vs background |
+|---|---|---|
+| Critical | `#991b1b` | 7.70:1 |
+| High | `#794203` | 7.50:1 |
+| Medium | `#7a5c00` | 5.79:1 |
+| Low | `#0891b2` | 3.41:1 |
+| Policy Exceptions | `#6a635f` | 5.46:1 |
+
+Two things it confirms. Medium renders as `#7a5c00`, the `--color-medium-bright`
+token added on 2026-08-19, so that fix reached the screen. And High against
+Medium measures **1.29:1 dot to dot**, matching the ceiling recorded for it in
+prose to two decimals: those were token arithmetic, and this is pixels.
+
+**It also puts the `.severity_low` deferral in doubt, on evidence rather than
+on a hunch.** That entry is held open at 3.32:1 against the 4.5 bar, with the
+reason that clearing it needs a `--color-info-bright` token no theme has. But
+the class only ever lands on an 8px dot, so `.finding-dot`'s
+`background: currentColor` overrides the `rgba()` tint being composited and the
+pair weighed is not drawn at all. The bar for a non-text graphical object is
+WCAG 1.4.11 at 3.0, not 1.4.3 at 4.5, and the dot as rendered reads 3.41:1,
+which clears it. The rank is carried by the adjacent word in any case, the same
+redundancy the medium-versus-high ceiling already leans on, and a purely
+decorative graphic carries no contrast requirement.
+
+**That is a maintainer's decision and is recorded rather than taken**, like the
+`--bg-elevated` question above. Two things to weigh against it: 3.41 against
+3.0 is a slim margin, and whether the dot is "required to understand the
+content" is a judgement rather than a fact. What has changed is that the
+deferral's stated reason - a theme-wide retune of `--color-info` - may buy
+nothing, and nobody re-deriving it from the tokens alone would ever find that
+out.
+
 **And the dot does not render what `validate_contrast.py` weighs.**
 `.finding-dot` declares `background: currentColor` at `styles.css:4035`, later
 in source than `.severity_critical` at `1082` and of equal specificity, so the
