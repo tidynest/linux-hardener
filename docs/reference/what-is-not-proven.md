@@ -884,16 +884,48 @@ one that painted. The rule is `browserOwnsPairing` in
 own self-check, each of its three arms observed failing under the transposition
 that would disable it.
 
-**What is proved is the boundary, not the measurement.** The predicate has
-executed; the widened sweep has not. Nobody has yet seen it collect a single
-translucent pairing, and the failure mode is on record two paragraphs above:
-this same file shipped on 2026-08-13 measuring **0** pairings and passing. The
-widening therefore carries its own vacuity guard, separate from `MINIMUM_PAIRS`
-because the colour-only pairings alone clear that floor. Until a container run
-comes back, treat the browser half's coverage of the pill as declared rather
-than demonstrated, and expect the possibility that a translucent badge reads
-lower on its real ancestor than the figures above: those are ceilings, and a
-ceiling is what a first real reading is most likely to fall below.
+**The first container run confirmed the ceiling was real, and cost the
+widening a defect it could not have found any other way.** Arch, 2026-08-20,
+`--grep T-CONTRAST`: 7 of 7 themes passed, 37 pairings measured per theme (39
+on daywatch), 0 unmeasurable. **`.compliance-excluded` reads 4.91:1 on daywatch
+against the ancestor that actually painted, `rgb(234,234,234)`, where the
+best-of-surfaces figure above is 5.26:1.** Both are correct answers to
+different questions, and the 0.35 between them is the size of the ceiling this
+subsection had been describing in the abstract since 2026-08-19.
+
+**The defect was in the scope rule, and only the run's own output showed it.**
+The suite was green, so nothing failed; reading the per-theme listing rather
+than the summary is what found it. Ownership was keyed on the element's
+COMPUTED background alpha, and `.tab-button.tab-active` declares an opaque
+`--bg-secondary` while the same element is also `:hover`, which paints a
+translucent `--bg-elevated` over it. The selector was therefore admitted in all
+seven themes and carried a number here AND in `validate_contrast.py`, measured
+against two different backdrops: exactly the two-answers-one-label confusion
+the split exists to prevent. It appears 0 times in the 2026-08-19 logs and 7
+times in the 2026-08-20 one, which is how it was pinned. Ownership is a
+question about a rule, so it now reads the alpha of the fill the rule declares,
+resolved through the theme's custom properties but not through the cascade.
+
+**A second hole went with it.** The widening's vacuity guard counted any rule
+declaring a background, which includes `background: transparent` - reachable
+before the widening and behaviourally identical to a colour-only rule. Two are
+on these routes, so the guard could have been satisfied entirely by pairings
+the widening did not win. It now counts only fills strictly between 0 and 1.
+
+**Both fixes are unrun.** They were made after the run that validated the
+feature and change which rules are collected, so the numbers in the paragraph
+above describe the previous behaviour. Expect the per-theme count to fall by
+about two as the opaque-declared tab rules leave.
+
+**What the browser half still does not reach is the class that motivated the
+whole arc.** No severity badge was measured on any theme. `.severity_critical`,
+`.severity_medium`, `.severity_low`, `.partial-row-badge-failed` and
+`.status-error` are the 18-rule alpha class, and the eight defects fixed on
+2026-08-19 were all among them; the browser sees none of them, because
+`/analysis` is loaded fresh with no scan and renders its empty state, so the
+findings table those badges live in never exists. The pill is reached, the
+badges are not, and their figures remain best-of-surface ceilings that nothing
+has checked against a real ancestor.
 
 **What that suite drives is not the desktop application.** It serves the same
 wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of

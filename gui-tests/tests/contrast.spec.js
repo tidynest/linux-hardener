@@ -166,6 +166,25 @@ async function collectPairs(page, routeName) {
       return stack;
     };
 
+    // Resolve a DECLARED background value to a colour, by asking the browser.
+    // `var(--pill-muted-bg)`, `transparent`, `#151b23` and `rgba(...)` all
+    // appear in this stylesheet, and writing four parsers to answer one
+    // question is how a second copy of something starts. A detached element
+    // would not inherit the theme's custom properties, so it is parented; it
+    // is cached by declaration because those properties are set on `:root`.
+    const scratch = document.createElement('span');
+    scratch.style.display = 'none';
+    document.body.appendChild(scratch);
+    const resolved = new Map();
+    const resolveBackground = (value) => {
+      if (!resolved.has(value)) {
+        scratch.style.background = '';
+        scratch.style.background = value;
+        resolved.set(value, parse(getComputedStyle(scratch).backgroundColor));
+      }
+      return resolved.get(value);
+    };
+
     const rules = [];
     for (const sheet of Array.from(document.styleSheets)) {
       try {
@@ -180,10 +199,22 @@ async function collectPairs(page, routeName) {
     const seen = new Set();
     for (const rule of rules) {
       const declaresColour = rule.style.getPropertyValue('color');
-      const declaresBackground = Boolean(
+      const declaredBackground =
         rule.style.getPropertyValue('background-color') ||
-          rule.style.getPropertyValue('background'),
-      );
+        rule.style.getPropertyValue('background');
+      const declaresBackground = Boolean(declaredBackground);
+      // The alpha of the fill THIS RULE declares, which is the question the
+      // scope test asks, and not the alpha the element ended up with. The two
+      // differ wherever another rule wins: `.tab-button.tab-active` declares
+      // an opaque `--bg-secondary`, but the element is also `:hover`, which
+      // paints a translucent `--bg-elevated` over it. Keying on the computed
+      // value admitted that rule into all seven themes on the first container
+      // run, giving one selector a number here AND in validate_contrast.py -
+      // measured against two different backdrops, which is precisely the
+      // confusion this file's decision 2 exists to prevent.
+      const declaredAlpha = declaresBackground
+        ? (resolveBackground(declaredBackground) || {}).a
+        : null;
       // Whether this file or validate_contrast.py owns the result is
       // `browserOwnsPairing`, applied outside `page.evaluate` so the boundary
       // is provable without a container. The only thing decided in here is
@@ -217,11 +248,6 @@ async function collectPairs(page, routeName) {
         // rare enough not to guess at. Skipped rather than measured wrongly.
         if (!colour || colour.a !== 1) continue;
         const stack = backdropStack(el);
-        // The element's OWN fill, which is also `stack[0]` whenever it has
-        // one. Read separately because the scope rule turns on whether this
-        // particular layer is translucent, and the flattened stack no longer
-        // says which layer came from where.
-        const ownBackground = parse(style.backgroundColor);
 
         // `declaresBackground` is part of the key, not decoration. Rules that
         // declare an opaque fill now reach this set, where they used to be
@@ -238,7 +264,7 @@ async function collectPairs(page, routeName) {
           colour: [colour.r, colour.g, colour.b],
           stack,
           declaresBackground,
-          backgroundAlpha: ownBackground ? ownBackground.a : null,
+          backgroundAlpha: declaredAlpha === undefined ? null : declaredAlpha,
           fontSize: parseFloat(style.fontSize),
           fontWeight: parseInt(style.fontWeight, 10) || 400,
           sample: ownText.slice(0, 40),
@@ -293,12 +319,21 @@ test.describe('Contrast, computed cascade', () => {
       // silently stopped collecting translucent fills would leave every
       // assertion here green while covering exactly what it did before. Not a
       // named selector, because the claim is "the widening reached something"
-      // rather than "it reached the one rule I thought of"; the mock fixture
-      // emits four severities, so the badges are the floor being cleared.
-      const translucent = pairs.filter((pair) => pair.declaresBackground);
+      // rather than "it reached the one rule I thought of".
+      //
+      // Strictly between 0 and 1, not merely `declaresBackground`. A rule
+      // declaring `transparent` renders exactly as a colour-only rule does and
+      // was already reachable before the widening, and two of them are on
+      // these routes (`.tab-button`, `.btn-secondary`), so counting those
+      // would let the guard be satisfied by pairings the widening did not
+      // win. Only a partly translucent fill is a thing this file can measure
+      // and validate_contrast.py cannot.
+      const translucent = pairs.filter(
+        (pair) => pair.backgroundAlpha > 0 && pair.backgroundAlpha < 1,
+      );
       expect(
         translucent.length,
-        `${theme.name}: no translucent-fill pairing was measured, so the ` +
+        `${theme.name}: no partly-translucent fill was measured, so the ` +
           'widening past colour-only rules is covering nothing',
       ).toBeGreaterThan(0);
 
@@ -327,7 +362,7 @@ test.describe('Contrast, computed cascade', () => {
       // cannot be sanity-checked against a screenshot.
       console.log(
         `\n${theme.name}: ${weighed.length} pairings measured ` +
-          `(${translucent.length} over a translucent fill), ` +
+          `(${translucent.length} over a partly translucent fill), ` +
           `${unmeasurable.length} unmeasurable\n` +
           weighed
             .slice()

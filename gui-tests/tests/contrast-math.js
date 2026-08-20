@@ -89,11 +89,20 @@ function thresholdFor({ fontSize, fontWeight }) {
  * actually rendered. The two numbers answer different questions, so the better
  * one is not a duplicate of the weaker one.
  *
- * `backgroundAlpha` is the element's COMPUTED alpha rather than the declared
- * text, because a rule may declare `var(--pill-muted-bg)` and only the cascade
- * knows what that resolved to. An unreadable one is declined rather than
- * assumed: measuring text against its ancestors while ignoring a fill we could
- * not parse would report a colour that never rendered.
+ * `backgroundAlpha` is the alpha of the fill THIS RULE declares, resolved
+ * through the theme's custom properties but not through the cascade. That
+ * distinction was got wrong once and the first container run caught it: keying
+ * on the element's computed alpha admitted `.tab-button.tab-active`, whose
+ * declared `--bg-secondary` is opaque, because the same element is also
+ * `:hover` and that rule paints a translucent `--bg-elevated` over it. The
+ * selector then carried a number here AND in validate_contrast.py against two
+ * different backdrops, which is the confusion this split exists to prevent.
+ * Ownership is a question about a rule; only the value it declares can answer
+ * it.
+ *
+ * An unreadable alpha is declined rather than assumed: measuring text against
+ * its ancestors while ignoring a fill we could not parse would report a colour
+ * that never rendered.
  */
 function browserOwnsPairing({ declaresBackground, backgroundAlpha }) {
   if (!declaresBackground) return true;
@@ -222,7 +231,18 @@ if (require.main === module) {
     'a fully transparent declared fill renders as colour-only and is ours',
   );
 
-  // An unreadable computed alpha is declined rather than measured. Without
+  // The regression the first container run found, stated as the case it is:
+  // an opaque DECLARED fill stays the static check's however translucent the
+  // element it lands on ends up being. `.tab-button.tab-active` declares an
+  // opaque `--bg-secondary` and renders under a translucent `:hover` fill, and
+  // reading the element instead of the rule put it in both checks at once.
+  assert.strictEqual(
+    owns({ declaresBackground: true, backgroundAlpha: 1 }),
+    false,
+    'an opaque declared fill stays out even when another rule paints translucent over it',
+  );
+
+  // An unreadable alpha is declined rather than measured. Without
   // this the pairing would be weighed against its ancestors alone, silently
   // dropping a fill that did render: a fabricated reading, which is the one
   // outcome both contrast files rank below saying nothing.
