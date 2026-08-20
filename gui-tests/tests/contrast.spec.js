@@ -127,8 +127,21 @@ const ROUTES = [
     query: 'error_mode=export',
     setup: async (page) => {
       await page.getByRole('tab', { name: 'Compliance' }).click();
-      // Export is disabled until at least one framework is selected.
-      await page.getByRole('group', { name: 'Compliance frameworks' }).getByRole('button').first().click();
+      // Export is disabled while no framework is selected, so ENSURE one is
+      // pressed rather than clicking one. Clicking blind deselected it and
+      // failed all seven themes on 2026-08-20: `compliance_tab.rs:28` starts
+      // with `vec!["cis"]`, so the first toggle is already pressed and a click
+      // emptied the selection. These are `aria-pressed` toggles, which the
+      // analysis suite also reads rather than assumes; a drive step that
+      // toggles depends on the state it finds, one that asserts does not.
+      const framework = page
+        .getByRole('group', { name: 'Compliance frameworks' })
+        .getByRole('button')
+        .first();
+      if ((await framework.getAttribute('aria-pressed')) !== 'true') {
+        await framework.click();
+      }
+      await expect(framework).toHaveAttribute('aria-pressed', 'true');
       await page.getByRole('button', { name: /^Export$/ }).click();
       await expect(page.locator('.status-error')).toBeVisible({ timeout: 10000 });
     },

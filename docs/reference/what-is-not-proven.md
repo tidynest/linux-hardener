@@ -983,15 +983,26 @@ return these routes to a state that renders neither badge, and every other
 assertion in the file would stay green. That is the same failure `/analysis`
 sat in for two runs.
 
-**Unrun, and the prediction is recorded so it can be wrong in public.** Three
-count predictions have been made about this check and all three were wrong in
-the same direction, by reasoning about elements where the check counts rules.
-No fourth number is offered here. What is claimed is narrower: if the run
-passes, `.partial-row-badge-failed` and `.status-error` will appear in the
-per-theme listing with a ratio each, and those will be the first readings of
-either against the ancestor that painted rather than against the best surface
-the theme declares. If the run fails on `MUST_REACH`, a drive step is wrong
-rather than a colour.
+**The first run of these routes failed on a drive step, as predicted, and the
+apply route passed.** All seven themes failed at the export drive on
+2026-08-20, before any ratio was computed, so no listing exists yet. The
+hardening route under `apply_mode=mixed` is verified by that same run: it runs
+before the export route, so `runApply` completed and `.partial-panel` became
+visible inside its wait.
+
+**The defective step assumed a state instead of asserting one.** It clicked the
+first framework toggle to enable Export, but `compliance_tab.rs:28` starts with
+`vec!["cis"]`, so that toggle is already pressed and the click DESELECTED it,
+emptying the selection and leaving Export disabled. The step now ensures the
+toggle is pressed and asserts it, which is what the analysis suite already does
+for these `aria-pressed` controls. **A drive step that toggles depends on the
+state it finds; one that asserts does not**, and the difference is invisible
+until the default changes or a route arrives at the screen differently.
+
+Worth separating from the colour work: this was a failure to reach the subject,
+not a finding about it. `.partial-row-badge-failed` and `.status-error` still
+have no measured ratio against a real ancestor, and the claim remains that the
+next run should produce the first one for each.
 
 **`/analysis` is now scanned rather than bare**, which was worth doing on its
 own: the first two container runs loaded it into its empty state, so it
