@@ -751,3 +751,228 @@ fn the_system_config_is_read_from_the_path_the_seam_names() {
         "the control: a plugin the system config did not name stays enabled"
     );
 }
+
+/// The user config outranks the system config, which is the order
+/// `configuration.md` promises and which nothing asserted before 2026-08-20.
+///
+/// Red-first control: swapping the two blocks in `load()` compiles cleanly and
+/// silently inverts this, so this test is what stands between that
+/// transposition and a release.
+#[test]
+fn the_user_config_outranks_the_system_config() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let system = dir.path().join("system.toml");
+    let user_dir = dir.path().join("user");
+    std::fs::create_dir_all(user_dir.join("linux-hardener")).expect("user dir");
+
+    std::fs::write(
+        &system,
+        "[ssh.directives]\nMaxAuthTries = \"6\"\nPermitRootLogin = \"no\"\n",
+    )
+    .expect("write system");
+    std::fs::write(
+        user_dir.join("linux-hardener/config.toml"),
+        "[ssh.directives]\nMaxAuthTries = \"3\"\n",
+    )
+    .expect("write user");
+
+    let config = ConfigLoader::new()
+        .with_system_config(system)
+        .with_config_dir(user_dir)
+        .with_running_as_root(false)
+        .load()
+        .expect("load");
+
+    let ssh = config.get_plugin_config("ssh-hardening");
+    assert_eq!(
+        ssh.directives.get("MaxAuthTries").map(String::as_str),
+        Some("3"),
+        "the user config states this key later and must win"
+    );
+    assert_eq!(
+        ssh.directives.get("PermitRootLogin").map(String::as_str),
+        Some("no"),
+        "a key only the system config states must survive: the sources merge \
+         per key rather than the later file replacing the earlier wholesale"
+    );
+}
+
+/// `--config` is an addition to the earlier sources, not a replacement for
+/// them, which is what `configuration.md` promises and what no test drove
+/// through `load()` before 2026-08-20.
+#[test]
+fn a_named_config_adds_to_the_sources_below_it() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let system = dir.path().join("system.toml");
+    let user_dir = dir.path().join("user");
+    let named = dir.path().join("named.toml");
+    std::fs::create_dir_all(user_dir.join("linux-hardener")).expect("user dir");
+
+    std::fs::write(&system, "[kernel.directives]\nfrom_system = \"1\"\n").expect("write system");
+    std::fs::write(
+        user_dir.join("linux-hardener/config.toml"),
+        "[kernel.directives]\nfrom_user = \"1\"\n",
+    )
+    .expect("write user");
+    std::fs::write(
+        &named,
+        "[kernel.directives]\nfrom_named = \"1\"\nfrom_user = \"2\"\n",
+    )
+    .expect("write named");
+
+    let config = ConfigLoader::new()
+        .with_system_config(system)
+        .with_config_dir(user_dir)
+        .with_running_as_root(false)
+        .with_cli_config(named)
+        .load()
+        .expect("load");
+
+    let kernel = config.get_plugin_config("kernel-hardening");
+    for key in ["from_system", "from_user", "from_named"] {
+        assert!(
+            kernel.directives.contains_key(key),
+            "`{key}` came from a source the named file does not replace"
+        );
+    }
+    assert_eq!(
+        kernel.directives.get("from_user").map(String::as_str),
+        Some("2"),
+        "the named file states this key last and must win on the collision"
+    );
+}
+
+/// Environment overrides are applied after every file source, including a
+/// named `--config`, which is the order all four documents promise and which
+/// nothing drove through `load()` before 2026-08-20.
+///
+/// Red-first control: swapping the CLI merge and the env override in `load()`
+/// compiles cleanly and silently lets a file beat the environment.
+///
+/// `HARDENER_DISABLED_PLUGINS` is process-wide, so this test sets it, loads,
+/// and removes it. It is the only test in this file that touches the
+/// environment; keep it that way, because `cargo test` runs threads in one
+/// process and a second such test could interleave with this one.
+#[test]
+fn the_environment_outranks_a_named_config() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let named = dir.path().join("named.toml");
+    std::fs::write(&named, "[global]\ndisabled_plugins = [\"ssh-hardening\"]\n")
+        .expect("write named");
+
+    // SAFETY: single-threaded access is not guaranteed by the test harness, so
+    // this is the one place in the file that writes the environment and it
+    // removes the variable before returning.
+    unsafe {
+        std::env::set_var("HARDENER_DISABLED_PLUGINS", "mac-hardening");
+    }
+    let loaded = ConfigLoader::new()
+        .skip_defaults()
+        .with_cli_config(named)
+        .load();
+    unsafe {
+        std::env::remove_var("HARDENER_DISABLED_PLUGINS");
+    }
+
+    let config = loaded.expect("load");
+    assert!(
+        !config.is_plugin_enabled("mac-hardening"),
+        "the environment names mac-hardening and is applied last"
+    );
+    assert!(
+        config.is_plugin_enabled("ssh-hardening"),
+        "the named file's list is REPLACED by the environment rather than \
+         merged with it, so the plugin only the file named is enabled again"
+    );
+}
+
+/// The last source that STATES `enabled` decides it, and a source that
+/// mentions the section without the key decides nothing. Both halves were
+/// asserted against `merge_configs` directly; neither was driven through
+/// `load()` with real files until 2026-08-20.
+///
+/// Red-first control: `base.enabled.or(overlay.enabled)` at the merge site
+/// compiles cleanly and makes the FIRST source to state it win forever.
+#[test]
+fn the_last_source_to_state_enabled_decides_it_through_load() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let system = dir.path().join("system.toml");
+    let user_dir = dir.path().join("user");
+    std::fs::create_dir_all(user_dir.join("linux-hardener")).expect("user dir");
+
+    // The system config disables ssh and enables nothing else explicitly.
+    std::fs::write(&system, "[ssh]\nenabled = false\n[pam]\nenabled = false\n")
+        .expect("write system");
+    // The user config revives ssh by STATING it, and mentions pam without the
+    // key, which must decide nothing.
+    std::fs::write(
+        user_dir.join("linux-hardener/config.toml"),
+        "[ssh]\nenabled = true\n[pam.directives]\nminlen = \"14\"\n",
+    )
+    .expect("write user");
+
+    let config = ConfigLoader::new()
+        .with_system_config(system)
+        .with_config_dir(user_dir)
+        .with_running_as_root(false)
+        .load()
+        .expect("load");
+
+    assert!(
+        config.is_plugin_enabled("ssh-hardening"),
+        "the user config states enabled = true later and must revive it"
+    );
+    assert!(
+        !config.is_plugin_enabled("pam-hardening"),
+        "the user config mentions [pam.directives] without the enabled key, \
+         which says nothing, so the system config's false stands"
+    );
+    assert_eq!(
+        config
+            .get_plugin_config("pam-hardening")
+            .directives
+            .get("minlen")
+            .map(String::as_str),
+        Some("14"),
+        "the control: the section really was read, so the assertion above is \
+         about the enabled key and not about the file being ignored"
+    );
+}
+
+/// The directive cap is enforced against the merged result, so two files each
+/// within it that together exceed it are refused. Proven of `merge_plugin`
+/// directly before 2026-08-20; this drives it through `load()` with two real
+/// files, which is the shape an operator actually reaches.
+#[test]
+fn two_files_each_under_the_directive_cap_are_refused_together() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let system = dir.path().join("system.toml");
+    let user_dir = dir.path().join("user");
+    std::fs::create_dir_all(user_dir.join("linux-hardener")).expect("user dir");
+
+    let half = ConfigLoader::MAX_DIRECTIVES_PER_PLUGIN / 2 + 1;
+    let body = |prefix: &str, count: usize| {
+        let mut text = String::from("[kernel.directives]\n");
+        for index in 0..count {
+            text.push_str(&format!("{prefix}_{index} = \"1\"\n"));
+        }
+        text
+    };
+    std::fs::write(&system, body("sys", half)).expect("write system");
+    std::fs::write(
+        user_dir.join("linux-hardener/config.toml"),
+        body("usr", half),
+    )
+    .expect("write user");
+
+    let refusal = ConfigLoader::new()
+        .with_system_config(system)
+        .with_config_dir(user_dir)
+        .with_running_as_root(false)
+        .load()
+        .expect_err("two halves that together exceed the cap must be refused");
+    assert!(
+        refusal.to_string().contains("directive"),
+        "the refusal must name what was exceeded: {refusal}"
+    );
+}
