@@ -37,9 +37,9 @@ container GUI suite rather than a static parse.
 Alpha backgrounds ARE checked, and were not until 322 pairs replaced 182. An
 `rgba()` fill has no one colour until it composites over its ancestor, and a
 static parse cannot know which ancestor, so both instruments used to skip the
-whole class: this file returned None for it and the browser half skips any rule
-declaring a background. 18 rules were invisible to both, every severity badge
-among them, and one of them read 1.77:1.
+whole class: this file returned None for it and the browser half skipped any
+rule declaring a background at all. 18 rules were invisible to both, every
+severity badge among them, and one of them read 1.77:1.
 
 What makes them checkable without guessing is compositing over EVERY `--bg-*`
 surface the theme declares and taking the BEST result. A failure then holds
@@ -50,11 +50,20 @@ all 8 were real. The cost is the mirror of that: a pair that fails on the darker
 surfaces but clears on one is not reported here.
 
 That browser half now exists, as `gui-tests/tests/contrast.spec.js` (#158). It
-covers the colour-only rules named above, and the two files are deliberately
-disjoint: it skips any rule declaring both a colour and a background, because
-one defect failing two checks with two different numbers is how a team learns
-to read neither. This file still runs on every commit and needs no container,
-which is why the narrow scope is worth keeping rather than retiring.
+covers the colour-only rules named above, and since it learned to read
+translucent fills it also weighs the alpha class described here, on the
+ancestor that actually painted rather than on the best one available. That is
+the ceiling above being closed, not a duplicate: the two files answer
+different questions and both answers are facts. An OPAQUE declared fill is
+still weighed here and nowhere else, because that one IS fully determined on
+paper, and two numbers for one question is how a team learns to read neither.
+The boundary is one function, `browserOwnsPairing` in
+`gui-tests/tests/contrast-math.js`, provable with plain node.
+
+This file still runs on every commit and needs no container, which is why the
+narrow scope is worth keeping rather than retiring: the browser half runs only
+inside nspawn, so on a development host this is the only contrast check there
+is.
 """
 
 import re

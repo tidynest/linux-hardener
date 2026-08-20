@@ -868,11 +868,32 @@ every run, and a deferral is not a pass.
 
 **What the widening does not do is close the gap it was cut from.** The
 best-case rule means a pair that fails on the darker surfaces but clears on one
-is still not reported, so a green line here is a claim about the most
-favourable ancestor rather than about every ancestor. And
-`gui-tests/tests/contrast.spec.js` still skips any rule declaring a background,
-so the two halves stay disjoint by design, and the browser half, the only one
-that reads the cascade a user actually sees, still never looks at this pill.
+is still not reported here, so a green line in this file is a claim about the
+most favourable ancestor rather than about every ancestor.
+
+**The browser half was widened to answer exactly that, on 2026-08-20, and it
+has not run once.** `gui-tests/tests/contrast.spec.js` no longer skips every
+rule declaring a background: the boundary between the two files moved from
+"declares a background" to "the static parse already has the true number",
+which stopped being the same thing the moment this file learned to composite.
+An opaque declared fill is still weighed by the static check alone. A
+translucent one is now weighed by both, and that is not two numbers for one
+question: this file reports the best surface available, the browser reports the
+one that painted. The rule is `browserOwnsPairing` in
+`gui-tests/tests/contrast-math.js`, and it is proved on the host by that file's
+own self-check, each of its three arms observed failing under the transposition
+that would disable it.
+
+**What is proved is the boundary, not the measurement.** The predicate has
+executed; the widened sweep has not. Nobody has yet seen it collect a single
+translucent pairing, and the failure mode is on record two paragraphs above:
+this same file shipped on 2026-08-13 measuring **0** pairings and passing. The
+widening therefore carries its own vacuity guard, separate from `MINIMUM_PAIRS`
+because the colour-only pairings alone clear that floor. Until a container run
+comes back, treat the browser half's coverage of the pill as declared rather
+than demonstrated, and expect the possibility that a translucent badge reads
+lower on its real ancestor than the figures above: those are ceilings, and a
+ceiling is what a first real reading is most likely to fall below.
 
 **What that suite drives is not the desktop application.** It serves the same
 wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of

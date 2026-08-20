@@ -71,7 +71,42 @@ function thresholdFor({ fontSize, fontWeight }) {
   return isLarge ? 3.0 : 4.5;
 }
 
-module.exports = { luminance, contrastRatio, flattenBackdrop, thresholdFor };
+/**
+ * Whether the browser half owns a pairing, or `validate_contrast.py` does.
+ *
+ * The two checks stay disjoint on purpose: one defect failing both with two
+ * different numbers is how a team learns to read neither. What changed is the
+ * boundary, not the principle. It used to be "declares a background", which
+ * was the same thing as "the static parse already has the true number" until
+ * that parse learned to composite alpha fills.
+ *
+ * An OPAQUE declared background is still fully determined on paper, so it is
+ * the static check's alone and nothing here may touch it. A translucent one is
+ * not: that check composites the fill over every `--bg-*` surface the theme
+ * declares and takes the BEST, which is a ceiling rather than a reading, and
+ * its own docstring records the cost - a pair failing on the darker surfaces
+ * but clearing on one is not reported there. The browser knows which ancestor
+ * actually rendered. The two numbers answer different questions, so the better
+ * one is not a duplicate of the weaker one.
+ *
+ * `backgroundAlpha` is the element's COMPUTED alpha rather than the declared
+ * text, because a rule may declare `var(--pill-muted-bg)` and only the cascade
+ * knows what that resolved to. An unreadable one is declined rather than
+ * assumed: measuring text against its ancestors while ignoring a fill we could
+ * not parse would report a colour that never rendered.
+ */
+function browserOwnsPairing({ declaresBackground, backgroundAlpha }) {
+  if (!declaresBackground) return true;
+  return Number.isFinite(backgroundAlpha) && backgroundAlpha < 1;
+}
+
+module.exports = {
+  luminance,
+  contrastRatio,
+  flattenBackdrop,
+  thresholdFor,
+  browserOwnsPairing,
+};
 
 // --- Self-check --------------------------------------------------------------
 if (require.main === module) {
@@ -151,6 +186,53 @@ if (require.main === module) {
   assert.strictEqual(thresholdFor({ fontSize: 19, fontWeight: 700 }), 3.0, '19px bold is large');
   assert.strictEqual(thresholdFor({ fontSize: 19, fontWeight: 400 }), 4.5, '19px normal is not');
   assert.strictEqual(thresholdFor({ fontSize: 23, fontWeight: 600 }), 4.5, '23px semibold is not');
+
+  // Scope. The colour-only case is what this file has always covered, and the
+  // opaque case is the one it must never touch, because a rule declaring a
+  // text colour and an opaque fill in the same block is fully weighed by
+  // validate_contrast.py.
+  const owns = browserOwnsPairing;
+  assert.strictEqual(
+    owns({ declaresBackground: false, backgroundAlpha: 0 }),
+    true,
+    'a colour-only rule is ours',
+  );
+  assert.strictEqual(
+    owns({ declaresBackground: false, backgroundAlpha: 1 }),
+    true,
+    'a colour-only rule stays ours even where an ancestor paints an opaque fill',
+  );
+  assert.strictEqual(
+    owns({ declaresBackground: true, backgroundAlpha: 1 }),
+    false,
+    "an opaque declared fill is the static check's, and weighing it here doubles one defect",
+  );
+
+  // The widening itself, and the reason it is not a duplicate: the static
+  // check has a best-of-surfaces ceiling for these, never the rendered fact.
+  // `.severity_medium` at rgba(227, 179, 65, 0.15) is the shape.
+  assert.strictEqual(
+    owns({ declaresBackground: true, backgroundAlpha: 0.15 }),
+    true,
+    'a translucent declared fill is ours: the static check has only a ceiling for it',
+  );
+  assert.strictEqual(
+    owns({ declaresBackground: true, backgroundAlpha: 0 }),
+    true,
+    'a fully transparent declared fill renders as colour-only and is ours',
+  );
+
+  // An unreadable computed alpha is declined rather than measured. Without
+  // this the pairing would be weighed against its ancestors alone, silently
+  // dropping a fill that did render: a fabricated reading, which is the one
+  // outcome both contrast files rank below saying nothing.
+  for (const alpha of [null, undefined, NaN]) {
+    assert.strictEqual(
+      owns({ declaresBackground: true, backgroundAlpha: alpha }),
+      false,
+      `an unparseable alpha (${alpha}) is declined, not assumed transparent`,
+    );
+  }
 
   console.log('contrast-math: all checks passed');
 }

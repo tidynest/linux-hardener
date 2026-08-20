@@ -1240,7 +1240,7 @@ runner rather than grepping the sources is therefore deliberate: a count of
 | `fleet.spec.js` | T-FLEET-01..10 | 10 | Fleet scan view, per-host results, row expander, delete confirmation, the expanded host's persisted history rail |
 | `fleet-apply.spec.js` | T-FAPPLY-01..09 | 9 | Fleet Apply mode toggle, selection, confirm modal |
 | `settings.spec.js` | T-SET-01..08 | 8 | Settings page |
-| `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries a vacuity guard, because a sweep that collects nothing would otherwise pass |
+| `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries two vacuity guards, because a sweep that collects nothing would otherwise pass: a floor on pairings measured, and since 2026-08-20 a separate one on translucent-fill pairings, which the colour-only rules would otherwise clear on their behalf |
 | `scheduler.spec.js` | T-SCHED-01..07 | 7 | Scheduler and notification configuration, and the two notes that appear only while scheduled scanning is off |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 | `remote.spec.js` | T-REMOTE-01..03 | 3 | The `/remote` redirect, the saved host list, the Add Host form |

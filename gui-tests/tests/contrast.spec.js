@@ -20,7 +20,20 @@
 // getComputedStyle, and weighs those. Every pairing reported provably
 // rendered, so nothing here is manufactured.
 //
-// Three decisions worth stating, because #158 left all three open:
+// The scope has widened once since, and the boundary is now a rule rather than
+// a habit. This file used to skip every rule declaring a background, on the
+// grounds that the static parse already had those numbers. That stopped being
+// true when validate_contrast.py learned to composite alpha fills: for a
+// translucent background it reports the BEST of every `--bg-*` surface the
+// theme declares, which is a ceiling, and its own docstring records that a
+// pair failing on the darker surfaces but clearing on one goes unreported
+// there. Only the browser knows which ancestor actually painted. So the split
+// is now opaque-declared to the static check, translucent-declared and
+// colour-only to this one, and it lives in `browserOwnsPairing` where node can
+// prove it. Opaque fills are still untouched here: that half of the original
+// reasoning was never wrong.
+//
+// Four decisions worth stating, because #158 left the first three open:
 //
 // 1. The selector list is DERIVED, not curated. A hand-written list of
 //    "semantic-colour users" answers the question once and then rots: the
@@ -33,6 +46,12 @@
 // 3. Font size is read from the browser, so large text gets the 3.0 bar the
 //    specification actually allows rather than the flat 4.5 a static parse has
 //    to assume.
+// 4. Two checks may both weigh a translucent fill, and that is not the
+//    duplication decision 2's rationale forbids. They answer different
+//    questions - the best surface available versus the one that rendered - and
+//    both answers are facts. What is forbidden is two numbers for one
+//    question, which is why an opaque fill is still weighed in exactly one
+//    place.
 //
 // The arithmetic lives in contrast-math.js and is proved by its own self-check
 // against #158's hand measurements. Nothing is computed inside `page.evaluate`,
@@ -41,7 +60,12 @@
 
 const { test, expect } = require('@playwright/test');
 const { loadApp, runScan, selectTheme, THEMES } = require('./helpers');
-const { contrastRatio, flattenBackdrop, thresholdFor } = require('./contrast-math');
+const {
+  contrastRatio,
+  flattenBackdrop,
+  thresholdFor,
+  browserOwnsPairing,
+} = require('./contrast-math');
 
 // Known failures held open on purpose, keyed `<theme value> <selector>`, each
 // with the reason and who decides. Reported on every run; they merely do not
@@ -156,13 +180,15 @@ async function collectPairs(page, routeName) {
     const seen = new Set();
     for (const rule of rules) {
       const declaresColour = rule.style.getPropertyValue('color');
-      const declaresBackground =
+      const declaresBackground = Boolean(
         rule.style.getPropertyValue('background-color') ||
-        rule.style.getPropertyValue('background');
-      // Rules declaring both are already weighed by validate_contrast.py.
-      // Weighing them here too would make one defect fail two checks with two
-      // different numbers, which is how a team learns to read neither.
-      if (!declaresColour || declaresBackground) continue;
+          rule.style.getPropertyValue('background'),
+      );
+      // Whether this file or validate_contrast.py owns the result is
+      // `browserOwnsPairing`, applied outside `page.evaluate` so the boundary
+      // is provable without a container. The only thing decided in here is
+      // whether there is a pairing at all, which needs a declared text colour.
+      if (!declaresColour) continue;
 
       let matched;
       try {
@@ -191,8 +217,19 @@ async function collectPairs(page, routeName) {
         // rare enough not to guess at. Skipped rather than measured wrongly.
         if (!colour || colour.a !== 1) continue;
         const stack = backdropStack(el);
+        // The element's OWN fill, which is also `stack[0]` whenever it has
+        // one. Read separately because the scope rule turns on whether this
+        // particular layer is translucent, and the flattened stack no longer
+        // says which layer came from where.
+        const ownBackground = parse(style.backgroundColor);
 
-        const key = `${rule.selectorText}|${style.color}|${stack.map((b) => `${b.r},${b.g},${b.b},${b.a}`).join('/')}`;
+        // `declaresBackground` is part of the key, not decoration. Rules that
+        // declare an opaque fill now reach this set, where they used to be
+        // dropped before it, so without it one of them could shadow a
+        // colour-only rule sharing its selector text and computed colours - a
+        // base rule and its @media override, say. The shadowed entry is the
+        // one this file keeps, so the loss would be silent coverage.
+        const key = `${rule.selectorText}|${declaresBackground}|${style.color}|${stack.map((b) => `${b.r},${b.g},${b.b},${b.a}`).join('/')}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
@@ -200,6 +237,8 @@ async function collectPairs(page, routeName) {
           selector: rule.selectorText,
           colour: [colour.r, colour.g, colour.b],
           stack,
+          declaresBackground,
+          backgroundAlpha: ownBackground ? ownBackground.a : null,
           fontSize: parseFloat(style.fontSize),
           fontWeight: parseInt(style.fontWeight, 10) || 400,
           sample: ownText.slice(0, 40),
@@ -209,7 +248,9 @@ async function collectPairs(page, routeName) {
     return out;
   });
 
-  return found.map((pair) => ({ ...pair, route: routeName }));
+  return found
+    .filter(browserOwnsPairing)
+    .map((pair) => ({ ...pair, route: routeName }));
 }
 
 const describePair = (p) =>
@@ -247,6 +288,20 @@ test.describe('Contrast, computed cascade', () => {
         ).toBeTruthy();
       }
 
+      // The widening has its own vacuity guard, separate from MINIMUM_PAIRS,
+      // because the colour-only pairings alone clear that floor: a change that
+      // silently stopped collecting translucent fills would leave every
+      // assertion here green while covering exactly what it did before. Not a
+      // named selector, because the claim is "the widening reached something"
+      // rather than "it reached the one rule I thought of"; the mock fixture
+      // emits four severities, so the badges are the floor being cleared.
+      const translucent = pairs.filter((pair) => pair.declaresBackground);
+      expect(
+        translucent.length,
+        `${theme.name}: no translucent-fill pairing was measured, so the ` +
+          'widening past colour-only rules is covering nothing',
+      ).toBeGreaterThan(0);
+
       // An element with no opaque ancestor is backed by the canvas, which the
       // DOM walk cannot see. Recorded as unmeasurable and named in the report
       // rather than assumed white, for the reason validate_contrast.py gives:
@@ -271,7 +326,8 @@ test.describe('Contrast, computed cascade', () => {
       // somebody can read the numbers; a check that speaks only when it fails
       // cannot be sanity-checked against a screenshot.
       console.log(
-        `\n${theme.name}: ${weighed.length} colour-only pairings measured, ` +
+        `\n${theme.name}: ${weighed.length} pairings measured ` +
+          `(${translucent.length} over a translucent fill), ` +
           `${unmeasurable.length} unmeasurable\n` +
           weighed
             .slice()
@@ -290,8 +346,11 @@ test.describe('Contrast, computed cascade', () => {
       );
       expect(
         failures.map(describePair).join('\n'),
-        `${theme.name}: ${failures.length} colour-only pairing(s) below the WCAG bar. ` +
-          'Fix the colour, or record the decision in DEFERRED with a reason and who took it.',
+        `${theme.name}: ${failures.length} pairing(s) below the WCAG bar as rendered. ` +
+          'These are the ratio on the ancestor that actually painted, so a ' +
+          'translucent fill can read lower here than in validate_contrast.py, ' +
+          'which reports the best surface the theme declares. Fix the colour, ' +
+          'or record the decision in DEFERRED with a reason and who took it.',
       ).toBe('');
     });
   }
