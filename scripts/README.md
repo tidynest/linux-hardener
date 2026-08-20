@@ -700,16 +700,21 @@ Validating facts stated in more than one document...
   compliance frameworks: the tree says 10
     OK scripts/README.md agrees at 10
     OK scripts/README.md agrees at 10
-  GUI Playwright tests: the tree says 156
-    OK docs/reference/distribution-validation.md agrees at 156
-    OK scripts/README.md agrees at 156
+  GUI Playwright tests: the tree says 157
+    OK docs/reference/distribution-validation.md agrees at 157
+    OK scripts/README.md agrees at 157
+  GUI Playwright test call sites: the tree says 116
+    OK docs/reference/distribution-validation.md agrees at 116
+    OK docs/reference/distribution-validation.md agrees at 116
 
-All 4 registered sites agree with their source
+All 6 registered sites agree with their source
   Dated readings are deliberately not registered.
 ```
 
+This block said 156 across 4 sites until 2026-08-20, two days after the suite reached 157. It is a sample rather than a registered site, so nothing held it: the same defect it exists to illustrate, in the entry describing the validator that exists to catch it.
+
 **Source of Truth**:
-- Named per fact in the script's `REGISTRY`; for the compliance framework count, the `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`, read via `validate_compliance_docs.py`'s `parse_enum_frameworks`; for the GUI Playwright test count, the row marked **current** in the Reading table of [distribution-validation.md](../docs/reference/distribution-validation.md)
+- Named per fact in the script's `REGISTRY`. For the compliance framework count, the `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`, read via `validate_compliance_docs.py`'s `parse_enum_frameworks`. For the GUI Playwright test count, the row marked **current** in the Reading table of [distribution-validation.md](../docs/reference/distribution-validation.md), which is the document this validator also checks: it can therefore confirm that the consumers agree with the row and never that the row is true. For the GUI Playwright call-site count, `gui-tests/tests/*.spec.js` counted in the tree, registered on 2026-08-20 precisely because the fact above has no tree definition and went stale in three documents for two days while this validator stayed green
 
 **Dependencies**:
 - Python 3.9+

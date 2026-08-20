@@ -74,6 +74,52 @@ def gui_playwright_test_count(root: Path) -> int:
     return int(match.group(1))
 
 
+def gui_playwright_call_sites(root: Path) -> int:
+    """How many `test()` call sites the specs carry, counted in the tree.
+
+    The fact above has no tree definition and is therefore read out of the
+    document it validates, which means it can only ever check that the
+    consumer sites agree with the row: it cannot ask whether the row is true.
+    On 2026-08-20 three documents called 156 current while the suite read 157,
+    and this validator was green throughout.
+
+    This is the tree quantity that moves when a test is added, and it is
+    registered so that the tree, rather than a person's memory, is what turns
+    the paragraph stating both numbers red. It counts CALL SITES and not
+    cases: `npx playwright test --list` reported 116 distinct sites producing
+    157 cases on 2026-08-20, and this count agreed with it exactly.
+
+    **It does not verify the case count, and one shape defeats it**: a
+    parameterised site gaining cases moves the total without moving any call
+    site, so an eighth theme would take 157 past 160 with this still reading
+    116. What it does catch is the ordinary way the suite grows, which is how
+    the 2026-08-20 drift happened.
+
+    A `test.skip`/`only`/`fixme`/`fail` variant would break the agreement with
+    `--list`, which still counts a skipped test as a case. Rather than
+    miscount in silence the scan refuses, naming the file.
+    """
+    specs = sorted((root / "gui-tests" / "tests").glob("*.spec.js"))
+    if not specs:
+        raise LookupError("no gui-tests/tests/*.spec.js found")
+    call_site = re.compile(r"^\s*test\s*\(", re.MULTILINE)
+    variant = re.compile(r"^\s*test\.(skip|only|fixme|fail)\s*\(", re.MULTILINE)
+    total = 0
+    for spec in specs:
+        text = spec.read_text()
+        if found := variant.search(text):
+            raise LookupError(
+                f"{spec.relative_to(root)}: {found.group(0).strip()} makes this "
+                "count disagree with `npx playwright test --list`, which counts "
+                "a skipped test as a case. Teach this function the variant "
+                "rather than letting the number drift"
+            )
+        total += len(call_site.findall(text))
+    if not total:
+        raise LookupError("gui-tests/tests/*.spec.js parsed to zero call sites")
+    return total
+
+
 # (fact, canonical source callable, [(path, pattern, note)])
 #
 # The pattern must capture exactly one group and must be present-tense. A
@@ -112,6 +158,26 @@ REGISTRY = [
                 "scripts/README.md",
                 r"is \*\*(\d+) tests in \d+ files\*\*",
                 "the run-gui-tests.sh entry's Purpose line",
+            ),
+        ],
+    ),
+    (
+        "GUI Playwright test call sites",
+        gui_playwright_call_sites,
+        [
+            (
+                "docs/reference/distribution-validation.md",
+                r"\*\*(\d+) `test\(\)` call sites produce \d+\s+cases\*\*",
+                "the Spec Inventory preamble, which states this number beside "
+                "the case count. Registered so the TREE turns that paragraph "
+                "red: the case count beside it has no tree definition and went "
+                "stale for two days in three documents",
+            ),
+            (
+                "docs/reference/distribution-validation.md",
+                r"a count of\s+`test\(` calls is (\d+) and understates the suite",
+                "the same paragraph's closing sentence, which restates it as "
+                "the reason for reading the runner instead",
             ),
         ],
     ),

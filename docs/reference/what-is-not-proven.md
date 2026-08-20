@@ -1480,20 +1480,41 @@ visits.
 `validate_cross_document_facts.py` compares a fact stated in more than one
 document against the site that owns it, and `crosscheck.py`, which lives
 outside this repository in `~/Documents/DEVELOPMENT/prose-sweep/`, is what
-finds candidates for it. Five limits, four of them deliberate and the fifth
-a discovered blind spot:
+finds candidates for it. Six limits, four of them deliberate and two of them
+discovered blind spots, the second found on 2026-08-20 by the defect it let
+through:
 
 - **It reads quantities, not claims.** "Five distributions" is in scope. "The
   suite has never been run against a booted host" carries no number and is
   invisible to both tiers.
-- **The gate holds only what is registered.** Only one of its two facts grew
+- **The gate holds only what is registered.** Only one of its three facts grew
   from a confirmed survivor of a sweep: the GUI Playwright test count. The
   compliance framework count predates `crosscheck.py` entirely, added from an
   earlier throwaway probe, so the registry is evidence-driven only by the one
   fact that happens to be, not by design. A fact nobody has swept for, or
   swept for and not registered, is not held.
-- **The sweep is not scheduled.** Nothing runs it. It is run when the corpus
-  has moved.
+- **A registered fact can be sourced from the document it validates, and one
+  is.** `gui_playwright_test_count` reads the row marked **current** in
+  `distribution-validation.md`, because Playwright generates the count at
+  collection time and no tree definition of it exists. So the gate confirms
+  that the consumer sites agree with the row and **cannot ask whether the row
+  is true**. On 2026-08-20 three documents called 156 current while the suite
+  read 157, for two days, with this validator green throughout and
+  `crosscheck.py` unable to see it either, 157 standing in exactly one tracked
+  file where the sweep needs a key to disagree across more than one.
+  Mitigated, not closed, by registering the **call-site count** as a third
+  fact on 2026-08-20: `test()` call sites in `gui-tests/tests/*.spec.js` are a
+  tree quantity that moves whenever a test is added, and they sit in the same
+  paragraph as the case count, so the tree now turns that paragraph red.
+  **One shape still defeats it**: a parameterised site gaining cases moves the
+  total without moving any call site, so an eighth theme would take the total
+  past 160 with the call-site count unchanged. Three controls were observed
+  firing, including a `test.skip` variant, which would disagree with `--list`
+  and is refused by name rather than miscounted.
+- **The sweep is not scheduled.** Nothing runs it. It was last run on
+  2026-08-20, returning seven clusters and no defect: the one real staleness
+  that day was found by asking whether the largest number was the current one,
+  which is a question the sweep has no way to put.
 - **A stale pointer is found only when it carries a number.** The defect it
   found on 2026-08-19 was caught because the sentence contained "154". The
   same sentence phrased "superseded by the August reading" would be invisible.
