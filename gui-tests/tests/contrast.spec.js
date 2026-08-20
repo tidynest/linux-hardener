@@ -96,14 +96,12 @@ const fleetPanel = (ratio) =>
   'docs/reference/what-is-not-proven.md.';
 
 const DEFERRED = {
-  // Six of seven themes. A systemic cause is likely, so read it as one
-  // question about `--pill-muted-bg` against this panel rather than as six.
-  'default .severity_exception': fleetPanel('4.21'),
-  'daywatch .severity_exception': fleetPanel('4.23'),
-  'sentinel .severity_exception': fleetPanel('4.24'),
-  'guardian .severity_exception': fleetPanel('4.28'),
-  'command .severity_exception': fleetPanel('4.34'),
-  'fortress .severity_exception': fleetPanel('4.34'),
+  // `.severity_exception` was six of the thirteen and is FIXED, not deferred.
+  // The systemic cause the six suggested was real: each theme's `--text-muted`
+  // is tuned to clear 4.5 on the bare surface and the pill's 14% fill lifts
+  // the backdrop under it. It moved to `--text-secondary` on 2026-08-20,
+  // together with `.compliance-excluded`, which shares `--pill-muted-bg` and
+  // therefore shared the defect while never being measured at all.
   // `.tally-crit` was the other five and is FIXED rather than deferred: it
   // moved to `--color-critical-bright` on 2026-08-20, the same move
   // `.partial-row-badge-failed` and `.status-error` made on 2026-08-19, taking

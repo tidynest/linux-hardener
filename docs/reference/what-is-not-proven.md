@@ -1040,10 +1040,31 @@ without remainder here because the host row paints an opaque surface; where
 they differed by 0.02 on `.severity_low` in daywatch, the backdrop was a
 composited tint no theme declares.
 
-**Eight remain deferred**: `.severity_exception` in six themes of seven and one
-theme each for `.severity_critical` and `.severity_low`. Six of the eight being
-one rule suggests a single cause in how `--pill-muted-bg` meets this panel,
-so it is one question rather than six.
+**`.severity_exception` was the next six and is also fixed.** The single cause
+the cluster suggested was real, and un-compositing the backdrop found it: each
+theme's `--text-muted` is tuned to clear 4.5 against the bare surface, reading
+4.61 to 5.53 there, and the pill's own 14% lighter fill lifts the backdrop just
+far enough to put it under. That also ruled out the obvious remedy: lowering
+the fill's alpha cannot rescue daywatch, whose `#6a635f` reaches only 4.61 on
+the bare background and so stays short at any alpha. Moving to
+`--text-secondary` clears every theme. Predicted before the run and measured
+after, within 0.03 in all seven: Command 4.83, Sentinel 4.89, Guardian 5.64,
+Fortress 5.67, Midnight Teal 5.97, Daywatch 7.36, High Contrast 10.94.
+
+`.compliance-excluded` moved with it. It shares `--pill-muted-bg` **and**
+`--text-muted`, so it is the identical pairing, and no contrast route renders a
+compliance table, so it had never been measured; computed over declared
+surfaces it read 3.55:1 to 4.22:1 at worst across the six dark themes. Fixing
+one and not the other would have split a pair the stylesheet keeps together on
+purpose.
+
+**The residual is the `--bg-elevated` question already open**, not a new one:
+on that surface alone Command reads 4.13 and Sentinel 4.18, while every other
+surface clears. It now has four instances rather than two.
+
+**Two remain deferred**, one theme each: `.severity_critical` in sentinel at
+4.18 and `.severity_low` in fortress at 4.29. Both were re-verified live
+against the run's own listing of 371 measured pairs.
 
 > **Second time a widening has paid like this.** The 2026-08-19 alpha-fill
 > widening found eight; this route found thirteen. A documented gap is a

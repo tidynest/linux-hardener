@@ -1105,7 +1105,22 @@ tbody tr:hover {
 /* A documented deviation is not a severity. It reads as neutral rather than
    ranked, so it cannot be mistaken for the bottom rung of the severity scale
    it sits below. */
-.severity_exception { background-color: var(--pill-muted-bg); color: var(--text-muted); }
+/* `--text-muted` on this pill read 4.19:1 to 4.34:1 in six themes of seven,
+   measured on the fleet host panel on 2026-08-20. One cause, not six: each
+   theme's `--text-muted` is tuned to clear 4.5 against the bare surface, where
+   it reads 4.61 to 5.53, and the pill's 14% lighter fill lifts the backdrop
+   just enough to put it under. Lowering the fill's alpha cannot fix it,
+   because daywatch's #6a635f reaches only 4.61 on the BARE background and so
+   stays short at every alpha; `--text-secondary` clears every theme, worst
+   4.84 in Command. Both rules that share `--pill-muted-bg` move together, the
+   shared property being the point.
+   The residual is the SAME `--bg-elevated` question already open for
+   `.partial-row-badge-failed` and `.status-error`, not a new one: on that one
+   surface Command reads 4.13 and Sentinel 4.18, while every other surface
+   clears. No route renders either pill there.
+   It now shares a text colour with `.severity_info` and is still not the
+   bottom rung: the fills differ, and each pill carries its own word. */
+.severity_exception { background-color: var(--pill-muted-bg); color: var(--text-secondary); }
 
 /* ============================================================
    14. ANALYSIS PAGE
@@ -3916,9 +3931,16 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    the plain italic of .compliance-manual, because the two counts move the score
    in opposite directions - unassessed stays in the denominator and lowers it,
    excluded leaves it and raises it - and so must not read as one category. */
+/* Moves with `.severity_exception` above, which is the point of the shared
+   property: the same pairing, so the same defect. It was never measured, since
+   no contrast route renders a compliance table, and an unmeasured pairing is
+   not a passing one. Computed over every declared surface it read 3.55:1 to
+   4.22:1 at worst across the six dark themes, worse than the fleet panel
+   reading because the compliance table sits on surfaces the host row does not
+   use. */
 .compliance-excluded {
   background-color: var(--pill-muted-bg);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   border-radius: var(--radius-sm);
   padding: 0 0.4em;
 }
