@@ -842,49 +842,11 @@ fn a_named_config_adds_to_the_sources_below_it() {
     );
 }
 
-/// Environment overrides are applied after every file source, including a
-/// named `--config`, which is the order all four documents promise and which
-/// nothing drove through `load()` before 2026-08-20.
-///
-/// Red-first control: swapping the CLI merge and the env override in `load()`
-/// compiles cleanly and silently lets a file beat the environment.
-///
-/// `HARDENER_DISABLED_PLUGINS` is process-wide, so this test sets it, loads,
-/// and removes it. It is the only test in this file that touches the
-/// environment; keep it that way, because `cargo test` runs threads in one
-/// process and a second such test could interleave with this one.
-#[test]
-fn the_environment_outranks_a_named_config() {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let named = dir.path().join("named.toml");
-    std::fs::write(&named, "[global]\ndisabled_plugins = [\"ssh-hardening\"]\n")
-        .expect("write named");
-
-    // SAFETY: single-threaded access is not guaranteed by the test harness, so
-    // this is the one place in the file that writes the environment and it
-    // removes the variable before returning.
-    unsafe {
-        std::env::set_var("HARDENER_DISABLED_PLUGINS", "mac-hardening");
-    }
-    let loaded = ConfigLoader::new()
-        .skip_defaults()
-        .with_cli_config(named)
-        .load();
-    unsafe {
-        std::env::remove_var("HARDENER_DISABLED_PLUGINS");
-    }
-
-    let config = loaded.expect("load");
-    assert!(
-        !config.is_plugin_enabled("mac-hardening"),
-        "the environment names mac-hardening and is applied last"
-    );
-    assert!(
-        config.is_plugin_enabled("ssh-hardening"),
-        "the named file's list is REPLACED by the environment rather than \
-         merged with it, so the plugin only the file named is enabled again"
-    );
-}
+// The test proving environment overrides outrank a named `--config` file
+// lives in `tests/config_env_precedence.rs`, its own integration binary,
+// rather than here: `HARDENER_DISABLED_PLUGINS` is process-wide, and this
+// file's tests run as threads sharing one process with it. See that file's
+// header for why that matters and what it once broke.
 
 /// The last source that STATES `enabled` decides it, and a source that
 /// mentions the section without the key decides nothing. Both halves were
@@ -974,5 +936,33 @@ fn two_files_each_under_the_directive_cap_are_refused_together() {
     assert!(
         refusal.to_string().contains("directive"),
         "the refusal must name what was exceeded: {refusal}"
+    );
+}
+
+/// The seam falls back to the real system path when unset, and returns the
+/// seam when one is set.
+///
+/// Every other test in this file that reaches the system layer sets the
+/// seam, so nothing asked what an unset one falls back to. The mutant
+/// `self.system_config_path.clone().or_else(Self::system_config_path)`
+/// replaced by `self.system_config_path.clone()` stops the shipping product
+/// reading `/etc/linux-hardener/config.toml` at all, because every caller
+/// that ships leaves the seam unset, and the whole workspace suite stayed
+/// green under it.
+#[test]
+fn system_config_path_for_falls_back_to_the_real_path_when_unset() {
+    let unseamed = ConfigLoader::new();
+    assert_eq!(
+        unseamed.system_config_path_for(),
+        ConfigLoader::system_config_path(),
+        "with no seam set, the loader must fall back to the real system path"
+    );
+
+    let seam = PathBuf::from("/tmp/config-loader-tests/system-config-seam.toml");
+    let seamed = ConfigLoader::new().with_system_config(seam.clone());
+    assert_eq!(
+        seamed.system_config_path_for(),
+        Some(seam),
+        "and with a seam set, that seam must be what is returned"
     );
 }

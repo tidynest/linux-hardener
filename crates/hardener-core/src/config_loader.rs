@@ -33,10 +33,10 @@ pub struct ConfigLoader {
     ///
     /// `None`, which every shipping caller leaves it as, resolves to
     /// [`Self::SYSTEM_CONFIG_PATH`]. It exists because that path is absolute
-    /// and outside any directory a test may write: without a seam the system
-    /// layer is read by nothing, on any developer machine or in CI, so the
-    /// step that merges it could be deleted and no test would notice. See
-    /// [`Self::with_system_config`].
+    /// and outside any directory a test may write: without a seam, `load`
+    /// reads it in every test that does not call `skip_defaults`, but nothing
+    /// observes what it read, since `/etc/linux-hardener/config.toml` does not
+    /// exist on a developer machine or in CI. See [`Self::with_system_config`].
     system_config_path: Option<PathBuf>,
     /// Whether this process counts as root for the user-config rule.
     ///
