@@ -1017,19 +1017,35 @@ its floor of 1. Every reading clears 4.5.
 | daywatch | 5.70:1 | 6.79:1 |
 | high contrast | 8.33:1 | 13.55:1 |
 
-**One number deserves attention and is deliberately not stated as a
-conclusion.** The post-fix range recorded for these six sites on 2026-08-19 is
-5.54 to 6.11, and the lowest rendered reading here is **5.02 on sentinel**,
-below that whole range. That is the shape the ceiling predicts, a rendered
-value under a best-of-surfaces value, and it is what this route was added to
-expose. It is not asserted as a quantified gap, because
-`validate_contrast.py` prints only failures and deferrals, so its per-selector
-figures could not be re-derived from the tool while writing this; the 5.54 to
-6.11 comes from the documented range rather than from a fresh measurement.
-**Comparing a fresh number against a remembered one is the exact mistake this
-document was created to stop**, so the comparison is recorded as a question.
-Answering it means making the static checker able to print a pair on demand,
-which nothing currently asks of it.
+**The question that reading raised is now answered from the tool rather than
+from prose.** `validate_contrast.py --explain <selector>` prints every theme's
+figure for a pair, and for an alpha background it prints the SPREAD: the best
+surface the theme declares, the worst, and which each is. The two instruments
+can therefore be compared without anyone remembering a number.
+
+**Every rendered reading falls inside its own theme's static spread, in both
+selectors and all seven themes.** The 5.02 on sentinel that prompted this sits
+inside 3.86 to 5.54. It was below the documented 5.54-to-6.11 range because
+that range was the best case across themes, which is not the quantity a
+rendered reading should be compared against at all. **The two checks agree
+everywhere, in exactly the sense the design intends: the browser lands between
+the worst and best surfaces, because it resolves the one real ancestor.** The
+only readings outside are `.status-error` on sentinel and command, over by
+0.01, which is two pipelines rounding the same value to two decimals rather
+than a disagreement.
+
+**The spread exposes something the headline figure hides, and it is a question
+for the maintainer rather than a defect.** For both selectors the worst surface
+is `--bg-elevated` in six of seven themes, and it falls below 4.5 in five of
+them: `.partial-row-badge-failed` reads 3.86 on sentinel, 4.05 on fortress,
+4.10 on default, 4.22 on guardian and 4.29 on command, with `.status-error`
+within a few hundredths of the same. So both pairs would fail WCAG if they ever
+rendered on an elevated surface. On the routes measured they do not, which is
+why the browser half reads 5.02 and above. **Whether a failed partial row or an
+export status can ever appear on `--bg-elevated` is a product question about
+modals and cards, not a tooling one**, and it is the concrete form of the
+tradeoff this file's docstring accepted in the abstract when it chose best-case
+over worst-case and recorded 61 as the worst-case count.
 
 **`/analysis` is now scanned rather than bare**, which was worth doing on its
 own: the first two container runs loaded it into its empty state, so it

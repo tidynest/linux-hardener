@@ -66,9 +66,12 @@ inside nspawn, so on a development host this is the only contrast check there
 is.
 """
 
+import argparse
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
+from typing import NamedTuple
 
 GREEN, RED, YELLOW, BLUE, NC = (
     "\033[0;32m",
@@ -218,17 +221,35 @@ def over(colour: tuple[int, int, int, float], backdrop: str) -> str:
     )
 
 
-def check(css_path: Path) -> int:
-    css = css_path.read_text()
-    themes = parse_themes(css)
-    if not themes:
-        print(f"{RED}No theme blocks found in {css_path}{NC}")
-        return 1
+class Measurement(NamedTuple):
+    """One declared pair, weighed in one theme.
 
-    failures: list[tuple[str, str, str, str, float]] = []
-    deferred: list[tuple[str, str, str, str, float]] = []
-    checked = 0
+    `ratio` is the reported figure and is the BEST case for an alpha
+    background, matching the rule this file has always applied. The spread
+    fields are populated only for those, and exist so `--explain` can show the
+    ceiling rather than describe it: the browser half resolves the one real
+    ancestor and can land anywhere between `worst_ratio` and `ratio`.
+    """
 
+    theme: str
+    selector: str
+    foreground: str
+    background: str
+    ratio: float
+    need: float
+    best_surface: str | None = None
+    worst_ratio: float | None = None
+    worst_surface: str | None = None
+
+
+def measure(css: str, themes: dict) -> Iterator[Measurement]:
+    """Every pair this file weighs, in every theme it applies to.
+
+    Split out of `check` so `--explain` reports the same arithmetic rather than
+    a second copy of it. A reader comparing one selector against the browser
+    half is asking what this check says, and a separate code path answering
+    that question is a way for the two answers to drift apart silently.
+    """
     for selector, body in RULE.findall(css):
         selector = " ".join(selector.split())
         if selector.startswith("@") or selector.startswith(":root"):
@@ -252,44 +273,73 @@ def check(css_path: Path) -> int:
             if not fg:
                 continue
             if bg:
-                ratio = contrast_ratio(fg, bg)
-            else:
-                # An alpha background composites over an ancestor a static
-                # parse cannot know, so take the BEST of every surface the
-                # theme declares: a failure then holds whatever the ancestor
-                # turns out to be, which keeps a report a fact rather than a
-                # guess. The worst-case rule was measured too and reports 61
-                # failures on pairings that may never co-occur, which is the
-                # manufactured-defect mode recorded in this file's docstring.
-                tint = alpha_colour(bg_decl.group(1), tokens)
-                surfaces = [
-                    v
-                    for k, v in tokens.items()
-                    if k.startswith("bg-") and v.startswith("#")
-                ]
-                if not (tint and surfaces):
-                    continue
-                ratio = max(contrast_ratio(fg, over(tint, s)) for s in surfaces)
-                bg = f"{bg_decl.group(1).strip()} over --bg-*"
-            checked += 1
-            if ratio < need:
-                if selector in DEFERRED:
-                    deferred.append((theme, selector, fg, bg, ratio))
-                else:
-                    failures.append((theme, selector, fg, bg, ratio))
+                yield Measurement(
+                    theme, selector, fg, bg, contrast_ratio(fg, bg), need
+                )
+                continue
+            # An alpha background composites over an ancestor a static parse
+            # cannot know, so take the BEST of every surface the theme
+            # declares: a failure then holds whatever the ancestor turns out
+            # to be, which keeps a report a fact rather than a guess. The
+            # worst-case rule was measured too and reports 61 failures on
+            # pairings that may never co-occur, which is the manufactured
+            # defect mode recorded in this file's docstring.
+            tint = alpha_colour(bg_decl.group(1), tokens)
+            surfaces = [
+                (k, v)
+                for k, v in tokens.items()
+                if k.startswith("bg-") and v.startswith("#")
+            ]
+            if not (tint and surfaces):
+                continue
+            scored = sorted(
+                ((contrast_ratio(fg, over(tint, v)), k) for k, v in surfaces),
+                reverse=True,
+            )
+            yield Measurement(
+                theme,
+                selector,
+                fg,
+                f"{bg_decl.group(1).strip()} over --bg-*",
+                scored[0][0],
+                need,
+                f"--{scored[0][1]}",
+                scored[-1][0],
+                f"--{scored[-1][1]}",
+            )
+
+
+def check(css_path: Path) -> int:
+    css = css_path.read_text()
+    themes = parse_themes(css)
+    if not themes:
+        print(f"{RED}No theme blocks found in {css_path}{NC}")
+        return 1
+
+    failures: list[Measurement] = []
+    deferred: list[Measurement] = []
+    checked = 0
+
+    for m in measure(css, themes):
+        checked += 1
+        if m.ratio < m.need:
+            (deferred if m.selector in DEFERRED else failures).append(m)
 
     print(f"{BLUE}Validating declared colour pairs in {css_path.name}...{NC}\n")
     if deferred:
         print(f"{YELLOW}Held open by decision ({len(deferred)}):{NC}\n")
-        for theme, selector, fg, bg, ratio in sorted(deferred, key=lambda d: d[4]):
-            print(f"  {YELLOW}!{NC} [{theme}] {selector}")
-            print(f"      {fg} on {bg} is {ratio:.2f}:1")
-            print(f"      {DEFERRED[selector]}\n")
+        for m in sorted(deferred, key=lambda d: d.ratio):
+            print(f"  {YELLOW}!{NC} [{m.theme}] {m.selector}")
+            print(f"      {m.foreground} on {m.background} is {m.ratio:.2f}:1")
+            print(f"      {DEFERRED[m.selector]}\n")
     if failures:
         print(f"{RED}Contrast failures ({len(failures)}):{NC}\n")
-        for theme, selector, fg, bg, ratio in sorted(failures, key=lambda f: f[4]):
-            print(f"  {RED}✗{NC} [{theme}] {selector}")
-            print(f"      {fg} on {bg} is {ratio:.2f}:1, needs {THRESHOLD}\n")
+        for m in sorted(failures, key=lambda f: f.ratio):
+            print(f"  {RED}✗{NC} [{m.theme}] {m.selector}")
+            print(
+                f"      {m.foreground} on {m.background} is {m.ratio:.2f}:1, "
+                f"needs {m.need}\n"
+            )
         print(
             f"{YELLOW}A pair here is declared in one rule, so both colours do "
             f"render together.{NC}"
@@ -306,12 +356,85 @@ def check(css_path: Path) -> int:
     return 0
 
 
+def explain(css_path: Path, pattern: str) -> int:
+    """Print what this file measures for one selector, in every theme.
+
+    Exists because the check prints only failures and deferrals, so a passing
+    pair had no figure anyone could read. On 2026-08-20 the browser half
+    measured `.partial-row-badge-failed` at 5.02:1 on sentinel and the only
+    thing to compare it against was a range written in prose, which is the
+    mistake `docs/reference/what-is-not-proven.md` exists to prevent. Reading
+    a remembered number back is not a measurement.
+
+    For an alpha background the spread is printed rather than the headline
+    alone. `ratio` is the best surface the theme declares and is deliberately
+    optimistic; the browser resolves the one real ancestor, so a rendered
+    reading below the best is the ceiling working as designed and NOT a
+    disagreement between the two checks. A rendered reading below the WORST is
+    a disagreement, and worth investigating.
+    """
+    css = css_path.read_text()
+    themes = parse_themes(css)
+    if not themes:
+        print(f"{RED}No theme blocks found in {css_path}{NC}")
+        return 1
+
+    hits = [m for m in measure(css, themes) if pattern.lower() in m.selector.lower()]
+    if not hits:
+        print(f"{RED}No pair weighed by this file matches {pattern!r}.{NC}")
+        print(
+            f"{YELLOW}Only rules declaring BOTH a colour and a background are "
+            f"weighed here, translucent fills included. A colour-only rule "
+            f"belongs to the browser half alone "
+            f"(gui-tests/tests/contrast.spec.js), which also weighs the "
+            f"translucent ones against the ancestor that actually painted.{NC}"
+        )
+        return 1
+
+    for selector in dict.fromkeys(m.selector for m in hits):
+        print(f"\n{BLUE}{selector}{NC}")
+        for m in sorted(
+            (h for h in hits if h.selector == selector), key=lambda h: h.theme
+        ):
+            mark = f"{GREEN}pass{NC}" if m.ratio >= m.need else f"{RED}FAIL{NC}"
+            print(
+                f"  {m.theme:14} {m.ratio:5.2f}:1  needs {m.need}  {mark}"
+                f"   {m.foreground} on {m.background}"
+            )
+            if m.worst_ratio is not None:
+                print(
+                    f"  {'':14} spread {m.worst_ratio:5.2f} to {m.ratio:5.2f}"
+                    f"   best {m.best_surface}, worst {m.worst_surface}"
+                )
+    print(
+        f"\n{YELLOW}A figure over 'over --bg-*' is the BEST surface the theme "
+        f"declares. The browser half resolves the real ancestor, so a rendered "
+        f"reading inside the printed spread is the documented ceiling, not a "
+        f"disagreement. Below the spread is a disagreement.{NC}"
+    )
+    return 0
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--explain",
+        metavar="SELECTOR",
+        help=(
+            "print every theme's figure for the pairs whose selector contains "
+            "this text, instead of validating. Substring match, so "
+            "'--explain status-error' is enough."
+        ),
+    )
+    args = parser.parse_args()
+
     root = Path(__file__).resolve().parent.parent.parent
     css = root / "crates" / "hardener-ui" / "styles.css"
     if not css.exists():
         print(f"{RED}Stylesheet not found: {css}{NC}")
         return 1
+    if args.explain:
+        return explain(css, args.explain)
     return check(css)
 
 
