@@ -1117,8 +1117,13 @@ six distributions.
 > **The current reading is not in this section.** It is the 2026-08-20 run:
 > **157 of 157 on every distribution** against `hardener 1.5.1 (2bc8bd76)`,
 > none failed, none skipped, none flaky, 2.9 to 4.5 minutes each, one worker
-> and no name filter. Everything below is either infrastructure read off the
-> tree or a dated record kept for its failure analysis.
+> and no name filter. **The containers were not recreated for it.** All six
+> were created on 2026-08-19 between 21:53 and 22:00 and reused the next day,
+> read from their directory birth times; `run-gui-tests.sh` permits this
+> because it only checks that a container exists and skips when one does not,
+> recreation being a separate manual step. Everything below is either
+> infrastructure read off the tree or a dated record kept for its failure
+> analysis.
 >
 > **The 156 was a declaration for one day and is now a result.** `T-FLEET-10`
 > and `T-SCHED-07` were written on 2026-08-18 and could not be run when they
