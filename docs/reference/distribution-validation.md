@@ -1114,12 +1114,11 @@ To reproduce the full cross-distro validation from scratch:
 In addition to CLI testing, the Web UI is validated with Playwright across all
 six distributions.
 
-> **The current reading is not in this section.** It is the 2026-08-18 run:
-> **156 of 156 on every distribution** against `hardener 1.5.1 (653b4ff1)`, all
-> six containers destroyed and recreated first, none failed, none skipped, none
-> flaky, 2.7 to 3.5 minutes each, one worker and no name filter. Everything
-> below is either infrastructure read off the tree or a dated record kept for
-> its failure analysis.
+> **The current reading is not in this section.** It is the 2026-08-20 run:
+> **157 of 157 on every distribution** against `hardener 1.5.1 (2bc8bd76)`,
+> none failed, none skipped, none flaky, 2.9 to 4.5 minutes each, one worker
+> and no name filter. Everything below is either infrastructure read off the
+> tree or a dated record kept for its failure analysis.
 >
 > **The 156 was a declaration for one day and is now a result.** `T-FLEET-10`
 > and `T-SCHED-07` were written on 2026-08-18 and could not be run when they
@@ -1144,12 +1143,20 @@ six distributions.
 | openSUSE | SUSE | Leap 15.6 | 2026-02-23 | 84 | 84 | 0 | VALIDATED (v0.3.3 baseline) |
 
 The suite has grown since that baseline, and has since been rewritten. Every
-figure in the table above is superseded by the reading in [Summary](#summary),
-which is **156 of 156 on all six distributions** at `653b4ff1` on 2026-08-18.
+figure in the table above is superseded by the reading in the Reading table
+below, which is **157 of 157 on all six distributions** at `2bc8bd76` on
+2026-08-20.
+
 This sentence named the 2026-08-16 reading of 154 until 2026-08-19. Summary had
 recorded the later reading on 2026-08-18, so the pointer stood stale for a day:
 the number it carried was a correct reading and the **pointer** to it was what
-went stale, which is the harder half of this class to see. None of the
+went stale, which is the harder half of this class to see. **It happened again
+immediately**: the 2026-08-19 fix moved the number 154 to 156 and carried the
+`[Summary](#summary)` link over untouched, so from 2026-08-20 the sentence
+named 156 while the suite read 157, and the link itself was ambiguous, two
+headings in this file being named Summary. It resolved to the CLI one at the
+top, whose GUI figure is 134. **The link is now gone rather than repointed**,
+because the table it means sits directly below the sentence. None of the
 intermediate figures is comparable to it or to each other, because the specs
 were rewritten between several of them, so the numbers count different tests
 rather than measuring growth:
@@ -1164,7 +1171,8 @@ rather than measuring growth:
 | 2026-08-12 | 134 | 6 | superseded, against `dd85255f` after a `trunk build --release` |
 | 2026-08-15 | 152 | 6 | superseded |
 | 2026-08-16 | 154 | 6 | superseded, against `5b715039` |
-| **2026-08-18** | **156** | **6** | **current**, against `653b4ff1` |
+| 2026-08-18 | 156 | 6 | superseded, against `653b4ff1` |
+| **2026-08-20** | **157** | **6** | **current**, against `2bc8bd76` |
 
 The Fedora-only row is kept because it records a rule rather than a result: it
 was deliberately never written into the table, since a six-distribution row
@@ -1220,23 +1228,23 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (11 Specs, 156 Tests)
+### Spec Inventory (11 Specs, 157 Tests)
 
-Counted off `npx playwright test --list` on 2026-08-18, which is the same count
-the container run of that date executed. **115 `test()` call sites produce 156
+Counted off `npx playwright test --list` on 2026-08-20, which is the same count
+the container run of that date executed. **116 `test()` call sites produce 157
 cases**, because three of the sites are parameterised and
 generate their cases at collection time: `themes.spec.js:152` produces 35
-screenshots (5 states x 7 themes), `contrast.spec.js:221` produces one case per
-theme, and `hardening.spec.js:479` produces one per viewport width. Reading the
+screenshots (5 states x 7 themes), `contrast.spec.js:364` produces one case per
+theme, and `hardening.spec.js:470` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
-`test(` calls is 115 and understates the suite by 41.
+`test(` calls is 116 and understates the suite by 41.
 
 | Spec | Test IDs | Tests | Description |
 |------|----------|-------|-------------|
 | `themes.spec.js` | T-THEME-01..09 | 9 + 35 | All seven themes verified. The 35 screenshot tests are generated as 5 states x 7 themes |
 | `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 and 11..13, T-APPLY-01..04, T-DIVG-01..05 | 29 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, signature verification and unread sources; what an executed apply produces; the rollback modal's divergence section. T-DIVG-03 runs once per viewport width, so this spec has 28 ids over 29 tests, and T-HIST-07..10 do not exist |
 | `analysis.spec.js` | T-FIND-01..12, T-COMP-01..08, T-EXC-01..05 | 25 | Findings grouping and detail expander, framework selection, report generation, the per-finding accept/remove exception controls |
-| `dashboard.spec.js` | T-DASH-01..10 | 10 | Score display, scan trigger, navigation, activity feed, the header subtitle's scanned state |
+| `dashboard.spec.js` | T-DASH-01..11 | 11 | Score display, scan trigger, navigation, activity feed, the header subtitle's scanned state, and T-DASH-11 asserting that only a framework carrying exclusions gets the excluded annotation |
 | `fleet.spec.js` | T-FLEET-01..10 | 10 | Fleet scan view, per-host results, row expander, delete confirmation, the expanded host's persisted history rail |
 | `fleet-apply.spec.js` | T-FAPPLY-01..09 | 9 | Fleet Apply mode toggle, selection, confirm modal |
 | `settings.spec.js` | T-SET-01..08 | 8 | Settings page |
