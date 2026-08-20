@@ -999,10 +999,37 @@ for these `aria-pressed` controls. **A drive step that toggles depends on the
 state it finds; one that asserts does not**, and the difference is invisible
 until the default changes or a route arrives at the screen differently.
 
-Worth separating from the colour work: this was a failure to reach the subject,
-not a finding about it. `.partial-row-badge-failed` and `.status-error` still
-have no measured ratio against a real ancestor, and the claim remains that the
-next run should produce the first one for each.
+Worth separating from the colour work: that was a failure to reach the subject,
+not a finding about it.
+
+**Both badges now have a measured ratio against the ancestor that painted, for
+the first time.** The run after the fix passed all seven themes, at 64 pairings
+each and 5 over a partly translucent fill, so the widening's own guard is off
+its floor of 1. Every reading clears 4.5.
+
+| theme | `.partial-row-badge-failed` | `.status-error` |
+|---|---|---|
+| sentinel | 5.02:1 | 5.89:1 |
+| fortress | 5.35:1 | 6.22:1 |
+| midnight teal | 5.40:1 | 6.14:1 |
+| guardian | 5.45:1 | 6.31:1 |
+| command | 5.66:1 | 6.44:1 |
+| daywatch | 5.70:1 | 6.79:1 |
+| high contrast | 8.33:1 | 13.55:1 |
+
+**One number deserves attention and is deliberately not stated as a
+conclusion.** The post-fix range recorded for these six sites on 2026-08-19 is
+5.54 to 6.11, and the lowest rendered reading here is **5.02 on sentinel**,
+below that whole range. That is the shape the ceiling predicts, a rendered
+value under a best-of-surfaces value, and it is what this route was added to
+expose. It is not asserted as a quantified gap, because
+`validate_contrast.py` prints only failures and deferrals, so its per-selector
+figures could not be re-derived from the tool while writing this; the 5.54 to
+6.11 comes from the documented range rather than from a fresh measurement.
+**Comparing a fresh number against a remembered one is the exact mistake this
+document was created to stop**, so the comparison is recorded as a question.
+Answering it means making the static checker able to print a pair on demand,
+which nothing currently asks of it.
 
 **`/analysis` is now scanned rather than bare**, which was worth doing on its
 own: the first two container runs loaded it into its empty state, so it
