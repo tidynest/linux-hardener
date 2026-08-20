@@ -100,7 +100,18 @@ const ROUTES = [
       await expect(page.locator('.timeline-verify').first()).toBeVisible();
     },
   },
-  { path: '/analysis', name: 'analysis', setup: async () => {} },
+  {
+    path: '/analysis',
+    name: 'analysis',
+    // Scanned, not bare. The first two container runs loaded this route with
+    // no scan, so it rendered "No findings yet" and the findings table did not
+    // exist: the route was contributing its chrome and none of the content it
+    // was added for. `analysis_page.rs:113` carries the same Run Security Scan
+    // button the dashboard hero does, so the same helper drives it.
+    setup: async (page) => {
+      await runScan(page);
+    },
+  },
 ];
 
 // Selectors this check exists to reach. If a run measures nothing for one of
@@ -108,7 +119,12 @@ const ROUTES = [
 // which is a different and worse outcome than finding a failure. Asserted per
 // theme rather than once, because a theme that failed to apply would otherwise
 // be measured entirely in the default theme's colours and still look covered.
-const MUST_REACH = ['.timeline-verify-ok', '.timeline-verify-bad'];
+// `.finding-group-count` is the tripwire for the scan on `/analysis`: it
+// declares a colour and carries text, and it exists only once a severity group
+// renders. Without it a runScan that silently failed would return the route to
+// the empty state it was in for the first two container runs, losing the
+// content this route contributes while every other assertion stayed green.
+const MUST_REACH = ['.timeline-verify-ok', '.timeline-verify-bad', '.finding-group-count'];
 
 // A run that measures nothing passes every assertion below it. This is a floor
 // a real page clears easily; it is a tripwire for a page that never hydrated,

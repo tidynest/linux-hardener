@@ -940,15 +940,47 @@ guard therefore sits precisely on its floor: one rule fewer and it fails. That
 is an honest tripwire rather than a comfortable margin, and it is the strongest
 argument for the gap in the next paragraph.
 
-**What the browser half still does not reach is the class that motivated the
-whole arc.** No severity badge was measured on any theme. `.severity_critical`,
-`.severity_medium`, `.severity_low`, `.partial-row-badge-failed` and
-`.status-error` are the 18-rule alpha class, and the eight defects fixed on
-2026-08-19 were all among them; the browser sees none of them, because
-`/analysis` is loaded fresh with no scan and renders its empty state, so the
-findings table those badges live in never exists. The pill is reached, the
-badges are not, and their figures remain best-of-surface ceilings that nothing
-has checked against a real ancestor.
+**The severity classes are not badges, and no scan will ever reach them.**
+This subsection said on 2026-08-20 that they went unmeasured because
+`/analysis` loads without a scan. That was half right and the wrong half was
+the conclusion. `severity_class()` is passed to `finding_group`
+(`findings_tab.rs:176`) and `host_finding_subgroup` (`host_panel.rs:283`), and
+both put it on an **empty** span: `finding-dot`, `host-finding-dot`. It never
+wraps text anywhere in the application. A text-contrast check that requires an
+element to render its own text is therefore not missing them by fixture or by
+route; they are outside what it measures, by construction.
+
+**And the dot does not render what `validate_contrast.py` weighs.**
+`.finding-dot` declares `background: currentColor` at `styles.css:4035`, later
+in source than `.severity_critical` at `1082` and of equal specificity, so the
+`rgba()` fill the static check composites is overridden: the element is a solid
+8px disc of the text colour. At the `host-finding-dot` site no background is
+set, so the tint does render, as a 6px disc with no text. Either way the pair
+"this colour as text on this tint" is a pair the static parse declares and the
+product never draws. That is the documented cost of a static parse rather than
+a defect in it, but it bears on how the 2026-08-19 fixes should be read: of
+the eight sites cleared, `.partial-row-badge-failed` x5 and `.status-error`
+carry real text, and the `.severity_medium` one is a dot. The fix was still
+worth making, because a coloured disc is subject to WCAG 1.4.11 non-text
+contrast at 3.0 rather than 1.4.3 at 4.5, and 1.77:1 fails both.
+
+**What the browser half does not reach is narrower than it looked, and still
+real.** `.partial-row-badge-failed` renders the word "Failed"
+(`configure_section.rs:1407`) on the Hardening page's Configure tab, and
+`.status-error` renders an export status message (`compliance_tab.rs:174`).
+Both are genuine text pairings over translucent fills, both are among the eight
+fixed on 2026-08-19, and neither is on any route in `ROUTES`. Reaching them
+needs an apply with partial results and a failed export respectively, which is
+route setup rather than instrument work, and it is the honest next step for
+this file. Their figures remain best-of-surface ceilings that nothing has
+checked against a real ancestor.
+
+**`/analysis` is now scanned rather than bare**, which was worth doing on its
+own: the first two container runs loaded it into its empty state, so it
+contributed its chrome and none of its content. `.finding-group-count` is in
+`MUST_REACH` as the tripwire, because a `runScan` that silently failed would
+return the route to that state with every other assertion still green. Unrun at
+the time of writing.
 
 **What that suite drives is not the desktop application.** It serves the same
 wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of
