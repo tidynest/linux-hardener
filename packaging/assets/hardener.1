@@ -522,12 +522,17 @@ Accepted anywhere, acted on by
 .BR "batch apply" ,
 .BR daemon ,
 .BR history ,
+.BR "exception add" ,
+which loads the named file as policy before editing it,
 and
 .BR "systemd generate" / install ,
 which embed the path in the unit they write, exactly as it was typed: give those
 two an absolute path, since systemd resolves a relative one against the
 service's working directory rather than yours, and regenerate the unit if the
 file later moves, because the embedded path has no fallback.
+.BR "exception remove"
+does not load the file, but it does write to the path this flag names, so the
+flag reaches it as a destination rather than as policy.
 Every other command accepts it and does nothing with it.
 .IP
 A named path that cannot be read is fatal for the commands that write or that

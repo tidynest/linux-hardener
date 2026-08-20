@@ -181,10 +181,20 @@ pub async fn run(
 
     // Step 3: Run scan
     eprintln!("\n{}", "Running security scan...".cyan());
-    // The wizard has no --config flag, but it must still honour the operator's
-    // config: scoring the same host differently from `hardener report` would
-    // make one of the two surfaces wrong. Invalid config is a hard error here
-    // too (report.rs ~76-80).
+    // The wizard must still honour the operator's config: scoring the same
+    // host differently from `hardener report` would make one of the two
+    // surfaces wrong. Invalid config is a hard error here too (report.rs
+    // ~76-80).
+    //
+    // **It honours the default sources only.** `--config` is a global flag, so
+    // clap accepts `hardener --config X report --interactive`, but `main.rs`
+    // never passes `cli.config` down this path and `ConfigLoader::new()` below
+    // takes no named file. A path typed there is silently dropped, and the
+    // wizard scores against the system and user config instead. That is the
+    // documented behaviour (configuration.md and cli.md both list this command
+    // among those that accept the flag without acting on it), not an oversight
+    // to fix here, but the comment above read as though the operator's own
+    // `--config` reached this call, and it does not.
     let hardener_config = ConfigLoader::new()
         .load()
         .map_err(|e| anyhow!("Config error: {}", e))?;

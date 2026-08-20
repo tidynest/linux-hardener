@@ -110,8 +110,12 @@ redirect it.
 `daemon` is separate again: it resolves the `[scheduler]` section through its own
 path search rather than the loader, so the merge rules that apply to `[global]`
 do not apply to it, and the first file found wins outright. `-C` is honoured:
-naming a path replaces that search rather than adding to it (see
-[configuration.md](configuration.md#scheduler)).
+naming a path puts it at the **front** of that search rather than replacing it,
+so a named file carrying no `[scheduler]` section falls through to your user and
+system config exactly as if it had not been named (`load_scheduler_config` in
+`commands/daemon.rs`). This sentence said the named path *replaced* the search
+until 2026-08-20, contradicting both the section above and
+[configuration.md](configuration.md#scheduler), which had it right.
 
 ---
 
@@ -1282,4 +1286,4 @@ hardener history export <SESSION_ID> [FLAGS]
 | `SESSION_ID` | UUID of the session to export | |
 | `-o`, `--output <FILE>` | Output file path. JSON is the only document this command produces, so a path ending in one of the report formats this tool renders elsewhere (`.csv`, `.htm`, `.html`, `.pdf`, `.txt`) is refused rather than filled with JSON. Any other path is written as given, including one with no extension and one whose name merely contains dots, such as `backups.2026.08.03` | `session-<first 8 chars of id>.json` |
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-20
