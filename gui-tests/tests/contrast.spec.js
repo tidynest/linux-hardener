@@ -110,10 +110,14 @@ const DEFERRED = {
   // here only happens once a pair has already failed, so an entry whose defect
   // is fixed sits reported by nothing.
   //
-  // One theme each. Daywatch's `.severity_low` passes here at 5.29:1, which is
-  // the 2026-08-20 --color-info fix confirmed against a rendered ancestor.
-  'sentinel .severity_critical': fleetPanel('4.18'),
-  'fortress .severity_low': fleetPanel('4.29'),
+  // The last two, sentinel's `.severity_critical` at 4.18 and fortress's
+  // `.severity_low` at 4.29, were fixed on 2026-08-20 rather than carried.
+  // Both had already been given the brightest text token their family offers,
+  // so neither was a token swap; what was left to move was each rule's OWN
+  // translucent fill, which is what had been lifting the backdrop under its
+  // text. #ef4444 became #b91c1c and #22d3ee became #0ea5e9, both at their
+  // existing alpha. Each fixed its failing theme and lifted the four or five
+  // others that sat within 0.21 of the bar behind it.
 };
 
 // Where to look. Not every route, because the point is coverage of the

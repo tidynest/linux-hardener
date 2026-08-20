@@ -1062,9 +1062,32 @@ purpose.
 on that surface alone Command reads 4.13 and Sentinel 4.18, while every other
 surface clears. It now has four instances rather than two.
 
-**Two remain deferred**, one theme each: `.severity_critical` in sentinel at
-4.18 and `.severity_low` in fortress at 4.29. Both were re-verified live
-against the run's own listing of 371 measured pairs.
+**The last two were fixed rather than carried, and `DEFERRED` is empty again**,
+which is its intended resting state. `.severity_critical` in sentinel at 4.18
+and `.severity_low` in fortress at 4.29 both already carried the brightest text
+token their family offers, so neither was a token swap. What neither had
+touched was its OWN translucent fill, which is exactly what lifts the backdrop
+under its text: `#ef4444` became `#b91c1c` and `#22d3ee` became `#0ea5e9`, each
+at its existing alpha.
+
+Two alternatives were computed and both were ruled out by measurement rather
+than by taste. Brightening sentinel's `--color-critical-bright` clears sentinel
+alone at 6.10 while moving all fifteen consumers of that token and leaving four
+themes at 4.49 to 4.65. Thinning the critical fill to 0.15 does not reach the
+bar at all, sentinel stopping at 4.44.
+
+Measured, all seven themes, against predictions made before the run and
+matching **within 0.02 in all fourteen readings**. `.severity_critical`:
+sentinel 4.75, daywatch 4.72, fortress 5.10, Midnight Teal 5.15, guardian 5.23,
+command 5.27, high contrast 10.79. `.severity_low`: fortress 4.66, daywatch
+5.01, sentinel 5.11, command 5.82, guardian 6.44, Midnight Teal 6.77, high
+contrast 7.75. Daywatch pays for both, 5.15 to 4.72 and 5.31 to 5.01, because
+its text is dark and a darker fill costs it; 4.72 is the smallest margin in the
+set and still clears.
+
+**All thirteen of the failures the fleet route exposed are fixed.** None was
+carried, and the route that found them is now guarded by `.severity_low` in
+`MUST_REACH`.
 
 > **Second time a widening has paid like this.** The 2026-08-19 alpha-fill
 > widening found eight; this route found thirteen. A documented gap is a

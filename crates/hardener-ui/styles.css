@@ -1096,10 +1096,31 @@ tbody tr:hover {
    13. SEVERITY BADGES
    ============================================================ */
 
-.severity_critical { background-color: rgba(239, 68, 68, 0.2); color: var(--color-critical-bright); }
+/* The fill is darkened rather than the text brightened, and it is this rule's
+   own fill rather than a shared token. #ef4444 at 0.2 left the whole family
+   near the bar on the fleet panel: sentinel 4.19 and FAILING, then fortress
+   4.49, Midnight Teal 4.55, guardian 4.62, command 4.65, every one of them
+   within 0.15 of going red. Brightening sentinel's --color-critical-bright
+   would have cleared sentinel alone at 6.10 while moving all FIFTEEN consumers
+   of that token and leaving the other four on the edge. Thinning the fill to
+   0.15 does not work at all: sentinel reaches only 4.44. #b91c1c at the same
+   0.2 clears every theme and lifts the marginal four: sentinel 4.76, fortress
+   5.09, Midnight Teal 5.16, guardian 5.23, command 5.26, high contrast 10.81.
+   Daywatch pays for it, 5.15 to 4.71, because its text is dark and a darker
+   fill costs it; that is the smallest margin here and still clears. */
+.severity_critical { background-color: rgba(185, 28, 28, 0.2); color: var(--color-critical-bright); }
 .severity_high { background-color: rgba(245, 158, 11, 0.2); color: var(--color-warning-bright); }
 .severity_medium { background-color: rgba(227, 179, 65, 0.15); color: var(--color-medium-bright); }
-.severity_low { background-color: rgba(34, 211, 238, 0.15); color: var(--color-info); }
+/* Same move as `.severity_critical` above, same reason. #22d3ee at 0.15 left
+   fortress at 4.29 and FAILING, with sentinel next at 4.71. Brightening
+   fortress's --color-info would clear fortress alone and leave sentinel on the
+   edge; #0ea5e9 at the same alpha clears every theme and lifts sentinel to
+   5.09: fortress 4.67, daywatch 5.02, command 5.80, guardian 6.45, Midnight
+   Teal 6.78, high contrast 7.74. Daywatch pays 5.31 to 5.02 for the darker
+   fill, as it does above, and its --color-info stays #155e75 from the fix
+   earlier the same day. Going darker still, #155e75 at 0.2, reaches 5.22 in
+   fortress but drops daywatch to 4.25 and fails it. */
+.severity_low { background-color: rgba(14, 165, 233, 0.15); color: var(--color-info); }
 .severity_info { background-color: rgba(100, 116, 139, 0.2); color: var(--text-secondary); }
 
 /* A documented deviation is not a severity. It reads as neutral rather than
