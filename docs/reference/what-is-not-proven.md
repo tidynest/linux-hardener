@@ -1017,6 +1017,26 @@ its floor of 1. Every reading clears 4.5.
 | daywatch | 5.70:1 | 6.79:1 |
 | high contrast | 8.33:1 | 13.55:1 |
 
+**The full GUI suite is green on all six distributions at `2bc8bd76`**: 157
+passed, 0 failed on each of arch, debian, ubuntu, fedora, rhel and opensuse,
+2.9 to 4.5 minutes apiece. That covers the two changes this arc made outside
+`contrast.spec.js` and never exercised by a `--grep T-CONTRAST` run: `runApply`
+moving into `helpers.js`, whose only four callers are `hardening.spec.js`
+T-APPLY-01..04, all green; and the `error_mode=export` branch in
+`tauri-mock.js`, which no other spec sets.
+
+**Two of those six results cost more than they should have, for reasons that
+were not the code.** Running the six with `--parallel` starved them: five
+concurrent containers each booting a 2.5 MB WASM bundle exceeded
+`waitForApp`'s 30-second timeout, and arch failed a test it had just passed
+serially. Killing that run left the debian and ubuntu images with an
+interrupted `dpkg` and unmet dependencies, so neither executed a single test
+across the next two attempts, each time reporting a container error that reads
+nothing like a test result. **On this machine the GUI suite is serial**, and
+its aggregate cost is about twenty minutes rather than four. The repair is
+`dpkg --configure -a` plus `apt-get -f install` inside the affected container,
+which is far cheaper than the debootstrap rebuild it looks like it needs.
+
 **The question that reading raised is now answered from the tool rather than
 from prose.** `validate_contrast.py --explain <selector>` prints every theme's
 figure for a pair, and for an alpha background it prints the SPREAD: the best
