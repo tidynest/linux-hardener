@@ -1001,11 +1001,22 @@ later run has.
 
 **The pointer is now parked at the viewport corner after each route's setup and
 before each sweep.** The corner is arbitrary and fixed, which is the point: it
-buys reproducibility rather than the absence of hover. **This is a hypothesis
-under test, not a diagnosis.** It is unrun, and the check that decides it is a
-fourth run whose daywatch listing should match the third's exactly; if the set
-still moves, the pointer was not the cause and the remaining candidate is
-layout timing, collection being gated on `getClientRects()`.
+buys reproducibility rather than the absence of hover.
+
+**The fourth run came back verbatim identical to the third.** All 273
+measurement lines across all seven themes match exactly, ratios and computed
+colours included, not merely the selector sets. That is the first consecutive
+pair of runs with no drift, following two consecutive pairs that both drifted.
+
+**It is evidence for the hypothesis and not proof of it.** One stable pair
+where the two before it were unstable is consistent with the pointer having
+been the cause; it does not exclude a cause that happened to be quiet. The
+claim that has actually been earned is the narrower one, and it is the useful
+one: **this check is now reproducible run to run, so a future listing that
+differs means something changed rather than meaning nothing.** That property is
+what makes a retained baseline worth keeping at all. If drift ever returns, the
+remaining candidate is layout timing, collection being gated on
+`getClientRects()`.
 
 **What neither vacuity guard can do is see this at all**, which is why three
 runs of it passed unremarked. `MINIMUM_PAIRS` answers "did the sweep collect
