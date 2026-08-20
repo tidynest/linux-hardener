@@ -861,10 +861,12 @@ check. Best-case reports 8, and all 8 were real. Pairs checked went from 182 to
 background. Two of those failures were cleared by giving `.severity_medium` a
 new `--color-medium-bright` token, daywatch having read 1.77:1, and six by
 moving `.partial-row-badge-failed` and `.status-error` from `--color-critical`
-to `--color-critical-bright`, 4.07:1 to 4.49:1. `.severity_low` on daywatch, at
-3.32:1, is held open by decision rather than fixed, because no
-`--color-info-bright` token exists in any theme to move it to; it is printed on
-every run, and a deferral is not a pass.
+to `--color-critical-bright`, 4.07:1 to 4.49:1. `.severity_low` on daywatch was
+held open at 3.32:1 and was **fixed on 2026-08-20** when the reopening found
+its reasoning had surveyed one call site of two: daywatch's `--color-info`
+moved `#0891b2` to `#155e75`, which reads 6.55:1 at the best surface and
+5.31:1 at `--bg-tertiary`. `DEFERRED` is now empty, which is its intended
+resting state.
 
 **What the widening does not do is close the gap it was cut from.** The
 best-case rule means a pair that fails on the darker surfaces but clears on one
@@ -963,26 +965,45 @@ background `rgb(248,246,242)`:
 | Low | `#0891b2` | 3.41:1 |
 | Policy Exceptions | `#6a635f` | 5.46:1 |
 
+The Low row is a reading of the screen on 2026-08-20 and keeps saying what it
+says, but it is **not current**: daywatch's `--color-info` moved to `#155e75`
+later that day, so the dot now draws darker than this records. Re-read it from
+a fresh capture before quoting the 3.41.
+
 Two things it confirms. Medium renders as `#7a5c00`, the `--color-medium-bright`
 token added on 2026-08-19, so that fix reached the screen. And High against
 Medium measures **1.29:1 dot to dot**, matching the ceiling recorded for it in
 prose to two decimals: those were token arithmetic, and this is pixels.
 
-**It also puts the `.severity_low` deferral in doubt, on evidence rather than
-on a hunch.** That entry is held open at 3.32:1 against the 4.5 bar, with the
-reason that clearing it needs a `--color-info-bright` token no theme has. But
-the class only ever lands on an 8px dot, so `.finding-dot`'s
-`background: currentColor` overrides the `rgba()` tint being composited and the
-pair weighed is not drawn at all. The bar for a non-text graphical object is
-WCAG 1.4.11 at 3.0, not 1.4.3 at 4.5, and the dot as rendered reads 3.41:1,
-which clears it. The rank is carried by the adjacent word in any case, the same
-redundancy the medium-versus-high ceiling already leans on, and a purely
-decorative graphic carries no contrast requirement.
+**It also put the `.severity_low` deferral in doubt, on evidence rather than
+on a hunch** - and the reopening on 2026-08-20 then refuted the doubt itself.
+The argument was that the class only ever lands on an 8px dot, so
+`.finding-dot`'s `background: currentColor` (line 4039, winning the cascade
+over `.severity_low` at line 1085) overrides the `rgba()` tint being
+composited and the pair weighed is not drawn at all; the bar for a non-text
+graphical object being WCAG 1.4.11 at 3.0 rather than 1.4.3 at 4.5, and the
+dot as rendered reading 3.41:1, which clears it.
 
-**That is a maintainer's decision and is recorded rather than taken**, like the
-`--bg-elevated` question above. Two things to weigh against it: 3.41 against
-3.0 is a slim margin, and whether the dot is "required to understand the
-content" is a judgement rather than a fact. What has changed is that the
+**That argument surveyed one consumer of `severity_class()` and there are
+two.** `findings_tab.rs:221` is the dot and the reasoning holds there.
+`host_panel.rs:42` is not: it renders
+`<span class="host-severity-label {class}">` carrying the text `"Low (3)"`,
+and `.host-severity-label` is `font-size: 0.78rem; font-weight: 500`, about
+12.5px at normal weight, which is ordinary text and takes the 4.5. The
+screenshot that prompted the doubt was the daywatch **findings** view, which
+contains only the dot; nothing had looked at the host panel. So the 4.5 bar
+was the right bar, the deferral was real, and it was fixed rather than
+dismissed: daywatch `--color-info` `#0891b2` to `#155e75`.
+
+**Recorded against a repeat: a deferral whose reasoning surveys one call site
+has not been checked.** The class is applied through a helper, so the question
+is never "where does this selector appear in the CSS" but "what does every
+caller of the function that emits it render". Cyan-700 `#0e7490` was rejected
+in passing for a related reason: it reaches 4.83 at the best surface and would
+have satisfied this file's best-case rule while sitting at 3.91 on
+`--bg-tertiary`.
+
+What had changed before that, and still stands, is that the
 deferral's stated reason - a theme-wide retune of `--color-info` - may buy
 nothing, and nobody re-deriving it from the tokens alone would ever find that
 out.

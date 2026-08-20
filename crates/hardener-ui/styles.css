@@ -327,7 +327,24 @@
        emphasis has to go darker. */
     --color-critical: #b91c1c;
     --color-critical-bright: #991b1b;
-    --color-info: #0891b2;
+    /* #0891b2 read 3.32:1 as `.severity_low`'s text on its own cyan tint at
+       the BEST surface daywatch declares and 2.69:1 at --bg-tertiary, against
+       a 4.5 bar. Held deferred until 2026-08-20 on the reading that the class
+       only ever lands on `.finding-dot`, an 8px circle whose currentColor
+       fill overrides the tint, where WCAG 1.4.11 asks 3.0 of a non-text
+       object and the dot measures 3.41:1. That survey missed a consumer:
+       `severity_class()` also reaches `host_panel.rs:42`, whose
+       `.host-severity-label` span carries the text "Low (3)" at 0.78rem and
+       weight 500, which is normal text and takes the 4.5. #155e75 holds
+       5.31:1 at --bg-tertiary and 6.55:1 at --bg-elevated, clearing every
+       surface rather than only the best one: cyan-700 #0e7490 reaches 4.83
+       best and would have passed this file's check while sitting at 3.91 on
+       --bg-tertiary. No -bright sibling was added, unlike --color-medium: that
+       token had no per-theme base to mirror, whereas --color-info is declared
+       in all seven themes, so a sibling would be six copies nothing checks.
+       The other consumer is `.section-guidance`'s 3px border-left, which goes
+       darker on a light ground and so reads stronger, not weaker. */
+    --color-info: #155e75;
     --color-pending: #a8a29e;
     /* The same correction, same reason, same measurement. #0d9488 read 3.21:1
        on --bg-secondary and 3.47:1 on --bg-primary as the text of

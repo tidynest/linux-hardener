@@ -110,19 +110,17 @@ EXEMPT = (
 # nothing. Three did, deferring daywatch's #0d9488 accent at 3.47:1 and 3.74:1
 # after 4284612d darkened it to #096961 on 2026-08-15; they now measure 6.07:1
 # and 6.55:1 and were removed. Re-read the ratio before trusting an entry.
-DEFERRED: dict[str, str] = {
-    ".severity_low": (
-        "daywatch, --color-info #0891b2 on its own cyan tint at 3.32:1. No "
-        "--color-info-bright token exists in any theme, so clearing it means "
-        "retuning --color-info theme-wide rather than picking a brighter "
-        "sibling as .severity_medium did. Maintainer's design decision. "
-        "REOPEN BEFORE ACTING: this class only ever lands on an 8px dot, "
-        "whose currentColor fill overrides the tint composited above, and the "
-        "dot as rendered reads 3.41:1 against the row, clearing the 3.0 that "
-        "WCAG 1.4.11 asks of a non-text object. The retune may buy nothing. "
-        "Evidence in docs/reference/what-is-not-proven.md."
-    ),
-}
+# Empty is the intended resting state, and it is empty as of 2026-08-20.
+# `.severity_low` was the last entry and was REOPENED rather than left to
+# accumulate: its own note said the retune might buy nothing, because the
+# class was believed to land only on `.finding-dot`, an 8px circle where WCAG
+# 1.4.11 asks 3.0 of a non-text object. The survey behind that had found one
+# consumer of `severity_class()` and missed a second. `host_panel.rs:42` puts
+# it on `.host-severity-label`, a span carrying the text "Low (3)" at 0.78rem
+# and weight 500, so the 4.5 bar was the right bar after all and daywatch's
+# --color-info moved to #155e75. A deferral whose reasoning surveys one call
+# site is a deferral that has not been checked.
+DEFERRED: dict[str, str] = {}
 
 HEX = re.compile(r"#[0-9a-fA-F]{6}\b")
 VAR = re.compile(r"var\(\s*(--[a-z0-9-]+)\s*(?:,[^)]*)?\)")
