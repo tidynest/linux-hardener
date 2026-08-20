@@ -979,8 +979,27 @@ checked against a real ancestor.
 own: the first two container runs loaded it into its empty state, so it
 contributed its chrome and none of its content. `.finding-group-count` is in
 `MUST_REACH` as the tripwire, because a `runScan` that silently failed would
-return the route to that state with every other assertion still green. Unrun at
-the time of writing.
+return the route to that state with every other assertion still green.
+
+**The third run confirms it took and shows the gain is small.** All seven
+themes reach `.finding-group-count`, and the route trades `.empty-state-hint`
+and `.empty-state-title` for `.finding-group-count`, `.findings-count` and
+`.finding-tag`. Three rules, not the notable rise predicted alongside the
+change: a findings table of eight rows collapses to a handful of distinct
+rules, because pairings are deduplicated by selector, colour and backdrop
+rather than counted per element. Per-theme totals are 38 everywhere, daywatch
+having come down from 39.
+
+**The drift is now measured across three runs and is not explained by any
+change made to this file.** Run 1 to run 2 gained two `.tab-button` entries on
+`/analysis`; run 2 to run 3 lost one of those and lost `.btn-secondary` on the
+hardening route, which nothing in that commit touched. The leading hypothesis
+is the pointer: Playwright leaves the mouse wherever the last click put it, so
+`:hover` matches a different element between runs and changes both which rules
+match and what colour they compute. Run 1 collected `.tab-button:hover` and no
+later run has. **Nothing currently pins the pointer**, and until something
+does, per-selector coverage varies run to run while `MINIMUM_PAIRS` and
+`MUST_REACH` stay green throughout.
 
 **What that suite drives is not the desktop application.** It serves the same
 wasm bundle the desktop embeds, with `gui-tests/tauri-mock.js` injected ahead of
