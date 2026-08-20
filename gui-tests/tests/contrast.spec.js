@@ -104,12 +104,14 @@ const DEFERRED = {
   'guardian .severity_exception': fleetPanel('4.28'),
   'command .severity_exception': fleetPanel('4.34'),
   'fortress .severity_exception': fleetPanel('4.34'),
-  // Five of seven, and the worst readings in the set.
-  'sentinel .tally-crit': fleetPanel('3.82'),
-  'fortress .tally-crit': fleetPanel('4.00'),
-  'default .tally-crit': fleetPanel('4.11'),
-  'guardian .tally-crit': fleetPanel('4.16'),
-  'command .tally-crit': fleetPanel('4.20'),
+  // `.tally-crit` was the other five and is FIXED rather than deferred: it
+  // moved to `--color-critical-bright` on 2026-08-20, the same move
+  // `.partial-row-badge-failed` and `.status-error` made on 2026-08-19, taking
+  // the worst case from 3.82:1 in Sentinel to 5.20:1. Its entries are gone
+  // rather than left saying something true-when-written, because the lookup
+  // here only happens once a pair has already failed, so an entry whose defect
+  // is fixed sits reported by nothing.
+  //
   // One theme each. Daywatch's `.severity_low` passes here at 5.29:1, which is
   // the 2026-08-20 --color-info fix confirmed against a rendered ancestor.
   'sentinel .severity_critical': fleetPanel('4.18'),

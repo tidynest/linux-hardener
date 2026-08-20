@@ -1022,12 +1022,28 @@ none of them a regression.** `.severity_exception` is short in six themes of
 seven (4.21 to 4.34), `.tally-crit` in five (3.82 to 4.20), and one theme each
 for `.severity_critical` (sentinel 4.18) and `.severity_low` (fortress 4.29).
 Every one has been failing since the panel was written; what changed is that
-something finally looked. They are recorded in `contrast.spec.js`'s `DEFERRED`
-rather than fixed alongside the route that found them, because retuning four
-semantic colours across six themes is a design decision. **`.tally-crit` at
-3.82 in Sentinel is the worst and reads a critical count**, so it is the one to
-take first. All thirteen were verified live: each key matches a pairing the run
-actually measured, so none is a dead entry excluding nothing.
+something finally looked. All thirteen were verified live against the run's own
+listing, so none was a dead entry excluding nothing.
+
+**`.tally-crit` was taken first and is fixed**, being the worst of them and a
+reading of a critical count. It moved to `--color-critical-bright`, the same
+move `.partial-row-badge-failed` and `.status-error` made on 2026-08-19, and
+the token already existed in all seven themes. Worst case goes 3.82:1 to
+**5.20:1** in Sentinel, and the two themes that already passed improve as well,
+daywatch 5.07 to 6.51 and high contrast 9.17 to 12.03. Its five deferrals were
+deleted rather than left true-when-written, because the lookup runs only after
+a pair has already failed and a fixed entry is consulted by nothing.
+
+**The seven predicted ratios matched the rendered readings exactly**, to two
+decimals in all seven themes. The static arithmetic and the browser agree
+without remainder here because the host row paints an opaque surface; where
+they differed by 0.02 on `.severity_low` in daywatch, the backdrop was a
+composited tint no theme declares.
+
+**Eight remain deferred**: `.severity_exception` in six themes of seven and one
+theme each for `.severity_critical` and `.severity_low`. Six of the eight being
+one rule suggests a single cause in how `--pill-muted-bg` meets this panel,
+so it is one question rather than six.
 
 > **Second time a widening has paid like this.** The 2026-08-19 alpha-fill
 > widening found eight; this route found thirteen. A documented gap is a
