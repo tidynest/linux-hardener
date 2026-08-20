@@ -4,7 +4,8 @@
 // Injected before WASM loads to simulate window.__TAURI__.core.invoke().
 // Field names match Rust struct definitions exactly (serde snake_case).
 //
-// Error mode: add ?error_mode=scan|apply|all to URL to trigger errors.
+// Error mode: add ?error_mode=scan|apply|checkpoint|export|all to URL to
+// trigger errors.
 // =============================================================================
 
 (function () {
@@ -29,6 +30,13 @@
     if (errorMode === 'scan' && cmd === 'run_scan') return true;
     if (errorMode === 'apply' && (cmd === 'run_apply' || cmd === 'run_apply_dry_run')) return true;
     if (errorMode === 'checkpoint' && cmd === 'get_checkpoints') return true;
+    // `export` fails only the export itself, deliberately narrower than `all`.
+    // `.status-error` renders the rejection message, and it is one of the two
+    // translucent-fill badges that carry real text, so `contrast.spec.js`
+    // needs it reachable. `all` cannot serve: it also fails
+    // get_compliance_reports, so the tab has nothing to select and the Export
+    // button stays disabled.
+    if (errorMode === 'export' && cmd === 'export_compliance_report') return true;
     return false;
   }
 

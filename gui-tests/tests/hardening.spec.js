@@ -5,7 +5,7 @@
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
-const { loadApp, runScan, takeScreenshot } = require('./helpers');
+const { loadApp, runScan, runApply, takeScreenshot } = require('./helpers');
 
 // ---------------------------------------------------------------------------
 // CONFIGURE SECTION
@@ -297,15 +297,6 @@ test.describe('History', () => {
 // Runs an apply to completion and returns once a result panel is on screen.
 // The preview, the acknowledgement and the apply are one sequence because no
 // test wants any prefix of it.
-async function runApply(page) {
-  await page.getByRole('tab', { name: 'Configure' }).click();
-  await page.getByRole('button', { name: /Preview Changes/i }).click();
-  const apply = page.getByRole('button', { name: /Apply \d+ Changes/ });
-  await expect(apply).toBeVisible({ timeout: 10000 });
-  await page.getByText(/I understand this can affect/).click();
-  await apply.click();
-}
-
 test.describe('Apply results', () => {
   // T-APPLY-01: The success path renders the done panel and its own totals
   //

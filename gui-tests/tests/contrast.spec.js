@@ -59,7 +59,7 @@
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
-const { loadApp, runScan, selectTheme, THEMES } = require('./helpers');
+const { loadApp, runScan, runApply, selectTheme, THEMES } = require('./helpers');
 const {
   contrastRatio,
   flattenBackdrop,
@@ -101,6 +101,39 @@ const ROUTES = [
     },
   },
   {
+    // `.partial-row-badge-failed`, one of the two translucent-fill rules that
+    // carry real text, renders only after an apply that partly failed. The
+    // default fixture's apply succeeds outright and reaches the done panel
+    // instead, so the route needs `apply_mode=mixed`, under which
+    // firewall-hardening fails alongside a success.
+    path: '/hardening',
+    name: 'hardening, applied (mixed)',
+    query: 'apply_mode=mixed',
+    setup: async (page) => {
+      await runApply(page);
+      // The badge lives inside this panel; without the wait the sweep can run
+      // against the confirmation step and collect the route's chrome only,
+      // which is how `/analysis` sat in its empty state for two runs.
+      await expect(page.locator('.partial-panel')).toBeVisible({ timeout: 15000 });
+    },
+  },
+  {
+    // `.status-error` is the other one. It renders the rejection message from
+    // a failed export, which needs `error_mode=export`: the mock's `all` would
+    // also fail get_compliance_reports, leaving nothing to select and the
+    // Export button disabled.
+    path: '/analysis',
+    name: 'analysis, export failed',
+    query: 'error_mode=export',
+    setup: async (page) => {
+      await page.getByRole('tab', { name: 'Compliance' }).click();
+      // Export is disabled until at least one framework is selected.
+      await page.getByRole('group', { name: 'Compliance frameworks' }).getByRole('button').first().click();
+      await page.getByRole('button', { name: /^Export$/ }).click();
+      await expect(page.locator('.status-error')).toBeVisible({ timeout: 10000 });
+    },
+  },
+  {
     path: '/analysis',
     name: 'analysis',
     // Scanned, not bare. The first two container runs loaded this route with
@@ -124,7 +157,20 @@ const ROUTES = [
 // renders. Without it a runScan that silently failed would return the route to
 // the empty state it was in for the first two container runs, losing the
 // content this route contributes while every other assertion stayed green.
-const MUST_REACH = ['.timeline-verify-ok', '.timeline-verify-bad', '.finding-group-count'];
+//
+// The last two are the point of the whole widening: they are the only rules in
+// the stylesheet that put real text over a translucent fill, both were among
+// the eight cleared on 2026-08-19, and until their routes were added no run
+// had ever measured either against a real ancestor. Each needs a state the
+// default fixture does not produce, so each is exactly the kind of coverage
+// that disappears silently when a fixture or a flag changes.
+const MUST_REACH = [
+  '.timeline-verify-ok',
+  '.timeline-verify-bad',
+  '.finding-group-count',
+  '.partial-row-badge-failed',
+  '.status-error',
+];
 
 // A run that measures nothing passes every assertion below it. This is a floor
 // a real page clears easily; it is a tripwire for a page that never hydrated,
@@ -302,10 +348,10 @@ const describePair = (p) =>
 
 test.describe('Contrast, computed cascade', () => {
   for (const theme of THEMES) {
-    test(`T-CONTRAST: colour-only rules clear WCAG in ${theme.name}`, async ({ page }) => {
+    test(`T-CONTRAST: rendered pairings clear WCAG in ${theme.name}`, async ({ page }) => {
       const pairs = [];
       for (const route of ROUTES) {
-        await loadApp(page, route.path);
+        await loadApp(page, route.path, route.query || '');
         await selectTheme(page, theme.value);
         await route.setup(page);
         // Park the pointer before observing. Playwright leaves the mouse where

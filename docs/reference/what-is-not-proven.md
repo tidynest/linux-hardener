@@ -964,16 +964,34 @@ carry real text, and the `.severity_medium` one is a dot. The fix was still
 worth making, because a coloured disc is subject to WCAG 1.4.11 non-text
 contrast at 3.0 rather than 1.4.3 at 4.5, and 1.77:1 fails both.
 
-**What the browser half does not reach is narrower than it looked, and still
-real.** `.partial-row-badge-failed` renders the word "Failed"
-(`configure_section.rs:1407`) on the Hardening page's Configure tab, and
-`.status-error` renders an export status message (`compliance_tab.rs:174`).
-Both are genuine text pairings over translucent fills, both are among the eight
-fixed on 2026-08-19, and neither is on any route in `ROUTES`. Reaching them
-needs an apply with partial results and a failed export respectively, which is
-route setup rather than instrument work, and it is the honest next step for
-this file. Their figures remain best-of-surface ceilings that nothing has
-checked against a real ancestor.
+**The two rules that do put real text over a translucent fill now have routes,
+and have never been run.** `.partial-row-badge-failed` renders the word
+"Failed" (`configure_section.rs:1407`) after an apply that partly failed, which
+the default fixture does not produce: its apply succeeds outright and reaches
+the done panel, so the route uses `apply_mode=mixed`, under which
+firewall-hardening fails alongside a success. `.status-error` renders the
+rejection message from a failed export (`compliance_tab.rs:174`), which needed
+a new mock lever: `error_mode=export`, narrower than the existing `all` because
+`all` also fails `get_compliance_reports`, leaving nothing to select and the
+Export button disabled. Both are among the eight cleared on 2026-08-19 and
+until now neither had been measured against a real ancestor by anything.
+
+**Both are in `MUST_REACH`, and that is the load-bearing part.** Coverage
+bought with a query flag is coverage a query flag can silently remove: a
+renamed mode, a changed default fixture or a reordered confirmation flow would
+return these routes to a state that renders neither badge, and every other
+assertion in the file would stay green. That is the same failure `/analysis`
+sat in for two runs.
+
+**Unrun, and the prediction is recorded so it can be wrong in public.** Three
+count predictions have been made about this check and all three were wrong in
+the same direction, by reasoning about elements where the check counts rules.
+No fourth number is offered here. What is claimed is narrower: if the run
+passes, `.partial-row-badge-failed` and `.status-error` will appear in the
+per-theme listing with a ratio each, and those will be the first readings of
+either against the ancestor that painted rather than against the best surface
+the theme declares. If the run fails on `MUST_REACH`, a drive step is wrong
+rather than a colour.
 
 **`/analysis` is now scanned rather than bare**, which was worth doing on its
 own: the first two container runs loaded it into its empty state, so it

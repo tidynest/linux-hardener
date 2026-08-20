@@ -1240,7 +1240,7 @@ runner rather than grepping the sources is therefore deliberate: a count of
 | `fleet.spec.js` | T-FLEET-01..10 | 10 | Fleet scan view, per-host results, row expander, delete confirmation, the expanded host's persisted history rail |
 | `fleet-apply.spec.js` | T-FAPPLY-01..09 | 9 | Fleet Apply mode toggle, selection, confirm modal |
 | `settings.spec.js` | T-SET-01..08 | 8 | Settings page |
-| `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries two vacuity guards, because a sweep that collects nothing would otherwise pass: a floor on pairings measured, and since 2026-08-20 a separate one on translucent-fill pairings, which the colour-only rules would otherwise clear on their behalf |
+| `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries two vacuity guards, because a sweep that collects nothing would otherwise pass: a floor on pairings measured, and since 2026-08-20 a separate one on partly-translucent fills, which the colour-only rules would otherwise clear on their behalf. Five routes, four of which need a state the default fixture does not produce: a scan, an apply under `apply_mode=mixed`, and a failed export under `error_mode=export`, the last two existing solely to render `.partial-row-badge-failed` and `.status-error`, the only rules in the stylesheet putting real text over a translucent fill |
 | `scheduler.spec.js` | T-SCHED-01..07 | 7 | Scheduler and notification configuration, and the two notes that appear only while scheduled scanning is off |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 | `remote.spec.js` | T-REMOTE-01..03 | 3 | The `/remote` redirect, the saved host list, the Add Host form |

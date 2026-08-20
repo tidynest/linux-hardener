@@ -81,4 +81,30 @@ const THEMES = [
   { value: 'high-contrast', name: 'High Contrast', dataTheme: 'high-contrast' },
 ];
 
-module.exports = { waitForApp, loadApp, runScan, selectTheme, takeScreenshot, THEMES };
+/**
+ * Drive a full apply on `/hardening`, through the Configure tab, the preview
+ * and the acknowledgement, leaving the results panel rendered.
+ *
+ * Lived in `hardening.spec.js` until `contrast.spec.js` needed the same five
+ * steps to reach `.partial-row-badge-failed`, which renders only after an
+ * apply. Moved rather than copied: the sequence encodes the confirmation flow,
+ * so a second copy would be a second thing to update when that flow changes.
+ */
+async function runApply(page) {
+  await page.getByRole('tab', { name: 'Configure' }).click();
+  await page.getByRole('button', { name: /Preview Changes/i }).click();
+  const apply = page.getByRole('button', { name: /Apply \d+ Changes/ });
+  await expect(apply).toBeVisible({ timeout: 10000 });
+  await page.getByText(/I understand this can affect/).click();
+  await apply.click();
+}
+
+module.exports = {
+  waitForApp,
+  loadApp,
+  runScan,
+  runApply,
+  selectTheme,
+  takeScreenshot,
+  THEMES,
+};
