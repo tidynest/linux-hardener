@@ -271,6 +271,13 @@ python3 scripts/validate/validate_naming.py
 - ✅ Constant names use SCREAMING_SNAKE_CASE
 - ✅ No forbidden abbreviations (mgr, ctx, cfg, cmd, etc.)
 - ✅ British English spellings (authorise, colour, organisation)
+- ✅ No em-dash or en-dash in any tracked file, including the two written as
+  Rust unicode escapes rather than as the glyph
+- ✅ Rule 6, one name for the project: the pre-#51 project name in any tracked
+  file that no allow-list entry exempts. Unlike the checks above this one reads
+  every tracked file whatever its suffix, since the name reaches `.desktop`,
+  `.policy` and `.service` files. Five paths are exempt only until the AUR
+  resubmission lands and are named on every run, passing or failing
 
 **Exit Codes**:
 - `0`: All naming conventions validated successfully
@@ -1704,7 +1711,7 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 
 **Script**: `run-gui-tests.sh`
 
-**Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. The suite is **165 tests in 11 files**, and that is a result rather than a static count: it ran 165 of 165 on all six distributions on 2026-08-21, none failed, skipped or flaky, one worker and no name filter, Ubuntu included, 3.7 to 4.7 minutes each and 44 screenshots each. Recorded in [distribution-validation.md](../docs/reference/distribution-validation.md). The count is still mostly generated rather than literal, which is why `npx playwright test --list` is the way to read it: `themes.spec.js` produces 42 from 7 themes x 6 states, and `hardening.spec.js`'s T-DIVG-03 produces 2 from two viewport widths. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
+**Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. The suite is **166 tests in 11 files**, which is what the tree holds rather than what a run has executed: the last sweep ran 165 of 165 on all six distributions on 2026-08-21, none failed, skipped or flaky, one worker and no name filter, Ubuntu included, 3.7 to 4.7 minutes each and 44 screenshots each. `T-FLEET-11` was added after it with the fleet profile badge and has been collected but never executed, so the two numbers stay one apart until the next sweep. Recorded in [distribution-validation.md](../docs/reference/distribution-validation.md). The count is still mostly generated rather than literal, which is why `npx playwright test --list` is the way to read it: `themes.spec.js` produces 42 from 7 themes x 6 states, and `hardening.spec.js`'s T-DIVG-03 produces 2 from two viewport widths. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
 
 **Four verdicts, not two.** `PASS` (exit 0), `DEGRADED` (98), `MISSING` (99, no container), `FAIL` (anything else). **`DEGRADED` means every test passed AND a package install did not**: `run_install` in `gui-test-inner.sh` records the failed step in `DEPS_FAILED`, and the run is rescued only because the container was already provisioned, so the next one may not be. Repair rather than rebuild, then re-run:
 

@@ -10,7 +10,7 @@ This document lists all source files with their purpose and key exports.
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
-| `src/lib.rs` | All shared type definitions | `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `ComplianceMapping`, `ControlStatus`, `FindingPolicyException`, `PluginMetadata`, `ScanResult`, `Finding`, `UncheckedCheck`, `ApplyResult`, `Change`, `ChangeType`, `ValidationReport`, `ValidationIssue`, `ComplianceReport`, `ControlResult`, `ComplianceSummary`, `ConfigSummary`, `FleetHostScan`, `FleetHostStatus`, `SeverityTallies` |
+| `src/lib.rs` | All shared type definitions | `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `ComplianceMapping`, `ControlStatus`, `FindingPolicyException`, `PluginMetadata`, `ScanResult`, `Finding`, `UncheckedCheck`, `ApplyResult`, `Change`, `ChangeType`, `ValidationReport`, `ValidationIssue`, `ComplianceReport`, `ControlResult`, `ComplianceSummary`, `ConfigSummary`, `FleetHostScan`, `FleetHostStatus`, `SeverityTallies`, `ComplianceProfile`, `profile_label()` |
 | `src/checkpoint.rs` | Checkpoint and scan-session types shared by the Tauri backend and the Leptos frontend. Hand-mirrored in `hardener-ui/src/types.rs` until #157; two fields fell through that copy (`system_unreadable` in #156, `checkpoint_verified` in #157) because the mirror sat outside the tree `validate_gui_mock_fixtures.py` resolves | `CheckpointInfo`, `CheckpointList`, `CheckpointDetail`, `CheckpointFileInfo`, `ScanSessionInfo` |
 | `src/config_picker.rs` | Config file picker types | `ConfigSummary`, WASM-safe validation results for config file picker |
 | `src/remote.rs` | Remote SSH scanning types | `RemoteHostProfile`, `HostsConfig`, `RemoteConnectionStatus`, `RemoteConnectionInfo` |
@@ -51,7 +51,7 @@ pub struct ComplianceSummary { summary_total_controls, summary_passing, summary_
 // Fleet scan types
 pub enum FleetHostStatus { Ok, Failed(String) }
 pub struct SeverityTallies { critical, high, medium, low, info: u32 }
-pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: SeverityTallies, scan_results: Vec<ScanResult>, compliance: Vec<FleetFrameworkPosture> }
+pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: SeverityTallies, scan_results: Vec<ScanResult>, compliance: Vec<FleetFrameworkPosture>, profile: ComplianceProfile }
 ```
 
 ---
@@ -315,7 +315,7 @@ pub struct FileState {
 | `src/lib.rs` | Module exports | Re-exports |
 | `src/report.rs` | Report types | `ComplianceReport`, `ControlResult`, `ComplianceSummary` |
 | `src/generator.rs` | Report generation | `ReportGenerator` |
-| `src/profiles.rs` | Report-time profile ID translation (sourced RHEL 10 STIG V1R1 / CIS v1.0.1 tables) | `translate()`, `translate_all()`, `profile_label()`, `resolve_profile()` |
+| `src/profiles.rs` | Report-time profile ID translation (sourced RHEL 10 STIG V1R1 / CIS v1.0.1 tables) | `translate()`, `translate_all()`, `resolve_profile()`, `profile_label()` (re-export; defined in `hardener-types` so the WASM frontend can reach it too) |
 | `src/config.rs` | Report configuration | `ReportConfig` |
 | `src/frameworks/mod.rs` | Framework routing and curated catalogue aggregation | `curated_controls()` |
 | `src/frameworks/cis.rs` | CIS Benchmark curated catalogue | `get_controls()` (CIS control definitions) |
@@ -537,7 +537,7 @@ pub struct ScanRunner {
 | `src/tauri_bindings.rs` | Tauri command bindings | `tauri_available`, `invoke_scan`, `invoke_deep_scan`, `invoke_apply`, `invoke_apply_dry_run`, `invoke_generate_report`, `invoke_export_report`, `invoke_get_latest_scan`, `invoke_get_checkpoints`, `invoke_create_checkpoint`, `invoke_delete_checkpoint`, `invoke_get_scan_history`, `invoke_get_scan_session`, `invoke_get_checkpoint_detail`, `invoke_rollback`, `invoke_list_remote_hosts`, `invoke_save_remote_host`, `invoke_delete_remote_host`, `invoke_connect_remote`, `invoke_disconnect_remote`, `invoke_remote_scan`, `invoke_fleet_scan`, `invoke_fleet_apply`, `invoke_fleet_rollback`, `invoke_get_host_history`, `invoke_list_plugins`, `invoke_get_scheduler_config`, `invoke_save_scheduler_config`, `invoke_test_notification`, `invoke_validate_config`, `invoke_pick_config_file`, `invoke_add_policy_exception`, `invoke_remove_policy_exception` (both called from the finding row's Accept/Remove control in `components/findings_tab.rs`) |
 | `src/keyboard.rs` | Global keyboard event handler | Ctrl+1-5 page nav (`/`, `/analysis`, `/hardening`, `/fleet`, `/scheduler`; Ctrl+4 navigates straight to `/fleet`, not through the retained `/remote` redirect - Fleet Apply and Settings have no shortcut yet), Ctrl+Shift+S scan from anywhere, Alt+T theme cycle, Escape priority chain, F11 fullscreen |
 | `src/navigation.rs` | Navigation signal helpers | Page routing helpers for keyboard and UI nav |
-| `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`, `unchecked_honesty_line()`, `apply_written_exception()`, `clear_exception()`, `PluginFinding`; `theme` mod |
+| `src/utils/mod.rs` | Utils module exports and preview/apply helpers | `annotate_preview()`, `PreviewDecision`, `apply_change_summary()`, `is_auth_cancelled()`, `parse_rate_limit_wait_secs()`, `unchecked_honesty_line()`, `apply_written_exception()`, `clear_exception()`, `PluginFinding`, `profile_badge_label()` (suppresses the `Generic` default, otherwise delegates to `hardener_types::profile_label`); `theme` mod |
 | `src/utils/theme.rs` | Shared theme metadata plus the single apply/persist side effects; the only writer of `<html data-theme>` and the `theme` localStorage key | `THEMES` (7 themes), `apply_theme()`, `get_stored_theme()`, `store_theme()` |
 | `src/utils/tests.rs` | Unit tests for `src/utils/mod.rs` | Test-only; that file *is* the module `utils`, so its tests go in the directory it already owns |
 | `src/utils/theme/tests.rs` | Unit tests for `src/utils/theme.rs` | Test-only; `super` resolves to `crate::utils::theme` |
@@ -962,20 +962,20 @@ tree on **2026-08-18**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2074. The eleventh
+The table covers the ten crates under `crates/` and sums to 2085. The eleventh
 workspace member, `src-tauri`, carries 109 more, which is why the tree total the
-evidence ledger records is 2183 and not this table's sum.
+evidence ledger records is 2194 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 128 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 113 |
-| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 141 |
+| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 145 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 107 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 312 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 315 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 859 |
-| hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 221 |
+| hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 225 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 63 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 125 |
 

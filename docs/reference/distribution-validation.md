@@ -326,12 +326,15 @@ runner. One command runs the suite across every distribution in
 `scripts/lib/common.sh`'s `DISTRO_ORDER`, collecting pass/fail/skip counts and
 writing `test-results/summary.txt` (`test-results/differential-summary.txt`
 under `--differential`, so the two suites do not overwrite each other). On a
-booted container under `--apply` the suite **declares 157 checks** per
-distribution, having declared 149 until 2026-08-19 and 151 for part of that same
-day. Section 12A gained two: it creates `/etc/audit/audit.rules.prev` itself
-where an apply leaves none, and asserts its presence before the rollback and its
-absence after. The `FRAMEWORKS` table then gained the three frameworks it had
-never named, which is six more checks, three in section 5 and three in section 7.
+booted container under `--apply` the suite **declares 159 checks** per
+distribution, having declared 149 until 2026-08-19, 151 for part of that same
+day, and 157 until 2026-08-21. Section 12A gained two: it creates
+`/etc/audit/audit.rules.prev` itself where an apply leaves none, and asserts its
+presence before the rollback and its absence after. The `FRAMEWORKS` table then
+gained the three frameworks it had never named, which is six more checks, three
+in section 5 and three in section 7. Section 5A then added the last two, the
+profile label in a report heading, and every measurement recorded below predates
+it.
 
 **Measured at 157 declared, 155 passed, 0 failed, 8 skipped on all six**, at
 `5652bb45` on 2026-08-19, every container recreated immediately beforehand.
@@ -576,6 +579,7 @@ sum to 149. Sections run in the order listed, which is not numeric order:
 | 3 | Scan Filters | 8 | All 5 severity levels, --audit, --exit-code, --quiet |
 | 4 | Scan Output Formats | 5 | text and json rendered, csv and html refused at the parse, plus a JSON structure check |
 | 5 | Reports, All 10 Frameworks | 10 | cis, stig, nist, pci-dss, hipaa, gdpr, iso27001, soc2, 800-171, fedramp. The last three joined on 2026-08-19 and no matrix run has rendered them yet |
+| 5A | Report Profile Labels | 2 | The STIG and CIS headings name the identifier scheme this host is scored against, read off stdout. Section 5 above checks only the exit status, which a host scored against the wrong catalogue also returns. Two arms: the `rhel` container is Rocky Linux 10 and must carry `(DISA RHEL 10 STIG V1R1)` and `(CIS RHEL 10 Benchmark v1.0.1)`; the other five must carry `(RHEL 8 baseline IDs)` and an unlabelled CIS heading. Both arms are asserted, so a resolution that collapsed to one profile everywhere fails somewhere whichever way it collapsed. Two checks on every distribution, so the declared size does not vary with the container. Added 2026-08-21 and not yet met by a container |
 | 6 | Reports All Scenarios | 7 | server, workstation, government, healthcare, financial, gdpr, all |
 | 7 | Report Output Formats | 15 | text, json, csv, html and pdf for CIS, plus a PDF for each of the 10 frameworks |
 | 8 | Dry-Run All Plugins | 9 | --dry-run for all 8 plugins, plus --all |
@@ -1179,7 +1183,13 @@ six distributions.
 
 The suite has grown since that baseline, and has since been rewritten. Every
 figure in the table above is superseded by the reading in the Reading table
-below, which is **165 of 165 on all six distributions** on 2026-08-21.
+below, which is **165 of 165 on all six distributions** on 2026-08-21. The tree
+now collects 166: `T-FLEET-11` was added after that sweep with the fleet profile
+badge, so this pointer and the current row of the Reading table both stay at 165
+until a sweep records 166, and both are the correct red until it does. Restating
+the number here rather than only pointing at it is deliberate, and so is holding
+it to the collection count: a pointer that cannot go stale is a pointer nothing
+checks.
 
 This sentence named the 2026-08-16 reading of 154 until 2026-08-19. Summary had
 recorded the later reading on 2026-08-18, so the pointer stood stale for a day:
@@ -1266,16 +1276,23 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (11 Specs, 165 Tests)
+### Spec Inventory (11 Specs, 166 Tests)
 
-Counted off `npx playwright test --list` on 2026-08-21, which is the same count
-the container run of that date executed. **117 `test()` call sites produce 165
-cases**, because three of the sites are parameterised and
+Counted off `npx playwright test --list` on 2026-08-21.
+**118 `test()` call sites produce 166 cases**, because three sites are
+parameterised and
 generate their cases at collection time: `themes.spec.js:200` produces 42
 screenshots (6 states x 7 themes), `contrast.spec.js:765` produces one case per
 theme, and `hardening.spec.js:464` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
-`test(` calls is 117 and understates the suite by 48.
+`test(` calls is 118 and understates the suite by 48.
+
+This is a **collection** count and no longer the count any container run has
+executed: `T-FLEET-11` was added with the fleet profile badge and the last
+sweep, the current row of the Reading table above, ran the 165 cases that
+preceded it. That row stays at 165 deliberately, because it records what a run
+did rather than what the tree holds, and it is the correct red until the next
+sweep records 166.
 
 **All three line numbers were stale when this paragraph was rewritten**, and
 only one of them by the change that prompted the rewrite. The sweep genuinely

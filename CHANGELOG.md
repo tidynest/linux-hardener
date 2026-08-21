@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **An unprivileged scan and a root apply silently resolved different
+  configuration.** `save_key` tightened the signing key's parent directory to
+  `0700`, and that parent is `/etc/linux-hardener`, which is not a key
+  directory but the shared configuration directory: `packaging/PKGBUILD`
+  installs it `0755` and ships `config.toml` inside it. A second site in
+  `state.rs` wrote the same mode. After a single root run the directory was
+  `drwx------ root:root`, so `Path::exists()` on
+  `/etc/linux-hardener/config.toml` answered `false` for an unprivileged
+  process, because `statx` fails `EACCES` and `exists()` is
+  `metadata(..).is_ok()` with no error channel. `merge_source` read that
+  `false` as "no such file" and dropped the entire system configuration layer
+  without a word. On any host that had run as root once, `hardener scan` and
+  `pkexec hardener apply` therefore hardened against different policy, and
+  nothing in the tool could report it. Neither site tightens the shared
+  directory now. One helper widens a directory back to `0755` **only** when its
+  mode is exactly `0o700`, which is the precise value these two sites used to
+  write and so the signature of this defect; any other restrictive mode is an
+  administrator's decision and is left alone. The signing key's own protection
+  is unchanged and is what was always doing the work: it is created `0o400` and
+  root-owned, the same posture as `/etc/shadow` inside a `0755` `/etc`. Repair
+  is automatic on the next root run. **An operator who will not run as root
+  again should repair it by hand with `chmod 755 /etc/linux-hardener`.**
+
+- **A configuration source that could not be reached was indistinguishable from
+  one that did not exist.** `Path::exists()` collapses three states an operator
+  cares about into two: absent, present, and unreachable. `ConfigLoader` now
+  classifies the three separately through `try_exists`, which is the idiom
+  `CheckpointSigner::new_with_path` and the systemd uninstall path already use
+  for this exact reason. An absent optional source is still skipped in silence,
+  because most hosts genuinely carry no `/etc/linux-hardener/config.toml`, and
+  a source named by `--config` is still a hard error whether it is absent or
+  unreachable. An unreachable optional source is still skipped, deliberately:
+  failing closed would break every unprivileged `scan` on a host already in the
+  state above, for what is usually a benign default config. It now logs a
+  warning naming the path and the error kind, so the divergence is visible
+  rather than silent. The classification is a value the tests assert directly,
+  so the decision is proved rather than the log line.
+
 - **The coverage invariant is now asserted by all eight plugins.** The defect
   behind #159, #166, #167 and the SSH silence above is one shape: a plugin
   declares a control in `coverage()`, some host state makes the finding that

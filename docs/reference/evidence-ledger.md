@@ -32,13 +32,13 @@ them; do not copy a figure from an older document.
 | Measurement | Command | Reading |
 |---|---|---|
 | Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 2141 passed, 42 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2147 passed, 0 failed, 49 ignored |
+| Tests the default suite runs | `cargo nextest run --workspace` | 2152 passed, 42 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2158 passed, 0 failed, 49 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 63 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 26 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2183 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2183 across 305 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2194 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2194 across 305 files |
 
 Three of these rows are re-derived from the tree on every `validate_all.py` run
 by `scripts/validate/validate_test_counts.py`: the annotation count, the
@@ -51,7 +51,7 @@ The rows a build produces are not re-measured there, and are not therefore
 unchecked: they are pinned to each other by the identities this section states,
 so a figure edited alone fails even though nothing about it was measured.
 
-The gap between 2183 annotations and 2141 executions is exactly 42, and all 42
+The gap between 2194 annotations and 2152 executions is exactly 42, and all 42
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -59,14 +59,14 @@ ledger does not record.
 
 Two further reconciliations, because three of the rows above look like they
 disagree and do not. The annotation count and the assertion check's walk total
-are the same number, 2183, and they are meant to be: the check globs every `.rs`
+are the same number, 2194, and they are meant to be: the check globs every `.rs`
 file under `crates/*/src/` and `src-tauri/src/` rather than the file names unit
 tests are conventionally split out under, so every annotated test in the tree is
 one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 2141 + 6 = 2147 and 42 + 7 = 49.
+covers. 2152 + 6 = 2158 and 42 + 7 = 49.
 
 ---
 
@@ -970,7 +970,7 @@ tables above, and a citation that resolves is all that check can ask for.
 
 | Claim | Evidence | Command | Ceiling |
 |---|---|---|---|
-| A `--config` file decides the policy of the run it was passed to, a missing one is an error where a missing default is not, and a root session refuses the unprivileged user config beside it | `crates/hardener-core/src/config_loader/tests.rs` (28 tests), `crates/hardener-core/tests/config_env_precedence.rs` (1 test, its own binary because it writes a process-wide variable), `crates/hardener-cli/tests/config_flag.rs` (12 tests, driven through the built binary rather than through `apply::run`, because the flag is threaded by `main` and a unit test cannot enter it), `crates/hardener-core/tests/config_tests.rs` (21 tests on the `HardenerConfig` the loader returns and on `is_plugin_enabled`, which is what the merge rules ultimately decide) | `cargo nextest run -p hardener-core config_loader` and `cargo nextest run -p hardener-cli --test config_flag`, both unprivileged | **The sequence is now asked end to end, and two ceilings recorded here closed on 2026-08-20.** Six tests drive `load` with two or more real sources at once: system against user, a named `--config` added on top of both, the environment applied after all of them, the enabled-last-stated rule across two files, and the directive cap refusing two files each within it. `with_system_config` gives the system layer the seam `with_config_dir` already gave the user layer, and a separate test pins the fallback, since deleting it left the shipping product reading no system config at all while the whole suite stayed green. Every one of the six carries as its control the one-line transposition that would silently invert it, each observed failing: swapping the system and user blocks, making the named file replace rather than merge, moving `apply_env_overrides` above the CLI merge, flipping `overlay.enabled.or(base.enabled)`, and narrowing the cap check to the overlay. **What remains: no test reads the real `/etc/linux-hardener/config.toml`**, only the seam's redirect, so the packaged path is exercised by nothing. **The root rule is still proven through a seam, not by running as root.** `with_running_as_root(true)` is what makes the refusal observable; the real `is_running_as_root` answers `false` in every run of this suite, so the `true` branch of `nix::unistd::geteuid().is_root()` is executed by no test and by no script, and that function's replacement by `false` is recorded above as permanently alive and provably equivalent. The rule is also **feature-gated**: under `default-features = false` the check compiles to a constant `false` and a root process reads the user config. Only `hardener-compliance` builds `hardener-core` that way today and it does not call the loader, so nothing ships in that state, and nothing checks that nothing does. Grade 2 throughout: the fixtures are real files in temporary directories, and no privileged path is reached. |
+| A `--config` file decides the policy of the run it was passed to, a missing one is an error where a missing default is not, and a root session refuses the unprivileged user config beside it | `crates/hardener-core/src/config_loader/tests.rs` (32 tests), `crates/hardener-core/tests/config_env_precedence.rs` (1 test, its own binary because it writes a process-wide variable), `crates/hardener-cli/tests/config_flag.rs` (12 tests, driven through the built binary rather than through `apply::run`, because the flag is threaded by `main` and a unit test cannot enter it), `crates/hardener-core/tests/config_tests.rs` (21 tests on the `HardenerConfig` the loader returns and on `is_plugin_enabled`, which is what the merge rules ultimately decide) | `cargo nextest run -p hardener-core config_loader` and `cargo nextest run -p hardener-cli --test config_flag`, both unprivileged | **The sequence is now asked end to end, and two ceilings recorded here closed on 2026-08-20.** Six tests drive `load` with two or more real sources at once: system against user, a named `--config` added on top of both, the environment applied after all of them, the enabled-last-stated rule across two files, and the directive cap refusing two files each within it. `with_system_config` gives the system layer the seam `with_config_dir` already gave the user layer, and a separate test pins the fallback, since deleting it left the shipping product reading no system config at all while the whole suite stayed green. Every one of the six carries as its control the one-line transposition that would silently invert it, each observed failing: swapping the system and user blocks, making the named file replace rather than merge, moving `apply_env_overrides` above the CLI merge, flipping `overlay.enabled.or(base.enabled)`, and narrowing the cap check to the overlay. **Four tests added on 2026-08-21 close the permission half of what used to remain here.** `Path::exists()` is `metadata(..).is_ok()` and answers `false` for a file this process may not stat, which made a system config it could not reach indistinguishable from one that was never installed, and dropped the whole system layer in silence. That decision is now a three-way `classify_source`, each of whose arms is asserted, and the two permission behaviours are pinned at real paths in temporary directories: a file that exists and cannot be read is a hard error naming the path, and a file under a directory that refuses traversal is skipped with a warning. Both permission tests carry a root guard and say why, because `chmod 0o000` does not stop root and a root runner would otherwise pass them vacuously; that the guard is what switches them was itself confirmed by forcing it true against deliberately broken behaviour and observing both go green. **What remains: no test reads the packaged `/etc/linux-hardener/config.toml` itself**, only the seam's redirect and temporary files standing in for it, so the path constant is asserted while the shipped file is read by nothing. **Nor is the warning asserted**: this workspace has no `tracing` subscriber harness, so the decision that produces the warning is asserted directly of `classify_source` and the log call itself is taken on trust. **The root rule is still proven through a seam, not by running as root.** `with_running_as_root(true)` is what makes the refusal observable; the real `is_running_as_root` answers `false` in every run of this suite, so the `true` branch of `nix::unistd::geteuid().is_root()` is executed by no test and by no script, and that function's replacement by `false` is recorded above as permanently alive and provably equivalent. The rule is also **feature-gated**: under `default-features = false` the check compiles to a constant `false` and a root process reads the user config. Only `hardener-compliance` builds `hardener-core` that way today and it does not call the loader, so nothing ships in that state, and nothing checks that nothing does. Grade 2 throughout: the fixtures are real files in temporary directories, and no privileged path is reached. |
 
 ### The eight plugins
 
