@@ -1315,10 +1315,53 @@ two live in different rules and only the cascade joins them.
 **The fix is at `summary:hover`, which now moves the text instead of the
 backdrop**, the idiom `.advanced-disclosure-summary:hover` already used. That
 removes the app's only parent-hover backdrop lift, so the shape has no second
-instance to find today. What remains unproven: **no contrast route has ever
-opened a modal**, and `.modal` paints `--bg-elevated` permanently rather than
-on hover. Its contents are weighed by the static half against all four tiers,
-best-case, exactly as these pills were.
+instance to find today.
+
+**Asking it once more of the modals found two failures that were not on hover
+at all.** No contrast route has ever opened a modal, and `.modal` painted
+`--bg-elevated` permanently. Of the thirty classes rendered inside the three
+modal components, only three appear in the static corpus, because a rule that
+declares a colour and no background is left to the browser half by design, and
+for these the browser half never arrives. The two that carry critical red both
+failed, permanently, in the same five themes:
+
+- `.exception-modal .modal-error`, its text over its own translucent fill over
+  the modal: 3.86 sentinel, 4.05 fortress, 4.10 default, 4.22 guardian, 4.29
+  command. Identical colour and fill to `.partial-row-badge-failed`, which is
+  why the spread matches it exactly, and the third user of that combination
+  was the one sitting permanently on the surface the other two can never
+  reach.
+- `.restore-error`, colour-only, on `--color-critical` rather than
+  `--color-critical-bright`: 3.25 sentinel to 3.57 command. It was missed by
+  the sweep that moved five other rules to the bright token precisely because
+  it renders only inside the rollback modal.
+
+**`--bg-elevated` cannot carry critical red at 4.5 in this token system, and
+both narrower fixes were computed before that was concluded.** Darkening
+`--color-critical-bg` to rgba(185,28,28,.15), the value `.severity_critical`
+already uses, leaves fortress at 4.46 and sentinel at 4.27. Using
+`--color-critical-bright` bare leaves sentinel at 4.42. Only moving the modal
+to `--bg-secondary` clears every theme, and it still needs the bright token
+alongside it, because the base token reads 4.35 in sentinel even there. After
+both: `.modal-error` 5.00 to 8.32, `.restore-error` 5.91 to 13.68,
+`.restore-warn .restore-error` 5.55 to 15.02, title and body text 13.81 to
+19.80, `.field-input` 15.14 to 21.00.
+
+**The raised read survives the tier drop for free.** `--border-strong` is the
+same value as `--bg-elevated` in all six dark themes, so a 1px edge carries the
+elevated tone as an outline instead of as the surface the text sits on.
+`.exception-modal .field-input` moved down a tier with its panel, to keep the
+one-tier gap that makes a field read as a well rather than as part of the
+dialog.
+
+**Neither check can confirm any of this, which is the same boundary that hid
+it.** The static half still prints the identical four-tier spread for
+`.modal-error`, because it enumerates surfaces as hypotheses and does not know
+which one a parent paints; its `--bg-secondary` point, 5.00 in sentinel, is now
+the real reading rather than the `--bg-elevated` one, and nothing in the output
+says so. The browser half would settle it in one assertion by opening a modal
+on a contrast route. That route does not exist yet, and adding it is the open
+item this section leaves behind.
 
 **And the visual read of the new hover affordance is unverified.** The
 measurement is settled and the failure is gone by construction, but no

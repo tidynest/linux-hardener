@@ -2256,7 +2256,14 @@ tbody tr:hover {
 }
 
 .restore-action { color: var(--text-secondary); font-size: var(--font-size-caption); }
-.restore-error { color: var(--color-critical); font-size: var(--font-size-caption); }
+/* `--color-critical-bright`, the same move `.partial-row-badge-failed`,
+   `.status-error`, `.tally-crit`, `.host-row-failed` and `.host-row-error`
+   already made. This rule was missed because it renders only inside the
+   rollback modal, which no contrast route opens: the base token read 3.25 in
+   sentinel to 3.57 in command on the modal's surface. The surface moved too
+   (see `.modal`), and it took both: on `--bg-secondary` the base token still
+   reads 4.35 in sentinel. Now 5.91 to 13.68. */
+.restore-error { color: var(--color-critical-bright); font-size: var(--font-size-caption); }
 .restore-warn .restore-error { color: var(--color-warning); }
 
 .modal-actions {
@@ -3674,8 +3681,26 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   z-index: 50;
 }
 
+/* `--bg-secondary`, not `--bg-elevated`, because that surface cannot carry
+   critical red at 4.5 in this token system and a modal is where critical red
+   lives. Measured, not assumed: `.exception-modal .modal-error` read 3.86 in
+   sentinel, 4.05 fortress, 4.10 default, 4.22 guardian and 4.29 command, and
+   `.restore-error` read 3.25 to 3.57 across the same five, permanently rather
+   than on hover, because `.modal` painted `--bg-elevated` whenever either was
+   open. Both alternatives were computed and both fall short: darkening
+   `--color-critical-bg` to rgba(185,28,28,.15) still leaves fortress at 4.46
+   and sentinel at 4.27, and `--color-critical-bright` bare on `--bg-elevated`
+   still leaves sentinel at 4.42. Only the surface move clears every theme, at
+   5.00 worst.
+
+   The 1px edge is what keeps the raised read after the fill dropped a tier,
+   and it is free rather than a compromise: `--border-strong` IS
+   `--bg-elevated` in all six dark themes, so the elevated tone survives as the
+   modal's outline instead of as the surface its text sits on. Against a
+   backdrop already dimmed by rgba(0, 0, 0, .5) that is enough separation. */
 .modal {
-  background: var(--bg-elevated);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-strong);
   padding: var(--space-lg);
   border-radius: 8px;
   max-width: 40rem;
@@ -3722,7 +3747,13 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-family: inherit;
   font-size: var(--font-size-body);
   color: var(--text-primary);
-  background: var(--bg-secondary);
+  /* One tier below its panel, which is what makes a field read as a well
+     rather than as part of the surface. It followed `.modal` down from
+     `--bg-elevated`/`--bg-secondary` to `--bg-secondary`/`--bg-primary` to
+     keep that one-tier gap; leaving it alone would have made the input the
+     same colour as the dialog it sits in. Text rises from 13.81-19.80 to
+     15.14-21.00. */
+  background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: 4px;
   outline: none;
