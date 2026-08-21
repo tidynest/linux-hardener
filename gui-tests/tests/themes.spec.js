@@ -1,9 +1,16 @@
 // =============================================================================
-// THEME TESTS (T-THEME-01..09) + 35 Screenshot Captures
+// THEME TESTS (T-THEME-01..09) + 42 Screenshot Captures
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
-const { loadApp, runScan, selectTheme, takeScreenshot, THEMES } = require('./helpers');
+const {
+  loadApp,
+  runScan,
+  runRollback,
+  selectTheme,
+  takeScreenshot,
+  THEMES,
+} = require('./helpers');
 
 test.describe('Themes', () => {
   test.beforeEach(async ({ page }) => {
@@ -97,21 +104,34 @@ test.describe('Themes', () => {
 });
 
 // ---------------------------------------------------------------------------
-// SCREENSHOT CAPTURES - 5 states x 7 themes = 35 screenshots
+// SCREENSHOT CAPTURES - 6 states x 7 themes = 42 screenshots
 // ---------------------------------------------------------------------------
 
+// Each state applies its own theme rather than having the loop apply one
+// afterwards, and the reason is the modal state below. `.modal-backdrop` is
+// `position: fixed; inset: 0` at `z-index: 50`, so once a modal is open the
+// theme selector is covered by it and `selectOption`'s actionability check
+// cannot reach the control. The theme has to be chosen BEFORE the modal opens,
+// which is an ordering no single position in the loop can give every state:
+// the other five must theme AFTER their `loadApp`, because `page.goto` reloads
+// the document and takes any earlier selection with it.
+//
+// Passing `theme` in and letting each state place the call keeps one code path
+// instead of a flag, and puts the ordering next to the steps it constrains.
 const STATES = [
   {
     name: 'dashboard-empty',
-    setup: async (page) => {
+    setup: async (page, theme) => {
       await loadApp(page, '/');
+      await selectTheme(page, theme);
     },
   },
   {
     name: 'dashboard-scanned',
-    setup: async (page) => {
+    setup: async (page, theme) => {
       await loadApp(page, '/');
       await runScan(page);
+      await selectTheme(page, theme);
     },
   },
   {
@@ -121,23 +141,51 @@ const STATES = [
     // failed for all six themes: one dead control, six failing screenshots.
     // The state being captured is Analysis carrying findings, and scanning from
     // that page produces it without depending on how one arrives.
-    setup: async (page) => {
+    setup: async (page, theme) => {
       await loadApp(page, '/analysis');
       await runScan(page);
+      await selectTheme(page, theme);
     },
   },
   {
     name: 'hardening-configure',
-    setup: async (page) => {
+    setup: async (page, theme) => {
       await loadApp(page, '/hardening');
+      await selectTheme(page, theme);
     },
   },
   {
     name: 'hardening-history',
-    setup: async (page) => {
+    setup: async (page, theme) => {
       await loadApp(page, '/hardening');
       await page.getByRole('tab', { name: 'History' }).click();
       await page.waitForSelector('.history-section', { timeout: 10000 });
+      await selectTheme(page, theme);
+    },
+  },
+  {
+    // The only modal in the sweep, and the reason the sweep has one at all.
+    // `.modal` dropped from `--bg-elevated` to `--bg-secondary` in 04930f71
+    // because the elevated tier could not carry critical red at 4.5 in any of
+    // five themes: `.restore-error` read 3.25 sentinel to 3.57 command,
+    // `.exception-modal .modal-error` 3.86 to 4.29. The arithmetic settles the
+    // ratios, and settles nothing about whether a dialog one tier lower still
+    // READS as raised, which only a person looking at it can answer.
+    //
+    // Before this the whole modal surface was captured in exactly one theme, as
+    // a by-product of T-DIVG-03's geometry check, and sentinel - the worst of
+    // the five - had no modal shot at any width.
+    //
+    // The rollback modal rather than the exception one because this is the
+    // route that exists: `.modal-error` renders only when a write fails, which
+    // needs a failing path in the mock. `.restore-error` is also the worse of
+    // the two readings, so the reachable modal is the one carrying the sharper
+    // question.
+    name: 'rollback-divergences',
+    setup: async (page, theme) => {
+      await loadApp(page, '/hardening');
+      await selectTheme(page, theme);
+      await runRollback(page);
     },
   },
 ];
@@ -150,8 +198,7 @@ test.describe('Theme Screenshots', () => {
   for (const theme of THEMES) {
     for (const state of STATES) {
       test(`screenshot: ${state.name} [${theme.name}]`, async ({ page }) => {
-        await state.setup(page);
-        await selectTheme(page, theme.value);
+        await state.setup(page, theme.value);
         await takeScreenshot(page, `${state.name}_${theme.value}`);
       });
     }

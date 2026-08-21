@@ -1115,13 +1115,22 @@ In addition to CLI testing, the Web UI is validated with Playwright across all
 six distributions.
 
 > **The current reading is not in this section.** It is the 2026-08-21 run:
-> **158 of 158 on every distribution**, none failed, none skipped, none flaky,
-> 3.4 to 4.5 minutes each, one worker and no name filter. **The containers
-> were not recreated for it.** All six were created on 2026-08-19 between
-> 21:53 and 22:00 and have been reused since, read from their directory birth
-> times; `run-gui-tests.sh` permits this because it only checks that a
-> container exists and skips when one does not, recreation being a separate
-> manual step.
+> **165 of 165 on every distribution**, none failed, none skipped, none flaky,
+> 3.7 to 4.7 minutes each, 44 screenshots each, one worker and no name filter.
+> **The containers were not recreated for it.** All six were created on
+> 2026-08-19 between 21:53 and 22:00 and have been reused since, read from
+> their directory birth times; `run-gui-tests.sh` permits this because it only
+> checks that a container exists and skips when one does not, recreation being
+> a separate manual step.
+>
+> **The suite grew by seven without a single new `test()` call site**, which is
+> the one shape `validate_cross_document_facts.py` documents itself as unable
+> to see. The theme sweep gained a sixth state, so seven cases appeared inside
+> a site that already existed, and the call-site count stayed at 117 while the
+> case count moved 158 to 165. The validator was green throughout, against
+> documents that all said 158. It is registered against the row below marked
+> **current**, so that row is what turns them red, and nothing in the tree
+> could have turned the row itself red.
 >
 > **A six-distribution run earlier the same day was not green**, and it is
 > kept in the Reading table rather than dropped: 157 of 157 on five and one
@@ -1154,7 +1163,7 @@ six distributions.
 
 The suite has grown since that baseline, and has since been rewritten. Every
 figure in the table above is superseded by the reading in the Reading table
-below, which is **158 of 158 on all six distributions** on 2026-08-21.
+below, which is **165 of 165 on all six distributions** on 2026-08-21.
 
 This sentence named the 2026-08-16 reading of 154 until 2026-08-19. Summary had
 recorded the later reading on 2026-08-18, so the pointer stood stale for a day:
@@ -1183,7 +1192,8 @@ rather than measuring growth:
 | 2026-08-18 | 156 | 6 | superseded, against `653b4ff1` |
 | 2026-08-20 | 157 | 6 | superseded, against `2bc8bd76` |
 | 2026-08-21 | 157 | 6 | **not green**: 5 distributions passed, openSUSE failed T-SCHED-07. Not an openSUSE fault - a load racing an edit, which the other five happened to win |
-| **2026-08-21** | **158** | **6** | **current**, and taken twice at this count: once after the fix for that race and the test that pins it, and again after the fleet-apply fixture gained a failing host, which the nine `T-FAPPLY` cases read |
+| 2026-08-21 | 158 | 6 | superseded, taken twice at this count: once after the fix for that race and the test that pins it, and again after the fleet-apply fixture gained a failing host, which the nine `T-FAPPLY` cases read |
+| **2026-08-21** | **165** | **6** | **current**, 3.7 to 4.7 minutes each and 44 screenshots each. The theme sweep gained a sixth state, the rollback modal, so the whole modal surface is now captured in all seven themes instead of in one as a by-product of `T-DIVG-03`'s geometry check. **Seven cases from no new call site**: the count below stayed at 117 and every document said 158 with the validator green |
 
 The Fedora-only row is kept because it records a rule rather than a result: it
 was deliberately never written into the table, since a six-distribution row
@@ -1239,20 +1249,28 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (11 Specs, 158 Tests)
+### Spec Inventory (11 Specs, 165 Tests)
 
 Counted off `npx playwright test --list` on 2026-08-21, which is the same count
-the container run of that date executed. **117 `test()` call sites produce 158
+the container run of that date executed. **117 `test()` call sites produce 165
 cases**, because three of the sites are parameterised and
-generate their cases at collection time: `themes.spec.js:152` produces 35
-screenshots (5 states x 7 themes), `contrast.spec.js:364` produces one case per
-theme, and `hardening.spec.js:470` produces one per viewport width. Reading the
+generate their cases at collection time: `themes.spec.js:200` produces 42
+screenshots (6 states x 7 themes), `contrast.spec.js:551` produces one case per
+theme, and `hardening.spec.js:464` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
-`test(` calls is 117 and understates the suite by 41.
+`test(` calls is 117 and understates the suite by 48.
+
+**All three line numbers were stale when this paragraph was rewritten**, and
+only one of them by the change that prompted the rewrite. The sweep genuinely
+moved from 152 to 200, but `contrast.spec.js` was named at 364 while its site
+sat at 551 and `hardening.spec.js` at 470 while its site sat at 464, both
+displaced by edits elsewhere in their own files that never touched the sites.
+A line number is the one kind of cross-reference that goes wrong without anyone
+editing the thing it names, and nothing checks these three.
 
 | Spec | Test IDs | Tests | Description |
 |------|----------|-------|-------------|
-| `themes.spec.js` | T-THEME-01..09 | 9 + 35 | All seven themes verified. The 35 screenshot tests are generated as 5 states x 7 themes |
+| `themes.spec.js` | T-THEME-01..09 | 9 + 42 | All seven themes verified. The 42 screenshot tests are generated as 6 states x 7 themes. The sixth state is the rollback modal, added 2026-08-21 so that `.modal` is captured in every theme rather than in one: it had been shot only as a by-product of `T-DIVG-03`'s geometry check, which parameterises over viewport width and not over theme, so sentinel - where `.restore-error` read 3.25 before `04930f71` - had no modal shot at any width. Each state applies its own theme rather than the loop applying one afterwards, because `.modal-backdrop` covers the theme selector once a modal is open |
 | `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 and 11..13, T-APPLY-01..04, T-DIVG-01..05 | 29 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, signature verification and unread sources; what an executed apply produces; the rollback modal's divergence section. T-DIVG-03 runs once per viewport width, so this spec has 28 ids over 29 tests, and T-HIST-07..10 do not exist |
 | `analysis.spec.js` | T-FIND-01..12, T-COMP-01..08, T-EXC-01..05 | 25 | Findings grouping and detail expander, framework selection, report generation, the per-finding accept/remove exception controls |
 | `dashboard.spec.js` | T-DASH-01..11 | 11 | Score display, scan trigger, navigation, activity feed, the header subtitle's scanned state, and T-DASH-11 asserting that only a framework carrying exclusions gets the excluded annotation |

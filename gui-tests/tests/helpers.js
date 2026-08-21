@@ -99,11 +99,37 @@ async function runApply(page) {
   await apply.click();
 }
 
+/**
+ * Drive a rollback on `/hardening` through the History tab and the modal's own
+ * confirmation, leaving the result modal open over the divergence section.
+ *
+ * Lived in `hardening.spec.js` until the theme sweep needed the same four steps
+ * to render a modal in every theme, which is the same move `runApply` made
+ * above and for the same reason: the sequence encodes a confirmation flow, so a
+ * second copy would be a second thing to update when that flow changes.
+ *
+ * Waits on "Still diverged:" rather than on `.modal`, because the modal is
+ * present from the confirm click onwards while its divergence content arrives
+ * with the rollback's result. A screenshot taken on the earlier signal would
+ * catch the modal mid-populate, and would do it only on the slower
+ * distributions.
+ */
+async function runRollback(page) {
+  await page.getByRole('tab', { name: 'History' }).click();
+  await page.getByRole('button', { name: 'Roll back', exact: true }).first().click();
+  // The modal's own confirm button, reached by its class rather than its name:
+  // the name carries a file count, and "Roll back" as a substring also matches
+  // every button in the history list behind the modal.
+  await page.locator('.modal-actions button.btn-danger').click();
+  await expect(page.getByText('Still diverged:')).toBeVisible({ timeout: 15000 });
+}
+
 module.exports = {
   waitForApp,
   loadApp,
   runScan,
   runApply,
+  runRollback,
   selectTheme,
   takeScreenshot,
   THEMES,

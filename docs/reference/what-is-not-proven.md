@@ -1363,6 +1363,34 @@ says so. The browser half would settle it in one assertion by opening a modal
 on a contrast route. That route does not exist yet, and adding it is the open
 item this section leaves behind.
 
+**The eyeball half of it IS now closed, and it was closed by a different
+instrument.** On 2026-08-21 the theme sweep gained a sixth state, the rollback
+modal, so `.modal` is rendered in all seven themes on all six distributions,
+44 screenshots per distribution instead of 37. Before that the entire modal
+surface had been captured in exactly one theme, as a by-product of
+`T-DIVG-03`'s geometry check, which parameterises over viewport width and not
+over theme: sentinel, the worst of the five failures, had no modal shot at any
+width. The shots say the dialog still reads as raised a tier lower, most
+clearly in High Contrast, where `--border-strong` carries the separation as a
+bright outline and the surface itself is near-black.
+
+**That is a rendering, not a measurement, and it does not close the entry
+above.** A screenshot answers whether the dialog reads as raised; it answers
+nothing about the ratio, and `.restore-error` and `.modal-error` remain
+computed rather than measured. The contrast route is still owed. What changed
+is that two questions were being carried as one, and only the cheaper of them
+needed a contrast route to answer.
+
+**The sweep's own ordering is a constraint worth recording**, because it is
+invisible until something breaks on it. Each state now applies its own theme
+instead of the loop applying one after `setup`. `.modal-backdrop` is
+`position: fixed; inset: 0` at `z-index: 50`, so once a modal is open the theme
+selector is underneath it and `selectOption`'s actionability check cannot reach
+the control; the modal state must therefore theme BEFORE it opens the dialog,
+while the other five must theme AFTER their `loadApp`, `page.goto` taking any
+earlier selection with it. No single position in the loop satisfies both. A
+seventh state that opens anything over the sidebar inherits this.
+
 **And the visual read of the new hover affordance is unverified.** The
 measurement is settled and the failure is gone by construction, but no
 container run has looked at a summary hovering since the change, so whether a

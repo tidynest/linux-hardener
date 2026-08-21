@@ -5,7 +5,7 @@
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
-const { loadApp, runScan, runApply, takeScreenshot } = require('./helpers');
+const { loadApp, runScan, runApply, runRollback, takeScreenshot } = require('./helpers');
 
 // ---------------------------------------------------------------------------
 // CONFIGURE SECTION
@@ -397,13 +397,7 @@ test.describe('Apply results', () => {
 test.describe('Rollback modal divergences', () => {
   test.beforeEach(async ({ page }) => {
     await loadApp(page, '/hardening');
-    await page.getByRole('tab', { name: 'History' }).click();
-    await page.getByRole('button', { name: 'Roll back', exact: true }).first().click();
-    // The modal's own confirm button, reached by its class rather than its
-    // name: the name carries a file count, and "Roll back" as a substring also
-    // matches every button in the history list behind the modal.
-    await page.locator('.modal-actions button.btn-danger').click();
-    await expect(page.getByText('Still diverged:')).toBeVisible({ timeout: 15000 });
+    await runRollback(page);
   });
 
   test('T-DIVG-01: both divergence states render, labelled apart', async ({ page }) => {
