@@ -333,6 +333,36 @@ const ROUTES = [
     },
   },
   {
+    // The two live-progress glyphs, recorded in `styles.css` and in three
+    // sessions of notes as unreachable: `host_row.rs:86` draws them only while
+    // `scanning` is true, "so it is gone before any sweep runs and no route can
+    // reach it". `.host-prog-failed` was retuned on 2026-08-20 on that basis -
+    // moved to `--color-critical-bright` alongside `.host-row-failed` on the
+    // reasoning that it is the same token on the same row - and shipped
+    // unweighed.
+    //
+    // It was a property of the FIXTURE, not of the component. The mock emitted
+    // its `fleet-progress` events and resolved `run_fleet_scan` in the same
+    // tick, so `scanning` went false immediately and both glyphs lived for one
+    // frame. `?fleet_scan=hold` leaves that call pending, which is what a real
+    // scan does for its entire duration, and the glyphs then simply sit there.
+    //
+    // Third time today a stated impossibility turned out to be a route
+    // problem, after `.fleet-glyph-ok` and the `.modal` surface tier.
+    path: '/fleet',
+    name: 'fleet, scan in progress',
+    query: 'fleet_scan=hold',
+    setup: async (page) => {
+      await page.getByRole('checkbox', { name: 'Select web-01' }).check();
+      await page.getByRole('checkbox', { name: 'Select db-01' }).check();
+      await page.getByRole('button', { name: /Scan Selected/i }).click();
+      // The FAILING glyph specifically. Waiting on `.host-prog-ok` would pass
+      // against a fixture that had stopped failing db-01, and this route exists
+      // for the rule that carries the critical colour.
+      await expect(page.locator('.host-prog-failed')).toBeVisible();
+    },
+  },
+  {
     // `.fleet-glyph-ok`, the last rule on this page, and it needed neither a
     // third host nor a fixture flag. Both were assumed: the note left on the
     // route above reasoned that a clean glyph wants a host that applied with
@@ -511,6 +541,12 @@ const MUST_REACH = [
   // the mock's rollback handler grows the failing host its apply handler has,
   // the rule silently goes back to being the reasoned-about one it was.
   '.fleet-glyph-ok',
+  // Added 2026-08-21 with the held-scan route. It is the most fragile entry
+  // here: it renders only while an IPC call is still pending, so it stops
+  // being measured the moment `?fleet_scan=hold` stops holding, and the route
+  // would go on passing because every other rule on the Hosts page still
+  // renders. It was shipped retuned-but-unweighed once already.
+  '.host-prog-failed',
 ];
 
 // A run that measures nothing passes every assertion below it. This is a floor

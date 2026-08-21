@@ -6,7 +6,7 @@
 //
 // Error mode: add ?error_mode=scan|apply|checkpoint|export|exception|all to
 // URL to trigger errors. Outcome shape: ?apply_mode=mixed,
-// ?rollback_mode=partial, ?checkpoint_source=unreadable.
+// ?rollback_mode=partial, ?checkpoint_source=unreadable, ?fleet_scan=hold.
 // =============================================================================
 
 (function () {
@@ -35,6 +35,13 @@
   // `--color-critical-bright` in none of them. That is what the first modal
   // contrast route found on 2026-08-21, while passing.
   const rollbackMode = params.get('rollback_mode') || '';
+  // `?fleet_scan=hold` leaves `run_fleet_scan` pending after its progress
+  // events, so the Hosts page stays mid-scan instead of settling in the same
+  // tick. It is the only way to reach `.host-prog-ok` and `.host-prog-failed`,
+  // which `host_row.rs:86` draws only while `scanning` is true; both were
+  // recorded as unreachable by any route, which was true of this fixture
+  // rather than of the component.
+  const fleetScan = params.get('fleet_scan') || '';
 
   function shouldError(cmd) {
     if (errorMode === 'all') return true;
@@ -1007,6 +1014,24 @@
             failed: name === 'db-01',
           });
         });
+        // `?fleet_scan=hold` never resolves, which leaves the page in the
+        // state a scan actually spends its time in.
+        //
+        // `host_row.rs:86` draws `.host-prog-ok` and `.host-prog-failed` only
+        // while `scanning` is true. The progress events above are emitted and
+        // then this handler returns in the same tick, so `scanning` goes false
+        // immediately and both glyphs exist for one frame. They were recorded
+        // as unmeasurable in `styles.css` and in the session notes - "gone
+        // before any sweep runs and no route can reach it" - and that was a
+        // property of the FIXTURE resolving instantly, not of the component.
+        //
+        // Holding forever rather than for a timeout: there is no duration to
+        // pick, no timer to leak, and "the scan has not come back yet" is
+        // exactly the state being posed. The page stays on "Scanning...", which
+        // is correct and is what the route measures.
+        if (fleetScan === 'hold') {
+          await new Promise(() => {});
+        }
         // db-01 exercises the failed-row path; everything else is a healthy host.
         return targets.map((name) =>
           name === 'db-01'

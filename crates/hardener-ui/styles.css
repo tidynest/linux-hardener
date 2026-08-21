@@ -4548,12 +4548,27 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    5.20:1 in Sentinel, and the two themes that already passed improve as well,
    daywatch 5.07 to 6.51 and high contrast 9.17 to 12.03.
    `.host-row-failed` moved with it once db-01 was scanned and expanded.
-   `.host-prog-failed` moves too WITHOUT being measured, and deliberately:
-   `host_row.rs:86` renders it only while `scanning` is true, so it is gone
-   before any sweep runs and no route can reach it. It is the same token on the
-   same row as `.host-row-failed`, so it is the same pairing and the same
-   reading; leaving it behind would have kept a known-failing colour purely
-   because the instrument cannot see it. */
+   `.host-prog-failed` moved too, and shipped UNMEASURED on the reasoning that
+   it is the same token on the same row as `.host-row-failed`, so the same
+   pairing and the same reading. `host_row.rs:86` renders it only while
+   `scanning` is true, and that was read as putting it beyond any route.
+
+   It was not. The fixture emitted its progress events and resolved
+   `run_fleet_scan` in the same tick, so the glyph lived for one frame; the
+   limit was the mock, not the component. `?fleet_scan=hold` leaves that call
+   pending and the glyph simply sits there, which is what a scan in flight
+   looks like. Measured 2026-08-21 by the `fleet, scan in progress` route:
+   6.69 midnight teal, 6.75 fortress, 6.50 sentinel, 6.96 command, 6.85
+   guardian, 7.70 daywatch, 14.52 high contrast, all against 4.5 - and every
+   one identical, to the colour and the backdrop, to what `.host-row-failed`
+   reads on the same route. The reasoning was exactly right AND unverifiable,
+   which is the half that has now changed.
+
+   Still unmeasured on the OPEN row's `--bg-tertiary`, where the same token
+   reads 5.20 to 5.71. Reaching it needs a row already expanded when the scan
+   starts, and `hosts_page.rs:74` refuses to open a failed host; that is a
+   choice not to spend a second route on a surface this token already clears,
+   not a second impossibility. */
 .tally-crit { color: var(--color-critical-bright); }
 .tally-high { color: var(--color-warning); }
 .tally-med { color: var(--text-secondary); }
