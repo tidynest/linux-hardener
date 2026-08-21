@@ -703,6 +703,17 @@ Validating facts stated in more than one document...
   GUI Playwright tests: the tree says 165
     OK docs/reference/distribution-validation.md agrees at 165
     OK scripts/README.md agrees at 165
+    OK docs/reference/distribution-validation.md agrees at 165
+    OK docs/reference/distribution-validation.md agrees at 165
+  themes.spec.js parameterised site line: the tree says 200
+    OK docs/reference/distribution-validation.md agrees at 200
+  contrast.spec.js parameterised site line: the tree says 710
+    OK docs/reference/distribution-validation.md agrees at 710
+  hardening.spec.js parameterised site line: the tree says 464
+    OK docs/reference/distribution-validation.md agrees at 464
+  contrast sweep routes: the tree says 12
+    OK docs/reference/distribution-validation.md agrees at 12
+    OK docs/reference/file-map.md agrees at 12
   GUI Playwright test call sites: the tree says 117
     OK docs/reference/distribution-validation.md agrees at 117
     OK docs/reference/distribution-validation.md agrees at 117
@@ -719,10 +730,10 @@ Validating facts stated in more than one document...
     OK docs/reference/distribution-validation.md agrees at 42
     OK docs/reference/file-map.md agrees at 42
     OK scripts/README.md agrees at 42
-  registered sites: the tree says 18
-    OK scripts/README.md agrees at 18
+  registered sites: the tree says 25
+    OK scripts/README.md agrees at 25
 
-All 18 registered sites agree with their source
+All 25 registered sites agree with their source
   Dated readings are deliberately not registered.
 ```
 
@@ -731,7 +742,7 @@ This block said 156 across 4 sites until 2026-08-20, two days after the suite re
 **The per-fact numbers above remain illustrative and unheld.** Each duplicates a fact already registered against a different site, so a stale one here is a stale copy rather than an unchecked claim, and a pattern unique enough to pin one of them inside a fenced sample would be anchored to the sample's line order. The trade is deliberate: one integer that cannot go stale, rather than five that are pinned to the shape of a code block.
 
 **Source of Truth**:
-- Named per fact in the script's `REGISTRY`. For the compliance framework count, the `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`, read via `validate_compliance_docs.py`'s `parse_enum_frameworks`. For the GUI Playwright test count, the row marked **current** in the Reading table of [distribution-validation.md](../docs/reference/distribution-validation.md), which is the document this validator also checks: it can therefore confirm that the consumers agree with the row and never that the row is true. For the GUI Playwright call-site count, `gui-tests/tests/*.spec.js` counted in the tree, registered on 2026-08-20 precisely because the fact above has no tree definition and went stale in three documents for two days while this validator stayed green
+- Named per fact in the script's `REGISTRY`. For the compliance framework count, the `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`, read via `validate_compliance_docs.py`'s `parse_enum_frameworks`. For the GUI Playwright test count, `gui-tests/tests/*.spec.js` themselves as of 2026-08-21: `_spec_cases` walks each spec with its comments and string bodies blanked, keeps a stack of the enclosing `for...of` loops, and gives each `test()` the product of that stack, so a parameterised site contributes its cases rather than one. It reproduces `npx playwright test --list` exactly, 165 cases over 117 call sites. **Until that day this fact read the row marked current in the Reading table of [distribution-validation.md](../docs/reference/distribution-validation.md), the document this validator also checks**, so it could confirm that the consumers agreed with the row and never that the row was true; that row is now a checked site instead. Deriving rather than running the collector keeps `validate_all.py` free of `gui-tests/node_modules`, which is gitignored and absent from a fresh clone. The ceiling is the shapes the walk understands - `for...of` over an inline array, or over a `const NAME = [` array in the spec or in `helpers.js` - and any other parameterisation is refused by name at the `test()` it reaches rather than counted as one. For the GUI Playwright call-site count, the same specs counted by a plain regex with no brace tracking, registered on 2026-08-20 when the fact above had no tree definition and kept as the total check that proves the walk read its source: `_suite_shape` compares the two and refuses if they disagree. For the three parameterised-site LINE numbers and the contrast sweep's route count, the specs again; all four were prose that had rotted, three of them line numbers displaced by edits elsewhere in their own files
 
 **Dependencies**:
 - Python 3.9+

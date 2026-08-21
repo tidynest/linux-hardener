@@ -47,41 +47,281 @@ def framework_count(root: Path) -> int:
     return len(variants)
 
 
-def gui_playwright_test_count(root: Path) -> int:
-    """The GUI Playwright suite's current size, read from the Reading table.
+def _blank_js(text: str) -> str:
+    """`text` with every comment and string body replaced by spaces.
 
-    This fact has no tree definition: the count is generated at Playwright's
-    own collection time from parameterised specs, so the document is the
-    source, not the code. The Reading table in distribution-validation.md
-    keeps every superseded count alongside the current one, so the row
-    marked **current** is the one this reads, not the last row or the
-    largest number.
+    Length and line numbers are preserved, so an offset into the result is an
+    offset into the source. Brace and paren counting is only sound on this:
+    `gui-tests/tests/` is a corpus of heavily commented specs, and a `{` inside
+    a sentence about an object literal would otherwise open a scope that never
+    closes. Quotes are kept and their contents blanked, so a comma inside a
+    string cannot be counted as an array separator either.
+
+    Refuses on an unterminated comment or string rather than running off the
+    end and reporting whatever the truncated parse happened to produce.
     """
-    path = root / "docs" / "reference" / "distribution-validation.md"
-    try:
-        text = path.read_text()
-    except OSError as problem:
-        raise LookupError(f"cannot read {path}: {problem}") from problem
+    out: list[str] = []
+    i, end = 0, len(text)
+    while i < end:
+        char, pair = text[i], text[i : i + 2]
+        if pair == "//":
+            stop = text.find("\n", i)
+            stop = end if stop < 0 else stop
+            out.append(" " * (stop - i))
+            i = stop
+        elif pair == "/*":
+            stop = text.find("*/", i + 2)
+            if stop < 0:
+                raise LookupError("unterminated block comment")
+            stop += 2
+            out.append("".join(c if c == "\n" else " " for c in text[i:stop]))
+            i = stop
+        elif char in "'\"`":
+            stop = i + 1
+            while stop < end and text[stop] != char:
+                stop += 2 if text[stop] == "\\" else 1
+            if stop >= end:
+                raise LookupError(f"unterminated string at offset {i}")
+            body = text[i + 1 : stop]
+            out.append(char + "".join(c if c == "\n" else " " for c in body) + char)
+            i = stop + 1
+        else:
+            out.append(char)
+            i += 1
+    return "".join(out)
+
+
+def _literal_length(expr: str) -> int | None:
+    """Entries in an inline array literal, or None if `expr` is not one.
+
+    Counts separators at the literal's own nesting depth, so
+    `[['wide', 1280], ['narrow', 420]]` is two and not four.
+    """
+    if not (expr.startswith("[") and expr.endswith("]")):
+        return None
+    inner = expr[1:-1]
+    if not inner.strip():
+        return 0
+    depth = separators = 0
+    for char in inner:
+        if char in "[({":
+            depth += 1
+        elif char in "])}":
+            depth -= 1
+        elif char == "," and depth == 0:
+            separators += 1
+    return separators + 1
+
+
+def _array_length(src: str, name: str) -> int | None:
+    """Entries in a top-level `const <name> = [...]`, or None if there is none.
+
+    Counts object OPENERS at the array's own indent, `^  {`, which is the one
+    structural marker these arrays share: `STATES` spreads each entry over many
+    lines and `THEMES` writes each on one. Counting a key instead was the first
+    attempt and read `THEMES` as zero, because its `name:` sits inline rather
+    than at four spaces.
+
+    None means the array is absent and 0 means it is empty; both are refused by
+    the callers, which is why they are distinguished here rather than collapsed.
+    Anything nested inside an entry is indented further and cannot be counted
+    twice, and the array is bounded by a `];` at column 0, so a nested array
+    cannot end the scan early.
+    """
     match = re.search(
-        r"\|\s*\*\*[\d-]+\*\*\s*\|\s*\*\*(\d+)\*\*\s*\|\s*\*\*\d+\*\*\s*\|\s*"
-        r"\*\*current\*\*",
-        text,
+        rf"^const {re.escape(name)} = \[$(.*?)^\];$", src, re.MULTILINE | re.DOTALL
     )
     if not match:
+        return None
+    return len(re.findall(r"^ {2}\{", match.group(1), re.MULTILINE))
+
+
+_FOR_HEAD = re.compile(r"\bfor\s*\(")
+_TEST_SITE = re.compile(r"^[ \t]*test\s*\(", re.MULTILINE)
+
+
+def _spec_cases(path: Path, helpers: str) -> tuple[int, int, dict[int, int]]:
+    """Cases, call sites, and `{line: multiplier}` for every parameterised site.
+
+    Walks the blanked source once, keeping a stack of the enclosing `for...of`
+    loops. A `test(` contributes the product of the stack, which is one for an
+    ordinary site and the loop lengths for a parameterised one; nested loops
+    multiply, which is what `themes.spec.js` needs.
+
+    An iterable is resolved LAZILY, at the `test(` site rather than at the loop
+    that opens. Most loops in these files iterate a runtime value inside a test
+    body - `for (const rule of rules)` in the contrast sweep - and resolving
+    eagerly refused on the first of them while counting nothing wrong. A loop
+    that contains no `test(` cannot change a count, so it does not have to be
+    understood; one that does is refused by name.
+    """
+    src = _blank_js(path.read_text())
+
+    bodies: dict[int, str] = {}
+    for head in _FOR_HEAD.finditer(src):
+        open_paren = src.index("(", head.start())
+        depth, cursor = 0, open_paren
+        while cursor < len(src):
+            if src[cursor] == "(":
+                depth += 1
+            elif src[cursor] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            cursor += 1
+        else:
+            raise LookupError(f"{path.name}: unclosed `for (` at offset {open_paren}")
+        header = src[open_paren + 1 : cursor]
+        # A C-style `for (let i = 0; ...)` has no ` of ` and cannot repeat a
+        # `test()` call site, so it is left as a plain block.
+        marker = header.find(" of ")
+        if marker < 0:
+            continue
+        rest = src[cursor + 1 :]
+        gap = len(rest) - len(rest.lstrip())
+        if not rest[gap:].startswith("{"):
+            raise LookupError(
+                f"{path.name}: a brace-less `for...of` body cannot be bounded by "
+                "this scan; give the loop a block"
+            )
+        bodies[cursor + 1 + gap] = header[marker + 4 :].strip()
+
+    def resolve(expr: str) -> int:
+        if (length := _literal_length(expr)) is not None:
+            return length
+        if re.fullmatch(r"[A-Za-z_$][\w$]*", expr):
+            length = _array_length(src, expr) or _array_length(helpers, expr)
+            if length:
+                return length
         raise LookupError(
-            f"{path}: no row marked '**current**' found in the Reading table"
+            f"{path.name}: a `test()` is parameterised over `{expr}`, which is "
+            "neither an inline array nor a `const NAME = [` array in this file "
+            "or in helpers.js. Teach this function the shape rather than "
+            "letting the count drift"
         )
-    return int(match.group(1))
+
+    sites = {match.start() for match in _TEST_SITE.finditer(src)}
+    depth, stack = 0, []  # stack: (depth the loop body opened at, iterable text)
+    cases = found = 0
+    parameterised: dict[int, int] = {}
+    for offset, char in enumerate(src):
+        if offset in sites:
+            multiplier = 1
+            for _opened_at, iterable in stack:
+                multiplier *= resolve(iterable)
+            cases += multiplier
+            found += 1
+            if multiplier > 1:
+                parameterised[src.count("\n", 0, offset) + 1] = multiplier
+        if char == "{":
+            if offset in bodies:
+                stack.append((depth, bodies[offset]))
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            while stack and stack[-1][0] == depth:
+                stack.pop()
+    return cases, found, parameterised
+
+
+def _suite_shape(root: Path) -> tuple[int, dict[str, int]]:
+    """The whole suite's case count, and the line of each parameterised site."""
+    specs = sorted((root / "gui-tests" / "tests").glob("*.spec.js"))
+    if not specs:
+        raise LookupError("no gui-tests/tests/*.spec.js found")
+    helpers = _blank_js((root / "gui-tests" / "tests" / "helpers.js").read_text())
+    cases = sites = 0
+    lines: dict[str, int] = {}
+    for spec in specs:
+        spec_cases, spec_sites, parameterised = _spec_cases(spec, helpers)
+        cases += spec_cases
+        sites += spec_sites
+        if len(parameterised) > 1:
+            raise LookupError(
+                f"{spec.relative_to(root)}: {len(parameterised)} parameterised "
+                "sites, and the documents name one per file"
+            )
+        for line in parameterised:
+            lines[spec.name] = line
+    # A total check on the walk itself. `gui_playwright_call_sites` counts the
+    # same `test(` sites with a plain regex over the raw text and no brace
+    # tracking at all, so the two agree only if the blanking preserved every
+    # site and invented none. A silent disagreement is the one failure this
+    # walk could have that still produces a plausible number.
+    independent = gui_playwright_call_sites(root)
+    if sites != independent:
+        raise LookupError(
+            f"the case walk found {sites} `test()` sites and the independent "
+            f"count found {independent}; the walk is misreading the source, so "
+            "its case total cannot be trusted either"
+        )
+    if not cases:
+        raise LookupError("gui-tests/tests/*.spec.js parsed to zero cases")
+    return cases, lines
+
+
+def gui_playwright_test_count(root: Path) -> int:
+    """The GUI Playwright suite's size, DERIVED from the specs.
+
+    This read the Reading table in distribution-validation.md until 2026-08-21,
+    because the count is produced at Playwright's collection time and the
+    document was the only place it existed. That made this fact the one entry in
+    the registry that could not ask whether its source was true: on 2026-08-20
+    three documents called 156 current while the suite read 157, and every site
+    agreed with the row, so this validator was green.
+
+    `_spec_cases` resolves the parameterisation instead, and reproduces
+    `npx playwright test --list` exactly: 165 cases over 117 call sites on
+    2026-08-21, the same pair the runner reported that day. Deriving rather than
+    running keeps `validate_all.py` free of `gui-tests/node_modules`, which is
+    gitignored and absent from a fresh clone.
+
+    **The ceiling is the shapes it understands**: `for...of` over an inline
+    array or over a `const NAME = [` array in the spec or in helpers.js. Any
+    other parameterisation is REFUSED by name at the `test()` it reaches, never
+    counted as one. The runner remains the ground truth; this is a second
+    instrument that agrees with it, and the Reading table's rows stay as the
+    record of what a container actually executed.
+    """
+    return _suite_shape(root)[0]
+
+
+def _parameterised_site_line(spec: str):
+    """A callable reporting the line of `spec`'s single parameterised site.
+
+    Registered per spec because the documents name the three individually, and
+    all three were stale on 2026-08-21 with nothing able to say so: two had been
+    displaced by edits elsewhere in their own files, `contrast.spec.js` by 114
+    lines. A line number is the one cross-reference that rots without anyone
+    touching what it names, so it is worth the three entries.
+    """
+
+    def line(root: Path) -> int:
+        lines = _suite_shape(root)[1]
+        if spec not in lines:
+            raise LookupError(
+                f"{spec} no longer has a parameterised `test()` site, so the "
+                "documents naming one are describing a file that changed"
+            )
+        return lines[spec]
+
+    return line
 
 
 def gui_playwright_call_sites(root: Path) -> int:
     """How many `test()` call sites the specs carry, counted in the tree.
 
-    The fact above has no tree definition and is therefore read out of the
-    document it validates, which means it can only ever check that the
-    consumer sites agree with the row: it cannot ask whether the row is true.
-    On 2026-08-20 three documents called 156 current while the suite read 157,
-    and this validator was green throughout.
+    The fact above had no tree definition until 2026-08-21 and was read out of
+    the document it validates, which meant it could only check that the consumer
+    sites agreed with the row: it could not ask whether the row was true. On
+    2026-08-20 three documents called 156 current while the suite read 157, and
+    this validator was green throughout.
+
+    `_spec_cases` now derives that count, and this scan is what proves the
+    derivation read the source correctly: `_suite_shape` compares its walk
+    against this plain regex and refuses if they disagree. Two counts of the
+    same thing by different means, kept because the walk is the one with
+    somewhere to go wrong.
 
     This is the tree quantity that moves when a test is added, and it is
     registered so that the tree, rather than a person's memory, is what turns
@@ -121,30 +361,19 @@ def gui_playwright_call_sites(root: Path) -> int:
 
 
 def _count_array_entries(path: Path, name: str) -> int:
-    """Entries in a top-level `const <name> = [...]` array of objects.
+    """`_array_length` against a file, refusing rather than returning nothing.
 
-    Counts object OPENERS at the array's own indent, `^  {`, which is the one
-    structural marker the two arrays share: `STATES` spreads each entry over
-    many lines and `THEMES` writes each on one. Counting a key instead was the
-    first attempt and read `THEMES` as zero, because its `name:` sits inline
-    rather than at four spaces. Zero is refused below rather than returned, so
-    that mistake failed loudly instead of reporting a product of zero that
-    every document would then have disagreed with.
-
-    Anything nested inside an entry is indented further and cannot be counted
-    twice. The array is bounded by a `];` at column 0, so a nested array cannot
-    end the scan early.
+    Zero is refused rather than returned, so a parse that stops reading its
+    source fails loudly instead of reporting a product of zero that every
+    document would then have "disagreed" with.
     """
     try:
         text = path.read_text()
     except OSError as problem:
         raise LookupError(f"cannot read {path}: {problem}") from problem
-    match = re.search(
-        rf"^const {re.escape(name)} = \[$(.*?)^\];$", text, re.MULTILINE | re.DOTALL
-    )
-    if not match:
+    entries = _array_length(text, name)
+    if entries is None:
         raise LookupError(f"{path}: no top-level `const {name} = [` array found")
-    entries = len(re.findall(r"^ {2}\{", match.group(1), re.MULTILINE))
     if not entries:
         raise LookupError(f"{path}: `{name}` parsed to zero entries")
     return entries
@@ -161,10 +390,11 @@ def theme_sweep_states(root: Path) -> int:
     every check green.
 
     This is the quantity that actually moved, and it is three lines of parsing
-    away from the tree. `gui_playwright_test_count` still has no tree
-    definition and still reads the document it validates; this does not fix
-    that, and is not a substitute for it. What it does is turn the ORDINARY way
-    a parameterised site grows into something the tree reports.
+    away from the tree. It was registered while `gui_playwright_test_count`
+    still read the document it validates, as the cheap half of closing that
+    gap; the expensive half followed on the same day, and the case count is now
+    derived too. Both are kept: this one names the factor a reader changes,
+    where the derived total only says the product moved.
     """
     return _count_array_entries(root / "gui-tests" / "tests" / "themes.spec.js", "STATES")
 
@@ -184,6 +414,22 @@ def theme_sweep_screenshots(root: Path) -> int:
     """
     themes = _count_array_entries(root / "gui-tests" / "tests" / "helpers.js", "THEMES")
     return theme_sweep_states(root) * themes
+
+
+def contrast_routes(root: Path) -> int:
+    """Routes the computed-cascade contrast sweep drives, per theme.
+
+    Registered because this is the count with the worst record in the tree: the
+    `contrast.spec.js` cell of `file-map.md` said FIVE from the day five was
+    right until 2026-08-21, through three separate route additions, and the
+    matching cell in `distribution-validation.md` drifted with it. Adding a
+    route changes no test count - the routes are swept inside one case per
+    theme - so nothing else here moves when one lands, which is precisely why
+    the prose rotted unnoticed.
+    """
+    return _count_array_entries(
+        root / "gui-tests" / "tests" / "contrast.spec.js", "ROUTES"
+    )
 
 
 def registered_site_count(_root: Path) -> int:
@@ -253,6 +499,86 @@ REGISTRY = [
                 "scripts/README.md",
                 r"is \*\*(\d+) tests in \d+ files\*\*",
                 "the run-gui-tests.sh entry's Purpose line",
+            ),
+            (
+                "docs/reference/distribution-validation.md",
+                r"### Spec Inventory \(\d+ Specs, (\d+) Tests\)",
+                "the Spec Inventory heading, a present-tense claim about the "
+                "suite's size that no check could reach while this fact's "
+                "canonical source was the same document",
+            ),
+            (
+                "docs/reference/distribution-validation.md",
+                r"\|\s*\*\*[\d-]+\*\*\s*\|\s*\*\*(\d+)\*\*\s*\|\s*\*\*\d+\*\*"
+                r"\s*\|\s*\*\*current\*\*",
+                "the row marked **current** in the Reading table, which WAS "
+                "this fact's canonical source until the derivation replaced it. "
+                "The rows are dated readings and stay that way; what is held "
+                "here is the one marked current, whose whole job is to state "
+                "today's size. It turns red when a test is added and no run has "
+                "recorded the new count, which is the correct reading of that "
+                "state rather than an inconvenience",
+            ),
+        ],
+    ),
+    (
+        "themes.spec.js parameterised site line",
+        _parameterised_site_line("themes.spec.js"),
+        [
+            (
+                "docs/reference/distribution-validation.md",
+                r"`themes\.spec\.js:(\d+)` produces",
+                "the Spec Inventory preamble, which names the three "
+                "parameterised sites by line. This one moved 152 to 200 and was "
+                "corrected by hand on 2026-08-21",
+            ),
+        ],
+    ),
+    (
+        "contrast.spec.js parameterised site line",
+        _parameterised_site_line("contrast.spec.js"),
+        [
+            (
+                "docs/reference/distribution-validation.md",
+                r"`contrast\.spec\.js:(\d+)` produces",
+                "the same preamble. It was corrected to 551 on 2026-08-21 and "
+                "was ALREADY wrong: the site sat at 665, displaced 114 lines by "
+                "edits elsewhere in its own file, and the correction that "
+                "flagged two stale numbers introduced a third",
+            ),
+        ],
+    ),
+    (
+        "hardening.spec.js parameterised site line",
+        _parameterised_site_line("hardening.spec.js"),
+        [
+            (
+                "docs/reference/distribution-validation.md",
+                r"`hardening\.spec\.js:(\d+)` produces",
+                "the same preamble, where it was named at 470 while sitting at "
+                "464",
+            ),
+        ],
+    ),
+    (
+        "contrast sweep routes",
+        contrast_routes,
+        [
+            (
+                "docs/reference/distribution-validation.md",
+                r"\*\*(\d+) routes\*\*, \d+ of which need a state",
+                "the `contrast.spec.js` row of the Spec Inventory. Both this "
+                "site and the one below said the count in WORDS until this fact "
+                "was registered; they are digits now because every pattern here "
+                "must capture something `int()` accepts, and a word-to-number "
+                "table in `main` would be a second thing to keep true for one "
+                "site's prose style",
+            ),
+            (
+                "docs/reference/file-map.md",
+                r"Drives (\d+) routes, \d+ of them into a state",
+                "the `contrast.spec.js` row, the cell that said FIVE for three "
+                "route additions running",
             ),
         ],
     ),
