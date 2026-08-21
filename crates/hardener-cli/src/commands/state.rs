@@ -1,9 +1,13 @@
 //! Shared state initialisation - database and signing key paths
 
 use anyhow::Result;
+use hardener_state::signing::repair_narrowed_directory_mode;
 use hardener_state::{CheckpointManager, CheckpointSigner, init_db};
 use std::os::unix::fs::PermissionsExt;
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 /// Root signing key directory, separate from checkpoint data.
 const SYSTEM_KEY_DIR: &str = "/etc/linux-hardener";
@@ -27,12 +31,9 @@ fn resolve_paths() -> Result<(PathBuf, PathBuf)> {
         let db_path = PathBuf::from(SYSTEM_DATA_DIR).join("checkpoints.db");
         let key_path = PathBuf::from(SYSTEM_KEY_DIR).join("signing.key");
 
-        fs::create_dir_all(SYSTEM_KEY_DIR)?;
-        let _ = fs::set_permissions(SYSTEM_KEY_DIR, fs::Permissions::from_mode(0o700));
-        fs::create_dir_all(SYSTEM_DATA_DIR)?;
-        let _ = fs::set_permissions(SYSTEM_DATA_DIR, fs::Permissions::from_mode(0o755));
+        prepare_root_dirs(Path::new(SYSTEM_KEY_DIR), Path::new(SYSTEM_DATA_DIR))?;
 
-        migrate_key_from(std::path::Path::new(LEGACY_KEY_PATH), &key_path)?;
+        migrate_key_from(Path::new(LEGACY_KEY_PATH), &key_path)?;
 
         Ok((db_path, key_path))
     } else {
@@ -45,6 +46,26 @@ fn resolve_paths() -> Result<(PathBuf, PathBuf)> {
             data_dir.join("signing.key"),
         ))
     }
+}
+
+/// Creates the two root directories and settles their modes.
+///
+/// Taking both paths as arguments is what makes the modes assertable: the
+/// caller's own are absolute and privileged, so nothing unprivileged can
+/// exercise them, and the modes are the entire content of this function.
+///
+/// The key directory is `/etc/linux-hardener`, which holds `config.toml` as
+/// well as the signing key, so it keeps the 0755 the package installed. This
+/// used to force it to 0700 and hide the configuration from every unprivileged
+/// reader; [`repair_narrowed_directory_mode`] undoes that on hosts where it
+/// already happened. The key file's own 0400 is unchanged and is what protects
+/// it. The data directory has no such second role, so it is still set outright.
+fn prepare_root_dirs(key_dir: &Path, data_dir: &Path) -> Result<()> {
+    fs::create_dir_all(key_dir)?;
+    repair_narrowed_directory_mode(key_dir);
+    fs::create_dir_all(data_dir)?;
+    let _ = fs::set_permissions(data_dir, fs::Permissions::from_mode(0o755));
+    Ok(())
 }
 
 /// Moves the signing key from the legacy co-located path if it exists at the

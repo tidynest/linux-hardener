@@ -43,6 +43,40 @@ const ENCRYPTED_KEY_MAGIC: &[u8; 4] = b"LSH1";
 /// falling back to v1 with a re-encrypt on success. Nothing reads a v2 today.
 const KEY_DERIVATION_SALT: &[u8] = b"linux-hardener-signing-key-v1";
 
+/// Widens a directory this code used to narrow, and nothing else.
+///
+/// `/etc/linux-hardener` is the signing key's parent, but it is first of all
+/// the **shared configuration directory**: the package installs it 0755 and
+/// ships `config.toml` inside it. Two sites used to chmod it 0700 simply
+/// because the key lived there, and after one root run an unprivileged process
+/// could no longer see the configuration at all. `Path::exists` swallows the
+/// `EACCES` that `statx` returns for an unsearchable parent and answers
+/// `false`, so an unprivileged `scan` and a privileged `apply` silently
+/// resolved different configuration.
+///
+/// Nothing is lost by widening it. The credential's protection is the key
+/// file's own mode, which is created 0400 and root-owned, the same posture
+/// `/etc/shadow` has inside a 0755 `/etc`.
+///
+/// **Only the exact mode 0o700 is repaired.** That is the precise value the two
+/// sites wrote, so it is the signature of this code's own damage rather than of
+/// a decision. An administrator who deliberately chose some other restrictive
+/// mode, 0o710 or 0o750, must not be overridden by a hardening tool.
+///
+/// A failure is ignored, matching the call sites it replaced: a permissions
+/// problem must never abort a run, and an unprivileged process simply cannot
+/// repair a root-owned directory and has no need to. The repair therefore
+/// happens on the next root run, wherever that comes from.
+pub fn repair_narrowed_directory_mode(dir: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    if let Ok(metadata) = fs::metadata(dir)
+        && metadata.permissions().mode() & 0o777 == 0o700
+    {
+        let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o755));
+    }
+}
+
 /// Manages Ed25519 signing keys for checkpoint signatures.
 ///
 /// Supports both signing and verification-only modes.
@@ -221,13 +255,15 @@ impl CheckpointSigner {
     fn save_key(key_path: &Path, signing_key: &SigningKey) -> Result<()> {
         use std::fs::OpenOptions;
         use std::io::Write;
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        use std::os::unix::fs::OpenOptionsExt;
 
-        // Ensure parent directory exists (idempotent)
+        // Ensure parent directory exists (idempotent). Its mode is otherwise
+        // left alone: the key's parent is a shared directory, and the 0400
+        // below is what protects the key. See
+        // [`repair_narrowed_directory_mode`] for the damage this used to do.
         if let Some(parent) = key_path.parent() {
             std::fs::create_dir_all(parent).map_err(HardeningError::System)?;
-            let perms = std::fs::Permissions::from_mode(0o700);
-            let _ = std::fs::set_permissions(parent, perms);
+            repair_narrowed_directory_mode(parent);
         }
 
         let encrypted = Self::encrypt_key(&signing_key.to_bytes())?;

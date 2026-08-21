@@ -495,7 +495,12 @@ absence.
 
 Every location below is chosen by effective UID, not by configuration. Root
 splits the three across `/etc`, `/var/lib` and `/var/log` so the signing key
-sits behind its own 0700 directory rather than beside the state it signs;
+does not sit beside the state it signs. The key is protected by its own mode,
+0400 and root-owned, and not by its directory: `/etc/linux-hardener` is the
+shared configuration directory, installed 0755 and carrying `config.toml`, so
+it is not the key's to narrow. Describing it as the key's own directory is what
+once licensed narrowing it to 0700, which left every unprivileged run unable to
+read the system config at all;
 unprivileged runs keep everything in the user data directory, where there is no
 privilege boundary to enforce that separation. `resolve_paths` and
 `audit_logger` in `hardener-cli/src/commands/state.rs` are the single place
@@ -505,7 +510,7 @@ that decides.
 |-----------|---------------|-----------------------|---------|
 | Checkpoints | `/var/lib/linux-hardener/checkpoints.db` (0755 dir) | `~/.local/share/linux-hardener/checkpoints.db` | System state snapshots |
 | Audit Log | `/var/log/linux-hardener/audit.log` (0700 dir) | `~/.local/share/linux-hardener/audit.log` | Tamper-evident action history (JSONL) |
-| Signing Keys | `/etc/linux-hardener/signing.key` (0700 dir, 0400 key) | `~/.local/share/linux-hardener/signing.key` | Ed25519 keys |
+| Signing Keys | `/etc/linux-hardener/signing.key` (0755 dir, 0400 key) | `~/.local/share/linux-hardener/signing.key` | Ed25519 keys |
 
 `hardener-state` carries its own defaults for the root paths:
 `DEFAULT_DB_PATH` in `db.rs` and `CheckpointSigner::DEFAULT_KEY_PATH` /

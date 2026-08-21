@@ -273,6 +273,107 @@ fn the_public_key_accessor_returns_the_key_written_beside_it() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The signing key's parent directory.
+//
+// `save_key` used to chmod it 0700, because the key lives there. It is also
+// `/etc/linux-hardener`, the shared configuration directory the package
+// installs 0755 with `config.toml` inside it, so one root run made the
+// configuration unreadable to every unprivileged process and `Path::exists`
+// reported it absent rather than forbidden. Four things must hold: an
+// untouched directory stays untouched, our own 0700 is repaired, another
+// restrictive mode is not, and the key file is still 0400 through all of it.
+// ---------------------------------------------------------------------------
+
+/// Creates `parent/` inside a scratch directory at exactly `mode`, generates a
+/// key inside it, and answers with the parent's mode afterwards and the key's.
+///
+/// `create_dir` alone will not do: the process umask clears bits from it, so a
+/// directory asked for at 0755 arrives at 0755 on this machine and at 0750
+/// under a stricter umask, and the whole point here is the exact value.
+fn modes_after_saving_a_key_under(mode: u32) -> (u32, u32) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let parent = dir.path().join("parent");
+    fs::create_dir(&parent).expect("create the parent directory");
+    fs::set_permissions(&parent, fs::Permissions::from_mode(mode)).expect("pin the parent's mode");
+
+    let key_path = parent.join("signing.key");
+    CheckpointSigner::new_with_path(&key_path).expect("generate and save a key");
+
+    let parent_mode = fs::metadata(&parent)
+        .expect("the parent must still be there")
+        .permissions()
+        .mode()
+        & 0o777;
+    let key_mode = fs::metadata(&key_path)
+        .expect("the key must have been written")
+        .permissions()
+        .mode()
+        & 0o777;
+    (parent_mode, key_mode)
+}
+
+/// The installed case, and the defect. The package ships `/etc/linux-hardener`
+/// at 0755; saving a key into it must leave it there.
+#[test]
+fn saving_a_key_leaves_the_installed_directory_mode_alone() {
+    let (parent_mode, _) = modes_after_saving_a_key_under(0o755);
+
+    assert_eq!(
+        parent_mode, 0o755,
+        "the key's parent is the shared configuration directory; narrowing it \
+         hides config.toml from every unprivileged reader, and Path::exists \
+         reports that as absent rather than forbidden"
+    );
+}
+
+/// The repair, for hosts where a root run already narrowed the directory. They
+/// cannot fix themselves any other way: the package only sets the mode at
+/// install time.
+#[test]
+fn a_directory_narrowed_to_0700_is_widened_on_the_next_save() {
+    let (parent_mode, _) = modes_after_saving_a_key_under(0o700);
+
+    assert_eq!(
+        parent_mode, 0o755,
+        "0700 is exactly what this code used to write, so it is repaired"
+    );
+}
+
+/// The arm that makes the two above mean something. Without it they pass just
+/// as well against an unconditional chmod to 0755, which would override an
+/// administrator who chose a restrictive mode deliberately. 0o750 is not a mode
+/// this code ever wrote, so it is not ours to change.
+#[test]
+fn a_deliberately_restrictive_directory_mode_is_not_widened() {
+    let (parent_mode, _) = modes_after_saving_a_key_under(0o750);
+
+    assert_eq!(
+        parent_mode, 0o750,
+        "only the exact 0700 this code used to write is repaired; any other \
+         restrictive mode is an administrator's decision"
+    );
+}
+
+/// The security guard on the whole change. Widening the directory is safe only
+/// because the credential is protected by its own mode, so if that ever moves,
+/// this must fail. It is checked under all three parent modes, since the
+/// repair path touches permissions in the same call.
+#[test]
+fn the_key_file_itself_stays_root_read_only() {
+    for parent in [0o755, 0o700, 0o750] {
+        let (_, key_mode) = modes_after_saving_a_key_under(parent);
+        assert_eq!(
+            key_mode, 0o400,
+            "the signing key must stay read-only to its owner whatever its \
+             parent's mode is: that, and not the directory, is what keeps it \
+             secret (parent was {parent:o})"
+        );
+    }
+}
+
 /// `can_sign` survived being replaced by `false`. A signer that generated its
 /// own key holds the private half, and reporting otherwise would make every
 /// checkpoint go unsigned on a host that could sign perfectly well.
