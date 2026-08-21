@@ -1257,11 +1257,74 @@ them: `.partial-row-badge-failed` reads 3.86 on sentinel, 4.05 on fortress,
 4.10 on default, 4.22 on guardian and 4.29 on command, with `.status-error`
 within a few hundredths of the same. So both pairs would fail WCAG if they ever
 rendered on an elevated surface. On the routes measured they do not, which is
-why the browser half reads 5.02 and above. **Whether a failed partial row or an
-export status can ever appear on `--bg-elevated` is a product question about
-modals and cards, not a tooling one**, and it is the concrete form of the
-tradeoff this file's docstring accepted in the abstract when it chose best-case
-over worst-case and recorded 61 as the worst-case count.
+why the browser half reads 5.02 and above.
+
+**For these two selectors that surface is unreachable, and the question is
+closed by ancestry rather than by a route.** It was recorded here as a product
+question about modals and cards; it is not one, because each selector has
+exactly one render site and each site's ancestry is fixed.
+`.partial-row-badge-failed`
+(`configure_section.rs:1407`) sits inside a `<Card class="partial-panel">`, and
+`.card` paints an opaque `--bg-secondary`, so nothing above the Card can lift
+its backdrop, a modal included. `.status-error` (`compliance_tab.rs:174`)
+resolves through `.compliance-actions`, `.compliance-tab`, `.tab-panel` and
+`.app-main`, none of which declares a background, to `body` at `--bg-primary`,
+the best surface in its own spread. Of the thirteen rules that paint
+`--bg-elevated`, eleven are hover or focus states on controls, a scrollbar
+thumb, a swatch or an action bar; the only one that could hold arbitrary
+content is `.modal`, and neither site is reachable from it. **A route measures
+what one route draws; an opaque ancestor decides what any route can draw**, and
+that is why walking the chain answered in minutes what no sweep had settled.
+Both rules carry the finding as a comment naming the dependency it rests on, so
+a future wrapper that breaks it is visible at the rule.
+
+The tradeoff this file's docstring accepted in the abstract, when it chose
+best-case over worst-case and recorded 61 as the worst-case count, is therefore
+still live in general and no longer has these two as its concrete form.
+
+**Asking the same question of the other selectors found nine failures that were
+shipping.** The `--bg-elevated` residual was recorded for four selectors, the
+two above plus `.severity_exception` and `.compliance-excluded`, on one shared
+justification: no route renders them there. For `.severity_exception` that was
+false when it was written. `host_panel.rs:42` renders it, and every other
+`.severity_*` class, inside a `<summary>`, and `summary:hover` painted
+`--bg-elevated`. So the hover state of every host-panel finding subgroup put
+four of the six severity pills under 4.5: `.severity_low` 3.94 in fortress and
+4.42 in sentinel, `.severity_exception` 4.13 in command and 4.18 in sentinel,
+`.severity_critical` 4.19 in sentinel with 4.43 in default and fortress, and
+`.severity_info` 4.28 in command and 4.40 in sentinel.
+
+**The resting half of that model was checked against a real browser before any
+of it was believed.** The arch run records `.severity_exception` at 5.97 on
+`rgb(47,55,65)` in default on the fleet host panel. Compositing
+`--pill-muted-bg`, `rgba(148,163,184,0.14)`, over `--bg-tertiary` `#1e252e`
+gives `rgb(47,55,65)`. The summary paints the tier the bare rule says it does,
+so the hover tier is the one the bare hover rule said too.
+
+**Neither check could see it, and the reason is specific rather than general.**
+The static half enumerates all four `--bg-*` tiers for a translucent fill and
+reports the best, so the one tier a parent actually paints is filed as a worst
+case no route reaches. The browser half resolves the real ancestor but has no
+hover step. Note what this is NOT: the static half handles a hover fill
+correctly whenever one rule declares both the fill and the text over it, which
+is why `.tab-button:hover`, `.segment-btn:hover`, `.plugin-row-help:hover` and
+`.config-clear-btn:hover` are sound, the lowest being 5.23 in guardian. **The
+shape it misses is a parent's hover fill under a child's own fill**, where the
+two live in different rules and only the cascade joins them.
+
+**The fix is at `summary:hover`, which now moves the text instead of the
+backdrop**, the idiom `.advanced-disclosure-summary:hover` already used. That
+removes the app's only parent-hover backdrop lift, so the shape has no second
+instance to find today. What remains unproven: **no contrast route has ever
+opened a modal**, and `.modal` paints `--bg-elevated` permanently rather than
+on hover. Its contents are weighed by the static half against all four tiers,
+best-case, exactly as these pills were.
+
+**And the visual read of the new hover affordance is unverified.** The
+measurement is settled and the failure is gone by construction, but no
+container run has looked at a summary hovering since the change, so whether a
+colour move alone still reads as hoverable on a row whose chevron does not
+move is an eyeball question that no number here answers.
 
 **`/analysis` is now scanned rather than bare**, which was worth doing on its
 own: the first two container runs loaded it into its empty state, so it

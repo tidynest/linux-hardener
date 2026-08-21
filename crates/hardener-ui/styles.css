@@ -1135,10 +1135,15 @@ tbody tr:hover {
    stays short at every alpha; `--text-secondary` clears every theme, worst
    4.84 in Command. Both rules that share `--pill-muted-bg` move together, the
    shared property being the point.
-   The residual is the SAME `--bg-elevated` question already open for
-   `.partial-row-badge-failed` and `.status-error`, not a new one: on that one
-   surface Command reads 4.13 and Sentinel 4.18, while every other surface
-   clears. No route renders either pill there.
+   The residual was the `--bg-elevated` reading, filed as hypothetical on the
+   grounds that no route renders either pill there. That was FALSE for this
+   rule and had been since it was written: `host_panel.rs:42` renders this pill
+   inside a `<summary>`, and `summary:hover` painted exactly `--bg-elevated`,
+   which is where Command's 4.13 and Sentinel's 4.18 landed on every hover.
+   The backdrop lift was removed at the `summary:hover` rule (section 18)
+   rather than here, because all six `.severity_*` pills shared it and the fill
+   is not what was wrong. Do not restore a hover fill under this pill without
+   re-reading its spread.
    It now shares a text colour with `.severity_info` and is still not the
    bottom rung: the fills differ, and each pill carries its own word. */
 .severity_exception { background-color: var(--pill-muted-bg); color: var(--text-secondary); }
@@ -2560,6 +2565,12 @@ tbody tr:hover {
   border-radius: var(--radius-full);
 }
 
+/* The `--bg-elevated` worst case (3.86 sentinel, under 4.5 in five themes of
+   seven) is unreachable, not deferred. The one render site,
+   configure_section.rs:1407, sits inside a `<Card class="partial-panel">`, and
+   `.card` paints an opaque `--bg-secondary`, so no ancestor above the Card can
+   lift this fill's backdrop. Re-open only if this badge ever renders outside a
+   Card. */
 .partial-row-badge-failed {
   color: var(--color-critical-bright);
   background-color: var(--color-critical-bg);
@@ -2726,6 +2737,11 @@ tbody tr:hover {
   background-color: rgba(16, 185, 129, 0.1);
 }
 
+/* Same closed question as `.partial-row-badge-failed`: the one render site,
+   compliance_tab.rs:174, resolves through `.compliance-actions`,
+   `.compliance-tab`, `.tab-panel` and `.app-main`, none of which declares a
+   background, to `body` at `--bg-primary`. That is the best surface in the
+   spread. Re-open if any of those four gains a fill. */
 .status-error {
   color: var(--color-critical-bright);
   background-color: rgba(239, 68, 68, 0.1);
@@ -2743,10 +2759,29 @@ summary {
   background-color: var(--bg-tertiary);
   cursor: pointer;
   font-weight: 500;
-  transition: background-color var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
-summary:hover { background-color: var(--bg-elevated); }
+/* Hover moves the TEXT, not the backdrop. This rule used to set
+   `background-color: var(--bg-elevated)`, and every summary in this app holds
+   custom content rather than a bare label: `host_panel.rs:42` puts the six
+   `.severity_*` pills in one, and `configure_section.rs:1103` puts
+   `.lockout-pill` in another. Those pills carry translucent fills tuned
+   against the resting `--bg-tertiary`, so lifting the backdrop under them read
+   `.severity_low` 3.94 in fortress, `.severity_exception` 4.13 in command and
+   4.18 in sentinel, `.severity_critical` 4.19 in sentinel and 4.43 in default
+   and fortress, and `.severity_info` 4.28 in command and 4.40 in sentinel:
+   nine failures neither contrast check could see. The static half enumerates
+   all four `--bg-*` tiers as hypotheses and reports the best, so the one tier
+   a parent actually paints on hover is filed as a worst case that no route
+   reaches; the browser half resolves the real ancestor but never hovers. It
+   weighs a hover fill correctly when ONE rule declares both, which is why
+   `.tab-button:hover` and `.plugin-row-help:hover` are sound at 5.23 and
+   above. A parent's hover fill under a child's own fill is the shape it
+   misses. `.advanced-disclosure-summary:hover` already used a colour move, so
+   this is the house idiom rather than a new one. */
+summary:hover { color: var(--text-primary); }
+.compliance-disclosure > summary:hover { color: var(--text-primary); }
 details[open] summary { border-bottom: 1px solid var(--border); }
 
 .control-status { font-weight: 600; font-size: var(--font-size-caption); }
