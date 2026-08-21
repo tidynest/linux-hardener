@@ -966,3 +966,258 @@ fn system_config_path_for_falls_back_to_the_real_path_when_unset() {
         "and with a seam set, that seam must be what is returned"
     );
 }
+
+/// True when this process would read a closed file regardless of its mode, so
+/// a permission test below can prove nothing and must say so by returning.
+///
+/// `chmod 0o000` does not stop a process with effective UID 0. Under a root
+/// runner both permission tests in this file would go green without exercising
+/// anything, which is the vacuous pass this project keeps meeting. An early
+/// return is deliberately preferred to `#[ignore]`: this suite already carries
+/// ignored tests, and an ignored test is one nobody runs, whereas a guarded one
+/// runs on every unprivileged machine and only steps aside where it is blind.
+///
+/// It asks `ConfigLoader::is_running_as_root`, which under the default
+/// `system` feature is `nix::unistd::geteuid().is_root()`, rather than calling
+/// `nix` here, so the guard compiles on the same feature set as the crate.
+fn root_would_read_it_anyway() -> bool {
+    ConfigLoader::is_running_as_root()
+}
+
+/// Restores a directory's mode when it leaves scope, panic or not.
+///
+/// A `TempDir` deletes its tree on drop and cannot descend into a `0o000`
+/// directory, so a test that closes one has to reopen it or the cleanup fails.
+/// A plain statement at the end of the test would be skipped by a failing
+/// assertion, which is precisely the run where the tree still needs removing.
+struct ReopensOnDrop<'a>(&'a Path);
+
+impl Drop for ReopensOnDrop<'_> {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _ = std::fs::set_permissions(self.0, std::fs::Permissions::from_mode(0o700));
+    }
+}
+
+/// The classifier tells a file that is not there from one that is, which is the
+/// distinction the whole skip rests on.
+///
+/// Without this pair, a classifier answering `Unreachable` for everything, or
+/// `Absent` for everything, would satisfy the unreachable test below: that one
+/// asks only that a closed directory is not read. The two ordinary answers are
+/// what say the classifier is classifying rather than returning a constant, and
+/// they need no permission games, so they are asked outside the root guard and
+/// run on every machine.
+#[test]
+fn classify_source_tells_an_absent_file_from_a_present_one() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let present = dir.path().join("config.toml");
+    std::fs::write(&present, "[ssh]\nenabled = true\n").expect("write the config");
+
+    assert_eq!(
+        ConfigLoader::classify_source(&present),
+        ConfigSourceState::Present,
+        "a file that is there and can be stat'd is present"
+    );
+    assert_eq!(
+        ConfigLoader::classify_source(&dir.path().join("nothing-here.toml")),
+        ConfigSourceState::Absent,
+        "and a path nobody installed anything at is absent, which is the \
+         ordinary case and the one that stays silent"
+    );
+}
+
+/// A source under a directory this process cannot traverse classifies as
+/// unreachable, carrying the reason, rather than as absent.
+///
+/// This is the arm `Path::exists()` cannot express. The premise is asserted
+/// first: `exists()` really does answer `false` here, identically to the absent
+/// case above, so the two situations were genuinely indistinguishable to
+/// `merge_source` and the operator got no signal for either.
+///
+/// Guarded, because `chmod 0o000` does not stop a process with effective UID 0:
+/// under a root runner the directory stays traversable and the assertion would
+/// pass without exercising anything.
+///
+/// The reopened control at the end is what stops the answer being a constant:
+/// the same path, the same classifier, and a different answer once the
+/// traversal is allowed.
+#[test]
+fn classify_source_reports_an_unreachable_file_rather_than_calling_it_absent() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if root_would_read_it_anyway() {
+        return;
+    }
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let closed = dir.path().join("closed");
+    std::fs::create_dir(&closed).expect("create the directory that will be closed");
+    let system = closed.join("system.toml");
+    std::fs::write(&system, "[ssh]\nenabled = true\n").expect("write the config");
+
+    // The file itself stays readable. Only the directory above it is closed,
+    // so the failure under test is the traversal and not the read.
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o000))
+        .expect("close the directory");
+    let _reopen = ReopensOnDrop(&closed);
+
+    assert!(
+        !system.exists(),
+        "the premise: `exists()` is `metadata(..).is_ok()` and answers `false` \
+         here exactly as it does for a file nobody installed, which is why the \
+         classifier exists at all"
+    );
+    assert_eq!(
+        ConfigLoader::classify_source(&system),
+        ConfigSourceState::Unreachable(std::io::ErrorKind::PermissionDenied),
+        "the classifier must say the question went unanswered, and say why, \
+         rather than reporting the file as absent"
+    );
+
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o700))
+        .expect("reopen the directory");
+    assert_eq!(
+        ConfigLoader::classify_source(&system),
+        ConfigSourceState::Present,
+        "the control: the same path classifies as present once the directory is \
+         traversable, so the answer above is about the permissions and not about \
+         the path being wrong"
+    );
+}
+
+/// A system config that exists and cannot be read is a hard error naming the
+/// path, not a layer quietly dropped.
+///
+/// Nothing reached the read arm of `load_from_file` before. An unbounded grep
+/// for `Failed to read config file` across the workspace finds two format
+/// strings, this one and an unrelated one in the CLI's daemon command, and no
+/// test site at all, so every mutant in that arm survived. The behaviour is
+/// worth pinning for more than the mutant: the
+/// package ships `/etc/linux-hardener/config.toml`, so a mode an operator or a
+/// packaging step tightens turns every hardener command into an immediate
+/// failure, and that failure must at minimum name the file that caused it.
+///
+/// Read together with its neighbour below. An unreadable FILE stops the tool;
+/// an unreachable DIRECTORY is a skip that warns. The two are opposites and
+/// neither is safe to let drift into the other unnoticed.
+#[test]
+fn an_unreadable_system_config_is_a_hard_error_naming_the_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if root_would_read_it_anyway() {
+        return;
+    }
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let system = dir.path().join("system.toml");
+    std::fs::write(
+        &system,
+        "[global]\ndisabled_plugins = [\"mac-hardening\"]\n",
+    )
+    .expect("write system config");
+    std::fs::set_permissions(&system, std::fs::Permissions::from_mode(0o000))
+        .expect("close the system config to its owner");
+
+    let refusal = ConfigLoader::new()
+        .with_system_config(system.clone())
+        .with_config_dir(dir.path().join("no-user-config"))
+        .with_running_as_root(false)
+        .load()
+        .expect_err("a system config that exists and cannot be read must not be skipped");
+
+    let message = refusal.to_string();
+    assert!(
+        message.contains("Failed to read config file"),
+        "the refusal must come from the read arm rather than from the stat, the \
+         size cap or the parser, or a different failure is being pinned: {message}"
+    );
+    assert!(
+        message.contains(&system.display().to_string()),
+        "and it must name the file, because an operator has no other way to tell \
+         which of the layered sources refused: {message}"
+    );
+}
+
+/// A system config the process cannot reach is skipped with a warning, and the
+/// skip is the shipped behaviour rather than an accident of this test.
+///
+/// The skip is deliberate. Refusing to run would break every unprivileged
+/// `scan` on a host in this state, usually over a benign default config, so
+/// `merge_source` keeps returning the base configuration. What the operator
+/// lacked was any signal, and the warning is what makes the skip observable;
+/// the log line itself is not asserted here, because the decision that produces
+/// it is asserted directly of `classify_source` above.
+///
+/// The situation is not hypothetical. `/etc/linux-hardener` is `0700
+/// root:root` on a host that has run the tool as root once, because saving the
+/// signing key chmods the key's parent, which is that shared config directory.
+/// On such a host an unprivileged `scan` and a root `apply` resolve different
+/// configuration, and until the warning existed neither said so.
+///
+/// Read together with its neighbour above. What this test buys is that the
+/// difference between the two cannot change unnoticed, in either direction: if
+/// the skip ever becomes a refusal, or the refusal ever becomes a skip, one of
+/// the two goes red.
+///
+/// The reachable control at the end is what stops the assertion being vacuous.
+/// Absence alone is also what a loader that read nothing whatsoever would
+/// produce, so the same builder is made to read the same file once the
+/// directory is reopened.
+#[test]
+fn a_system_config_inside_an_unreachable_directory_is_skipped_with_a_warning() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if root_would_read_it_anyway() {
+        return;
+    }
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let closed = dir.path().join("closed");
+    std::fs::create_dir(&closed).expect("create the directory that will be closed");
+    let system = closed.join("system.toml");
+    std::fs::write(&system, "[ssh.directives]\nPermitRootLogin = \"no\"\n")
+        .expect("write system config");
+
+    // The file itself stays readable. Only the directory above it is closed,
+    // so the failure under test is the traversal and not the read.
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o000))
+        .expect("close the directory");
+    let _reopen = ReopensOnDrop(&closed);
+
+    let unreachable = ConfigLoader::new()
+        .with_system_config(system.clone())
+        .with_config_dir(dir.path().join("no-user-config"))
+        .with_running_as_root(false)
+        .load()
+        .expect("an unreachable system config is not an error today, it is a skip");
+
+    assert!(
+        !unreachable.ssh.directives.contains_key("PermitRootLogin"),
+        "the file sets this directive and the load must not have seen it: the \
+         source classifies as unreachable, so `merge_source` returns the base \
+         config and the entire system layer is skipped, warning as it goes"
+    );
+
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o700))
+        .expect("reopen the directory");
+    let reachable = ConfigLoader::new()
+        .with_system_config(system)
+        .with_config_dir(dir.path().join("no-user-config"))
+        .with_running_as_root(false)
+        .load()
+        .expect("the same load with the directory reopened");
+
+    assert_eq!(
+        reachable
+            .ssh
+            .directives
+            .get("PermitRootLogin")
+            .map(String::as_str),
+        Some("no"),
+        "the control: the same builder reading the same file must pick the \
+         directive up once the directory is traversable, or the absence above \
+         says nothing about permissions and everything about the seam being ignored"
+    );
+}

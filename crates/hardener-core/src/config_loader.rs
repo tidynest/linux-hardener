@@ -12,6 +12,27 @@ use crate::config::scope::ComplianceConfig;
 use crate::config::{GlobalConfig, HardenerConfig, PluginConfig};
 use hardener_common::error::{HardeningError, Result};
 use std::path::{Path, PathBuf};
+use tracing::warn;
+
+/// What a configuration source turned out to be when it was asked about.
+///
+/// The three states are what `Path::exists()` cannot tell apart. That method is
+/// `metadata(..).is_ok()` and so has no error channel: a file nobody installed
+/// and a file sitting under a directory this process may not search both answer
+/// `false`. They are different situations for an operator, and only one of them
+/// is ordinary.
+#[derive(Debug, PartialEq, Eq)]
+enum ConfigSourceState {
+    /// Nothing is at the path. The ordinary case, since most hosts carry no
+    /// `/etc/linux-hardener/config.toml`, and the one that is skipped silently.
+    Absent,
+    /// A file is there and can at least be stat'd.
+    Present,
+    /// The question could not be answered at all, carrying the kind of failure
+    /// that stopped it. `PermissionDenied` is the one seen in practice: a
+    /// parent directory refuses traversal, so `statx` fails `EACCES`.
+    Unreachable(std::io::ErrorKind),
+}
 
 /// Configuration loader with support for multiple sources.
 #[derive(Debug, Default)]
@@ -162,22 +183,61 @@ impl ConfigLoader {
         Ok(config)
     }
 
+    /// Classify a configuration source: absent, present, or out of reach.
+    ///
+    /// `try_exists`, not `exists`: the latter is `metadata(..).is_ok()` and
+    /// answers `false` for a file this process may not stat, which is
+    /// indistinguishable from the file not being there. Here that difference
+    /// decides whether a whole configuration layer is dropped, so it is carried
+    /// out rather than collapsed. `try_exists` already folds `NotFound` into
+    /// `Ok(false)`, which is exactly the absent case; every other kind, and
+    /// `PermissionDenied` first among them, is a question left unanswered.
+    ///
+    /// The same reasoning as `CheckpointSigner::new_with_path` and the systemd
+    /// uninstall path, which reach for `try_exists` for the same reason.
+    fn classify_source(path: &Path) -> ConfigSourceState {
+        match path.try_exists() {
+            Ok(true) => ConfigSourceState::Present,
+            Ok(false) => ConfigSourceState::Absent,
+            Err(error) => ConfigSourceState::Unreachable(error.kind()),
+        }
+    }
+
     /// Helper to merge a configuration source if it exists.
     ///
-    /// If `required` is true, returns an error if the file is missing.
+    /// If `required` is true, returns an error if the file is missing, and a
+    /// source that cannot be reached counts as missing: the operator named that
+    /// file, so continuing without it would apply a policy they did not write.
+    ///
+    /// An optional source that cannot be reached is still skipped, deliberately
+    /// so. Failing closed would break every unprivileged `scan` on a host whose
+    /// `/etc/linux-hardener` is `0700 root:root`, which is the state saving the
+    /// signing key leaves it in, and usually for a benign default config. What
+    /// the operator lacked was any signal at all, so the skip is now announced:
+    /// an unprivileged scan and a root apply resolving different configuration
+    /// is a fact worth one log line.
     fn merge_source(base: HardenerConfig, path: &Path, required: bool) -> Result<HardenerConfig> {
-        if !path.exists() {
-            if required {
-                return Err(HardeningError::Config(format!(
-                    "Config file not found: {}",
-                    path.display()
-                )));
+        match Self::classify_source(path) {
+            ConfigSourceState::Present => {
+                let overlay = Self::load_from_file(path)?;
+                Self::merge_configs(base, overlay)
             }
-            return Ok(base);
+            _ if required => Err(HardeningError::Config(format!(
+                "Config file not found: {}",
+                path.display()
+            ))),
+            ConfigSourceState::Absent => Ok(base),
+            ConfigSourceState::Unreachable(kind) => {
+                warn!(
+                    "Config source {} could not be reached ({kind:?}), so it was \
+                     skipped and this run is hardening from different \
+                     configuration than one that can reach it. Check the \
+                     permissions on the directories above it.",
+                    path.display()
+                );
+                Ok(base)
+            }
         }
-
-        let overlay = Self::load_from_file(path)?;
-        Self::merge_configs(base, overlay)
     }
 
     /// Returns true when the process is running with effective UID 0.

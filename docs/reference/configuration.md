@@ -39,6 +39,17 @@ Rules worth knowing:
   (`batch scan`, `batch report`, and `batch apply` without `--execute`), which
   warn on stderr and fall back to the compiled-in defaults. `batch apply
   --execute` refuses like the rest, because it writes.
+- A system or user config the process cannot **reach** is skipped like a missing
+  one, but it says so. `Path::exists()` answers `false` both for a file nobody
+  installed and for a file under a directory this process may not search, so the
+  loader classifies the two apart and logs a warning naming the path and the
+  error kind for the second. The case seen in practice is
+  `/etc/linux-hardener` left at `0700 root:root`, which older versions did to
+  themselves when saving the signing key: an unprivileged `scan` then resolved
+  different configuration from a root `apply`, silently. Repair it with
+  `chmod 755 /etc/linux-hardener`. An unreachable `--config` file is the same
+  hard error as a missing one, since the operator named that file and applying a
+  policy they did not write would be worse than stopping.
 - When running as root (including via pkexec from the desktop app), the user
   config is **skipped** so that unprivileged per-user settings cannot influence
   root-level hardening. `ConfigLoader::load` tests the effective UID for this,
