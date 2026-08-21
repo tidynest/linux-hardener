@@ -101,3 +101,12 @@ packaging/*.tar.zst
 # cargo-mutants run artefacts (regenerable; 3 MB and full of absolute paths)
 mutants.out/
 mutants.out.old/
+
+# Screenshot harness working output (scripts/screenshots). The harness itself is
+# tracked; what it assembles and writes is not. `serve/` is a copy of the built
+# frontend, `shots/` is regenerated on every run and lands in
+# docs/assets/screenshots when it is wanted, and the chrome profiles exist only
+# because back-to-back headless launches stall on a shared singleton lock.
+scripts/screenshots/serve/
+scripts/screenshots/shots/
+scripts/screenshots/chrome-profile-*/

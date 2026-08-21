@@ -1,0 +1,97 @@
+[
+  {
+    "scan_plugin_id": "kernel-hardening",
+    "scan_success": true,
+    "scan_findings": [
+      {
+        "finding_id": "kernel-001",
+        "finding_category": "Kernel",
+        "finding_severity": "Critical",
+        "finding_title": "ASLR not fully enabled",
+        "finding_description": "Address Space Layout Randomisation is not configured to maximum security level",
+        "finding_current_value": "1",
+        "finding_recommended_value": "2",
+        "finding_explanation": "ASLR randomises memory addresses to prevent exploitation. Level 2 provides full randomisation including heap and stack.",
+        "finding_impact": "Without full ASLR, attackers can more easily exploit memory corruption vulnerabilities.",
+        "finding_remediation_steps": [
+          "Set kernel.randomize_va_space = 2 in /etc/sysctl.conf",
+          "Run 'sudo sysctl -p' to apply changes"
+        ],
+        "finding_compliance": [],
+        "finding_policy_exception": null
+      },
+      {
+        "finding_id": "kernel-002",
+        "finding_category": "Kernel",
+        "finding_severity": "High",
+        "finding_title": "Kernel pointers exposed",
+        "finding_description": "Kernel pointers are visible to unprivileged users",
+        "finding_current_value": "0",
+        "finding_recommended_value": "2",
+        "finding_explanation": "Hiding kernel pointers prevents information disclosure attacks.",
+        "finding_impact": "Exposed kernel pointers aid in kernel exploitation.",
+        "finding_remediation_steps": [
+          "Set kernel.kptr_restrict = 2"
+        ],
+        "finding_compliance": [],
+        "finding_policy_exception": null
+      }
+    ],
+    "scan_unchecked": [],
+    "scan_duration_us": 1250,
+    "scan_error": null
+  },
+  {
+    "scan_plugin_id": "ssh-hardening",
+    "scan_success": true,
+    "scan_findings": [
+      {
+        "finding_id": "ssh-001",
+        "finding_category": "Authentication",
+        "finding_severity": "Critical",
+        "finding_title": "Root login via SSH enabled",
+        "finding_description": "SSH configuration allows direct root login",
+        "finding_current_value": "yes",
+        "finding_recommended_value": "no",
+        "finding_explanation": "Disabling root SSH login forces users to authenticate as regular users first, providing better audit trails.",
+        "finding_impact": "Direct root access increases risk of brute-force attacks and provides no audit trail.",
+        "finding_remediation_steps": [
+          "Edit /etc/ssh/sshd_config",
+          "Set PermitRootLogin no",
+          "Restart SSH service: sudo systemctl restart sshd"
+        ],
+        "finding_compliance": [],
+        "finding_policy_exception": null
+      }
+    ],
+    "scan_unchecked": [],
+    "scan_duration_us": 890,
+    "scan_error": null
+  },
+  {
+    "scan_plugin_id": "firewall-hardening",
+    "scan_success": true,
+    "scan_findings": [
+      {
+        "finding_id": "firewall-001",
+        "finding_category": "Network",
+        "finding_severity": "High",
+        "finding_title": "Firewall not enabled",
+        "finding_description": "System firewall is not active",
+        "finding_current_value": "inactive",
+        "finding_recommended_value": "active",
+        "finding_explanation": "An active firewall blocks unauthorised network access.",
+        "finding_impact": "Without a firewall, all network services are exposed.",
+        "finding_remediation_steps": [
+          "Enable firewall: sudo ufw enable",
+          "Configure default deny: sudo ufw default deny incoming"
+        ],
+        "finding_compliance": [],
+        "finding_policy_exception": null
+      }
+    ],
+    "scan_unchecked": [],
+    "scan_duration_us": 450,
+    "scan_error": null
+  }
+]

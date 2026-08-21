@@ -30,6 +30,7 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Validate all docs** | `./scripts/validate/validate_all.py` |
 | **Quick validation** | `./scripts/validate/validate_all.py --quick` |
 | **Auto-fix docs** | `./scripts/validate/update_all_docs.py --apply` |
+| **Refresh doc screenshots** | `cd scripts/screenshots && python3 build.py && (python3 serve.py &) && node capture-docs.js` |
 | **Check naming** | `./scripts/validate/validate_naming.py` |
 | **Verify versions** | `./scripts/release/release.sh --verify` |
 | **Dry-run release** | `./scripts/release/release.sh patch --dry-run` |

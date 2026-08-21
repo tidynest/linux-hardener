@@ -1,0 +1,1785 @@
+[
+  {
+    "report_framework": "CIS",
+    "report_framework_name": "CIS Benchmark",
+    "report_framework_description": "Center for Internet Security Benchmarks for Linux",
+    "report_generated_at": "2026-07-21T18:24:41.240487250Z",
+    "report_controls": [
+      {
+        "control_id": "1.5.1",
+        "control_title": "Ensure address space layout randomisation (ASLR)",
+        "control_section": "Initial Setup",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "1.5.2",
+        "control_title": "Ensure ptrace_scope is restricted",
+        "control_section": "Initial Setup",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "1.5.3",
+        "control_title": "Ensure core dumps are restricted",
+        "control_section": "Initial Setup",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "1.5.4",
+        "control_title": "Ensure kernel pointers are restricted",
+        "control_section": "Initial Setup",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.2.1",
+        "control_title": "Ensure source routed packets are not accepted",
+        "control_section": "Network Configuration",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.2.2",
+        "control_title": "Ensure ICMP redirects are not accepted",
+        "control_section": "Network Configuration",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.2.3",
+        "control_title": "Ensure secure ICMP redirects are not accepted",
+        "control_section": "Network Configuration",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.2.4",
+        "control_title": "Ensure suspicious packets are logged",
+        "control_section": "Network Configuration",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.2.7",
+        "control_title": "Ensure reverse path filtering is enabled",
+        "control_section": "Network Configuration",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.2.8",
+        "control_title": "Ensure TCP SYN cookies is enabled",
+        "control_section": "Network Configuration",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.4.1.1",
+        "control_title": "Ensure firewall is installed",
+        "control_section": "Network Configuration",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.4.1.2",
+        "control_title": "Ensure firewall service is enabled and running",
+        "control_section": "Network Configuration",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "4.1.1.1",
+        "control_title": "Ensure auditd is installed",
+        "control_section": "Logging and Auditing",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "4.1.1.2",
+        "control_title": "Ensure auditd service is enabled and running",
+        "control_section": "Logging and Auditing",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "4.1.2.1",
+        "control_title": "Ensure audit log storage size is configured",
+        "control_section": "Logging and Auditing",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.1.8",
+        "control_title": "Ensure cron is restricted to authorised users",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.1",
+        "control_title": "Ensure permissions on /etc/ssh/sshd_config are configured",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.4",
+        "control_title": "Ensure SSH Protocol is set to 2",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.6",
+        "control_title": "Ensure SSH X11 forwarding is disabled",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.7",
+        "control_title": "Ensure SSH MaxAuthTries is set to 4 or less",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.10",
+        "control_title": "Ensure SSH root login is disabled",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.11",
+        "control_title": "Ensure SSH PermitEmptyPasswords is disabled",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.13",
+        "control_title": "Ensure SSH Idle Timeout Interval is configured",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.14",
+        "control_title": "Ensure only strong Key Exchange algorithms are used",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.15",
+        "control_title": "Ensure only strong Ciphers are used",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.2.16",
+        "control_title": "Ensure only strong MAC algorithms are used",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.3.1",
+        "control_title": "Ensure password creation requirements are configured",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.3.2",
+        "control_title": "Ensure lockout for failed password attempts is configured",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.3.3",
+        "control_title": "Ensure password reuse is limited",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "6.1.2",
+        "control_title": "Ensure permissions on /etc/passwd are configured",
+        "control_section": "System Maintenance",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "6.1.3",
+        "control_title": "Ensure permissions on /etc/shadow are configured",
+        "control_section": "System Maintenance",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "6.1.4",
+        "control_title": "Ensure permissions on /etc/group are configured",
+        "control_section": "System Maintenance",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "6.1.5",
+        "control_title": "Ensure permissions on /etc/gshadow are configured",
+        "control_section": "System Maintenance",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "2.1.1",
+        "control_title": "Ensure xinetd is not installed",
+        "control_section": "Services",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "2.2.2",
+        "control_title": "Ensure X Window System is not installed",
+        "control_section": "Services",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "2.2.3",
+        "control_title": "Ensure Avahi Server is not installed",
+        "control_section": "Services",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "2.2.4",
+        "control_title": "Ensure CUPS is not installed",
+        "control_section": "Services",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "1.6.1.1",
+        "control_title": "Ensure SELinux or AppArmor is installed",
+        "control_section": "Mandatory Access Control",
+        "control_status": "Fail",
+        "control_findings": [
+          {
+            "finding_category": "Kernel",
+            "finding_current_value": "None",
+            "finding_description": "No MAC system detected on this system",
+            "finding_explanation": "Neither SELinux nor AppArmor is available. Consider enabling one for enhanced security.",
+            "finding_id": "no-mac-system",
+            "finding_impact": "Missing kernel-level mandatory access controls",
+            "finding_recommended_value": "SELinux or AppArmor enabled",
+            "finding_remediation_steps": [
+              "Install and enable AppArmor (Ubuntu/Debian) or SELinux (RHEL/Fedora)"
+            ],
+            "finding_severity": "Medium",
+            "finding_title": "No MAC System Found",
+            "finding_compliance": [
+              {
+                "compliance_framework": "CIS",
+                "compliance_control_id": "1.6.1.1",
+                "compliance_control_title": "Ensure SELinux or AppArmor is installed",
+                "compliance_section": "Mandatory Access Control"
+              },
+              {
+                "compliance_framework": "NIST",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "HIPAA",
+                "compliance_control_id": "164.312(a)(1)",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Safeguards"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-AC",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-SH",
+                "compliance_control_title": "System Hardening",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "8.3",
+                "compliance_control_title": "Information access restriction",
+                "compliance_section": "Technological"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "5.15",
+                "compliance_control_title": "Access control",
+                "compliance_section": "Organizational"
+              },
+              {
+                "compliance_framework": "SOC2",
+                "compliance_control_id": "CC6.8",
+                "compliance_control_title": "Prevent or detect the introduction of unauthorized or malicious software",
+                "compliance_section": "Logical and Physical Access Controls"
+              },
+              {
+                "compliance_framework": "NIST800171",
+                "compliance_control_id": "3.1.2",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "FedRAMP",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              }
+            ],
+            "finding_policy_exception": null
+          }
+        ]
+      },
+      {
+        "control_id": "1.6.1.2",
+        "control_title": "Ensure SELinux is not disabled in bootloader configuration",
+        "control_section": "Mandatory Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "1.6.1.3",
+        "control_title": "Ensure SELinux policy is configured",
+        "control_section": "Mandatory Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "1.6.1.4",
+        "control_title": "Ensure the SELinux mode is enforcing or AppArmor is enabled",
+        "control_section": "Mandatory Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.4.1.1",
+        "control_title": "Ensure password expiration is 365 days or less",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.4.1.2",
+        "control_title": "Ensure minimum days between password changes is configured",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "5.4.1.3",
+        "control_title": "Ensure password expiration warning days is 7 or more",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      }
+    ],
+    "report_summary": {
+      "summary_total_controls": 44,
+      "summary_passing": 33,
+      "summary_failing": 1,
+      "summary_manual_review": 10,
+      "summary_not_applicable": 0,
+      "summary_score_percentage": 75.0
+    }
+  },
+  {
+    "report_framework": "STIG",
+    "report_framework_name": "DISA STIG",
+    "report_framework_description": "Defense Information Systems Agency Security Technical Implementation Guides",
+    "report_generated_at": "2026-07-21T18:24:41.240520321Z",
+    "report_controls": [
+      {
+        "control_id": "OL08-00-030180",
+        "control_title": "The audit package must be installed",
+        "control_section": "Audit and Accountability",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "OL08-00-030181",
+        "control_title": "The auditd service must be enabled and running",
+        "control_section": "Audit and Accountability",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-040101",
+        "control_title": "A firewall must be enabled and active",
+        "control_section": "DISA STIG",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-010430",
+        "control_title": "Implement address space layout randomization",
+        "control_section": "DISA STIG",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-040283",
+        "control_title": "Restrict exposed kernel pointer addresses access",
+        "control_section": "DISA STIG",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-010375",
+        "control_title": "Restrict access to the kernel message buffer",
+        "control_section": "DISA STIG",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-040282",
+        "control_title": "Restrict usage of ptrace to descendant processes",
+        "control_section": "DISA STIG",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-010374",
+        "control_title": "Enforce DAC on hardlinks and symlinks",
+        "control_section": "DISA STIG",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-040285",
+        "control_title": "Use reverse path filtering on all IPv4 interfaces",
+        "control_section": "DISA STIG",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-040239",
+        "control_title": "Do not accept source-routed IPv4 packets",
+        "control_section": "DISA STIG",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "OL08-00-010170",
+        "control_title": "SELinux must be in enforcing mode",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-020230",
+        "control_title": "RHEL 8 passwords must have a minimum of 15 characters",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-020130",
+        "control_title": "RHEL 8 must enforce password complexity by requiring at least one numeric character",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-020110",
+        "control_title": "RHEL 8 must enforce password complexity by requiring at least one uppercase character",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-020120",
+        "control_title": "RHEL 8 must enforce password complexity by requiring at least one lowercase character",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-020280",
+        "control_title": "RHEL 8 must enforce password complexity by requiring at least one special character",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-020150",
+        "control_title": "RHEL 8 passwords must not contain more than three consecutive repeating characters",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-020200",
+        "control_title": "RHEL 8 user account passwords must have a 60-day maximum password lifetime restriction",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-020190",
+        "control_title": "RHEL 8 passwords for new users must have a minimum of 24 hours between password changes",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-020011",
+        "control_title": "RHEL 8 must automatically lock an account when three unsuccessful logon attempts occur",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-010291",
+        "control_title": "The RHEL 8 SSH server must be configured to use only DOD-approved encryption ciphers employing FIPS 140-3-validated cryptographic hash algorithms to protect the confidentiality of SSH server connections.",
+        "control_section": "Cryptography",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "RHEL-08-010290",
+        "control_title": "The RHEL 8 SSH server must be configured to use only Message Authentication Codes (MACs) employing FIPS 140-3-validated cryptographic hash algorithms to protect the confidentiality of SSH server connections.",
+        "control_section": "Cryptography",
+        "control_status": "Pass",
+        "control_findings": []
+      }
+    ],
+    "report_summary": {
+      "summary_total_controls": 22,
+      "summary_passing": 15,
+      "summary_failing": 0,
+      "summary_manual_review": 7,
+      "summary_not_applicable": 0,
+      "summary_score_percentage": 68.18181818181817
+    }
+  },
+  {
+    "report_framework": "NIST",
+    "report_framework_name": "NIST 800-53",
+    "report_framework_description": "National Institute of Standards and Technology Special Publication 800-53",
+    "report_generated_at": "2026-07-21T18:24:41.240547151Z",
+    "report_controls": [
+      {
+        "control_id": "AU-2(a)",
+        "control_title": "Event Logging",
+        "control_section": "Audit and Accountability",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AU-12(c)",
+        "control_title": "Audit Record Generation",
+        "control_section": "Audit and Accountability",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "SC-7",
+        "control_title": "Boundary Protection",
+        "control_section": "System and Communications Protection",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "CM-7",
+        "control_title": "Least Functionality",
+        "control_section": "Configuration Management",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "SI-16",
+        "control_title": "Memory Protection",
+        "control_section": "System and Information Integrity",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "CM-6",
+        "control_title": "Configuration Settings",
+        "control_section": "Configuration Management",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SI-11",
+        "control_title": "Error Handling",
+        "control_section": "System and Information Integrity",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-6",
+        "control_title": "Least Privilege",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SC-5",
+        "control_title": "Denial-of-Service Protection",
+        "control_section": "System and Communications Protection",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SI-4",
+        "control_title": "System Monitoring",
+        "control_section": "System and Information Integrity",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-3",
+        "control_title": "Access Enforcement",
+        "control_section": "Access Control",
+        "control_status": "Fail",
+        "control_findings": [
+          {
+            "finding_category": "Kernel",
+            "finding_current_value": "None",
+            "finding_description": "No MAC system detected on this system",
+            "finding_explanation": "Neither SELinux nor AppArmor is available. Consider enabling one for enhanced security.",
+            "finding_id": "no-mac-system",
+            "finding_impact": "Missing kernel-level mandatory access controls",
+            "finding_recommended_value": "SELinux or AppArmor enabled",
+            "finding_remediation_steps": [
+              "Install and enable AppArmor (Ubuntu/Debian) or SELinux (RHEL/Fedora)"
+            ],
+            "finding_severity": "Medium",
+            "finding_title": "No MAC System Found",
+            "finding_compliance": [
+              {
+                "compliance_framework": "CIS",
+                "compliance_control_id": "1.6.1.1",
+                "compliance_control_title": "Ensure SELinux or AppArmor is installed",
+                "compliance_section": "Mandatory Access Control"
+              },
+              {
+                "compliance_framework": "NIST",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "HIPAA",
+                "compliance_control_id": "164.312(a)(1)",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Safeguards"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-AC",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-SH",
+                "compliance_control_title": "System Hardening",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "8.3",
+                "compliance_control_title": "Information access restriction",
+                "compliance_section": "Technological"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "5.15",
+                "compliance_control_title": "Access control",
+                "compliance_section": "Organizational"
+              },
+              {
+                "compliance_framework": "SOC2",
+                "compliance_control_id": "CC6.8",
+                "compliance_control_title": "Prevent or detect the introduction of unauthorized or malicious software",
+                "compliance_section": "Logical and Physical Access Controls"
+              },
+              {
+                "compliance_framework": "NIST800171",
+                "compliance_control_id": "3.1.2",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "FedRAMP",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              }
+            ],
+            "finding_policy_exception": null
+          }
+        ]
+      },
+      {
+        "control_id": "IA-5(1)(a)",
+        "control_title": "Authenticator Management | Password-Based Authentication",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "IA-5(1)(d)",
+        "control_title": "Authenticator Management | Password-Based Authentication",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-7(a)",
+        "control_title": "Unsuccessful Logon Attempts",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-17(a)",
+        "control_title": "Remote Access - Usage Restrictions and Configuration",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-6(1)",
+        "control_title": "Least Privilege - Authorize Access to Security Functions",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-18",
+        "control_title": "Wireless Access",
+        "control_section": "Services",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SC-13",
+        "control_title": "Cryptographic Protection",
+        "control_section": "System and Communications Protection",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SC-8",
+        "control_title": "Transmission Confidentiality and Integrity",
+        "control_section": "System and Communications Protection",
+        "control_status": "Pass",
+        "control_findings": []
+      }
+    ],
+    "report_summary": {
+      "summary_total_controls": 19,
+      "summary_passing": 14,
+      "summary_failing": 1,
+      "summary_manual_review": 4,
+      "summary_not_applicable": 0,
+      "summary_score_percentage": 73.68421052631578
+    }
+  },
+  {
+    "report_framework": "PCIDSS",
+    "report_framework_name": "PCI-DSS v4.0",
+    "report_framework_description": "Payment Card Industry Data Security Standard",
+    "report_generated_at": "2026-07-21T18:24:41.240559013Z",
+    "report_controls": [
+      {
+        "control_id": "10.1",
+        "control_title": "Implement audit trails to link access to system components",
+        "control_section": "Track and Monitor Access",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "10.2.7",
+        "control_title": "Record audit trail entries for security-relevant events",
+        "control_section": "Track and Monitor Access",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "1.4.1",
+        "control_title": "NSCs are implemented between trusted and untrusted networks",
+        "control_section": "Network Security Controls",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "2.2.6",
+        "control_title": "System security parameters are configured to prevent misuse",
+        "control_section": "Secure Configurations",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "8.2.3",
+        "control_title": "Strong passwords and passphrases",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "8.2.4",
+        "control_title": "Change user passwords/passphrases at least once every 90 days",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "8.1.6",
+        "control_title": "Limit repeated access attempts by locking out the user ID",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "8.7.c",
+        "control_title": "Restrict access to system component databases and files",
+        "control_section": "Identify and Authenticate Access",
+        "control_status": "Pass",
+        "control_findings": []
+      }
+    ],
+    "report_summary": {
+      "summary_total_controls": 8,
+      "summary_passing": 5,
+      "summary_failing": 0,
+      "summary_manual_review": 3,
+      "summary_not_applicable": 0,
+      "summary_score_percentage": 62.5
+    }
+  },
+  {
+    "report_framework": "HIPAA",
+    "report_framework_name": "HIPAA Security Rule",
+    "report_framework_description": "Health Insurance Portability and Accountability Act",
+    "report_generated_at": "2026-07-21T18:24:41.240568601Z",
+    "report_controls": [
+      {
+        "control_id": "164.312(b)",
+        "control_title": "Audit Controls",
+        "control_section": "Technical Safeguards",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "164.308(a)(1)(ii)(D)",
+        "control_title": "Information System Activity Review",
+        "control_section": "Administrative Safeguards",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "164.312(e)(1)",
+        "control_title": "Transmission security",
+        "control_section": "Technical Safeguards",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "164.312(a)(1)",
+        "control_title": "Access control",
+        "control_section": "Technical Safeguards",
+        "control_status": "Fail",
+        "control_findings": [
+          {
+            "finding_category": "Kernel",
+            "finding_current_value": "None",
+            "finding_description": "No MAC system detected on this system",
+            "finding_explanation": "Neither SELinux nor AppArmor is available. Consider enabling one for enhanced security.",
+            "finding_id": "no-mac-system",
+            "finding_impact": "Missing kernel-level mandatory access controls",
+            "finding_recommended_value": "SELinux or AppArmor enabled",
+            "finding_remediation_steps": [
+              "Install and enable AppArmor (Ubuntu/Debian) or SELinux (RHEL/Fedora)"
+            ],
+            "finding_severity": "Medium",
+            "finding_title": "No MAC System Found",
+            "finding_compliance": [
+              {
+                "compliance_framework": "CIS",
+                "compliance_control_id": "1.6.1.1",
+                "compliance_control_title": "Ensure SELinux or AppArmor is installed",
+                "compliance_section": "Mandatory Access Control"
+              },
+              {
+                "compliance_framework": "NIST",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "HIPAA",
+                "compliance_control_id": "164.312(a)(1)",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Safeguards"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-AC",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-SH",
+                "compliance_control_title": "System Hardening",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "8.3",
+                "compliance_control_title": "Information access restriction",
+                "compliance_section": "Technological"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "5.15",
+                "compliance_control_title": "Access control",
+                "compliance_section": "Organizational"
+              },
+              {
+                "compliance_framework": "SOC2",
+                "compliance_control_id": "CC6.8",
+                "compliance_control_title": "Prevent or detect the introduction of unauthorized or malicious software",
+                "compliance_section": "Logical and Physical Access Controls"
+              },
+              {
+                "compliance_framework": "NIST800171",
+                "compliance_control_id": "3.1.2",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "FedRAMP",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              }
+            ],
+            "finding_policy_exception": null
+          }
+        ]
+      },
+      {
+        "control_id": "164.308(a)(5)(ii)(D)",
+        "control_title": "Password Management",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "164.312(d)",
+        "control_title": "Implement procedures to verify person or entity identity",
+        "control_section": "Authentication",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "164.312(a)(2)(iii)",
+        "control_title": "Automatic Logoff",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "164.312(e)(2)(ii)",
+        "control_title": "Encryption for transmission",
+        "control_section": "Transmission Security",
+        "control_status": "Pass",
+        "control_findings": []
+      }
+    ],
+    "report_summary": {
+      "summary_total_controls": 8,
+      "summary_passing": 3,
+      "summary_failing": 1,
+      "summary_manual_review": 4,
+      "summary_not_applicable": 0,
+      "summary_score_percentage": 37.5
+    }
+  },
+  {
+    "report_framework": "GDPR",
+    "report_framework_name": "GDPR Article 32",
+    "report_framework_description": "European Union General Data Protection Regulation",
+    "report_generated_at": "2026-07-21T18:24:41.240578790Z",
+    "report_controls": [
+      {
+        "control_id": "TM-AU",
+        "control_title": "Audit Logging",
+        "control_section": "Technical Measures",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "TM-SH",
+        "control_title": "System hardening of processing systems",
+        "control_section": "Article 32 - Security of Processing",
+        "control_status": "Fail",
+        "control_findings": [
+          {
+            "finding_category": "Kernel",
+            "finding_current_value": "None",
+            "finding_description": "No MAC system detected on this system",
+            "finding_explanation": "Neither SELinux nor AppArmor is available. Consider enabling one for enhanced security.",
+            "finding_id": "no-mac-system",
+            "finding_impact": "Missing kernel-level mandatory access controls",
+            "finding_recommended_value": "SELinux or AppArmor enabled",
+            "finding_remediation_steps": [
+              "Install and enable AppArmor (Ubuntu/Debian) or SELinux (RHEL/Fedora)"
+            ],
+            "finding_severity": "Medium",
+            "finding_title": "No MAC System Found",
+            "finding_compliance": [
+              {
+                "compliance_framework": "CIS",
+                "compliance_control_id": "1.6.1.1",
+                "compliance_control_title": "Ensure SELinux or AppArmor is installed",
+                "compliance_section": "Mandatory Access Control"
+              },
+              {
+                "compliance_framework": "NIST",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "HIPAA",
+                "compliance_control_id": "164.312(a)(1)",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Safeguards"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-AC",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-SH",
+                "compliance_control_title": "System Hardening",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "8.3",
+                "compliance_control_title": "Information access restriction",
+                "compliance_section": "Technological"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "5.15",
+                "compliance_control_title": "Access control",
+                "compliance_section": "Organizational"
+              },
+              {
+                "compliance_framework": "SOC2",
+                "compliance_control_id": "CC6.8",
+                "compliance_control_title": "Prevent or detect the introduction of unauthorized or malicious software",
+                "compliance_section": "Logical and Physical Access Controls"
+              },
+              {
+                "compliance_framework": "NIST800171",
+                "compliance_control_id": "3.1.2",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "FedRAMP",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              }
+            ],
+            "finding_policy_exception": null
+          }
+        ]
+      },
+      {
+        "control_id": "TM-NW",
+        "control_title": "Network-level protection of processing systems",
+        "control_section": "Article 32 - Security of Processing",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "TM-AC",
+        "control_title": "Access Control",
+        "control_section": "Technical Measures",
+        "control_status": "Fail",
+        "control_findings": [
+          {
+            "finding_category": "Kernel",
+            "finding_current_value": "None",
+            "finding_description": "No MAC system detected on this system",
+            "finding_explanation": "Neither SELinux nor AppArmor is available. Consider enabling one for enhanced security.",
+            "finding_id": "no-mac-system",
+            "finding_impact": "Missing kernel-level mandatory access controls",
+            "finding_recommended_value": "SELinux or AppArmor enabled",
+            "finding_remediation_steps": [
+              "Install and enable AppArmor (Ubuntu/Debian) or SELinux (RHEL/Fedora)"
+            ],
+            "finding_severity": "Medium",
+            "finding_title": "No MAC System Found",
+            "finding_compliance": [
+              {
+                "compliance_framework": "CIS",
+                "compliance_control_id": "1.6.1.1",
+                "compliance_control_title": "Ensure SELinux or AppArmor is installed",
+                "compliance_section": "Mandatory Access Control"
+              },
+              {
+                "compliance_framework": "NIST",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "HIPAA",
+                "compliance_control_id": "164.312(a)(1)",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Safeguards"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-AC",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-SH",
+                "compliance_control_title": "System Hardening",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "8.3",
+                "compliance_control_title": "Information access restriction",
+                "compliance_section": "Technological"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "5.15",
+                "compliance_control_title": "Access control",
+                "compliance_section": "Organizational"
+              },
+              {
+                "compliance_framework": "SOC2",
+                "compliance_control_id": "CC6.8",
+                "compliance_control_title": "Prevent or detect the introduction of unauthorized or malicious software",
+                "compliance_section": "Logical and Physical Access Controls"
+              },
+              {
+                "compliance_framework": "NIST800171",
+                "compliance_control_id": "3.1.2",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "FedRAMP",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              }
+            ],
+            "finding_policy_exception": null
+          }
+        ]
+      },
+      {
+        "control_id": "TM-AUTH",
+        "control_title": "Technical measure: authentication strength",
+        "control_section": "Access Control",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "Art.32(1)(a)",
+        "control_title": "Pseudonymisation and encryption of personal data",
+        "control_section": "Security of Processing",
+        "control_status": "Pass",
+        "control_findings": []
+      }
+    ],
+    "report_summary": {
+      "summary_total_controls": 6,
+      "summary_passing": 1,
+      "summary_failing": 2,
+      "summary_manual_review": 3,
+      "summary_not_applicable": 0,
+      "summary_score_percentage": 16.666666666666664
+    }
+  },
+  {
+    "report_framework": "SOC2",
+    "report_framework_name": "SOC 2 Trust Services Criteria",
+    "report_framework_description": "AICPA Trust Services Criteria (2017, with 2022 points of focus)",
+    "report_generated_at": "2026-07-21T18:24:41.240588368Z",
+    "report_controls": [
+      {
+        "control_id": "CC7.2",
+        "control_title": "Monitor system components for anomalies indicative of malicious acts or errors",
+        "control_section": "System Operations",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "CC7.1",
+        "control_title": "Detection and monitoring of configuration changes and new vulnerabilities",
+        "control_section": "System Operations",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "CC6.6",
+        "control_title": "Protect against threats from sources outside system boundaries",
+        "control_section": "Logical and Physical Access Controls",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "CC6.8",
+        "control_title": "Prevent or detect the introduction of unauthorized or malicious software",
+        "control_section": "Logical and Physical Access Controls",
+        "control_status": "Fail",
+        "control_findings": [
+          {
+            "finding_category": "Kernel",
+            "finding_current_value": "None",
+            "finding_description": "No MAC system detected on this system",
+            "finding_explanation": "Neither SELinux nor AppArmor is available. Consider enabling one for enhanced security.",
+            "finding_id": "no-mac-system",
+            "finding_impact": "Missing kernel-level mandatory access controls",
+            "finding_recommended_value": "SELinux or AppArmor enabled",
+            "finding_remediation_steps": [
+              "Install and enable AppArmor (Ubuntu/Debian) or SELinux (RHEL/Fedora)"
+            ],
+            "finding_severity": "Medium",
+            "finding_title": "No MAC System Found",
+            "finding_compliance": [
+              {
+                "compliance_framework": "CIS",
+                "compliance_control_id": "1.6.1.1",
+                "compliance_control_title": "Ensure SELinux or AppArmor is installed",
+                "compliance_section": "Mandatory Access Control"
+              },
+              {
+                "compliance_framework": "NIST",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "HIPAA",
+                "compliance_control_id": "164.312(a)(1)",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Safeguards"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-AC",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-SH",
+                "compliance_control_title": "System Hardening",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "8.3",
+                "compliance_control_title": "Information access restriction",
+                "compliance_section": "Technological"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "5.15",
+                "compliance_control_title": "Access control",
+                "compliance_section": "Organizational"
+              },
+              {
+                "compliance_framework": "SOC2",
+                "compliance_control_id": "CC6.8",
+                "compliance_control_title": "Prevent or detect the introduction of unauthorized or malicious software",
+                "compliance_section": "Logical and Physical Access Controls"
+              },
+              {
+                "compliance_framework": "NIST800171",
+                "compliance_control_id": "3.1.2",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "FedRAMP",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              }
+            ],
+            "finding_policy_exception": null
+          }
+        ]
+      },
+      {
+        "control_id": "CC6.1",
+        "control_title": "Logical access security software, infrastructure, and architectures",
+        "control_section": "Logical and Physical Access Controls",
+        "control_status": "ManualReview",
+        "control_findings": []
+      }
+    ],
+    "report_summary": {
+      "summary_total_controls": 5,
+      "summary_passing": 0,
+      "summary_failing": 1,
+      "summary_manual_review": 4,
+      "summary_not_applicable": 0,
+      "summary_score_percentage": 0.0
+    }
+  },
+  {
+    "report_framework": "NIST800171",
+    "report_framework_name": "NIST SP 800-171",
+    "report_framework_description": "NIST SP 800-171 Revision 3 protection of Controlled Unclassified Information",
+    "report_generated_at": "2026-07-21T18:24:41.240604458Z",
+    "report_controls": [
+      {
+        "control_id": "3.3.1",
+        "control_title": "Event Logging",
+        "control_section": "Audit and Accountability",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.3.3",
+        "control_title": "Audit Record Generation",
+        "control_section": "Audit and Accountability",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.13.1",
+        "control_title": "Boundary Protection",
+        "control_section": "System and Communications Protection",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.4.6",
+        "control_title": "Least Functionality",
+        "control_section": "Configuration Management",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.4.2",
+        "control_title": "Configuration Settings",
+        "control_section": "Configuration Management",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.1.5",
+        "control_title": "Least Privilege",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.14.6",
+        "control_title": "System Monitoring",
+        "control_section": "System and Information Integrity",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.1.2",
+        "control_title": "Access Enforcement",
+        "control_section": "Access Control",
+        "control_status": "Fail",
+        "control_findings": [
+          {
+            "finding_category": "Kernel",
+            "finding_current_value": "None",
+            "finding_description": "No MAC system detected on this system",
+            "finding_explanation": "Neither SELinux nor AppArmor is available. Consider enabling one for enhanced security.",
+            "finding_id": "no-mac-system",
+            "finding_impact": "Missing kernel-level mandatory access controls",
+            "finding_recommended_value": "SELinux or AppArmor enabled",
+            "finding_remediation_steps": [
+              "Install and enable AppArmor (Ubuntu/Debian) or SELinux (RHEL/Fedora)"
+            ],
+            "finding_severity": "Medium",
+            "finding_title": "No MAC System Found",
+            "finding_compliance": [
+              {
+                "compliance_framework": "CIS",
+                "compliance_control_id": "1.6.1.1",
+                "compliance_control_title": "Ensure SELinux or AppArmor is installed",
+                "compliance_section": "Mandatory Access Control"
+              },
+              {
+                "compliance_framework": "NIST",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "HIPAA",
+                "compliance_control_id": "164.312(a)(1)",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Safeguards"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-AC",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-SH",
+                "compliance_control_title": "System Hardening",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "8.3",
+                "compliance_control_title": "Information access restriction",
+                "compliance_section": "Technological"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "5.15",
+                "compliance_control_title": "Access control",
+                "compliance_section": "Organizational"
+              },
+              {
+                "compliance_framework": "SOC2",
+                "compliance_control_id": "CC6.8",
+                "compliance_control_title": "Prevent or detect the introduction of unauthorized or malicious software",
+                "compliance_section": "Logical and Physical Access Controls"
+              },
+              {
+                "compliance_framework": "NIST800171",
+                "compliance_control_id": "3.1.2",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "FedRAMP",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              }
+            ],
+            "finding_policy_exception": null
+          }
+        ]
+      },
+      {
+        "control_id": "3.5.7",
+        "control_title": "Password Management",
+        "control_section": "Identification and Authentication",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.1.8",
+        "control_title": "Unsuccessful Logon Attempts",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.1.12",
+        "control_title": "Remote Access",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.1.16",
+        "control_title": "Wireless Access",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.13.11",
+        "control_title": "Cryptographic Protection",
+        "control_section": "System and Communications Protection",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "3.13.8",
+        "control_title": "Transmission and Storage Confidentiality",
+        "control_section": "System and Communications Protection",
+        "control_status": "Pass",
+        "control_findings": []
+      }
+    ],
+    "report_summary": {
+      "summary_total_controls": 14,
+      "summary_passing": 9,
+      "summary_failing": 1,
+      "summary_manual_review": 4,
+      "summary_not_applicable": 0,
+      "summary_score_percentage": 64.28571428571429
+    }
+  },
+  {
+    "report_framework": "FedRAMP",
+    "report_framework_name": "FedRAMP Moderate Baseline",
+    "report_framework_description": "FedRAMP Moderate baseline (Rev 5) of NIST SP 800-53 controls for federal cloud authorisation",
+    "report_generated_at": "2026-07-21T18:24:41.240640635Z",
+    "report_controls": [
+      {
+        "control_id": "AU-2(a)",
+        "control_title": "Event Logging",
+        "control_section": "Audit and Accountability",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AU-12(c)",
+        "control_title": "Audit Record Generation",
+        "control_section": "Audit and Accountability",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "SC-7",
+        "control_title": "Boundary Protection",
+        "control_section": "System and Communications Protection",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "CM-7",
+        "control_title": "Least Functionality",
+        "control_section": "Configuration Management",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "SI-16",
+        "control_title": "Memory Protection",
+        "control_section": "System and Information Integrity",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "CM-6",
+        "control_title": "Configuration Settings",
+        "control_section": "Configuration Management",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SI-11",
+        "control_title": "Error Handling",
+        "control_section": "System and Information Integrity",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-6",
+        "control_title": "Least Privilege",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SC-5",
+        "control_title": "Denial-of-Service Protection",
+        "control_section": "System and Communications Protection",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SI-4",
+        "control_title": "System Monitoring",
+        "control_section": "System and Information Integrity",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-3",
+        "control_title": "Access Enforcement",
+        "control_section": "Access Control",
+        "control_status": "Fail",
+        "control_findings": [
+          {
+            "finding_category": "Kernel",
+            "finding_current_value": "None",
+            "finding_description": "No MAC system detected on this system",
+            "finding_explanation": "Neither SELinux nor AppArmor is available. Consider enabling one for enhanced security.",
+            "finding_id": "no-mac-system",
+            "finding_impact": "Missing kernel-level mandatory access controls",
+            "finding_recommended_value": "SELinux or AppArmor enabled",
+            "finding_remediation_steps": [
+              "Install and enable AppArmor (Ubuntu/Debian) or SELinux (RHEL/Fedora)"
+            ],
+            "finding_severity": "Medium",
+            "finding_title": "No MAC System Found",
+            "finding_compliance": [
+              {
+                "compliance_framework": "CIS",
+                "compliance_control_id": "1.6.1.1",
+                "compliance_control_title": "Ensure SELinux or AppArmor is installed",
+                "compliance_section": "Mandatory Access Control"
+              },
+              {
+                "compliance_framework": "NIST",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "HIPAA",
+                "compliance_control_id": "164.312(a)(1)",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Safeguards"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-AC",
+                "compliance_control_title": "Access Control",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "GDPR",
+                "compliance_control_id": "TM-SH",
+                "compliance_control_title": "System Hardening",
+                "compliance_section": "Technical Measures"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "8.3",
+                "compliance_control_title": "Information access restriction",
+                "compliance_section": "Technological"
+              },
+              {
+                "compliance_framework": "ISO27001",
+                "compliance_control_id": "5.15",
+                "compliance_control_title": "Access control",
+                "compliance_section": "Organizational"
+              },
+              {
+                "compliance_framework": "SOC2",
+                "compliance_control_id": "CC6.8",
+                "compliance_control_title": "Prevent or detect the introduction of unauthorized or malicious software",
+                "compliance_section": "Logical and Physical Access Controls"
+              },
+              {
+                "compliance_framework": "NIST800171",
+                "compliance_control_id": "3.1.2",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              },
+              {
+                "compliance_framework": "FedRAMP",
+                "compliance_control_id": "AC-3",
+                "compliance_control_title": "Access Enforcement",
+                "compliance_section": "Access Control"
+              }
+            ],
+            "finding_policy_exception": null
+          }
+        ]
+      },
+      {
+        "control_id": "IA-5(1)(a)",
+        "control_title": "Authenticator Management | Password-Based Authentication",
+        "control_section": "Identification and Authentication",
+        "control_status": "ManualReview",
+        "control_findings": []
+      },
+      {
+        "control_id": "IA-5(1)(d)",
+        "control_title": "Authenticator Management | Password-Based Authentication",
+        "control_section": "Identification and Authentication",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-7(a)",
+        "control_title": "Unsuccessful Logon Attempts",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-17(a)",
+        "control_title": "Remote Access - Usage Restrictions and Configuration",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-6(1)",
+        "control_title": "Least Privilege - Authorize Access to Security Functions",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "AC-18",
+        "control_title": "Wireless Access",
+        "control_section": "Access Control",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SC-13",
+        "control_title": "Cryptographic Protection",
+        "control_section": "System and Communications Protection",
+        "control_status": "Pass",
+        "control_findings": []
+      },
+      {
+        "control_id": "SC-8",
+        "control_title": "Transmission Confidentiality and Integrity",
+        "control_section": "System and Communications Protection",
+        "control_status": "Pass",
+        "control_findings": []
+      }
+    ],
+    "report_summary": {
+      "summary_total_controls": 19,
+      "summary_passing": 14,
+      "summary_failing": 1,
+      "summary_manual_review": 4,
+      "summary_not_applicable": 0,
+      "summary_score_percentage": 73.68421052631578
+    }
+  }
+]
