@@ -1110,10 +1110,28 @@ the static half skips the rule because it declares no background of its own.
 The fix clears it at 5.91, but that figure is **computed, not rendered**, and
 so is the 4.35 it replaces.
 
-**What this leaves open is a page, not a rule.** `.fleet-outcome`,
-`.fleet-stat` and the outcome glyph bands have never been weighed by either
-half. This is the same shape as the compliance table above: a real surface no
-route renders, invisible until something asks what else draws the class.
+**That left open a page rather than a rule, and it was closed the same day.**
+Two routes now load the fleet apply page, one per state, and every rule on it
+is measured: `.fleet-stat` plain and its three bands, `.fleet-outcome-name`,
+`.fleet-outcome-target`, `.fleet-glyph-pending`, `.fleet-glyph-failed` and the
+error line on `--bg-secondary`. All seven themes clear, worst case 5.05 in
+daywatch, and every reading matched a prediction made before the run.
+
+**The fixture was what had been hiding it, not the route list.** Every host
+succeeded identically in the mock's `run_fleet_apply`, so the outcome row could
+draw exactly one shape: three bands, the error line and two glyphs were
+unreachable by any test that could have been written against it. db-01 now
+fails there, which is not an invention but the fleet scan fixture's own
+failing host under a different verb, and executed outcomes gained a non-zero
+`failed`. That is the third instance of a fixture deciding what a check is
+able to detect.
+
+**One rule on the page stays unmeasured and is recorded rather than left to
+look measured.** `.fleet-glyph-ok` needs a host that applied with nothing
+failing, and the fixture has two hosts, one of which must keep failing to hold
+the error line. It is `--color-good-bright` on `.fleet-outcome`, the same token
+on the same surface as `.fleet-stat.score-good` at 6.58 to 14.10, so it is the
+same pairing and the same reading - reasoning, not a measurement.
 
 **Recorded against a repeat: a deferral whose reasoning surveys one call site
 has not been checked.** The class is applied through a helper, so the question

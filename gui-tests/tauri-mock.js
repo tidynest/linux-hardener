@@ -984,15 +984,29 @@
         );
       }
 
+      // Every host succeeded identically here until 2026-08-21, so the outcome
+      // row could only ever render one shape and three of its bands, its error
+      // line and two of its glyphs were unreachable by any test. db-01 is the
+      // host the fleet scan fixture already fails, for a reason that does not
+      // stop being true when the verb changes: an apply over SSH to a host
+      // refusing SSH fails the same way. `compliant` and the executed `failed`
+      // are what put the remaining bands on the page.
+      //
+      // A preview that validates cleanly and an apply that then fails is not a
+      // contradiction: validation reads the target state, applying writes it,
+      // and the second can fail where the first did not.
       case 'run_fleet_apply': {
         const hosts = (args && args.hosts) || [];
         const execute = !!(args && args.execute);
         return hosts.map((name) => ({
           name,
           target: name,
-          status: execute
-            ? { state: 'applied', ok: 2, failed: 0 }
-            : { state: 'validated', plugins: 2, would_change: 5, failed: 0 },
+          status:
+            name === 'db-01'
+              ? { state: 'failed', error: 'SSH connection refused on port 2222' }
+              : execute
+                ? { state: 'applied', ok: 2, failed: 1 }
+                : { state: 'validated', plugins: 2, would_change: 5, compliant: 3, failed: 0 },
         }));
       }
 

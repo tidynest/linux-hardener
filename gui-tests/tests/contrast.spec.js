@@ -270,6 +270,64 @@ const ROUTES = [
       await expect(failed).toHaveAttribute('aria-expanded', 'true');
     },
   },
+  {
+    // The fleet APPLY page, which no route had ever loaded. It was found by
+    // asking what else draws `.host-row-error`: `fleet_outcome_row.rs:37`
+    // does, on `--bg-secondary` inside `.fleet-outcome`, and that instance was
+    // failing at 4.35 in Sentinel with neither check able to say so - the
+    // browser half never rendered the page and the static half skips the rule
+    // because it declares no background of its own.
+    //
+    // Two routes, because the page has two states and they draw different
+    // bands. This one is the dry-run preview: web-01 validates with changes
+    // pending and db-01 fails, so one render carries `.fleet-stat` plain and
+    // `.score-warning`, `.fleet-glyph-pending` and `-failed`, and the error
+    // line on the surface that was never weighed.
+    path: '/fleet-apply',
+    name: 'fleet apply, previewed',
+    setup: async (page) => {
+      const hosts = page.getByRole('group', { name: 'Hosts', exact: true });
+      await hosts.getByRole('checkbox', { name: /^web-01 / }).check();
+      await hosts.getByRole('checkbox', { name: /^db-01 / }).check();
+      await page.getByRole('button', { name: /Preview Changes/i }).click();
+      // Both halves of the render, not the container around them. One host
+      // contributes the bands and the other the error line, so waiting on
+      // either alone would let the sweep run while the other was still absent.
+      await expect(page.locator('.fleet-stat.score-warning')).toBeVisible();
+      await expect(page.locator('.fleet-outcome .host-row-error')).toBeVisible();
+    },
+  },
+  {
+    // The executed half. `.score-good` and `.score-critical` exist only after
+    // a real apply, so the preview route above cannot reach them however it is
+    // set up: `ApplyStatus::Validated` has no "applied" cell to draw.
+    //
+    // `.fleet-glyph-ok` is the one rule on this page still unmeasured, and
+    // deliberately: it needs a host that applied with nothing failing, and the
+    // fixture has two hosts, one of which must keep failing to hold the error
+    // line above. It is `--color-good-bright` on `.fleet-outcome`, which is
+    // the same token on the same surface as `.fleet-stat.score-good` measured
+    // here, so it is the same pairing and the same reading - reasoning, not a
+    // measurement, and recorded as such rather than left to look measured.
+    path: '/fleet-apply',
+    name: 'fleet apply, executed',
+    setup: async (page) => {
+      const hosts = page.getByRole('group', { name: 'Hosts', exact: true });
+      await hosts.getByRole('checkbox', { name: /^web-01 / }).check();
+      await hosts.getByRole('checkbox', { name: /^db-01 / }).check();
+      await page.getByRole('button', { name: /Preview Changes/i }).click();
+      // Execute is not rendered until a preview for the exact selection
+      // exists, so its appearance is the signal the gate has opened.
+      const execute = page.getByRole('button', { name: /^Execute/ });
+      await expect(execute).toBeVisible();
+      await execute.click();
+      await page.getByRole('button', { name: /Yes, execute/i }).click();
+      // The band only an executed apply produces, so this cannot pass against
+      // the preview still on screen.
+      await expect(page.locator('.fleet-stat.score-critical')).toBeVisible();
+      await expect(page.locator('.fleet-stat.score-good')).toBeVisible();
+    },
+  },
 ];
 
 // Selectors this check exists to reach. If a run measures nothing for one of
@@ -306,6 +364,12 @@ const MUST_REACH = [
   // host ever stops failing, or the selection silently drops it, this rule
   // stops being measured and nothing else in the file would say so.
   '.host-row-failed',
+  // Added 2026-08-21 with the two fleet-apply routes. It cannot render unless
+  // an outcome row rendered, so it guards the whole page: the preview gate,
+  // the confirm modal and the fixture's two shapes all have to work for this
+  // selector to appear at all, and nothing else in this file would notice if
+  // one of them stopped.
+  '.fleet-stat',
 ];
 
 // A run that measures nothing passes every assertion below it. This is a floor
