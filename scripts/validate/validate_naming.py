@@ -12,7 +12,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Dict, Set
+from typing import List, Dict, Optional, Set
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
@@ -35,6 +35,22 @@ class ValidationIssue:
     issue: str
     suggestion: str = ""
     in_test: bool = False
+
+
+@dataclass
+class NameExemption:
+    """A tracked path where the project's pre-#51 name is still correct.
+
+    `reason` says why, so the list documents itself rather than reading as a
+    list of files somebody could not be bothered to fix. `line_pattern`
+    narrows the exemption to the lines it matches, leaving the rest of that
+    file checked; an empty pattern exempts the whole file, which also blinds
+    this check to every other line in it. `temporary` marks an exemption that
+    a named future event deletes rather than one that must never be removed.
+    """
+    reason: str
+    line_pattern: str = ''
+    temporary: bool = False
 
 
 @dataclass
@@ -151,6 +167,100 @@ class NamingValidator:
             r'Authorize Access to Security Functions',  # NIST SP 800-53 AC-6(1)
         ]
 
+        # Rule 6, "One Name for the Project". The project unified on
+        # `linux-hardener` in issue #51 (641360cb, 2026-08-07) and the old
+        # name survives only where it is correct. That rule says in as many
+        # words that it "exists so it cannot accumulate again", and until this
+        # check nothing enforced it: of the scripts in scripts/validate/, only
+        # validate_srcinfo.py reads the name at all, and it compares PKGBUILD
+        # against .SRCINFO, so it agrees with itself on whichever name both
+        # files happen to carry. The rule was prose with no instrument behind
+        # it, which is the state a name accumulates in.
+        #
+        # Assembled from two halves rather than written out, for the same
+        # reason the dash pattern above uses unicode escapes: a check that
+        # spells the string it forbids reports its own source.
+        self.old_project_name = 'linux-system' + '-hardener'
+
+        # Permanent: packaging migration metadata. Renaming or deleting any of
+        # these strands an existing Arch, deb or rpm install on upgrade, so
+        # the old name here is load bearing rather than left over. Each
+        # pattern admits the migration directives and the comments explaining
+        # them, and nothing else, so a `pkgname=`, `Package:` or `Name:` line
+        # that regressed to the old name is still an error in these files.
+        self.old_name_allowlist: Dict[str, NameExemption] = {
+            'packaging/PKGBUILD': NameExemption(
+                'provides/conflicts/replaces carry an existing Arch install '
+                'across the rename',
+                r'^\s*(#|(provides|conflicts|replaces)=)',
+            ),
+            'packaging/.SRCINFO': NameExemption(
+                'generated from PKGBUILD by makepkg --printsrcinfo; the same '
+                'three directives',
+                r'^\s*(provides|conflicts|replaces)\s*=',
+            ),
+            'packaging/debian/control': NameExemption(
+                'Provides/Replaces/Breaks carry an existing deb install '
+                'across the rename',
+                r'^\s*(#|(Provides|Replaces|Breaks):)',
+            ),
+            'packaging/linux-hardener.spec': NameExemption(
+                'Obsoletes/Provides carry an existing rpm install across the '
+                'rename',
+                r'^\s*(#|(Obsoletes|Provides):)',
+            ),
+
+            # Permanent: records that are correct about their own moment.
+            # Rewriting them would make them wrong, and Rule 6 names this
+            # exception itself. Whole-file, because the old name appears in
+            # running prose rather than on a shape a pattern could pin.
+            'CHANGELOG.md': NameExemption(
+                'past entries describe the tree as it was when they were '
+                'written',
+            ),
+            'docs/plans/2026-07-18-docs-and-repo-reorg.md': NameExemption(
+                'a superseded plan, kept as the record of what was proposed '
+                'and what #51 did instead',
+            ),
+            'docs/reference/naming-conventions.md': NameExemption(
+                'Rule 6 itself, which has to be able to name the old name in '
+                'order to forbid it',
+            ),
+
+            # Temporary: prose that is accurate only until the AUR
+            # resubmission lands, at which point the old package stops being
+            # the one to install and every entry below becomes false. The
+            # cleanup step in docs/contributing/releasing.md names each of
+            # them, because a deferral nothing points at goes stale in
+            # silence.
+            'README.md': NameExemption(
+                'TEMPORARY: names the AUR package to install until the '
+                'resubmission lands',
+                temporary=True,
+            ),
+            'docs/guide/installation.md': NameExemption(
+                'TEMPORARY: install, upgrade and removal commands against '
+                'the old AUR package',
+                temporary=True,
+            ),
+            'docs/guide/upgrading.md': NameExemption(
+                'TEMPORARY: explains the rename to an operator upgrading '
+                'across it',
+                temporary=True,
+            ),
+            'docs/contributing/releasing.md': NameExemption(
+                'TEMPORARY: the one-time AUR resubmission note, including the '
+                'not-yet-existing linux-hardener.git remote it will be '
+                'pushed to',
+                temporary=True,
+            ),
+            'scripts/test/polkit/test-polkit-matrix.sh': NameExemption(
+                'TEMPORARY: operator-facing remedy strings naming the package '
+                'that currently ships the policy and the binary',
+                temporary=True,
+            ),
+        }
+
         # `field_prefixes` used to sit here, mapping six type names to a
         # required struct-field prefix. No method ever read it, so it enforced
         # nothing while reading as a rule this validator applied. Deleted
@@ -182,6 +292,9 @@ class NamingValidator:
 
         # Repo-wide em/en dash scan across tracked prose and source
         self.check_dashes()
+
+        # Repo-wide scan for the project's pre-#51 name (Rule 6)
+        self.check_project_name()
 
         # Print results
         self.print_results()
@@ -249,10 +362,18 @@ class NamingValidator:
         except Exception as e:
             print(f"⚠️  Error reading {file_path}: {e}")
 
-    def check_dashes(self):
-        """Flag em-dashes and en-dashes in tracked prose and source files."""
+    def tracked_files(self, scan_name: str) -> List[str]:
+        """List every git-tracked path, or an empty list if git is unavailable.
+
+        `git ls-files` and not a filesystem walk, because the tree carries
+        ignored build output and vendored dependencies that are not ours to
+        judge. Note this is also the only reading that cannot be skewed by a
+        shell alias: the interactive `grep` on this machine injects
+        `--ignore-files`, so a raw sweep silently answers a different
+        question than the one asked.
+        """
         try:
-            tracked = subprocess.run(
+            return subprocess.run(
                 ['git', 'ls-files', '-z'],
                 cwd=self.project_root,
                 capture_output=True,
@@ -260,10 +381,12 @@ class NamingValidator:
                 check=True,
             ).stdout.split('\0')
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            print(f"⚠️  Dash scan skipped (git unavailable): {e}")
-            return
+            print(f"⚠️  {scan_name} skipped (git unavailable): {e}")
+            return []
 
-        for rel in tracked:
+    def check_dashes(self):
+        """Flag em-dashes and en-dashes in tracked prose and source files."""
+        for rel in self.tracked_files("Dash scan"):
             if not rel or Path(rel).suffix not in self.dash_scan_suffixes:
                 continue
             path = self.project_root / rel
@@ -281,6 +404,95 @@ class NamingValidator:
                         issue="Em-dash or en-dash is forbidden project-wide",
                         suggestion="Use a comma, colon, parentheses, or plain hyphen",
                     ))
+
+    def name_exemption(self, rel: str) -> Optional[NameExemption]:
+        """Return the exemption covering a tracked path, or None."""
+        if rel in self.old_name_allowlist:
+            return self.old_name_allowlist[rel]
+
+        # Archived documents keep the name they were written with. Matched by
+        # shape rather than by path, because the archives grow: a new
+        # docs/*/archive/ directory would otherwise need a list entry before
+        # the document could be filed, and the check would then be refusing a
+        # document for being accurate.
+        parts = Path(rel).parts
+        if parts and parts[0] == 'docs' and 'archive' in parts[1:]:
+            return NameExemption(
+                'an archived document, accurate about the moment it was '
+                'written'
+            )
+        return None
+
+    def check_project_name(self):
+        """Flag the project's pre-#51 name outside the paths where it is correct.
+
+        Rule 6 of docs/reference/naming-conventions.md. Reported as an ERROR
+        and not a warning: the rule's stated purpose is that a second name
+        "cannot accumulate again", and the warning counts this validator
+        prints are non-blocking and drift, so a reappearance raised as a
+        warning would be counted, shipped and then normalised. An error is
+        also what the exemption list needs to stay honest, since an entry
+        nobody is forced to justify is an entry nobody removes.
+
+        Every tracked file is read, not only the suffixes the dash scan
+        covers. The name reaches unit files, polkit actions, desktop entries
+        and shell scripts, and a suffix list is how a check ends up green
+        over the half of the tree it never opened.
+        """
+        for rel in self.tracked_files("Project name scan"):
+            if not rel:
+                continue
+            exemption = self.name_exemption(rel)
+            if exemption and not exemption.line_pattern:
+                continue
+            path = self.project_root / rel
+            try:
+                lines = path.read_text(encoding='utf-8').split('\n')
+            except (OSError, UnicodeDecodeError):
+                continue  # binary or unreadable; no name to read out of it
+            for line_num, line in enumerate(lines, start=1):
+                if self.old_project_name not in line:
+                    continue
+                if exemption and re.search(exemption.line_pattern, line):
+                    continue
+                self.issues.append(ValidationIssue(
+                    file_path=path,
+                    line_number=line_num,
+                    severity=Severity.ERROR,
+                    category="Project Name",
+                    issue=(
+                        f"'{self.old_project_name}' is the pre-#51 project "
+                        f"name and this path is not exempt from Rule 6"
+                    ),
+                    suggestion=(
+                        f"Use 'linux-hardener'. This path is exempt only on "
+                        f"the lines its pattern admits ({exemption.reason}), "
+                        f"and this is not one of them"
+                        if exemption else
+                        "Use 'linux-hardener'. If the old name is correct "
+                        "here, add the path to old_name_allowlist with the "
+                        "reason it is"
+                    ),
+                ))
+
+        # The temporary exemptions announce themselves on every run. A
+        # deferral consulted only from inside a failure branch reports nothing
+        # while it is being honoured, which is the whole window in which it
+        # goes stale; this list is read while the check is passing, which is
+        # when somebody can still act on it.
+        temporary = sorted(
+            rel for rel, exemption in self.old_name_allowlist.items()
+            if exemption.temporary
+        )
+        if temporary:
+            print(
+                f"ℹ️  {len(temporary)} path(s) carry the old project name "
+                f"under a TEMPORARY exemption, cleared by the AUR "
+                f"resubmission (see docs/contributing/releasing.md):"
+            )
+            for rel in temporary:
+                print(f"    - {rel}")
+            print()
 
     def validate_line(self, file_path: Path, line_num: int, line: str,
                       is_component: bool = False, in_test: bool = False):

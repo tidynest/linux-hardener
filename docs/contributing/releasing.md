@@ -383,6 +383,28 @@ tarball, regenerate `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`), then commi
 > stranded on an orphaned package. Only then request deletion or merge of the
 > old one.
 >
+> **Then clean up every file that names the old package temporarily.** Each of
+> these is accurate only while the old package is still the one to install, and
+> none of them is reached by deleting this note:
+>
+> - `README.md`, the AUR install command and the sentence explaining why it is
+>   still that one
+> - `docs/guide/installation.md`, the install, upgrade and removal commands and
+>   the note above them
+> - `docs/guide/upgrading.md`, the section written for an operator crossing the
+>   rename
+> - `scripts/test/polkit/test-polkit-matrix.sh:102-103`, the operator-facing
+>   remedy strings naming the package that ships the policy file and the
+>   binary. Correct today, and named by no other checklist, so it is the one
+>   that would go stale unread
+> - this file, both the note you are reading and the AUR remote quoted above it,
+>   which is written as `linux-hardener.git` because that is what it will be
+>
+> `scripts/validate/validate_naming.py` holds those same five paths in
+> `old_name_allowlist`, each marked `temporary=True`, and refuses the old name
+> anywhere else. Remove each entry as you clean its file: the check then reports
+> whatever the cleanup missed, rather than leaving it to be noticed.
+>
 > Delete this note once that release has shipped.
 
 ---

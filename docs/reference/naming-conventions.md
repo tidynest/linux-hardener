@@ -146,7 +146,10 @@ second name for it:
 It reads every `.rs` file under `crates/` (skipping `build.rs` and any path
 containing `target`), and for the dash scan it reads every git-tracked file with
 a `.md`, `.rs`, `.toml`, `.py`, `.sh`, `.txt`, `.yml`, `.yaml` or `.json`
-suffix. Nothing outside `crates/` is checked for naming.
+suffix. The Rule 6 project-name scan reads every git-tracked file whatever its
+suffix, because the name reaches `.desktop`, `.policy` and `.service` files that
+carry no extension the other scans list. Only the declaration checks are
+confined to `crates/`.
 
 ### Errors, which fail the run
 
@@ -158,6 +161,13 @@ Only these return a non-zero exit code:
 - A `const` whose name is not `SCREAMING_SNAKE_CASE`
 - An em-dash or en-dash in a tracked file, including the two written as Rust
   unicode escapes rather than as the glyph
+- The pre-#51 project name in a tracked file that no entry of
+  `old_name_allowlist` exempts, which is the check behind Rule 6. Four packaging
+  files are exempt only on the lines carrying `provides`, `conflicts`,
+  `replaces` and their rpm and deb equivalents, so a `pkgname=` or `Name:`
+  regression in those same files is still an error. Five further paths are
+  exempt only until the AUR resubmission lands, and the validator names them on
+  every run, passing or failing, so the list cannot go stale unobserved.
 
 The declaration checks are line based and anchored to the start of the declaring
 line, so a name is judged where it is written and never where it is used, and
