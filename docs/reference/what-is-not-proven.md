@@ -1,6 +1,6 @@
 # What This Release Does Not Prove
 
-**Last Updated**: 2026-08-20
+**Last Updated**: 2026-08-21
 
 This release does not claim to be proven bug-free, and no release of anything
 ever has been. It claims something narrower and checkable: every capability it
@@ -1092,6 +1092,28 @@ carried, and the route that found them is now guarded by `.severity_low` in
 > **Second time a widening has paid like this.** The 2026-08-19 alpha-fill
 > widening found eight; this route found thirteen. A documented gap is a
 > choice, not a law, and the cost of looking has twice been about thirty lines.
+
+**A fourteenth surfaced with the seventh route and is also fixed.**
+`.host-row-error`, the SSH failure line, sits outside the expanded panel, so it
+paints the same two surfaces `.host-row-failed` does and gave the same five
+readings against `--bg-tertiary`: 3.82 Sentinel, 4.00 Fortress, 4.11 Midnight
+Teal, 4.16 Guardian, 4.20 Command. It moved to `--color-critical-bright` with
+its siblings and now renders 5.20 to 12.03 expanded and 6.50 to 14.52
+collapsed, all fourteen readings matching predictions exactly.
+
+**But the rule has two callers, and only one of them is on a page any contrast
+route visits.** `fleet_outcome_row.rs:37` draws the same class inside
+`.fleet-outcome`, on `--bg-secondary`, and **no route reaches the fleet apply
+page at all**. That third surface was failing too - 4.35 in Sentinel - and
+neither instrument could say so: the browser half never renders the page, and
+the static half skips the rule because it declares no background of its own.
+The fix clears it at 5.91, but that figure is **computed, not rendered**, and
+so is the 4.35 it replaces.
+
+**What this leaves open is a page, not a rule.** `.fleet-outcome`,
+`.fleet-stat` and the outcome glyph bands have never been weighed by either
+half. This is the same shape as the compliance table above: a real surface no
+route renders, invisible until something asks what else draws the class.
 
 **Recorded against a repeat: a deferral whose reasoning surveys one call site
 has not been checked.** The class is applied through a helper, so the question

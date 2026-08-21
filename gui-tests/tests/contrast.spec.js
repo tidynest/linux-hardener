@@ -221,11 +221,17 @@ const ROUTES = [
     name: 'fleet, host expanded',
     setup: async (page) => {
       await page.getByRole('checkbox', { name: 'Select web-01' }).check();
+      // db-01 as well, and it is the fixture's failing host: its row settles on
+      // `.host-row-failed`, the word "Failed" in `--color-critical`. That rule
+      // and `.host-prog-failed` are the same pairing on the same surface and
+      // neither had ever been measured, because until now this route scanned
+      // web-01 alone and db-01 stayed merely unscanned.
+      await page.getByRole('checkbox', { name: 'Select db-01' }).check();
       await page.getByRole('button', { name: /Scan Selected/i }).click();
-      // db-01 was not selected, so exactly one row stays unscanned. Waiting on
-      // the result rather than the button: the row cannot expand before the
-      // scan lands, and a blind click would expand nothing.
-      await expect(page.getByText('Not scanned yet')).toHaveCount(1);
+      // Waiting on the failed row rather than on a count of unscanned ones: a
+      // count of zero is also what a page that never rendered would show, and
+      // this is the pairing the second host was added to reach.
+      await expect(page.locator('.host-row-failed')).toBeVisible();
       const expander = page.getByRole('button', { name: 'Expand web-01' });
       await expander.click();
       await expect(expander).toHaveAttribute('aria-expanded', 'true');
@@ -234,6 +240,34 @@ const ROUTES = [
       // still rendering, which is how `/analysis` sat in its empty state for
       // two runs.
       await expect(page.locator('.host-severity-label.severity_low')).toBeVisible();
+    },
+  },
+  {
+    // The same `.host-row-failed` as the route above, on the other surface it
+    // can paint. `.host-row-open` gives an expanded row `--bg-tertiary`, and
+    // `expanded` is a single Option<String>, so one host is open at a time and
+    // the route above must keep web-01: this needs its own pass.
+    //
+    // Reaching it depends on ORDER, not on clicking harder. `hosts_page.rs:74`
+    // refuses to open a failed host, deliberately, so expanding db-01 after
+    // the scan is impossible and an earlier attempt at exactly that failed all
+    // seven themes on `aria-expanded` staying false. The guard is
+    // `is_failed && !currently_open`, so a row already open when it fails stays
+    // open, which is what a reader gets by opening a host and then running a
+    // scan that fails it.
+    path: '/fleet',
+    name: 'fleet, failed host left open',
+    setup: async (page) => {
+      // Before the scan, db-01 is merely unscanned and opens like any host.
+      const failed = page.getByRole('button', { name: 'Expand db-01' });
+      await failed.click();
+      await expect(failed).toHaveAttribute('aria-expanded', 'true');
+      await page.getByRole('checkbox', { name: 'Select db-01' }).check();
+      await page.getByRole('button', { name: /Scan Selected/i }).click();
+      await expect(page.locator('.host-row-failed')).toBeVisible();
+      // The point of the route: the row is failed AND still open, so the rule
+      // is weighed against `--bg-tertiary` rather than the page background.
+      await expect(failed).toHaveAttribute('aria-expanded', 'true');
     },
   },
 ];
@@ -267,6 +301,11 @@ const MUST_REACH = [
   // caller draws it on an empty dot. An absence here is not a failure anywhere
   // else, which is the whole reason this list exists.
   '.severity_low',
+  // Added 2026-08-20 with the second host. It guards the db-01 half of the
+  // fleet route the way `.severity_low` guards the web-01 half: if the failing
+  // host ever stops failing, or the selection silently drops it, this rule
+  // stops being measured and nothing else in the file would say so.
+  '.host-row-failed',
 ];
 
 // A run that measures nothing passes every assertion below it. This is a floor

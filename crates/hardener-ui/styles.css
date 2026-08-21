@@ -4457,7 +4457,21 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .host-row-detail { font-size: 0.78rem; color: var(--text-secondary); font-family: var(--font-mono); }
 .host-row-posture { margin-left: auto; font-size: 0.78rem; display: flex; align-items: center; gap: 9px; }
 .host-row-unscanned { color: var(--text-muted); }
-.host-row-failed { color: var(--color-critical); }
+/* Measured 2026-08-20 once a route scanned db-01, the fixture's failing host.
+   Collapsed on the page background it cleared, 4.77:1 in Sentinel up to 11.06
+   in High Contrast. That is not the only surface it paints: `.host-row-open`
+   gives an expanded row `--bg-tertiary`, where the same rule reads 3.82 to
+   4.20 in five themes, the identical figures `.tally-crit` gave before its fix
+   on the same surface with the same token.
+   Reaching that state depends on order rather than effort. `hosts_page.rs:74`
+   refuses to OPEN a failed host, so it cannot be expanded after it fails; the
+   guard is `is_failed && !currently_open`, so a row already open when it fails
+   stays open, which is what a reader gets by opening a host and then running a
+   scan that fails it. One rule, two surfaces, decided by that order.
+   It takes `--color-critical-bright` for the same reason `.tally-crit` did,
+   putting the expanded case at 5.20 to 5.71 and lifting the collapsed case
+   with it. */
+.host-row-failed { color: var(--color-critical-bright); }
 .host-row-tallies { display: flex; gap: 9px; }
 /* `--color-critical` #ef4444 read 3.82:1 in Sentinel, 4.00 Fortress, 4.11
    Midnight Teal, 4.16 Guardian and 4.20 Command against the surfaces the host
@@ -4467,24 +4481,43 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    token it needs already exists in all seven themes: worst case becomes
    5.20:1 in Sentinel, and the two themes that already passed improve as well,
    daywatch 5.07 to 6.51 and high contrast 9.17 to 12.03.
-   `.host-row-failed` and `.host-prog-failed` still carry the darker token; no
-   route renders either, so neither has ever been measured, and an unmeasured
-   pairing is not a passing one. */
+   `.host-row-failed` moved with it once db-01 was scanned and expanded.
+   `.host-prog-failed` moves too WITHOUT being measured, and deliberately:
+   `host_row.rs:86` renders it only while `scanning` is true, so it is gone
+   before any sweep runs and no route can reach it. It is the same token on the
+   same row as `.host-row-failed`, so it is the same pairing and the same
+   reading; leaving it behind would have kept a known-failing colour purely
+   because the instrument cannot see it. */
 .tally-crit { color: var(--color-critical-bright); }
 .tally-high { color: var(--color-warning); }
 .tally-med { color: var(--text-secondary); }
 .tally-low { color: var(--text-muted); }
 .host-prog-ok { color: var(--color-accent); }
-.host-prog-failed { color: var(--color-critical); }
+.host-prog-failed { color: var(--color-critical-bright); }
 .host-row-strip {
   display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 0 14px 10px 56px;
   font-size: 0.78rem; font-family: var(--font-mono);
 }
 .host-strip-item b { font-weight: 500; }
+/* The SSH failure message. It sits OUTSIDE the expanded panel in
+   `host_row.rs:133`, so it paints the same two surfaces `.host-row-failed`
+   does, and against `--bg-tertiary` it gave the same five readings: 3.82
+   Sentinel, 4.00 Fortress, 4.11 Midnight Teal, 4.16 Guardian, 4.20 Command.
+   Nothing had ever weighed it, because a route only reaches it once a host has
+   actually failed.
+   It has a SECOND caller, `fleet_outcome_row.rs:37`, which draws it inside
+   `.fleet-outcome` on `--bg-secondary`, and no contrast route reaches the
+   fleet apply page at all. That surface was failing too, and could only be
+   COMPUTED, not rendered: 4.35 in Sentinel. Reading the one call site a route
+   happens to reach is how `.severity_low` was argued into a deferral it did
+   not deserve.
+   `--color-critical-bright` clears every theme on all three surfaces at once.
+   Rendered on arch: worst case 5.20 on `--bg-tertiary` and 6.50 on
+   `--bg-primary`, both Sentinel. Computed for `--bg-secondary`: 5.91. */
 .host-row-error {
   padding: 0 14px 10px 56px;
   font-size: 0.78rem;
-  color: var(--color-critical);
+  color: var(--color-critical-bright);
   overflow-wrap: anywhere;
 }
 
