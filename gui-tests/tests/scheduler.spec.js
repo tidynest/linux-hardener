@@ -1,5 +1,5 @@
 // =============================================================================
-// SCHEDULER TESTS (T-SCHED-01..07) - Linux Hardener GUI Tests
+// SCHEDULER TESTS (T-SCHED-01..08) - Linux Hardener GUI Tests
 // =============================================================================
 // Scheduled-scan config, notification config, save, and test-notification.
 
@@ -101,5 +101,58 @@ test.describe('Scheduler', () => {
   test('T-SCHED-06: Send Test Notification reports success', async ({ page }) => {
     await page.getByRole('button', { name: /Test Notification/i }).click();
     await expect(page.getByText(/sent successfully/i)).toBeVisible();
+  });
+
+  // T-SCHED-08: The form does not exist before the config it is made of
+  //
+  // The page loads its config in a `spawn_local` on mount and populates the
+  // form from an Effect when it arrives. A form rendered immediately is
+  // therefore editable before it has any data, and the hydration lands on top
+  // of whatever was done in that window: switching scheduled scanning on there
+  // switched itself back off. T-SCHED-07 caught it once, on opensuse on
+  // 2026-08-21, and it read as a distribution fault because the mock's latency
+  // is `150 + random * 200` and five distributions won the coin flip.
+  //
+  // This test does not flip a coin. `__mockLatency` widens that one command
+  // until the pre-load window is somewhere a test can stand inside, and the
+  // assertion is that nothing editable is standing there with it.
+  //
+  // Absence first, and it is the whole point rather than a preamble: if the
+  // gate is ever removed the toggle is present at that moment and this fails,
+  // which is exactly the reintroduced bug. The Save button is checked too and
+  // is the more expensive half - a save fired before the load would write the
+  // form's empty defaults over the real config, reaching the file rather than
+  // the screen.
+  //
+  // Then the positive half, so the gate cannot pass by never opening: the
+  // toggle appears on its own, takes an edit, and keeps it while the schedule
+  // select proves the config is the loaded one. That select is reached
+  // positionally because its <label> is not associated with it; the Schedule
+  // block precedes Notifications, so it is the first `.form-select` on the
+  // page. Associating them is the better fix and belongs in the interface.
+  test('T-SCHED-08: nothing is editable before the config lands', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__mockLatency = { get_scheduler_config: 3000 };
+    });
+    await loadApp(page, '/scheduler');
+
+    const toggle = page.getByRole('checkbox', { name: /Enable scheduled scanning/i });
+    const save = page.getByRole('button', { name: 'Save', exact: true });
+    const schedule = page.locator('select.form-select').first();
+
+    // Absence of the controls comes first and the hint comes last, because
+    // the order decides which assertion a regression reports. With the hint
+    // first, removing the gate fails on a missing hint and never reaches the
+    // question the test exists to ask; measured on 2026-08-21 by removing it.
+    await expect(toggle).toHaveCount(0);
+    await expect(save).toBeDisabled();
+    await expect(page.getByText(/Loading configuration/i)).toBeVisible();
+
+    await expect(toggle).toBeVisible({ timeout: 10000 });
+    await expect(schedule).toHaveValue('Daily at 2:00 AM');
+    await expect(save).toBeEnabled();
+
+    await page.getByText('Enable scheduled scanning').click();
+    await expect(toggle).toBeChecked();
   });
 });

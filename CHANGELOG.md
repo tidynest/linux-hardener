@@ -1816,6 +1816,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The scheduler page was editable before it had a config, and the config then
+  landed on top of the edit.** The page loads its configuration after mount and
+  populates the form when it arrives, so switching scheduled scanning on in the
+  window between the two switched itself back off a moment later, silently and
+  with no error. Save was live in the same window and was the more expensive
+  half: firing it there would have written the form's empty defaults over the
+  real configuration, reaching the file rather than the screen. Nothing on the
+  page is editable now until the configuration arrives; a "Loading
+  configuration..." line stands in its place, and Save is disabled until then.
+  The header stays, so the route still identifies itself and the page is never
+  blank. **The window is a race and it had never been reported as one**: it was
+  found as a single openSUSE test failure in a six-distribution run where the
+  other five passed, and the difference between them was which side of a
+  150-350 ms coin flip they landed on. `T-SCHED-08` pins it deterministically,
+  the Tauri mock having gained a per-command latency hook so a test can stand
+  inside the window rather than hope to. The test asserts the controls are
+  ABSENT first and the loading line second, because with that order reversed a
+  removed gate fails on a missing line and never reaches the question the test
+  exists to ask - measured, by removing it. Both directions were run: without
+  the fix `T-SCHED-08` fails reporting the toggle present mid-load, with it the
+  suite is 158 of 158 on all six distributions. A first attempt that refused to
+  hydrate TWICE was built, measured and discarded, because the damage is done
+  by the first and only hydration.
 - **A notification channel could be switched on with nowhere to send, and
   nothing said so at either end.** `WebhookUiConfig` writes an endpoint list
   and never writes an entry with no URL, so a desktop form saved with the
@@ -6807,4 +6830,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-08-19
+**Last Updated**: 2026-08-21

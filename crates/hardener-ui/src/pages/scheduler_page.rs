@@ -25,9 +25,31 @@ pub fn SchedulerPage() -> impl IntoView {
         }
     });
 
-    // The sole sync Effect: populate the whole bundle from the loaded config.
+    // The sole sync Effect: populate the whole bundle from the loaded config,
+    // ONCE, and record that it has happened so the form below can wait for it.
+    //
+    // The waiting is the fix, and it took a wrong answer first. The load above
+    // resolves 150 ms or more after mount, so a form rendered immediately is
+    // interactive before it has its data, and the hydration then lands on top
+    // of whatever the operator has already done: switch scheduled scanning on
+    // in that window and it silently switches itself back off. `T-SCHED-07`
+    // caught exactly that on opensuse on 2026-08-21, and it read as a fault of
+    // that distribution only because the window is a coin flip, five others
+    // having won it. Refusing to hydrate TWICE does not help, because the
+    // damage is done by the first and only hydration; a form that cannot be
+    // edited before its data exists is what actually closes it.
+    //
+    // The once-guard is kept for the second writer rather than the first.
+    // Save also sets `scheduler_config`, from a value built out of this very
+    // form, so re-hydrating from it was always a no-op - but it is a no-op
+    // only for as long as nothing is edited between the save being sent and
+    // its result landing, which is the same race one layer along.
+    let hydrated = RwSignal::new(false);
     Effect::new(move || {
-        if let Some(config) = app_state.scheduler_config.get() {
+        if let Some(config) = app_state.scheduler_config.get()
+            && !hydrated.get_untracked()
+        {
+            hydrated.set(true);
             form.enabled.set(config.enabled);
             // An empty stored severity would leave the select unmatched (blank);
             // keep the form's "medium" default in that case.
@@ -130,15 +152,33 @@ pub fn SchedulerPage() -> impl IntoView {
                 </p>
             </div>
 
-            <section class="scheduler-block">
-                <h2 class="scheduler-block-title">"Schedule"</h2>
-                <ScheduleSection form=form />
-            </section>
+            // Nothing editable exists until the config has landed. The header
+            // above stays, so the page is never blank and the route still
+            // identifies itself; what waits is only what the load owns.
+            //
+            // The hint reuses `.empty-state-hint` rather than introducing a
+            // colour: that pairing is already weighed by the contrast suite,
+            // and a new class here would be a fresh unmeasured one.
+            <Show
+                when=move || hydrated.get()
+                fallback=|| {
+                    view! {
+                        <p class="empty-state-hint" role="status" aria-live="polite">
+                            "Loading configuration..."
+                        </p>
+                    }
+                }
+            >
+                <section class="scheduler-block">
+                    <h2 class="scheduler-block-title">"Schedule"</h2>
+                    <ScheduleSection form=form />
+                </section>
 
-            <section class="scheduler-block">
-                <h2 class="scheduler-block-title">"Notifications"</h2>
-                <NotificationSection form=form />
-            </section>
+                <section class="scheduler-block">
+                    <h2 class="scheduler-block-title">"Notifications"</h2>
+                    <NotificationSection form=form />
+                </section>
+            </Show>
 
             <div class="scheduler-save-bar">
                 // Always-present live region so the save result is announced
@@ -158,10 +198,15 @@ pub fn SchedulerPage() -> impl IntoView {
                             })
                     }}
                 </div>
+                // Disabled rather than hidden before the load lands, so the
+                // save bar keeps its shape and its live region. Saving in that
+                // window would write the form's empty defaults over the real
+                // config, which is the same race as the one above and costs
+                // more: it reaches the file rather than the screen.
                 <button
                     class="btn btn-primary"
                     on:click=handle_save
-                    disabled=move || app_state.is_saving_scheduler.get()
+                    disabled=move || app_state.is_saving_scheduler.get() || !hydrated.get()
                 >
                     {move || {
                         if app_state.is_saving_scheduler.get() { "Saving..." } else { "Save" }

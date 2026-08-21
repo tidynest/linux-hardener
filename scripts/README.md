@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-08-20
+**Last Updated**: 2026-08-21
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -1675,7 +1675,7 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 
 **Script**: `run-gui-tests.sh`
 
-**Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. The suite is **157 tests in 11 files**, and that is a result rather than a static count: it ran 157 of 157 on all six distributions on 2026-08-20 at `2bc8bd76`, none failed, skipped or flaky, one worker and no name filter, Ubuntu included. Recorded in [distribution-validation.md](../docs/reference/distribution-validation.md). The count is still mostly generated rather than literal, which is why `npx playwright test --list` is the way to read it: `themes.spec.js` produces 35 from 7 themes x 5 states, and `hardening.spec.js`'s T-DIVG-03 produces 2 from two viewport widths. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
+**Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. The suite is **158 tests in 11 files**, and that is a result rather than a static count: it ran 158 of 158 on all six distributions on 2026-08-21, none failed, skipped or flaky, one worker and no name filter, Ubuntu included. Recorded in [distribution-validation.md](../docs/reference/distribution-validation.md). The count is still mostly generated rather than literal, which is why `npx playwright test --list` is the way to read it: `themes.spec.js` produces 35 from 7 themes x 5 states, and `hardening.spec.js`'s T-DIVG-03 produces 2 from two viewport widths. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
 
 **Usage**:
 ```bash

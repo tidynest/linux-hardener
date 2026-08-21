@@ -1,6 +1,6 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-08-20
+**Last Updated**: 2026-08-21
 
 This document tracks validation testing across supported Linux distributions.
 
@@ -1114,14 +1114,19 @@ To reproduce the full cross-distro validation from scratch:
 In addition to CLI testing, the Web UI is validated with Playwright across all
 six distributions.
 
-> **The current reading is not in this section.** It is the 2026-08-20 run:
-> **157 of 157 on every distribution** against `hardener 1.5.1 (2bc8bd76)`,
-> none failed, none skipped, none flaky, 2.9 to 4.5 minutes each, one worker
-> and no name filter. **The containers were not recreated for it.** All six
-> were created on 2026-08-19 between 21:53 and 22:00 and reused the next day,
-> read from their directory birth times; `run-gui-tests.sh` permits this
-> because it only checks that a container exists and skips when one does not,
-> recreation being a separate manual step. Everything below is either
+> **The current reading is not in this section.** It is the 2026-08-21 run:
+> **158 of 158 on every distribution**, none failed, none skipped, none flaky,
+> 3.3 to 4.1 minutes each, one worker and no name filter. **The containers
+> were not recreated for it.** All six were created on 2026-08-19 between
+> 21:53 and 22:00 and have been reused since, read from their directory birth
+> times; `run-gui-tests.sh` permits this because it only checks that a
+> container exists and skips when one does not, recreation being a separate
+> manual step.
+>
+> **A six-distribution run earlier the same day was not green**, and it is
+> kept in the Reading table rather than dropped: 157 of 157 on five and one
+> failure on openSUSE, which was not an openSUSE fault but a race the other
+> five won. Everything below is either
 > infrastructure read off the tree or a dated record kept for its failure
 > analysis.
 >
@@ -1149,8 +1154,7 @@ six distributions.
 
 The suite has grown since that baseline, and has since been rewritten. Every
 figure in the table above is superseded by the reading in the Reading table
-below, which is **157 of 157 on all six distributions** at `2bc8bd76` on
-2026-08-20.
+below, which is **158 of 158 on all six distributions** on 2026-08-21.
 
 This sentence named the 2026-08-16 reading of 154 until 2026-08-19. Summary had
 recorded the later reading on 2026-08-18, so the pointer stood stale for a day:
@@ -1177,7 +1181,9 @@ rather than measuring growth:
 | 2026-08-15 | 152 | 6 | superseded |
 | 2026-08-16 | 154 | 6 | superseded, against `5b715039` |
 | 2026-08-18 | 156 | 6 | superseded, against `653b4ff1` |
-| **2026-08-20** | **157** | **6** | **current**, against `2bc8bd76` |
+| 2026-08-20 | 157 | 6 | superseded, against `2bc8bd76` |
+| 2026-08-21 | 157 | 6 | **not green**: 5 distributions passed, openSUSE failed T-SCHED-07. Not an openSUSE fault - a load racing an edit, which the other five happened to win |
+| **2026-08-21** | **158** | **6** | **current**, after the fix for that race and the test that pins it |
 
 The Fedora-only row is kept because it records a rule rather than a result: it
 was deliberately never written into the table, since a six-distribution row
@@ -1233,16 +1239,16 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (11 Specs, 157 Tests)
+### Spec Inventory (11 Specs, 158 Tests)
 
-Counted off `npx playwright test --list` on 2026-08-20, which is the same count
-the container run of that date executed. **116 `test()` call sites produce 157
+Counted off `npx playwright test --list` on 2026-08-21, which is the same count
+the container run of that date executed. **117 `test()` call sites produce 158
 cases**, because three of the sites are parameterised and
 generate their cases at collection time: `themes.spec.js:152` produces 35
 screenshots (5 states x 7 themes), `contrast.spec.js:364` produces one case per
 theme, and `hardening.spec.js:470` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
-`test(` calls is 116 and understates the suite by 41.
+`test(` calls is 117 and understates the suite by 41.
 
 | Spec | Test IDs | Tests | Description |
 |------|----------|-------|-------------|
@@ -1254,7 +1260,7 @@ runner rather than grepping the sources is therefore deliberate: a count of
 | `fleet-apply.spec.js` | T-FAPPLY-01..09 | 9 | Fleet Apply mode toggle, selection, confirm modal |
 | `settings.spec.js` | T-SET-01..08 | 8 | Settings page |
 | `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries two vacuity guards, because a sweep that collects nothing would otherwise pass: a floor on pairings measured, and since 2026-08-20 a separate one on partly-translucent fills, which the colour-only rules would otherwise clear on their behalf. Five routes, four of which need a state the default fixture does not produce: a scan, an apply under `apply_mode=mixed`, and a failed export under `error_mode=export`, the last two existing solely to render `.partial-row-badge-failed` and `.status-error`, the only rules in the stylesheet putting real text over a translucent fill |
-| `scheduler.spec.js` | T-SCHED-01..07 | 7 | Scheduler and notification configuration, and the two notes that appear only while scheduled scanning is off |
+| `scheduler.spec.js` | T-SCHED-01..08 | 8 | Scheduler and notification configuration, the two notes that appear only while scheduled scanning is off, and that nothing on the page is editable before the config it is made of has arrived |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 | `remote.spec.js` | T-REMOTE-01..03 | 3 | The `/remote` redirect, the saved host list, the Add Host form |
 
@@ -1313,4 +1319,4 @@ test-results/gui/
 
 ---
 
-**Last Updated**: 2026-08-20
+**Last Updated**: 2026-08-21

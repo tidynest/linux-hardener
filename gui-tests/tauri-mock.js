@@ -711,6 +711,15 @@
     // Simulate network latency
     await new Promise((r) => setTimeout(r, 150 + Math.random() * 200));
 
+    // Extra per-command latency, opt-in from a test via addInitScript. A page
+    // that populates itself from a load resolving after mount has a window in
+    // which an operator can already be typing, and the default 150-350 ms
+    // makes reaching that window a coin flip: T-SCHED-07 lost it once in six
+    // distributions on 2026-08-21 and read as an opensuse fault. Widening one
+    // command turns the window into something a test can stand inside.
+    const extra = (window.__mockLatency || {})[cmd];
+    if (extra) await new Promise((r) => setTimeout(r, extra));
+
     if (shouldError(cmd)) {
       switch (cmd) {
         case 'run_scan':
