@@ -1123,6 +1123,22 @@ six distributions.
 > checks that a container exists and skips when one does not, recreation being
 > a separate manual step.
 >
+> **The two contrast routes that first open a modal landed the same day**, with
+> `rollback_mode=partial`, the fixture flag they turned out to need. Every
+> prediction `04930f71` made is now measured rather than computed:
+> `.restore-error` 5.91 to 13.68 against a predicted 5.91 to 13.68,
+> `.restore-warn .restore-error` 5.55 to 15.02 against 5.55 to 15.02, and
+> `.exception-modal .modal-error` 5.02 to 8.33 against 5.00 to 8.32. Arch and
+> openSUSE agree to the digit on all five dark-theme readings.
+>
+> **The first run of those routes was GREEN while measuring the wrong thing.**
+> It collected fourteen `.restore-error` pairings and `--color-critical-bright`
+> was in none of them, both default instances being overridden by a more
+> specific rule; the rule's own colour renders only when a file or reload fails,
+> which the all-success fixture never produced. `MUST_REACH` asks whether a
+> selector was measured, not which rule won the cascade for it, so it could not
+> have caught this. Detail in `docs/reference/what-is-not-proven.md`.
+>
 > **The suite grew by seven without a single new `test()` call site**, which is
 > the one shape `validate_cross_document_facts.py` documents itself as unable
 > to see. The theme sweep gained a sixth state, so seven cases appeared inside
@@ -1193,7 +1209,8 @@ rather than measuring growth:
 | 2026-08-20 | 157 | 6 | superseded, against `2bc8bd76` |
 | 2026-08-21 | 157 | 6 | **not green**: 5 distributions passed, openSUSE failed T-SCHED-07. Not an openSUSE fault - a load racing an edit, which the other five happened to win |
 | 2026-08-21 | 158 | 6 | superseded, taken twice at this count: once after the fix for that race and the test that pins it, and again after the fleet-apply fixture gained a failing host, which the nine `T-FAPPLY` cases read |
-| **2026-08-21** | **165** | **6** | **current**, 3.7 to 4.7 minutes each and 44 screenshots each. The theme sweep gained a sixth state, the rollback modal, so the whole modal surface is now captured in all seven themes instead of in one as a by-product of `T-DIVG-03`'s geometry check. **Seven cases from no new call site**: the count below stayed at 117 and every document said 158 with the validator green |
+| 2026-08-21 | 165 | 6 | superseded, 3.7 to 4.7 minutes each and 44 screenshots each. The theme sweep gained a sixth state, the rollback modal, so the whole modal surface is now captured in all seven themes instead of in one as a by-product of `T-DIVG-03`'s geometry check. **Seven cases from no new call site**: the count below stayed at 117 and every document said 158 with the validator green |
+| **2026-08-21** | **165** | **6** | **current**, against the two contrast routes that first open a MODAL and the `rollback_mode=partial` fixture they needed. Five distributions green in one sweep; openSUSE failed `T-FIND-10` on a 30 s `waitForApp` timeout and passed on a re-run at 165. **Kept rather than dropped, and it was NOT a distribution fault**: the identical `beforeEach` succeeded 24 times in that same file, run and container, with `T-FIND-09` and `T-FIND-11` passing either side of it in 2.6 s and 1.7 s. A real fault in a shared hook fails all 25. openSUSE took 5.6 minutes here against 4.7 in the sweep before, so it is load |
 
 The Fedora-only row is kept because it records a rule rather than a result: it
 was deliberately never written into the table, since a six-distribution row
@@ -1277,7 +1294,7 @@ editing the thing it names, and nothing checks these three.
 | `fleet.spec.js` | T-FLEET-01..10 | 10 | Fleet scan view, per-host results, row expander, delete confirmation, the expanded host's persisted history rail |
 | `fleet-apply.spec.js` | T-FAPPLY-01..09 | 9 | Fleet Apply mode toggle, selection, confirm modal |
 | `settings.spec.js` | T-SET-01..08 | 8 | Settings page |
-| `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries two vacuity guards, because a sweep that collects nothing would otherwise pass: a floor on pairings measured, and since 2026-08-20 a separate one on partly-translucent fills, which the colour-only rules would otherwise clear on their behalf. **Nine routes**, seven of which need a state the default fixture does not produce: a scan, an apply under `apply_mode=mixed`, a failed export under `error_mode=export`, a fleet scan with the failing host expanded and the same host left open across a scan that fails it, and both states of the fleet apply page. The count in this cell said five until 2026-08-21, having gone stale twice while routes were added; the routes themselves are guarded by `MUST_REACH`, which the cell is not. Several exist solely to render one rule: `.partial-row-badge-failed` and `.status-error` are the only rules in the stylesheet putting real text over a translucent fill, `.severity_low` is text on exactly one of its two call sites, and the fleet apply pair was added because `.host-row-error` has a second caller on a page nothing had ever loaded |
+| `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries two vacuity guards, because a sweep that collects nothing would otherwise pass: a floor on pairings measured, and since 2026-08-20 a separate one on partly-translucent fills, which the colour-only rules would otherwise clear on their behalf. **Eleven routes**, nine of which need a state the default fixture does not produce: a scan, an apply under `apply_mode=mixed`, a failed export under `error_mode=export`, a fleet scan with the failing host expanded and the same host left open across a scan that fails it, and both states of the fleet apply page. The count in this cell said five until 2026-08-21, having gone stale twice while routes were added; the routes themselves are guarded by `MUST_REACH`, which the cell is not. Several exist solely to render one rule: `.partial-row-badge-failed` and `.status-error` are the only rules in the stylesheet putting real text over a translucent fill, `.severity_low` is text on exactly one of its two call sites, and the fleet apply pair was added because `.host-row-error` has a second caller on a page nothing had ever loaded. The tenth and eleventh, added 2026-08-21, are the first that open a MODAL: no route ever had, which is why `.restore-error` and `.exception-modal .modal-error` could fail WCAG permanently in five themes each with both checks silent. They are the only routes carrying a `scope`, confining the sweep to `.modal`, because `.modal-backdrop` is an overlay rather than an ancestor and the page behind an open dialog would otherwise be measured as though undimmed - a false pass, since compositing rgba(0, 0, 0, .5) over text and fill alike makes the rendered contrast worse than the computed number |
 | `scheduler.spec.js` | T-SCHED-01..08 | 8 | Scheduler and notification configuration, the two notes that appear only while scheduled scanning is off, and that nothing on the page is editable before the config it is made of has arrived |
 | `errors.spec.js` | T-ERR-01..04 | 4 | Scan/apply/checkpoint errors, dismiss |
 | `remote.spec.js` | T-REMOTE-01..03 | 3 | The `/remote` redirect, the saved host list, the Add Host form |

@@ -4,8 +4,9 @@
 // Injected before WASM loads to simulate window.__TAURI__.core.invoke().
 // Field names match Rust struct definitions exactly (serde snake_case).
 //
-// Error mode: add ?error_mode=scan|apply|checkpoint|export|all to URL to
-// trigger errors.
+// Error mode: add ?error_mode=scan|apply|checkpoint|export|exception|all to
+// URL to trigger errors. Outcome shape: ?apply_mode=mixed,
+// ?rollback_mode=partial, ?checkpoint_source=unreadable.
 // =============================================================================
 
 (function () {
@@ -24,6 +25,16 @@
   // root-owned file the desktop cannot read, which a browser fixture has no
   // way to produce, so the flag is set directly.
   const checkpointSource = params.get('checkpoint_source') || '';
+  // `?rollback_mode=partial` makes one of the two files fail to restore.
+  // Selected the same way as `apply_mode`, and for the same reason: the
+  // default fixture restores everything, so `.restore-error` never renders in
+  // its OWN colour. Its two default instances are both overridden by a more
+  // specific rule, `.restore-warn .restore-error` in amber and
+  // `.rollback-divergence-unchecked ... .divergence-detail` in muted grey, so
+  // a run measuring fourteen `.restore-error` pairings measured
+  // `--color-critical-bright` in none of them. That is what the first modal
+  // contrast route found on 2026-08-21, while passing.
+  const rollbackMode = params.get('rollback_mode') || '';
 
   function shouldError(cmd) {
     if (errorMode === 'all') return true;
@@ -37,6 +48,15 @@
     // get_compliance_reports, so the tab has nothing to select and the Export
     // button stays disabled.
     if (errorMode === 'export' && cmd === 'export_compliance_report') return true;
+    // `exception` fails only the exception write, and it exists for the same
+    // reason `export` does: `.exception-modal .modal-error` renders ONLY on a
+    // failed write, and it was one of the two rules that failed permanently on
+    // `--bg-elevated` before 04930f71 moved `.modal` down a tier. Neither
+    // contrast check could see it, the static half because it enumerates
+    // surfaces as hypotheses and the browser half because no route had ever
+    // opened a modal. `all` cannot serve: it also fails run_scan, so there are
+    // no findings, no accept control and no modal to fail a write in.
+    if (errorMode === 'exception' && cmd === 'add_policy_exception') return true;
     return false;
   }
 
@@ -775,7 +795,10 @@
         return {
           rollback_checkpoint_id: (args && args.checkpoint_id) || 'cp_mock_1234',
           rollback_checkpoint_name: 'kernel-hardening-pre-apply',
-          rollback_success: true,
+          // `rollback_modal.rs:218` reads this AND `reloads_ok()`, so a partial
+          // run has to say so here or the header would claim "Restored" over a
+          // file list showing a failure.
+          rollback_success: rollbackMode !== 'partial',
           rollback_files: [
             {
               restore_path: '/etc/sysctl.d/99-hardener.conf',
@@ -786,8 +809,16 @@
             {
               restore_path: '/proc/sys/kernel/kptr_restrict',
               restore_action: 'Restored',
-              restore_success: true,
-              restore_error: null,
+              restore_success: rollbackMode !== 'partial',
+              // The real shape of this failure: `/proc/sys` is writable only by
+              // root and a rollback running unprivileged cannot restore it. A
+              // stand-in like "error" would render the same colour and prove the
+              // same ratio while telling an operator nothing, and this list is
+              // read by people as well as by the sweep.
+              restore_error:
+                rollbackMode === 'partial'
+                  ? 'Permission denied writing /proc/sys/kernel/kptr_restrict: the value was left as the apply set it'
+                  : null,
             },
           ],
           // The rollback modal's divergence section had no fixture, so it had

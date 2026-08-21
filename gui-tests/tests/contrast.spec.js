@@ -59,7 +59,14 @@
 // =============================================================================
 
 const { test, expect } = require('@playwright/test');
-const { loadApp, runScan, runApply, selectTheme, THEMES } = require('./helpers');
+const {
+  loadApp,
+  runScan,
+  runApply,
+  runRollback,
+  selectTheme,
+  THEMES,
+} = require('./helpers');
 const {
   contrastRatio,
   flattenBackdrop,
@@ -328,6 +335,78 @@ const ROUTES = [
       await expect(page.locator('.fleet-stat.score-good')).toBeVisible();
     },
   },
+  {
+    // THE FIRST ROUTE THAT OPENS A MODAL. Until 2026-08-21 none did, and that
+    // absence is what let two rules fail WCAG permanently in five themes each
+    // while both checks reported nothing: `.modal` painted `--bg-elevated`,
+    // `.restore-error` read 3.25 sentinel to 3.57 command and
+    // `.exception-modal .modal-error` 3.86 to 4.29. The static half cannot see
+    // either, one because it declares no background of its own and one because
+    // its translucent fill is spread over all four tiers as hypotheses; the
+    // browser half could have seen both and was never driven to a dialog.
+    //
+    // Of the thirty classes the three modal components render, three are in
+    // the static corpus. This route and the one below are what put the rest
+    // under a real ancestor for the first time.
+    //
+    // `rollback_mode=partial` because the DEFAULT fixture restores everything,
+    // and this route found that out the expensive way. Its first run measured
+    // fourteen `.restore-error` pairings, two per theme, and
+    // `--color-critical-bright` was in none of them: both default instances are
+    // overridden by a more specific rule, `.restore-warn .restore-error` in
+    // amber and `.rollback-divergence-unchecked .restore-error.divergence-detail`
+    // in muted grey. `rollback_modal.rs:271` and `:293` render the rule in its
+    // own colour and both are guarded by `err.map(...)`, so nothing draws it
+    // until a file or a reload actually fails.
+    //
+    // The run was green. `MUST_REACH` tests whether a SELECTOR was measured,
+    // not which rule won the cascade for it, so `.restore-error` satisfied it
+    // while the declaration under test went unweighed. That is the same shape
+    // as `.tab-button.tab-active` in decision 2 of this file, arriving from the
+    // other direction.
+    path: '/hardening',
+    name: 'hardening, rollback modal',
+    query: 'rollback_mode=partial',
+    scope: '.modal',
+    setup: async (page) => {
+      await runRollback(page);
+      // `.restore-fail` is the failing row, so this asserts the instance whose
+      // colour comes from `.restore-error` ITSELF. Asserting the bare class
+      // instead is what the first version did, and it passed against a modal
+      // in which the rule never won anything.
+      await expect(page.locator('.restore-fail .restore-error')).toBeVisible();
+    },
+  },
+  {
+    // The other modal, and the other shape of failure. `.modal-error` renders
+    // only when the exception write fails, so this is the one route in the file
+    // that needs a flag invented for it: `error_mode=exception` fails
+    // `add_policy_exception` alone. `all` cannot serve, because it also fails
+    // `run_scan` and there is then no finding to accept and no modal at all.
+    //
+    // Reaching it is four steps rather than one, and each is load-bearing:
+    // without the scan there are no findings, without the keyed finding there
+    // is no accept control (`services-002` is the fixture's only one still
+    // `NotConfigured`), without the modal there is no form, and without a
+    // reason `can_submit` holds the button disabled. `findings_tab.rs:288`
+    // clears the error whenever the modal reopens, so nothing here can pass on
+    // a failure left over from a previous attempt.
+    path: '/analysis',
+    name: 'analysis, exception write failed',
+    query: 'error_mode=exception',
+    scope: '.modal',
+    setup: async (page) => {
+      await runScan(page);
+      await page.getByRole('button', { name: 'Bluetooth service enabled' }).click();
+      await page.getByRole('button', { name: 'Accept This Finding', exact: true }).click();
+      await page.getByLabel('Reason').fill('measuring the failure surface');
+      await page.getByRole('button', { name: 'Accept Finding', exact: true }).click();
+      // The modal stays open on a failed write, deliberately, and this is the
+      // rule that proves it did: a dialog that closed would leave the sweep
+      // measuring `/analysis` and passing.
+      await expect(page.locator('.exception-modal .modal-error')).toBeVisible({ timeout: 10000 });
+    },
+  },
 ];
 
 // Selectors this check exists to reach. If a run measures nothing for one of
@@ -370,6 +449,15 @@ const MUST_REACH = [
   // selector to appear at all, and nothing else in this file would notice if
   // one of them stopped.
   '.fleet-stat',
+  // The two modal rules, added 2026-08-21 with the routes that first opened a
+  // dialog. Both are here rather than one standing for the pair, because they
+  // fail independently: `.restore-error` needs the fixture to keep reporting
+  // divergences and `.modal-error` needs `error_mode=exception` to keep
+  // failing exactly one command. Either could stop rendering while the other
+  // carried on, and a route reaching a modal is not the same claim as a route
+  // reaching the rule the modal was opened for.
+  '.restore-error',
+  '.modal-error',
 ];
 
 // A run that measures nothing passes every assertion below it. This is a floor
@@ -383,9 +471,19 @@ const MINIMUM_PAIRS = 12;
  *
  * Observes only. The stack is returned unflattened and the ratio is not
  * computed, so this half has one job and the arithmetic stays in one place.
+ *
+ * `scope` confines the sweep to one subtree, and only the modal routes pass
+ * one. `backdropStack` walks ANCESTORS, and `.modal-backdrop` is an overlay
+ * rather than an ancestor of the page it covers, so with a dialog open every
+ * element behind it would be measured as though undimmed. That is a false PASS
+ * and not merely noise: compositing rgba(0, 0, 0, .5) over text and fill alike
+ * moves both luminances toward zero while the +0.05 in the ratio stays put, so
+ * the rendered contrast behind a backdrop is WORSE than the number this
+ * function would report for it. Everything behind the dialog is already
+ * measured, undimmed and correctly, by the route it belongs to.
  */
-async function collectPairs(page, routeName) {
-  const found = await page.evaluate(() => {
+async function collectPairs(page, routeName, scope = null) {
+  const found = await page.evaluate((scopeSelector) => {
     // Flatten @media and @supports, whose rules are nested one or more levels
     // down. A theme's overrides commonly live inside one, so a walk that read
     // only top-level rules would miss precisely the interesting ones.
@@ -447,6 +545,15 @@ async function collectPairs(page, routeName) {
       return resolved.get(value);
     };
 
+    // Resolved once. A scope that is asked for and not found is an ERROR
+    // rather than a silent whole-document sweep: the route would then measure
+    // the dimmed page it was written to exclude, and report more pairings than
+    // before while measuring the wrong thing.
+    const scopeRoot = scopeSelector ? document.querySelector(scopeSelector) : null;
+    if (scopeSelector && !scopeRoot) {
+      throw new Error(`contrast scope '${scopeSelector}' matched no element`);
+    }
+
     const rules = [];
     for (const sheet of Array.from(document.styleSheets)) {
       try {
@@ -491,6 +598,13 @@ async function collectPairs(page, routeName) {
         // Out of reach for this method, and never silently counted as passing.
         continue;
       }
+      // Queried against the whole document and then filtered, rather than
+      // queried under the root: a selector like `.exception-modal .modal-error`
+      // is written from an ancestor the root itself carries, and
+      // `root.querySelectorAll` would match nothing for it while every other
+      // rule went on matching. That failure is silent and looks like a clean
+      // sweep, so the containment test is applied to elements instead.
+      if (scopeRoot) matched = matched.filter((el) => scopeRoot.contains(el));
 
       for (const el of matched) {
         if (!el.getClientRects().length) continue;
@@ -534,7 +648,7 @@ async function collectPairs(page, routeName) {
       }
     }
     return out;
-  });
+  }, scope);
 
   return found
     .filter(browserOwnsPairing)
@@ -567,7 +681,7 @@ test.describe('Contrast, computed cascade', () => {
         // The corner is arbitrary but fixed, which is the whole point: this
         // buys reproducibility, not the absence of hover.
         await page.mouse.move(0, 0);
-        pairs.push(...(await collectPairs(page, route.name)));
+        pairs.push(...(await collectPairs(page, route.name, route.scope || null)));
       }
 
       // Vacuity guard. Every assertion below is satisfied by an empty list, so

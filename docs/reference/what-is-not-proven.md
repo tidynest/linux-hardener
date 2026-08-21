@@ -1360,8 +1360,65 @@ it.** The static half still prints the identical four-tier spread for
 which one a parent paints; its `--bg-secondary` point, 5.00 in sentinel, is now
 the real reading rather than the `--bg-elevated` one, and nothing in the output
 says so. The browser half would settle it in one assertion by opening a modal
-on a contrast route. That route does not exist yet, and adding it is the open
-item this section leaves behind.
+on a contrast route.
+
+**That route now exists, and it is two routes rather than one.** Added
+2026-08-21: `hardening, rollback modal` reaches `.restore-error` on the default
+fixture, whose rollback reports divergences on the success path, and `analysis,
+exception write failed` reaches `.exception-modal .modal-error` under a new
+`error_mode=exception`, which fails `add_policy_exception` alone. `all` cannot
+serve it, because `all` also fails `run_scan` and there is then no finding to
+accept and no modal to fail a write in. Both selectors are in `MUST_REACH`,
+separately: they fail independently, and a route reaching a modal is not the
+same claim as a route reaching the rule the modal was opened for.
+
+**Both routes carry a `scope`, and the reason is a false PASS rather than
+noise.** `backdropStack` walks ancestors, and `.modal-backdrop` is an overlay
+rather than an ancestor of the page it covers, so with a dialog open every
+element behind it would be weighed as though undimmed. Compositing
+rgba(0, 0, 0, .5) over text and fill alike drives both luminances toward zero
+while the +0.05 in the ratio stays where it is, so the rendered contrast behind
+a backdrop is WORSE than the number the sweep would report. Everything behind
+the dialog is already measured, undimmed and correctly, by the route it belongs
+to. The scope is resolved once and a scope that matches nothing throws, because
+the alternative is a silent whole-document sweep that reports MORE pairings
+than before while measuring the wrong thing.
+
+The containment test is applied to matched elements rather than by querying
+under the root, which looks like the longer way round and is not:
+`.exception-modal .modal-error` is written from an ancestor the root itself
+carries, so `root.querySelectorAll` would match nothing for exactly the rule
+these routes exist for while every other rule went on matching. That failure is
+silent and reads as a clean sweep.
+
+**THE FIRST RUN OF THESE ROUTES PASSED WHILE MEASURING THE WRONG THING, and
+that is the finding worth keeping.** It collected fourteen `.restore-error`
+pairings, two per theme, and `--color-critical-bright` `rgb(248,113,113)` was in
+none of them. Both instances the default fixture draws are overridden by a more
+specific rule: `.restore-warn .restore-error` in amber, and
+`.rollback-divergence-unchecked .restore-error.divergence-detail` in muted grey.
+`rollback_modal.rs:271` and `:293` render the rule in its own colour and both
+sit behind `err.map(...)`, so nothing draws it until a file or a reload actually
+fails, and the fixture restored everything successfully. The `.restore-error`
+half of `04930f71`, the 3.25 sentinel reading and the worse of the two failures,
+was the half the route could not see.
+
+**`MUST_REACH` cannot catch this and should not be expected to.** It asks
+whether a SELECTOR was measured, `s.includes(selector)` over the rule text, and
+not which rule won the cascade for the element. `.restore-error` satisfied it
+from an instance whose colour came from somewhere else entirely. That is the
+same defect as `.tab-button.tab-active` in decision 2 of `contrast.spec.js`,
+arriving from the opposite direction: there a rule was measured against a
+backdrop another rule had overridden, here a rule was credited for a colour
+another rule had overridden.
+
+The fix is `rollback_mode=partial`, following the `apply_mode=mixed` precedent
+rather than flipping the default fixture, which would have bought the failure
+path by giving up the success path. The route now asserts
+`.restore-fail .restore-error`, the instance whose colour can only come from the
+rule itself. **The third instance of an all-success fixture hiding the branch a
+check existed to weigh**, after the identical-counts case and the fleet-apply
+outcome row.
 
 **The eyeball half of it IS now closed, and it was closed by a different
 instrument.** On 2026-08-21 the theme sweep gained a sixth state, the rollback
@@ -1374,12 +1431,19 @@ width. The shots say the dialog still reads as raised a tier lower, most
 clearly in High Contrast, where `--border-strong` carries the separation as a
 bright outline and the surface itself is near-black.
 
-**That is a rendering, not a measurement, and it does not close the entry
-above.** A screenshot answers whether the dialog reads as raised; it answers
-nothing about the ratio, and `.restore-error` and `.modal-error` remain
-computed rather than measured. The contrast route is still owed. What changed
-is that two questions were being carried as one, and only the cheaper of them
-needed a contrast route to answer.
+**That is a rendering, not a measurement.** A screenshot answers whether the
+dialog reads as raised and answers nothing about the ratio. Two questions were
+being carried as one, and the screenshots settled only the cheaper.
+
+**The ratios were settled the same day, by the two contrast routes below, and
+every prediction `04930f71` made held.** Measured on all six distributions,
+`.restore-error` 5.91 to 13.68 against a predicted 5.91 to 13.68,
+`.restore-warn .restore-error` 5.55 to 15.02 against a predicted 5.55 to 15.02,
+and `.exception-modal .modal-error` 5.02 to 8.33 against a predicted 5.00 to
+8.32. Five endpoints of six matched to the digit and the sixth by 0.01. Arch
+and openSUSE agree exactly on all five dark-theme `.restore-error` readings,
+5.91, 6.16, 6.26, 6.30 and 6.52, so this is a property of the stylesheet and
+not of one container.
 
 **The sweep's own ordering is a constraint worth recording**, because it is
 invisible until something breaks on it. Each state now applies its own theme
