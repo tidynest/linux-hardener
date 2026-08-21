@@ -349,6 +349,17 @@ const ROUTES = [
     //
     // Third time today a stated impossibility turned out to be a route
     // problem, after `.fleet-glyph-ok` and the `.modal` surface tier.
+    //
+    // MEASURED, arch container, 2026-08-21. The route adds 12 pairings per
+    // theme, 180 to 192, uniform across all seven. Three of the twelve can
+    // render ONLY while a scan is in flight and had therefore never been
+    // measured by anything:
+    //   `.host-prog-failed`  6.50 to 14.52   (the rule this route was for)
+    //   `.host-prog-ok`      6.07 to 14.49
+    //   `.hosts-progress`    7.51 to 16.67   ("2 of 2 finished")
+    // All against 4.5. The other nine are ordinary Hosts-page chrome that
+    // simply had no route until now. Two rules came along for free, which is
+    // the usual return on reaching a state rather than a selector.
     path: '/fleet',
     name: 'fleet, scan in progress',
     query: 'fleet_scan=hold',
