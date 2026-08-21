@@ -120,6 +120,72 @@ def gui_playwright_call_sites(root: Path) -> int:
     return total
 
 
+def _count_array_entries(path: Path, name: str) -> int:
+    """Entries in a top-level `const <name> = [...]` array of objects.
+
+    Counts object OPENERS at the array's own indent, `^  {`, which is the one
+    structural marker the two arrays share: `STATES` spreads each entry over
+    many lines and `THEMES` writes each on one. Counting a key instead was the
+    first attempt and read `THEMES` as zero, because its `name:` sits inline
+    rather than at four spaces. Zero is refused below rather than returned, so
+    that mistake failed loudly instead of reporting a product of zero that
+    every document would then have disagreed with.
+
+    Anything nested inside an entry is indented further and cannot be counted
+    twice. The array is bounded by a `];` at column 0, so a nested array cannot
+    end the scan early.
+    """
+    try:
+        text = path.read_text()
+    except OSError as problem:
+        raise LookupError(f"cannot read {path}: {problem}") from problem
+    match = re.search(
+        rf"^const {re.escape(name)} = \[$(.*?)^\];$", text, re.MULTILINE | re.DOTALL
+    )
+    if not match:
+        raise LookupError(f"{path}: no top-level `const {name} = [` array found")
+    entries = len(re.findall(r"^ {2}\{", match.group(1), re.MULTILINE))
+    if not entries:
+        raise LookupError(f"{path}: `{name}` parsed to zero entries")
+    return entries
+
+
+def theme_sweep_states(root: Path) -> int:
+    """How many states the theme screenshot sweep captures, per theme.
+
+    Registered because of a drift this validator watched happen and could not
+    see. On 2026-08-21 the sweep gained a sixth state, the rollback modal, and
+    the suite went from 158 cases to 165 WITHOUT a new `test()` call site,
+    which is the one shape `gui_playwright_call_sites` documents itself as
+    unable to catch. Four documents went on saying 158 and 35 screenshots with
+    every check green.
+
+    This is the quantity that actually moved, and it is three lines of parsing
+    away from the tree. `gui_playwright_test_count` still has no tree
+    definition and still reads the document it validates; this does not fix
+    that, and is not a substitute for it. What it does is turn the ORDINARY way
+    a parameterised site grows into something the tree reports.
+    """
+    return _count_array_entries(root / "gui-tests" / "tests" / "themes.spec.js", "STATES")
+
+
+def theme_sweep_screenshots(root: Path) -> int:
+    """Screenshots the theme sweep writes per distribution: states x themes.
+
+    Derived rather than declared, so it moves when EITHER factor moves. A theme
+    added to `THEMES` is otherwise guarded only by `T-THEME-09`, which holds the
+    selector's option list against that same array and therefore says nothing
+    about any count stated in prose.
+
+    `THEMES` lives in `helpers.js` and `STATES` in `themes.spec.js`, so this is
+    the one fact here whose canonical source spans two files. That is the
+    argument for deriving it: a reader updating one array has no reason to look
+    at the other, and the product of the two is what every document states.
+    """
+    themes = _count_array_entries(root / "gui-tests" / "tests" / "helpers.js", "THEMES")
+    return theme_sweep_states(root) * themes
+
+
 # (fact, canonical source callable, [(path, pattern, note)])
 #
 # The pattern must capture exactly one group and must be present-tense. A
@@ -178,6 +244,84 @@ REGISTRY = [
                 r"a count of\s+`test\(` calls is (\d+) and understates the suite",
                 "the same paragraph's closing sentence, which restates it as "
                 "the reason for reading the runner instead",
+            ),
+        ],
+    ),
+    (
+        "theme sweep states",
+        theme_sweep_states,
+        [
+            (
+                "gui-tests/tests/themes.spec.js",
+                r"SCREENSHOT CAPTURES - (\d+) states x \d+ themes",
+                "the banner directly above the array it counts. Registered "
+                "even though it sits in the same file, because it went stale "
+                "there too: a reader adding a state edits the array and not "
+                "the comment, which is exactly what a banner stating a count "
+                "is for",
+            ),
+            (
+                "docs/reference/distribution-validation.md",
+                r"screenshots \((\d+) states x \d+ themes\)",
+                "the Spec Inventory preamble, which names the two factors "
+                "beside the product",
+            ),
+            (
+                "docs/reference/distribution-validation.md",
+                r"screenshot tests are generated as (\d+) states x \d+ themes",
+                "the `themes.spec.js` row of the same table, which restates it",
+            ),
+            (
+                "docs/reference/file-map.md",
+                r"generated at collection time from (\d+) states x \d+ themes",
+                "the `themes.spec.js` row. This file said FIVE routes for "
+                "`contrast.spec.js` through three route additions, so a count "
+                "here is exactly the kind that rots unwatched",
+            ),
+            (
+                "scripts/README.md",
+                r"`themes\.spec\.js` produces \d+ from \d+ themes x (\d+) states",
+                "the run-gui-tests.sh entry, which states the factors in the "
+                "opposite order. The order is why this is a separate pattern "
+                "rather than a fifth use of the one above",
+            ),
+        ],
+    ),
+    (
+        "theme sweep screenshots",
+        theme_sweep_screenshots,
+        [
+            (
+                "gui-tests/tests/themes.spec.js",
+                r"T-THEME-01\.\.09\) \+ (\d+) Screenshot Captures",
+                "the file's own header banner",
+            ),
+            (
+                "gui-tests/tests/themes.spec.js",
+                r"states x \d+ themes = (\d+) screenshots",
+                "the product stated beside its factors",
+            ),
+            (
+                "docs/reference/distribution-validation.md",
+                r"\| 9 \+ (\d+) \|",
+                "the Tests cell of the `themes.spec.js` row, which carries the "
+                "sweep as an addend rather than as prose",
+            ),
+            (
+                "docs/reference/distribution-validation.md",
+                r"The (\d+) screenshot tests are generated",
+                "the same row's description",
+            ),
+            (
+                "docs/reference/file-map.md",
+                r"T-THEME-01\.\.09 \(\d+ tests \+ (\d+) screenshots\)",
+                "the `themes.spec.js` row",
+            ),
+            (
+                "scripts/README.md",
+                r"`themes\.spec\.js` produces (\d+) from \d+ themes",
+                "the run-gui-tests.sh entry's explanation of why the count is "
+                "read off the runner",
             ),
         ],
     ),

@@ -700,18 +700,31 @@ Validating facts stated in more than one document...
   compliance frameworks: the tree says 10
     OK scripts/README.md agrees at 10
     OK scripts/README.md agrees at 10
-  GUI Playwright tests: the tree says 157
-    OK docs/reference/distribution-validation.md agrees at 157
-    OK scripts/README.md agrees at 157
-  GUI Playwright test call sites: the tree says 116
-    OK docs/reference/distribution-validation.md agrees at 116
-    OK docs/reference/distribution-validation.md agrees at 116
+  GUI Playwright tests: the tree says 165
+    OK docs/reference/distribution-validation.md agrees at 165
+    OK scripts/README.md agrees at 165
+  GUI Playwright test call sites: the tree says 117
+    OK docs/reference/distribution-validation.md agrees at 117
+    OK docs/reference/distribution-validation.md agrees at 117
+  theme sweep states: the tree says 6
+    OK gui-tests/tests/themes.spec.js agrees at 6
+    OK docs/reference/distribution-validation.md agrees at 6
+    OK docs/reference/distribution-validation.md agrees at 6
+    OK docs/reference/file-map.md agrees at 6
+    OK scripts/README.md agrees at 6
+  theme sweep screenshots: the tree says 42
+    OK gui-tests/tests/themes.spec.js agrees at 42
+    OK gui-tests/tests/themes.spec.js agrees at 42
+    OK docs/reference/distribution-validation.md agrees at 42
+    OK docs/reference/distribution-validation.md agrees at 42
+    OK docs/reference/file-map.md agrees at 42
+    OK scripts/README.md agrees at 42
 
-All 6 registered sites agree with their source
+All 17 registered sites agree with their source
   Dated readings are deliberately not registered.
 ```
 
-This block said 156 across 4 sites until 2026-08-20, two days after the suite reached 157. It is a sample rather than a registered site, so nothing held it: the same defect it exists to illustrate, in the entry describing the validator that exists to catch it.
+This block said 156 across 4 sites until 2026-08-20, two days after the suite reached 157, and 157 across 6 until 2026-08-21. It is a sample rather than a registered site, so nothing holds it: the same defect it exists to illustrate, in the entry describing the validator that exists to catch it. **It has now gone stale twice**, which makes it the strongest candidate in this file for registration; the "All N registered sites" line alone would be one integer and would move whenever any fact is added.
 
 **Source of Truth**:
 - Named per fact in the script's `REGISTRY`. For the compliance framework count, the `ComplianceFramework` enum in `crates/hardener-types/src/lib.rs`, read via `validate_compliance_docs.py`'s `parse_enum_frameworks`. For the GUI Playwright test count, the row marked **current** in the Reading table of [distribution-validation.md](../docs/reference/distribution-validation.md), which is the document this validator also checks: it can therefore confirm that the consumers agree with the row and never that the row is true. For the GUI Playwright call-site count, `gui-tests/tests/*.spec.js` counted in the tree, registered on 2026-08-20 precisely because the fact above has no tree definition and went stale in three documents for two days while this validator stayed green
