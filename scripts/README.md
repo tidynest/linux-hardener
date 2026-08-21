@@ -1706,6 +1706,14 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 
 **Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. The suite is **165 tests in 11 files**, and that is a result rather than a static count: it ran 165 of 165 on all six distributions on 2026-08-21, none failed, skipped or flaky, one worker and no name filter, Ubuntu included, 3.7 to 4.7 minutes each and 44 screenshots each. Recorded in [distribution-validation.md](../docs/reference/distribution-validation.md). The count is still mostly generated rather than literal, which is why `npx playwright test --list` is the way to read it: `themes.spec.js` produces 42 from 7 themes x 6 states, and `hardening.spec.js`'s T-DIVG-03 produces 2 from two viewport widths. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
 
+**Four verdicts, not two.** `PASS` (exit 0), `DEGRADED` (98), `MISSING` (99, no container), `FAIL` (anything else). **`DEGRADED` means every test passed AND a package install did not**: `run_install` in `gui-test-inner.sh` records the failed step in `DEPS_FAILED`, and the run is rescued only because the container was already provisioned, so the next one may not be. Repair rather than rebuild, then re-run:
+
+```bash
+sudo systemd-nspawn -q -D /var/lib/machines/hardener-test-debian --pipe /bin/bash -c 'apt-get update && apt-get -y -f install && apt-get install -y python3 chromium nodejs npm'
+```
+
+That branch first executed on 2026-08-21, by appending a nonexistent package to the arch install line and running `--grep T-FAPPLY`: `pacman` reported `target not found`, skipped the four real packages as already up to date, 9 tests passed, and the runner reported `DEGRADED` and exited non-zero. The probe is only meaningful against an ALREADY-PROVISIONED container - on a bare one the tests fail and the verdict is `FAIL`, which proves nothing about 98. That run is also what found the inline verdict calling a degraded run `[FAIL] Tests failed (exit code: 98)` while the summary called it `DEGRADED`; the line a reader watching the scroll sees was sending them to look for a failing test.
+
 **Usage**:
 ```bash
 # Run GUI tests on every distro in DISTRO_ORDER

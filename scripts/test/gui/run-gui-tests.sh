@@ -251,8 +251,21 @@ run_single_distro() {
         echo -e "  ${CYAN}[LOG]${NC}  $logfile"
         nspawn_gui_tests "$container_path" "$distro" 2>&1 | tee "$logfile"
         exit_code=${PIPESTATUS[0]}
+        # 98 gets its own arm, matching the summary table below. Without it a
+        # degraded run prints "[FAIL] Tests failed (exit code: 98)" here while
+        # the summary calls the same run DEGRADED, and the inline line is the
+        # one a reader watching the scroll actually sees. It sends them looking
+        # for a failing test when every test passed and a package install did
+        # not, which is the single distinction exit 98 exists to draw.
+        #
+        # Found on 2026-08-21, the first time this path had ever executed: it
+        # was reachable only by breaking an install on purpose, so eleven
+        # months of green runs could not reach the branch that describes them
+        # being not-green.
         if [[ $exit_code -eq 0 ]]; then
             echo -e "  ${GREEN}[PASS]${NC} All Playwright tests passed"
+        elif [[ $exit_code -eq 98 ]]; then
+            echo -e "  ${YELLOW}[DEGRADED]${NC} Tests passed, but a dependency step failed (exit 98): repair the container before trusting the next run"
         else
             echo -e "  ${RED}[FAIL]${NC} Tests failed (exit code: $exit_code)"
         fi
