@@ -747,6 +747,17 @@ test.describe('Contrast, computed cascade', () => {
         // harmless. It would not be for a rule whose resting colour fails and
         // whose hover colour passes, and this file would have reported the
         // passing one.
+        //
+        // CONFIRMED by the re-run: all 42 theme-by-distribution cells read
+        // 180, where they had read 184 and 182. The count FELL and no rule was
+        // lost - 89 distinct selectors before and after. The four keys that
+        // went are `.fleet-host-option` and a bare `label`, on the previewed
+        // and executed fleet-apply routes, every one of them at
+        // rgb(232,237,244), which is `--text-primary`: the HOVER colour,
+        // recorded as though it were a pairing the page renders. Nothing
+        // appeared that had not been there before, so 180 was always the real
+        // number and 184 was 180 plus four artefacts of the pointer's last
+        // position.
         await page.addStyleTag({
           content: '*,*::before,*::after{transition:none!important;animation:none!important}',
         });
