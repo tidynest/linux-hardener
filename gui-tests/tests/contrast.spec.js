@@ -354,6 +354,14 @@ const ROUTES = [
     // The cost of the wrong assumption would have been a third host rippling
     // into every test that asserts a host count, to buy a reading this gets
     // for free.
+    //
+    // MEASURED, arch container, 2026-08-21: 9.01 Midnight Teal, 9.77 Fortress,
+    // 9.38 Sentinel, 9.38 Command, 9.06 Guardian, 6.58 Daywatch, 14.10 High
+    // Contrast, every one against 4.5. The deferral note predicted "6.58 to
+    // 14.10" by reasoning from `.fleet-stat.score-good`, and the range is
+    // exactly that - the reasoning was correct AND unverifiable, which is the
+    // distinction this route closes rather than the number. Nothing else the
+    // route contributes falls below 5.05.
     path: '/fleet-apply',
     name: 'fleet apply, rolled back',
     setup: async (page) => {

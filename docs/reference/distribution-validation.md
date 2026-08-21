@@ -1272,7 +1272,7 @@ Counted off `npx playwright test --list` on 2026-08-21, which is the same count
 the container run of that date executed. **117 `test()` call sites produce 165
 cases**, because three of the sites are parameterised and
 generate their cases at collection time: `themes.spec.js:200` produces 42
-screenshots (6 states x 7 themes), `contrast.spec.js:710` produces one case per
+screenshots (6 states x 7 themes), `contrast.spec.js:718` produces one case per
 theme, and `hardening.spec.js:464` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
 `test(` calls is 117 and understates the suite by 48.
