@@ -302,10 +302,27 @@ async fn a_derived_framework_is_warned_about_yet_still_written_and_audited() {
     assert_eq!(entries.len(), 1, "and audited all the same");
     assert_eq!(entries[0].entry_result, ActionResult::Success);
     assert_eq!(entries[0].entry_target, "soc2:CC6.1");
+    assert_eq!(
+        entries[0]
+            .entry_details
+            .get("takes_effect")
+            .map(String::as_str),
+        Some("false"),
+        "and the entry says so, because the advisory goes to stderr and an \
+         auditor reading the log months later has no stderr to read"
+    );
+    assert!(
+        AuditLogger::verify_integrity(scratch.log_path())
+            .await
+            .expect("verify"),
+        "the flag is inside the hash chain, as every detail on a success entry \
+         is, so it cannot be edited out without detection"
+    );
 }
 
 /// The other direction, without which the case above would pass just as well
-/// against a verb that warned on every framework. CIS and ISO/IEC 27001 carry
+/// against a verb that warned on every framework, or that stamped every entry
+/// `takes_effect = false` whatever the catalogue. CIS and ISO/IEC 27001 carry
 /// hand-curated catalogues, so their catalogues list controls the engine does
 /// not assess and an exclusion of one does reach the generator's exclusion arm.
 #[tokio::test]
@@ -331,6 +348,17 @@ async fn a_curated_framework_is_not_warned_about() {
             advisory.is_none(),
             "{framework} has a curated catalogue, so the exclusion takes effect \
              and there is nothing to warn about: {advisory:?}"
+        );
+
+        let entries = scratch.entries().await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].entry_result, ActionResult::Success);
+        assert_eq!(
+            entries[0].entry_details.get("takes_effect"),
+            None,
+            "and nothing on the entry says it cannot take effect, for {framework}: \
+             {:?}",
+            entries[0].entry_details
         );
     }
 }

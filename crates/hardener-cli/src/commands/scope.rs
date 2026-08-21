@@ -27,7 +27,9 @@
 //! and the generator settles it before reaching the arm that honours an
 //! exclusion. Such a declaration is still written and still audited, because a
 //! framework may gain a curated catalogue later, but it is written with a
-//! warning on stderr rather than in silence. See `inert_exclusion_advisory`.
+//! warning on stderr rather than in silence, and its audit entry carries
+//! `takes_effect = false` so that an auditor with only the log in front of them
+//! can tell the two apart. See `inert_exclusion_advisory`.
 //!
 //! **Why this verb exists at all.** The same declaration could be typed into
 //! the configuration file by hand, and the generator would honour it. What a
@@ -276,6 +278,15 @@ async fn exclude(
         .await;
     }
 
+    // Settled before the entry is filed rather than at the print site below,
+    // because an auditor reading `audit.log` has no stderr to read alongside
+    // it: an inert SOC 2 exclusion and an effective CIS one would otherwise be
+    // the same entry. `unknown_control_refusal` refuses a mistyped id on
+    // exactly that reasoning, that the log must not record a control as
+    // excluded that no catalogue carries, and a declaration no catalogue can
+    // honour is that same claim one step weaker.
+    let advisory = inert_exclusion_advisory(&framework, request.control);
+
     let mut details = HashMap::from([
         ("operation".to_string(), "exclude".to_string()),
         ("reason".to_string(), exclusion.reason.clone()),
@@ -293,6 +304,15 @@ async fn exclude(
     if !exclusion.hosts.is_empty() {
         details.insert("hosts".to_string(), exclusion.hosts.join(","));
     }
+    // Written only when the declaration cannot take effect, as every optional
+    // detail above is written only when there is something to say. The key
+    // borrows the advisory's own words, so the entry and the warning on stderr
+    // name the same fact. It is inside the hash, because a success entry goes
+    // through `log_action_with_details`; only the failure path is held to a
+    // single `error` detail. See `refuse`.
+    if advisory.is_some() {
+        details.insert("takes_effect".to_string(), "false".to_string());
+    }
 
     record(logger.as_ref(), target, details).await;
 
@@ -303,7 +323,6 @@ async fn exclude(
         path.display()
     );
 
-    let advisory = inert_exclusion_advisory(&framework, request.control);
     if let Some(text) = &advisory {
         eprintln!("W  {text}");
     }
