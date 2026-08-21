@@ -719,6 +719,37 @@ test.describe('Contrast, computed cascade', () => {
       const pairs = [];
       for (const route of ROUTES) {
         await loadApp(page, route.path, route.query || '');
+        // Freeze transitions before anything is driven. Parking the pointer
+        // below ENDS a hover, and a rule with `transition: color` answers that
+        // by ANIMATING back, so a read taken immediately afterwards returns a
+        // colour the design never renders at rest.
+        //
+        // Measured on `.fleet-host-option`, which is `--text-secondary` with
+        // `transition: color var(--transition-fast)` (150ms) and a `:hover`
+        // of `--text-primary`: at rest rgb(168,184,200), hovered
+        // rgb(232,237,244), and 0ms after un-hovering rgb(225,231,239) - all
+        // but indistinguishable from the HOVER colour. At 60ms it reads
+        // rgb(177,192,207) and only by 300ms is it back. With this style tag
+        // in place the same read returns rgb(168,184,200) immediately.
+        //
+        // The 2026-08-21 full sweep is what exposed it, and only by a count:
+        // three distributions measured 182 pairings in two themes each where
+        // the other three measured 184, with the short themes DIFFERENT on
+        // each - Fortress and Guardian on openSUSE, Midnight Teal and Guardian
+        // on RHEL, Daywatch and High Contrast on Ubuntu. One element seen by
+        // two rules, `.fleet-host-option` and a bare `label`, landing on a
+        // colour already recorded for another route and folding into its
+        // deduplication key. The ratios were 12.18 to 14.99 against a bar of
+        // 4.5, so nothing came close to failing and every distribution passed.
+        //
+        // That is the danger rather than the missing pairings: a ratio can be
+        // reported for a colour that exists only in transit. Here it was
+        // harmless. It would not be for a rule whose resting colour fails and
+        // whose hover colour passes, and this file would have reported the
+        // passing one.
+        await page.addStyleTag({
+          content: '*,*::before,*::after{transition:none!important;animation:none!important}',
+        });
         await selectTheme(page, theme.value);
         await route.setup(page);
         // Park the pointer before observing. Playwright leaves the mouse where
@@ -733,6 +764,13 @@ test.describe('Contrast, computed cascade', () => {
         //
         // The corner is arbitrary but fixed, which is the whole point: this
         // buys reproducibility, not the absence of hover.
+        //
+        // It bought LESS than that on its own, and for eleven days nothing
+        // said so. Moving the pointer away does not restore the resting colour,
+        // it starts a transition towards it, so this line ended one race and
+        // opened a slower one. The style tag above is what actually closes it;
+        // this still matters, because which rules MATCH at all depends on
+        // where the pointer sits.
         await page.mouse.move(0, 0);
         pairs.push(...(await collectPairs(page, route.name, route.scope || null)));
       }
