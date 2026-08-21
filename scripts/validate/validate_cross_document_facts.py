@@ -186,6 +186,35 @@ def theme_sweep_screenshots(root: Path) -> int:
     return theme_sweep_states(root) * themes
 
 
+def registered_site_count(_root: Path) -> int:
+    """How many sites this validator holds, counted off its own registry.
+
+    The only fact here whose canonical source is this file rather than the tree
+    or a named document, and it exists because the Example Output block in
+    `scripts/README.md` had gone stale TWICE: it said 156 across 4 sites until
+    2026-08-20 and 157 across 6 until 2026-08-21. A sample of a validator's
+    output, in the entry describing that validator, drifting exactly as the
+    validator exists to prevent.
+
+    It is deliberately self-referential. Registering it added a site, so the
+    number it reports moved 17 to 18 in the same edit, and any fact added later
+    moves it again whether or not that fact's own sites are in this file. That
+    is the property worth having: this is the one number in the block that
+    changes on EVERY registry change rather than only on a change to what it
+    describes.
+
+    `main` counts a site as checked only after it has agreed, and prints this
+    line only when nothing failed, so on a green run its `checked` equals this
+    sum by construction. On a failing run the line is never printed and the
+    comparison never arises.
+
+    `_root` is unused and named so. The registry passes a project root to every
+    canonical callable, and a signature that quietly ignored it would read as
+    an oversight rather than as the point.
+    """
+    return sum(len(sites) for _fact, _source, sites in REGISTRY)
+
+
 # (fact, canonical source callable, [(path, pattern, note)])
 #
 # The pattern must capture exactly one group and must be present-tense. A
@@ -322,6 +351,23 @@ REGISTRY = [
                 r"`themes\.spec\.js` produces (\d+) from \d+ themes",
                 "the run-gui-tests.sh entry's explanation of why the count is "
                 "read off the runner",
+            ),
+        ],
+    ),
+    (
+        "registered sites",
+        registered_site_count,
+        [
+            (
+                "scripts/README.md",
+                r"All (\d+) registered sites agree with their source",
+                "the Example Output block of this validator's own entry, which "
+                "went stale at 4 sites and again at 6. The other numbers in "
+                "that block are illustrative and remain unheld: each duplicates "
+                "a fact registered against a different site, and a pattern "
+                "unique enough to pin one of them inside a fenced sample would "
+                "be pinned to the sample's line ORDER. This line needs no such "
+                "anchor and is the only one that moves on every registry change",
             ),
         ],
     ),
