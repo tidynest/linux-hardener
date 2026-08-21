@@ -241,8 +241,10 @@ def main():
             # date on it would be a claim nobody maintains. Requiring one
             # produced 37 permanent warnings, every run, and a warning that is
             # always present is a warning nobody reads. An archived file that
-            # *does* carry a date is still checked below, so an accidental edit
-            # leaving a stale one is still caught.
+            # *does* carry a date is recorded below but never compared, so a
+            # stale one on an archive is deliberately not caught: see the skip
+            # in the marker loop for why holding it to a git date would be a
+            # red with no green path.
             if not is_archived(rel_path):
                 missing_dates.append(rel_path)
             continue
@@ -260,10 +262,17 @@ def main():
             # Archived documents are frozen, and `update_all_docs.py` refuses to
             # rewrite their stamps. Holding them to a git date the sanctioned
             # tool will not correct produces a red with no green path, which is
-            # the state this validator was in the moment the tolerance came off:
-            # three archived plans, all moved on 2026-08-01 by a reorganisation
-            # that changed no word in them. The two tools now agree on scope as
-            # well as on the question.
+            # the state this validator was in the moment the tolerance came off.
+            # Five archived stamps disagree with their git dates, not the three
+            # this comment first recorded: the other two are written
+            # `**Last Updated:**`, with the colon inside the emphasis, which
+            # none of the patterns above match, so they never reach this line.
+            # Nor were the three "moved on 2026-08-01 by a reorganisation that
+            # changed no word in them". The reorganisation was 4f7901b1 on
+            # 2026-07-18; the 2026-08-01 dates come from 83ca212f, which added a
+            # one-line archive banner to all thirty-one tracked archive files.
+            # The conclusion held, the cause did not. The two tools now agree on
+            # scope as well as on the question.
             if is_archived(rel_path):
                 current_files.append((rel_path, line_no, date_str, "archived"))
                 continue

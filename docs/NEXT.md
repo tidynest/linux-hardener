@@ -491,7 +491,7 @@ For coding standards, workflow, and conventions, see [CONTRIBUTING.md](../CONTRI
 ### Workspace Structure
 
 ```
-/home/bakri/RustroverProjects/linux-system-hardener/
+linux-hardener/
 ├── Cargo.toml (workspace root)
 ├── .cargo/config.toml       # WASM rustflags for getrandom
 ├── crates/
