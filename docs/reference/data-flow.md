@@ -1417,13 +1417,16 @@ pub struct Daemon {
 │    tallies: SeverityTallies {                                │
 │      critical: 2, high: 5, medium: 3, low: 1, info: 0       │
 │    },                                                        │
-│    scan_results: Vec<ScanResult>  // full findings           │
+│    scan_results: Vec<ScanResult>, // full findings           │
+│    compliance: Vec<FleetFrameworkPosture>, // derived below  │
+│    profile: ComplianceProfile::Rhel10 // scheme that scored  │
 │  }                                                           │
 │                                                              │
 │  On connect/scan error:                                      │
 │    status: FleetHostStatus::Failed(sanitised_msg)            │
 │    tallies: all zeros                                        │
-│    scan_results: []                                          │
+│    scan_results: [], compliance: []                          │
+│    profile: ComplianceProfile::Generic                       │
 └────────┬─────────────────────────────────────────────────────┘
          │ JSON response (Vec<FleetHostScan>)
          ▼
@@ -1435,7 +1438,9 @@ pub struct Daemon {
 │  ├─ Framework score strip, one cell per compliance framework │
 │  └─ Expand row → HostPanel, four sections: Compliance        │
 │     detail (per-framework score + pass/fail/manual/NA        │
-│     counts); one collapsible control list per framework      │
+│     counts, each row badged with the identifier scheme that  │
+│     scored it when `profile` is not Generic); one            │
+│     collapsible control list per framework                   │
 │     (FleetFrameworkPosture::controls); Findings grouped      │
 │     by severity; and the per-host Scan history timeline,     │
 │     read from scheduler.db via get_host_history              │
@@ -1490,6 +1495,9 @@ pub struct FleetHostScan {
     pub scan_results: Vec<ScanResult>,
     /// Per-framework compliance postures derived from `scan_results` in-process.
     pub compliance: Vec<FleetFrameworkPosture>,
+    /// Identifier scheme `compliance` was scored under, resolved per host from
+    /// its own `/etc/os-release`; `Generic` when the host failed to scan.
+    pub profile: ComplianceProfile,
 }
 ```
 

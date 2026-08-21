@@ -293,6 +293,27 @@ impl FromStr for ComplianceProfile {
     }
 }
 
+/// Human-readable identifier-scheme label for a report heading, when the
+/// (profile, framework) pair warrants one. The generic STIG label names its
+/// RHEL 8 baseline honestly instead of implying universality.
+///
+/// Lives here rather than in `hardener-compliance` (which re-exports it) so
+/// the Leptos frontend can label a fleet row with the scheme that scored it
+/// without depending on that crate. One copy, because two would drift.
+pub fn profile_label(
+    profile: ComplianceProfile,
+    framework: ComplianceFramework,
+) -> Option<&'static str> {
+    match (profile, framework) {
+        (ComplianceProfile::Rhel10, ComplianceFramework::STIG) => Some("DISA RHEL 10 STIG V1R1"),
+        (ComplianceProfile::Rhel10, ComplianceFramework::CIS) => {
+            Some("CIS RHEL 10 Benchmark v1.0.1")
+        }
+        (ComplianceProfile::Generic, ComplianceFramework::STIG) => Some("RHEL 8 baseline IDs"),
+        _ => None,
+    }
+}
+
 /// Mapping of a finding to a specific compliance framework control.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ComplianceMapping {
@@ -1454,6 +1475,11 @@ pub struct FleetHostScan {
     /// Per-framework compliance posture derived from `scan_results`; empty when
     /// the host failed to scan.
     pub compliance: Vec<FleetFrameworkPosture>,
+    /// Identifier scheme the posture above was scored under, resolved from the
+    /// host's own `/etc/os-release`; `Generic` for a host that failed to scan.
+    /// Carried so a reader can tell which scheme produced the control ids
+    /// rather than having to infer it from the distribution.
+    pub profile: ComplianceProfile,
 }
 
 // ============================================================================

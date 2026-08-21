@@ -10,11 +10,11 @@ pub use hardener_types::scheduler::{
 };
 pub use hardener_types::{
     ApplyOutcome, ApplyResult, Change, ChangeType, CheckpointDetail, CheckpointFileInfo,
-    CheckpointInfo, CheckpointList, ComplianceFramework, ComplianceMapping, ComplianceReport,
-    ComplianceSummary, ConfigSummary, ControlResult, ControlStatus, DivergenceState,
-    ExceptionOutcome, FileRestoreAction, FileRestoreResult, Finding, FindingCategory,
-    FindingPolicyException, FleetFrameworkPosture, FleetHostScan, FleetHostStatus, PluginId,
-    PluginMetadata, RollbackDivergence, RollbackOutcome, RollbackResult, ScanResult,
+    CheckpointInfo, CheckpointList, ComplianceFramework, ComplianceMapping, ComplianceProfile,
+    ComplianceReport, ComplianceSummary, ConfigSummary, ControlResult, ControlStatus,
+    DivergenceState, ExceptionOutcome, FileRestoreAction, FileRestoreResult, Finding,
+    FindingCategory, FindingPolicyException, FleetFrameworkPosture, FleetHostScan, FleetHostStatus,
+    PluginId, PluginMetadata, RollbackDivergence, RollbackOutcome, RollbackResult, ScanResult,
     ScanSessionInfo, Severity, SeverityTallies, ValidationIssue, ValidationReport,
     WrittenException,
 };

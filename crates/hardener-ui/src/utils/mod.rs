@@ -2,9 +2,10 @@ pub mod theme;
 
 use crate::types::{ApplyOutcome as FleetApplyOutcome, RollbackOutcome as FleetRollbackOutcome};
 use crate::types::{
-    ApplyResult, Change, CheckpointInfo, ComplianceFramework, ControlStatus, ExceptionOutcome,
-    FileRestoreAction, Finding, FindingPolicyException, FleetFrameworkPosture, RollbackResult,
-    ScanResult, ScanSessionInfo, Severity, ValidationIssue, ValidationReport, WrittenException,
+    ApplyResult, Change, CheckpointInfo, ComplianceFramework, ComplianceProfile, ControlStatus,
+    ExceptionOutcome, FileRestoreAction, Finding, FindingPolicyException, FleetFrameworkPosture,
+    RollbackResult, ScanResult, ScanSessionInfo, Severity, ValidationIssue, ValidationReport,
+    WrittenException,
 };
 use hardener_types::{ApplyStatus, RollbackStatus, UncheckedTally};
 
@@ -496,6 +497,29 @@ pub fn framework_short_label(framework: ComplianceFramework) -> &'static str {
         ComplianceFramework::SOC2 => "SOC2",
         ComplianceFramework::NIST800171 => "800-171",
         ComplianceFramework::FedRAMP => "FedRAMP",
+    }
+}
+
+/// The identifier scheme a fleet row's framework was scored under, for the
+/// badge beside its short label, or `None` when there is nothing worth saying.
+///
+/// Delegates to `hardener_types::profile_label`, the one copy of these
+/// strings, rather than restating them: the report headings and this badge
+/// cannot then disagree about what scored a host.
+///
+/// `Generic` is suppressed here rather than there. A generic host's STIG row
+/// does have an honest label ("RHEL 8 baseline IDs") and a report heading
+/// wants it, but every host in a non-RHEL fleet is generic, so on this screen
+/// it would badge every row with the default and say nothing about any of
+/// them. A badge that never varies is noise; the profiled rows are the ones
+/// that carry information.
+pub fn profile_badge_label(
+    profile: ComplianceProfile,
+    framework: ComplianceFramework,
+) -> Option<&'static str> {
+    match profile {
+        ComplianceProfile::Generic => None,
+        ComplianceProfile::Rhel10 => hardener_types::profile_label(profile, framework),
     }
 }
 

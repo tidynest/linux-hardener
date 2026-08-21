@@ -1033,10 +1033,24 @@
           await new Promise(() => {});
         }
         // db-01 exercises the failed-row path; everything else is a healthy host.
+        //
+        // `profile` is the identifier scheme each row was scored under, and it
+        // is a REQUIRED field of FleetHostScan: ComplianceProfile serialises
+        // lowercase, so "generic" or "rhel10" and nothing else. Omitting it
+        // fails the whole scan to deserialise and empties the view, which is
+        // what the missing `controls` above did once already.
+        //
+        // web-01 is rhel10 and every other target is generic, so both arms of
+        // the badge exist in one fixture: web-01's compliance rows carry a
+        // scheme label and a generic host's identical rows carry none. An
+        // ad-hoc target is the generic host with compliance to show, because
+        // db-01 (the other saved host) fails and renders no compliance table
+        // at all, so it could only ever confirm the badge's absence vacuously.
+        const hostProfile = (name) => (name === 'web-01' ? 'rhel10' : 'generic');
         return targets.map((name) =>
           name === 'db-01'
-            ? { host_name: name, status: { Failed: 'SSH connection refused on port 2222' }, tallies: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, scan_results: [], compliance: [] }
-            : { host_name: name, status: 'Ok', tallies: okTallies, scan_results: SCAN_RESULTS, compliance }
+            ? { host_name: name, status: { Failed: 'SSH connection refused on port 2222' }, tallies: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, scan_results: [], compliance: [], profile: 'generic' }
+            : { host_name: name, status: 'Ok', tallies: okTallies, scan_results: SCAN_RESULTS, compliance, profile: hostProfile(name) }
         );
       }
 

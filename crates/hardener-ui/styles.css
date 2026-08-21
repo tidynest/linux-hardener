@@ -4487,6 +4487,24 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .host-compliance-table td { text-align: right; padding: 4px 8px; border-top: 0.5px solid var(--border); }
 .host-col-left { text-align: left !important; }
 
+/* Which identifier scheme scored the framework on this row, e.g. "DISA RHEL 10
+   STIG V1R1". Rendered only for a non-generic profile, so it qualifies the
+   framework name beside it rather than repeating the default on every row.
+   A quiet meta label and not a tinted pill deliberately: it explains the
+   control ids further down the panel and must not outrank the score cell it
+   sits next to.
+   The pairing is not a new one. `--text-muted` on this panel's surfaces is
+   what `.host-finding-plugin` already carries inside the same panel and
+   `.tally-low` carries on the row above it, so this rule adds a render site
+   to a measured pairing rather than a colour that has never been weighed. */
+.host-profile-badge {
+  margin-left: 6px;
+  font-size: 0.72rem;
+  color: var(--text-muted, #888);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
 /* Compliance score cell - colour the percentage text directly. The shared
    .score-* classes only colour a .score-value child (a bare table cell has
    none), so the Hosts table scopes its own colour like the fleet table does. */

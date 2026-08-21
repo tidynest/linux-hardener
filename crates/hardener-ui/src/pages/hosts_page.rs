@@ -9,7 +9,7 @@ use crate::tauri_bindings::{
     invoke_connect_remote, invoke_delete_remote_host, invoke_disconnect_remote, invoke_fleet_scan,
     invoke_list_remote_hosts, invoke_remote_scan, listen_event,
 };
-use crate::types::{FleetHostScan, FleetHostStatus, SeverityTallies};
+use crate::types::{ComplianceProfile, FleetHostScan, FleetHostStatus, SeverityTallies};
 use crate::utils::{adhoc_canonical, adhoc_target_error};
 use hardener_types::remote::{
     FLEET_PROGRESS_EVENT, FleetProgress, RemoteConnectionInfo, RemoteConnectionStatus,
@@ -183,12 +183,19 @@ pub fn HostsPage() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match invoke_remote_scan(None).await {
                 Ok(results) => {
+                    // `profile` is `Generic` because a session scan resolves
+                    // none: `run_remote_scan` returns findings alone and
+                    // derives no posture, so `compliance` is empty and there
+                    // is no scored row for a scheme to label. The default is
+                    // the honest answer here rather than a guess, and it
+                    // renders no badge.
                     let synthesised = FleetHostScan {
                         host_name: name.clone(),
                         status: FleetHostStatus::Ok,
                         tallies: SeverityTallies::from_results(&results),
                         scan_results: results,
                         compliance: Vec::new(),
+                        profile: ComplianceProfile::default(),
                     };
                     scans.update(|m| {
                         m.insert(name, synthesised);

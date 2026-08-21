@@ -1715,12 +1715,13 @@ const FLEET_CONCURRENCY: usize = 8;
 
 /// Scans many hosts concurrently, isolating per-host failure and preserving
 /// input order. `scan_one` produces one host's resolved compliance profile and
-/// scan results (or an error that becomes a `Failed` row). Each returned row
-/// pairs the host's profile with its scan: the profile drives posture scoring
-/// and is `Generic` for failed hosts. `on_progress` fires once per completed
-/// host, in completion order, with (host row, completed count, total): the
-/// UI's live progress hook. Generic so the orchestration is unit-testable
-/// without real SSH or a Tauri app handle.
+/// scan results (or an error that becomes a `Failed` row). Each row carries the
+/// profile it was scanned under in `FleetHostScan::profile`: it drives posture
+/// scoring, travels to the UI as the scheme that scored the row, and is
+/// `Generic` for failed hosts. `on_progress` fires once per completed host, in
+/// completion order, with (host row, completed count, total): the UI's live
+/// progress hook. Generic so the orchestration is unit-testable without real
+/// SSH or a Tauri app handle.
 ///
 /// ponytail: a spawned task that *panics* (rather than returning `Err`) keeps
 /// its pre-filled `Failed` slot, so the result always has exactly one row per
@@ -1730,7 +1731,7 @@ async fn scan_fleet<F, Fut>(
     host_names: Vec<String>,
     scan_one: F,
     mut on_progress: impl FnMut(&FleetHostScan, usize, usize),
-) -> Vec<(ComplianceProfile, FleetHostScan)>
+) -> Vec<FleetHostScan>
 where
     F: Fn(String) -> Fut,
     Fut: std::future::Future<Output = Result<(ComplianceProfile, Vec<ScanResult>), String>>
@@ -1743,19 +1744,15 @@ where
 
     // One placeholder row per host, overwritten as tasks complete. A panicked
     // task leaves its placeholder, preserving the one-row-per-host contract.
-    let mut ordered: Vec<(ComplianceProfile, FleetHostScan)> = host_names
+    let mut ordered: Vec<FleetHostScan> = host_names
         .iter()
-        .map(|name| {
-            (
-                ComplianceProfile::Generic,
-                FleetHostScan {
-                    host_name: name.clone(),
-                    status: FleetHostStatus::Failed("scan task panicked".to_string()),
-                    tallies: SeverityTallies::default(),
-                    scan_results: Vec::new(),
-                    compliance: Vec::new(),
-                },
-            )
+        .map(|name| FleetHostScan {
+            host_name: name.clone(),
+            status: FleetHostStatus::Failed("scan task panicked".to_string()),
+            tallies: SeverityTallies::default(),
+            scan_results: Vec::new(),
+            compliance: Vec::new(),
+            profile: ComplianceProfile::Generic,
         })
         .collect();
 
@@ -1774,13 +1771,13 @@ where
             };
             (
                 index,
-                profile,
                 FleetHostScan {
                     host_name: name,
                     tallies: SeverityTallies::from_results(&scan_results),
                     status,
                     scan_results,
                     compliance: Vec::new(),
+                    profile,
                 },
             )
         });
@@ -1788,10 +1785,10 @@ where
 
     let mut completed = 0;
     while let Some(joined) = set.join_next().await {
-        if let Ok((index, profile, scan)) = joined {
+        if let Ok((index, scan)) = joined {
             completed += 1;
             on_progress(&scan, completed, total);
-            ordered[index] = (profile, scan);
+            ordered[index] = scan;
         }
     }
     ordered
@@ -2005,7 +2002,7 @@ pub async fn run_fleet_scan(
     // declared-not-applicable set are read once and cloned per host.
     let coverage = hardener_plugins::compliance_coverage();
     let exclusions = local_exclusions();
-    for (profile, host) in &mut results {
+    for host in &mut results {
         if matches!(host.status, FleetHostStatus::Ok) {
             let findings: Vec<Finding> = host
                 .scan_results
@@ -2025,13 +2022,17 @@ pub async fn run_fleet_scan(
                 .get(&host.host_name)
                 .cloned()
                 .unwrap_or_else(|| RemoteHostProfile::from_target(&host.host_name, 22, None, true));
-            let generator =
-                fleet_report_generator(*profile, coverage.clone(), exclusions.clone(), &identity);
+            let generator = fleet_report_generator(
+                host.profile,
+                coverage.clone(),
+                exclusions.clone(),
+                &identity,
+            );
             host.compliance = posture_for_findings(&generator, &findings, &unchecked);
         }
     }
 
-    Ok(results.into_iter().map(|(_, host)| host).collect())
+    Ok(results)
 }
 
 // ---------------------------------------------------------------------------

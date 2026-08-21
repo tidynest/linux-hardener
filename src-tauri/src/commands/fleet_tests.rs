@@ -348,12 +348,12 @@ async fn fleet_isolates_failures_and_preserves_order() {
     .await;
 
     assert_eq!(results.len(), 3);
-    assert_eq!(results[0].1.host_name, "a");
-    assert_eq!(results[1].1.host_name, "b");
-    assert_eq!(results[2].1.host_name, "c");
-    assert!(matches!(results[0].1.status, FleetHostStatus::Ok));
-    assert!(matches!(results[1].1.status, FleetHostStatus::Failed(_)));
-    assert!(matches!(results[2].1.status, FleetHostStatus::Ok));
+    assert_eq!(results[0].host_name, "a");
+    assert_eq!(results[1].host_name, "b");
+    assert_eq!(results[2].host_name, "c");
+    assert!(matches!(results[0].status, FleetHostStatus::Ok));
+    assert!(matches!(results[1].status, FleetHostStatus::Failed(_)));
+    assert!(matches!(results[2].status, FleetHostStatus::Ok));
 }
 
 #[tokio::test]
@@ -372,12 +372,12 @@ async fn fleet_carries_per_host_profile_and_failed_hosts_stay_generic() {
     .await;
 
     assert_eq!(
-        results[0].0,
+        results[0].profile,
         ComplianceProfile::Rhel10,
-        "a scanned host's resolved profile rides alongside its row"
+        "a scanned host's resolved profile travels on its own row"
     );
     assert_eq!(
-        results[1].0,
+        results[1].profile,
         ComplianceProfile::Generic,
         "a failed host scores under Generic"
     );

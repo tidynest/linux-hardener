@@ -1,5 +1,5 @@
 // =============================================================================
-// FLEET SCAN TESTS (T-FLEET-01..10) - Linux Hardener GUI Tests
+// FLEET SCAN TESTS (T-FLEET-01..11) - Linux Hardener GUI Tests
 // =============================================================================
 // Read-only multi-host scan: host selection, per-host results, expandable rows,
 // and the failed-host path.
@@ -168,6 +168,65 @@ test.describe('Fleet Scan', () => {
     await expandHost(page, 'db-01').click();
     await expect(page.getByText(/No persisted history for this host/i)).toBeVisible();
     await expect(nodes).toHaveCount(0);
+  });
+
+  // T-FLEET-11: The expanded host says which identifier scheme scored it
+  //
+  // The fleet has always scored each host under its own resolved profile and
+  // never said so, which is the follow-up #11 left: an operator reading
+  // "RHEL-10-701130" in the control list had no way to tell a RHEL 10 scheme
+  // from canonical ids that had gone strange.
+  //
+  // Both arms are asserted, and they need two different hosts. web-01 is the
+  // fixture's rhel10 host, so its CIS and STIG rows each carry the scheme that
+  // scored them. The generic arm cannot use db-01: it fails, renders no
+  // compliance table, and a badge count of 0 there would hold whether or not
+  // the badge was suppressed for Generic, which is no assertion at all. An
+  // ad-hoc target scans clean in this fixture and is generic, so it renders
+  // the same two framework rows web-01 does with no badge on either, and the
+  // contrast between the two halves is what has content.
+  //
+  // The framework rows are counted in the generic half before the badges are.
+  // Without it a build that dropped the whole Compliance detail section, or a
+  // mock drift that emptied `compliance`, would satisfy "no badges" perfectly.
+  test('T-FLEET-11: the profile that scored a host is named on its rows', async ({ page }) => {
+    const badges = page.locator('.host-panel .host-profile-badge');
+
+    await selectHost(page, 'web-01').check();
+    await scanButton(page).click();
+    await expect(unscanned(page)).toHaveCount(1);
+
+    const web = expandHost(page, 'web-01');
+    await web.click();
+    await expect(badges).toHaveCount(2);
+    await expect(badges).toHaveText([
+      'CIS RHEL 10 Benchmark v1.0.1',
+      'DISA RHEL 10 STIG V1R1',
+    ]);
+
+    // Collapse before the second host: the panel is behind a `<Show>`, so this
+    // removes it rather than hiding it, and the locator above is panel-rooted.
+    await web.click();
+    await expect(page.locator('.host-panel')).toHaveCount(0);
+
+    // The generic half. The target is added, selected and scanned like any
+    // other row; `adhoc_canonical` fills the default port in, so the row is
+    // named "admin@10.0.0.9:22" rather than what was typed.
+    await page.getByRole('button', { name: 'Add ad-hoc target' }).click();
+    await page.getByRole('textbox', { name: 'Ad-hoc SSH target' }).fill('admin@10.0.0.9');
+    await button(page, 'Add').click();
+
+    const adhoc = 'admin@10.0.0.9:22';
+    await expect(selectHost(page, adhoc)).toBeVisible();
+    await selectHost(page, 'web-01').uncheck();
+    await selectHost(page, adhoc).check();
+    await scanButton(page).click();
+
+    await expandHost(page, adhoc).click();
+    // The rows exist, so the absence below is a suppressed badge and not a
+    // missing table.
+    await expect(page.locator('.host-panel .host-compliance-table tbody tr')).toHaveCount(2);
+    await expect(badges).toHaveCount(0);
   });
 
   // T-FLEET-09: The armed state is reversible, and reverting it deletes nothing

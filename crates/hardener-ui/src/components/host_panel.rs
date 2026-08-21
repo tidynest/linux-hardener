@@ -8,7 +8,8 @@ use crate::tauri_bindings::invoke_get_host_history;
 use crate::types::{Finding, FleetHostScan};
 use crate::utils::{
     checkpoint_time, control_status_class, framework_short_label, group_findings_by_severity,
-    score_band, score_band_class, severity_class, severity_label, split_policy_excepted,
+    profile_badge_label, score_band, score_band_class, severity_class, severity_label,
+    split_policy_excepted,
 };
 use hardener_types::remote::{HostSessionInfo, RemoteHostProfile};
 use leptos::prelude::*;
@@ -167,7 +168,12 @@ pub fn HostPanel(
 
             // --- Compliance detail (above Findings) ---
             {move || {
-                let compliance = scan.get().map(|s| s.compliance).unwrap_or_default();
+                let scanned = scan.get();
+                // The scheme this host's posture was scored under. Read once,
+                // beside the compliance it labels, because a badge that
+                // disagreed with the rows below it would be worse than none.
+                let host_profile = scanned.as_ref().map(|s| s.profile).unwrap_or_default();
+                let compliance = scanned.map(|s| s.compliance).unwrap_or_default();
                 // Frameworks with no control rows are dropped rather than
                 // rendered as an empty expander: a host scanned before this
                 // shipped, or one that failed, carries a summary and nothing
@@ -198,9 +204,20 @@ pub fn HostPanel(
                                         let sm = p.summary;
                                         let score = sm.summary_score_percentage.round() as i32;
                                         let band = score_band_class(score_band(score));
+                                        // Which identifier scheme scored this
+                                        // row, where a scheme other than the
+                                        // default was used. Without it the
+                                        // control ids below read as canonical
+                                        // ones that had gone strange.
+                                        let scheme = profile_badge_label(host_profile, p.framework);
                                         view! {
                                             <tr>
-                                                <td class="host-col-left">{framework_short_label(p.framework)}</td>
+                                                <td class="host-col-left">
+                                                    {framework_short_label(p.framework)}
+                                                    {scheme.map(|s| view! {
+                                                        <span class="host-profile-badge">{s}</span>
+                                                    })}
+                                                </td>
                                                 <td class=band>{score}</td>
                                                 <td>{sm.summary_passing}</td>
                                                 <td>{sm.summary_failing}</td>

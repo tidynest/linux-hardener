@@ -590,22 +590,11 @@ pub fn translate_all(
         .collect()
 }
 
-/// Human-readable identifier-scheme label for a report heading, when the
-/// (profile, framework) pair warrants one. The generic STIG label names its
-/// RHEL 8 baseline honestly instead of implying universality.
-pub fn profile_label(
-    profile: ComplianceProfile,
-    framework: ComplianceFramework,
-) -> Option<&'static str> {
-    match (profile, framework) {
-        (ComplianceProfile::Rhel10, ComplianceFramework::STIG) => Some("DISA RHEL 10 STIG V1R1"),
-        (ComplianceProfile::Rhel10, ComplianceFramework::CIS) => {
-            Some("CIS RHEL 10 Benchmark v1.0.1")
-        }
-        (ComplianceProfile::Generic, ComplianceFramework::STIG) => Some("RHEL 8 baseline IDs"),
-        _ => None,
-    }
-}
+/// Re-exported from `hardener-types`, where the labels moved so the Leptos
+/// frontend could reach them without depending on this crate. Every caller
+/// here keeps its `profiles::profile_label` path; there is still one copy of
+/// the strings.
+pub use hardener_common::types::profile_label;
 
 /// Resolves the report profile for a detected distribution.
 ///

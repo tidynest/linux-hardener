@@ -7,5 +7,5 @@
 pub use hardener_types::{
     ComplianceFramework, ComplianceMapping, ComplianceProfile, ControlStatus,
     EXCEPTION_OBSERVED_UNCHANGED, FindingCategory, FindingPolicyException, PluginId, Severity,
-    UNDELETABLE_ROLLBACK_PATHS, exception_preview_line,
+    UNDELETABLE_ROLLBACK_PATHS, exception_preview_line, profile_label,
 };
