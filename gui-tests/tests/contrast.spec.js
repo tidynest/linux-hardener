@@ -309,13 +309,10 @@ const ROUTES = [
     // a real apply, so the preview route above cannot reach them however it is
     // set up: `ApplyStatus::Validated` has no "applied" cell to draw.
     //
-    // `.fleet-glyph-ok` is the one rule on this page still unmeasured, and
-    // deliberately: it needs a host that applied with nothing failing, and the
-    // fixture has two hosts, one of which must keep failing to hold the error
-    // line above. It is `--color-good-bright` on `.fleet-outcome`, which is
-    // the same token on the same surface as `.fleet-stat.score-good` measured
-    // here, so it is the same pairing and the same reading - reasoning, not a
-    // measurement, and recorded as such rather than left to look measured.
+    // This route reaches `.fleet-glyph-failed` and `.score-critical`, both from
+    // web-01's `failed: 1`; db-01's `Failed` arm renders no cells at all, only
+    // the error line. `.fleet-glyph-ok` is NOT reachable here for that reason,
+    // and is measured by the rollback route below rather than reasoned about.
     path: '/fleet-apply',
     name: 'fleet apply, executed',
     setup: async (page) => {
@@ -333,6 +330,48 @@ const ROUTES = [
       // the preview still on screen.
       await expect(page.locator('.fleet-stat.score-critical')).toBeVisible();
       await expect(page.locator('.fleet-stat.score-good')).toBeVisible();
+    },
+  },
+  {
+    // `.fleet-glyph-ok`, the last rule on this page, and it needed neither a
+    // third host nor a fixture flag. Both were assumed: the note left on the
+    // route above reasoned that a clean glyph wants a host that applied with
+    // nothing failing, that the fixture has two, and that one of them must
+    // keep failing to hold the error line - so the rule was recorded as
+    // reasoned-not-measured and a third host was written down as the price.
+    //
+    // The assumption was about APPLY. This page has a second mode, and
+    // `fleet_rollback_cells` reaches `OutcomeGlyph::Ok` by a different door:
+    // its `RolledBack` arm asks only whether `failed > 0`, and the mock's
+    // `run_fleet_rollback` returns `{ restored: 2, failed: 0 }` for every host
+    // it is given, db-01 included, because that handler does not special-case
+    // the name the apply handler fails. So the default fixture already draws
+    // the rule, twice, on the surface it needed measuring against. What was
+    // missing was a route that pressed Execute in rollback mode, and none
+    // existed: T-FAPPLY-09 switches modes but stops at the preview, where
+    // `checkpoints > 0` gives Pending.
+    //
+    // The cost of the wrong assumption would have been a third host rippling
+    // into every test that asserts a host count, to buy a reading this gets
+    // for free.
+    path: '/fleet-apply',
+    name: 'fleet apply, rolled back',
+    setup: async (page) => {
+      // Mode first. `set_mode` clears the preview, so switching after one
+      // would re-arm the gate and Execute would be gone again.
+      await page.getByRole('radio', { name: 'Roll back' }).check();
+      const hosts = page.getByRole('group', { name: 'Hosts', exact: true });
+      await hosts.getByRole('checkbox', { name: /^web-01 / }).check();
+      await hosts.getByRole('checkbox', { name: /^db-01 / }).check();
+      await page.getByRole('button', { name: /Preview Changes/i }).click();
+      const execute = page.getByRole('button', { name: /^Execute/ });
+      await expect(execute).toBeVisible();
+      await execute.click();
+      await page.getByRole('button', { name: /Yes, execute/i }).click();
+      // The glyph itself, not the row around it. A preview also renders
+      // `.fleet-outcome` and `.fleet-glyph`, so waiting on either would let
+      // the sweep run against the Pending state this route exists to get past.
+      await expect(page.locator('.fleet-glyph-ok').first()).toBeVisible();
     },
   },
   {
@@ -458,6 +497,12 @@ const MUST_REACH = [
   // reaching the rule the modal was opened for.
   '.restore-error',
   '.modal-error',
+  // Added 2026-08-21 with the rollback route. It is the only entry here that
+  // needs a MODE as well as a state: an apply can never draw it on this
+  // fixture, so if the route ever stops pressing Execute in rollback mode, or
+  // the mock's rollback handler grows the failing host its apply handler has,
+  // the rule silently goes back to being the reasoned-about one it was.
+  '.fleet-glyph-ok',
 ];
 
 // A run that measures nothing passes every assertion below it. This is a floor
