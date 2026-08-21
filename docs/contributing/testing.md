@@ -422,9 +422,14 @@ run whose recorded total differs. As measured off the function itself:
 
 | Run | Declared checks |
 |-----|-----------------|
-| `--apply` in a booted container | **157** |
-| `--apply` in an unbooted (`--pipe`) container | **151** |
-| without `--apply` | **115** |
+| `--apply` in a booted container | **159** |
+| `--apply` in an unbooted (`--pipe`) container | **153** |
+| without `--apply` | **117** |
+
+Each row gained two on 2026-08-21, when section 5A began asserting the profile
+label in a report heading. That section records the same two checks on every
+distribution whatever profile the host resolves to, so it moves all three rows by
+the same amount and none of them varies with the container.
 
 Those three figures are pinned by `--self-test`, and this table said 149, 143
 and 109 until 2026-08-19: it had missed section 12A's two checks entirely and

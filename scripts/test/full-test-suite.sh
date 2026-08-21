@@ -299,7 +299,10 @@ require_suite_tables() {
 # five per-distribution logs of the 2026-08-01 --apply --booted run, section by
 # section, and all five distributions agreed on every section. The unbooted 12B
 # row and the two non-container rows are read off the code and have never been
-# measured, which is said out loud rather than left for somebody to assume.
+# measured, which is said out loud rather than left for somebody to assume. So is
+# section 5A's two, added 2026-08-21 and not yet met by a container: it records
+# the same pair on every distribution by construction, one heading per arm, which
+# is why no column here varies with the profile.
 suite_section_sizes() {
     local apply="$1" booted="$2" container="$3"
     local systemd_checks=5 other_apply_checks=7 services_rollback_checks=1
@@ -318,6 +321,7 @@ suite_section_sizes() {
         "3 scan filters|$((SEVERITIES_EXPECTED + 3))" \
         "4 scan output formats|$((FORMATS_EXPECTED + FORMATS_REFUSED_EXPECTED + 1))" \
         "5 reports, all frameworks|$FRAMEWORKS_EXPECTED" \
+        "5A report profile labels|2" \
         "6 reports, all scenarios|$SCENARIOS_EXPECTED" \
         "7 report output formats|$((FRAMEWORKS_EXPECTED + 5))" \
         "8 dry run, all plugins|$((PLUGINS_EXPECTED + 1))" \
@@ -553,6 +557,125 @@ test_reports_all_frameworks() {
     for framework in "${FRAMEWORKS[@]}"; do
         run_test "Report --framework $framework" "\"$BINARY\" report --framework \"$framework\""
     done
+}
+
+# =============================================================================
+# Section 5A: the report heading names the profile this host resolves to
+# =============================================================================
+
+# The value of one os-release field, unquoted, or the empty string.
+#
+# The quotes are stripped rather than matched: os-release quotes some values and
+# leaves others bare, and both spellings are legal in the same file, so
+# `ID="rocky"` and `ID=arch` have to read alike. `grep -m1` because a field is
+# single-valued and a second line naming it would otherwise be folded into the
+# answer.
+os_release_field() {
+    local line
+    line="$(grep -m1 "^$2=" "$1" 2>/dev/null)" || return 0
+    line="${line#*=}"
+    printf '%s' "${line//\"/}"
+}
+
+# Which compliance profile this host's os-release warrants, as one word.
+#
+# `unreadable` is kept apart from `generic` deliberately, and it is the whole
+# reason this is a function rather than two lines inline. Both answers send the
+# section below down its non-RHEL arm, so folding them together would let a host
+# whose os-release nobody could read pass the arm asserting the RHEL 8 baseline
+# label, and pass it for a reason that has nothing to do with the tool. That is
+# the sentinel conflation `line_count` further down exists to prevent, one value
+# standing for several outcomes.
+#
+# The rule is `resolve_profile`'s, narrowed to the one image that exercises it.
+# The tool resolves Rhel10 for the whole Red Hat family at major 10, and the
+# `rhel` entry in DISTRO_ORDER is Rocky Linux 10 (`create-container.sh` pulls
+# rockylinux:10). A Red Hat family image at major 10 that is NOT Rocky, added to
+# DISTRO_ORDER later, would resolve rhel10 in the tool and read generic here, so
+# widen this predicate alongside the image rather than leaving the two sides of
+# the boundary to disagree in silence.
+report_profile_of() {
+    local os_release="${1:-/etc/os-release}"
+    [[ -r "$os_release" ]] || { echo unreadable; return; }
+
+    local id version major
+    id="$(os_release_field "$os_release" ID)"
+    version="$(os_release_field "$os_release" VERSION_ID)"
+    major="${version%%.*}"
+
+    if [[ -z "$id" ]]; then
+        echo unreadable
+    elif [[ "$id" == rocky ]] && [[ "$major" == 10 ]]; then
+        echo rhel10
+    else
+        echo generic
+    fi
+}
+
+# Asserts that a report heading names the identifier scheme this host is scored
+# against.
+#
+# Section 5 above runs `report --framework` for all ten frameworks and reads only
+# the exit status, so a host scored against the wrong catalogue passes every one
+# of those rows: the command succeeds either way and the profile appears nowhere
+# that section looks. The closing note on #11 called a live `report` inside the
+# rocky:10 container the one remaining manual spot-check; this is that check,
+# asked by the suite on every distribution rather than by hand on one.
+#
+# BOTH arms are asserted and the non-RHEL arm is the one carrying the weight. A
+# regression that resolved rhel10 on every host would satisfy an RHEL-only check
+# on the single container it could run in and be invisible on the other five;
+# with the generic arm written down the same regression fails on five of six. The
+# mirror holds too, which is why the RHEL arm is here: a resolution that fell
+# back to generic everywhere fails on the rhel host and nowhere else.
+#
+# Two checks on every host whatever the answer, so what this section declares in
+# `suite_section_sizes` does not depend on which container it runs in. An
+# unreadable os-release fails both rather than skipping, because a profile nobody
+# could determine is not a profile that matched.
+#
+# The profile arrives as an argument the way the three facts in
+# `suite_section_sizes` do, so the self-test can put this section in a state the
+# host running it is not in. Nothing but the self-test passes one.
+test_report_profile_labels() {
+    log_header "5A. COMPLIANCE REPORTS - PROFILE LABELS"
+
+    local profile="${1:-$(report_profile_of)}"
+    log_info "This host's os-release resolves to the $profile profile"
+
+    local stig_row="Report profile: the STIG heading names this host's identifier scheme"
+    local cis_row="Report profile: the CIS heading names this host's identifier scheme"
+
+    if [[ "$profile" == unreadable ]]; then
+        log_test "$stig_row"
+        log_fail "$stig_row (os-release names no ID, so no heading can be predicted)"
+        log_test "$cis_row"
+        log_fail "$cis_row (os-release names no ID, so no heading can be predicted)"
+        return
+    fi
+
+    # The labels are `profile_label`'s and the brackets are `report_title`'s,
+    # which appends `(<label>)` to the framework's full name where the pair
+    # warrants a label and prints the name alone where it does not. The CIS pair
+    # is the asymmetric one: the generic profile warrants no CIS label at all, so
+    # that arm asserts the heading ENDS after `Compliance Report`. Anchored, or
+    # it would match the RHEL 10 heading as a prefix and could never go red.
+    #
+    # Matched on stdout, where the renderer puts the heading on a line of its
+    # own. The tool also prints `Profile:` to stderr, but only where the profile
+    # is not Generic, so it exists on one of the six hosts and cannot be the
+    # thing asserted on all of them.
+    local stig_pattern cis_pattern
+    if [[ "$profile" == rhel10 ]]; then
+        stig_pattern='^DISA STIG Compliance Report \(DISA RHEL 10 STIG V1R1\)$'
+        cis_pattern='^CIS Benchmark Compliance Report \(CIS RHEL 10 Benchmark v1\.0\.1\)$'
+    else
+        stig_pattern='^DISA STIG Compliance Report \(RHEL 8 baseline IDs\)$'
+        cis_pattern='^CIS Benchmark Compliance Report$'
+    fi
+
+    run_test_output "$stig_row" "\"$BINARY\" report --framework stig" "$stig_pattern"
+    run_test_output "$cis_row" "\"$BINARY\" report --framework cis" "$cis_pattern"
 }
 
 test_reports_all_scenarios() {
@@ -2266,18 +2389,44 @@ LISTING
     check_eq "$(finding_count_verdict 3 no-document)" "void" \
         "a reading that is not a reading has no direction"
 
+    # The profile reading section 5A gates on, over os-release files spelled the
+    # way real images spell them: rocky quotes its values and carries a minor
+    # version, fedora quotes nothing, and arch names no VERSION_ID at all. The
+    # last two fixtures are the ones that matter, because `generic` and
+    # `unreadable` send the section down the same arm and only these say which
+    # answer it got there by.
+    printf 'ID="rocky"\nVERSION_ID="10.0"\n' > "$workdir/os-release-rocky10"
+    printf 'ID="rocky"\nVERSION_ID="9.4"\n' > "$workdir/os-release-rocky9"
+    printf 'ID=fedora\nVERSION_ID=42\n' > "$workdir/os-release-fedora"
+    printf 'ID=arch\nBUILD_ID=rolling\n' > "$workdir/os-release-arch"
+    printf 'PRETTY_NAME="A distribution that names no ID"\n' > "$workdir/os-release-nameless"
+
+    check_eq "$(report_profile_of "$workdir/os-release-rocky10")" "rhel10" \
+        "a rocky 10 host is scored against the RHEL 10 catalogues"
+    check_eq "$(report_profile_of "$workdir/os-release-rocky9")" "generic" \
+        "the same distribution one major earlier is not"
+    check_eq "$(report_profile_of "$workdir/os-release-fedora")" "generic" \
+        "a major that is not 10 is generic however large the number is"
+    check_eq "$(report_profile_of "$workdir/os-release-arch")" "generic" \
+        "a rolling distribution naming no VERSION_ID is generic, not unreadable"
+    check_eq "$(report_profile_of "$workdir/os-release-nameless")" "unreadable" \
+        "a file naming no ID is a reading nobody took, not a generic host"
+    check_eq "$(report_profile_of "$workdir/os-release-missing")" "unreadable" \
+        "an os-release that is not there is not a generic host either"
+
     # The size of a run. 140 was counted off the five per-distribution logs of
     # the 2026-08-01 --apply --booted run, section by section, and all five
     # agreed on every section; section 23 then grew by nine, which is derived
     # rather than measured and has not yet met a container. The unbooted and
     # read-only figures are derived too, which is said here so nobody reads them
     # as evidence. So are the six the three added frameworks bring, three in
-    # section 5 and three in section 7: derived, and unmet by a container.
-    check_eq "$(expected_test_total true true true)" "157" \
-        "a booted --apply run in a container declares the 140 five hosts recorded, section 23's nine, 12A's two backup rows, and the three added frameworks twice over"
-    check_eq "$(expected_test_total true false true)" "151" \
+    # section 5 and three in section 7: derived, and unmet by a container. So are
+    # section 5A's two profile-label rows.
+    check_eq "$(expected_test_total true true true)" "159" \
+        "a booted --apply run in a container declares the 140 five hosts recorded, section 23's nine, 12A's two backup rows, the three added frameworks twice over, and section 5A's two"
+    check_eq "$(expected_test_total true false true)" "153" \
         "an unbooted --apply run declares six fewer, the services rollback rows it cannot ask"
-    check_eq "$(expected_test_total false true true)" "115" \
+    check_eq "$(expected_test_total false true true)" "117" \
         "a run without --apply declares neither the apply sections nor the lifecycle, so 12A's two do not count here either"
 
     # The property that makes the table guard a guard rather than a mirror: the
@@ -2291,7 +2440,7 @@ LISTING
     PLUGINS=("${PLUGINS[@]:0:7}")
     check_status 1 "require_suite_tables refuses a table edited down" \
         require_suite_tables
-    check_eq "$(expected_test_total true true true)" "157" \
+    check_eq "$(expected_test_total true true true)" "159" \
         "and the expected total does not follow the table it polices"
     PLUGINS=("${saved_plugins[@]}")
     check_status 0 "require_suite_tables accepts the table once it is restored" \
@@ -2300,10 +2449,10 @@ LISTING
     # A run is refused on the count it recorded, not on the count it wanted.
     local saved_log="$LOG_FILE" saved_total="$TESTS_TOTAL"
     LOG_FILE="$workdir/self-test.log"
-    TESTS_TOTAL=157
+    TESTS_TOTAL=159
     check_status 0 "a run that recorded what the sections declare is accepted" \
         require_expected_total true true true
-    TESTS_TOTAL=156
+    TESTS_TOTAL=158
     check_status 1 "a run one check short of what the sections declare is refused" \
         require_expected_total true true true
 
@@ -2507,6 +2656,52 @@ JSON
     TESTS_FAILED="$all_saved_failed"
     FAILED_TESTS=("${all_saved_failed_list[@]}")
 
+    # Section 5A's two rows, driven both ways round. The question this answers is
+    # the one a distro-gated check has to answer before it is worth having: can
+    # the row go red, on each arm, for the fault that arm exists to catch. It
+    # cannot be asked on the host, which resolves one profile and can therefore
+    # only ever run one arm, so the profile is passed in and the tool is the
+    # stand-in that prints the headings.
+    #
+    # The off-diagonal pair is the whole point. A regression resolving rhel10
+    # everywhere is the generic arm reading RHEL 10 headings, and a resolution
+    # collapsing to generic is the rhel arm reading the plain ones; both must
+    # fail, or the arm they belong to is decoration.
+    printf 'DISA STIG Compliance Report (DISA RHEL 10 STIG V1R1)\nCIS Benchmark Compliance Report (CIS RHEL 10 Benchmark v1.0.1)\n' \
+        > "$workdir/headings-rhel10"
+    printf 'DISA STIG Compliance Report (RHEL 8 baseline IDs)\nCIS Benchmark Compliance Report\n' \
+        > "$workdir/headings-generic"
+
+    local label_saved_binary="$BINARY" label_saved_failed="$TESTS_FAILED"
+    local label_saved_failed_list=("${FAILED_TESTS[@]}")
+    BINARY="$workdir/fake-tool"
+
+    row_profile_verdict() {
+        local before="$TESTS_FAILED"
+        FAKE_DOC="$1"
+        FAKE_STATUS=0
+        export FAKE_DOC FAKE_STATUS
+        test_report_profile_labels "$2" >/dev/null 2>&1
+        if (( TESTS_FAILED > before )); then echo "fail"; else echo "pass"; fi
+    }
+
+    check_eq "$(row_profile_verdict "$workdir/headings-rhel10" rhel10)" "pass" \
+        "a rocky 10 host whose headings name the RHEL 10 catalogues passes"
+    check_eq "$(row_profile_verdict "$workdir/headings-generic" generic)" "pass" \
+        "every other host passes on the RHEL 8 baseline heading and an unlabelled CIS one"
+    check_eq "$(row_profile_verdict "$workdir/headings-generic" rhel10)" "fail" \
+        "a rocky 10 host that fell back to the generic catalogues fails"
+    check_eq "$(row_profile_verdict "$workdir/headings-rhel10" generic)" "fail" \
+        "and a host that is not rocky 10 fails on RHEL 10 headings, which is the arm five of six hosts run"
+    check_eq "$(row_profile_verdict "$workdir/empty.json" generic)" "fail" \
+        "a report that printed no heading at all fails rather than matching nothing quietly"
+    check_eq "$(row_profile_verdict "$workdir/headings-generic" unreadable)" "fail" \
+        "a host whose os-release could not be read fails both rows instead of passing the generic arm"
+
+    BINARY="$label_saved_binary"
+    TESTS_FAILED="$label_saved_failed"
+    FAILED_TESTS=("${label_saved_failed_list[@]}")
+
     LOG_FILE="$saved_log"
     TESTS_TOTAL="$saved_total"
 
@@ -2582,6 +2777,7 @@ main() {
     test_scan_output_formats
 
     test_reports_all_frameworks
+    test_report_profile_labels
     test_reports_all_scenarios
     test_reports_output_formats
 
