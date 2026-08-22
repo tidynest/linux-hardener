@@ -2417,11 +2417,20 @@ LISTING
     # The size of a run. 140 was counted off the five per-distribution logs of
     # the 2026-08-01 --apply --booted run, section by section, and all five
     # agreed on every section; section 23 then grew by nine, which is derived
-    # rather than measured and has not yet met a container. The unbooted and
-    # read-only figures are derived too, which is said here so nobody reads them
-    # as evidence. So are the six the three added frameworks bring, three in
-    # section 5 and three in section 7: derived, and unmet by a container. So are
-    # section 5A's two profile-label rows.
+    # rather than measured and has not yet met a container. The unbooted figure
+    # is derived too, which is said here so nobody reads it as evidence. So are
+    # the six the three added frameworks bring, three in section 5 and three in
+    # section 7: derived, and unmet by a container.
+    #
+    # The read-only figure is no longer among them. On 2026-08-22 a
+    # `run-cross-distro-tests.sh` sweep with no --apply declared 117 and passed
+    # 117 on all six, so that row is measured. Section 5A's two rows met a
+    # container in the same sweep, and both arms fired rather than one: the
+    # `rhel` container resolved to the rhel10 profile and the other five to
+    # generic, which is the 1-of-6 / 5-of-6 split the section was built to make.
+    # The containers carried hardening from earlier runs and the runner said so;
+    # these two rows read os-release and a report heading, so neither depends on
+    # a pristine host, but a reading here that does would be void.
     check_eq "$(expected_test_total true true true)" "159" \
         "a booted --apply run in a container declares the 140 five hosts recorded, section 23's nine, 12A's two backup rows, the three added frameworks twice over, and section 5A's two"
     check_eq "$(expected_test_total true false true)" "153" \

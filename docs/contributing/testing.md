@@ -431,6 +431,15 @@ label in a report heading. That section records the same two checks on every
 distribution whatever profile the host resolves to, so it moves all three rows by
 the same amount and none of them varies with the container.
 
+**The 117 was authored a day before anything ran it, and a sweep then agreed.**
+On 2026-08-22 `run-cross-distro-tests.sh` without `--apply` declared 117 and
+passed 117 on all six, so that row is measured rather than derived; the other
+two still are. Section 5A's arms both fired in that sweep, `rhel` resolving to
+the rhel10 profile and the other five to generic, which is what stops the
+section passing on one arm alone. Every container was reported dirty from
+earlier runs, which does not reach these two rows, since they read os-release
+and a heading on stdout rather than the state of the host.
+
 Those three figures are pinned by `--self-test`, and this table said 149, 143
 and 109 until 2026-08-19: it had missed section 12A's two checks entirely and
 was two low on the first two rows for four days. It is checked against the
