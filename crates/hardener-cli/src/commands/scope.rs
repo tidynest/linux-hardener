@@ -36,12 +36,14 @@
 //! hand edit cannot produce is the audit entry: a file edited by an editor runs
 //! no code, so nothing records who raised the score, when, or on what grounds.
 
-use super::exception::{read_or_empty, write_atomically, write_path};
+#[cfg(test)]
+use super::exception::logger_at;
+use super::exception::{WriteAudit, read_or_empty, write_atomically, write_path};
 use super::state::effective_user;
 use anyhow::{Context as _, Result, anyhow};
 use hardener_compliance::frameworks::curated_controls;
 use hardener_core::config::scope::ScopeExclusion;
-use hardener_state::audit::{ActionResult, ActionType, AuditLogger};
+use hardener_state::audit::{ActionType, AuditLogger};
 use hardener_types::ComplianceFramework;
 use std::collections::HashMap;
 use std::path::Path;
@@ -160,17 +162,6 @@ pub async fn run_include_to(
     .await
 }
 
-#[cfg(test)]
-async fn logger_at(audit_log_path: &str) -> Option<AuditLogger> {
-    match AuditLogger::new(audit_log_path).await {
-        Ok(logger) => Some(logger),
-        Err(e) => {
-            tracing::warn!("audit logging unavailable at {audit_log_path}: {e}");
-            None
-        }
-    }
-}
-
 async fn exclude(
     request: ExcludeRequest<'_>,
     logger: Option<AuditLogger>,
@@ -266,25 +257,36 @@ async fn exclude(
     };
 
     let path = write_path(request.config_path);
-    if let Err(e) = read_or_empty(&path)
-        .and_then(|existing| upsert_exclusion(&existing, framework_id, request.control, &exclusion))
-        .and_then(|written| write_atomically(&path, &written))
-    {
-        return refuse(
-            logger.as_ref(),
-            target,
-            format!("Control '{}' was not excluded: {e:#}", request.control),
-        )
-        .await;
-    }
 
-    // Settled before the entry is filed rather than at the print site below,
-    // because an auditor reading `audit.log` has no stderr to read alongside
-    // it: an inert SOC 2 exclusion and an effective CIS one would otherwise be
-    // the same entry. `unknown_control_refusal` refuses a mistyped id on
-    // exactly that reasoning, that the log must not record a control as
-    // excluded that no catalogue carries, and a declaration no catalogue can
-    // honour is that same claim one step weaker.
+    // Reading and editing the document are still a synchronous chain; only the
+    // write is not, because the write is what files the entry. A failure here
+    // never reached the file, so it is refused rather than left to the write to
+    // report.
+    let written = match read_or_empty(&path)
+        .and_then(|existing| upsert_exclusion(&existing, framework_id, request.control, &exclusion))
+    {
+        Ok(written) => written,
+        Err(e) => {
+            return refuse(
+                logger.as_ref(),
+                target,
+                format!("Control '{}' was not excluded: {e:#}", request.control),
+            )
+            .await;
+        }
+    };
+
+    // Settled before the write rather than after it, because the write files
+    // its own entry now and this is one of that entry's details. Nothing here
+    // reads the file: `inert_exclusion_advisory` asks the framework and the
+    // control whether any catalogue could carry it, which no write changes.
+    //
+    // It is filed at all because an auditor reading `audit.log` has no stderr
+    // to read alongside it: an inert SOC 2 exclusion and an effective CIS one
+    // would otherwise be the same entry. `unknown_control_refusal` refuses a
+    // mistyped id on exactly that reasoning, that the log must not record a
+    // control as excluded that no catalogue carries, and a declaration no
+    // catalogue can honour is that same claim one step weaker.
     let advisory = inert_exclusion_advisory(&framework, request.control);
 
     let mut details = HashMap::from([
@@ -309,12 +311,26 @@ async fn exclude(
     // borrows the advisory's own words, so the entry and the warning on stderr
     // name the same fact. It is inside the hash, because a success entry goes
     // through `log_action_with_details`; only the failure path is held to a
-    // single `error` detail. See `refuse`.
+    // single `error` detail. See `WriteAudit::record`.
     if advisory.is_some() {
         details.insert("takes_effect".to_string(), "false".to_string());
     }
 
-    record(logger.as_ref(), target, details).await;
+    // The failure entry is filed by the write itself, so a write that cannot be
+    // made returns its cause here rather than going through `refuse`, which
+    // would file a second entry for one attempt.
+    write_atomically(
+        &path,
+        &written,
+        WriteAudit {
+            logger: logger.as_ref(),
+            action: ActionType::ScopeExclusion,
+            target,
+            details,
+        },
+    )
+    .await
+    .map_err(|e| anyhow!("Control '{}' was not excluded: {e:#}", request.control))?;
 
     println!(
         "Excluded '{}' from {} as not applicable. Written to {}.",
@@ -435,28 +451,37 @@ async fn include(
     let framework_id = known.id();
     let path = write_path(config_path);
 
-    // One refusal for every way the withdrawal can fail to land: an unreadable
+    // One entry for every way the withdrawal can fail to land: an unreadable
     // file, an exclusion that was never there, and a write that cannot be made.
     // The last of those is the one an unprivileged operator meets, and leaving
-    // it to `?` filed no audit entry for an attempt on this host's policy.
-    if let Err(e) = read_or_empty(&path)
+    // it to `?` filed nothing for an attempt on this host's policy. The first
+    // two never reach the file and are refused here; the third the write files
+    // itself.
+    let written = match read_or_empty(&path)
         .and_then(|existing| remove_exclusion(&existing, framework_id, control))
-        .and_then(|written| write_atomically(&path, &written))
     {
-        return refuse(
-            logger.as_ref(),
-            format!("{framework_id}:{control}"),
-            format!("{e:#}"),
-        )
-        .await;
-    }
+        Ok(written) => written,
+        Err(e) => {
+            return refuse(
+                logger.as_ref(),
+                format!("{framework_id}:{control}"),
+                format!("{e:#}"),
+            )
+            .await;
+        }
+    };
 
-    record(
-        logger.as_ref(),
-        format!("{framework_id}:{control}"),
-        HashMap::from([("operation".to_string(), "include".to_string())]),
+    write_atomically(
+        &path,
+        &written,
+        WriteAudit {
+            logger: logger.as_ref(),
+            action: ActionType::ScopeExclusion,
+            target: format!("{framework_id}:{control}"),
+            details: HashMap::from([("operation".to_string(), "include".to_string())]),
+        },
     )
-    .await;
+    .await?;
 
     println!(
         "Withdrew the exclusion of '{control}' from {known}; it counts towards \
@@ -464,32 +489,6 @@ async fn include(
         path.display()
     );
     Ok(())
-}
-
-/// Records a granted or withdrawn exclusion, with its context inside the hash
-/// chain.
-///
-/// A logging failure does not fail the command: the declaration is already in
-/// the file, and reporting the write as failed would be the worse lie. It is
-/// said out loud, though, because an operator who believes the act was recorded
-/// and finds nothing at the audit is in a worse position than one who was told.
-async fn record(logger: Option<&AuditLogger>, target: String, details: HashMap<String, String>) {
-    let Some(logger) = logger else {
-        return;
-    };
-    if let Err(e) = logger
-        .log_action_with_details(
-            ActionType::ScopeExclusion,
-            effective_user(),
-            target,
-            ActionResult::Success,
-            details,
-        )
-        .await
-    {
-        tracing::warn!("the scope change was written but not audited: {e}");
-        eprintln!("W  The change was written, but the audit entry failed: {e}");
-    }
 }
 
 /// Records an attempt that did not take effect and returns the error the

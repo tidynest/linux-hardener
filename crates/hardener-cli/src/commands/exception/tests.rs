@@ -1,6 +1,43 @@
 use super::*;
 use hardener_core::MockExecutor;
+use hardener_state::audit::QueryFilter;
 use hardener_types::{ExceptionOutcome, FindingCategory, Severity};
+
+/// A config and an audit log a test may actually write, since the log a command
+/// picks is otherwise root's or the invoking user's.
+struct Scratch {
+    _dir: tempfile::TempDir,
+    config: PathBuf,
+    log: PathBuf,
+}
+
+impl Scratch {
+    fn empty() -> Scratch {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = dir.path().join("config.toml");
+        let log = dir.path().join("audit.log");
+        std::fs::write(&config, "").expect("an empty starting config");
+        Scratch {
+            _dir: dir,
+            config,
+            log,
+        }
+    }
+
+    fn log_path(&self) -> &str {
+        self.log.to_str().expect("utf-8 path")
+    }
+
+    async fn entries(&self) -> Vec<hardener_state::AuditEntry> {
+        AuditLogger::query(self.log_path(), QueryFilter::new())
+            .await
+            .expect("query")
+    }
+}
+
+fn ssh_executor() -> Arc<dyn hardener_core::executor::SystemExecutor> {
+    Arc::new(MockExecutor::new().with_file("/etc/ssh/sshd_config", "PermitRootLogin yes\n"))
+}
 
 fn finding(key: Option<&str>, current: &str) -> Finding {
     Finding {
@@ -87,7 +124,7 @@ fn an_invalid_calendar_date_is_refused() {
 /// mode (root's umask default), silently discarding whatever mode the
 /// operator set on the target.
 #[test]
-fn write_atomically_preserves_the_target_mode() {
+fn write_file_atomically_preserves_the_target_mode() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().unwrap();
@@ -95,7 +132,7 @@ fn write_atomically_preserves_the_target_mode() {
     std::fs::write(&path, "existing = true\n").unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
 
-    write_atomically(&path, "existing = true\nnew = 1\n").unwrap();
+    write_file_atomically(&path, "existing = true\nnew = 1\n").unwrap();
 
     let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o640);
@@ -104,13 +141,167 @@ fn write_atomically_preserves_the_target_mode() {
 /// A target that does not exist yet has no mode to preserve, so the write
 /// still succeeds and the file lands with the temporary file's default mode.
 #[test]
-fn write_atomically_succeeds_for_a_new_file() {
+fn write_file_atomically_succeeds_for_a_new_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
 
-    write_atomically(&path, "new = 1\n").unwrap();
+    write_file_atomically(&path, "new = 1\n").unwrap();
 
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "new = 1\n");
+}
+
+/// Every field the exception carries reaches the entry, `reason` included.
+///
+/// An auditor reading this months later has no access to whoever ran the
+/// command, and no guarantee that the `config.toml` they can read still says
+/// what it said on the day. `reason` is the field that makes the deviation
+/// defensible rather than arbitrary, so an entry without it records that a
+/// deviation was granted and nothing about why.
+#[test]
+fn exception_details_carry_every_documented_field() {
+    let exception = PolicyException {
+        value: "active".to_string(),
+        allowed: true,
+        reason: "vendor appliance needs it until Q3".to_string(),
+        approved_by: Some("e.jingryd".to_string()),
+        approved_date: Some("2026-08-22".to_string()),
+        ticket: Some("SEC-4412".to_string()),
+        expires: Some("2026-09-30".to_string()),
+    };
+
+    let details = exception_details(&exception);
+
+    assert_eq!(details["operation"], "add");
+    assert_eq!(details["reason"], "vendor appliance needs it until Q3");
+    assert_eq!(details["value"], "active");
+    assert_eq!(details["allowed"], "true");
+    assert_eq!(details["approved_by"], "e.jingryd");
+    assert_eq!(details["approved_date"], "2026-08-22");
+    assert_eq!(details["ticket"], "SEC-4412");
+    assert_eq!(details["expires"], "2026-09-30");
+}
+
+/// `exception add` files an entry naming what was granted, on the path the
+/// write landed on.
+///
+/// This is the assertion the verb went without for as long as it existed.
+/// `scope exclude` and `scope include` audited. `exception add` and
+/// `exception remove` wrote the same root-owned file, under the same
+/// privilege, through the same shared writer, and left nothing behind.
+/// Nothing was wrong with either verb read on its own, which is why review
+/// never caught it: the writer was shared and correct, and auditing was a
+/// habit that two of its four callers happened to have.
+#[tokio::test]
+async fn add_files_an_audit_entry_naming_what_was_granted() {
+    let scratch = Scratch::empty();
+
+    add_at(
+        AddOptions {
+            plugin_id: "ssh-hardening",
+            key: "PermitRootLogin",
+            reason: "break-glass access from the bastion",
+            approved_by: Some("e.jingryd"),
+            ticket: Some("SEC-4412"),
+            expires: Some("2026-09-30"),
+            config_path: Some(&scratch.config),
+            format: OutputFormat::Json,
+            quiet: true,
+            executor: ssh_executor(),
+        },
+        scratch.log_path(),
+    )
+    .await
+    .expect("the exception is written");
+
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry_action_type, ActionType::ConfigChange);
+    assert_eq!(entries[0].entry_result, ActionResult::Success);
+    assert_eq!(
+        entries[0].entry_target, "ssh:PermitRootLogin",
+        "the target names the config section and the key, and is hashed"
+    );
+    assert_eq!(
+        entries[0].entry_details["reason"], "break-glass access from the bastion",
+        "the grounds for the deviation are the point of the entry"
+    );
+    assert_eq!(entries[0].entry_details["ticket"], "SEC-4412");
+    assert_eq!(
+        entries[0].entry_details["value"], "yes",
+        "the value pinned is the one the scan read, not one supplied by the caller"
+    );
+}
+
+/// A withdrawal is its own entry against the same target, so an auditor reading
+/// the chain sees the exception granted and then taken back rather than a
+/// deviation that appears to still stand.
+#[tokio::test]
+async fn remove_files_its_own_entry_against_the_same_target() {
+    let scratch = Scratch::empty();
+
+    add_at(
+        AddOptions {
+            plugin_id: "ssh-hardening",
+            key: "PermitRootLogin",
+            reason: "break-glass access from the bastion",
+            approved_by: None,
+            ticket: None,
+            expires: None,
+            config_path: Some(&scratch.config),
+            format: OutputFormat::Json,
+            quiet: true,
+            executor: ssh_executor(),
+        },
+        scratch.log_path(),
+    )
+    .await
+    .expect("the exception is written");
+
+    remove_at(
+        RemoveOptions {
+            plugin_id: "ssh-hardening",
+            key: "PermitRootLogin",
+            config_path: Some(&scratch.config),
+            format: OutputFormat::Json,
+            quiet: true,
+        },
+        scratch.log_path(),
+    )
+    .await
+    .expect("the exception is withdrawn");
+
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].entry_details["operation"], "add");
+    assert_eq!(entries[1].entry_details["operation"], "remove");
+    assert_eq!(entries[1].entry_action_type, ActionType::ConfigChange);
+    assert_eq!(entries[1].entry_target, "ssh:PermitRootLogin");
+}
+
+/// An absent optional field and an empty one are different claims, so the key
+/// is left out rather than written blank. An auditor filtering for entries
+/// carrying a ticket must not match one that never had a ticket.
+#[test]
+fn exception_details_omit_the_optional_fields_that_were_not_given() {
+    let exception = PolicyException {
+        value: "active".to_string(),
+        allowed: true,
+        reason: "documented".to_string(),
+        approved_by: None,
+        approved_date: None,
+        ticket: None,
+        expires: None,
+    };
+
+    let details = exception_details(&exception);
+
+    for key in ["approved_by", "approved_date", "ticket", "expires"] {
+        assert!(
+            !details.contains_key(key),
+            "'{key}' was not given, so the entry must not assert one"
+        );
+    }
+    assert_eq!(details["reason"], "documented");
 }
 
 /// Re-scans `plugin_id` against the config `add` just wrote, using the same

@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`exception add` and `exception remove` wrote a root-owned configuration
+  file and left no audit entry.** Four commands write
+  `/etc/linux-hardener/config.toml`, all four through one shared writer, and
+  only two of them filed anything: `scope exclude` and `scope include` audited,
+  the two exception verbs did not. Granting a documented deviation from policy
+  was therefore invisible to `hardener audit`, and the module doc for `scope`
+  already stated the principle the exception verbs were missing, that what a
+  hand edit cannot produce is the record of who changed the host's policy, when
+  and on what grounds. `ActionType::ConfigChange` had existed as a variant the
+  whole time and was emitted nowhere. **Nothing was wrong with the writer, and
+  nothing was wrong with either verb read on its own,** which is why review
+  never caught it: auditing was a habit two of the four callers happened to
+  have rather than anything the code required. It is now required.
+  `write_atomically` takes a `WriteAudit` naming the action type, the target
+  and the details, and files the entry itself, so a config write that records
+  nothing no longer compiles. The exception entries carry every field the
+  exception documents, `reason` included, since an entry naming only the key
+  records that a deviation was granted and nothing about why. `scope`'s own
+  `record` helper is gone, absorbed by the writer; its `ScopeExclusion` variant
+  and its separate refusal path for attempts that never reach the file are
+  unchanged. **Operators auditing a host through `hardener audit` will see
+  `ConfigChange` entries that earlier versions never wrote. Their absence
+  before now is a gap in the record, not evidence that no exception was
+  granted.**
+
 - **An unprivileged scan and a root apply silently resolved different
   configuration.** `save_key` tightened the signing key's parent directory to
   `0700`, and that parent is `/etc/linux-hardener`, which is not a key

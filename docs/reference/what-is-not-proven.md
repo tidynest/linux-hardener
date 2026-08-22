@@ -787,17 +787,33 @@ the person who declared it and the date, so an estate that reached its
 declarations through the verb can produce them; the report does not, and does
 not say where to look.
 
-**The advisory that an exclusion is inert goes to stderr and is not audited.**
-Only CIS and ISO 27001:2022 have a curated catalogue; for the other eight
-frameworks the catalogue is derived from live plugin coverage at report time,
-so every control in it is one the engine assesses and the generator settles it
-before reaching the arm that would honour an exclusion. `hardener scope exclude`
-still writes such a declaration and still audits it, with `W  ...` on stderr
-saying it will not take effect. That warning is printed after the audit entry is
-recorded and is not among the details the entry carries, so the log cannot later
-be read to show that an exclusion was already inert at the moment it was
-granted. An operator who redirects stderr, or who reaches the verb over IPC,
-sees nothing.
+**An inert exclusion is flagged in the log, but only as a boolean.** Only CIS
+and ISO 27001:2022 have a curated catalogue; for the other eight frameworks the
+catalogue is derived from live plugin coverage at report time, so every control
+in it is one the engine assesses and the generator settles it before reaching
+the arm that would honour an exclusion. `hardener scope exclude` still writes
+such a declaration and still audits it, with `W  ...` on stderr saying it will
+not take effect. The entry carries `takes_effect = false` beside it, inside the
+hash chain, so the log alone distinguishes an inert declaration from an
+effective one; both directions are asserted, including that a curated framework
+gets no such key. What the entry does not carry is the advisory's own text,
+which names the reason the catalogue cannot honour the control. An operator who
+redirects stderr, or who reaches the verb over IPC, gets the flag and not the
+explanation.
+
+**Two config writers outside the CLI still record nothing.** Every write to
+`config.toml` from `hardener` itself goes through one writer that files its own
+audit entry, so a config change the CLI makes without a record no longer
+compiles. Two writes do not use it. `save_scheduler_config` in `src-tauri`
+writes the `[scheduler]` section in process, as the desktop user rather than
+through `pkexec`, and files nothing; it is also the one config write in the tree
+that is not atomic and does not preserve the target's mode. `hardener systemd
+install` writes a `.service` and a `.timer` into `/etc/systemd/system` as root
+and files nothing. Neither gap is an oversight in the writer, and closing them
+raises a question the writer cannot answer on its own: the audit log a process
+writes is chosen by uid, root's under `/var/log` and everyone else's under
+`$XDG_DATA_HOME`, so a user-scope config change would land in a per-user chain
+that no auditor reading the host's log would ever see.
 
 ---
 
