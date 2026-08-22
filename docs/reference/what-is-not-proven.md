@@ -598,21 +598,36 @@ parsing, output shaping and refusal policy over fixtures. Multi-host behaviour
 against real hosts, partial failure part-way across a fleet, and a privilege
 refusal from a host that genuinely refuses are unproven against anything live.
 
-**`run_fleet_scan`, the desktop's own fleet path, is entered by no test at
-all.** It is a `#[tauri::command]` that opens one SSH connection per host, so
-nothing can reach it without live SSH, and unlike the CLI's four fleet verbs it
-has no `#[ignore]`d live test standing ready for a booted fixture either. The
-distinction worth drawing is between the pieces and the wiring: the report
-generator it builds per host is covered, by `fleet_report_generator` in
-`src-tauri/src/commands/fleet_tests.rs`, and so is the exclusion resolution that
-generator performs. What is covered by nothing is the function body that
-assembles them: the profile map that keys inventory hosts by name and ad-hoc
-targets by their full target string, the `or_insert` that decides an inventory
-host outranks an ad-hoc target spelling its name, the `local_exclusions()` read
-that loads the operator's declared-not-applicable set, and the identity handed
-to each host's generator, which is what makes a host-targeted exclusion apply to
-the right row. Every one of those is a decision, and a mutation in any of them
-would leave the whole workspace suite green.
+**`run_fleet_scan`, the desktop's own fleet path, is still entered by no test,
+but most of what it decides no longer lives inside it.** It is a
+`#[tauri::command]` opening one SSH connection per host, so nothing reaches the
+command itself without live SSH, and unlike the CLI's four fleet verbs it has no
+`#[ignore]`d live test standing ready for a booted fixture. Of its 126 lines,
+five need a socket. On 2026-08-22 the rest moved into `fleet_targets`,
+`ssh_config_for` and `attach_compliance`, and all three are covered by
+`src-tauri/src/commands/fleet_tests.rs` over `MockExecutor` and plain fixtures:
+the profile map keyed by inventory name and by full ad-hoc target, the
+precedence of a saved host over an ad-hoc target spelling its name, the
+`host_key_checking` to `KnownHosts` mapping, the identity each host's generator
+is handed, which is what makes a host-targeted exclusion apply to the right row,
+and the gate that leaves a failed host with no posture at all. What is still
+proven by nothing is the wiring: that the command hands those three the right
+arguments, and that `SshExecutor::connect` and `detect_host_profile` behave over
+a real connection. `local_exclusions()`, the read that loads the operator's
+declared-not-applicable set, is called only from the command body and is entered
+by no test.
+
+**That paragraph used to end by saying a mutation in any of those decisions
+would leave the whole workspace suite green. One already had.** The flatten
+written by hand in that body counted 38 passing CIS controls for a fleet row
+scanned with a single plugin, the same 38 a row scanned with all eight counted,
+because a plugin that reports nothing leaves nothing for the generator to mark
+unassessed and its controls pass on the silence. The fleet path now flattens
+through `flatten_scan_results`, the same call the local compliance tab makes, so
+a plugin missing from a row contributes an unassessed entry: the one-plugin row
+counts 10. The defect is fixed and asserted. The general point is the one worth
+keeping, that a function body no test enters is where this happens, and that a
+copy of logic that already exists elsewhere is where it happens first.
 
 **The remote executor's own default coverage is three tests of seventeen**, and
 those three assert configuration shape and description formatting. The other

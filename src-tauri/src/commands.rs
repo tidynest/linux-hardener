@@ -1932,6 +1932,54 @@ fn fleet_targets(
     Ok(profiles)
 }
 
+/// Derives each scanned host's compliance posture from the findings already in
+/// hand: in memory, with no second trip over SSH. A host that failed keeps an
+/// empty posture, because a score derived from no findings is a claim about a
+/// host nobody assessed rather than a clean bill of health.
+///
+/// Flattening goes through `flatten_scan_results`, the same path the local
+/// compliance tab uses, and not a hand-written pass over `scan_results`. A
+/// fleet scan does not always come back with every plugin: the caller may have
+/// filtered to a subset, and `scan_with_executor` drops a plugin whose scan
+/// errored on that host. Those plugins report nothing, and nothing is exactly
+/// what a control needs to look clean, so every registered plugin missing from
+/// a row contributes an unassessed entry and its controls report ManualReview.
+/// Flattened by hand this said nothing, and a row scanned with one plugin
+/// reported the same 38 passing CIS controls as a row scanned with all eight.
+///
+/// `coverage` and `exclusions` are passed in rather than read here, so the
+/// caller does the one disk read and this stays a pure function of its inputs.
+/// Each host is scored under its own resolved `ComplianceProfile` and its own
+/// identity: the identity decides which host-targeted exclusions apply, so a
+/// row scored under the wrong one silently gains or loses its operator's
+/// declarations. A row exists because `profiles` produced the profile it was
+/// scanned with, so the lookup resolves; the fallback keeps the arm gated by
+/// the display name rather than leaving it ungated.
+fn attach_compliance(
+    results: &mut [FleetHostScan],
+    profiles: &std::collections::HashMap<String, RemoteHostProfile>,
+    coverage: Vec<ComplianceMapping>,
+    exclusions: ComplianceConfig,
+) {
+    for host in results
+        .iter_mut()
+        .filter(|h| matches!(h.status, FleetHostStatus::Ok))
+    {
+        let (findings, unchecked) = flatten_scan_results(host.scan_results.clone());
+        let identity = profiles
+            .get(&host.host_name)
+            .cloned()
+            .unwrap_or_else(|| RemoteHostProfile::from_target(&host.host_name, 22, None, true));
+        let generator = fleet_report_generator(
+            host.profile,
+            coverage.clone(),
+            exclusions.clone(),
+            &identity,
+        );
+        host.compliance = posture_for_findings(&generator, &findings, &unchecked);
+    }
+}
+
 /// Scans several hosts concurrently and returns each host's severity posture:
 /// saved inventory hosts by name plus ad-hoc `user@host[:port]` targets.
 /// Read-only: opens a short-lived SSH connection per host, scans, and drops it.
@@ -2006,41 +2054,12 @@ pub async fn run_fleet_scan(
     )
     .await;
 
-    // Derive each host's compliance posture from the findings already scanned:
-    // in-memory, no extra SSH. Each host gets a generator carrying its own
-    // resolved profile and its own identity; the coverage set and the
-    // declared-not-applicable set are read once and cloned per host.
-    let coverage = hardener_plugins::compliance_coverage();
-    let exclusions = local_exclusions();
-    for host in &mut results {
-        if matches!(host.status, FleetHostStatus::Ok) {
-            let findings: Vec<Finding> = host
-                .scan_results
-                .iter()
-                .flat_map(|r| r.scan_findings.iter().cloned())
-                .collect();
-            let unchecked: Vec<UncheckedCheck> = host
-                .scan_results
-                .iter()
-                .flat_map(|r| r.scan_unchecked.iter().cloned())
-                .collect();
-            // The row exists because this map produced the profile it was
-            // scanned with, so the lookup resolves. Should it ever not, the
-            // display name alone still gates the arm rather than leaving it
-            // ungated.
-            let identity = profiles
-                .get(&host.host_name)
-                .cloned()
-                .unwrap_or_else(|| RemoteHostProfile::from_target(&host.host_name, 22, None, true));
-            let generator = fleet_report_generator(
-                host.profile,
-                coverage.clone(),
-                exclusions.clone(),
-                &identity,
-            );
-            host.compliance = posture_for_findings(&generator, &findings, &unchecked);
-        }
-    }
+    attach_compliance(
+        &mut results,
+        &profiles,
+        hardener_plugins::compliance_coverage(),
+        local_exclusions(),
+    );
 
     Ok(results)
 }

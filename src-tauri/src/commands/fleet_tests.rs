@@ -854,6 +854,134 @@ async fn scan_over_empty_mock(plugin_ids: Option<&[String]>) -> Vec<ScanResult> 
         .expect("a plugin that fails is skipped, never fatal")
 }
 
+/// One fleet row, before the compliance pass has run over it.
+fn scanned_row(
+    name: &str,
+    status: FleetHostStatus,
+    scan_results: Vec<ScanResult>,
+) -> FleetHostScan {
+    FleetHostScan {
+        host_name: name.to_string(),
+        status,
+        tallies: SeverityTallies::default(),
+        scan_results,
+        compliance: Vec::new(),
+        profile: ComplianceProfile::Generic,
+    }
+}
+
+#[test]
+fn attach_compliance_scores_the_scanned_hosts_and_leaves_the_failed_one_empty() {
+    // The exclusion names the saved profile's hostname, which is the one
+    // spelling the fallback identity cannot produce: `from_target("web-01")`
+    // yields hostname "web-01", not "web-01.internal". A posture that reports
+    // the exclusion is therefore a posture scored under the profile the host
+    // was actually reached with, which is what the map lookup is for.
+    let profiles: std::collections::HashMap<String, RemoteHostProfile> = [(
+        "web-01".to_string(),
+        saved_host("web-01", "web-01.internal"),
+    )]
+    .into_iter()
+    .collect();
+
+    let mut results = vec![
+        scanned_row(
+            "web-01",
+            FleetHostStatus::Ok,
+            vec![
+                plugin_result("kernel", vec![finding("K-1")], vec![]),
+                plugin_result("ssh", vec![finding("S-1")], vec![]),
+            ],
+        ),
+        scanned_row(
+            "db-01",
+            FleetHostStatus::Failed("connection refused".to_string()),
+            Vec::new(),
+        ),
+    ];
+
+    attach_compliance(
+        &mut results,
+        &profiles,
+        hardener_plugins::compliance_coverage(),
+        cis_exclusion("5.1.8", &["web-01.internal"]),
+    );
+
+    assert_eq!(
+        results[0].compliance.len(),
+        FLEET_FRAMEWORKS.len(),
+        "a scanned host is scored against every fleet framework"
+    );
+    assert_eq!(
+        cis_not_applicable(&results[0].compliance),
+        1,
+        "the exclusion names the saved hostname, so it applies only if the \
+         identity came from the profile map rather than the fallback"
+    );
+    assert!(
+        results[1].compliance.is_empty(),
+        "a host nobody reached has no findings, and a score derived from no \
+         findings is a claim about a host that was never assessed"
+    );
+}
+
+/// How many CIS controls one host's posture reports as passing.
+fn cis_passing(posture: &[FleetFrameworkPosture]) -> usize {
+    posture
+        .iter()
+        .find(|p| p.framework == ComplianceFramework::CIS)
+        .expect("CIS is a fleet framework")
+        .summary
+        .summary_passing
+}
+
+/// A fleet row scored from the given per-plugin results, with no saved profiles
+/// and no exclusions, so the only thing varying is what the scan covered.
+fn fleet_posture_from(scan_results: Vec<ScanResult>) -> Vec<FleetFrameworkPosture> {
+    let mut rows = vec![scanned_row("web-01", FleetHostStatus::Ok, scan_results)];
+    attach_compliance(
+        &mut rows,
+        &std::collections::HashMap::new(),
+        hardener_plugins::compliance_coverage(),
+        ComplianceConfig::default(),
+    );
+    rows.remove(0).compliance
+}
+
+/// A fleet scan reaches a host over one short-lived SSH connection, and what it
+/// comes back with is not always every plugin: `scan_with_executor` drops a
+/// plugin whose scan errored, and the caller may have filtered to a subset in
+/// the first place. Those controls were not assessed on that host, and the rule
+/// this project scores by is that an unassessed control is ManualReview and
+/// never Pass. The local compliance path has said so since `flatten_persisted_scans`;
+/// the fleet path flattened the results by hand and said nothing.
+#[test]
+fn a_fleet_row_cannot_pass_a_control_the_scan_never_assessed() {
+    let every_plugin: Vec<ScanResult> = create_plugin_registry()
+        .list()
+        .expect("the registry lists on this build")
+        .iter()
+        .map(|m| plugin_result(m.plugin_id.as_str(), vec![], vec![]))
+        .collect();
+
+    let full = fleet_posture_from(every_plugin);
+    let kernel_only = fleet_posture_from(vec![plugin_result("kernel-hardening", vec![], vec![])]);
+
+    assert!(
+        cis_passing(&full) > 0,
+        "a clean scan covering every plugin must pass something, or the \
+         comparison below is between two zeroes"
+    );
+    assert!(
+        cis_passing(&kernel_only) < cis_passing(&full),
+        "seven plugins assessed nothing on this host, so their controls must \
+         drop out of the passing count rather than passing on their silence: \
+         {} passing against {}",
+        cis_passing(&kernel_only),
+        cis_passing(&full)
+    );
+}
+
 #[tokio::test]
 async fn scan_with_executor_filters_plugins_by_bare_id_prefix() {
     // The GUI sends "kernel"; the registry holds "kernel-hardening". The

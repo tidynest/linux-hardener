@@ -1397,8 +1397,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has always satisfied. Its plugin-id filter is asserted on both arms now, the
   bare-prefix match that joins the GUI's `kernel` to the registry's
   `kernel-hardening`, and the guard that reads an empty id list as no filter
-  rather than as no plugins. Six tests, no network and no root, and each one was
-  checked by breaking the code it covers and watching it go red.
+  rather than as no plugins. The compliance pass at the end of the command body
+  moved out too, as `attach_compliance`, which takes the coverage set and the
+  exclusion set as arguments rather than reading them from disk itself, so the
+  caller does the one read and the scoring is a pure function of its inputs.
+  Extracting it is what surfaced the false-Pass recorded under Fixed below.
+  Eight tests, no network and no root, and each one was checked by breaking the
+  code it covers and watching it go red.
 
 - **`hardener report --scenario all` now renders all ten frameworks, where it
   rendered nine.** ISO 27001 was missing from a scenario whose own
@@ -1876,6 +1881,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fired rather than only that one did.
 
 ### Fixed
+
+- **A fleet row passed compliance controls no plugin on that host had
+  assessed.** The desktop's fleet view derives each host's posture from the
+  findings that host's scan returned, and it flattened them by hand: two
+  `flat_map` passes concatenating the findings and the unchecked entries each
+  plugin reported. A plugin that reports nothing therefore contributed nothing,
+  and a control with no finding against it and no unchecked entry beside it is
+  a control that passed. A fleet scan does not always come back with every
+  plugin. The caller may filter to a subset, and `scan_with_executor` logs and
+  drops a plugin whose scan errored on that host, which is the case that needs
+  no user action to happen. Measured on the fixture: a row scanned with only
+  `kernel-hardening` reported **38 passing CIS controls, the same 38** a row
+  scanned with all eight reported. The local compliance tab never had this
+  defect, because it goes through `flatten_persisted_scans`, which contributes
+  an unassessed entry for every registered plugin missing from the results and
+  for every result marked `scan_success: false`. The fleet path now makes the
+  same call. The one-plugin row reports 10. **A fleet compliance column will
+  read lower than it did wherever a plugin failed on a host**, and that drop is
+  the correction: those controls were never assessed, and this project's rule
+  is that an unassessed control is Manual Review and never a Pass. Asserted by
+  a differential rather than a pinned number, so it cannot pass on two zeroes.
 
 - **The scheduler page was editable before it had a config, and the config then
   landed on top of the edit.** The page loads its configuration after mount and
