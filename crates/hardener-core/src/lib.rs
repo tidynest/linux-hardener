@@ -17,6 +17,11 @@ pub mod plugin;
 pub mod config;
 pub mod config_loader;
 pub mod config_validation;
+/// Needs `hardener-state` for the audit log and `nix` for the effective user,
+/// both of which arrive with `system`, so a `default-features = false` build
+/// gets the config loader without the writer.
+#[cfg(feature = "system")]
+pub mod config_write;
 #[cfg(feature = "system")]
 pub mod context;
 pub mod executor;

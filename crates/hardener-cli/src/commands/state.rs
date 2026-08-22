@@ -107,78 +107,13 @@ pub async fn get_checkpoint_manager() -> Result<CheckpointManager> {
     Ok(CheckpointManager::new_with_signer(pool, signer)?)
 }
 
-/// Root audit log directory for privileged operations.
-const SYSTEM_LOG_DIR: &str = "/var/log/linux-hardener";
-
-/// Returns the effective username for audit logging.
-pub fn effective_user() -> String {
-    nix::unistd::User::from_uid(nix::unistd::getuid())
-        .ok()
-        .flatten()
-        .map(|user| user.name)
-        .unwrap_or_else(|| format!("uid:{}", nix::unistd::getuid()))
-}
-
-/// Opens an [`AuditLogger`] writing `audit.log` under `dir`, creating the
-/// directory (and restricting it to `mode`, when given) first.
-///
-/// Every failure carries the path it was working on, because "audit logging
-/// unavailable" with no location is not actionable.
-async fn audit_logger_in(
-    dir: &std::path::Path,
-    mode: Option<u32>,
-) -> Result<hardener_state::AuditLogger> {
-    use anyhow::Context;
-
-    fs::create_dir_all(dir)
-        .with_context(|| format!("creating audit log directory {}", dir.display()))?;
-    if let Some(mode) = mode {
-        let _ = fs::set_permissions(dir, fs::Permissions::from_mode(mode));
-    }
-
-    let path = dir.join("audit.log");
-    hardener_state::AuditLogger::new(&path.to_string_lossy())
-        .await
-        .with_context(|| format!("opening audit log {}", path.display()))
-}
-
-/// Creates an [`AuditLogger`] at the appropriate path.
-///
-/// Root: `/var/log/linux-hardener/audit.log` (0700 directory)
-/// Non-root: `$XDG_DATA_HOME/linux-hardener/audit.log`
-pub async fn audit_logger() -> Result<hardener_state::AuditLogger> {
-    if nix::unistd::getuid().is_root() {
-        audit_logger_in(std::path::Path::new(SYSTEM_LOG_DIR), Some(0o700)).await
-    } else {
-        // The user data directory holds more than this log, so its mode is
-        // left to whatever created it.
-        let dir = dirs::data_local_dir()
-            .map(|p| p.join("linux-hardener"))
-            .unwrap_or_else(|| PathBuf::from(".linux-hardener"));
-        audit_logger_in(&dir, None).await
-    }
-}
-
-/// The audit logger, or `None` after telling the operator there will be no
-/// audit trail.
-///
-/// Callers continue without one: refusing to harden a host because its log
-/// directory is unwritable would be the worse failure. What must not happen
-/// is the previous behaviour, where every failure folded to `None` and a
-/// privileged `apply`, `checkpoint` or `batch` ran with the audit trail
-/// silently absent. The notice goes to stderr so `--format json` stdout
-/// stays parseable.
-pub async fn get_audit_logger() -> Option<hardener_state::AuditLogger> {
-    match audit_logger().await {
-        Ok(logger) => Some(logger),
-        Err(e) => {
-            tracing::warn!("audit logging unavailable: {e:#}");
-            eprintln!("W  Audit logging unavailable: {e:#}");
-            eprintln!("   This operation will not be recorded in the audit trail.");
-            None
-        }
-    }
-}
+// The audit log's location, the effective user and the config writer all live
+// in `hardener_core::config_write` now. They moved because `hardener-cli` is a
+// binary and the desktop backend needs the same three answers: while they were
+// here, src-tauri could not reach them and wrote its own configuration
+// unaudited. Re-exported so every call site in this crate is unchanged, and so
+// there is still one answer to where this host's audit trail lives.
+pub use hardener_core::config_write::{effective_user, get_audit_logger};
 
 #[cfg(test)]
 mod tests;

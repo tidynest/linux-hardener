@@ -26,8 +26,11 @@
 //! does with the result. It also cannot pin the real `~/.config` location,
 //! which is the point of moving it.
 
-use hardener_core::inventory::{default_path, load, save};
+use hardener_core::config_write::{WriteAudit, logger_at};
+use hardener_core::inventory::{default_path, load, save_audited};
+use hardener_state::audit::{ActionType, AuditLogger, QueryFilter};
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 /// Serialises every test in this file that redirects the config directory.
@@ -70,11 +73,25 @@ fn with_config_root<T>(body: impl FnOnce() -> T) -> T {
     result
 }
 
-/// `save` writes the inventory, rather than reporting success and doing nothing.
+/// Runs `body` on a runtime of its own.
 ///
-/// The mutant `save -> Ok(())` leaves the file absent while every caller is
-/// told the write succeeded. A host added through the CLI's `batch` or the
-/// desktop fleet view would vanish at the next read.
+/// `with_config_root` holds a `std::sync::Mutex` across its closure, so the
+/// closure cannot be `async` without holding a non-`Send` guard across an
+/// await. The runtime goes inside the closure instead.
+fn block_on<T>(body: impl std::future::Future<Output = T>) -> T {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime")
+        .block_on(body)
+}
+
+/// `save_audited` writes the inventory, rather than reporting success and doing
+/// nothing.
+///
+/// The mutant `save_audited -> Ok(())` leaves the file absent while every
+/// caller is told the write succeeded. A host added through the CLI's `batch`
+/// or the desktop fleet view would vanish at the next read.
 ///
 /// Asserted on the file rather than through `load`, so this fails for one
 /// reason only. A test that saved and then loaded would also go red when
@@ -82,16 +99,68 @@ fn with_config_root<T>(body: impl FnOnce() -> T) -> T {
 #[test]
 fn save_writes_the_inventory_to_the_shared_path() {
     with_config_root(|| {
-        save(&sample()).expect("save to the default path");
+        block_on(async { save_audited(&sample(), unaudited()).await })
+            .expect("save to the default path");
 
         let path = default_path().expect("the config directory resolves");
         let written = std::fs::read_to_string(&path)
-            .expect("save() reported success, so the shared file must exist");
+            .expect("save_audited() reported success, so the shared file must exist");
 
         assert!(
             written.contains("web-01"),
             "the saved host must reach the file both front ends read: {written}"
         );
+    });
+}
+
+/// A descriptor with no logger, for the tests that are about the file rather
+/// than the entry.
+///
+/// The `None` is the state a host with an unwritable log directory is in, not
+/// an opt-out: the inventory still has to be writable there.
+fn unaudited() -> WriteAudit<'static> {
+    WriteAudit {
+        logger: None,
+        action: ActionType::ConfigChange,
+        target: "host:web-01".to_string(),
+        details: HashMap::new(),
+    }
+}
+
+/// A host joining or leaving the inventory is recorded.
+///
+/// This is the whole reason `save` became `save_audited`. A host leaving the
+/// file stops being scanned, and nothing else in the tool reports that: the
+/// fleet simply has one fewer row the next time somebody looks.
+#[test]
+fn save_files_an_entry_naming_the_host() {
+    with_config_root(|| {
+        let log = default_path()
+            .expect("the config directory resolves")
+            .with_file_name("audit.log");
+        let log_path = log.to_str().expect("utf-8 path").to_string();
+
+        block_on(async {
+            let logger = logger_at(&log_path).await.expect("a logger opens");
+            save_audited(
+                &sample(),
+                WriteAudit {
+                    logger: Some(&logger),
+                    action: ActionType::ConfigChange,
+                    target: "host:web-01".to_string(),
+                    details: HashMap::from([("operation".to_string(), "save".to_string())]),
+                },
+            )
+            .await
+            .expect("save to the default path");
+
+            let entries = AuditLogger::query(&log_path, QueryFilter::new())
+                .await
+                .expect("query");
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].entry_target, "host:web-01");
+            assert_eq!(entries[0].entry_details["operation"], "save");
+        });
     });
 }
 

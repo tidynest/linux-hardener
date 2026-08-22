@@ -801,19 +801,42 @@ which names the reason the catalogue cannot honour the control. An operator who
 redirects stderr, or who reaches the verb over IPC, gets the flag and not the
 explanation.
 
-**Two config writers outside the CLI still record nothing.** Every write to
-`config.toml` from `hardener` itself goes through one writer that files its own
-audit entry, so a config change the CLI makes without a record no longer
-compiles. Two writes do not use it. `save_scheduler_config` in `src-tauri`
-writes the `[scheduler]` section in process, as the desktop user rather than
-through `pkexec`, and files nothing; it is also the one config write in the tree
-that is not atomic and does not preserve the target's mode. `hardener systemd
-install` writes a `.service` and a `.timer` into `/etc/systemd/system` as root
-and files nothing. Neither gap is an oversight in the writer, and closing them
-raises a question the writer cannot answer on its own: the audit log a process
-writes is chosen by uid, root's under `/var/log` and everyone else's under
-`$XDG_DATA_HOME`, so a user-scope config change would land in a per-user chain
-that no auditor reading the host's log would ever see.
+**A desktop config change lands in a chain the host's auditor does not read.**
+Every configuration write in this project now goes through one writer that files
+its own entry, the CLI's four and the desktop's three alike, and a write that
+records nothing does not compile. Where the entry lands is still chosen by uid:
+root writes `/var/log/linux-hardener/audit.log`, everyone else writes
+`$XDG_DATA_HOME/linux-hardener/audit.log`. The desktop's own writes, the
+scheduler section and the two host-inventory commands, run as the desktop user
+and do not escalate, so their entries are in that user's chain and not the
+host's. An auditor reading `/var/log` sees the exception and scope entries,
+which reach it through `pkexec`, and none of the three above. **Nothing is lost
+and nothing is unrecorded; it is in a second file, per user, and no tool in this
+project collects the two together.** Making the desktop escalate to record its
+own settings would be a worse trade than the gap.
+
+**`hardener systemd install` writes unit files and records nothing.** It puts a
+`.service` and a `.timer` into `/etc/systemd/system` as root, or under
+`~/.config/systemd/user` with `--user`, through a plain `fs::write` that is
+neither atomic nor audited. It is the one host-state writer left outside the
+shared writer, and it is outside it because a unit file is not a config file:
+`write_atomically` names its temporary `.toml.new`, and the audit target
+vocabulary is sections and control ids rather than unit paths. Fitting it is a
+change to the writer, not a call site.
+
+**The desktop's three writes are asserted on their detail, not end to end.**
+`save_scheduler_config`, `save_remote_host` and `delete_remote_host` resolve
+both the config path and the audit log path from the process environment, so a
+test cannot drive them without moving both, and moving environment variables
+under `cargo test`'s threads is the race that put
+`crates/hardener-core/tests/inventory_shared_path.rs` in its own binary. What is
+asserted is the detail map each hands the writer
+(`src-tauri/src/commands/config_write_detail_tests.rs`) and, separately, that
+the writer files what it is given (`hardener-core/src/config_write/tests.rs`,
+and for the inventory the integration test above). **An entry whose detail is
+correct and which is never filed would pass every test in the first of those
+files.** The join between them is covered for the inventory and not for the
+scheduler.
 
 ---
 

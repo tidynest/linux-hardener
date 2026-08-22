@@ -22,9 +22,37 @@ pub fn load() -> Result<HostsConfig> {
     load_from(&default_path()?)
 }
 
-/// Saves the inventory to the default path.
-pub fn save(config: &HostsConfig) -> Result<()> {
-    save_to(&default_path()?, config)
+/// Saves the inventory to the default path, recording the change.
+///
+/// Every caller is a desktop command that adds or removes a host, and a host
+/// leaving this file stops being scanned without anything else reporting it.
+/// The audit descriptor is therefore mandatory rather than optional, on the
+/// same reasoning as [`crate::config_write::write_atomically`], which this
+/// delegates to and which is also what makes the write atomic.
+///
+/// Behind `system` because the audit log and the effective user are, and a
+/// `default-features = false` build has neither. That build reads the inventory
+/// and does not write it.
+#[cfg(feature = "system")]
+pub async fn save_audited(
+    config: &HostsConfig,
+    audit: crate::config_write::WriteAudit<'_>,
+) -> Result<()> {
+    let content = serialise(config)?;
+    crate::config_write::write_atomically(&default_path()?, &content, audit)
+        .await
+        .map_err(|e| HardeningError::Config(format!("{e:#}")))
+}
+
+/// The inventory as TOML, or the serialisation error naming what failed.
+///
+/// Separate from the write so both the audited path and the round-trip test can
+/// use it, and so a serialisation failure is distinguishable from a write
+/// failure: the first never touches the file, the second may leave a temporary
+/// one behind.
+fn serialise(config: &HostsConfig) -> Result<String> {
+    toml::to_string_pretty(config)
+        .map_err(|e| HardeningError::Config(format!("failed to serialise hosts config: {e}")))
 }
 
 fn load_from(path: &Path) -> Result<HostsConfig> {
@@ -36,12 +64,11 @@ fn load_from(path: &Path) -> Result<HostsConfig> {
         .map_err(|e| HardeningError::Config(format!("failed to parse hosts config: {e}")))
 }
 
-fn save_to(path: &Path, config: &HostsConfig) -> Result<()> {
-    let content = toml::to_string_pretty(config)
-        .map_err(|e| HardeningError::Config(format!("failed to serialise hosts config: {e}")))?;
-    std::fs::write(path, content)?;
-    Ok(())
-}
+// `save_to` used to sit here, writing an arbitrary path with `std::fs::write`.
+// It went when `save_audited` started delegating to
+// `crate::config_write::write_atomically`, which does the writing and files the
+// entry. Nothing but the round-trip test below called it, and that asserts what
+// it was really for: that `serialise` and `load_from` agree.
 
 #[cfg(test)]
 mod tests;

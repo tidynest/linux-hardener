@@ -1,6 +1,6 @@
 use super::*;
 use hardener_core::MockExecutor;
-use hardener_state::audit::QueryFilter;
+use hardener_state::audit::{ActionResult, QueryFilter};
 use hardener_types::{ExceptionOutcome, FindingCategory, Severity};
 
 /// A config and an audit log a test may actually write, since the log a command
@@ -118,36 +118,6 @@ fn a_malformed_expiry_date_is_refused() {
 #[test]
 fn an_invalid_calendar_date_is_refused() {
     assert!(parse_expiry("2027-02-30").is_err());
-}
-
-/// A rename over an existing file otherwise carries the temporary file's own
-/// mode (root's umask default), silently discarding whatever mode the
-/// operator set on the target.
-#[test]
-fn write_file_atomically_preserves_the_target_mode() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-    std::fs::write(&path, "existing = true\n").unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
-
-    write_file_atomically(&path, "existing = true\nnew = 1\n").unwrap();
-
-    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o640);
-}
-
-/// A target that does not exist yet has no mode to preserve, so the write
-/// still succeeds and the file lands with the temporary file's default mode.
-#[test]
-fn write_file_atomically_succeeds_for_a_new_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-
-    write_file_atomically(&path, "new = 1\n").unwrap();
-
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), "new = 1\n");
 }
 
 /// Every field the exception carries reaches the entry, `reason` included.

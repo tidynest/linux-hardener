@@ -41,7 +41,7 @@ fn missing_file_is_empty_inventory() {
 #[test]
 fn save_then_load_round_trips() {
     let path = std::env::temp_dir().join("hardener-test-roundtrip-hosts.toml");
-    save_to(&path, &sample()).expect("save");
+    std::fs::write(&path, serialise(&sample()).expect("serialise")).expect("save");
     let loaded = load_from(&path).expect("load");
     let _ = std::fs::remove_file(&path);
     assert_eq!(loaded.hosts.len(), 1);

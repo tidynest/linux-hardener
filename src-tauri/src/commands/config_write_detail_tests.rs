@@ -1,0 +1,140 @@
+#![cfg(test)]
+//
+// The module declaration that pulls this file in is already gated, so this
+// inner attribute changes nothing about what is compiled. Present so the file
+// says what it is on its own terms, matching its siblings in this directory.
+
+//! Tests for the audit detail the desktop's three in-process config writes
+//! carry.
+//!
+//! The writes themselves reach `~/.config` and the audit log through paths
+//! chosen from the process environment, so a test cannot drive
+//! `save_scheduler_config` or `save_remote_host` without moving both. What a
+//! test can pin, and what actually decides whether an entry is worth reading
+//! months later, is the detail map each one hands the writer. That is what
+//! these assert.
+//!
+//! Ceiling: an entry whose detail is right and which is never filed passes
+//! every test here. That the writes file at all is asserted where the writer
+//! lives, in `hardener-core/src/config_write/tests.rs`, and for the inventory
+//! in `hardener-core/tests/inventory_shared_path.rs`.
+
+use super::*;
+use hardener_types::scheduler::{
+    EmailUiConfig, NotificationUiConfig, SchedulerUiConfig, WebhookUiConfig,
+};
+
+fn scheduler(enabled: bool) -> SchedulerUiConfig {
+    SchedulerUiConfig {
+        enabled,
+        schedule: "daily".to_string(),
+        plugins: vec!["kernel-hardening".to_string(), "ssh-hardening".to_string()],
+        min_severity: "medium".to_string(),
+        notifications: NotificationUiConfig {
+            notify_min_severity: "high".to_string(),
+            email: EmailUiConfig {
+                enabled: true,
+                recipients: vec!["ops@example.com".to_string()],
+                ..EmailUiConfig::default()
+            },
+            webhooks: WebhookUiConfig {
+                enabled: false,
+                url: "https://hooks.example.com/abc".to_string(),
+                ..WebhookUiConfig::default()
+            },
+        },
+    }
+}
+
+fn profile(host_key_checking: bool) -> RemoteHostProfile {
+    RemoteHostProfile {
+        name: "web-01".to_string(),
+        hostname: "web-01.example.com".to_string(),
+        user: Some("admin".to_string()),
+        port: 2222,
+        key_file: None,
+        host_key_checking,
+    }
+}
+
+/// What the host now runs unattended, and who hears about it.
+#[test]
+fn scheduler_detail_names_the_schedule_and_the_plugin_set() {
+    let details = scheduler_details(&scheduler(true));
+
+    assert_eq!(details["enabled"], "true");
+    assert_eq!(details["schedule"], "daily");
+    assert_eq!(details["plugins"], "kernel-hardening,ssh-hardening");
+    assert_eq!(details["min_severity"], "medium");
+    assert_eq!(details["notify_min_severity"], "high");
+    assert_eq!(details["email_enabled"], "true");
+    assert_eq!(details["webhook_enabled"], "false");
+}
+
+/// Turning the scheduler off is the change most easily mistaken for nothing
+/// having happened: no scan runs afterwards, and no failure is reported,
+/// because there is nothing left to fail.
+#[test]
+fn scheduler_detail_records_the_scheduler_being_turned_off() {
+    let details = scheduler_details(&scheduler(false));
+
+    assert_eq!(details["enabled"], "false");
+}
+
+/// Recipient addresses and the webhook URL stay in the config file.
+///
+/// Whether a channel is on is the change; the addresses are personal data, and
+/// an append-only hash-chained log is the worst place to copy them to for an
+/// audit question they do not answer.
+#[test]
+fn scheduler_detail_carries_no_recipient_or_webhook_url() {
+    let details = scheduler_details(&scheduler(true));
+
+    let joined = details.values().cloned().collect::<Vec<_>>().join(" ");
+    assert!(
+        !joined.contains("ops@example.com"),
+        "a recipient address reached the audit log: {joined}"
+    );
+    assert!(
+        !joined.contains("hooks.example.com"),
+        "the webhook URL reached the audit log: {joined}"
+    );
+}
+
+/// A host joining the inventory is named by where it is, not only by what it
+/// was called.
+#[test]
+fn host_detail_names_the_endpoint_and_the_operation() {
+    let details = host_details("save", &profile(true));
+
+    assert_eq!(details["operation"], "save");
+    assert_eq!(details["hostname"], "web-01.example.com");
+    assert_eq!(details["port"], "2222");
+    assert_eq!(details["user"], "admin");
+    assert_eq!(details["host_key_checking"], "true");
+}
+
+/// The one field on a profile that weakens a security decision.
+///
+/// A host saved with host-key checking off accepts whatever key the far end
+/// presents. Without this in the entry, the operator who turned it off is the
+/// only record that it happened.
+#[test]
+fn host_detail_records_host_key_checking_being_turned_off() {
+    let details = host_details("save", &profile(false));
+
+    assert_eq!(details["host_key_checking"], "false");
+}
+
+/// A profile with no user runs as whoever is logged in, which is a different
+/// claim from a profile naming a user, and the entry must not read as though a
+/// user was named.
+#[test]
+fn host_detail_says_so_when_no_user_was_named() {
+    let mut anonymous = profile(true);
+    anonymous.user = None;
+
+    let details = host_details("save", &anonymous);
+
+    assert_eq!(details["user"], "(current)");
+}

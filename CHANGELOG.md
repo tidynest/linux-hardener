@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The desktop wrote three kinds of host state in process and recorded none of
+  them.** `save_scheduler_config` wrote the `[scheduler]` section, deciding
+  which scans this host runs unattended and who is notified.
+  `save_remote_host` and `delete_remote_host` wrote the fleet inventory, and a
+  host leaving that file stops being scanned with nothing else reporting it: the
+  fleet simply has one fewer row the next time anybody looks. All three used a
+  bare `std::fs::write`, so none was atomic, none preserved the target's mode,
+  and none filed an audit entry. **The cause was structural rather than an
+  oversight.** The writer that does all three things lived in `hardener-cli`,
+  which is a binary, so nothing may depend on it, and the desktop could not
+  reach the code that would have made its own writes safe. It now lives in
+  `hardener-core` as `config_write`, behind the `system` feature that already
+  carries the audit log and the effective user, and both front ends go through
+  it. `hardener_core::inventory::save` became `save_audited` and takes the same
+  mandatory descriptor, so a host cannot join or leave the fleet unrecorded.
+  The scheduler entry names what the host now runs unattended, the schedule, the
+  plugin set and the reporting thresholds; recipient addresses and the webhook
+  URL are deliberately left out, because whether a channel is on is what
+  changed and an append-only hash-chained log is the wrong place to copy
+  personal data to. A host entry names the endpoint, the port, the user and
+  `host_key_checking`, that last one because a profile saved with it off accepts
+  whatever key the far end presents. **These entries are written to the invoking
+  user's audit log, not the host's**, since the desktop does not escalate to
+  change its own settings; the consequence for an auditor is stated in
+  `docs/reference/what-is-not-proven.md`. `hardener systemd install` is now the
+  only host-state writer left outside the shared writer, and it is named there
+  too.
+
+- **The desktop's three writes are atomic now, which changes when they fail.**
+  They write a sibling temporary file and rename it over the target, so an
+  interrupted write can no longer leave a half-written `config.toml` or
+  `hosts.toml` that the next read fails to parse. The rename also carries the
+  target's existing mode, which a bare write did not. **The failure mode moves
+  rather than disappearing:** the temporary file needs the target's directory to
+  be writable, so a directory that permits replacing a file but not creating one
+  beside it now fails the save outright where it previously truncated the
+  existing file and wrote what it could. The old behaviour was not the safer
+  one. It reported success while leaving a fleet inventory the desktop would
+  read back as empty, or as fewer hosts than it holds. An operator who meets the
+  new refusal has a config directory their user cannot write to, which is worth
+  being told about rather than working around.
+
 - **`exception add` and `exception remove` wrote a root-owned configuration
   file and left no audit entry.** Four commands write
   `/etc/linux-hardener/config.toml`, all four through one shared writer, and

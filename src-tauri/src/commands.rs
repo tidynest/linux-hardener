@@ -7,12 +7,14 @@ use hardener_compliance::{
     resolve_profile,
 };
 use hardener_core::config::scope::ComplianceConfig;
+use hardener_core::config_write::{WriteAudit, get_audit_logger, write_atomically};
 use hardener_core::{
     ApplyResult, ConfigLoader, Context, Finding, PluginConfig, PluginMetadata, ScanResult,
     UncheckedCheck, ValidationReport,
 };
 use hardener_distro::Distribution;
 use hardener_plugins::create_plugin_registry;
+use hardener_state::audit::ActionType;
 use hardener_state::{
     Checkpoint, CheckpointId, CheckpointManager, CheckpointSigner, FileState, RollbackResult,
     ScanHistoryManager, ScanSession, ScanSessionId, ScanStatus, init_db,
@@ -26,6 +28,7 @@ use hardener_types::{
         RemoteHostProfile,
     },
 };
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::process::Command;
 use tracing::error;
@@ -196,9 +199,41 @@ fn load_hosts_config() -> Result<HostsConfig, String> {
     hardener_core::inventory::load().map_err(|e| safe_err(e.to_string()))
 }
 
-/// Saves host profiles to the shared inventory file.
-fn save_hosts_config(config: &HostsConfig) -> Result<(), String> {
-    hardener_core::inventory::save(config).map_err(|e| safe_err(e.to_string()))
+/// Saves host profiles to the shared inventory file, recording the change.
+///
+/// A host leaving this file stops being scanned, and until this recorded it
+/// nothing said so: the fleet simply had one fewer row the next time anybody
+/// looked. The audit descriptor is the caller's, because only the caller knows
+/// whether the host was added or removed.
+async fn save_hosts_config(config: &HostsConfig, audit: WriteAudit<'_>) -> Result<(), String> {
+    hardener_core::inventory::save_audited(config, audit)
+        .await
+        .map_err(|e| safe_err(e.to_string()))
+}
+
+/// The audit detail for a host joining or leaving the inventory.
+///
+/// `host_key_checking` is here because it is the one field on a profile that
+/// weakens a security decision: a host saved with it off accepts any key the
+/// far end presents, and an operator turning it off for one host should not be
+/// the only record that it happened.
+fn host_details(operation: &str, profile: &RemoteHostProfile) -> HashMap<String, String> {
+    HashMap::from([
+        ("operation".to_string(), operation.to_string()),
+        ("hostname".to_string(), profile.hostname.clone()),
+        ("port".to_string(), profile.port.to_string()),
+        (
+            "host_key_checking".to_string(),
+            profile.host_key_checking.to_string(),
+        ),
+        (
+            "user".to_string(),
+            profile
+                .user
+                .clone()
+                .unwrap_or_else(|| "(current)".to_string()),
+        ),
+    ])
 }
 
 /// Formats a Unix timestamp as a human-readable string.
@@ -1586,12 +1621,24 @@ pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String> 
     }
 
     let mut config = load_hosts_config()?;
+    let details = host_details("save", &profile);
+    let target = format!("host:{}", profile.name);
     if let Some(existing) = config.hosts.iter_mut().find(|h| h.name == profile.name) {
         *existing = profile;
     } else {
         config.hosts.push(profile);
     }
-    save_hosts_config(&config)
+    let logger = get_audit_logger().await;
+    save_hosts_config(
+        &config,
+        WriteAudit {
+            logger: logger.as_ref(),
+            action: ActionType::ConfigChange,
+            target,
+            details,
+        },
+    )
+    .await
 }
 
 /// Deletes a remote host profile by name.
@@ -1600,8 +1647,25 @@ pub async fn delete_remote_host(name: String) -> Result<(), String> {
     validate_ipc_string(&name, "profile_name")?;
 
     let mut config = load_hosts_config()?;
+    // Read off the profile before it goes, so the entry says what left rather
+    // than only that something did. A name that matches nothing writes the file
+    // unchanged and is still recorded as an attempt.
+    let details = config.hosts.iter().find(|h| h.name == name).map_or_else(
+        || HashMap::from([("operation".to_string(), "delete".to_string())]),
+        |profile| host_details("delete", profile),
+    );
     config.hosts.retain(|h| h.name != name);
-    save_hosts_config(&config)
+    let logger = get_audit_logger().await;
+    save_hosts_config(
+        &config,
+        WriteAudit {
+            logger: logger.as_ref(),
+            action: ActionType::ConfigChange,
+            target: format!("host:{name}"),
+            details,
+        },
+    )
+    .await
 }
 
 /// Connects to a remote host by profile name.
@@ -2150,10 +2214,60 @@ pub async fn save_scheduler_config(
 
     output.push_str(&render_scheduler_section(&config, &content)?);
 
-    std::fs::write(&write_path, output)
-        .map_err(|e| safe_err(format!("Failed to write config: {e}")))?;
+    // Through the shared writer, which is what makes this atomic, makes it
+    // preserve the target's mode, and files the audit entry. Before the writer
+    // moved into `hardener-core` this was a bare `std::fs::write` recording
+    // nothing, not by decision but because `hardener-cli` is a binary and the
+    // code that would have done otherwise could not be reached from here.
+    let logger = get_audit_logger().await;
+    write_atomically(
+        &write_path,
+        &output,
+        WriteAudit {
+            logger: logger.as_ref(),
+            action: ActionType::ConfigChange,
+            target: "scheduler".to_string(),
+            details: scheduler_details(&config),
+        },
+    )
+    .await
+    .map_err(|e| safe_err(format!("Failed to write config: {e:#}")))?;
 
     Ok("Configuration saved".to_string())
+}
+
+/// The audit detail for a scheduler change.
+///
+/// What an auditor needs is which scans this host now runs unattended and who
+/// hears about them, so the schedule, the plugin set and the reporting
+/// thresholds all go in. `enabled` first, because turning the scheduler off is
+/// the change most easily mistaken for nothing having happened.
+///
+/// Recipient addresses and the webhook URL are deliberately left out. Whether a
+/// channel is on is what changed; the addresses are in the config file, and
+/// copying them into an append-only log spreads personal data for no audit
+/// question they answer.
+fn scheduler_details(
+    config: &hardener_types::scheduler::SchedulerUiConfig,
+) -> std::collections::HashMap<String, String> {
+    std::collections::HashMap::from([
+        ("enabled".to_string(), config.enabled.to_string()),
+        ("schedule".to_string(), config.schedule.clone()),
+        ("plugins".to_string(), config.plugins.join(",")),
+        ("min_severity".to_string(), config.min_severity.clone()),
+        (
+            "notify_min_severity".to_string(),
+            config.notifications.notify_min_severity.clone(),
+        ),
+        (
+            "email_enabled".to_string(),
+            config.notifications.email.enabled.to_string(),
+        ),
+        (
+            "webhook_enabled".to_string(),
+            config.notifications.webhooks.enabled.to_string(),
+        ),
+    ])
 }
 
 /// The `[scheduler]` table already in a config file, or an empty one.
@@ -2679,3 +2793,7 @@ mod webhook_shape_tests;
 /// `add_policy_exception`.
 #[cfg(test)]
 mod exception_args_tests;
+
+/// Tests for the audit detail the desktop's own config writes carry.
+#[cfg(test)]
+mod config_write_detail_tests;
