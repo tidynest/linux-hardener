@@ -629,6 +629,19 @@ counts 10. The defect is fixed and asserted. The general point is the one worth
 keeping, that a function body no test enters is where this happens, and that a
 copy of logic that already exists elsewhere is where it happens first.
 
+**Whether a plugin can error at all on a remote host is unproven, and the arm
+that handles it is asserted only in isolation.** `scan_with_executor` now
+records a plugin whose `scan` returns `Err` as a failed result rather than
+dropping it, which is what both local scan paths already did. No fixture reaches
+that arm: measured over a `MockExecutor` stubbing nothing, all eight plugins
+return `Ok`, three of them carrying `scan_success: false` because the host is
+too bare to assess rather than because anything failed. The `Err` arm is a
+transport failure part-way through a host, and nothing short of a live
+connection that drops mid-scan produces one. What is asserted is the rule in
+isolation, that `recorded_scan` turns an error into a failed result carrying its
+message, and separately that a bare host still yields eight accounted rows and
+not five.
+
 **The remote executor's own default coverage is three tests of seventeen**, and
 those three assert configuration shape and description formatting. The other
 fourteen are `#[ignore]`d behind `SSH_TEST_HOST`.

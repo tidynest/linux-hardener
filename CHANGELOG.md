@@ -1882,6 +1882,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A remote scan dropped a plugin whose scan errored, where a local scan
+  records it.** Both local scan paths in `commands.rs` push
+  `hardener_plugins::failed_scan(..)` on the error arm, with a comment on each
+  saying why: a dropped plugin is indistinguishable from a plugin that found
+  nothing, and the two are scored differently, `NotCovered` against
+  `ScanIncomplete` carrying the reason. `scan_with_executor`, which is the
+  remote path for both the single-host scan and every fleet row, logged the
+  error and dropped the plugin. On a remote host the error arm is a transport
+  failure part-way through, so the case it loses is exactly the one a fleet
+  operator most needs told apart from a clean result. All three sites now go
+  through one `recorded_scan` helper rather than three copies of the same rule,
+  two of which agreed and one of which did not. **This changes nothing about a
+  host that is merely bare**: measured over an executor stubbing nothing, three
+  of the eight plugins already returned `Ok` carrying `scan_success: false`,
+  which was never the dropped case. Firewall finds no backend, ssh finds no
+  `sshd_config`, service minimisation cannot run `systemctl`, and all three came
+  back before this change and come back after it.
+
 - **A fleet row passed compliance controls no plugin on that host had
   assessed.** The desktop's fleet view derives each host's posture from the
   findings that host's scan returned, and it flattened them by hand: two

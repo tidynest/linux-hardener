@@ -599,20 +599,15 @@ pub async fn run_scan(
             // Retrieve the actual plugin
             if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
                 let plugin_config = config.get_plugin_config(metadata.plugin_id.as_str());
-                match plugin.scan(&ctx, plugin_config).await {
-                    Ok(result) => results.push(result),
-                    Err(e) => {
-                        // Recorded, not merely logged. These results are what
-                        // gets persisted and later built into a compliance
-                        // report, so a plugin dropped here is a plugin whose
-                        // controls pass on the silence its own failure caused.
-                        error!("Scan failed for plugin {}: {}", metadata.plugin_id, e);
-                        results.push(hardener_plugins::failed_scan(
-                            &metadata.plugin_id,
-                            &e.to_string(),
-                        ));
-                    }
+                let outcome = plugin.scan(&ctx, plugin_config).await;
+                // Recorded, not merely logged. These results are what gets
+                // persisted and later built into a compliance report, so a
+                // plugin dropped here is a plugin whose controls pass on the
+                // silence its own failure caused.
+                if let Err(ref e) = outcome {
+                    error!("Scan failed for plugin {}: {}", metadata.plugin_id, e);
                 }
+                results.push(recorded_scan(&metadata.plugin_id, outcome));
             }
         }
 
@@ -1243,20 +1238,30 @@ async fn collect_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), Strin
         let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) else {
             continue;
         };
-        match plugin
+        // A scan that errored used to be swallowed by an `if let Ok`, which is
+        // indistinguishable from a plugin that found nothing.
+        let outcome = plugin
             .scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
-            .await
-        {
-            Ok(result) => results.push(result),
-            // A scan that errored used to be swallowed by an `if let Ok`,
-            // which is indistinguishable from a plugin that found nothing.
-            Err(e) => results.push(hardener_plugins::failed_scan(
-                &metadata.plugin_id,
-                &e.to_string(),
-            )),
-        }
+            .await;
+        results.push(recorded_scan(&metadata.plugin_id, outcome));
     }
     Ok(hardener_plugins::flatten_persisted_scans(&results))
+}
+
+/// One plugin's scan outcome as a result the caller can record either way.
+///
+/// A scan that errored becomes a failed result rather than being dropped.
+/// Dropping it is indistinguishable from a plugin that found nothing, and the
+/// two are scored differently: `flatten_persisted_scans` reads an absent plugin
+/// as `NotCovered` and a failed one as `ScanIncomplete` carrying its reason. On
+/// a remote host the `Err` arm is a transport failure part-way through, so the
+/// distinction is between "this host has no firewall backend" and "the
+/// connection dropped whilst asking".
+fn recorded_scan<E: std::fmt::Display>(
+    plugin_id: &PluginId,
+    outcome: Result<ScanResult, E>,
+) -> ScanResult {
+    outcome.unwrap_or_else(|e| hardener_plugins::failed_scan(plugin_id, &e.to_string()))
 }
 
 /// Flattens per-plugin scan results into the flat findings and unchecked
@@ -1674,10 +1679,11 @@ async fn scan_with_executor(
         }
 
         if let Ok(Some(plugin)) = registry.get(&metadata.plugin_id) {
-            match plugin.scan(&ctx, &default_config).await {
-                Ok(result) => results.push(result),
-                Err(e) => error!("Scan failed for plugin {}: {}", metadata.plugin_id, e),
+            let outcome = plugin.scan(&ctx, &default_config).await;
+            if let Err(ref e) = outcome {
+                error!("Scan failed for plugin {}: {}", metadata.plugin_id, e);
             }
+            results.push(recorded_scan(&metadata.plugin_id, outcome));
         }
     }
 

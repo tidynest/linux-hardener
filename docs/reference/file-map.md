@@ -963,8 +963,8 @@ Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
 The table covers the ten crates under `crates/` and sums to 2085. The eleventh
-workspace member, `src-tauri`, carries 117 more, which is why the tree total the
-evidence ledger records is 2202 and not this table's sum.
+workspace member, `src-tauri`, carries 119 more, which is why the tree total the
+evidence ledger records is 2204 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|

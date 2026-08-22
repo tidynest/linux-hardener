@@ -999,6 +999,73 @@ async fn scan_with_executor_filters_plugins_by_bare_id_prefix() {
     assert_eq!(filtered[0].scan_plugin_id.as_str(), "kernel-hardening");
 }
 
+/// A plugin that cannot assess the host must still come back in the list.
+///
+/// Over an executor stubbing nothing, three of the eight plugins report
+/// `scan_success: false` rather than erroring: firewall finds no backend, ssh
+/// finds no `sshd_config`, and service minimisation cannot run `systemctl`.
+/// They return `Ok` carrying the failure, so this pins the arm that matters
+/// most in practice, that a host too bare to assess produces eight accounted
+/// rows and not five. It does **not** exercise the `Err` arm, because no
+/// plugin returns `Err` against this fixture; `recorded_scan` is asserted
+/// directly for that.
+#[tokio::test]
+async fn scan_with_executor_accounts_for_every_plugin_including_the_ones_that_failed() {
+    let registered = create_plugin_registry()
+        .list()
+        .expect("the registry lists on this build");
+    let results = scan_over_empty_mock(None).await;
+
+    assert_eq!(
+        results.len(),
+        registered.len(),
+        "every registered plugin must account for itself, whether it assessed \
+         the host or failed to; missing: {:?}",
+        registered
+            .iter()
+            .map(|m| m.plugin_id.as_str())
+            .filter(|id| !results.iter().any(|r| r.scan_plugin_id.as_str() == *id))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        results.iter().any(|r| !r.scan_success),
+        "a host stubbing nothing must defeat at least one plugin, or the \
+         assertion above is about eight clean scans and says nothing about \
+         what happens to a failed one"
+    );
+    for result in &results {
+        assert_eq!(
+            result.scan_success,
+            result.scan_error.is_none(),
+            "{} must carry its error exactly when it failed",
+            result.scan_plugin_id
+        );
+    }
+}
+
+/// The `Err` arm no fixture reaches: a plugin whose `scan` call itself errors,
+/// which over SSH is a transport failure part-way through a host. Dropping it
+/// is indistinguishable from a plugin that found nothing, which is the whole
+/// reason `failed_scan` exists.
+#[test]
+fn recorded_scan_turns_a_scan_error_into_a_failed_result() {
+    let id = PluginId::new("kernel-hardening");
+
+    let failed = recorded_scan(&id, Err::<ScanResult, _>("connection reset"));
+    assert_eq!(failed.scan_plugin_id, id, "the failure keeps its plugin");
+    assert!(!failed.scan_success);
+    assert_eq!(failed.scan_error.as_deref(), Some("connection reset"));
+
+    let clean = plugin_result("kernel-hardening", vec![finding("K-1")], vec![]);
+    let passed = recorded_scan(&id, Ok::<_, &str>(clean.clone()));
+    assert!(passed.scan_success);
+    assert_eq!(
+        passed.scan_findings.len(),
+        clean.scan_findings.len(),
+        "a successful scan passes through untouched"
+    );
+}
+
 #[tokio::test]
 async fn scan_with_executor_treats_an_empty_filter_as_no_filter() {
     let unfiltered = scan_over_empty_mock(None).await;
