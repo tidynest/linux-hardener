@@ -747,3 +747,143 @@ fn the_fleet_posture_carries_one_outcome_per_control() {
          assertion above would also satisfy"
     );
 }
+
+/// One saved inventory host, spelled out rather than parsed, so a test about
+/// inventory-versus-ad-hoc precedence cannot accidentally build both sides of
+/// the comparison through the same parser.
+fn saved_host(name: &str, hostname: &str) -> RemoteHostProfile {
+    RemoteHostProfile {
+        name: name.to_string(),
+        hostname: hostname.to_string(),
+        user: Some("ops".to_string()),
+        port: 2022,
+        key_file: Some("/keys/inventory".to_string()),
+        host_key_checking: true,
+    }
+}
+
+#[test]
+fn fleet_targets_keys_inventory_by_name_and_adhoc_by_full_target() {
+    let targets = fleet_targets(
+        vec![saved_host("web-01", "web-01.example.net")],
+        &["root@db-01:2222".to_string()],
+    )
+    .expect("both targets are well formed");
+
+    assert_eq!(targets.len(), 2);
+    assert_eq!(targets["web-01"].hostname, "web-01.example.net");
+
+    // The ad-hoc key is the target string as typed, not the parsed hostname:
+    // the fleet rows are named by it and the history is keyed by it.
+    let adhoc = &targets["root@db-01:2222"];
+    assert_eq!(adhoc.hostname, "db-01");
+    assert_eq!(adhoc.port, 2222);
+    assert_eq!(adhoc.user.as_deref(), Some("root"));
+}
+
+#[test]
+fn fleet_targets_lets_an_inventory_host_win_a_name_collision() {
+    // An ad-hoc target that happens to spell a saved host's name must not
+    // overwrite the saved profile, which carries the real hostname, port, user
+    // and key file. Until now this was guarded by `or_insert` and a comment,
+    // and swapping it for `insert` broke nothing any test could see.
+    let targets = fleet_targets(
+        vec![saved_host("db-01", "db-01.internal")],
+        &["db-01".to_string()],
+    )
+    .expect("both targets are well formed");
+
+    assert_eq!(targets.len(), 1, "one key, because both name the same host");
+    let kept = &targets["db-01"];
+    assert_eq!(
+        kept.hostname, "db-01.internal",
+        "the ad-hoc parse would have set hostname to the bare name"
+    );
+    assert_eq!(kept.port, 2022, "the saved port survives the collision");
+    assert_eq!(kept.key_file.as_deref(), Some("/keys/inventory"));
+}
+
+#[test]
+fn fleet_targets_rejects_an_invalid_adhoc_target() {
+    // A rejected target fails the whole scan rather than being dropped: a
+    // silently skipped host reads as a host with nothing to report.
+    let err = fleet_targets(Vec::new(), &["-oProxyCommand=x".to_string()])
+        .expect_err("a leading dash is an ssh option, not a hostname");
+    assert!(err.contains("Invalid ad-hoc target"), "got: {err}");
+}
+
+#[test]
+fn ssh_config_for_carries_the_profile_and_maps_host_key_checking() {
+    let mut profile = RemoteHostProfile::from_target(
+        "ops@db-01:2222",
+        22,
+        Some("/keys/id_ed25519".to_string()),
+        true,
+    );
+
+    let strict = ssh_config_for(&profile);
+    assert_eq!(strict.host, "db-01");
+    assert_eq!(strict.port, 2222);
+    assert_eq!(strict.user.as_deref(), Some("ops"));
+    assert_eq!(strict.identity_file.as_deref(), Some("/keys/id_ed25519"));
+    assert!(
+        matches!(strict.known_hosts, hardener_core::KnownHosts::Strict),
+        "a host that checks its key must verify it"
+    );
+
+    profile.host_key_checking = false;
+    assert!(
+        matches!(
+            ssh_config_for(&profile).known_hosts,
+            hardener_core::KnownHosts::Accept
+        ),
+        "an unchecked host key relaxes to Accept; staying Strict would fail \
+         every host the user opted out for"
+    );
+}
+
+/// Every plugin scanned over a `MockExecutor` that stubs nothing. Plugins that
+/// error are logged and skipped by `scan_with_executor`, so this is the set of
+/// plugins that survive a host with no files and no commands, and it is the
+/// baseline the filter assertions below compare against.
+async fn scan_over_empty_mock(plugin_ids: Option<&[String]>) -> Vec<ScanResult> {
+    let executor: std::sync::Arc<dyn hardener_core::SystemExecutor> =
+        std::sync::Arc::new(hardener_core::MockExecutor::new());
+    scan_with_executor(executor, plugin_ids)
+        .await
+        .expect("a plugin that fails is skipped, never fatal")
+}
+
+#[tokio::test]
+async fn scan_with_executor_filters_plugins_by_bare_id_prefix() {
+    // The GUI sends "kernel"; the registry holds "kernel-hardening". The
+    // prefix arm of the filter is what joins them.
+    let filtered = scan_over_empty_mock(Some(&["kernel".to_string()])).await;
+    assert_eq!(
+        filtered.len(),
+        1,
+        "exactly the kernel plugin, got: {:?}",
+        filtered
+            .iter()
+            .map(|r| r.scan_plugin_id.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(filtered[0].scan_plugin_id.as_str(), "kernel-hardening");
+}
+
+#[tokio::test]
+async fn scan_with_executor_treats_an_empty_filter_as_no_filter() {
+    let unfiltered = scan_over_empty_mock(None).await;
+    let empty_filter = scan_over_empty_mock(Some(&[])).await;
+
+    assert!(
+        unfiltered.len() > 1,
+        "an unfiltered scan that produced nothing would satisfy every equality \
+         below whatever the filter did"
+    );
+    assert_eq!(
+        unfiltered.len(),
+        empty_filter.len(),
+        "an empty id list means no filter, not no plugins"
+    );
+}

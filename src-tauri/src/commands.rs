@@ -1619,18 +1619,7 @@ pub async fn connect_remote(
         .ok_or_else(|| format!("Host profile '{}' not found", name))?
         .clone();
 
-    let ssh_config = hardener_core::SshConfig {
-        host: profile.hostname.clone(),
-        port: profile.port,
-        user: profile.user.clone(),
-        identity_file: profile.key_file.clone(),
-        known_hosts: if profile.host_key_checking {
-            hardener_core::KnownHosts::Strict
-        } else {
-            hardener_core::KnownHosts::Accept
-        },
-        connect_timeout: std::time::Duration::from_secs(30),
-    };
+    let ssh_config = ssh_config_for(&profile);
 
     match hardener_core::SshExecutor::connect(ssh_config).await {
         Ok(executor) => {
@@ -1898,6 +1887,51 @@ fn adhoc_profile(target: &str) -> Result<RemoteHostProfile, String> {
     Ok(profile)
 }
 
+/// How long a remote connection may take to establish, for every host the
+/// desktop reaches: one saved profile or eight fleet hosts at once.
+const REMOTE_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Builds the core SSH config for one host profile. The single place the
+/// desktop turns a profile into a connection, shared by `connect_remote` and
+/// the fleet scan: `host_key_checking` decides `Strict` against `Accept`, and
+/// no caller can drift on which way round that goes.
+fn ssh_config_for(profile: &RemoteHostProfile) -> hardener_core::SshConfig {
+    hardener_core::SshConfig {
+        host: profile.hostname.clone(),
+        port: profile.port,
+        user: profile.user.clone(),
+        identity_file: profile.key_file.clone(),
+        known_hosts: if profile.host_key_checking {
+            hardener_core::KnownHosts::Strict
+        } else {
+            hardener_core::KnownHosts::Accept
+        },
+        connect_timeout: REMOTE_CONNECT_TIMEOUT,
+    }
+}
+
+/// Resolves a fleet scan's targets into one profile per row, keyed the way the
+/// rows are named: inventory hosts by their profile name, ad-hoc ones by the
+/// full `user@host[:port]` string as typed, which is also the history key.
+///
+/// An inventory host keeps precedence over an ad-hoc target that happens to
+/// spell its name, because the saved profile carries the real hostname, port,
+/// user and key file that parsing a bare name cannot recover. An unparseable
+/// ad-hoc target fails the whole scan rather than being dropped: a silently
+/// skipped host reads as a host with nothing to report.
+fn fleet_targets(
+    hosts: Vec<RemoteHostProfile>,
+    adhoc: &[String],
+) -> Result<std::collections::HashMap<String, RemoteHostProfile>, String> {
+    let mut profiles: std::collections::HashMap<String, RemoteHostProfile> =
+        hosts.into_iter().map(|h| (h.name.clone(), h)).collect();
+    for target in adhoc {
+        let profile = adhoc_profile(target)?;
+        profiles.entry(target.clone()).or_insert(profile);
+    }
+    Ok(profiles)
+}
+
 /// Scans several hosts concurrently and returns each host's severity posture:
 /// saved inventory hosts by name plus ad-hoc `user@host[:port]` targets.
 /// Read-only: opens a short-lived SSH connection per host, scans, and drops it.
@@ -1918,24 +1952,11 @@ pub async fn run_fleet_scan(
     }
     let adhoc = adhoc.unwrap_or_default();
 
-    // One profile lookup, keyed the way the rows are named: inventory hosts by
-    // their profile name, ad-hoc ones by the full target string. Built once and
-    // shared, because the scan closure takes ownership of what it captures and
-    // the compliance pass below needs the same identities to resolve
-    // host-targeted exclusions.
+    // One profile lookup, built once and shared, because the scan closure takes
+    // ownership of what it captures and the compliance pass below needs the
+    // same identities to resolve host-targeted exclusions.
     let config = load_hosts_config()?;
-    let mut profiles: std::collections::HashMap<String, RemoteHostProfile> = config
-        .hosts
-        .into_iter()
-        .map(|h| (h.name.clone(), h))
-        .collect();
-    for target in &adhoc {
-        // `or_insert` and not `insert`: an inventory host keeps precedence over
-        // an ad-hoc target that happens to spell its name, which is the order
-        // the lookup this replaced already had.
-        let profile = adhoc_profile(target)?;
-        profiles.entry(target.clone()).or_insert(profile);
-    }
+    let profiles = fleet_targets(config.hosts, &adhoc)?;
 
     let plugin_ids = std::sync::Arc::new(plugin_ids);
     let profiles = std::sync::Arc::new(profiles);
@@ -1967,18 +1988,7 @@ pub async fn run_fleet_scan(
                 let profile =
                     profile.ok_or_else(|| format!("Host profile '{}' not found", name))?;
 
-                let ssh_config = hardener_core::SshConfig {
-                    host: profile.hostname.clone(),
-                    port: profile.port,
-                    user: profile.user.clone(),
-                    identity_file: profile.key_file.clone(),
-                    known_hosts: if profile.host_key_checking {
-                        hardener_core::KnownHosts::Strict
-                    } else {
-                        hardener_core::KnownHosts::Accept
-                    },
-                    connect_timeout: std::time::Duration::from_secs(30),
-                };
+                let ssh_config = ssh_config_for(&profile);
 
                 let executor = std::sync::Arc::new(
                     hardener_core::SshExecutor::connect(ssh_config)

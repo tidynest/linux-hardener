@@ -1377,6 +1377,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The desktop built its SSH connection twice, and the fleet scan's target map
+  could not be reached without a network.** `connect_remote` and the fleet scan
+  each assembled a `hardener_core::SshConfig` from a host profile, the same
+  eleven lines both times, and among those lines is the one that turns
+  `host_key_checking` into `KnownHosts::Strict` or `KnownHosts::Accept`. That is
+  the switch deciding whether a host key is verified at all, so a second copy of
+  it is a second place for it to be got backwards. Both sites now call
+  `ssh_config_for`, and the connect timeout both were hard-coding is a named
+  constant. Separately, the fleet scan's profile map moved out of the command
+  body into `fleet_targets`. That extraction is what made the logic reachable:
+  `run_fleet_scan` is 126 lines of which five need a live socket, and the other
+  121 were untested only because the five sat in the middle of them. The rule
+  that a saved inventory host beats an ad-hoc target spelling its name was
+  carried by an `or_insert` and a comment saying so; changing it to `insert`
+  broke nothing any test could see. It now fails one by name. `scan_with_executor`,
+  which every plugin scan on both the single-host and fleet paths runs through,
+  had no test at all, though it takes a `dyn SystemExecutor` that `MockExecutor`
+  has always satisfied. Its plugin-id filter is asserted on both arms now, the
+  bare-prefix match that joins the GUI's `kernel` to the registry's
+  `kernel-hardening`, and the guard that reads an empty id list as no filter
+  rather than as no plugins. Six tests, no network and no root, and each one was
+  checked by breaking the code it covers and watching it go red.
+
 - **`hardener report --scenario all` now renders all ten frameworks, where it
   rendered nine.** ISO 27001 was missing from a scenario whose own
   `Scenario::name()` returns "All Frameworks", so the command silently omitted
