@@ -663,6 +663,25 @@ measurement.
 That is asserted directly, and it is the property that stops a report claiming
 compliance the engine never measured.
 
+**A control no plugin *reached on this host* is a separate rule, and it is the
+one that broke.** Coverage is declared statically, so a plugin that declares a
+control but never ran leaves that control with no finding against it, and a
+control with no finding and no unchecked entry passes. What stops that is the
+flatten: `hardener_plugins::flatten_scans` and `flatten_persisted_scans` each
+contribute an unassessed entry for a plugin missing from the results. The rule
+holds only where a caller goes through one of them, and on 2026-08-22 the
+desktop's fleet path did not. All six sites that build a `ReportGenerator` were
+traced by hand that day, and each is now fed by one of those two: the CLI's
+`report`, `report_wizard` and `batch` paths, the desktop's two local report
+commands, and the fleet column. **Nothing enforces this for a seventh site.** A
+validator was considered and not written, because deciding whether a given
+call's arguments came from an approved flatten needs to follow bindings through
+pass-through functions, and a regex that guesses would either miss the case or
+need enough exemptions to stop meaning anything. Both live paths carry a
+behavioural test instead: `flattening_no_results_leaves_every_plugin_unassessed`
+for the local one and `a_fleet_row_cannot_pass_a_control_the_scan_never_assessed`
+for the fleet one.
+
 **Coverage is declared by each plugin's own `coverage()` function.** The
 guarantee is therefore exactly as good as those declarations: a plugin that
 over-declares turns a Manual Review into a Pass, and nothing in the compliance
