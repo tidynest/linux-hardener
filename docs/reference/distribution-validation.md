@@ -1183,13 +1183,10 @@ six distributions.
 
 The suite has grown since that baseline, and has since been rewritten. Every
 figure in the table above is superseded by the reading in the Reading table
-below, which is **165 of 165 on all six distributions** on 2026-08-21. The tree
-now collects 166: `T-FLEET-11` was added after that sweep with the fleet profile
-badge, so this pointer and the current row of the Reading table both stay at 165
-until a sweep records 166, and both are the correct red until it does. Restating
-the number here rather than only pointing at it is deliberate, and so is holding
-it to the collection count: a pointer that cannot go stale is a pointer nothing
-checks.
+below, which is **166 of 166 on all six distributions** on 2026-08-22.
+Restating the number here rather than only pointing at it is deliberate, and so
+is holding it to the collection count: a pointer that cannot go stale is a
+pointer nothing checks.
 
 This sentence named the 2026-08-16 reading of 154 until 2026-08-19. Summary had
 recorded the later reading on 2026-08-18, so the pointer stood stale for a day:
@@ -1220,7 +1217,8 @@ rather than measuring growth:
 | 2026-08-21 | 157 | 6 | **not green**: 5 distributions passed, openSUSE failed T-SCHED-07. Not an openSUSE fault - a load racing an edit, which the other five happened to win |
 | 2026-08-21 | 158 | 6 | superseded, taken twice at this count: once after the fix for that race and the test that pins it, and again after the fleet-apply fixture gained a failing host, which the nine `T-FAPPLY` cases read |
 | 2026-08-21 | 165 | 6 | superseded, 3.7 to 4.7 minutes each and 44 screenshots each. The theme sweep gained a sixth state, the rollback modal, so the whole modal surface is now captured in all seven themes instead of in one as a by-product of `T-DIVG-03`'s geometry check. **Seven cases from no new call site**: the count below stayed at 117 and every document said 158 with the validator green |
-| **2026-08-21** | **165** | **6** | **current**, against the two contrast routes that first open a MODAL and the `rollback_mode=partial` fixture they needed. Five distributions green in one sweep; openSUSE failed `T-FIND-10` on a 30 s `waitForApp` timeout and passed on a re-run at 165. **Kept rather than dropped, and it was NOT a distribution fault**: the identical `beforeEach` succeeded 24 times in that same file, run and container, with `T-FIND-09` and `T-FIND-11` passing either side of it in 2.6 s and 1.7 s. A real fault in a shared hook fails all 25. openSUSE took 5.6 minutes here against 4.7 in the sweep before, so it is load |
+| 2026-08-21 | 165 | 6 | superseded, against the two contrast routes that first open a MODAL and the `rollback_mode=partial` fixture they needed. Five distributions green in one sweep; openSUSE failed `T-FIND-10` on a 30 s `waitForApp` timeout and passed on a re-run at 165. **Kept rather than dropped, and it was NOT a distribution fault**: the identical `beforeEach` succeeded 24 times in that same file, run and container, with `T-FIND-09` and `T-FIND-11` passing either side of it in 2.6 s and 1.7 s. A real fault in a shared hook fails all 25. openSUSE took 5.6 minutes here against 4.7 in the sweep before, so it is load |
+| **2026-08-22** | **166** | **6** | **current**, the first execution of `T-FLEET-11`, which was authored unexecuted alongside the fleet profile badge and asserts the badge on a `rhel10` host and its suppression on a `generic` ad-hoc target. **All six green in one sweep with no re-run**, 44 screenshots each, and the run before this one needed an openSUSE re-run. The ad-hoc flow it drives, adding a target and scanning it, had no other spec exercising it |
 
 The Fedora-only row is kept because it records a rule rather than a result: it
 was deliberately never written into the table, since a six-distribution row
@@ -1287,12 +1285,14 @@ theme, and `hardening.spec.js:464` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
 `test(` calls is 118 and understates the suite by 48.
 
-This is a **collection** count and no longer the count any container run has
-executed: `T-FLEET-11` was added with the fleet profile badge and the last
-sweep, the current row of the Reading table above, ran the 165 cases that
-preceded it. That row stays at 165 deliberately, because it records what a run
-did rather than what the tree holds, and it is the correct red until the next
-sweep records 166.
+This is a **collection** count, and the sweep of 2026-08-22 has now executed
+all of it: `T-FLEET-11` was added with the fleet profile badge, stood unexecuted
+for a day, and ran green on all six distributions in the current row of the
+Reading table above. While it stood unexecuted the two numbers differed and
+three registered sites read 165 against a tree of 166. **That red was correct
+and was left standing rather than edited away**, because a Reading row records
+what a run did and not what the tree holds; the only thing that could clear it
+was a run.
 
 **All three line numbers were stale when this paragraph was rewritten**, and
 only one of them by the change that prompted the rewrite. The sweep genuinely
