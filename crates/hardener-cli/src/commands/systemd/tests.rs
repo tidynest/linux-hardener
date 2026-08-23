@@ -77,3 +77,77 @@ fn removing_nothing_does_not_claim_a_removal() {
         "with nothing removed, the disable outcome does not change the answer"
     );
 }
+
+/// A user timer and a system timer are different facts about a host.
+///
+/// One runs as the operator and only while they are logged in; the other runs
+/// as root on a timer the host keeps. Two entries naming only the unit, which
+/// is the same string in both cases, would be indistinguishable.
+#[test]
+fn a_unit_entry_says_which_systemd_instance_it_changed() {
+    let system = unit_audit(None, timer_name(), "install", false, &[]);
+    let user = unit_audit(None, timer_name(), "install", true, &[]);
+
+    assert_eq!(system.target, user.target, "the unit name is the same");
+    assert_eq!(system.details["scope"], "system");
+    assert_eq!(user.details["scope"], "user");
+}
+
+/// The target names the unit, not the path it landed on.
+///
+/// An auditor asking whether the scheduled scan was changed wants both the
+/// `--user` and the system install, and a path-shaped target would split them
+/// into two vocabularies.
+#[test]
+fn a_unit_entry_targets_the_unit_rather_than_its_directory() {
+    let audit = unit_audit(None, service_name(), "install", false, &[]);
+
+    assert_eq!(audit.target, "unit:linux-hardener.service");
+    assert!(
+        !audit.target.contains('/'),
+        "a directory in the target splits user and system installs apart: {}",
+        audit.target
+    );
+}
+
+/// Install and uninstall are the same target and must be told apart by the
+/// entry itself, since the absence of a later entry proves nothing.
+#[test]
+fn install_and_uninstall_are_distinguishable_at_the_same_target() {
+    let installed = unit_audit(None, timer_name(), "install", false, &[]);
+    let removed = unit_audit(None, timer_name(), "uninstall", false, &[]);
+
+    assert_eq!(installed.details["operation"], "install");
+    assert_eq!(removed.details["operation"], "uninstall");
+}
+
+/// Caller detail reaches the entry alongside the two keys every unit entry
+/// carries, rather than replacing them.
+#[test]
+fn caller_detail_is_added_to_the_entry_rather_than_replacing_it() {
+    let audit = unit_audit(
+        None,
+        timer_name(),
+        "install",
+        false,
+        &[("schedule", "daily".to_string())],
+    );
+
+    assert_eq!(audit.details["schedule"], "daily");
+    assert_eq!(audit.details["operation"], "install");
+    assert_eq!(audit.details["scope"], "system");
+}
+
+/// A system install and a user install write the same two unit names to
+/// different directories, and the directory is the whole difference.
+#[test]
+fn the_unit_directory_follows_the_mode() {
+    let system = unit_dir_for(false).expect("a system unit directory always resolves");
+
+    assert_eq!(system, std::path::PathBuf::from("/etc/systemd/system"));
+    assert!(
+        unit_dir_for(true)
+            .expect("a home directory resolves on this runner")
+            .ends_with(".config/systemd/user"),
+    );
+}

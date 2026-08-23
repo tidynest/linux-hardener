@@ -200,20 +200,81 @@ pub async fn write_atomically(path: &Path, contents: &str, audit: WriteAudit<'_>
     outcome
 }
 
+/// Removes `path` if it is there, and files the audit entry the caller
+/// described.
+///
+/// Answers whether the file was present, which is not the same question as
+/// whether the call succeeded: uninstalling something that was never installed
+/// is a success that removed nothing, and an entry saying so is worth more than
+/// one implying a removal happened.
+///
+/// **Taking a file away is a change to host state exactly as writing one is**,
+/// and it is the direction that reports itself least: a scheduled scan that
+/// stops running produces no failure, no finding and no output at all. So it
+/// takes the same mandatory descriptor [`write_atomically`] does.
+///
+/// `try_exists`, not `exists`. The latter is `metadata(..).is_ok()` and answers
+/// `false` for a file this process may not stat, which would record a
+/// successful removal that never touched anything.
+pub async fn remove_file_audited(path: &Path, audit: WriteAudit<'_>) -> Result<bool> {
+    let outcome = remove_if_present(path);
+    // The descriptor's `record` takes the shape every write reports, so the
+    // presence answer is set aside for the caller and only success or failure
+    // reaches the log.
+    audit
+        .record(&outcome.as_ref().map(|_| ()).map_err(|e| anyhow!("{e:#}")))
+        .await;
+    outcome
+}
+
+/// Deletes `path` when it is there, answering whether it was.
+fn remove_if_present(path: &Path) -> Result<bool> {
+    let present = path
+        .try_exists()
+        .map_err(|e| anyhow!("Cannot check for {}: {e}", path.display()))?;
+    if !present {
+        return Ok(false);
+    }
+    std::fs::remove_file(path).map_err(|e| anyhow!("Cannot remove {}: {e}", path.display()))?;
+    Ok(true)
+}
+
+/// The sibling temporary file a write to `path` goes through first.
+///
+/// Appended to the whole file name rather than replacing the extension. This
+/// used to be `path.with_extension("toml.new")`, which was right for the only
+/// two files that then existed and wrong in general twice over. It named a
+/// `.service` file's temporary `linux-hardener.toml.new`, and, because it
+/// replaces the extension rather than adding to it, every file sharing a stem
+/// in one directory mapped to the same temporary path:
+/// `linux-hardener.service` and `linux-hardener.timer` both became
+/// `linux-hardener.toml.new`. The unit writes are sequential, so nothing was
+/// corrupted, but the collision was one concurrent caller away from being real.
+///
+/// `config.toml` is unaffected either way: replacing `.toml` with `.toml.new`
+/// and appending `.new` both give `config.toml.new`.
+fn temporary_beside(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".new");
+    path.with_file_name(name)
+}
+
 /// Write to a sibling temporary file and rename over the target, so an
-/// interrupted write cannot leave a half-written config that the next reader
+/// interrupted write cannot leave a half-written file that the next reader
 /// fails to parse.
 ///
 /// Split from [`write_atomically`] so the filesystem behaviour stays a
 /// synchronous function with no logger in it: the mode-preservation and
 /// new-file tests exercise exactly this and need neither a runtime nor an
-/// audit log to say what they say.
-pub fn write_file_atomically(path: &Path, contents: &str) -> Result<()> {
+/// audit log to say what they say. Private, so the split cannot become a way
+/// to write host state without recording it: every caller outside this module
+/// goes through [`write_atomically`] and supplies a descriptor.
+fn write_file_atomically(path: &Path, contents: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| anyhow!("Cannot create {}: {e}", parent.display()))?;
     }
-    let temporary = path.with_extension("toml.new");
+    let temporary = temporary_beside(path);
     std::fs::write(&temporary, contents)
         .map_err(|e| anyhow!("Cannot write {}: {e}", temporary.display()))?;
 
@@ -227,11 +288,10 @@ pub fn write_file_atomically(path: &Path, contents: &str) -> Result<()> {
     }
 
     std::fs::rename(&temporary, path).map_err(|e| {
-        // The rename failed, so the temporary file is not the config: leaving
-        // it behind would litter the config directory with a `.toml.new` for
-        // every failed write. Best-effort, since the write itself already
-        // failed and this is cleanup rather than the operation the caller asked
-        // for.
+        // The rename failed, so the temporary file is not the target: leaving
+        // it behind would litter the directory with a `.new` for every failed
+        // write. Best-effort, since the write itself already failed and this is
+        // cleanup rather than the operation the caller asked for.
         let _ = std::fs::remove_file(&temporary);
         anyhow!("Cannot replace {}: {e}", path.display())
     })

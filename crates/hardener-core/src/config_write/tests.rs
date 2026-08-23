@@ -69,6 +69,109 @@ fn write_file_atomically_succeeds_for_a_new_file() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "new = 1\n");
 }
 
+/// Two files sharing a stem in one directory must not share a temporary path.
+///
+/// This is the defect `with_extension("toml.new")` carried:
+/// `linux-hardener.service` and `linux-hardener.timer` both mapped to
+/// `linux-hardener.toml.new`. Asserted on the temporary name rather than by
+/// writing both, because the unit writes are sequential and a collision that
+/// only matters to a concurrent caller would leave both files correct.
+#[test]
+fn files_sharing_a_stem_get_distinct_temporary_paths() {
+    let service = temporary_beside(Path::new("/etc/systemd/system/linux-hardener.service"));
+    let timer = temporary_beside(Path::new("/etc/systemd/system/linux-hardener.timer"));
+
+    assert_ne!(service, timer, "a shared temporary path is a lost write");
+    assert!(
+        service
+            .to_string_lossy()
+            .ends_with("linux-hardener.service.new")
+    );
+    assert!(
+        timer
+            .to_string_lossy()
+            .ends_with("linux-hardener.timer.new")
+    );
+}
+
+/// The name the config writes have always used, unchanged by the fix above.
+///
+/// Replacing `.toml` with `.toml.new` and appending `.new` give the same
+/// answer for this one file, which is why the old form looked correct.
+#[test]
+fn a_config_file_keeps_the_temporary_name_it_always_had() {
+    let temporary = temporary_beside(Path::new("/etc/linux-hardener/config.toml"));
+
+    assert!(temporary.to_string_lossy().ends_with("config.toml.new"));
+}
+
+/// Removing a unit file is recorded, and answers that it was there.
+#[tokio::test]
+async fn removing_a_present_file_reports_it_and_files_an_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let unit = dir.path().join("linux-hardener.timer");
+    std::fs::write(&unit, "[Timer]\n").unwrap();
+    let log = dir.path().join("audit.log");
+    let log_path = log.to_str().unwrap();
+    let logger = logger_at(log_path).await.expect("a logger opens");
+
+    let was_present = remove_file_audited(
+        &unit,
+        WriteAudit {
+            logger: Some(&logger),
+            action: ActionType::ConfigChange,
+            target: "unit:linux-hardener.timer".to_string(),
+            details: HashMap::from([("operation".to_string(), "uninstall".to_string())]),
+        },
+    )
+    .await
+    .expect("the removal succeeds");
+
+    assert!(was_present, "the file was there and is gone");
+    assert!(!unit.exists());
+
+    let entries = AuditLogger::query(log_path, QueryFilter::new())
+        .await
+        .expect("query");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry_target, "unit:linux-hardener.timer");
+    assert_eq!(entries[0].entry_details["operation"], "uninstall");
+}
+
+/// Uninstalling something that was never installed is a success that removed
+/// nothing, and the two must be distinguishable.
+///
+/// The entry is still filed, because an attempt on the host's scheduled scan is
+/// worth recording whether or not it found anything to undo. What must not
+/// happen is `false` being reported as a removal.
+#[tokio::test]
+async fn removing_an_absent_file_reports_absence_and_still_files_an_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("audit.log");
+    let log_path = log.to_str().unwrap();
+    let logger = logger_at(log_path).await.expect("a logger opens");
+
+    let was_present = remove_file_audited(
+        &dir.path().join("never-installed.timer"),
+        WriteAudit {
+            logger: Some(&logger),
+            action: ActionType::ConfigChange,
+            target: "unit:never-installed.timer".to_string(),
+            details: HashMap::new(),
+        },
+    )
+    .await
+    .expect("removing nothing is not a failure");
+
+    assert!(!was_present, "nothing was there, so nothing was removed");
+
+    let entries = AuditLogger::query(log_path, QueryFilter::new())
+        .await
+        .expect("query");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry_result, ActionResult::Success);
+}
+
 /// A missing file reads as an empty document rather than an error: the first
 /// setting written on a host may be the first line of its config.
 #[test]

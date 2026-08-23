@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **`hardener systemd install` put a root timer on the host and recorded
+  nothing, and `uninstall` took it away in the same silence.** The units it
+  writes run `hardener scan` on a schedule as root. Installing them was two
+  bare `fs::write` calls, so a unit could be left half written for the
+  `daemon-reload` immediately after to read, and removing them was a
+  `remove_file` that reported nothing at all. **Removal is the direction that
+  reports itself least:** a scheduled scan that stops running produces no
+  failure, no finding and no output, so nothing distinguishes an uninstalled
+  timer from one that has not fired yet. Both verbs now go through the shared
+  writer, which replaces a unit file whole and files an entry each way. One
+  entry per unit rather than one per command, so a run that writes the service
+  and then cannot write the timer says which half it managed. The entry targets
+  the unit name rather than its path, because `--user` and a system install
+  write the same two names to different directories and an auditor asking
+  whether the scheduled scan changed wants both; a `scope` detail tells them
+  apart. An uninstall entry carries whether `disable --now` succeeded, since a
+  unit file removed while its timer is still loaded is the state worth finding
+  later. `generate --output-dir` is deliberately left out: it writes to a
+  directory the operator named, and nothing it produces runs.
+
+- **Fixed: two files sharing a stem in one directory shared a temporary write
+  path.** The shared writer derived its temporary from
+  `path.with_extension("toml.new")`, which replaces the extension rather than
+  adding to it, so `linux-hardener.service` and `linux-hardener.timer` both
+  mapped to `linux-hardener.toml.new`. Nothing was corrupted, because the unit
+  writes are sequential and each rename completes before the next begins, but
+  the collision was one concurrent caller away from losing a write, and the
+  name was a lie in the meantime. The temporary is now the whole file name with
+  `.new` appended. `config.toml` is unaffected either way, which is why the old
+  form looked correct: both spellings give `config.toml.new`.
+
 - **The desktop wrote three kinds of host state in process and recorded none of
   them.** `save_scheduler_config` wrote the `[scheduler]` section, deciding
   which scans this host runs unattended and who is notified.
@@ -33,9 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whatever key the far end presents. **These entries are written to the invoking
   user's audit log, not the host's**, since the desktop does not escalate to
   change its own settings; the consequence for an auditor is stated in
-  `docs/reference/what-is-not-proven.md`. `hardener systemd install` is now the
-  only host-state writer left outside the shared writer, and it is named there
-  too.
+  `docs/reference/what-is-not-proven.md`.
 
 - **The desktop's three writes are atomic now, which changes when they fail.**
   They write a sibling temporary file and rename it over the target, so an

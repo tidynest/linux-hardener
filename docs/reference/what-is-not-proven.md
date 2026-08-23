@@ -815,14 +815,23 @@ and nothing is unrecorded; it is in a second file, per user, and no tool in this
 project collects the two together.** Making the desktop escalate to record its
 own settings would be a worse trade than the gap.
 
-**`hardener systemd install` writes unit files and records nothing.** It puts a
-`.service` and a `.timer` into `/etc/systemd/system` as root, or under
-`~/.config/systemd/user` with `--user`, through a plain `fs::write` that is
-neither atomic nor audited. It is the one host-state writer left outside the
-shared writer, and it is outside it because a unit file is not a config file:
-`write_atomically` names its temporary `.toml.new`, and the audit target
-vocabulary is sections and control ids rather than unit paths. Fitting it is a
-change to the writer, not a call site.
+**`hardener systemd generate --output-dir` writes files and records nothing,
+deliberately.** `install` and `uninstall` both go through the shared writer now
+and file an entry each way. `generate` does not, because it writes to a
+directory the operator named on the command line rather than to a systemd unit
+path: it produces units for inspection, and nothing it writes runs. If a future
+change lets `generate` target a live unit directory, that reasoning stops
+holding.
+
+**No test observes a unit file actually being installed.** `install` and
+`uninstall` shell out to `systemctl` and write into `/etc/systemd/system` or
+`~/.config/systemd/user`, neither of which a test may touch, so what is
+asserted is the audit descriptor each builds
+(`crates/hardener-cli/src/commands/systemd/tests.rs`) and, separately, that the
+writer and the remover file what they are given
+(`crates/hardener-core/src/config_write/tests.rs`). **The join is unasserted, in
+the same shape as the desktop's scheduler write.** A descriptor that is correct
+and never reaches a write would pass everything.
 
 **The desktop's three writes are asserted on their detail, not end to end.**
 `save_scheduler_config`, `save_remote_host` and `delete_remote_host` resolve
