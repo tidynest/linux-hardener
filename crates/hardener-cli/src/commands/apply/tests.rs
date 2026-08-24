@@ -45,9 +45,22 @@ async fn run_bails_with_privilege_message_when_executor_lacks_privilege() {
             .with_command("sudo", &["-n", "true"], fail),
     );
 
-    let err = run(&[], true, false, OutputFormat::Json, true, None, executor)
-        .await
-        .expect_err("non-privileged executor must not be allowed to apply");
+    // `None` for the logger, and it is a parameter at all so that this line
+    // has to say so. It used to be resolved inside `run`, which answers with
+    // this host's own audit trail: the refusal below happens before anything is
+    // filed, so nothing leaked here, but nothing about the call said that.
+    let err = run(
+        &[],
+        true,
+        false,
+        OutputFormat::Json,
+        true,
+        None,
+        executor,
+        None,
+    )
+    .await
+    .expect_err("non-privileged executor must not be allowed to apply");
 
     let message = err.to_string();
     assert!(

@@ -2042,6 +2042,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **No command resolves its own audit logger any more.** The fix below closed
+  the one module that was leaking. `scope`, `apply`, `batch`, `checkpoint` and
+  `systemd` kept the shape that allowed it: a public verb calling
+  `get_audit_logger`, which answers with this host's real trail chosen by uid,
+  with nothing a test could say about it. None of them was leaking, measured
+  rather than assumed, but the distance between them and the one that did was a
+  single new test calling the obvious name.
+
+  All eleven verbs that file entries now take an `Option<AuditLogger>` and
+  `main.rs` supplies it. `git grep get_audit_logger -- crates/hardener-cli/src`
+  now names `main.rs` and the re-export in `commands/state.rs` and nothing else,
+  so a command that grew its own resolution would show up in one line of output.
+  **No behaviour changes**: the same logger is resolved for the same verbs, one
+  call frame further out.
+
 - **Running the test suite wrote real policy exceptions into the audit log of
   whoever ran it.** `hardener exception add` and `remove` each had a
   no-argument form, which resolved this host's audit trail by uid, beside an

@@ -864,17 +864,31 @@ entries, an add and a remove for `ssh:PasswordAuthentication` and
 accumulated by the time it was found. The short forms are gone and the logger is
 now a parameter, so the leak cannot be reached by forgetting a suffix.
 
-**`scope.rs`, `apply.rs`, `batch.rs` and `checkpoint.rs` still resolve their
-logger inside the command.** `scope` carries the same wrapper-plus-`_to` pair
-`exception` had. None of the four writes the real log today, measured by running
-`cargo test --workspace` against a byte count of the file and finding it
-unchanged, but that is a measurement rather than a guarantee: a new test calling
-the wrapper would leak exactly as `exception`'s did, and nothing would fail.
+**No command in `hardener-cli` resolves its own audit logger any more.** All
+eleven that file entries take an `Option<AuditLogger>`, and `main.rs` supplies
+it: `exception` add and remove, `scope` exclude and include, `checkpoint`
+create, delete, repair and rollback, `apply` run, `batch` apply and rollback
+through their options structs, and `systemd` install and uninstall. The rule is
+checkable rather than remembered, which is the point:
 
-**Nor is the fix itself defended by a test.** Reverting it means adding a
-one-argument `add` back, and no assertion anywhere would notice. The seal is the
-signature, and the only thing holding it is that the signature has no second
-form.
+```
+git grep get_audit_logger -- crates/hardener-cli/src
+```
+
+names `main.rs` and the re-export in `commands/state.rs`, and nothing else. A
+command that grew its own resolution would show up in that one line of output.
+
+**It is checkable, not enforced.** Nothing runs that grep. No validator asserts
+it and no test fails if a twelfth command resolves its own, because what a test
+would have to observe is a write to a path outside the temporary directory it
+controls, and it has no way to see one. The measurement that stands in for it is
+crude and was run: `cargo test --workspace` leaves
+`$XDG_DATA_HOME/linux-hardener/audit.log` byte-identical, checked by line count
+before and after.
+
+**Nor is any of this defended against being undone.** Reverting means restoring
+a no-argument form, and no assertion anywhere would notice. The seal is the
+signature, and the only thing holding it is that there is no second spelling.
 
 **`hardener systemd status` still spawns `systemctl` itself.** It was left
 alone deliberately: it already captures rather than inheriting, its decision

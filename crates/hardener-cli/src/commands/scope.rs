@@ -68,8 +68,18 @@ struct ExcludeRequest<'a> {
     config_path: Option<&'a Path>,
 }
 
-/// Declares `control` not applicable, recording the act in this host's audit
-/// log.
+/// Declares `control` not applicable, recording the act in the log it is given.
+///
+/// **The logger is a parameter and there is no form without one.** It used to
+/// resolve `super::state::get_audit_logger` here, which answers with this
+/// host's own trail chosen by uid. `exception::add` had the same shape until
+/// 2026-08-24, with a `_to` sibling for tests exactly as [`run_exclude_to`] is
+/// here, and five tests reached for the short name and filed 126 real entries
+/// into the developer's audit log before anyone noticed. Nothing had gone wrong
+/// in this module, and nothing distinguished it from the one that failed.
+///
+/// [`run_exclude_to`] survives as sugar over the same call. What is gone is the
+/// spelling that silently picked a log.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_exclude(
     framework: &str,
@@ -80,6 +90,7 @@ pub async fn run_exclude(
     review_by: Option<&str>,
     hosts: &[String],
     config_path: Option<&Path>,
+    logger: Option<AuditLogger>,
 ) -> Result<()> {
     let request = ExcludeRequest {
         framework,
@@ -91,9 +102,7 @@ pub async fn run_exclude(
         hosts,
         config_path,
     };
-    exclude(request, super::state::get_audit_logger().await)
-        .await
-        .map(|_advisory| ())
+    exclude(request, logger).await.map(|_advisory| ())
 }
 
 /// [`run_exclude`] with the audit log named, so a test writes neither
@@ -134,14 +143,15 @@ pub async fn run_exclude_to(
 }
 
 /// Withdraws a not-applicable declaration, returning the control to the score.
-pub async fn run_include(framework: &str, control: &str, config_path: Option<&Path>) -> Result<()> {
-    include(
-        framework,
-        control,
-        config_path,
-        super::state::get_audit_logger().await,
-    )
-    .await
+///
+/// Takes its logger for the reason [`run_exclude`] does.
+pub async fn run_include(
+    framework: &str,
+    control: &str,
+    config_path: Option<&Path>,
+    logger: Option<AuditLogger>,
+) -> Result<()> {
+    include(framework, control, config_path, logger).await
 }
 
 /// [`run_include`] with the audit log named. Tests only, as

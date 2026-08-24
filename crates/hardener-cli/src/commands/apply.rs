@@ -12,7 +12,7 @@ use hardener_state::{ActionResult, ActionType, AuditLogger, CheckpointManager};
 use std::sync::Arc;
 
 use super::privilege::is_privileged;
-use super::state::{get_audit_logger, get_checkpoint_manager};
+use super::state::get_checkpoint_manager;
 
 /// Result of running `apply_host` for one executor target.
 pub(crate) struct ApplyHostResult {
@@ -183,6 +183,14 @@ pub(crate) async fn apply_host(
     }
 }
 
+/// Takes its audit logger rather than resolving one, as `scope::run_exclude`
+/// beside it does and for the same reason: the name that resolved it answers
+/// with this host's own trail, and a test calling this verb had no way to say
+/// otherwise.
+///
+/// The eighth argument is what trips the lint, and a struct for a single call
+/// site would be more machinery than the parameter is worth.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     plugin_filter: &[String],
     all: bool,
@@ -191,6 +199,7 @@ pub async fn run(
     quiet: bool,
     config_path: Option<&std::path::PathBuf>,
     executor: Arc<dyn SystemExecutor>,
+    audit: Option<AuditLogger>,
 ) -> Result<()> {
     // Must be privileged (on the target session, local or remote) to apply changes
     if !dry_run && !is_privileged(executor.as_ref()).await {
@@ -238,7 +247,6 @@ pub async fn run(
     } else {
         Some(get_checkpoint_manager().await?)
     };
-    let audit = get_audit_logger().await;
     let result = apply_host(
         executor,
         &plugin_ids,

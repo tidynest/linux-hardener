@@ -1,7 +1,7 @@
 //! `hardener batch scan`: scan many remote hosts concurrently.
 
 use super::privilege::is_privileged;
-use super::state::{effective_user, get_audit_logger, get_checkpoint_manager};
+use super::state::{effective_user, get_checkpoint_manager};
 use crate::cli::OutputFormat as CliOutputFormat;
 use crate::commands::daemon::load_scheduler_config;
 use crate::commands::report::{finding_to_scan_finding, scan_grouped};
@@ -1831,6 +1831,13 @@ pub struct BatchApplyOptions {
     pub global_port: u16,
     pub global_timeout: u64,
     pub global_no_verify: bool,
+    /// The log the per-host entries are filed into.
+    ///
+    /// A field rather than something this verb resolves, so a test cannot reach
+    /// the invoking user's own audit trail by calling the obvious name. That is
+    /// what `exception::add` did until 2026-08-24, filing 126 real entries into
+    /// the developer's log.
+    pub logger: Option<hardener_state::AuditLogger>,
 }
 
 /// CLI entry point for `hardener batch apply`. Dry-run unless `--execute`.
@@ -1892,7 +1899,7 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
     .await;
 
     // Best-effort per-host audit (execute path only), sequential on a shared logger.
-    if execute && let Some(logger) = get_audit_logger().await {
+    if execute && let Some(logger) = opts.logger {
         let user = effective_user();
         for o in &outcomes {
             let result = match &o.status {
@@ -1939,6 +1946,13 @@ pub struct BatchRollbackOptions {
     pub global_port: u16,
     pub global_timeout: u64,
     pub global_no_verify: bool,
+    /// The log the per-host entries are filed into.
+    ///
+    /// A field rather than something this verb resolves, so a test cannot reach
+    /// the invoking user's own audit trail by calling the obvious name. That is
+    /// what `exception::add` did until 2026-08-24, filing 126 real entries into
+    /// the developer's log.
+    pub logger: Option<hardener_state::AuditLogger>,
 }
 
 /// CLI entry point for `hardener batch rollback`. Dry-run unless `--execute`.
@@ -1990,7 +2004,7 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
     .await;
 
     // Best-effort per-host audit (execute path only), sequential on a shared logger.
-    if execute && let Some(logger) = get_audit_logger().await {
+    if execute && let Some(logger) = opts.logger {
         let user = effective_user();
         for o in &outcomes {
             let result = match &o.status {

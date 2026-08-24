@@ -113,6 +113,18 @@ pub async fn get_checkpoint_manager() -> Result<CheckpointManager> {
 // here, src-tauri could not reach them and wrote its own configuration
 // unaudited. Re-exported so every call site in this crate is unchanged, and so
 // there is still one answer to where this host's audit trail lives.
+//
+// `get_audit_logger` is called from `main.rs` and nowhere else in this crate,
+// and that is the rule rather than an accident of the current code. It answers
+// with this host's real trail, chosen by uid, so any command that resolved its
+// own could be driven by a test straight into the invoking user's audit log.
+// `exception::add` did exactly that until 2026-08-24 and filed 126 real
+// entries. Every command now takes an `Option<AuditLogger>` and the dispatch
+// supplies it, which makes the rule checkable:
+//
+//     git grep get_audit_logger -- crates/hardener-cli/src
+//
+// should name `main.rs` and this line, and nothing else.
 pub use hardener_core::config_write::{effective_user, get_audit_logger};
 
 #[cfg(test)]

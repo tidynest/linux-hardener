@@ -268,12 +268,14 @@ pub async fn generate(
 }
 
 /// Installs systemd unit files.
+#[allow(clippy::too_many_arguments)]
 pub async fn install(
     user_mode: bool,
     schedule: String,
     config_path: Option<PathBuf>,
     format: OutputFormat,
     quiet: bool,
+    logger: Option<AuditLogger>,
 ) -> Result<()> {
     let binary = resolve_binary_path(None)?;
     let calendar = resolve_calendar(&schedule);
@@ -293,7 +295,6 @@ pub async fn install(
         bail!("System install requires root privileges. Use --user for user install.");
     }
 
-    let logger = super::state::get_audit_logger().await;
     let outcome = install_with(
         &LocalExecutor::new(),
         &unit_dir_for(user_mode)?,
@@ -378,13 +379,17 @@ async fn install_with(
 }
 
 /// Uninstalls systemd unit files.
-pub async fn uninstall(user_mode: bool, format: OutputFormat, quiet: bool) -> Result<()> {
+pub async fn uninstall(
+    user_mode: bool,
+    format: OutputFormat,
+    quiet: bool,
+    logger: Option<AuditLogger>,
+) -> Result<()> {
     // Check permissions for system uninstall
     if !user_mode && !nix::unistd::Uid::effective().is_root() {
         bail!("System uninstall requires root privileges. Use --user for user uninstall.");
     }
 
-    let logger = super::state::get_audit_logger().await;
     let outcome = uninstall_with(
         &LocalExecutor::new(),
         &unit_dir_for(user_mode)?,

@@ -115,28 +115,54 @@ async fn main() -> Result<()> {
                 cli.quiet,
                 cli.config.as_ref(),
                 executor.clone(),
+                commands::state::get_audit_logger().await,
             )
             .await
         }
         Command::Rollback { checkpoint_id } => {
-            commands::checkpoint::rollback(&checkpoint_id, format, cli.quiet, executor.clone())
-                .await
+            commands::checkpoint::rollback(
+                &checkpoint_id,
+                format,
+                cli.quiet,
+                executor.clone(),
+                commands::state::get_audit_logger().await,
+            )
+            .await
         }
         Command::Checkpoint { action } => match action {
             CheckpointAction::List { limit, all } => {
                 commands::checkpoint::list(format, cli.quiet, executor.clone(), limit, all).await
             }
             CheckpointAction::Create { name } => {
-                commands::checkpoint::create(&name, format, cli.quiet, executor.clone()).await
+                commands::checkpoint::create(
+                    &name,
+                    format,
+                    cli.quiet,
+                    executor.clone(),
+                    commands::state::get_audit_logger().await,
+                )
+                .await
             }
             CheckpointAction::Delete { checkpoint_id } => {
-                commands::checkpoint::delete(&checkpoint_id, format, cli.quiet).await
+                commands::checkpoint::delete(
+                    &checkpoint_id,
+                    format,
+                    cli.quiet,
+                    commands::state::get_audit_logger().await,
+                )
+                .await
             }
             CheckpointAction::Show { checkpoint_id } => {
                 commands::checkpoint::show(&checkpoint_id, format, cli.quiet).await
             }
             CheckpointAction::Repair { execute } => {
-                commands::checkpoint::repair(execute, format, cli.quiet).await
+                commands::checkpoint::repair(
+                    execute,
+                    format,
+                    cli.quiet,
+                    commands::state::get_audit_logger().await,
+                )
+                .await
             }
         },
         Command::Plugins => commands::plugins::run(format, cli.quiet).await,
@@ -199,11 +225,18 @@ async fn main() -> Result<()> {
                     review_by.as_deref(),
                     &host,
                     cli.config.as_deref(),
+                    commands::state::get_audit_logger().await,
                 )
                 .await
             }
             ScopeAction::Include { framework, control } => {
-                commands::scope::run_include(&framework, &control, cli.config.as_deref()).await
+                commands::scope::run_include(
+                    &framework,
+                    &control,
+                    cli.config.as_deref(),
+                    commands::state::get_audit_logger().await,
+                )
+                .await
             }
         },
         Command::Report {
@@ -317,6 +350,7 @@ async fn main() -> Result<()> {
                     global_port: cli.port,
                     global_timeout: cli.ssh_timeout,
                     global_no_verify: cli.ssh_no_verify,
+                    logger: commands::state::get_audit_logger().await,
                 })
                 .await
             }
@@ -346,6 +380,7 @@ async fn main() -> Result<()> {
                     global_port: cli.port,
                     global_timeout: cli.ssh_timeout,
                     global_no_verify: cli.ssh_no_verify,
+                    logger: commands::state::get_audit_logger().await,
                 })
                 .await
             }
@@ -371,10 +406,24 @@ async fn main() -> Result<()> {
                     .await
             }
             SystemdAction::Install { user, schedule } => {
-                commands::systemd::install(user, schedule, cli.config, format, cli.quiet).await
+                commands::systemd::install(
+                    user,
+                    schedule,
+                    cli.config,
+                    format,
+                    cli.quiet,
+                    commands::state::get_audit_logger().await,
+                )
+                .await
             }
             SystemdAction::Uninstall { user } => {
-                commands::systemd::uninstall(user, format, cli.quiet).await
+                commands::systemd::uninstall(
+                    user,
+                    format,
+                    cli.quiet,
+                    commands::state::get_audit_logger().await,
+                )
+                .await
             }
             SystemdAction::Status { user } => {
                 commands::systemd::status(user, format, cli.quiet).await

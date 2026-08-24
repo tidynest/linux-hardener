@@ -5,14 +5,14 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use hardener_core::{Context, SystemExecutor, executor::host_keys_for};
-use hardener_state::{ActionResult, ActionType, CheckpointId};
+use hardener_state::{ActionResult, ActionType, AuditLogger, CheckpointId};
 use hardener_types::RollbackResult;
 
 use crate::cli::OutputFormat;
 use crate::output;
 
 use super::privilege::is_privileged;
-use super::state::{effective_user, get_audit_logger, get_checkpoint_manager};
+use super::state::{effective_user, get_checkpoint_manager};
 
 pub async fn list(
     format: OutputFormat,
@@ -44,6 +44,7 @@ pub async fn create(
     format: OutputFormat,
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
+    logger: Option<AuditLogger>,
 ) -> Result<()> {
     if !is_privileged(executor.as_ref()).await {
         bail!("Root privileges required to create checkpoints.");
@@ -62,7 +63,7 @@ pub async fn create(
         .create_checkpoint(executor.as_ref(), name, &paths)
         .await?;
 
-    if let Some(logger) = get_audit_logger().await {
+    if let Some(logger) = logger {
         let _ = logger
             .log_action(
                 ActionType::CheckpointCreate,
@@ -77,7 +78,12 @@ pub async fn create(
     Ok(())
 }
 
-pub async fn delete(checkpoint_id: &str, format: OutputFormat, quiet: bool) -> Result<()> {
+pub async fn delete(
+    checkpoint_id: &str,
+    format: OutputFormat,
+    quiet: bool,
+    logger: Option<AuditLogger>,
+) -> Result<()> {
     let manager = get_checkpoint_manager().await?;
     let id = CheckpointId::new(checkpoint_id);
 
@@ -92,7 +98,7 @@ pub async fn delete(checkpoint_id: &str, format: OutputFormat, quiet: bool) -> R
     // which is the one place it needs to appear. `rollback` and `apply` already
     // log both outcomes.
     let outcome = manager.delete_checkpoint(&id).await;
-    if let Some(logger) = get_audit_logger().await {
+    if let Some(logger) = logger {
         let _ = logger
             .log_action(
                 ActionType::CheckpointDelete,
@@ -121,7 +127,12 @@ pub async fn delete(checkpoint_id: &str, format: OutputFormat, quiet: bool) -> R
 /// database through this tool can strand a row. What it repairs is a database
 /// edited by something else, `sqlite3` included, which defaults that
 /// enforcement off.
-pub async fn repair(execute: bool, format: OutputFormat, quiet: bool) -> Result<()> {
+pub async fn repair(
+    execute: bool,
+    format: OutputFormat,
+    quiet: bool,
+    logger: Option<AuditLogger>,
+) -> Result<()> {
     let manager = get_checkpoint_manager().await?;
     let found = manager.orphaned_file_states().await?;
 
@@ -138,7 +149,7 @@ pub async fn repair(execute: bool, format: OutputFormat, quiet: bool) -> Result<
     // Logged under the deletion action because that is what it is: rows leave
     // the state database. A run that removed nothing is still recorded, so the
     // trail says the database was inspected and found clean.
-    if let Some(logger) = get_audit_logger().await {
+    if let Some(logger) = logger {
         let _ = logger
             .log_action(
                 ActionType::CheckpointDelete,
@@ -169,6 +180,7 @@ pub async fn rollback(
     format: OutputFormat,
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
+    logger: Option<AuditLogger>,
 ) -> Result<()> {
     if !is_privileged(executor.as_ref()).await {
         bail!("Root privileges required to rollback changes.");
@@ -197,7 +209,7 @@ pub async fn rollback(
         None => ActionResult::Success,
         Some(_) => ActionResult::Failure,
     };
-    if let Some(logger) = get_audit_logger().await {
+    if let Some(logger) = logger {
         let _ = logger
             .log_action(
                 ActionType::Rollback,
