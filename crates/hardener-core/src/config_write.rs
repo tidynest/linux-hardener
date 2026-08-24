@@ -93,7 +93,7 @@ pub async fn get_audit_logger() -> Option<AuditLogger> {
         Ok(logger) => Some(logger),
         Err(e) => {
             tracing::warn!("audit logging unavailable: {e:#}");
-            eprintln!("W  Audit logging unavailable: {e:#}");
+            eprintln!("⚠  Audit logging unavailable: {e:#}");
             eprintln!("   This operation will not be recorded in the audit trail.");
             None
         }
@@ -184,7 +184,7 @@ impl WriteAudit<'_> {
         };
         if let Err(e) = filed {
             tracing::warn!("a config write was not audited: {e}");
-            eprintln!("W  The audit entry for this change failed: {e}");
+            eprintln!("⚠  The audit entry for this change failed: {e}");
         }
     }
 }

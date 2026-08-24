@@ -1433,7 +1433,7 @@ fn render_apply_text(outcomes: &[ApplyOutcome]) -> String {
                 // them all.
                 for plugin in plugins.iter().filter(|p| !p.success) {
                     let reason = plugin.error.as_deref().unwrap_or("no reason given");
-                    out.push_str(&format!("    {} {}: {reason}\n", "x".red(), plugin.plugin));
+                    out.push_str(&format!("    {} {}: {reason}\n", "✗".red(), plugin.plugin));
                 }
             }
             ApplyStatus::Failed { error } => {

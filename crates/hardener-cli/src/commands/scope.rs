@@ -350,7 +350,7 @@ async fn exclude(
     );
 
     if let Some(text) = &advisory {
-        eprintln!("W  {text}");
+        eprintln!("⚠  {text}");
     }
     Ok(advisory)
 }

@@ -26,7 +26,7 @@ pub fn info(format: &OutputFormat, message: &str) {
         OutputFormat::Json => {
             eprintln!("{}", serde_json::json!({ "info": message }));
         }
-        _ => println!("{} {}", "i".cyan(), message),
+        _ => println!("{} {}", "ℹ".cyan(), message),
     }
 }
 
@@ -35,7 +35,7 @@ pub fn error(format: &OutputFormat, message: &str) {
         OutputFormat::Json => {
             eprintln!("{}", serde_json::json!({ "error": message }));
         }
-        _ => eprintln!("{} {}", "x".red(), message),
+        _ => eprintln!("{} {}", "✗".red(), message),
     }
 }
 
@@ -44,7 +44,7 @@ pub fn warning(format: &OutputFormat, message: &str) {
         OutputFormat::Json => {
             eprintln!("{}", serde_json::json!({ "warning": message }));
         }
-        _ => eprintln!("{} {}", "W".yellow(), message),
+        _ => eprintln!("{} {}", "⚠".yellow(), message),
     }
 }
 
@@ -172,7 +172,7 @@ fn scan_plugin_lines(metadata: &PluginMetadata, result: &ScanResult) -> Vec<Stri
     } else {
         lines.push(format!(
             "\n{} {} - {} finding(s)",
-            "!".yellow(),
+            "⚠".yellow(),
             metadata.plugin_name.bold(),
             findings.len()
         ));
@@ -850,7 +850,7 @@ fn validation_report_lines(report: &ValidationReport) -> Vec<String> {
             .unwrap_or_default();
         lines.push(format!(
             "  {} [{}] {}{}",
-            "!".yellow(),
+            "⚠".yellow(),
             format_severity(&issue.validation_issue_severity),
             issue.validation_issue_message,
             key.dimmed(),

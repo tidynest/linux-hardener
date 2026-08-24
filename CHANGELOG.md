@@ -2042,6 +2042,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The CLI printed four different status markers for the same three states.**
+  `output.rs` used `✓` at eleven sites and `✗` at six, and alongside them `i`
+  for info, `x` for error, `W` for warning at one site and `!` for warning at
+  two others. `batch.rs` had its own `x`, and `scope.rs` and
+  `core::config_write` printed a literal `W  ` prefix to stderr. An operator
+  reading two commands saw two vocabularies for the same outcome.
+
+  They are now `ℹ`, `✗` and `⚠`, matching the `✓` and `✗` the file already used
+  everywhere else. The dimmed `?` for an unchecked control is unchanged; it
+  means something none of the others do and was already used consistently.
+  Verified by running the built binary, not just by compiling it: the info,
+  warning and success markers were each rendered from a real invocation.
+
 - **The compliance documentation validator could not tell a framework's table
   row from a mention of it.** `validate_compliance_docs.py` joined every
   pipe-carrying line in a document and searched that text for each framework's
