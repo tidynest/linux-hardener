@@ -133,9 +133,36 @@ def check_suite_table(root: Path, frameworks: list[str]) -> bool:
     return True
 
 
-def framework_table_rows(content: str) -> str:
-    """Join the lines that look like markdown table rows for substring search."""
-    return "\n".join(line for line in content.split("\n") if line.count("|") >= 3)
+def framework_table_cells(content: str) -> list[str]:
+    """The first cell of every markdown table row, which is where a table names
+    its subject.
+
+    This used to join whole rows into one string and search that. A substring
+    match over every pipe-carrying line in the file answers "is this framework
+    mentioned anywhere in anything table-shaped", which is a weaker question
+    than the one this validator is named for, and the difference is reachable:
+    renaming architecture.md's `| ISO 27001:2022 |` to `| ISO 27002:2022 |`
+    passed, because the same row's own description says `ISO/IEC 27001:2022`
+    and cites `frameworks/iso27001.rs`, so the `27001` marker survived the
+    label being wrong. Measured 2026-08-24, along with the two cases that were
+    already caught: deleting the row, and deleting every row mentioning 27001.
+
+    Separator rows are dropped. `|---|---|` carries three pipes and a first
+    cell of dashes, and leaving it in would only add noise.
+    """
+    cells = []
+    for line in content.split("\n"):
+        if line.count("|") < 3:
+            continue
+        parts = line.split("|")
+        # A row written with a leading pipe puts an empty string in parts[0],
+        # so the subject is parts[1]. A row written without one is not a shape
+        # any table in these documents uses.
+        cell = parts[1].strip() if len(parts) > 1 else ""
+        # Anything that is only dashes, colons and spaces is a separator.
+        if cell and set(cell) - set("-: "):
+            cells.append(cell)
+    return cells
 
 
 def main():
@@ -164,16 +191,26 @@ def main():
             continue
 
         print(f"{BLUE}Checking {rel}...{NC}")
-        rows = framework_table_rows(full_path.read_text())
+        cells = framework_table_cells(full_path.read_text())
 
         missing = [
-            fw for fw in frameworks if DOC_MARKERS.get(fw, fw) not in rows
+            fw
+            for fw in frameworks
+            if not any(DOC_MARKERS.get(fw, fw) in cell for cell in cells)
         ]
         if missing:
             has_errors = True
-            print(f"  {RED}Frameworks defined in code but absent from the table:{NC}")
+            print(
+                f"  {RED}Frameworks defined in code but named by no table row "
+                f"in this file:{NC}"
+            )
             for fw in missing:
                 print(f"    - {fw} (expected marker '{DOC_MARKERS.get(fw, fw)}')")
+            print(
+                f"  {YELLOW}The marker is looked for in each row's first cell, "
+                f"where a table names its subject. A mention in a description "
+                f"or a file path no longer satisfies it.{NC}"
+            )
         else:
             print(f"  {GREEN}✓ All {len(frameworks)} frameworks documented{NC}")
         print()

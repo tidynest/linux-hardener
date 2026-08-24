@@ -646,9 +646,11 @@ CLI documentation validation failed
 ```
 
 **What It Checks**:
-- Every `ComplianceFramework` enum variant appears in the architecture.md framework table
+- Every `ComplianceFramework` enum variant is the subject of a table row in architecture.md, meaning its marker appears in a row's **first cell**
 - The same for the docs/ROADMAP.md framework table
 - Per-control *counts* are no longer statically validated: post-rework the control catalogues are split between curated files (`cis.rs`, `iso27001.rs`) and plugin-declared coverage aggregated at runtime, so a static count is not meaningful here
+
+**Why the first cell and not the row**: until 2026-08-24 this joined every pipe-carrying line in the file and searched that text, which answers "is this framework mentioned anywhere in anything table-shaped". Renaming architecture.md's `| ISO 27001:2022 |` to `| ISO 27002:2022 |` passed, because the same row's description says `ISO/IEC 27001:2022` and cites `frameworks/iso27001.rs`, so the `27001` marker outlived the label being wrong. Deleting the row was caught, and still is; relabelling it was not, and now is.
 
 **Exit Codes**:
 - `0`: every enum framework is documented in each table

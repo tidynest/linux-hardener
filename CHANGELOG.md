@@ -2042,6 +2042,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The compliance documentation validator could not tell a framework's table
+  row from a mention of it.** `validate_compliance_docs.py` joined every
+  pipe-carrying line in a document and searched that text for each framework's
+  marker, which answers whether the framework is mentioned anywhere in anything
+  table-shaped. Renaming architecture.md's `| ISO 27001:2022 |` row to
+  `| ISO 27002:2022 |` passed, because the same row's own description says
+  `ISO/IEC 27001:2022` and cites `frameworks/iso27001.rs`, so the `27001` marker
+  survived the label being wrong. It now looks in each row's **first cell**,
+  where a table names its subject.
+
+  Found by mutating each of the 26 validators in turn and checking it went red.
+  Deleting the row and deleting every row mentioning the framework were both
+  already caught and still are; relabelling was the case that slipped. The other
+  25 validators all failed under a mutation of the property each claims.
+
 - **`install` and `uninstall` no longer each resolve the host they act on.**
   Both spelled out the same three answers, the local executor, the home
   directory and whether this process is root, so six literals in two triples had
