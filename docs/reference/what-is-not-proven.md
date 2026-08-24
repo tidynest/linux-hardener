@@ -872,11 +872,20 @@ through their options structs, and `systemd` install and uninstall. The rule is
 checkable rather than remembered, which is the point:
 
 ```
-git grep get_audit_logger -- crates/hardener-cli/src
+git grep -c 'get_audit_logger[(]' -- crates/hardener-cli/src
 ```
 
-names `main.rs` and the re-export in `commands/state.rs`, and nothing else. A
-command that grew its own resolution would show up in that one line of output.
+answers `main.rs:13` and names no other file. A command that grew its own
+resolution would show up as a second file in that output.
+
+**Both oddities in that pattern are load-bearing, and two earlier spellings had
+to fail to find them.** Without the paren, it matches every doc comment
+discussing the rule as readily as every call: 21 lines across 5 files, 8 of them
+prose, which reads at a glance as the rule being broken in `exception.rs`,
+`scope.rs` and `systemd.rs`, where it holds. With a plain `()`, it matches the
+line in `commands/state.rs` that writes the command down, so the check reports
+its own documentation as a second call site. The character class matches a
+literal `(` without being one.
 
 **It is checkable, not enforced.** Nothing runs that grep. No validator asserts
 it and no test fails if a twelfth command resolves its own, because what a test

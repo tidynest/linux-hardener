@@ -2051,9 +2051,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   single new test calling the obvious name.
 
   All eleven verbs that file entries now take an `Option<AuditLogger>` and
-  `main.rs` supplies it. `git grep get_audit_logger -- crates/hardener-cli/src`
-  now names `main.rs` and the re-export in `commands/state.rs` and nothing else,
-  so a command that grew its own resolution would show up in one line of output.
+  `main.rs` supplies it. `git grep -c 'get_audit_logger[(]' --
+  crates/hardener-cli/src` now answers `main.rs:13` and names no other file, so
+  a command that grew its own resolution would show up as a second file. The
+  bracketed paren is load-bearing twice over: without a paren the search matches
+  the doc comments describing the rule as readily as the calls, and with a plain
+  `()` it matches the line that writes the command down.
   **No behaviour changes**: the same logger is resolved for the same verbs, one
   call frame further out.
 

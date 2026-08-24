@@ -122,9 +122,22 @@ pub async fn get_checkpoint_manager() -> Result<CheckpointManager> {
 // entries. Every command now takes an `Option<AuditLogger>` and the dispatch
 // supplies it, which makes the rule checkable:
 //
-//     git grep get_audit_logger -- crates/hardener-cli/src
+//     git grep -c 'get_audit_logger[(]' -- crates/hardener-cli/src
 //
-// should name `main.rs` and this line, and nothing else.
+// should answer `main.rs:13` and name no other file.
+//
+// Both oddities in that pattern are load-bearing, and each was found by the
+// previous spelling failing. Without the bracketed paren at all, it matches
+// every doc comment discussing the rule as readily as every call: 21 lines
+// across 5 files, 8 of them prose, which reads at a glance as the rule being
+// broken in `exception.rs`, `scope.rs` and `systemd.rs`, where it holds. With a
+// plain `()` instead, it matches this very line, so the check reports the file
+// documenting it as a second call site. The character class matches a literal
+// `(` and is not itself one, so the command can be written down inside the
+// thing it checks.
+//
+// A check that cannot tell a violation from a sentence about violations is
+// answering a different question from the one it was written for.
 pub use hardener_core::config_write::{effective_user, get_audit_logger};
 
 #[cfg(test)]
