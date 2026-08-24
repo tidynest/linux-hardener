@@ -101,9 +101,21 @@ fn scope_name(user_mode: bool) -> &'static str {
 }
 
 /// Where a `--user` or system install puts its units.
-fn unit_dir_for(user_mode: bool) -> Result<PathBuf> {
+///
+/// **`home` is passed in rather than read here.** It used to call
+/// `dirs::home_dir()`, which reads `HOME` from the process environment, so the
+/// only test of the user branch was one that took whatever home the test runner
+/// happened to have and asserted the suffix of the answer. That passes for a
+/// build joining `.config/systemd/user` onto anything at all, and it cannot
+/// reach the third case below, where there is no home to join onto.
+///
+/// A system install ignores `home` entirely, including when it is `None`. That
+/// is not an accident of the branch order: `install` runs as root, often under
+/// a `sudo` that does not carry a home, and a system install has no business
+/// failing because of one it never needed.
+fn unit_dir_for(user_mode: bool, home: Option<PathBuf>) -> Result<PathBuf> {
     if user_mode {
-        Ok(dirs::home_dir()
+        Ok(home
             .context("Could not determine home directory")?
             .join(".config/systemd/user"))
     } else {
@@ -297,7 +309,7 @@ pub async fn install(
 
     let outcome = install_with(
         &LocalExecutor::new(),
-        &unit_dir_for(user_mode)?,
+        &unit_dir_for(user_mode, dirs::home_dir())?,
         &generator,
         logger.as_ref(),
         user_mode,
@@ -392,7 +404,7 @@ pub async fn uninstall(
 
     let outcome = uninstall_with(
         &LocalExecutor::new(),
-        &unit_dir_for(user_mode)?,
+        &unit_dir_for(user_mode, dirs::home_dir())?,
         logger.as_ref(),
         user_mode,
     )

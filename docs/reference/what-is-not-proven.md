@@ -848,11 +848,26 @@ arriving before the enable, a system install never carrying `--user`, a timer
 that would not start reported as such, and an uninstall proceeding past a
 `disable` that failed.
 
-**What each verb still resolves for itself is untested:** `unit_dir_for`, which
-reads `HOME` and picks `/etc/systemd/system` over `~/.config/systemd/user`; the
-root check, which is about this process; and the `LocalExecutor` the production
-path passes. A change to any of those would send a correct install to the wrong
-instance and every test here would still pass.
+**`unit_dir_for` is now pinned on all three of its answers.** It takes the home
+directory rather than reading `HOME`, so the user branch is asserted against a
+named base instead of whatever home the test runner has, and the case with no
+home at all is reachable: a system install still resolves, a user install
+refuses. That last pair matters because `install` normally runs under a `sudo`
+that may carry no home, and a version that demanded one would break the common
+invocation to guard the rare one.
+
+This entry previously said `unit_dir_for` was untested, which was wrong. A test
+named `the_unit_directory_follows_the_mode` had covered both modes since before
+any of this work. What it could not do was name the base it expected, because
+the base came from the environment, so it asserted
+`ends_with(".config/systemd/user")`, which holds for that suffix joined onto
+anything, an empty path included. It now asserts both paths whole.
+
+**What each verb still resolves for itself is untested:** the root check, which
+is about this process, the `LocalExecutor` the production path passes, and
+`dirs::home_dir()` itself, now that it is a call at the two call sites rather
+than inside the function. A change to any of those would send a correct install
+to the wrong instance and every test here would still pass.
 
 **The suite wrote real audit entries into the operator's own log until
 2026-08-24, and four modules keep the shape that allowed it.**

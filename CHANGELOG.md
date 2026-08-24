@@ -2042,6 +2042,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener systemd install --user` now says so when it cannot find a home
+  directory, instead of writing units under a relative path.** `unit_dir_for`
+  called `dirs::home_dir()` itself and propagated the `None` case as an error,
+  which was correct, and no test could reach it: the only test of that branch
+  took whatever home the runner had and checked that the answer ended in
+  `.config/systemd/user`, which is true of that suffix joined onto anything,
+  including an empty path. The home directory is now a parameter, both answers
+  are asserted whole, and the no-home case is covered in both directions: a
+  system install still resolves, because it runs under a `sudo` that often
+  carries no home and never needed one, and a user install refuses.
+
+  **No behaviour changes.** The two call sites pass `dirs::home_dir()`, which is
+  what the function read before.
+
 - **No command resolves its own audit logger any more.** The fix below closed
   the one module that was leaking. `scope`, `apply`, `batch`, `checkpoint` and
   `systemd` kept the shape that allowed it: a public verb calling

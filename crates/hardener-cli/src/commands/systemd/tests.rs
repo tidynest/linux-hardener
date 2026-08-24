@@ -140,15 +140,50 @@ fn caller_detail_is_added_to_the_entry_rather_than_replacing_it() {
 
 /// A system install and a user install write the same two unit names to
 /// different directories, and the directory is the whole difference.
+///
+/// Both answers are asserted whole. This used to check that the user answer
+/// merely `ends_with(".config/systemd/user")`, against whatever home the test
+/// runner happened to have, which is true of that suffix joined onto anything:
+/// the current directory, an empty path, `/`. Naming the base is what makes the
+/// assertion about the join rather than about the constant.
 #[test]
 fn the_unit_directory_follows_the_mode() {
-    let system = unit_dir_for(false).expect("a system unit directory always resolves");
+    let home = std::path::PathBuf::from("/home/operator");
 
-    assert_eq!(system, std::path::PathBuf::from("/etc/systemd/system"));
+    assert_eq!(
+        unit_dir_for(true, Some(home.clone())).expect("a user unit directory resolves"),
+        std::path::PathBuf::from("/home/operator/.config/systemd/user"),
+    );
+    assert_eq!(
+        unit_dir_for(false, Some(home)).expect("a system unit directory always resolves"),
+        std::path::PathBuf::from("/etc/systemd/system"),
+        "a system install ignores the home it was handed",
+    );
+}
+
+/// A host with no home directory can still take a system install, and cannot
+/// take a user one.
+///
+/// The two halves are the point. `install` runs as root, usually through a
+/// `sudo` that may carry no `HOME` at all, and that is precisely the invocation
+/// a system install is for: making it fail on a home it never reads would break
+/// the common case to guard the rare one. The user branch has nothing to join
+/// onto and must say so rather than writing units under a bare relative path.
+///
+/// A single `unwrap_or_default` in place of the `?` passes neither: the user
+/// case would answer `.config/systemd/user`, a relative path pointing at
+/// whatever directory the operator happened to run from.
+#[test]
+fn a_missing_home_directory_stops_a_user_install_and_not_a_system_one() {
+    let refused = unit_dir_for(true, None).expect_err("a user install needs a home directory");
     assert!(
-        unit_dir_for(true)
-            .expect("a home directory resolves on this runner")
-            .ends_with(".config/systemd/user"),
+        refused.to_string().contains("home directory"),
+        "the message must name what was missing: {refused}"
+    );
+
+    assert_eq!(
+        unit_dir_for(false, None).expect("a system install needs no home directory"),
+        std::path::PathBuf::from("/etc/systemd/system"),
     );
 }
 
