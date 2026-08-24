@@ -1,6 +1,6 @@
 # Linux Hardener - File Map
 
-**Last Updated**: 2026-08-23
+**Last Updated**: 2026-08-24
 
 This document lists all source files with their purpose and key exports.
 
@@ -1051,4 +1051,4 @@ counts measured the same way and on the same date as the table above.
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-08-23
+**Last Updated**: 2026-08-24

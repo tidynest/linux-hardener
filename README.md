@@ -538,4 +538,4 @@ Drawing on [Lynis](https://cisofy.com/lynis/),
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-hardener
 
-**Last Updated**: 2026-08-23
+**Last Updated**: 2026-08-24
