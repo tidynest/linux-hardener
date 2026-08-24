@@ -149,28 +149,34 @@ async fn main() -> Result<()> {
                 ticket,
                 expires,
             } => {
-                commands::exception::add(commands::exception::AddOptions {
-                    plugin_id: &plugin_id,
-                    key: &key,
-                    reason: &reason,
-                    approved_by: approved_by.as_deref(),
-                    ticket: ticket.as_deref(),
-                    expires: expires.as_deref(),
-                    config_path: cli.config.as_ref(),
-                    format,
-                    quiet: cli.quiet,
-                    executor: executor.clone(),
-                })
+                commands::exception::add(
+                    commands::exception::AddOptions {
+                        plugin_id: &plugin_id,
+                        key: &key,
+                        reason: &reason,
+                        approved_by: approved_by.as_deref(),
+                        ticket: ticket.as_deref(),
+                        expires: expires.as_deref(),
+                        config_path: cli.config.as_ref(),
+                        format,
+                        quiet: cli.quiet,
+                        executor: executor.clone(),
+                    },
+                    commands::state::get_audit_logger().await,
+                )
                 .await
             }
             ExceptionAction::Remove { plugin_id, key } => {
-                commands::exception::remove(commands::exception::RemoveOptions {
-                    plugin_id: &plugin_id,
-                    key: &key,
-                    config_path: cli.config.as_ref(),
-                    format,
-                    quiet: cli.quiet,
-                })
+                commands::exception::remove(
+                    commands::exception::RemoveOptions {
+                        plugin_id: &plugin_id,
+                        key: &key,
+                        config_path: cli.config.as_ref(),
+                        format,
+                        quiet: cli.quiet,
+                    },
+                    commands::state::get_audit_logger().await,
+                )
                 .await
             }
         },

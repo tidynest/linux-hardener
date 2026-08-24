@@ -165,7 +165,7 @@ fn exception_details_carry_every_documented_field() {
 async fn add_files_an_audit_entry_naming_what_was_granted() {
     let scratch = Scratch::empty();
 
-    add_at(
+    add(
         AddOptions {
             plugin_id: "ssh-hardening",
             key: "PermitRootLogin",
@@ -178,7 +178,7 @@ async fn add_files_an_audit_entry_naming_what_was_granted() {
             quiet: true,
             executor: ssh_executor(),
         },
-        scratch.log_path(),
+        logger_at(scratch.log_path()).await,
     )
     .await
     .expect("the exception is written");
@@ -209,7 +209,7 @@ async fn add_files_an_audit_entry_naming_what_was_granted() {
 async fn remove_files_its_own_entry_against_the_same_target() {
     let scratch = Scratch::empty();
 
-    add_at(
+    add(
         AddOptions {
             plugin_id: "ssh-hardening",
             key: "PermitRootLogin",
@@ -222,12 +222,12 @@ async fn remove_files_its_own_entry_against_the_same_target() {
             quiet: true,
             executor: ssh_executor(),
         },
-        scratch.log_path(),
+        logger_at(scratch.log_path()).await,
     )
     .await
     .expect("the exception is written");
 
-    remove_at(
+    remove(
         RemoveOptions {
             plugin_id: "ssh-hardening",
             key: "PermitRootLogin",
@@ -235,7 +235,7 @@ async fn remove_files_its_own_entry_against_the_same_target() {
             format: OutputFormat::Json,
             quiet: true,
         },
-        scratch.log_path(),
+        logger_at(scratch.log_path()).await,
     )
     .await
     .expect("the exception is withdrawn");
@@ -339,18 +339,21 @@ async fn add_then_remove_pins_the_scanned_value_for_a_value_comparing_plugin() {
     let executor: Arc<dyn hardener_core::executor::SystemExecutor> =
         Arc::new(MockExecutor::new().with_file("/etc/ssh/sshd_config", "PermitRootLogin yes\n"));
 
-    add(AddOptions {
-        plugin_id: "ssh-hardening",
-        key: "PasswordAuthentication",
-        reason: "break-glass access from the bastion",
-        approved_by: None,
-        ticket: None,
-        expires: None,
-        config_path: Some(&config_path),
-        format: OutputFormat::Json,
-        quiet: true,
-        executor: executor.clone(),
-    })
+    add(
+        AddOptions {
+            plugin_id: "ssh-hardening",
+            key: "PasswordAuthentication",
+            reason: "break-glass access from the bastion",
+            approved_by: None,
+            ticket: None,
+            expires: None,
+            config_path: Some(&config_path),
+            format: OutputFormat::Json,
+            quiet: true,
+            executor: executor.clone(),
+        },
+        None,
+    )
     .await
     .expect("add must succeed against a temporary config and a mock scan");
 
@@ -380,13 +383,16 @@ async fn add_then_remove_pins_the_scanned_value_for_a_value_comparing_plugin() {
         rescanned.finding_exception
     );
 
-    remove(RemoveOptions {
-        plugin_id: "ssh-hardening",
-        key: "PasswordAuthentication",
-        config_path: Some(&config_path),
-        format: OutputFormat::Json,
-        quiet: true,
-    })
+    remove(
+        RemoveOptions {
+            plugin_id: "ssh-hardening",
+            key: "PasswordAuthentication",
+            config_path: Some(&config_path),
+            format: OutputFormat::Json,
+            quiet: true,
+        },
+        None,
+    )
     .await
     .expect("remove must succeed against the same config");
 
@@ -420,18 +426,21 @@ async fn add_then_remove_pins_the_scanned_value_for_a_presence_plugin() {
     let executor: Arc<dyn hardener_core::executor::SystemExecutor> =
         Arc::new(MockExecutor::new().with_command_exists("auditd", false));
 
-    add(AddOptions {
-        plugin_id: "audit-hardening",
-        key: "auditd-present",
-        reason: "audited by the host's own syslog pipeline instead",
-        approved_by: None,
-        ticket: None,
-        expires: None,
-        config_path: Some(&config_path),
-        format: OutputFormat::Json,
-        quiet: true,
-        executor: executor.clone(),
-    })
+    add(
+        AddOptions {
+            plugin_id: "audit-hardening",
+            key: "auditd-present",
+            reason: "audited by the host's own syslog pipeline instead",
+            approved_by: None,
+            ticket: None,
+            expires: None,
+            config_path: Some(&config_path),
+            format: OutputFormat::Json,
+            quiet: true,
+            executor: executor.clone(),
+        },
+        None,
+    )
     .await
     .expect("add must succeed for a presence plugin too");
 
@@ -453,13 +462,16 @@ async fn add_then_remove_pins_the_scanned_value_for_a_presence_plugin() {
         rescanned.finding_exception
     );
 
-    remove(RemoveOptions {
-        plugin_id: "audit-hardening",
-        key: "auditd-present",
-        config_path: Some(&config_path),
-        format: OutputFormat::Json,
-        quiet: true,
-    })
+    remove(
+        RemoveOptions {
+            plugin_id: "audit-hardening",
+            key: "auditd-present",
+            config_path: Some(&config_path),
+            format: OutputFormat::Json,
+            quiet: true,
+        },
+        None,
+    )
     .await
     .expect("remove must succeed against the same config");
 
@@ -486,18 +498,21 @@ async fn add_refuses_a_malformed_expiry_before_writing_anything() {
     let executor: Arc<dyn hardener_core::executor::SystemExecutor> =
         Arc::new(MockExecutor::new().with_file("/etc/ssh/sshd_config", "PermitRootLogin yes\n"));
 
-    let err = add(AddOptions {
-        plugin_id: "ssh-hardening",
-        key: "PermitRootLogin",
-        reason: "break-glass access from the bastion",
-        approved_by: None,
-        ticket: None,
-        expires: Some("31/01/2027"),
-        config_path: Some(&config_path),
-        format: OutputFormat::Json,
-        quiet: true,
-        executor,
-    })
+    let err = add(
+        AddOptions {
+            plugin_id: "ssh-hardening",
+            key: "PermitRootLogin",
+            reason: "break-glass access from the bastion",
+            approved_by: None,
+            ticket: None,
+            expires: Some("31/01/2027"),
+            config_path: Some(&config_path),
+            format: OutputFormat::Json,
+            quiet: true,
+            executor,
+        },
+        None,
+    )
     .await
     .expect_err("a day/month/year expiry must be refused");
 

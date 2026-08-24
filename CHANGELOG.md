@@ -2042,6 +2042,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Running the test suite wrote real policy exceptions into the audit log of
+  whoever ran it.** `hardener exception add` and `remove` each had a
+  no-argument form, which resolved this host's audit trail by uid, beside an
+  `add_at` form compiled for tests that named its own log. Five call sites in
+  `exception/tests.rs` used the short name, so every `cargo test --workspace`
+  filed four genuine entries into `$XDG_DATA_HOME/linux-hardener/audit.log`: an
+  add and a remove for `ssh:PasswordAuthentication` and for
+  `audit:auditd-present`, indistinguishable from an operator having granted and
+  withdrawn those exceptions. 126 had accumulated on the development machine
+  before anyone looked.
+
+  The short forms are gone. `add` and `remove` take their logger as a
+  parameter, so there is no spelling that quietly reaches the real one, and the
+  suite now leaves the file byte-identical. **No behaviour changes for anyone
+  running the shipped binary**, which resolved the same logger before and
+  resolves it in the command dispatch now. `scope`, `apply`, `batch` and
+  `checkpoint` still resolve theirs internally; none of them leaks today, and
+  that is recorded in `docs/reference/what-is-not-proven.md` as measured rather
+  than guaranteed.
+
 - **A remote scan dropped a plugin whose scan errored, where a local scan
   records it.** Both local scan paths in `commands.rs` push
   `hardener_plugins::failed_scan(..)` on the error arm, with a comment on each

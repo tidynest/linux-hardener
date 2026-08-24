@@ -854,6 +854,28 @@ root check, which is about this process; and the `LocalExecutor` the production
 path passes. A change to any of those would send a correct install to the wrong
 instance and every test here would still pass.
 
+**The suite wrote real audit entries into the operator's own log until
+2026-08-24, and four modules keep the shape that allowed it.**
+`exception::add` and `remove` each had a no-argument form beside an `add_at`
+form compiled for tests. Five call sites in `exception/tests.rs` reached for the
+short name, so every `cargo test --workspace` filed four genuine exception
+entries, an add and a remove for `ssh:PasswordAuthentication` and
+`audit:auditd-present`, into `$XDG_DATA_HOME/linux-hardener/audit.log`. 126 had
+accumulated by the time it was found. The short forms are gone and the logger is
+now a parameter, so the leak cannot be reached by forgetting a suffix.
+
+**`scope.rs`, `apply.rs`, `batch.rs` and `checkpoint.rs` still resolve their
+logger inside the command.** `scope` carries the same wrapper-plus-`_to` pair
+`exception` had. None of the four writes the real log today, measured by running
+`cargo test --workspace` against a byte count of the file and finding it
+unchanged, but that is a measurement rather than a guarantee: a new test calling
+the wrapper would leak exactly as `exception`'s did, and nothing would fail.
+
+**Nor is the fix itself defended by a test.** Reverting it means adding a
+one-argument `add` back, and no assertion anywhere would notice. The seal is the
+signature, and the only thing holding it is that the signature has no second
+form.
+
 **`hardener systemd status` still spawns `systemctl` itself.** It was left
 alone deliberately: it already captures rather than inheriting, its decision
 about which stream holds the answer is asserted by `status_report`, and moving

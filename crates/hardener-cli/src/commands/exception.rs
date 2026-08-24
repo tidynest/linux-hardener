@@ -90,18 +90,16 @@ pub fn pin_from_findings<'a>(findings: &'a [Finding], key: &str) -> Result<&'a F
 
 /// Refuses a malformed `--expires`, scans `plugin_id` to pin the value the
 /// host has right now, and writes the exception.
-pub async fn add(opts: AddOptions<'_>) -> Result<()> {
-    add_with_logger(opts, super::state::get_audit_logger().await).await
-}
-
-/// [`add`] with the audit log named, so a test writes neither root's log nor
-/// the invoking user's.
-#[cfg(test)]
-pub(crate) async fn add_at(opts: AddOptions<'_>, audit_log_path: &str) -> Result<()> {
-    add_with_logger(opts, logger_at(audit_log_path).await).await
-}
-
-async fn add_with_logger(opts: AddOptions<'_>, logger: Option<AuditLogger>) -> Result<()> {
+///
+/// **The logger is a parameter, and that is the only way in.** There used to be
+/// a no-argument `add` beside an `add_at` compiled for tests, and the pairing
+/// did not hold: five call sites in `tests.rs` reached for the short name, so
+/// every `cargo test --workspace` filed real exception entries into the audit
+/// log of whoever ran it. `super::state::get_audit_logger` answers with this
+/// host's own trail, chosen by uid, and a test cannot tell it not to. Sealed by
+/// deleting the short name rather than by asking callers to prefer the other
+/// one: the pair was already the rule, and the rule is what failed.
+pub async fn add(opts: AddOptions<'_>, logger: Option<AuditLogger>) -> Result<()> {
     if let Some(expires) = opts.expires {
         parse_expiry(expires)?;
     }
@@ -159,17 +157,10 @@ async fn add_with_logger(opts: AddOptions<'_>, logger: Option<AuditLogger>) -> R
     Ok(())
 }
 
-pub async fn remove(opts: RemoveOptions<'_>) -> Result<()> {
-    remove_with_logger(opts, super::state::get_audit_logger().await).await
-}
-
-/// [`remove`] with the audit log named. Tests only, as [`add_at`].
-#[cfg(test)]
-pub(crate) async fn remove_at(opts: RemoveOptions<'_>, audit_log_path: &str) -> Result<()> {
-    remove_with_logger(opts, logger_at(audit_log_path).await).await
-}
-
-async fn remove_with_logger(opts: RemoveOptions<'_>, logger: Option<AuditLogger>) -> Result<()> {
+/// Withdraws an exception, recording the withdrawal.
+///
+/// Takes its logger for the reason [`add`] does.
+pub async fn remove(opts: RemoveOptions<'_>, logger: Option<AuditLogger>) -> Result<()> {
     let section = section_for(opts.plugin_id)?;
     let path = write_path(opts.config_path.map(PathBuf::as_path));
     let existing = read_or_empty(&path)?;
