@@ -1495,6 +1495,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`hardener systemd install` and `uninstall` no longer print what `systemctl`
+  said when it succeeded.** Both used to spawn `systemctl` with this process's
+  streams inherited, so `Created symlink /etc/systemd/system/timers.target.wants/...`
+  and anything else it had to say went straight to the terminal. They now run it
+  through the executor abstraction the plugins already scan through, and stderr
+  is forwarded only when the invocation fails. A `daemon-reload` or an `enable`
+  that goes wrong still says why; a successful one is silent beside the summary
+  the verb prints for itself. **`hardener systemd status` is unchanged**, and
+  the JSON envelopes of all three are unchanged.
+
+  The reason for the change is that neither verb could be tested at all while it
+  spawned `systemctl` itself: the test would have reloaded the operator's own
+  systemd and enabled a real timer in their session. `install_with` and
+  `uninstall_with` now take the executor, the unit directory and the audit
+  logger as arguments, and four new tests drive them against a mock, covering
+  the reload arriving before the enable, a system install never carrying
+  `--user`, a timer that would not start, and an uninstall proceeding past a
+  `disable` that failed. Each was proved to go red under the mutation it exists
+  to catch.
+
 - **Five writes that record host state are now watched reaching the log, not
   only building the entry they would send.** `hardener systemd install` and
   `uninstall`, and the desktop's scheduler save, host save and host delete,

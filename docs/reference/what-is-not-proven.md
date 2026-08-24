@@ -837,18 +837,28 @@ path: it produces units for inspection, and nothing it writes runs. If a future
 change lets `generate` target a live unit directory, that reasoning stops
 holding.
 
-**No test observes `install` or `uninstall` as a whole; the filesystem half of
-each is observed.** The two verbs split their work: `write_units` and
-`remove_units` take the unit directory as an argument and do everything that
-touches disk, and the rest of each verb is `systemctl`. The first half is
-driven against a temporary directory in
-`crates/hardener-cli/src/commands/systemd/tests.rs`, which is where a
-descriptor is now watched reaching a write rather than only being built.
-**What no test covers is the `systemctl` half**, and that is a limit with a
-reason rather than an omission: a test that called `install` itself would
-reload the operator's own systemd and enable a real timer in their session.
-`unit_dir_for` is therefore also unpinned, since nothing exercises the branch
-that picks `/etc/systemd/system` over `~/.config/systemd/user`.
+**`install` and `uninstall` are observed end to end apart from three lines
+each.** Both now talk to systemd through a `SystemExecutor`, the same
+abstraction the plugins scan through, so `install_with` and `uninstall_with`
+take the executor, the unit directory and the audit logger as arguments and a
+`MockExecutor` answers for systemd. Six tests in
+`crates/hardener-cli/src/commands/systemd/tests.rs` drive them against a
+temporary directory: the units written and each entry filed, the reload
+arriving before the enable, a system install never carrying `--user`, a timer
+that would not start reported as such, and an uninstall proceeding past a
+`disable` that failed.
+
+**What each verb still resolves for itself is untested:** `unit_dir_for`, which
+reads `HOME` and picks `/etc/systemd/system` over `~/.config/systemd/user`; the
+root check, which is about this process; and the `LocalExecutor` the production
+path passes. A change to any of those would send a correct install to the wrong
+instance and every test here would still pass.
+
+**`hardener systemd status` still spawns `systemctl` itself.** It was left
+alone deliberately: it already captures rather than inheriting, its decision
+about which stream holds the answer is asserted by `status_report`, and moving
+it to the executor would change `exit_code` in the JSON envelope from a
+nullable field to an always-present number for no coverage gained.
 
 **All three of the desktop's writes are observed reaching the file and the
 log.** Each command reads both its target path and the audit log path from the

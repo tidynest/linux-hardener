@@ -322,3 +322,184 @@ async fn an_uninstall_records_both_units_and_reports_only_what_was_there() {
         assert_eq!(entry.entry_details["timer_disabled"], "true");
     }
 }
+
+// --- The systemctl half ------------------------------------------------------
+//
+// `install` and `uninstall` used to spawn `systemctl` themselves, so neither
+// could be driven by a test at all: the call would have reloaded the operator's
+// own systemd and enabled a real timer in their session. Both now take a
+// `SystemExecutor`, which is the abstraction the plugins already scan through,
+// so a mock answers for systemd and records what it was asked.
+//
+// What these cannot see is the ordering between a `systemctl` call and a file
+// being written: `remove_units` goes through `std::fs`, not the executor, so
+// the mock's log holds the commands and nothing else. The order the two
+// invocations arrive in is visible, and that is the one that matters.
+
+use hardener_common::executor::MockExecutor;
+
+fn ok() -> CommandOutput {
+    CommandOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: 0,
+    }
+}
+
+fn failed() -> CommandOutput {
+    CommandOutput {
+        stdout: String::new(),
+        stderr: "Failed to enable unit: Unit file does not exist.\n".to_string(),
+        exit_code: 1,
+    }
+}
+
+/// A user-mode systemd with both invocations answering successfully.
+fn user_systemd(enable: CommandOutput) -> MockExecutor {
+    MockExecutor::new()
+        .with_command("systemctl", &["--user", "daemon-reload"], ok())
+        .with_command(
+            "systemctl",
+            &["--user", "enable", "--now", "linux-hardener.timer"],
+            enable,
+        )
+}
+
+/// An install reloads systemd and then enables the timer, in that order.
+///
+/// The order is not a preference. `enable --now` on a unit systemd has not read
+/// fails, so a reload that moved after the enable would leave every install
+/// reporting a timer that was never started, on a host where the units are
+/// nonetheless present and correct.
+///
+/// The argument lists are asserted whole rather than by their verb, because the
+/// `--user` that selects the instance is part of them: an invocation that lost
+/// it would act on the system instance while the entry beside it says `user`.
+#[tokio::test]
+async fn an_install_reloads_systemd_before_enabling_the_timer() {
+    let scratch = Scratch::new();
+    let executor = user_systemd(ok());
+
+    let outcome = write_and_install(&scratch, &executor, true).await;
+
+    assert!(outcome.timer_enabled);
+    assert_eq!(
+        executor.log().commands_executed,
+        vec![
+            ("systemctl".to_string(), owned(&["--user", "daemon-reload"])),
+            (
+                "systemctl".to_string(),
+                owned(&["--user", "enable", "--now", "linux-hardener.timer"])
+            ),
+        ]
+    );
+}
+
+/// A timer that would not start is reported, and the units stay.
+///
+/// `.status()` used to be read for spawn failure only, so a non-zero exit was
+/// discarded and the envelope claimed a running timer on the strength of having
+/// asked. The paired assertion is that the install is not rolled back: the units
+/// are on disk and correct, and an operator who can fix whatever refused the
+/// enable should not have to write them again.
+#[tokio::test]
+async fn an_install_reports_a_timer_that_would_not_start() {
+    let scratch = Scratch::new();
+    let executor = user_systemd(failed());
+
+    let outcome = write_and_install(&scratch, &executor, true).await;
+
+    assert!(!outcome.timer_enabled);
+    assert!(
+        outcome.service_path.exists() && outcome.timer_path.exists(),
+        "a timer that would not start does not undo the units"
+    );
+}
+
+/// A system install talks to the system instance.
+///
+/// The `--user` flag is prepended in one place now, which is what makes this
+/// assertable and also what makes it worth asserting: a mistake there sends
+/// every system install to the operator's own systemd, where the units it
+/// wrote to `/etc/systemd/system` are not visible at all. The install would
+/// report a timer it had enabled somewhere else.
+#[tokio::test]
+async fn a_system_install_does_not_reach_the_user_instance() {
+    let scratch = Scratch::new();
+    let executor = MockExecutor::new()
+        .with_command("systemctl", &["daemon-reload"], ok())
+        .with_command(
+            "systemctl",
+            &["enable", "--now", "linux-hardener.timer"],
+            ok(),
+        );
+
+    let outcome = write_and_install(&scratch, &executor, false).await;
+
+    assert!(outcome.timer_enabled);
+    for (_, args) in executor.log().commands_executed {
+        assert!(
+            !args.contains(&"--user".to_string()),
+            "a system install must not carry --user: {args:?}"
+        );
+    }
+}
+
+/// A timer that was never enabled does not stop the uninstall.
+///
+/// `disable --now` fails on a host where nothing was installed, and that is
+/// exactly the host with units to clear out after a half-finished install. The
+/// three assertions pull apart: the failure is carried rather than raised, the
+/// files still go, and every entry says the timer was not disabled, which is
+/// the state an operator most needs to find later.
+#[tokio::test]
+async fn an_uninstall_proceeds_when_the_timer_was_never_enabled() {
+    let scratch = Scratch::new();
+    std::fs::create_dir_all(&scratch.units).expect("the unit directory");
+    for unit in [service_name(), timer_name()] {
+        std::fs::write(scratch.units.join(unit), "[Unit]\n").expect("seed the unit");
+    }
+    let executor = MockExecutor::new()
+        .with_command(
+            "systemctl",
+            &["--user", "disable", "--now", "linux-hardener.timer"],
+            failed(),
+        )
+        .with_command("systemctl", &["--user", "daemon-reload"], ok());
+
+    let logger = scratch.logger().await;
+    let outcome = uninstall_with(&executor, &scratch.units, logger.as_ref(), true)
+        .await
+        .expect("the uninstall runs");
+
+    assert!(!outcome.timer_disabled);
+    assert_eq!(outcome.removed.len(), 2, "both units still go");
+    assert_eq!(
+        executor.log().commands_executed.len(),
+        2,
+        "disable, then the reload that picks up their absence"
+    );
+}
+
+/// Runs an install against `scratch`, with the generator every test here uses.
+async fn write_and_install(
+    scratch: &Scratch,
+    executor: &MockExecutor,
+    user_mode: bool,
+) -> InstallOutcome {
+    let logger = scratch.logger().await;
+    install_with(
+        executor,
+        &scratch.units,
+        &generator(),
+        logger.as_ref(),
+        user_mode,
+        &[("schedule", "Mon *-*-* 03:00:00".to_string())],
+    )
+    .await
+    .expect("the install runs")
+}
+
+fn owned(args: &[&str]) -> Vec<String> {
+    args.iter().map(|s| s.to_string()).collect()
+}

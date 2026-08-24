@@ -1,8 +1,10 @@
 //! Systemd unit file management commands.
 
 use anyhow::{Context, Result, bail};
+use hardener_common::executor::CommandOutput;
 use hardener_compliance::OutputFormat;
 use hardener_core::config_write::{WriteAudit, remove_file_audited, write_atomically};
+use hardener_core::{LocalExecutor, executor::SystemExecutor};
 use hardener_scheduler::systemd::{SystemdGenerator, cron_to_calendar, service_name, timer_name};
 use hardener_state::audit::{ActionType, AuditLogger};
 use std::collections::HashMap;
@@ -35,6 +37,58 @@ fn unit_audit<'a>(
         target: format!("unit:{unit}"),
         details,
     }
+}
+
+/// One `systemctl` invocation, through the executor rather than spawned here.
+///
+/// The executor is what makes `install` and `uninstall` drivable at all. Before
+/// this, both spawned `systemctl` directly, so a test of either would have
+/// reloaded the operator's own systemd and enabled a real timer in their
+/// session, and the whole `systemctl` half of both verbs went unasserted for
+/// that reason.
+///
+/// **Stderr is forwarded on failure and dropped on success.** The child used to
+/// inherit this process's streams, so everything `systemctl` said reached the
+/// operator: the `Created symlink ...` line from `enable --now` along with
+/// anything that went wrong. Keeping the failure half is what matters, since a
+/// `daemon-reload` that fails is otherwise silent. The success chatter is noise
+/// beside the summary these verbs already print for themselves.
+///
+/// The `--user` flag is prepended here rather than at each call site, because it
+/// was written out five times and a verb that forgot it would act on the system
+/// instance while reporting the user one.
+async fn systemctl(
+    executor: &dyn SystemExecutor,
+    user_mode: bool,
+    args: &[&str],
+) -> Result<CommandOutput> {
+    let mut full: Vec<&str> = Vec::with_capacity(args.len() + 1);
+    if user_mode {
+        full.push("--user");
+    }
+    full.extend_from_slice(args);
+
+    let output = executor.execute_command("systemctl", &full).await?;
+    if !output.success() && !output.stderr.trim().is_empty() {
+        eprint!("{}", output.stderr);
+    }
+    Ok(output)
+}
+
+/// What an install did, once it has stopped talking to systemd.
+///
+/// Returned rather than reported from inside, so a test reads the outcome
+/// instead of scraping stdout. `install` renders it.
+struct InstallOutcome {
+    service_path: PathBuf,
+    timer_path: PathBuf,
+    timer_enabled: bool,
+}
+
+/// What an uninstall did. The counterpart to [`InstallOutcome`].
+struct UninstallOutcome {
+    removed: Vec<PathBuf>,
+    timer_disabled: bool,
 }
 
 /// Which systemd instance the units belong to.
@@ -234,16 +288,15 @@ pub async fn install(
         generator = generator.with_config(cfg);
     }
 
-    let unit_dir = unit_dir_for(user_mode)?;
-
     // Check permissions for system install
     if !user_mode && !nix::unistd::Uid::effective().is_root() {
         bail!("System install requires root privileges. Use --user for user install.");
     }
 
     let logger = super::state::get_audit_logger().await;
-    let (service_path, timer_path) = write_units(
-        &unit_dir,
+    let outcome = install_with(
+        &LocalExecutor::new(),
+        &unit_dir_for(user_mode)?,
         &generator,
         logger.as_ref(),
         user_mode,
@@ -252,48 +305,20 @@ pub async fn install(
     .await?;
 
     if !quiet && !matches!(format, OutputFormat::Json) {
-        println!("Installed: {}", service_path.display());
-        println!("Installed: {}", timer_path.display());
+        println!("Installed: {}", outcome.service_path.display());
+        println!("Installed: {}", outcome.timer_path.display());
     }
-
-    // Reload systemd and enable timer
-    let systemctl_args: &[&str] = if user_mode {
-        &["--user", "daemon-reload"]
-    } else {
-        &["daemon-reload"]
-    };
-
-    Command::new("systemctl")
-        .args(systemctl_args)
-        .status()
-        .await
-        .context("Failed to reload systemd")?;
-
-    let enable_args: Vec<&str> = if user_mode {
-        vec!["--user", "enable", "--now", timer_name()]
-    } else {
-        vec!["enable", "--now", timer_name()]
-    };
-
-    // `.status()` only errors when the process cannot be spawned, so a
-    // non-zero exit was being discarded and the envelope asserted an outcome
-    // nothing had checked. Report what happened.
-    let enabled = Command::new("systemctl")
-        .args(&enable_args)
-        .status()
-        .await
-        .context("Failed to enable timer")?
-        .success();
 
     report(
         &format,
         serde_json::json!({
-            "installed": [service_path.display().to_string(), timer_path.display().to_string()],
-            "timer_enabled": enabled,
+            "installed": [outcome.service_path.display().to_string(),
+                          outcome.timer_path.display().to_string()],
+            "timer_enabled": outcome.timer_enabled,
         }),
         quiet,
         || {
-            if enabled {
+            if outcome.timer_enabled {
                 println!("Timer enabled and started");
             } else {
                 println!("Units installed, but enabling the timer failed");
@@ -304,6 +329,54 @@ pub async fn install(
     Ok(())
 }
 
+/// The whole of an install except deciding where it goes and how it is
+/// rendered: write both units, reload systemd, enable the timer.
+///
+/// Everything it depends on is an argument, so a test drives it against a
+/// temporary directory and a mock executor. What stays outside is
+/// [`unit_dir_for`], which reads `HOME`, the root check, which is about this
+/// process, [`LocalExecutor`] itself, and the logger.
+///
+/// **The logger is an argument and not resolved here**, which is not a detail.
+/// `get_audit_logger` answers with this host's real audit trail, chosen by uid,
+/// so an `install_with` that opened its own would have every test of it filing
+/// invented install entries into the log of whoever ran `cargo test`. Passing
+/// it in is what makes the tests inert.
+///
+/// The reload comes after the units are on disk and before the enable, which is
+/// the only order that works: `enable --now` on a unit systemd has not read
+/// fails, and reloading before the write reads the previous generation.
+async fn install_with(
+    executor: &dyn SystemExecutor,
+    unit_dir: &Path,
+    generator: &SystemdGenerator,
+    logger: Option<&AuditLogger>,
+    user_mode: bool,
+    calendar_detail: &[(&str, String)],
+) -> Result<InstallOutcome> {
+    let (service_path, timer_path) =
+        write_units(unit_dir, generator, logger, user_mode, calendar_detail).await?;
+
+    systemctl(executor, user_mode, &["daemon-reload"])
+        .await
+        .context("Failed to reload systemd")?;
+
+    // A non-zero exit was once discarded here, so the envelope asserted an
+    // outcome nothing had checked. Carried as a fact rather than raised: the
+    // units are already written and saying so is more use than an error that
+    // hides it.
+    let timer_enabled = systemctl(executor, user_mode, &["enable", "--now", timer_name()])
+        .await
+        .context("Failed to enable timer")?
+        .success();
+
+    Ok(InstallOutcome {
+        service_path,
+        timer_path,
+        timer_enabled,
+    })
+}
+
 /// Uninstalls systemd unit files.
 pub async fn uninstall(user_mode: bool, format: OutputFormat, quiet: bool) -> Result<()> {
     // Check permissions for system uninstall
@@ -311,59 +384,71 @@ pub async fn uninstall(user_mode: bool, format: OutputFormat, quiet: bool) -> Re
         bail!("System uninstall requires root privileges. Use --user for user uninstall.");
     }
 
-    let unit_dir = unit_dir_for(user_mode)?;
-
-    // Stop and disable timer
-    let stop_args: Vec<&str> = if user_mode {
-        vec!["--user", "disable", "--now", timer_name()]
-    } else {
-        vec!["disable", "--now", timer_name()]
-    };
-
-    // Reported rather than discarded, for the reason `install` reports its
-    // own: `.status()` only errors when the process cannot be spawned, so a
-    // failure to stop the timer was invisible and the envelope described an
-    // uninstall that might have left it running. A unit that was never enabled
-    // also fails here, which is why this is carried as a fact rather than
-    // raised as an error.
-    let timer_disabled = Command::new("systemctl")
-        .args(&stop_args)
-        .status()
-        .await
-        .map(|status| status.success())
-        .unwrap_or(false);
-
     let logger = super::state::get_audit_logger().await;
-    let removed = remove_units(&unit_dir, logger.as_ref(), user_mode, timer_disabled).await?;
+    let outcome = uninstall_with(
+        &LocalExecutor::new(),
+        &unit_dir_for(user_mode)?,
+        logger.as_ref(),
+        user_mode,
+    )
+    .await?;
+
     if !quiet && !matches!(format, OutputFormat::Json) {
-        for path in &removed {
+        for path in &outcome.removed {
             println!("Removed: {}", path.display());
         }
     }
 
-    // Reload systemd
-    let reload_args: &[&str] = if user_mode {
-        &["--user", "daemon-reload"]
-    } else {
-        &["daemon-reload"]
-    };
-
-    Command::new("systemctl")
-        .args(reload_args)
-        .status()
-        .await
-        .context("Failed to reload systemd")?;
-
-    let summary = uninstall_summary(removed.len(), timer_disabled);
-    let removed: Vec<String> = removed.iter().map(|p| p.display().to_string()).collect();
+    let summary = uninstall_summary(outcome.removed.len(), outcome.timer_disabled);
+    let removed: Vec<String> = outcome
+        .removed
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect();
     report(
         &format,
-        serde_json::json!({ "removed": removed, "timer_disabled": timer_disabled }),
+        serde_json::json!({ "removed": removed, "timer_disabled": outcome.timer_disabled }),
         quiet,
         || println!("{summary}"),
     );
 
     Ok(())
+}
+
+/// The whole of an uninstall except where it looks and how it is rendered:
+/// disable the timer, remove both units, reload systemd.
+///
+/// The counterpart to [`install_with`], and the order is again the only one
+/// that works: the timer is stopped while its unit file still exists, because
+/// `disable --now` on a unit systemd can no longer read cannot stop what it
+/// started.
+async fn uninstall_with(
+    executor: &dyn SystemExecutor,
+    unit_dir: &Path,
+    logger: Option<&AuditLogger>,
+    user_mode: bool,
+) -> Result<UninstallOutcome> {
+    // Carried as a fact rather than raised as an error, for the reason
+    // `install_with` carries its own. A unit that was never enabled fails here
+    // too, and that host is exactly the one with nothing to remove. A
+    // `systemctl` that cannot be spawned is also `false` rather than an error,
+    // so the units still come off a host whose systemd cannot be reached; the
+    // reload below is what fails in that case, after the removal.
+    let timer_disabled = systemctl(executor, user_mode, &["disable", "--now", timer_name()])
+        .await
+        .map(|output| output.success())
+        .unwrap_or(false);
+
+    let removed = remove_units(unit_dir, logger, user_mode, timer_disabled).await?;
+
+    systemctl(executor, user_mode, &["daemon-reload"])
+        .await
+        .context("Failed to reload systemd")?;
+
+    Ok(UninstallOutcome {
+        removed,
+        timer_disabled,
+    })
 }
 
 /// The one line `uninstall` prints, chosen from what actually happened.
