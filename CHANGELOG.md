@@ -2042,6 +2042,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`install` and `uninstall` no longer each resolve the host they act on.**
+  Both spelled out the same three answers, the local executor, the home
+  directory and whether this process is root, so six literals in two triples had
+  to be kept in agreement by whoever edited one of them. Nothing would have
+  failed if they drifted: an `uninstall` reading a different home from the
+  `install` that wrote the units reports having removed nothing, correctly, and
+  against a directory the units were never in. `LocalTarget::current` resolves
+  all three once.
+
+  Its executor field is a concrete local executor rather than a trait object, so
+  the one `main.rs` builds from `--ssh` cannot reach these verbs, and a test
+  asserts it is not a remote executor. **`dirs::home_dir()` and the root check
+  stay untested**, because a test of either could only compare it against
+  another spelling of the same question; both are named in
+  `docs/reference/what-is-not-proven.md`. **No behaviour changes.**
+
 - **The systemd privilege gate is driven by tests, and its wording is pinned.**
   `install` and `uninstall` each carried their own copy of the root check,
   inline and unreachable by any test, so nothing held the refusal to refusing

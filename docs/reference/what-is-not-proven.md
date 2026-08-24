@@ -884,13 +884,28 @@ that makes this safe: the executor's `files_written` log stays empty and every
 command it is asked for is `systemctl`. Injecting the executor here would remove
 a guarantee, not add coverage.
 
-**What no test drives is the wiring in `install` and `uninstall` themselves:**
-`nix::unistd::Uid::effective().is_root()`, `dirs::home_dir()`, and
-`LocalExecutor::new()`, each appearing once per verb as the argument to
-something that is driven. Six literals. A change to any of them would send a
-correct install to the wrong instance with every test here still passing, and
-closing that would mean driving the verbs from `main.rs`, which moves the same
-six lines rather than covering them.
+**The wiring in `install` and `uninstall` is one definition now, and two of its
+three answers are still untested.** Those two verbs each spelled out
+`LocalExecutor::new()`, `dirs::home_dir()` and
+`nix::unistd::Uid::effective().is_root()`, six literals in two triples that
+nothing held in agreement. An `uninstall` reading a different home from the
+`install` that wrote the units would have reported removing nothing, correctly
+and uselessly, against a directory the units were never in. `LocalTarget::current`
+resolves all three once.
+
+**The executor is covered, by type and by assertion.** The field is a concrete
+`LocalExecutor` rather than a trait object, so the executor `main.rs` builds
+from `--ssh` cannot be passed here at all, and
+`the_local_target_is_never_a_remote_one` asserts `is_remote()` is false. That
+was checked by flipping `LocalExecutor::is_remote` to `true` and watching the
+test fail, so it reads the real method rather than restating the type.
+
+**`dirs::home_dir()` and the root check are not covered and will not be.** Each
+is one standard call, and a test of either could only compare it against another
+spelling of the same question: `geteuid() == 0` against
+`Uid::effective().is_root()` asserts nothing about whether the right question is
+being asked. Driving them would mean moving them to `main.rs`, which relocates
+the two lines rather than covering them. They are named here instead.
 
 **The suite wrote real audit entries into the operator's own log until
 2026-08-24, and four modules keep the shape that allowed it.**

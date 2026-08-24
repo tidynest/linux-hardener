@@ -86,6 +86,45 @@ struct InstallOutcome {
     timer_enabled: bool,
 }
 
+/// Everything these two verbs learn from the process they are running in.
+///
+/// **One definition, where there were two identical triples.** `install` and
+/// `uninstall` each spelled all three of these out, so the pair had to be kept
+/// in agreement by whoever edited one of them. Nothing would have failed if
+/// they drifted: an `uninstall` reading a different home from the `install`
+/// that wrote the units would report having removed nothing, correctly and
+/// uselessly, against a directory the units were never in.
+///
+/// **`executor` is a [`LocalExecutor`] by type, not by choice at the call
+/// site.** `main.rs` holds an executor built from `--ssh`, and these verbs must
+/// never receive it: they write their unit files locally through `std::fs` and
+/// only talk to `systemctl` through the executor, so a remote one would enable
+/// a timer on one host against units written on another. Naming the concrete
+/// type here is what makes that assertable, and
+/// `the_local_target_is_never_a_remote_one` asserts it.
+///
+/// The other two fields are resolved here and are not covered by any test.
+/// `dirs::home_dir()` and `nix::unistd::Uid::effective().is_root()` are single
+/// standard calls, and a test of either could only compare them against another
+/// spelling of the same question, which asserts nothing. That is recorded in
+/// `docs/reference/what-is-not-proven.md` rather than papered over with a
+/// tautology.
+struct LocalTarget {
+    executor: LocalExecutor,
+    home: Option<PathBuf>,
+    is_root: bool,
+}
+
+impl LocalTarget {
+    fn current() -> LocalTarget {
+        LocalTarget {
+            executor: LocalExecutor::new(),
+            home: dirs::home_dir(),
+            is_root: nix::unistd::Uid::effective().is_root(),
+        }
+    }
+}
+
 /// What an uninstall did. The counterpart to [`InstallOutcome`].
 #[derive(Debug)]
 struct UninstallOutcome {
@@ -324,13 +363,14 @@ pub async fn install(
         generator = generator.with_config(cfg);
     }
 
+    let target = LocalTarget::current();
     let outcome = install_with(
-        &LocalExecutor::new(),
-        &unit_dir_for(user_mode, dirs::home_dir())?,
+        &target.executor,
+        &unit_dir_for(user_mode, target.home)?,
         &generator,
         logger.as_ref(),
         user_mode,
-        nix::unistd::Uid::effective().is_root(),
+        target.is_root,
         &calendar_detail,
     )
     .await?;
@@ -418,12 +458,13 @@ pub async fn uninstall(
     quiet: bool,
     logger: Option<AuditLogger>,
 ) -> Result<()> {
+    let target = LocalTarget::current();
     let outcome = uninstall_with(
-        &LocalExecutor::new(),
-        &unit_dir_for(user_mode, dirs::home_dir())?,
+        &target.executor,
+        &unit_dir_for(user_mode, target.home)?,
         logger.as_ref(),
         user_mode,
-        nix::unistd::Uid::effective().is_root(),
+        target.is_root,
     )
     .await?;
 

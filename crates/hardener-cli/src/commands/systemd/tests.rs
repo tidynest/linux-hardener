@@ -674,3 +674,27 @@ async fn the_units_are_written_to_disk_and_never_through_the_executor() {
     );
     let _ = logger;
 }
+
+/// The target these two verbs act on is never a remote one.
+///
+/// This is the only one of the three answers in [`LocalTarget::current`] that a
+/// test can say anything about. `main.rs` builds an executor from `--ssh` and
+/// holds it while dispatching every verb, so the mistake this guards is a small
+/// and plausible one: passing that executor here because it is already in hand.
+/// The units are written locally by `std::fs` whatever the executor is, so a
+/// remote one would leave `systemctl enable` running against a host that has no
+/// unit files, and the operator's own host holding two it never enabled.
+///
+/// Asserted through `is_remote` rather than by naming the type, because the
+/// type is what a careless change would alter and `is_remote` is what the change
+/// would mean.
+#[test]
+fn the_local_target_is_never_a_remote_one() {
+    let target = LocalTarget::current();
+
+    assert!(
+        !target.executor.is_remote(),
+        "systemd units are written locally; a remote executor would enable a \
+         timer on a host that has none"
+    );
+}
