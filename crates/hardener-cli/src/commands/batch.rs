@@ -77,6 +77,19 @@ pub enum HostStatus {
         /// index untyped `serde_json::Value` see no shape change.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         unchecked: Vec<UncheckedCheck>,
+        /// The scan as it came back, for `batch report` to score.
+        ///
+        /// `ReportGenerator::generate` takes raw results and flattens them
+        /// itself, so the two fields above cannot be handed to it. They stay
+        /// because they are the JSON this verb has always emitted; these two
+        /// never reach it, which is why they are skipped rather than added to
+        /// the document.
+        #[serde(skip)]
+        results: Vec<ScanResult>,
+        /// Plugin ids the config disabled, which the flatten above already
+        /// accounted for and the score below still needs.
+        #[serde(skip)]
+        skipped: Vec<PluginId>,
     },
     Failed {
         error: String,
@@ -717,12 +730,10 @@ pub fn render_json(outcomes: &[HostOutcome]) -> String {
 pub fn host_report(outcome: HostOutcome, generator: &ReportGenerator) -> HostReport {
     match outcome.status {
         HostStatus::Scanned {
-            findings,
-            unchecked,
-            ..
+            results, skipped, ..
         } => {
             let frameworks = generator
-                .generate(&findings, &unchecked)
+                .generate(&results, &skipped)
                 .iter()
                 .map(posture_from_report)
                 .collect();
@@ -759,7 +770,7 @@ fn assess_outcomes(
     override_profile: Option<ComplianceProfile>,
     exclusions: &ComplianceConfig,
 ) -> Vec<HostReport> {
-    let coverage = hardener_plugins::compliance_coverage();
+    let inventory = hardener_plugins::plugin_inventory();
     outcomes
         .into_iter()
         .map(|mut outcome| {
@@ -778,7 +789,7 @@ fn assess_outcomes(
                     output_dir: None,
                     profile: outcome.profile,
                 },
-                coverage.clone(),
+                inventory.clone(),
                 exclusions.clone(),
             )
             .for_host(outcome.target.clone(), hostname, outcome.name.clone());
@@ -990,8 +1001,15 @@ async fn scan_with_executor(
             // complete, or which the config never let run, contributes its
             // unchecked entry here too, instead of this host reporting a clean
             // fleet result it never verified.
-            let (findings, unchecked) =
-                crate::commands::report::flatten_scans(&grouped.results, &grouped.skipped);
+            // `batch scan` publishes this pair as JSON and never builds a
+            // report, so it flattens directly rather than through a generator.
+            // Scoring cannot be reached from here: `generate` takes raw results.
+            let (results, skipped) = grouped.evidence();
+            let (findings, unchecked) = hardener_compliance::scan_evidence::flatten(
+                &hardener_plugins::plugin_inventory(),
+                &results,
+                &skipped,
+            );
             let counts = SeverityCounts::from_findings(&findings);
             HostOutcome {
                 name,
@@ -1001,6 +1019,8 @@ async fn scan_with_executor(
                     counts,
                     findings,
                     unchecked,
+                    results,
+                    skipped,
                 },
             }
         }

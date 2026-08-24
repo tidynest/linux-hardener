@@ -465,6 +465,71 @@ pub struct WrittenException {
 // Plugin Types (from hardener-core)
 // ============================================================================
 
+/// One plugin as a compliance report needs to see it: what it is, and which
+/// controls it declares it can assess.
+///
+/// Here rather than in `hardener-compliance` because `hardener-plugins` builds
+/// it and `hardener-compliance` consumes it, and neither crate depends on the
+/// other. That independence is deliberate and documented on
+/// `ReportGenerator::new`; putting the type in the crate they both already
+/// depend on is what keeps it.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PluginCoverage {
+    /// Identity, name and category, for the stand-in entry an absent plugin
+    /// gets.
+    pub metadata: PluginMetadata,
+    /// The controls this plugin declares it assesses. A plugin declaring
+    /// nothing already sits outside the assessed set, so its controls report
+    /// `ManualReview` whether or not it ran.
+    pub coverage: Vec<ComplianceMapping>,
+}
+
+/// The plugin set a compliance report is scored against.
+///
+/// `Unavailable` is not a convenience. A caller whose registry could not be
+/// enumerated has no plugin left to name, and passing an empty list instead
+/// would read exactly like a build registering no plugins: nothing to stand in
+/// for, so every control passes on the resulting silence. The variant carries
+/// the reason so one entry can stand in for all of them.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum PluginInventory {
+    /// Every plugin this build registers, with its declared coverage.
+    Known(Vec<PluginCoverage>),
+    /// The registry could not be listed, and why.
+    Unavailable(String),
+}
+
+impl PluginInventory {
+    /// The union of every control any plugin can assess.
+    ///
+    /// This is what a report's assessed set is built from, and it used to
+    /// arrive as its own `coverage` parameter beside the per-plugin table.
+    /// Deriving it here is what stops the two disagreeing: they were separately
+    /// injected, and a caller could pass a union that did not match the plugins
+    /// it also passed.
+    pub fn assessed_controls(&self) -> Vec<ComplianceMapping> {
+        let mut seen = std::collections::HashSet::new();
+        match self {
+            PluginInventory::Known(plugins) => plugins
+                .iter()
+                .flat_map(|p| p.coverage.iter().cloned())
+                .filter(|m| seen.insert((m.compliance_framework, m.compliance_control_id.clone())))
+                .collect(),
+            // Nothing is assessed by a run that cannot say which plugins exist.
+            PluginInventory::Unavailable(_) => Vec::new(),
+        }
+    }
+
+    /// The plugins to expect results from, empty when the registry is
+    /// unavailable.
+    pub fn plugins(&self) -> &[PluginCoverage] {
+        match self {
+            PluginInventory::Known(plugins) => plugins,
+            PluginInventory::Unavailable(_) => &[],
+        }
+    }
+}
+
 /// Metadata describing a hardening plugin.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PluginMetadata {

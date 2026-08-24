@@ -1,4 +1,4 @@
-use hardener_common::types::{ComplianceFramework, ComplianceMapping, ComplianceProfile};
+use hardener_common::types::{ComplianceFramework, ComplianceProfile};
 use hardener_compliance::{
     ComplianceReport, OutputFormat, ReportConfig, ReportGenerator, Scenario,
     output::{
@@ -1252,7 +1252,7 @@ fn parse_output_format(format: &str) -> Result<OutputFormat, String> {
 /// unchecked list must never auto-pass on the mere absence of a finding.
 /// Honours the local system/user config (directives and exceptions), the
 /// same as `run_scan`, so a compliance report matches a manual scan.
-async fn collect_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), String> {
+async fn collect_findings() -> Result<Vec<ScanResult>, String> {
     let ctx = Context::new();
     let registry = create_plugin_registry();
     let plugin_list = registry.list().map_err(safe_err)?;
@@ -1280,7 +1280,7 @@ async fn collect_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), Strin
             .await;
         results.push(recorded_scan(&metadata.plugin_id, outcome));
     }
-    Ok(hardener_plugins::flatten_persisted_scans(&results))
+    Ok(results)
 }
 
 /// One plugin's scan outcome as a result the caller can record either way.
@@ -1299,17 +1299,11 @@ fn recorded_scan<E: std::fmt::Display>(
     outcome.unwrap_or_else(|e| hardener_plugins::failed_scan(plugin_id, &e.to_string()))
 }
 
-/// Flattens per-plugin scan results into the flat findings and unchecked
-/// lists the report generator consumes.
-///
-/// This kept its own copy of a rule the CLI had already corrected, and so it
-/// threw away `scan_success` (which does survive the round trip through the
-/// database) and said nothing about plugins the session never covered. Both
-/// gaps end the same way: the generator reads coverage statically, so a plugin
-/// that contributed nothing passed every control it covers.
-fn flatten_scan_results(results: Vec<ScanResult>) -> (Vec<Finding>, Vec<UncheckedCheck>) {
-    hardener_plugins::flatten_persisted_scans(&results)
-}
+// `flatten_scan_results` used to live here, wrapping
+// `hardener_plugins::flatten_persisted_scans`. It kept its own copy of a rule
+// the CLI had already corrected and so passed controls nobody assessed. The
+// flatten is inside `ReportGenerator::generate` now, which takes raw scan
+// results, so there is nothing left here to get wrong.
 
 /// Decides whether a persisted scan session's results should stand as the
 /// report source.
@@ -1321,12 +1315,12 @@ fn flatten_scan_results(results: Vec<ScanResult>) -> (Vec<Finding>, Vec<Unchecke
 /// while `scan_results` is empty. Even a clean host produces one
 /// `ScanResult` per plugin, so an empty result set is never a legitimate
 /// full scan; treating it as "no session" sends the caller to the fresh-scan
-/// fallback instead of flattening it into a false-green zero-finding report.
+/// fallback instead of scoring it into a false-green zero-finding report.
 fn persisted_scan_source(
     persisted: Option<(ScanSession, Vec<ScanResult>)>,
-) -> Option<(Vec<Finding>, Vec<UncheckedCheck>)> {
+) -> Option<Vec<ScanResult>> {
     match persisted {
-        Some((_, results)) if !results.is_empty() => Some(flatten_scan_results(results)),
+        Some((_, results)) if !results.is_empty() => Some(results),
         Some(_) | None => None,
     }
 }
@@ -1340,14 +1334,14 @@ fn persisted_scan_source(
 /// results (see `persisted_scan_source`), or the history database cannot
 /// be read; a read failure is logged, never propagated. Neither path can
 /// trigger a privilege prompt.
-async fn latest_or_fresh_findings() -> Result<(Vec<Finding>, Vec<UncheckedCheck>), String> {
+async fn latest_or_fresh_findings() -> Result<Vec<ScanResult>, String> {
     let persisted = match create_scan_history_manager().await {
         Ok(manager) => manager.get_latest_scan().await.map_err(safe_err),
         Err(e) => Err(e),
     };
     match persisted {
         Ok(persisted) => match persisted_scan_source(persisted) {
-            Some(findings) => Ok(findings),
+            Some(results) => Ok(results),
             None => collect_findings().await,
         },
         Err(e) => {
@@ -1385,7 +1379,7 @@ fn local_exclusions() -> ComplianceConfig {
 pub async fn generate_compliance_report(
     frameworks: Vec<String>,
 ) -> Result<Vec<ComplianceReport>, String> {
-    let (all_findings, unchecked) = latest_or_fresh_findings().await?;
+    let results = latest_or_fresh_findings().await?;
     let parsed_frameworks = parse_frameworks(&frameworks);
 
     let config = ReportConfig {
@@ -1397,10 +1391,10 @@ pub async fn generate_compliance_report(
 
     let generator = ReportGenerator::new(
         config,
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         local_exclusions(),
     );
-    Ok(generator.generate(&all_findings, &unchecked))
+    Ok(generator.generate(&results, &[]))
 }
 
 /// Exports compliance reports to a file in the specified format.
@@ -1424,7 +1418,7 @@ pub async fn export_compliance_report(
     let output_format = parse_output_format(&format)?;
     // Same sourcing as generate_compliance_report: an exported report must
     // match the one on screen.
-    let (all_findings, unchecked) = latest_or_fresh_findings().await?;
+    let results = latest_or_fresh_findings().await?;
     let parsed_frameworks = parse_frameworks(&frameworks);
 
     let config = ReportConfig {
@@ -1436,10 +1430,10 @@ pub async fn export_compliance_report(
 
     let generator = ReportGenerator::new(
         config,
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         local_exclusions(),
     );
-    let reports = generator.generate(&all_findings, &unchecked);
+    let reports = generator.generate(&results, &[]);
 
     // Format reports
     let formatted: String = match output_format {
@@ -1905,7 +1899,7 @@ const FLEET_FRAMEWORKS: [ComplianceFramework; 9] = [
 /// everywhere; a targeted one reaches only the hosts it names.
 fn fleet_report_generator(
     profile: ComplianceProfile,
-    coverage: Vec<ComplianceMapping>,
+    inventory: hardener_types::PluginInventory,
     exclusions: ComplianceConfig,
     host: &RemoteHostProfile,
 ) -> ReportGenerator {
@@ -1915,7 +1909,7 @@ fn fleet_report_generator(
         output_dir: None,
         profile,
     };
-    ReportGenerator::new(config, coverage, exclusions).for_host(
+    ReportGenerator::new(config, inventory, exclusions).for_host(
         host.target(),
         host.hostname.clone(),
         host.name.clone(),
@@ -1926,11 +1920,10 @@ fn fleet_report_generator(
 /// its scan could not evaluate (which must not auto-pass). In-memory; no SSH.
 fn posture_for_findings(
     generator: &ReportGenerator,
-    findings: &[Finding],
-    unchecked: &[UncheckedCheck],
+    results: &[ScanResult],
 ) -> Vec<FleetFrameworkPosture> {
     generator
-        .generate(findings, unchecked)
+        .generate(results, &[])
         .into_iter()
         .map(|r| FleetFrameworkPosture {
             framework: r.report_framework,
@@ -2028,25 +2021,24 @@ fn fleet_targets(
 fn attach_compliance(
     results: &mut [FleetHostScan],
     profiles: &std::collections::HashMap<String, RemoteHostProfile>,
-    coverage: Vec<ComplianceMapping>,
+    inventory: hardener_types::PluginInventory,
     exclusions: ComplianceConfig,
 ) {
     for host in results
         .iter_mut()
         .filter(|h| matches!(h.status, FleetHostStatus::Ok))
     {
-        let (findings, unchecked) = flatten_scan_results(host.scan_results.clone());
         let identity = profiles
             .get(&host.host_name)
             .cloned()
             .unwrap_or_else(|| RemoteHostProfile::from_target(&host.host_name, 22, None, true));
         let generator = fleet_report_generator(
             host.profile,
-            coverage.clone(),
+            inventory.clone(),
             exclusions.clone(),
             &identity,
         );
-        host.compliance = posture_for_findings(&generator, &findings, &unchecked);
+        host.compliance = posture_for_findings(&generator, &host.scan_results);
     }
 }
 
@@ -2127,7 +2119,7 @@ pub async fn run_fleet_scan(
     attach_compliance(
         &mut results,
         &profiles,
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         local_exclusions(),
     );
 

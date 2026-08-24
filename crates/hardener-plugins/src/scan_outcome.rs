@@ -1,65 +1,25 @@
-//! Turning per-plugin scan results into the flat lists a compliance report
-//! consumes.
+//! What this crate hands a compliance report: the plugin set it is scored
+//! against, and the stand-in result for a plugin whose scan errored.
 //!
-//! The report generator decides a control's status from statically declared
-//! plugin coverage plus the findings it is handed. A plugin that produced no
-//! evidence this run therefore passes every control it covers, on the strength
-//! of the silence its own absence caused, unless something says otherwise.
-//! That something is an `UncheckedCheck` carrying the plugin's whole declared
-//! coverage, which routes those controls to `ManualReview` through the path
-//! already built for checks that could not run at the current privilege level.
+//! **The flatten used to be here and is not any more.** It turned per-plugin
+//! results into the flat lists a report consumes, contributing an unassessed
+//! entry for any plugin that produced no evidence so its controls could not
+//! pass on silence. Being in front of the generator, it was something every
+//! caller had to remember, and on 2026-08-22 the desktop's fleet path did not:
+//! a row scanned with one plugin reported the same 38 passing CIS controls as a
+//! row scanned with all eight. Six call sites were traced and fixed, and
+//! nothing stopped a seventh.
 //!
-//! This lives beside `coverage_for` rather than in either front end because the
-//! CLI and the desktop both need it, and each keeping its own copy is precisely
-//! how the rule came to be applied in one and not the other.
+//! It now lives in `hardener_compliance::scan_evidence`, behind
+//! `ReportGenerator::generate`, whose parameter is raw scan results. There is
+//! no flattened pair for a new caller to get wrong. What stays here is
+//! [`plugin_inventory`], because the registry and the coverage table are in
+//! this crate, and the compliance crate takes it as a parameter rather than
+//! depending on this one.
 
-use hardener_common::types::{FindingCategory, PluginId};
-use hardener_core::{Finding, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck};
-
-/// Why a plugin contributed no evidence to this run.
-#[derive(Clone, Copy, Debug)]
-pub enum Unassessed<'a> {
-    /// Its scan ran and did not complete.
-    ScanIncomplete(Option<&'a str>),
-    /// The config disabled it, so it never ran at all.
-    DisabledByConfig,
-    /// The scan simply did not cover it. Inferred from a plugin's absence from
-    /// a result set, which is all a persisted session records: a filtered scan
-    /// and a config-disabled plugin are indistinguishable after the fact, and
-    /// both mean the same thing to a compliance report.
-    NotCovered,
-}
-
-/// Flattens per-plugin scan results into the findings and unchecked lists the
-/// compliance generator consumes.
-///
-/// `skipped` names plugins the config disabled. Those never ran, so they appear
-/// nowhere in `grouped`, and without an entry of their own, disabling a plugin
-/// would quietly pass every control it covers.
-pub fn flatten_scans(
-    grouped: &[(PluginMetadata, ScanResult)],
-    skipped: &[PluginMetadata],
-) -> (Vec<Finding>, Vec<UncheckedCheck>) {
-    let mut findings = Vec::new();
-    let mut unchecked = Vec::new();
-
-    for (metadata, result) in grouped {
-        if !result.scan_success {
-            unchecked.push(unassessed_check(
-                metadata,
-                Unassessed::ScanIncomplete(result.scan_error.as_deref()),
-            ));
-        }
-        findings.extend(result.scan_findings.iter().cloned());
-        unchecked.extend(result.scan_unchecked.iter().cloned());
-    }
-
-    for metadata in skipped {
-        unchecked.push(unassessed_check(metadata, Unassessed::DisabledByConfig));
-    }
-
-    (findings, unchecked)
-}
+use hardener_common::types::PluginId;
+use hardener_core::ScanResult;
+use hardener_types::{PluginCoverage, PluginInventory};
 
 /// The `ScanResult` standing in for a plugin whose `scan` call itself errored,
 /// so the failure travels the same path as a plugin that returned `Ok` while
@@ -80,152 +40,30 @@ pub fn failed_scan(plugin_id: &PluginId, error: &str) -> ScanResult {
     }
 }
 
-/// Flattens results that arrive without their plugin metadata, as a persisted
-/// scan session's do, resolving metadata from the registry.
+/// Every plugin this build registers, paired with the coverage it declares.
 ///
-/// Any registered plugin with no result at all contributes an unassessed entry.
-/// A stored session records only what ran, so absence is the only signal there
-/// is, and every reason for it (the config disabled the plugin, the operator
-/// scanned a subset, the plugin was added after the session was stored) means
-/// the same thing to a compliance report: nobody assessed those controls this
-/// run, so none of them may report `Pass`.
+/// This is what a compliance report is scored against, and it is built here
+/// because the registry and the coverage table both live in this crate. It is
+/// consumed by `hardener_compliance::ReportGenerator::new`, which takes it as a
+/// parameter rather than reaching for it: the compliance crate does not depend
+/// on this one, deliberately.
 ///
-/// When the registry itself cannot be enumerated there is no plugin left to
-/// name, so one entry carrying the engine's whole coverage stands in for all
-/// of them. See [`registered_or_unavailable`].
-pub fn flatten_persisted_scans(results: &[ScanResult]) -> (Vec<Finding>, Vec<UncheckedCheck>) {
-    let (registered, unavailable) =
-        registered_or_unavailable(crate::create_plugin_registry().list());
-
-    let mut findings = Vec::new();
-    let mut unchecked: Vec<UncheckedCheck> = unavailable.into_iter().collect();
-
-    for result in results {
-        findings.extend(result.scan_findings.iter().cloned());
-        unchecked.extend(result.scan_unchecked.iter().cloned());
-
-        // A result whose plugin this build no longer registers keeps its
-        // findings above, but gets no stand-in entry: it declares no coverage
-        // either, so the controls it would have assessed already sit outside
-        // the generator's assessed set and report ManualReview anyway.
-        if !result.scan_success
-            && let Some(metadata) = registered
-                .iter()
-                .find(|m| m.plugin_id == result.scan_plugin_id)
-        {
-            unchecked.push(unassessed_check(
-                metadata,
-                Unassessed::ScanIncomplete(result.scan_error.as_deref()),
-            ));
-        }
-    }
-
-    for metadata in &registered {
-        if !results
-            .iter()
-            .any(|r| r.scan_plugin_id == metadata.plugin_id)
-        {
-            unchecked.push(unassessed_check(metadata, Unassessed::NotCovered));
-        }
-    }
-
-    (findings, unchecked)
-}
-
-/// The plugin list a persisted flatten works from, together with whatever has
-/// to stand in for it when the registry cannot be enumerated at all.
-///
-/// Discarding the error left an empty list, which reads exactly like a build
-/// registering no plugins: the loops below find nothing to stand in for, and
-/// the report passes every control on the resulting silence. The list has
-/// nowhere to record why it is empty, so the stand-in travels beside it.
-fn registered_or_unavailable(
-    listed: hardener_common::error::Result<Vec<PluginMetadata>>,
-) -> (Vec<PluginMetadata>, Option<UncheckedCheck>) {
-    match listed {
-        Ok(registered) => (registered, None),
-        Err(error) => (
-            Vec::new(),
-            Some(registry_unavailable_check(&error.to_string())),
+/// A registry that cannot be enumerated becomes
+/// [`PluginInventory::Unavailable`] rather than an empty list. Discarding the
+/// error would leave a list that reads exactly like a build registering no
+/// plugins, and a report scored against no plugins passes every control on the
+/// resulting silence.
+pub fn plugin_inventory() -> PluginInventory {
+    match crate::create_plugin_registry().list() {
+        Ok(registered) => PluginInventory::Known(
+            registered
+                .into_iter()
+                .map(|metadata| PluginCoverage {
+                    coverage: crate::coverage_for(metadata.plugin_id.as_str()).unwrap_or_default(),
+                    metadata,
+                })
+                .collect(),
         ),
+        Err(error) => PluginInventory::Unavailable(error.to_string()),
     }
 }
-
-/// The entry standing in for a run that could not enumerate its plugins.
-///
-/// It carries the engine's whole declared coverage, because a run that cannot
-/// say which plugins exist cannot say that any control was assessed, and the
-/// generator passes a control it finds neither failed nor unchecked. This is
-/// the same rule `unassessed_check` applies per plugin, widened to the only
-/// scope left when no plugin can be named.
-///
-/// The category is the one field with no honest answer: no variant describes
-/// an engine-level failure. Nothing branches on it, and no renderer prints it
-/// (`output.rs` shows the title and the reason), so it reaches only the JSON
-/// output and the reason carries the meaning instead.
-fn registry_unavailable_check(reason: &str) -> UncheckedCheck {
-    UncheckedCheck {
-        unchecked_check_id: "plugin-registry-unavailable".to_string(),
-        unchecked_title: "Plugin registry could not be enumerated".to_string(),
-        unchecked_category: FindingCategory::Audit,
-        unchecked_reason: format!(
-            "the plugins this run would have assessed could not be listed ({reason}), \
-             so no control may be reported as satisfied"
-        ),
-        // The registry is enumerated in this process. Nothing about privilege
-        // reaches it, so a privileged re-run reports exactly this again.
-        unchecked_blocker: UncheckedBlocker::Environment,
-        unchecked_compliance: crate::compliance_coverage(),
-    }
-}
-
-/// The unchecked entry standing in for a plugin that produced no evidence.
-///
-/// It carries the plugin's whole declared coverage, so a reader of the report
-/// sees those controls as awaiting manual review rather than satisfied. A
-/// plugin absent from the coverage table declares nothing, and its controls
-/// already sit outside the generator's assessed set;
-/// `every_registered_plugin_declares_its_coverage` is what keeps that true as
-/// plugins are added.
-pub fn unassessed_check(metadata: &PluginMetadata, why: Unassessed<'_>) -> UncheckedCheck {
-    let id = metadata.plugin_id.as_str();
-    let (suffix, title, reason) = match why {
-        Unassessed::ScanIncomplete(error) => (
-            "scan-incomplete",
-            format!("{} scan did not complete", metadata.plugin_name),
-            error.unwrap_or("reason not reported").to_string(),
-        ),
-        Unassessed::DisabledByConfig => (
-            "not-assessed",
-            format!("{} did not run", metadata.plugin_name),
-            "disabled by configuration, so the controls it covers were not assessed".to_string(),
-        ),
-        Unassessed::NotCovered => (
-            "not-assessed",
-            format!("{} did not run", metadata.plugin_name),
-            "this scan did not cover it, so the controls it covers were not assessed".to_string(),
-        ),
-    };
-
-    UncheckedCheck {
-        unchecked_check_id: format!("{id}-{suffix}"),
-        unchecked_title: title,
-        unchecked_category: metadata.plugin_category,
-        unchecked_reason: reason,
-        // Two of the three are the operator's own doing, and root overrules
-        // neither: a plugin the config disabled, and one this run did not
-        // select. The third is a plugin whose scan reported its own failure,
-        // and that reason is the plugin's prose rather than anything this
-        // function classified, so it may well be a refusal root would lift.
-        // Claiming Environment for it would be asserting the remedy is useless
-        // on the strength of a string nobody read.
-        unchecked_blocker: match why {
-            Unassessed::ScanIncomplete(_) => UncheckedBlocker::Unknown,
-            Unassessed::DisabledByConfig | Unassessed::NotCovered => UncheckedBlocker::Environment,
-        },
-        unchecked_compliance: crate::coverage_for(id).unwrap_or_default(),
-    }
-}
-
-#[cfg(test)]
-mod tests;

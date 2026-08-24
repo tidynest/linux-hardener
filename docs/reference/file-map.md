@@ -183,7 +183,7 @@ pub trait HardeningPlugin: Send + Sync {
 |------|---------|---------------|
 | `src/lib.rs` | Module exports, helpers | `create_checkpoint_for_apply()`, `create_checkpoint_metadata_only_for_apply()`, `checkpoint_change()` (shared `ChangeType::Checkpoint` bookkeeping change), `reconcile_plugins_after_rollback()` (returns `RollbackReconciliation`: reload rows, then divergence rows), `create_plugin_registry()`, `compliance_coverage()` |
 | `src/macros.rs` | Plugin definition macro, `#[cfg(test)]` since #142 and compiled for this crate's own tests only, its sole caller. The `divergences_after_rollback` it generates returns an empty vector, which reads at every renderer as everything checkable came back, so a plugin written through the macro would publish that claim with nothing but a comment to warn its author. Gating the module is what withdraws it: `#[macro_export]` puts a macro at the crate root of every downstream build whatever the module's visibility | `define_plugin!` |
-| `src/scan_outcome.rs` | Turns per-plugin scan results into the flat lists a compliance report consumes. A plugin that contributed no evidence gets an entry carrying its whole declared coverage, so its controls route to Manual Review instead of passing on the silence its own absence caused; a run that could not enumerate its plugins at all gets one carrying the engine's whole coverage, for the same reason at the only scope left. Shared by the CLI and the desktop, beside the coverage table it depends on | `Unassessed`, `flatten_scans()`, `flatten_persisted_scans()`, `failed_scan()`, `unassessed_check()` |
+| `src/scan_outcome.rs` | What this crate hands a compliance report: `plugin_inventory()`, every registered plugin paired with the coverage it declares, and `failed_scan()`, the stand-in result for a plugin whose scan errored. The flatten that used to live here moved to `hardener-compliance::scan_evidence`, behind `ReportGenerator::generate`, because being in front of the generator made it something every caller had to remember and one of them did not | `plugin_inventory()`, `failed_scan()` |
 | `src/strictness.rs` | The one definition of which direction counts as stricter for a configuration value, shared by the pam, ssh and kernel plugins. Comparing a host's value against the baseline for equality has no direction, so a stricter host reads as violating and apply writes the baseline over it; every variant here carries a direction, and there is deliberately no equality variant to give a directive added later. Also the single place an operator's directive override is clamped, so an override can tighten a target but never relax it | `Strictness` (`AtMost`, `AtLeast`, `NonZeroAtMost`, `Ranked`), `clamp_target()`, `violated_by()`, `resolved_target()` |
 | `src/shell_config.rs` | Reads the last value a key is assigned in a shell-sourced configuration file, the format ufw's own init scripts and defaults files use: `.`-sourced by `ufw-init-functions`, so the last assignment wins and a commented-out line is not an assignment at all. Shared by the firewall plugin's ufw backend and its rollback divergence probe | `shell_value()` |
 
@@ -231,7 +231,6 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/permissions/tests.rs` | Tests | Unit tests for `src/permissions/mod.rs` | Test-only; `super` resolves to `crate::permissions` |
 | `src/services/tests.rs` | Tests | Unit tests for `src/services/mod.rs` | Test-only; `super` resolves to `crate::services` |
 | `src/services/divergence/tests.rs` | Tests | Unit tests for `src/services/divergence.rs` | Test-only; `super` resolves to `crate::services::divergence` |
-| `src/scan_outcome/tests.rs` | Tests | Unit tests for `src/scan_outcome.rs` | Test-only; `super` resolves to `crate::scan_outcome` |
 | `src/ssh/tests.rs` | Tests | Unit tests for `src/ssh/mod.rs` | Test-only; `super` resolves to `crate::ssh` |
 | `src/ssh/dropin/tests.rs` | Tests | Unit tests for `src/ssh/dropin.rs` | Test-only; `super` resolves to `crate::ssh::dropin` |
 | `src/ssh/include/tests.rs` | Tests | Unit tests for `src/ssh/include.rs` | Test-only; `super` resolves to `crate::ssh::include` |
@@ -316,7 +315,8 @@ pub struct FileState {
 |------|---------|-------------|
 | `src/lib.rs` | Module exports | Re-exports |
 | `src/report.rs` | Report types | `ComplianceReport`, `ControlResult`, `ComplianceSummary` |
-| `src/generator.rs` | Report generation | `ReportGenerator` |
+| `src/generator.rs` | Report generation. `generate` takes raw per-plugin scan results and flattens them itself through `scan_evidence`, so a caller cannot hand it a pair it flattened by hand; the private `score` beside it is the scoring pass the framework tests exercise. `new` takes a `PluginInventory` rather than a coverage union, because naming the plugins that produced no evidence needs to know who is missing | `ReportGenerator`, `new()`, `for_host()`, `generate()` |
+| `src/scan_evidence.rs` | The unassessed-plugin rule, behind the generator rather than in front of it. A plugin that contributed nothing gets an `UncheckedCheck` carrying its whole declared coverage, so its controls report `ManualReview` instead of passing on the silence its own absence caused. `flatten` is public for callers that publish the list rather than score it (`batch scan` emits it as JSON and builds no report); that cannot weaken the rule, since scoring is only reachable through `generate` | `flatten()`, `Unassessed` |
 | `src/profiles.rs` | Report-time profile ID translation (sourced RHEL 10 STIG V1R1 / CIS v1.0.1 tables) | `translate()`, `translate_all()`, `resolve_profile()`, `profile_label()` (re-export; defined in `hardener-types` so the WASM frontend can reach it too) |
 | `src/config.rs` | Report configuration | `ReportConfig` |
 | `src/frameworks/mod.rs` | Framework routing and curated catalogue aggregation | `curated_controls()` |
@@ -330,7 +330,8 @@ pub struct FileState {
 | `src/output/pdf.rs` | PDF formatter | `PdfFormatter` |
 | `src/fonts/NotoSans-Regular.ttf` | Embedded font | Regular weight |
 | `src/fonts/NotoSans-Bold.ttf` | Embedded font | Bold weight |
-| `src/generator/tests.rs` | Unit tests for `src/generator.rs` | Test-only; `super` resolves to `crate::generator`, so its imports carried across unchanged |
+| `src/generator/tests.rs` | Unit tests for `src/generator.rs` | Test-only; `super` resolves to `crate::generator`, so its imports carried across unchanged. They call `score` rather than `generate`, being about the scoring rules: `generate` would flatten first and add a stand-in for the plugin that declared their synthetic coverage and produced no result |
+| `src/scan_evidence/tests.rs` | Unit tests for `src/scan_evidence.rs`, 11 tests: the coverage an incomplete scan carries, a disabled plugin not reading as a failed one, a full scan contributing nothing, an absent plugin being reported unassessed, disabled against uncovered, the three blockers, a result from an unknown plugin, both directions of an unenumerable registry, and the assessed set being a deduplicated union | Test-only; ported from `hardener-plugins/src/scan_outcome/tests.rs` with the flatten. They build their inventory by hand, so the assertions do not move when the real eight plugins change what they declare |
 | `src/profiles/tests.rs` | Unit tests for `src/profiles.rs` | Test-only; `super` resolves to `crate::profiles` |
 | `src/frameworks/iso27001/tests.rs` | Unit tests for `src/frameworks/iso27001.rs` | Test-only; `super` resolves to `crate::frameworks::iso27001` |
 | `src/output/test_support.rs` | Fixtures shared by the formatter test modules, split out of `src/output/mod.rs` | Test-only; that file *is* the module `output`, so this sits in the directory it already owns and the formatter tests still reach it as `crate::output::test_support` |
@@ -965,19 +966,19 @@ tree on **2026-08-22**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2104. The eleventh
-workspace member, `src-tauri`, carries 125 more, which is why the tree total the
-evidence ledger records is 2229 and not this table's sum.
+The table covers the ten crates under `crates/` and sums to 2108. The eleventh
+workspace member, `src-tauri`, carries 126 more, which is why the tree total the
+evidence ledger records is 2234 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 128 |
-| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 113 |
+| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 124 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 145 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 107 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 320 |
-| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 859 |
+| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 852 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 239 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 63 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 125 |

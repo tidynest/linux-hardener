@@ -7,20 +7,27 @@ use crate::config::ReportConfig;
 use crate::frameworks;
 use crate::profiles;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
+use crate::scan_evidence;
 use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, ControlStatus};
 use hardener_core::config::scope::{ComplianceConfig, ScopeExclusion};
 use hardener_core::plugin::{Finding, UncheckedCheck};
-use hardener_types::ExceptionOutcome;
+use hardener_types::{ExceptionOutcome, PluginId, PluginInventory, ScanResult};
 use std::collections::{HashMap, HashSet};
 
 /// Generates compliance reports from scan findings.
 pub struct ReportGenerator {
     config: ReportConfig,
-    /// Every `(framework, control)` the engine actually assesses, supplied by the
-    /// caller (the plugins crate's `compliance_coverage()`). A control present
-    /// here can report `Pass`/`Fail`; one absent is `ManualReview`.
+    /// Every `(framework, control)` the engine actually assesses. A control
+    /// present here can report `Pass`/`Fail`; one absent is `ManualReview`.
+    ///
+    /// Derived from `inventory` at construction rather than injected beside it.
+    /// The two used to arrive as separate parameters, which let a caller pass a
+    /// union that did not match the plugins it also passed.
     coverage: Vec<ComplianceMapping>,
+    /// The plugins this report is scored against, kept so [`Self::generate`]
+    /// can tell which of them produced no evidence.
+    inventory: PluginInventory,
     /// The operator's declared-not-applicable set, from the controller's
     /// `[compliance]` config section.
     exclusions: ComplianceConfig,
@@ -38,10 +45,15 @@ pub struct ReportGenerator {
 impl ReportGenerator {
     /// Creates a new ReportGenerator.
     ///
-    /// `coverage` is the engine's automated-coverage set: the union of every
-    /// control any plugin can assess. Callers obtain it from
-    /// `hardener_plugins::compliance_coverage()`; the compliance crate stays
-    /// independent of the plugins crate by taking it as a parameter.
+    /// `inventory` is every plugin this build registers, with the coverage each
+    /// declares. Callers obtain it from `hardener_plugins::plugin_inventory()`;
+    /// the compliance crate stays independent of the plugins crate by taking it
+    /// as a parameter.
+    ///
+    /// It replaced a plain `coverage: Vec<ComplianceMapping>` union, because
+    /// [`Self::generate`] needs to name the plugins that produced no evidence
+    /// and a union cannot say who is missing. The union is still what the
+    /// assessed set is built from, derived here so the two cannot disagree.
     ///
     /// `exclusions` is the operator's declared-not-applicable set, from the
     /// controller's `[compliance]` config section. Taken as a parameter for the
@@ -56,12 +68,13 @@ impl ReportGenerator {
     /// anything for a declaration to convert.
     pub fn new(
         config: ReportConfig,
-        coverage: Vec<ComplianceMapping>,
+        inventory: PluginInventory,
         exclusions: ComplianceConfig,
     ) -> Self {
         Self {
             config,
-            coverage,
+            coverage: inventory.assessed_controls(),
+            inventory,
             exclusions,
             host: None,
         }
@@ -82,16 +95,34 @@ impl ReportGenerator {
 
     /// Generates compliance reports for all frameworks in the configured scenario.
     ///
-    /// `unchecked` lists checks the scan could not evaluate at its current
-    /// privilege level; the controls they cover must never auto-pass on the
-    /// mere absence of a finding.
+    /// `results` are the per-plugin scan results as they came back, not a
+    /// flattened pair. **That is the point of the signature.** A control with
+    /// no finding against it and no unchecked entry beside it passes, so a
+    /// plugin that contributed nothing passes every control it covers unless
+    /// something stands in for it. That standing-in used to happen in front of
+    /// this call, in `hardener_plugins::scan_outcome`, and every caller had to
+    /// remember to go through it; on 2026-08-22 the desktop's fleet path did
+    /// not, and a row scanned with one plugin reported the same 38 passing CIS
+    /// controls as a row scanned with all eight. Taking raw results leaves a
+    /// new caller nothing to hand-flatten.
+    ///
+    /// `skipped` names plugins the operator's config disabled. A caller
+    /// reading a persisted session passes none: a stored session records only
+    /// what ran, so absence is the only signal there is, and every reason for
+    /// it means the same thing to a report.
     ///
     /// Returns one report per framework.
-    pub fn generate(
-        &self,
-        findings: &[Finding],
-        unchecked: &[UncheckedCheck],
-    ) -> Vec<ComplianceReport> {
+    pub fn generate(&self, results: &[ScanResult], skipped: &[PluginId]) -> Vec<ComplianceReport> {
+        let (findings, unchecked) = scan_evidence::flatten(&self.inventory, results, skipped);
+        self.score(&findings, &unchecked)
+    }
+
+    /// Scores one already-flattened pair.
+    ///
+    /// Private, so the flatten above is the only way in. It is separate from
+    /// [`Self::generate`] because the scoring is what the framework tests
+    /// exercise and they have no plugins to build results from.
+    fn score(&self, findings: &[Finding], unchecked: &[UncheckedCheck]) -> Vec<ComplianceReport> {
         // Rewrite every mapping list once for the active profile so findings,
         // coverage, and catalogue all match on one identifier scheme. These
         // are report-internal copies; the caller's findings stay canonical.

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A compliance report can no longer be scored from a hand-flattened scan.**
+  The rule that stops a control passing on silence, an unassessed entry for
+  every plugin that produced no evidence, used to live in
+  `hardener_plugins::scan_outcome`, in front of the report generator. Being in
+  front of it made it something every caller had to remember, and on 2026-08-22
+  the desktop's fleet path did not: a row scanned with one plugin reported the
+  same 38 passing CIS controls as a row scanned with all eight. All six sites
+  building a generator were traced by hand and fixed, **and nothing stopped a
+  seventh.** `ReportGenerator::generate` now takes the per-plugin scan results
+  as they came back and flattens them itself, with the scoring pass private
+  beside it, so there is no flattened pair a new caller can hand to scoring.
+  `new` takes a `PluginInventory`, every registered plugin with the coverage it
+  declares, in place of the coverage union it took before: naming the plugins
+  that produced no evidence needs to know who is missing, and the union is
+  derived from the inventory so the two can no longer disagree. A registry that
+  cannot be enumerated is its own variant rather than an empty list, which
+  reads identically to a build registering no plugins and passes everything.
+  **No output changes.** `batch scan` still emits the same JSON, from the same
+  flatten, which stays public for callers that publish the list rather than
+  score it. The compliance crate still does not depend on the plugins crate:
+  the inventory types live in `hardener-types`, which both already use.
+
 - **`hardener systemd install` put a root timer on the host and recorded
   nothing, and `uninstall` took it away in the same silence.** The units it
   writes run `hardener scan` on a schedule as root. Installing them was two

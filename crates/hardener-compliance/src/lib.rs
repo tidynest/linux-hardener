@@ -29,6 +29,7 @@ pub mod generator;
 pub mod output;
 pub mod profiles;
 pub mod report;
+pub mod scan_evidence;
 
 pub use config::{OutputFormat, ReportConfig, Scenario};
 pub use generator::ReportGenerator;

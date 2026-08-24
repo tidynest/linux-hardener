@@ -15,6 +15,25 @@
 //! import carried across unchanged, private items included.
 
 use super::*;
+
+/// One plugin declaring exactly `coverage`, so the assessed set is what the
+/// caller asked for.
+///
+/// The generator takes an inventory rather than a bare coverage union now,
+/// because it has to name the plugins that produced no evidence. These tests
+/// care only about which controls are assessable.
+fn inventory_declaring(coverage: Vec<ComplianceMapping>) -> PluginInventory {
+    PluginInventory::Known(vec![hardener_types::PluginCoverage {
+        metadata: hardener_types::PluginMetadata {
+            plugin_category: hardener_common::types::FindingCategory::Kernel,
+            plugin_description: String::new(),
+            plugin_id: PluginId::new("test-plugin"),
+            plugin_name: "test plugin".to_string(),
+            plugin_version: "0.1.0".to_string(),
+        },
+        coverage,
+    }])
+}
 use crate::config::{OutputFormat, Scenario};
 use hardener_common::types::{
     ComplianceProfile, FindingCategory, FindingPolicyException, Severity,
@@ -108,7 +127,11 @@ fn report_for_with_exclusions_on_host(
     exclusions: ComplianceConfig,
     host: Option<(&str, &str, &str)>,
 ) -> ComplianceReport {
-    let generator = ReportGenerator::new(config_for(framework), coverage, exclusions);
+    let generator = ReportGenerator::new(
+        config_for(framework),
+        inventory_declaring(coverage),
+        exclusions,
+    );
     let generator = match host {
         Some((target, hostname, name)) => {
             generator.for_host(target.to_string(), hostname.to_string(), name.to_string())
@@ -116,7 +139,10 @@ fn report_for_with_exclusions_on_host(
         None => generator,
     };
     generator
-        .generate(findings, &[])
+        // `score`, not `generate`: these exercise the scoring rules, and
+        // `generate` would flatten first and add a stand-in entry for the
+        // plugin that declared this coverage and produced no result.
+        .score(findings, &[])
         .into_iter()
         .next()
         .expect("one report")
@@ -278,7 +304,7 @@ fn an_unchecked_control_stays_manual_review_even_when_excluded() {
     // outranks the declaration.
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        vec![mapping(ComplianceFramework::CIS, "1.5.1")],
+        inventory_declaring(vec![mapping(ComplianceFramework::CIS, "1.5.1")]),
         one_exclusion("cis", "1.5.1"),
     );
     let unchecked = vec![UncheckedCheck {
@@ -289,10 +315,7 @@ fn an_unchecked_control_stays_manual_review_even_when_excluded() {
         unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
         unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
     }];
-    let report = generator
-        .generate(&[], &unchecked)
-        .pop()
-        .expect("one report");
+    let report = generator.score(&[], &unchecked).pop().expect("one report");
 
     assert_eq!(
         status_of(&report, "1.5.1"),
@@ -458,10 +481,10 @@ fn assessed_control_passes_on_clean_system() {
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
-    let report = generator.generate(&[], &[]).pop().unwrap();
+    let report = generator.score(&[], &[]).pop().unwrap();
 
     let result = report
         .report_controls
@@ -480,7 +503,7 @@ fn unchecked_control_reports_manual_review_not_pass() {
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
     let unchecked = vec![UncheckedCheck {
@@ -491,7 +514,7 @@ fn unchecked_control_reports_manual_review_not_pass() {
         unchecked_blocker: hardener_types::UncheckedBlocker::Privilege,
         unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
     }];
-    let report = generator.generate(&[], &unchecked).pop().unwrap();
+    let report = generator.score(&[], &unchecked).pop().unwrap();
 
     let control = report
         .report_controls
@@ -509,7 +532,7 @@ fn finding_beats_unchecked_for_the_same_control() {
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
     let unchecked = vec![UncheckedCheck {
@@ -521,7 +544,7 @@ fn finding_beats_unchecked_for_the_same_control() {
         unchecked_compliance: vec![mapping(ComplianceFramework::CIS, "1.5.1")],
     }];
     let report = generator
-        .generate(&[cis_finding("1.5.1")], &unchecked)
+        .score(&[cis_finding("1.5.1")], &unchecked)
         .pop()
         .unwrap();
 
@@ -538,13 +561,10 @@ fn mapped_finding_fails_its_control() {
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
-    let report = generator
-        .generate(&[cis_finding("1.5.1")], &[])
-        .pop()
-        .unwrap();
+    let report = generator.score(&[cis_finding("1.5.1")], &[]).pop().unwrap();
 
     assert!(report.report_summary.summary_failing >= 1);
     let result = report
@@ -563,12 +583,12 @@ fn excepted_finding_does_not_fail_control() {
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
     let mut excepted = cis_finding("1.5.1");
     excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
-    let report = generator.generate(&[excepted], &[]).pop().unwrap();
+    let report = generator.score(&[excepted], &[]).pop().unwrap();
 
     let result = report
         .report_controls
@@ -594,14 +614,14 @@ fn live_finding_still_fails_a_control_that_also_has_an_excepted_one() {
     let coverage = vec![mapping(ComplianceFramework::CIS, "1.5.1")];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
     let mut excepted = cis_finding("1.5.1");
     excepted.finding_id = "test_excepted".to_string();
     excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
     let report = generator
-        .generate(&[excepted, cis_finding("1.5.1")], &[])
+        .score(&[excepted, cis_finding("1.5.1")], &[])
         .pop()
         .unwrap();
 
@@ -624,11 +644,11 @@ fn safe_failure_net_fails_a_mixed_uncatalogued_control() {
     excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        vec![],
+        inventory_declaring(vec![]),
         ComplianceConfig::default(),
     );
     let report = generator
-        .generate(&[excepted, cis_finding("ZZ-UNCATALOGUED-9999")], &[])
+        .score(&[excepted, cis_finding("ZZ-UNCATALOGUED-9999")], &[])
         .pop()
         .unwrap();
 
@@ -653,10 +673,10 @@ fn excepted_finding_on_uncatalogued_control_is_not_emitted() {
     excepted.finding_exception = ExceptionOutcome::Applied(FindingPolicyException::default());
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        vec![],
+        inventory_declaring(vec![]),
         ComplianceConfig::default(),
     );
-    let report = generator.generate(&[excepted], &[]).pop().unwrap();
+    let report = generator.score(&[excepted], &[]).pop().unwrap();
 
     assert!(
         report
@@ -671,10 +691,10 @@ fn uncovered_catalogue_control_is_manual_review() {
     // A curated CIS control with no coverage entry cannot be auto-passed.
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        vec![],
+        inventory_declaring(vec![]),
         ComplianceConfig::default(),
     );
-    let report = generator.generate(&[], &[]).pop().unwrap();
+    let report = generator.score(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_summary.summary_passing, 0);
     assert!(report.report_summary.summary_manual_review >= 1);
@@ -688,10 +708,10 @@ fn derived_framework_lists_only_assessed_controls() {
     let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::STIG),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
-    let report = generator.generate(&[], &[]).pop().unwrap();
+    let report = generator.score(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_summary.summary_total_controls, 1);
     assert_eq!(report.report_summary.summary_passing, 1);
@@ -709,10 +729,10 @@ fn soc2_clean_coverage_renders_pass_controls() {
     ];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::SOC2),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
-    let report = generator.generate(&[], &[]).pop().unwrap();
+    let report = generator.score(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_framework, ComplianceFramework::SOC2);
     assert_eq!(report.report_summary.summary_total_controls, 2);
@@ -731,10 +751,10 @@ fn nist_800_171_clean_coverage_renders_pass_controls() {
     ];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::NIST800171),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
-    let report = generator.generate(&[], &[]).pop().unwrap();
+    let report = generator.score(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_framework, ComplianceFramework::NIST800171);
     assert_eq!(report.report_summary.summary_total_controls, 2);
@@ -753,10 +773,10 @@ fn fedramp_clean_coverage_renders_pass_controls() {
     ];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::FedRAMP),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
-    let report = generator.generate(&[], &[]).pop().unwrap();
+    let report = generator.score(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_framework, ComplianceFramework::FedRAMP);
     assert_eq!(report.report_summary.summary_total_controls, 2);
@@ -771,11 +791,11 @@ fn rhel10_finding_reports_translated_stig_id() {
     let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
     let generator = ReportGenerator::new(
         config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
     let report = generator
-        .generate(&[stig_finding("RHEL-08-010430")], &[])
+        .score(&[stig_finding("RHEL-08-010430")], &[])
         .pop()
         .unwrap();
 
@@ -812,10 +832,10 @@ fn rhel10_clean_coverage_passes_translated_id() {
     let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
     let generator = ReportGenerator::new(
         config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
-    let report = generator.generate(&[], &[]).pop().unwrap();
+    let report = generator.score(&[], &[]).pop().unwrap();
 
     assert_eq!(report.report_summary.summary_total_controls, 1);
     let result = report
@@ -834,11 +854,11 @@ fn rhel10_drops_unsourced_stig_id_without_tripping_safe_net() {
     let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
     let generator = ReportGenerator::new(
         config_with_profile(ComplianceFramework::STIG, ComplianceProfile::Rhel10),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
     let report = generator
-        .generate(&[stig_finding("RHEL-08-999999")], &[])
+        .score(&[stig_finding("RHEL-08-999999")], &[])
         .pop()
         .unwrap();
 
@@ -859,14 +879,14 @@ fn generic_profile_reports_canonical_ids_unchanged() {
     let coverage = vec![mapping(ComplianceFramework::STIG, "RHEL-08-010430")];
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::STIG),
-        coverage,
+        inventory_declaring(coverage),
         ComplianceConfig::default(),
     );
     let mut finding = stig_finding("RHEL-08-010430");
     finding
         .finding_compliance
         .push(mapping(ComplianceFramework::STIG, "RHEL-08-999999"));
-    let report = generator.generate(&[finding], &[]).pop().unwrap();
+    let report = generator.score(&[finding], &[]).pop().unwrap();
 
     let ids: Vec<&str> = report
         .report_controls
@@ -891,10 +911,10 @@ fn noncatalogue_finding_still_surfaces_as_failure() {
         .push(mapping(ComplianceFramework::STIG, "OL08-00-999999"));
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::STIG),
-        vec![],
+        inventory_declaring(vec![]),
         ComplianceConfig::default(),
     );
-    let report = generator.generate(&[finding], &[]).pop().unwrap();
+    let report = generator.score(&[finding], &[]).pop().unwrap();
 
     assert!(
         report
@@ -922,7 +942,7 @@ fn noncatalogue_finding_still_surfaces_as_failure() {
 fn a_partial_scan_says_so_in_the_report() {
     let generator = ReportGenerator::new(
         config_for(ComplianceFramework::CIS),
-        vec![],
+        inventory_declaring(vec![]),
         ComplianceConfig::default(),
     );
 
@@ -945,7 +965,7 @@ fn a_partial_scan_says_so_in_the_report() {
         },
     ];
 
-    let report = generator.generate(&[], &unchecked).pop().unwrap();
+    let report = generator.score(&[], &unchecked).pop().unwrap();
 
     let note = report
         .report_coverage_note
@@ -964,7 +984,7 @@ fn a_partial_scan_says_so_in_the_report() {
     // The other half, and the one that can rot: a complete run must claim
     // nothing. A note composed unconditionally would pass every assertion
     // above and put "0 check(s) could not be verified" on a clean report.
-    let complete = generator.generate(&[], &[]).pop().unwrap();
+    let complete = generator.score(&[], &[]).pop().unwrap();
     assert!(
         complete.report_coverage_note.is_none(),
         "a run that verified everything has no caveat to make, got {:?}",

@@ -21,6 +21,25 @@
 //! stated here on purpose: see the note in `crate::cli::tests`.
 
 use super::*;
+
+/// One plugin declaring exactly `coverage`, so the assessed set is what the
+/// caller asked for. The generator takes an inventory rather than a bare union
+/// now, because it has to name the plugins that produced no evidence.
+fn inventory_declaring(
+    coverage: Vec<hardener_common::types::ComplianceMapping>,
+) -> hardener_types::PluginInventory {
+    hardener_types::PluginInventory::Known(vec![hardener_types::PluginCoverage {
+        metadata: hardener_types::PluginMetadata {
+            plugin_category: hardener_common::types::FindingCategory::Kernel,
+            plugin_description: String::new(),
+            plugin_id: hardener_types::PluginId::new("test-plugin"),
+            plugin_name: "test plugin".to_string(),
+            plugin_version: "0.1.0".to_string(),
+        },
+        coverage,
+    }])
+}
+
 use hardener_common::types::{
     ComplianceFramework, ComplianceMapping, ControlStatus, FindingCategory, Severity,
 };
@@ -845,6 +864,8 @@ fn clean_outcome(name: &str) -> HostOutcome {
         target: format!("ops@{name}:22"),
         profile: ComplianceProfile::Generic,
         status: HostStatus::Scanned {
+            results: vec![],
+            skipped: vec![],
             counts: SeverityCounts::default(),
             findings: vec![],
             unchecked: vec![],
@@ -956,7 +977,7 @@ fn assess_outcomes_applies_an_untargeted_exclusion_to_every_host() {
 fn host_report_assesses_scanned_and_passes_failures_through() {
     let generator = ReportGenerator::new(
         report_config_server(),
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         ComplianceConfig::default(),
     );
 
@@ -971,6 +992,8 @@ fn host_report_assesses_scanned_and_passes_failures_through() {
         target: "u@web-01:22".into(),
         profile: ComplianceProfile::Generic,
         status: HostStatus::Scanned {
+            results: vec![],
+            skipped: vec![],
             counts: SeverityCounts::default(),
             findings: vec![],
             unchecked: vec![],
@@ -1011,7 +1034,7 @@ fn host_report_treats_unchecked_covered_control_as_manual_review_not_pass() {
             output_dir: None,
             profile: ComplianceProfile::Generic,
         },
-        vec![stig_mapping.clone()],
+        inventory_declaring(vec![stig_mapping.clone()]),
         ComplianceConfig::default(),
     );
 
@@ -1032,6 +1055,8 @@ fn host_report_treats_unchecked_covered_control_as_manual_review_not_pass() {
         target: "u@web-01:22".into(),
         profile: ComplianceProfile::Generic,
         status: HostStatus::Scanned {
+            results: vec![],
+            skipped: vec![],
             counts: SeverityCounts::default(),
             findings: vec![],
             unchecked,
@@ -1216,6 +1241,8 @@ fn scanned(total_high: usize) -> HostOutcome {
         target: "u@h:22".into(),
         profile: ComplianceProfile::Generic,
         status: HostStatus::Scanned {
+            results: vec![],
+            skipped: vec![],
             counts: SeverityCounts {
                 high: total_high,
                 ..Default::default()
@@ -1243,6 +1270,8 @@ fn scanned_named(name: &str, counts: SeverityCounts) -> HostOutcome {
         target: format!("u@{name}:22"),
         profile: ComplianceProfile::Generic,
         status: HostStatus::Scanned {
+            results: vec![],
+            skipped: vec![],
             counts,
             findings: vec![],
             unchecked: vec![],
@@ -1634,6 +1663,8 @@ fn text_render_unchecked_line_only_when_nonzero() {
         target: "u@web-01:22".into(),
         profile: ComplianceProfile::Generic,
         status: HostStatus::Scanned {
+            results: vec![],
+            skipped: vec![],
             counts: SeverityCounts::default(),
             findings: vec![],
             unchecked,

@@ -15,6 +15,25 @@
 //! across unchanged, private items included.
 
 use super::*;
+
+/// One plugin declaring exactly `coverage`, so the assessed set is what the
+/// caller asked for. The generator takes an inventory rather than a bare union
+/// now, because it has to name the plugins that produced no evidence.
+fn inventory_declaring(
+    coverage: Vec<hardener_common::types::ComplianceMapping>,
+) -> hardener_types::PluginInventory {
+    hardener_types::PluginInventory::Known(vec![hardener_types::PluginCoverage {
+        metadata: hardener_types::PluginMetadata {
+            plugin_category: hardener_common::types::FindingCategory::Kernel,
+            plugin_description: String::new(),
+            plugin_id: hardener_types::PluginId::new("test-plugin"),
+            plugin_name: "test plugin".to_string(),
+            plugin_version: "0.1.0".to_string(),
+        },
+        coverage,
+    }])
+}
+
 use hardener_common::types::{ControlStatus, FindingCategory, PluginId, Severity};
 use hardener_core::config::scope::ComplianceConfig;
 use hardener_core::{MockExecutor, PolicyException};
@@ -107,36 +126,31 @@ async fn scan_grouped_keeps_plugin_grouping_and_flattening_matches() {
         "default config disables nothing"
     );
 
-    // run_scan_with_unchecked returns the same findings and unchecked
-    // entries, each flattened across plugins, plus one synthesised
-    // unchecked entry per plugin whose scan did not complete.
-    let (findings, unchecked) =
-        run_scan_with_unchecked(true, exec, &CliOutputFormat::Json, &default_config)
+    // `run_scan_for_report` hands on what the scan produced, unflattened: the
+    // generator flattens it now. So the evidence must be exactly the grouped
+    // results, plugin for plugin, with nothing dropped and nothing invented.
+    let (results, skipped) =
+        run_scan_for_report(true, exec, &CliOutputFormat::Json, &default_config)
             .await
             .unwrap();
-    let grouped_findings: usize = grouped
-        .results
-        .iter()
-        .map(|(_, r)| r.scan_findings.len())
-        .sum();
-    let grouped_unchecked: usize = grouped
-        .results
-        .iter()
-        .map(|(_, r)| r.scan_unchecked.len())
-        .sum();
-    let failed = grouped
-        .results
-        .iter()
-        .filter(|(_, r)| !r.scan_success)
-        .count();
-    assert_eq!(findings.len(), grouped_findings, "findings flatten");
     assert_eq!(
-        unchecked.len(),
-        grouped_unchecked + failed,
-        "unchecked flatten, plus one entry per incomplete scan"
+        results.len(),
+        grouped.results.len(),
+        "every grouped result has to travel, including the failed ones"
     );
-    // The bare MockExecutor has no fixture data, so this exercises the
-    // failure path rather than asserting a vacuous equality.
+    let grouped_ids: Vec<&str> = grouped
+        .results
+        .iter()
+        .map(|(_, r)| r.scan_plugin_id.as_str())
+        .collect();
+    let evidence_ids: Vec<&str> = results.iter().map(|r| r.scan_plugin_id.as_str()).collect();
+    assert_eq!(evidence_ids, grouped_ids, "and in the same order");
+    assert!(skipped.is_empty(), "default config disables nothing");
+
+    // The bare MockExecutor has no fixture data, so at least one plugin's scan
+    // reports failure. That the failure survives the hand-off is the thing
+    // worth pinning: dropping it is what let a failed scan read as a clean one.
+    let failed = results.iter().filter(|r| !r.scan_success).count();
     assert!(failed > 0, "expected at least one plugin scan to fail here");
 }
 
@@ -160,7 +174,7 @@ async fn a_failed_plugin_scan_cannot_pass_its_compliance_controls() {
         profile: ComplianceProfile::default(),
     };
 
-    let (findings, unchecked) = run_scan_with_unchecked(
+    let (findings, unchecked) = run_scan_for_report(
         true,
         executor,
         &CliOutputFormat::Json,
@@ -171,7 +185,7 @@ async fn a_failed_plugin_scan_cannot_pass_its_compliance_controls() {
 
     let report = ReportGenerator::new(
         report_config,
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         ComplianceConfig::default(),
     )
     .generate(&findings, &unchecked)
@@ -270,7 +284,7 @@ async fn report_scan_path_honours_config_exceptions() {
     };
 
     // Baseline: an unexcepted violation fails the control.
-    let (findings, unchecked) = run_scan_with_unchecked(
+    let (findings, unchecked) = run_scan_for_report(
         true,
         executor.clone(),
         &CliOutputFormat::Json,
@@ -280,7 +294,7 @@ async fn report_scan_path_honours_config_exceptions() {
     .unwrap();
     let report = ReportGenerator::new(
         report_config.clone(),
-        coverage.clone(),
+        inventory_declaring(coverage.clone()),
         ComplianceConfig::default(),
     )
     .generate(&findings, &unchecked)
@@ -313,15 +327,21 @@ async fn report_scan_path_honours_config_exceptions() {
         },
     );
 
-    let (findings, unchecked) =
-        run_scan_with_unchecked(true, executor, &CliOutputFormat::Json, &config)
-            .await
-            .unwrap();
-    let report = ReportGenerator::new(report_config, coverage, ComplianceConfig::default())
-        .generate(&findings, &unchecked)
-        .into_iter()
-        .next()
-        .expect("one report");
+    let (results, skipped) = run_scan_for_report(true, executor, &CliOutputFormat::Json, &config)
+        .await
+        .unwrap();
+    // The real inventory, because these results come from a real scan of every
+    // registered plugin. A synthetic one-plugin inventory would report the
+    // other seven unassessed and route 1.5.1 to manual review.
+    let report = ReportGenerator::new(
+        report_config,
+        hardener_plugins::plugin_inventory(),
+        ComplianceConfig::default(),
+    )
+    .generate(&results, &skipped)
+    .into_iter()
+    .next()
+    .expect("one report");
     let control = report
         .report_controls
         .iter()

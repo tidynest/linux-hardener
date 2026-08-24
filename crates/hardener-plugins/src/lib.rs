@@ -37,9 +37,7 @@ pub(crate) mod shell_config;
 pub mod ssh;
 pub(crate) mod strictness;
 
-pub use scan_outcome::{
-    Unassessed, failed_scan, flatten_persisted_scans, flatten_scans, unassessed_check,
-};
+pub use scan_outcome::{failed_scan, plugin_inventory};
 
 /// Common rollback helper for plugins.
 ///

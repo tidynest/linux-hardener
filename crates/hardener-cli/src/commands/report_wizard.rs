@@ -2,7 +2,7 @@
 //!
 //! Provides a guided CLI experience for generating compliance reports.
 
-use super::report::run_scan_with_unchecked;
+use super::report::run_scan_for_report;
 use crate::cli::OutputFormat as CliOutputFormat;
 use anyhow::{Result, anyhow};
 use chrono::Local;
@@ -198,13 +198,21 @@ pub async fn run(
     let hardener_config = ConfigLoader::new()
         .load()
         .map_err(|e| anyhow!("Config error: {}", e))?;
-    let (findings, unchecked) = run_scan_with_unchecked(
+    let (results, skipped) = run_scan_for_report(
         false,
         executor.clone(),
         &CliOutputFormat::Text,
         &hardener_config,
     )
     .await?;
+    // The wizard prints a count and lists what could not be checked, which is
+    // the flattened view. The generator below still takes the raw results and
+    // flattens them itself, so this is a display copy and never a score input.
+    let (findings, unchecked) = hardener_compliance::scan_evidence::flatten(
+        &hardener_plugins::plugin_inventory(),
+        &results,
+        &skipped,
+    );
     eprintln!(
         "{}",
         format!(
@@ -226,10 +234,10 @@ pub async fn run(
 
     let generator = ReportGenerator::new(
         config,
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         hardener_config.compliance.clone(),
     );
-    let reports = generator.generate(&findings, &unchecked);
+    let reports = generator.generate(&results, &skipped);
 
     // Step 5: Output reports
     output_reports(&reports, &state)?;

@@ -133,7 +133,11 @@ fn flatten_scan_results_preserves_findings_and_unchecked_across_plugins() {
         plugin_result("firewall", vec![], vec![unchecked_check("F-1")]),
     ];
 
-    let (findings, unchecked) = flatten_scan_results(results);
+    let (findings, unchecked) = hardener_compliance::scan_evidence::flatten(
+        &hardener_plugins::plugin_inventory(),
+        &results,
+        &[],
+    );
 
     let finding_ids: Vec<&str> = findings.iter().map(|f| f.finding_id.as_str()).collect();
     assert_eq!(finding_ids, ["K-1", "K-2", "P-1"]);
@@ -165,7 +169,11 @@ fn flatten_scan_results_preserves_findings_and_unchecked_across_plugins() {
 fn flattening_no_results_leaves_every_plugin_unassessed() {
     let registered = create_plugin_registry().list().unwrap();
 
-    let (findings, unchecked) = flatten_scan_results(vec![]);
+    let (findings, unchecked) = hardener_compliance::scan_evidence::flatten(
+        &hardener_plugins::plugin_inventory(),
+        &[],
+        &[],
+    );
 
     assert!(findings.is_empty());
     assert_eq!(
@@ -200,8 +208,9 @@ fn persisted_scan_source_uses_a_session_with_results() {
     let results = vec![plugin_result("kernel", vec![finding("K-1")], vec![])];
     let source = persisted_scan_source(Some((completed_session(), results)));
 
-    let (findings, _unchecked) = source.expect("a non-empty session must be used");
-    assert_eq!(findings.len(), 1);
+    let used = source.expect("a non-empty session must be used");
+    assert_eq!(used.len(), 1, "the session's results stand as the source");
+    assert_eq!(used[0].scan_findings.len(), 1);
 }
 
 #[test]
@@ -269,11 +278,11 @@ fn fleet_posture_resolves_exclusions_against_the_host_it_is_about() {
     let posture_with = |exclusions: ComplianceConfig, host: &RemoteHostProfile| {
         let generator = fleet_report_generator(
             ComplianceProfile::Generic,
-            hardener_plugins::compliance_coverage(),
+            hardener_plugins::plugin_inventory(),
             exclusions,
             host,
         );
-        posture_for_findings(&generator, &[], &[])
+        posture_for_findings(&generator, &[])
     };
 
     let targeted = cis_exclusion("5.1.8", &["web-01"]);
@@ -301,11 +310,11 @@ fn fleet_posture_resolves_exclusions_against_the_host_it_is_about() {
 fn posture_for_findings_returns_one_per_framework() {
     let generator = fleet_report_generator(
         ComplianceProfile::Generic,
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         ComplianceConfig::default(),
         &RemoteHostProfile::from_target("web-01", 22, None, true),
     );
-    let scores = posture_for_findings(&generator, &[], &[]);
+    let scores = posture_for_findings(&generator, &[]);
     assert_eq!(scores.len(), FLEET_FRAMEWORKS.len());
     assert!(
         scores
@@ -721,12 +730,12 @@ fn a_scan_entry_without_the_field_is_not_assumed_successful() {
 fn the_fleet_posture_carries_one_outcome_per_control() {
     let generator = fleet_report_generator(
         ComplianceProfile::Generic,
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         ComplianceConfig::default(),
         &RemoteHostProfile::from_target("web-01", 22, None, true),
     );
 
-    let posture = posture_for_findings(&generator, &[], &[]);
+    let posture = posture_for_findings(&generator, &[]);
 
     assert_eq!(
         posture.len(),
@@ -903,7 +912,7 @@ fn attach_compliance_scores_the_scanned_hosts_and_leaves_the_failed_one_empty() 
     attach_compliance(
         &mut results,
         &profiles,
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         cis_exclusion("5.1.8", &["web-01.internal"]),
     );
 
@@ -942,7 +951,7 @@ fn fleet_posture_from(scan_results: Vec<ScanResult>) -> Vec<FleetFrameworkPostur
     attach_compliance(
         &mut rows,
         &std::collections::HashMap::new(),
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         ComplianceConfig::default(),
     );
     rows.remove(0).compliance

@@ -10,10 +10,10 @@ use hardener_compliance::{
 };
 use hardener_core::{
     Context, Finding, HardenerConfig, PluginMetadata, ScanResult, executor::SystemExecutor,
-    plugin::UncheckedCheck,
 };
 use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
+use hardener_types::PluginId;
 use std::{fs, io, io::Write, path::PathBuf, sync::Arc};
 
 /// Decides which format the report body is rendered in.
@@ -114,10 +114,10 @@ pub async fn run(
         .load()
         .map_err(|e| anyhow!("Config error: {}", e))?;
 
-    // Run scan to get findings and the checks the current privilege level
-    // could not evaluate.
-    let (findings, unchecked) =
-        run_scan_with_unchecked(quiet, executor, &cli_format, &hardener_config).await?;
+    // Run the scan. The results travel as they came back: the generator
+    // flattens them itself, so nothing here has to remember to.
+    let (results, skipped) =
+        run_scan_for_report(quiet, executor, &cli_format, &hardener_config).await?;
 
     if !quiet {
         eprintln!("Generating compliance report...");
@@ -130,10 +130,10 @@ pub async fn run(
     // rather than counting as unassessed.
     let generator = ReportGenerator::new(
         config,
-        hardener_plugins::compliance_coverage(),
+        hardener_plugins::plugin_inventory(),
         hardener_config.compliance.clone(),
     );
-    let reports = generator.generate(&findings, &unchecked);
+    let reports = generator.generate(&results, &skipped);
 
     // Format output
     let formatted = match output_format {
@@ -247,6 +247,22 @@ pub struct GroupedScan {
     pub skipped: Vec<PluginMetadata>,
 }
 
+impl GroupedScan {
+    /// The pair `ReportGenerator::generate` takes: the results as they came
+    /// back, and the ids of the plugins the config disabled.
+    ///
+    /// The metadata pairing above is for the renderers, which print a plugin's
+    /// name beside its rows. A report does not need it: the generator holds the
+    /// whole plugin inventory and resolves metadata by id, which is what lets
+    /// it take raw results and do its own flatten.
+    pub fn evidence(&self) -> (Vec<ScanResult>, Vec<PluginId>) {
+        (
+            self.results.iter().map(|(_, r)| r.clone()).collect(),
+            self.skipped.iter().map(|m| m.plugin_id.clone()).collect(),
+        )
+    }
+}
+
 /// Scans every enabled plugin and returns each plugin's result alongside its
 /// metadata.
 ///
@@ -329,37 +345,22 @@ pub async fn scan_grouped(
     })
 }
 
-/// Scans every plugin and returns findings and unchecked checks, each
-/// flattened across plugins. The compliance report generator needs both: a
-/// control whose covering check landed in `unchecked` must never auto-pass
-/// on the mere absence of a finding.
+/// Scans every plugin and returns the evidence a compliance report is scored
+/// from: each plugin's result, and the ids of the plugins the config disabled.
 ///
-/// A plugin whose scan did not complete, and one the config never let run,
-/// each contribute an unchecked entry of their own, because the generator reads
-/// coverage statically: without one, the controls that plugin covers would pass
-/// on the very silence its absence caused.
-pub async fn run_scan_with_unchecked(
+/// It used to return an already-flattened `(findings, unchecked)` pair, which
+/// meant every caller had to reach the flatten to be correct and one of them
+/// did not. `ReportGenerator::generate` does the flatten now, so what travels
+/// here is what the scan actually produced.
+pub async fn run_scan_for_report(
     quiet: bool,
     executor: Arc<dyn SystemExecutor>,
     cli_format: &CliOutputFormat,
     config: &HardenerConfig,
-) -> Result<(Vec<Finding>, Vec<UncheckedCheck>)> {
-    let grouped = scan_grouped(quiet, executor, cli_format, config).await?;
-    Ok(flatten_scans(&grouped.results, &grouped.skipped))
-}
-
-/// Flattens grouped scan results into the findings and unchecked lists the
-/// compliance generator consumes.
-///
-/// The implementation lives in `hardener_plugins::scan_outcome`, next to the
-/// coverage table it depends on, because the desktop needs the same rule and a
-/// second copy here is how it came to be applied in one place and not the
-/// other.
-pub(crate) fn flatten_scans(
-    grouped: &[(PluginMetadata, ScanResult)],
-    skipped: &[PluginMetadata],
-) -> (Vec<Finding>, Vec<UncheckedCheck>) {
-    hardener_plugins::flatten_scans(grouped, skipped)
+) -> Result<(Vec<ScanResult>, Vec<PluginId>)> {
+    Ok(scan_grouped(quiet, executor, cli_format, config)
+        .await?
+        .evidence())
 }
 
 /// Converts a core `Finding` + plugin metadata into a scheduler `ScanFinding`.

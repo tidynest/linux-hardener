@@ -24,6 +24,7 @@ use hardener_compliance::{
 use hardener_core::config::scope::ComplianceConfig;
 use hardener_core::plugin::Finding;
 use hardener_types::ExceptionOutcome;
+use hardener_types::{PluginCoverage, PluginId, PluginInventory, PluginMetadata, ScanResult};
 
 fn mapping(framework: ComplianceFramework, id: &str) -> ComplianceMapping {
     ComplianceMapping {
@@ -57,11 +58,45 @@ fn insecure_root_login() -> Finding {
     }
 }
 
+/// One plugin declaring `coverage`, which reported `findings` and completed.
+///
+/// The generator flattens results itself now, so a test that wants "these
+/// controls are assessed and here is what was found" says so by handing it a
+/// plugin that ran. Passing findings with no plugin behind them would be the
+/// unassessed case, which is a different test.
+fn scanned(
+    coverage: Vec<ComplianceMapping>,
+    findings: &[Finding],
+) -> (PluginInventory, ScanResult) {
+    let id = "test-plugin";
+    (
+        PluginInventory::Known(vec![PluginCoverage {
+            metadata: PluginMetadata {
+                plugin_category: FindingCategory::Kernel,
+                plugin_description: String::new(),
+                plugin_id: PluginId::new(id),
+                plugin_name: "test plugin".to_string(),
+                plugin_version: "0.1.0".to_string(),
+            },
+            coverage,
+        }]),
+        ScanResult {
+            scan_plugin_id: PluginId::new(id),
+            scan_success: true,
+            scan_findings: findings.to_vec(),
+            scan_unchecked: vec![],
+            scan_duration_us: 0,
+            scan_error: None,
+        },
+    )
+}
+
 fn report_for(
     framework: ComplianceFramework,
     coverage: Vec<ComplianceMapping>,
     findings: &[Finding],
 ) -> ComplianceReport {
+    let (inventory, result) = scanned(coverage, findings);
     ReportGenerator::new(
         ReportConfig {
             scenario: Scenario::Custom(vec![framework]),
@@ -69,10 +104,10 @@ fn report_for(
             output_dir: None,
             profile: ComplianceProfile::default(),
         },
-        coverage,
+        inventory,
         ComplianceConfig::default(),
     )
-    .generate(findings, &[])
+    .generate(&[result], &[])
     .into_iter()
     .next()
     .expect("one report")
