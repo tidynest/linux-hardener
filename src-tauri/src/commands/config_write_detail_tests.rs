@@ -225,3 +225,178 @@ async fn turning_the_scheduler_off_is_recorded() {
     );
     assert_eq!(entries[0].entry_details["enabled"], "false");
 }
+
+/// The inventory the two host writes read back, and the log they file into.
+struct HostScratch {
+    _dir: tempfile::TempDir,
+    inventory: std::path::PathBuf,
+    log: std::path::PathBuf,
+}
+
+impl HostScratch {
+    fn new() -> HostScratch {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let inventory = dir.path().join("hosts.toml");
+        let log = dir.path().join("audit.log");
+        HostScratch {
+            _dir: dir,
+            inventory,
+            log,
+        }
+    }
+
+    fn log_path(&self) -> &str {
+        self.log.to_str().expect("utf-8 path")
+    }
+
+    async fn logger(&self) -> Option<hardener_state::audit::AuditLogger> {
+        hardener_core::config_write::logger_at(self.log_path()).await
+    }
+
+    /// The inventory as the next reader would parse it, not as a string.
+    ///
+    /// A host that reached the file under a mangled key, or twice, is a
+    /// difference `contains` would not see and every later lookup would.
+    fn hosts(&self) -> Vec<hardener_types::remote::RemoteHostProfile> {
+        let text = std::fs::read_to_string(&self.inventory).expect("the inventory file exists");
+        toml::from_str::<hardener_types::remote::HostsConfig>(&text)
+            .expect("what was written parses as an inventory")
+            .hosts
+    }
+
+    async fn entries(&self) -> Vec<hardener_state::AuditEntry> {
+        hardener_state::audit::AuditLogger::query(
+            self.log_path(),
+            hardener_state::audit::QueryFilter::new(),
+        )
+        .await
+        .expect("query")
+    }
+}
+
+/// A host joining the inventory reaches the file, and the entry names it.
+///
+/// The mutation this exists for is not a wrong detail map, which the tests
+/// above already catch. It is the map being built correctly and the write never
+/// happening, or happening to a file nobody reads.
+#[tokio::test]
+async fn saving_a_host_writes_it_to_the_inventory_and_records_it() {
+    let scratch = HostScratch::new();
+    let logger = scratch.logger().await;
+
+    super::upsert_host(
+        &scratch.inventory,
+        hardener_types::remote::HostsConfig::default(),
+        profile(true),
+        logger.as_ref(),
+    )
+    .await
+    .expect("the host is saved");
+
+    let hosts = scratch.hosts();
+    assert_eq!(hosts.len(), 1);
+    assert_eq!(hosts[0].name, "web-01");
+    assert_eq!(
+        hosts[0].port, 2222,
+        "the profile's own values, not defaults"
+    );
+
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry_target, "host:web-01");
+    assert_eq!(entries[0].entry_details["operation"], "save");
+}
+
+/// Re-saving a name already in the inventory replaces it.
+///
+/// The green half of the pair above: a write that appended would pass every
+/// assertion there and leave two rows claiming `web-01`. Every lookup in this
+/// file takes the first match, so the edit would read as having been ignored
+/// while the file grew a row per save.
+#[tokio::test]
+async fn saving_a_host_that_is_already_there_replaces_it() {
+    let scratch = HostScratch::new();
+    let logger = scratch.logger().await;
+    let existing = hardener_types::remote::HostsConfig {
+        hosts: vec![profile(true)],
+    };
+    let mut edited = profile(true);
+    edited.hostname = "web-01.internal.example.com".to_string();
+
+    super::upsert_host(&scratch.inventory, existing, edited, logger.as_ref())
+        .await
+        .expect("the host is replaced");
+
+    let hosts = scratch.hosts();
+    assert_eq!(hosts.len(), 1, "one row per name, not one row per save");
+    assert_eq!(hosts[0].hostname, "web-01.internal.example.com");
+}
+
+/// A deleted host leaves the file, and the others stay.
+///
+/// Two assertions with opposite jobs. The named host must be gone, since a
+/// delete that recorded itself and wrote the host back is the failure with no
+/// symptom: the fleet keeps scanning a host the operator removed. The other
+/// must remain, since a `retain` inverted or widened would empty the inventory
+/// and look, in the log, exactly like this test's success.
+#[tokio::test]
+async fn deleting_a_host_removes_only_that_host() {
+    let scratch = HostScratch::new();
+    let logger = scratch.logger().await;
+    let mut other = profile(true);
+    other.name = "db-01".to_string();
+    let existing = hardener_types::remote::HostsConfig {
+        hosts: vec![profile(true), other],
+    };
+
+    super::remove_host(&scratch.inventory, existing, "web-01", logger.as_ref())
+        .await
+        .expect("the host is deleted");
+
+    let names: Vec<String> = scratch.hosts().into_iter().map(|h| h.name).collect();
+    assert_eq!(names, vec!["db-01".to_string()]);
+
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry_target, "host:web-01");
+    assert_eq!(
+        entries[0].entry_details["hostname"], "web-01.example.com",
+        "the entry says what left, not only that something did"
+    );
+}
+
+/// Deleting a name that is not in the inventory is still recorded.
+///
+/// The case with nothing to see afterwards. The file comes back unchanged, so
+/// the only evidence the operator acted at all is the entry, and it is the
+/// evidence that matters when the name was a typo and the host they meant to
+/// remove is still being scanned. The entry carries no `hostname`, because
+/// there was no profile to read one off.
+#[tokio::test]
+async fn deleting_a_name_that_is_not_there_still_records_the_attempt() {
+    let scratch = HostScratch::new();
+    let logger = scratch.logger().await;
+    let existing = hardener_types::remote::HostsConfig {
+        hosts: vec![profile(true)],
+    };
+
+    super::remove_host(&scratch.inventory, existing, "web-02", logger.as_ref())
+        .await
+        .expect("a name matching nothing is not an error");
+
+    assert_eq!(
+        scratch.hosts().len(),
+        1,
+        "the inventory is written back unchanged"
+    );
+
+    let entries = scratch.entries().await;
+    assert_eq!(entries.len(), 1, "the attempt is recorded");
+    assert_eq!(entries[0].entry_target, "host:web-02");
+    assert_eq!(entries[0].entry_details["operation"], "delete");
+    assert!(
+        !entries[0].entry_details.contains_key("hostname"),
+        "there was no profile to name: {:?}",
+        entries[0].entry_details
+    );
+}

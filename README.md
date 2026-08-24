@@ -476,7 +476,7 @@ hardened host still carries is in [upgrading](docs/guide/upgrading.md).
 ### Tests
 
 ```
-Rust workspace (cargo nextest run --workspace):  2196 passed, 0 failed, 42 skipped
+Rust workspace (cargo nextest run --workspace):  2200 passed, 0 failed, 42 skipped
 ```
 
 The 42 skipped tests need root, a live SSH host, or a specific firewall backend,

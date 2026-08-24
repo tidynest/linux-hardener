@@ -38,8 +38,30 @@ pub async fn save_audited(
     config: &HostsConfig,
     audit: crate::config_write::WriteAudit<'_>,
 ) -> Result<()> {
+    save_audited_to(&default_path()?, config, audit).await
+}
+
+/// The same write, to the named path.
+///
+/// **For tests.** [`default_path`] is the only answer shipping code gives, and
+/// it is under `~/.config`, which a test may not write; a caller that wants to
+/// read back what was filed has to name its own file. The audit descriptor is
+/// as mandatory here as it is above, so this is not a way round the rule that
+/// the inventory cannot be written without recording it. What it does open is a
+/// second location, which is why every production caller goes through
+/// [`save_audited`] and this says so.
+///
+/// Not the `save_to` that used to sit below, which took an arbitrary path *and*
+/// wrote it with a bare `std::fs::write`, unaudited and non-atomic. This keeps
+/// both of those guarantees and gives up only the path.
+#[cfg(feature = "system")]
+pub async fn save_audited_to(
+    path: &Path,
+    config: &HostsConfig,
+    audit: crate::config_write::WriteAudit<'_>,
+) -> Result<()> {
     let content = serialise(config)?;
-    crate::config_write::write_atomically(&default_path()?, &content, audit)
+    crate::config_write::write_atomically(path, &content, audit)
         .await
         .map_err(|e| HardeningError::Config(format!("{e:#}")))
 }

@@ -850,22 +850,33 @@ reload the operator's own systemd and enable a real timer in their session.
 `unit_dir_for` is therefore also unpinned, since nothing exercises the branch
 that picks `/etc/systemd/system` over `~/.config/systemd/user`.
 
-**The desktop's scheduler write is observed end to end; its two host writes are
-not.** `save_scheduler_config` reads both the config path and the audit log
-path from the process environment, and moving environment variables under
-`cargo test`'s threads is the race that put
-`crates/hardener-core/tests/inventory_shared_path.rs` in its own binary, so the
-part that edits and writes the document is `write_scheduler_config`, which
-takes both as arguments. Two tests in
-`src-tauri/src/commands/config_write_detail_tests.rs` drive it against a
-temporary path and read the entry back. **`save_remote_host` and
-`delete_remote_host` are still asserted on their detail alone.** Each builds a
-map, hands it to `save_hosts_config`, and that call is the step nothing
-watches; that `inventory::save_audited` writes and files what it is given is
-covered by the integration test above. **What remains uncovered in both cases
-is which path the command picks**: `writable_config_path` and
-`inventory::default_path` resolve from the environment and no test may move it
-here.
+**All three of the desktop's writes are observed reaching the file and the
+log.** Each command reads both its target path and the audit log path from the
+process environment, and moving environment variables under `cargo test`'s
+threads is the race that put
+`crates/hardener-core/tests/inventory_shared_path.rs` in its own binary, so in
+each case the part that edits and writes takes both as arguments:
+`write_scheduler_config`, `upsert_host` and `remove_host`. Six tests in
+`src-tauri/src/commands/config_write_detail_tests.rs` drive them against a
+temporary config, inventory and log, and read back both the file and the entry.
+
+**What remains uncovered is which path each command picks.**
+`writable_config_path` and `inventory_path` resolve from the environment, and a
+test that moved it would be the race above. So a change that sent a write to
+the wrong file would still pass: every test here would watch it arrive at the
+path it was handed. The two resolvers are one line each and are read by nothing
+else, which is the whole of the argument that this is a small gap rather than
+no gap.
+
+**`inventory::save_audited_to` exists so those tests can name a file.** It is
+public and takes an arbitrary path, which the module otherwise refuses: the
+`save_to` that used to sit beside it was removed for taking a path *and*
+writing it unaudited with a bare `std::fs::write`. This keeps the mandatory
+audit descriptor and the atomic write and gives up only the location, and every
+production caller still goes through `save_audited`, which resolves
+`default_path`. **A second production answer to where the inventory lives would
+not fail any test**; it would show up as a call to this function outside a test
+module.
 
 ---
 

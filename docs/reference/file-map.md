@@ -695,7 +695,7 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | `src/commands/compliance_source_tests.rs` | Tests for the compliance report's source selection | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/webhook_shape_tests.rs` | Tests that what the desktop writes to `[scheduler.notifications.webhooks]` is what `hardener-scheduler` reads back | Test-only; `super` resolves to `crate::commands`. This crate depends on both, so it is the only place the two shapes meet |
 | `src/commands/exception_args_tests.rs` | Tests for `exception_add_args`, the flag-construction helper behind `add_policy_exception`: an absent optional field must add no flag, not an empty one | Test-only; `super` resolves to `crate::commands` |
-| `src/commands/config_write_detail_tests.rs` | Tests for the audit detail the desktop's three in-process config writes carry, 8 tests: what the scheduler entry names, the scheduler being turned off, recipient addresses and the webhook URL staying out of the log, the host endpoint and operation, host-key checking being turned off, a profile naming no user, and two that drive `write_scheduler_config` against a temporary path so the descriptor is observed reaching the writer. Ceiling: the six detail tests still pass on an entry that is never filed, and nothing here pins which path `writable_config_path` picks | Test-only; `super` resolves to `crate::commands` |
+| `src/commands/config_write_detail_tests.rs` | Tests for the audit detail the desktop's three in-process config writes carry, 12 tests: what the scheduler entry names, the scheduler being turned off, recipient addresses and the webhook URL staying out of the log, the host endpoint and operation, host-key checking being turned off, a profile naming no user, and six that drive `write_scheduler_config`, `upsert_host` and `remove_host` against a temporary inventory and log so each descriptor is observed reaching the writer (a save, an upsert replacing rather than appending, a delete taking only the named host, and a name matching nothing still recorded). Ceiling: the six detail tests still pass on an entry that is never filed, and nothing here pins which path `writable_config_path` or `inventory_path` picks | Test-only; `super` resolves to `crate::commands` |
 
 ### Tauri Commands
 ```rust
@@ -967,8 +967,8 @@ Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
 The table covers the ten crates under `crates/` and sums to 2110. The eleventh
-workspace member, `src-tauri`, carries 128 more, which is why the tree total the
-evidence ledger records is 2238 and not this table's sum.
+workspace member, `src-tauri`, carries 132 more, which is why the tree total the
+evidence ledger records is 2242 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|

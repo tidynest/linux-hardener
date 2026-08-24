@@ -199,16 +199,14 @@ fn load_hosts_config() -> Result<HostsConfig, String> {
     hardener_core::inventory::load().map_err(|e| safe_err(e.to_string()))
 }
 
-/// Saves host profiles to the shared inventory file, recording the change.
+/// The shared inventory file both front ends read and write.
 ///
-/// A host leaving this file stops being scanned, and until this recorded it
-/// nothing said so: the fleet simply had one fewer row the next time anybody
-/// looked. The audit descriptor is the caller's, because only the caller knows
-/// whether the host was added or removed.
-async fn save_hosts_config(config: &HostsConfig, audit: WriteAudit<'_>) -> Result<(), String> {
-    hardener_core::inventory::save_audited(config, audit)
-        .await
-        .map_err(|e| safe_err(e.to_string()))
+/// The one production answer to where it lives. Named here rather than left
+/// inside `save_audited` because the two commands that write it now hand the
+/// path to a function a test can also call, and a second answer resolved
+/// somewhere else is exactly what the inventory module exists to prevent.
+fn inventory_path() -> Result<std::path::PathBuf, String> {
+    hardener_core::inventory::default_path().map_err(|e| safe_err(e.to_string()))
 }
 
 /// The audit detail for a host joining or leaving the inventory.
@@ -1614,7 +1612,32 @@ pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String> 
         validate_ssh_key_path(key)?;
     }
 
-    let mut config = load_hosts_config()?;
+    let path = inventory_path()?;
+    let config = load_hosts_config()?;
+    let logger = get_audit_logger().await;
+    upsert_host(&path, config, profile, logger.as_ref()).await
+}
+
+/// Folds `profile` into `config` and writes the result to `path`, recording
+/// what changed.
+///
+/// Split from [`save_remote_host`] on the same reasoning as
+/// [`write_scheduler_config`]: that command resolves the inventory path and the
+/// audit log path from the process environment, and moving environment
+/// variables under `cargo test`'s threads is the race that put
+/// `crates/hardener-core/tests/inventory_shared_path.rs` in a binary of its
+/// own. Here the fold, the write and the entry are all observable at once.
+///
+/// Upsert by name, not append: a profile re-saved under a name already in the
+/// inventory replaces it. Appending would leave two rows claiming the same
+/// name, and every lookup in this file takes the first match, so the edit would
+/// appear to have been ignored.
+async fn upsert_host(
+    path: &std::path::Path,
+    mut config: HostsConfig,
+    profile: RemoteHostProfile,
+    logger: Option<&hardener_state::audit::AuditLogger>,
+) -> Result<(), String> {
     let details = host_details("save", &profile);
     let target = format!("host:{}", profile.name);
     if let Some(existing) = config.hosts.iter_mut().find(|h| h.name == profile.name) {
@@ -1622,17 +1645,18 @@ pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String> 
     } else {
         config.hosts.push(profile);
     }
-    let logger = get_audit_logger().await;
-    save_hosts_config(
+    hardener_core::inventory::save_audited_to(
+        path,
         &config,
         WriteAudit {
-            logger: logger.as_ref(),
+            logger,
             action: ActionType::ConfigChange,
             target,
             details,
         },
     )
     .await
+    .map_err(|e| safe_err(e.to_string()))
 }
 
 /// Deletes a remote host profile by name.
@@ -1640,26 +1664,46 @@ pub async fn save_remote_host(profile: RemoteHostProfile) -> Result<(), String> 
 pub async fn delete_remote_host(name: String) -> Result<(), String> {
     validate_ipc_string(&name, "profile_name")?;
 
-    let mut config = load_hosts_config()?;
+    let path = inventory_path()?;
+    let config = load_hosts_config()?;
+    let logger = get_audit_logger().await;
+    remove_host(&path, config, &name, logger.as_ref()).await
+}
+
+/// Drops the host named `name` from `config` and writes the result to `path`,
+/// recording what left.
+///
+/// The counterpart to [`upsert_host`], split for the same reason.
+///
+/// A name that matches nothing writes the file unchanged and is still recorded
+/// as an attempt. That is deliberate: the operator asked for a host to stop
+/// being scanned, and an unrecorded no-op leaves nothing to read when it turns
+/// out the name was a typo and the host is still in the fleet.
+async fn remove_host(
+    path: &std::path::Path,
+    mut config: HostsConfig,
+    name: &str,
+    logger: Option<&hardener_state::audit::AuditLogger>,
+) -> Result<(), String> {
     // Read off the profile before it goes, so the entry says what left rather
-    // than only that something did. A name that matches nothing writes the file
-    // unchanged and is still recorded as an attempt.
+    // than only that something did.
     let details = config.hosts.iter().find(|h| h.name == name).map_or_else(
         || HashMap::from([("operation".to_string(), "delete".to_string())]),
         |profile| host_details("delete", profile),
     );
     config.hosts.retain(|h| h.name != name);
-    let logger = get_audit_logger().await;
-    save_hosts_config(
+    hardener_core::inventory::save_audited_to(
+        path,
         &config,
         WriteAudit {
-            logger: logger.as_ref(),
+            logger,
             action: ActionType::ConfigChange,
             target: format!("host:{name}"),
             details,
         },
     )
     .await
+    .map_err(|e| safe_err(e.to_string()))
 }
 
 /// Connects to a remote host by profile name.
