@@ -863,11 +863,34 @@ the base came from the environment, so it asserted
 `ends_with(".config/systemd/user")`, which holds for that suffix joined onto
 anything, an empty path included. It now asserts both paths whole.
 
-**What each verb still resolves for itself is untested:** the root check, which
-is about this process, the `LocalExecutor` the production path passes, and
-`dirs::home_dir()` itself, now that it is a call at the two call sites rather
-than inside the function. A change to any of those would send a correct install
-to the wrong instance and every test here would still pass.
+**The privilege gate is now driven, and it is deliberately narrower than the
+one beside it.** `refuse_unprivileged` takes the root answer rather than asking,
+so four cases are covered: a system install without root refusing before the
+unit directory exists or systemd is asked anything, a `--user` install never
+needing root, and the uninstall refusal naming its own verb. It asks whether
+*this process* is root, where `privilege::is_privileged` answers root **or**
+passwordless sudo. That difference is load-bearing: these unit files are written
+by `std::fs` in this process, so an operator with working `sudo -n` would pass
+the wider check and then fail at the write with a permission error naming a path
+rather than a reason.
+
+**`LocalExecutor` stays hard-coded in `install` and `uninstall`, and that is the
+guarantee rather than the gap.** `main.rs` already holds an executor built from
+`--ssh`, and passing that one in would let a remote target reach these verbs,
+which write their unit files locally through `std::fs` and would then enable a
+timer on a different host from the one holding the units.
+`the_units_are_written_to_disk_and_never_through_the_executor` pins the half
+that makes this safe: the executor's `files_written` log stays empty and every
+command it is asked for is `systemctl`. Injecting the executor here would remove
+a guarantee, not add coverage.
+
+**What no test drives is the wiring in `install` and `uninstall` themselves:**
+`nix::unistd::Uid::effective().is_root()`, `dirs::home_dir()`, and
+`LocalExecutor::new()`, each appearing once per verb as the argument to
+something that is driven. Six literals. A change to any of them would send a
+correct install to the wrong instance with every test here still passing, and
+closing that would mean driving the verbs from `main.rs`, which moves the same
+six lines rather than covering them.
 
 **The suite wrote real audit entries into the operator's own log until
 2026-08-24, and four modules keep the shape that allowed it.**

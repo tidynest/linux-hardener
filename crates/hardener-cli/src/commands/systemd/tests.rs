@@ -503,7 +503,7 @@ async fn an_uninstall_proceeds_when_the_timer_was_never_enabled() {
         .with_command("systemctl", &["--user", "daemon-reload"], ok());
 
     let logger = scratch.logger().await;
-    let outcome = uninstall_with(&executor, &scratch.units, logger.as_ref(), true)
+    let outcome = uninstall_with(&executor, &scratch.units, logger.as_ref(), true, true)
         .await
         .expect("the uninstall runs");
 
@@ -529,6 +529,7 @@ async fn write_and_install(
         &generator(),
         logger.as_ref(),
         user_mode,
+        true,
         &[("schedule", "Mon *-*-* 03:00:00".to_string())],
     )
     .await
@@ -537,4 +538,139 @@ async fn write_and_install(
 
 fn owned(args: &[&str]) -> Vec<String> {
     args.iter().map(|s| s.to_string()).collect()
+}
+
+/// A system install by a non-root process refuses, and refuses before it has
+/// done anything.
+///
+/// Three assertions, and the last two are the ones worth having. A gate that
+/// ran after `write_units` would return the same error while leaving units in
+/// `/etc/systemd/system` and having asked systemd to reload them, which is a
+/// worse state than either succeeding or failing cleanly. So the directory must
+/// be untouched and the executor must have been asked nothing.
+///
+/// The check is deliberately narrower than `privilege::is_privileged`, which
+/// answers root **or** passwordless sudo. These unit files are written by
+/// `std::fs` in this process, so sudo being available says nothing about
+/// whether the write can land.
+#[tokio::test]
+async fn a_system_install_without_root_refuses_before_touching_anything() {
+    let scratch = Scratch::new();
+    let executor = MockExecutor::new();
+    let logger = scratch.logger().await;
+
+    let refused = install_with(
+        &executor,
+        &scratch.units,
+        &generator(),
+        logger.as_ref(),
+        false,
+        false,
+        &[("schedule", "daily".to_string())],
+    )
+    .await
+    .expect_err("a non-root process cannot write /etc/systemd/system");
+
+    assert!(
+        refused.to_string().contains("root privileges"),
+        "the message must name what was missing: {refused}"
+    );
+    assert!(
+        !scratch.units.exists(),
+        "the refusal must come before the unit directory is created"
+    );
+    assert!(
+        executor.log().commands_executed.is_empty(),
+        "nothing may be asked of systemd for an install that was refused"
+    );
+}
+
+/// A `--user` install never asks for root.
+///
+/// The green half of the pair above, and the one a gate written slightly too
+/// wide would break: requiring root for a change to the operator's own systemd
+/// makes the unprivileged half of this command unusable, and it is the half
+/// most people run.
+#[tokio::test]
+async fn a_user_install_does_not_require_root() {
+    let scratch = Scratch::new();
+    let executor = user_systemd(ok());
+    let logger = scratch.logger().await;
+
+    let outcome = install_with(
+        &executor,
+        &scratch.units,
+        &generator(),
+        logger.as_ref(),
+        true,
+        false,
+        &[("schedule", "daily".to_string())],
+    )
+    .await
+    .expect("a user install runs as the operator");
+
+    assert!(outcome.service_path.exists() && outcome.timer_path.exists());
+}
+
+/// The uninstall gate is the same gate and says the other verb.
+///
+/// Both halves again, and the wording is the subject: the two messages differ
+/// only by the verb, which is exactly the kind of string a shared helper gets
+/// wrong in one direction and nobody notices, because the refusal an operator
+/// sees is plausible either way.
+#[tokio::test]
+async fn a_system_uninstall_without_root_refuses_and_names_its_own_verb() {
+    let scratch = Scratch::new();
+    let executor = MockExecutor::new();
+
+    let refused = uninstall_with(&executor, &scratch.units, None, false, false)
+        .await
+        .expect_err("a non-root process cannot remove /etc/systemd/system units");
+
+    let message = refused.to_string();
+    assert!(
+        message.contains("System uninstall requires root"),
+        "the refusal must name the verb the operator ran: {message}"
+    );
+    // Anchored on `System install`, not on `install requires`: the latter is a
+    // substring of `uninstall requires` and the assertion failed against the
+    // correct message on its first run.
+    assert!(
+        !message.contains("System install requires"),
+        "an install message here would be a copied string: {message}"
+    );
+}
+
+/// The units go to the filesystem, never through the executor.
+///
+/// This is why `install` hard-codes a `LocalExecutor` rather than taking the
+/// one `main.rs` already built from `--ssh`, and it is the assertion that
+/// records the reason. The executor is asked for `systemctl` and nothing else,
+/// so handing it a remote target would enable a timer on one host against unit
+/// files written on another. A change that started writing through the executor
+/// would look reasonable and would silently make `--ssh` half-work.
+#[tokio::test]
+async fn the_units_are_written_to_disk_and_never_through_the_executor() {
+    let scratch = Scratch::new();
+    let executor = user_systemd(ok());
+    let logger = scratch.logger().await;
+
+    let outcome = write_and_install(&scratch, &executor, true).await;
+
+    assert!(outcome.service_path.exists(), "written by std::fs");
+    assert!(
+        executor.log().files_written.is_empty(),
+        "the executor writes no files: {:?}",
+        executor.log().files_written
+    );
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .all(|(program, _)| program == "systemctl"),
+        "the executor is for systemctl alone: {:?}",
+        executor.log().commands_executed
+    );
+    let _ = logger;
 }

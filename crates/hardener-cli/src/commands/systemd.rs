@@ -79,6 +79,7 @@ async fn systemctl(
 ///
 /// Returned rather than reported from inside, so a test reads the outcome
 /// instead of scraping stdout. `install` renders it.
+#[derive(Debug)]
 struct InstallOutcome {
     service_path: PathBuf,
     timer_path: PathBuf,
@@ -86,6 +87,7 @@ struct InstallOutcome {
 }
 
 /// What an uninstall did. The counterpart to [`InstallOutcome`].
+#[derive(Debug)]
 struct UninstallOutcome {
     removed: Vec<PathBuf>,
     timer_disabled: bool,
@@ -121,6 +123,26 @@ fn unit_dir_for(user_mode: bool, home: Option<PathBuf>) -> Result<PathBuf> {
     } else {
         Ok(PathBuf::from("/etc/systemd/system"))
     }
+}
+
+/// Refuses a system-scope change the process cannot carry out.
+///
+/// **`is_root` is the answer, not the question.** It asks whether *this
+/// process* is root, which is narrower than [`super::privilege::is_privileged`]
+/// beside it and deliberately so: that helper answers root **or** passwordless
+/// sudo, which is right for `apply`, whose changes go through the executor. The
+/// unit files here are written by `std::fs` in this process, so a non-root
+/// operator with working `sudo -n` would pass that check and then fail at the
+/// write with a permission error naming a path rather than a reason.
+///
+/// A `--user` install never consults it. That is the pairing worth keeping:
+/// requiring root for a change to the operator's own systemd would make the
+/// unprivileged half of this command unusable.
+fn refuse_unprivileged(user_mode: bool, is_root: bool, verb: &str) -> Result<()> {
+    if !user_mode && !is_root {
+        bail!("System {verb} requires root privileges. Use --user for user {verb}.");
+    }
+    Ok(())
 }
 
 /// Writes both unit files into `unit_dir`, filing one entry per unit.
@@ -302,17 +324,13 @@ pub async fn install(
         generator = generator.with_config(cfg);
     }
 
-    // Check permissions for system install
-    if !user_mode && !nix::unistd::Uid::effective().is_root() {
-        bail!("System install requires root privileges. Use --user for user install.");
-    }
-
     let outcome = install_with(
         &LocalExecutor::new(),
         &unit_dir_for(user_mode, dirs::home_dir())?,
         &generator,
         logger.as_ref(),
         user_mode,
+        nix::unistd::Uid::effective().is_root(),
         &calendar_detail,
     )
     .await?;
@@ -365,8 +383,11 @@ async fn install_with(
     generator: &SystemdGenerator,
     logger: Option<&AuditLogger>,
     user_mode: bool,
+    is_root: bool,
     calendar_detail: &[(&str, String)],
 ) -> Result<InstallOutcome> {
+    refuse_unprivileged(user_mode, is_root, "install")?;
+
     let (service_path, timer_path) =
         write_units(unit_dir, generator, logger, user_mode, calendar_detail).await?;
 
@@ -397,16 +418,12 @@ pub async fn uninstall(
     quiet: bool,
     logger: Option<AuditLogger>,
 ) -> Result<()> {
-    // Check permissions for system uninstall
-    if !user_mode && !nix::unistd::Uid::effective().is_root() {
-        bail!("System uninstall requires root privileges. Use --user for user uninstall.");
-    }
-
     let outcome = uninstall_with(
         &LocalExecutor::new(),
         &unit_dir_for(user_mode, dirs::home_dir())?,
         logger.as_ref(),
         user_mode,
+        nix::unistd::Uid::effective().is_root(),
     )
     .await?;
 
@@ -444,7 +461,10 @@ async fn uninstall_with(
     unit_dir: &Path,
     logger: Option<&AuditLogger>,
     user_mode: bool,
+    is_root: bool,
 ) -> Result<UninstallOutcome> {
+    refuse_unprivileged(user_mode, is_root, "uninstall")?;
+
     // Carried as a fact rather than raised as an error, for the reason
     // `install_with` carries its own. A unit that was never enabled fails here
     // too, and that host is exactly the one with nothing to remove. A

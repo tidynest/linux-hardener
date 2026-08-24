@@ -2042,6 +2042,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The systemd privilege gate is driven by tests, and its wording is pinned.**
+  `install` and `uninstall` each carried their own copy of the root check,
+  inline and unreachable by any test, so nothing held the refusal to refusing
+  before it had written anything. Both now share `refuse_unprivileged`, which
+  takes the root answer as an argument. Four tests cover it: a system install
+  without root leaves the unit directory absent and asks systemd nothing, a
+  `--user` install never needs root, and the uninstall message names its own
+  verb rather than a copied one.
+
+  The check stays narrower than `privilege::is_privileged` beside it, which
+  answers root **or** passwordless sudo. The unit files are written by
+  `std::fs` in this process, so an operator with working `sudo -n` would pass
+  the wider check and then fail at the write with a permission error naming a
+  path instead of a reason.
+
+  A fifth test pins why these two verbs hard-code a local executor rather than
+  taking the one already built from `--ssh`: the executor is asked for
+  `systemctl` and never to write a file, so a remote target would enable a timer
+  on one host against unit files written on another. **No behaviour changes.**
+
 - **`hardener systemd install --user` now says so when it cannot find a home
   directory, instead of writing units under a relative path.** `unit_dir_for`
   called `dirs::home_dir()` itself and propagated the `None` case as an error,
