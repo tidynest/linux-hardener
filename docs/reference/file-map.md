@@ -88,7 +88,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/plugin_filter/tests.rs` | Unit tests for `src/commands/plugin_filter.rs` | Test-only; `super` resolves to `crate::commands::plugin_filter`, so its imports carried across unchanged |
 | `src/commands/apply/tests.rs` | Unit tests for `src/commands/apply.rs` | Test-only; `super` resolves to `crate::commands::apply`, so its imports carried across unchanged |
 | `src/commands/report/tests.rs` | Unit tests for `src/commands/report.rs` | Test-only; `super` resolves to `crate::commands::report`, so its imports carried across unchanged |
-| `src/commands/systemd/tests.rs` | Unit tests for `src/commands/systemd.rs`, 8 tests: what `uninstall` reports, the status stream join, and the five decisions the audit descriptor makes (the systemd instance, the unit-shaped target, install against uninstall at that same target, caller detail being added rather than replacing, and the unit directory following the mode) | Test-only; `super` resolves to `crate::commands::systemd`. The four verbs shell out to `systemctl`, so what is covered is the decision each makes about what to report and what to record |
+| `src/commands/systemd/tests.rs` | Unit tests for `src/commands/systemd.rs`, 10 tests: what `uninstall` reports, the status stream join, the five decisions the audit descriptor makes (the systemd instance, the unit-shaped target, install against uninstall at that same target, caller detail being added rather than replacing, and the unit directory following the mode), and two that drive `write_units` and `remove_units` against a temporary unit directory so a descriptor is observed reaching a write | Test-only; `super` resolves to `crate::commands::systemd`. The `systemctl` half of each verb is still uncovered: a test that called `install` itself would reload the operator's own systemd and enable a real timer in their session |
 | `src/commands/report_wizard/tests.rs` | Unit tests for `src/commands/report_wizard.rs` | Test-only; `super` resolves to `crate::commands::report_wizard`, so its imports carried across unchanged |
 | `src/commands/history/tests.rs` | Unit tests for `src/commands/history.rs` | Test-only; `super` resolves to `crate::commands::history`, so its imports carried across unchanged |
 | `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 86 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
@@ -695,7 +695,7 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | `src/commands/compliance_source_tests.rs` | Tests for the compliance report's source selection | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/webhook_shape_tests.rs` | Tests that what the desktop writes to `[scheduler.notifications.webhooks]` is what `hardener-scheduler` reads back | Test-only; `super` resolves to `crate::commands`. This crate depends on both, so it is the only place the two shapes meet |
 | `src/commands/exception_args_tests.rs` | Tests for `exception_add_args`, the flag-construction helper behind `add_policy_exception`: an absent optional field must add no flag, not an empty one | Test-only; `super` resolves to `crate::commands` |
-| `src/commands/config_write_detail_tests.rs` | Tests for the audit detail the desktop's three in-process config writes carry, 6 tests: what the scheduler entry names, the scheduler being turned off, recipient addresses and the webhook URL staying out of the log, the host endpoint and operation, host-key checking being turned off, and a profile naming no user. Ceiling: an entry whose detail is right and which is never filed passes all six; that the writes file at all is asserted in `hardener-core` | Test-only; `super` resolves to `crate::commands` |
+| `src/commands/config_write_detail_tests.rs` | Tests for the audit detail the desktop's three in-process config writes carry, 8 tests: what the scheduler entry names, the scheduler being turned off, recipient addresses and the webhook URL staying out of the log, the host endpoint and operation, host-key checking being turned off, a profile naming no user, and two that drive `write_scheduler_config` against a temporary path so the descriptor is observed reaching the writer. Ceiling: the six detail tests still pass on an entry that is never filed, and nothing here pins which path `writable_config_path` picks | Test-only; `super` resolves to `crate::commands` |
 
 ### Tauri Commands
 ```rust
@@ -966,9 +966,9 @@ tree on **2026-08-22**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2108. The eleventh
-workspace member, `src-tauri`, carries 126 more, which is why the tree total the
-evidence ledger records is 2234 and not this table's sum.
+The table covers the ten crates under `crates/` and sums to 2110. The eleventh
+workspace member, `src-tauri`, carries 128 more, which is why the tree total the
+evidence ledger records is 2238 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -977,7 +977,7 @@ evidence ledger records is 2234 and not this table's sum.
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 145 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 107 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 320 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 322 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 852 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 239 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 63 |

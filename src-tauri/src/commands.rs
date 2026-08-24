@@ -2192,7 +2192,29 @@ pub async fn save_scheduler_config(
             .unwrap_or_default()
     };
 
-    let mut document: toml_edit::DocumentMut = content
+    let logger = get_audit_logger().await;
+    write_scheduler_config(&write_path, &content, &config, logger.as_ref()).await?;
+
+    Ok("Configuration saved".to_string())
+}
+
+/// Rewrites `[scheduler]` inside `existing` and writes the result to
+/// `write_path`, filing the entry that says what changed.
+///
+/// Takes the path, the document it is editing and the logger as arguments
+/// rather than resolving any of them, which is the whole reason this is
+/// separate from [`save_scheduler_config`]. That command reads both paths from
+/// the process environment, so a test driving it would have to move
+/// `XDG_CONFIG_HOME` while every other test in this binary is running in a
+/// thread beside it. Here the join between the descriptor and the write is
+/// observable without touching the environment at all.
+async fn write_scheduler_config(
+    write_path: &std::path::Path,
+    existing: &str,
+    config: &hardener_types::scheduler::SchedulerUiConfig,
+    logger: Option<&hardener_state::audit::AuditLogger>,
+) -> Result<(), String> {
+    let mut document: toml_edit::DocumentMut = existing
         .parse()
         .map_err(|e| safe_err(format!("Failed to parse config: {e}")))?;
 
@@ -2204,28 +2226,25 @@ pub async fn save_scheduler_config(
     document.remove("scheduler");
     let mut output = document.to_string();
 
-    output.push_str(&render_scheduler_section(&config, &content)?);
+    output.push_str(&render_scheduler_section(config, existing)?);
 
     // Through the shared writer, which is what makes this atomic, makes it
     // preserve the target's mode, and files the audit entry. Before the writer
     // moved into `hardener-core` this was a bare `std::fs::write` recording
     // nothing, not by decision but because `hardener-cli` is a binary and the
     // code that would have done otherwise could not be reached from here.
-    let logger = get_audit_logger().await;
     write_atomically(
-        &write_path,
+        write_path,
         &output,
         WriteAudit {
-            logger: logger.as_ref(),
+            logger,
             action: ActionType::ConfigChange,
             target: "scheduler".to_string(),
-            details: scheduler_details(&config),
+            details: scheduler_details(config),
         },
     )
     .await
-    .map_err(|e| safe_err(format!("Failed to write config: {e:#}")))?;
-
-    Ok("Configuration saved".to_string())
+    .map_err(|e| safe_err(format!("Failed to write config: {e:#}")))
 }
 
 /// The audit detail for a scheduler change.

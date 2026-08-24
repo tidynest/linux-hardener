@@ -6,7 +6,7 @@ use hardener_core::config_write::{WriteAudit, remove_file_audited, write_atomica
 use hardener_scheduler::systemd::{SystemdGenerator, cron_to_calendar, service_name, timer_name};
 use hardener_state::audit::{ActionType, AuditLogger};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::{fs, process::Command};
 
 /// The audit descriptor for one unit file joining or leaving this host.
@@ -55,6 +55,87 @@ fn unit_dir_for(user_mode: bool) -> Result<PathBuf> {
     } else {
         Ok(PathBuf::from("/etc/systemd/system"))
     }
+}
+
+/// Writes both unit files into `unit_dir`, filing one entry per unit.
+///
+/// Split out of [`install`] because everything else that verb does is
+/// `systemctl`: a test driving `install` itself would reload the operator's own
+/// systemd and enable a real timer in their session. This is the half that
+/// touches the filesystem, and it takes the directory as an argument rather
+/// than resolving it from `HOME`, so a test can point it somewhere it may write
+/// without moving an environment variable other threads are reading.
+///
+/// One entry per unit rather than one for the install: a run that writes the
+/// service and then cannot write the timer has done something, and the log
+/// should say which half.
+async fn write_units(
+    unit_dir: &Path,
+    generator: &SystemdGenerator,
+    logger: Option<&AuditLogger>,
+    user_mode: bool,
+    calendar_detail: &[(&str, String)],
+) -> Result<(PathBuf, PathBuf)> {
+    fs::create_dir_all(unit_dir)
+        .await
+        .context("Failed to create unit directory")?;
+
+    let service_path = unit_dir.join(service_name());
+    let timer_path = unit_dir.join(timer_name());
+
+    // Through the shared writer, so a unit file is replaced whole rather than
+    // truncated and rewritten in place. A half-written `.service` is one
+    // systemd fails to parse, and the caller's `daemon-reload` would read it.
+    for (path, unit, contents) in [
+        (&service_path, service_name(), generator.generate_service()),
+        (&timer_path, timer_name(), generator.generate_timer()),
+    ] {
+        write_atomically(
+            path,
+            &contents,
+            unit_audit(logger, unit, "install", user_mode, calendar_detail),
+        )
+        .await
+        .with_context(|| format!("Failed to write {unit}"))?;
+    }
+
+    Ok((service_path, timer_path))
+}
+
+/// Removes both unit files from `unit_dir`, answering which were there.
+///
+/// The counterpart to [`write_units`], split from [`uninstall`] for the same
+/// reason and testable on the same terms.
+///
+/// Through the shared remover, which keeps the `try_exists` rule this loop
+/// already had (`exists` is `metadata(..).is_ok()` and answers `false` for a
+/// unit this process may not stat, which would report an uninstall that removed
+/// nothing) and adds the entry it did not. `timer_disabled` is carried on both
+/// entries, because a unit file removed while its timer is still loaded is the
+/// state an operator most needs to find later.
+async fn remove_units(
+    unit_dir: &Path,
+    logger: Option<&AuditLogger>,
+    user_mode: bool,
+    timer_disabled: bool,
+) -> Result<Vec<PathBuf>> {
+    let disabled_detail = [("timer_disabled", timer_disabled.to_string())];
+    let mut removed = Vec::new();
+    for (path, unit) in [
+        (unit_dir.join(service_name()), service_name()),
+        (unit_dir.join(timer_name()), timer_name()),
+    ] {
+        let was_present = remove_file_audited(
+            &path,
+            unit_audit(logger, unit, "uninstall", user_mode, &disabled_detail),
+        )
+        .await
+        .with_context(|| format!("Failed to remove {unit}"))?;
+        if was_present {
+            removed.push(path);
+        }
+    }
+    Ok(removed)
 }
 
 /// Generates systemd unit files.
@@ -160,38 +241,15 @@ pub async fn install(
         bail!("System install requires root privileges. Use --user for user install.");
     }
 
-    fs::create_dir_all(&unit_dir)
-        .await
-        .context("Failed to create unit directory")?;
-
-    let service_path = unit_dir.join(service_name());
-    let timer_path = unit_dir.join(timer_name());
-
-    // Through the shared writer, so a unit file is replaced whole rather than
-    // truncated and rewritten in place. A half-written `.service` is one
-    // systemd fails to parse, and the `daemon-reload` below would read it.
-    // One entry per unit rather than one for the install: a run that writes the
-    // service and then cannot write the timer has done something, and the log
-    // should say which half.
     let logger = super::state::get_audit_logger().await;
-    for (path, unit, contents) in [
-        (&service_path, service_name(), generator.generate_service()),
-        (&timer_path, timer_name(), generator.generate_timer()),
-    ] {
-        write_atomically(
-            path,
-            &contents,
-            unit_audit(
-                logger.as_ref(),
-                unit,
-                "install",
-                user_mode,
-                &calendar_detail,
-            ),
-        )
-        .await
-        .with_context(|| format!("Failed to write {unit}"))?;
-    }
+    let (service_path, timer_path) = write_units(
+        &unit_dir,
+        &generator,
+        logger.as_ref(),
+        user_mode,
+        &calendar_detail,
+    )
+    .await?;
 
     if !quiet && !matches!(format, OutputFormat::Json) {
         println!("Installed: {}", service_path.display());
@@ -275,37 +333,11 @@ pub async fn uninstall(user_mode: bool, format: OutputFormat, quiet: bool) -> Re
         .map(|status| status.success())
         .unwrap_or(false);
 
-    // Remove files
-    let service_path = unit_dir.join(service_name());
-    let timer_path = unit_dir.join(timer_name());
-
-    // Through the shared remover, which keeps the `try_exists` rule this loop
-    // already had (`exists` is `metadata(..).is_ok()` and answers `false` for a
-    // unit this process may not stat, which would report an uninstall that
-    // removed nothing) and adds the entry it did not. `timer_disabled` is
-    // carried on both entries, because a unit file removed while its timer is
-    // still loaded is the state an operator most needs to find later.
     let logger = super::state::get_audit_logger().await;
-    let disabled_detail = [("timer_disabled", timer_disabled.to_string())];
-    let mut removed: Vec<String> = Vec::new();
-    for (path, unit) in [(&service_path, service_name()), (&timer_path, timer_name())] {
-        let was_present = remove_file_audited(
-            path,
-            unit_audit(
-                logger.as_ref(),
-                unit,
-                "uninstall",
-                user_mode,
-                &disabled_detail,
-            ),
-        )
-        .await
-        .with_context(|| format!("Failed to remove {unit}"))?;
-        if was_present {
-            removed.push(path.display().to_string());
-            if !quiet && !matches!(format, OutputFormat::Json) {
-                println!("Removed: {}", path.display());
-            }
+    let removed = remove_units(&unit_dir, logger.as_ref(), user_mode, timer_disabled).await?;
+    if !quiet && !matches!(format, OutputFormat::Json) {
+        for path in &removed {
+            println!("Removed: {}", path.display());
         }
     }
 
@@ -323,6 +355,7 @@ pub async fn uninstall(user_mode: bool, format: OutputFormat, quiet: bool) -> Re
         .context("Failed to reload systemd")?;
 
     let summary = uninstall_summary(removed.len(), timer_disabled);
+    let removed: Vec<String> = removed.iter().map(|p| p.display().to_string()).collect();
     report(
         &format,
         serde_json::json!({ "removed": removed, "timer_disabled": timer_disabled }),

@@ -138,3 +138,90 @@ fn host_detail_says_so_when_no_user_was_named() {
 
     assert_eq!(details["user"], "(current)");
 }
+
+// --- The join between a descriptor and a write -------------------------------
+//
+// Everything above this line asserts a detail map in isolation. That is worth
+// having and it is not the whole question: a detail map that is correct and
+// never reaches the writer passes every one of those tests. `save_scheduler_config`
+// itself cannot be driven here, because it reads both the config path and the
+// audit log path from the process environment and moving those under the other
+// tests in this binary is the race that put
+// `crates/hardener-core/tests/inventory_shared_path.rs` in a binary of its own.
+// `write_scheduler_config` takes both as arguments, which is what makes the
+// join observable without touching the environment.
+//
+// Still out of reach: which path `writable_config_path` picks, and which
+// document the command hands in when the user file does not exist yet and the
+// system config is read as a template.
+
+/// A scheduler save writes the document and files one entry describing it.
+///
+/// The three assertions have separate jobs. The file must hold the new section,
+/// because a writer reporting success and writing nothing is what the shared
+/// writer exists to prevent. The unrelated section must survive, because this
+/// command edits one table of a file the CLI also writes and a save that
+/// flattened the rest would silently drop an operator's exceptions. And exactly
+/// one entry must be filed, at the target an auditor filters on.
+#[tokio::test]
+async fn a_scheduler_save_writes_the_document_and_records_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let log_path = dir.path().join("audit.log");
+    let log = log_path.to_str().expect("utf-8 path");
+    let logger = hardener_core::config_write::logger_at(log).await;
+
+    let existing = "[scan]\nplugins = [\"kernel-hardening\"]\n";
+    super::write_scheduler_config(&config_path, existing, &scheduler(true), logger.as_ref())
+        .await
+        .expect("the scheduler section is written");
+
+    let written = std::fs::read_to_string(&config_path).expect("the config file exists");
+    assert!(
+        written.contains("[scheduler]"),
+        "the section this command exists to write must be in the file: {written}"
+    );
+    assert!(
+        written.contains("[scan]"),
+        "the sections it does not own must survive it: {written}"
+    );
+
+    let entries =
+        hardener_state::audit::AuditLogger::query(log, hardener_state::audit::QueryFilter::new())
+            .await
+            .expect("query");
+    assert_eq!(entries.len(), 1, "one entry per save");
+    assert_eq!(entries[0].entry_target, "scheduler");
+    assert_eq!(entries[0].entry_action_type, ActionType::ConfigChange);
+    assert_eq!(entries[0].entry_details["enabled"], "true");
+}
+
+/// Turning the scheduler off is recorded as a change, not as silence.
+///
+/// The green half of the pair. `enabled = false` is the save most easily
+/// mistaken for nothing having happened, and it is the one an auditor asking
+/// why the unattended scans stopped is looking for. A write that filed an entry
+/// only when the scheduler was on would pass the test above.
+#[tokio::test]
+async fn turning_the_scheduler_off_is_recorded() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config_path = dir.path().join("config.toml");
+    let log_path = dir.path().join("audit.log");
+    let log = log_path.to_str().expect("utf-8 path");
+    let logger = hardener_core::config_write::logger_at(log).await;
+
+    super::write_scheduler_config(&config_path, "", &scheduler(false), logger.as_ref())
+        .await
+        .expect("an empty starting document is a valid one");
+
+    let entries =
+        hardener_state::audit::AuditLogger::query(log, hardener_state::audit::QueryFilter::new())
+            .await
+            .expect("query");
+    assert_eq!(
+        entries.len(),
+        1,
+        "the off switch is a change like any other"
+    );
+    assert_eq!(entries[0].entry_details["enabled"], "false");
+}

@@ -1495,6 +1495,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Three writes that record host state are now watched reaching the log, not
+  only building the entry they would send.** `hardener systemd install` and
+  `uninstall`, and the desktop's scheduler save, each had their audit
+  descriptor asserted in one test and the writer asserted in another, with
+  nothing between them: a descriptor that was correct and never reached a write
+  passed both. The obstacle was that neither verb could be driven at all,
+  `install` because it reloads systemd and enables a real timer, the desktop
+  save because it resolves the config and log paths from the process
+  environment. The half of each that touches the filesystem now takes those
+  paths as arguments, as `write_units`, `remove_units` and
+  `write_scheduler_config`, so a test can drive it against a temporary
+  directory without moving an environment variable other threads are reading.
+  Four new tests, each proved to go red under the mutation it exists to catch.
+  **No behaviour changes**, in output, on disk or in the log. The `systemctl`
+  half of the two systemd verbs is still uncovered, and so is the choice of
+  which directory each write lands in; both are recorded in
+  `docs/reference/what-is-not-proven.md`.
+
 - **The desktop built its SSH connection twice, and the fleet scan's target map
   could not be reached without a network.** `connect_remote` and the fleet scan
   each assembled a `hardener_core::SshConfig` from a host profile, the same

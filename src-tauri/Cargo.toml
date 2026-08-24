@@ -36,3 +36,4 @@ whoami = { workspace = true }
 
 [dev-dependencies]
 tauri = { version = "2.11.1", features = ["test"] }
+tempfile = { workspace = true }

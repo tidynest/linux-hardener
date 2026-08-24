@@ -837,29 +837,35 @@ path: it produces units for inspection, and nothing it writes runs. If a future
 change lets `generate` target a live unit directory, that reasoning stops
 holding.
 
-**No test observes a unit file actually being installed.** `install` and
-`uninstall` shell out to `systemctl` and write into `/etc/systemd/system` or
-`~/.config/systemd/user`, neither of which a test may touch, so what is
-asserted is the audit descriptor each builds
-(`crates/hardener-cli/src/commands/systemd/tests.rs`) and, separately, that the
-writer and the remover file what they are given
-(`crates/hardener-core/src/config_write/tests.rs`). **The join is unasserted, in
-the same shape as the desktop's scheduler write.** A descriptor that is correct
-and never reaches a write would pass everything.
+**No test observes `install` or `uninstall` as a whole; the filesystem half of
+each is observed.** The two verbs split their work: `write_units` and
+`remove_units` take the unit directory as an argument and do everything that
+touches disk, and the rest of each verb is `systemctl`. The first half is
+driven against a temporary directory in
+`crates/hardener-cli/src/commands/systemd/tests.rs`, which is where a
+descriptor is now watched reaching a write rather than only being built.
+**What no test covers is the `systemctl` half**, and that is a limit with a
+reason rather than an omission: a test that called `install` itself would
+reload the operator's own systemd and enable a real timer in their session.
+`unit_dir_for` is therefore also unpinned, since nothing exercises the branch
+that picks `/etc/systemd/system` over `~/.config/systemd/user`.
 
-**The desktop's three writes are asserted on their detail, not end to end.**
-`save_scheduler_config`, `save_remote_host` and `delete_remote_host` resolve
-both the config path and the audit log path from the process environment, so a
-test cannot drive them without moving both, and moving environment variables
-under `cargo test`'s threads is the race that put
-`crates/hardener-core/tests/inventory_shared_path.rs` in its own binary. What is
-asserted is the detail map each hands the writer
-(`src-tauri/src/commands/config_write_detail_tests.rs`) and, separately, that
-the writer files what it is given (`hardener-core/src/config_write/tests.rs`,
-and for the inventory the integration test above). **An entry whose detail is
-correct and which is never filed would pass every test in the first of those
-files.** The join between them is covered for the inventory and not for the
-scheduler.
+**The desktop's scheduler write is observed end to end; its two host writes are
+not.** `save_scheduler_config` reads both the config path and the audit log
+path from the process environment, and moving environment variables under
+`cargo test`'s threads is the race that put
+`crates/hardener-core/tests/inventory_shared_path.rs` in its own binary, so the
+part that edits and writes the document is `write_scheduler_config`, which
+takes both as arguments. Two tests in
+`src-tauri/src/commands/config_write_detail_tests.rs` drive it against a
+temporary path and read the entry back. **`save_remote_host` and
+`delete_remote_host` are still asserted on their detail alone.** Each builds a
+map, hands it to `save_hosts_config`, and that call is the step nothing
+watches; that `inventory::save_audited` writes and files what it is given is
+covered by the integration test above. **What remains uncovered in both cases
+is which path the command picks**: `writable_config_path` and
+`inventory::default_path` resolve from the environment and no test may move it
+here.
 
 ---
 
