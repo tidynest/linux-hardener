@@ -134,3 +134,86 @@ fn json_names_the_profile_it_rendered() {
          identical JSON"
     );
 }
+
+/// The rendered document is handed to a deserialiser, which nothing had done.
+///
+/// Every other assertion in this file searches the rendered string, and a
+/// substring cannot see nesting. `output.contains("\"summary_passing\":1")`
+/// holds whether that field sits inside `report_summary` or is flattened
+/// beside it at the top level, and the second shape breaks every consumer
+/// reading the documented structure while leaving this file green.
+#[test]
+fn the_rendered_json_parses_back_into_the_documented_shape() {
+    let controls = vec![ControlResult {
+        control_id: "1.5.1".to_string(),
+        control_title: "Ensure ASLR is enabled".to_string(),
+        control_section: "Initial Setup".to_string(),
+        control_status: ControlStatus::Pass,
+        control_findings: vec![],
+    }];
+    let report = ComplianceReport {
+        report_framework: ComplianceFramework::CIS,
+        report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
+        report_generated_at: Utc::now(),
+        report_summary: ComplianceSummary::from_controls(&controls),
+        report_controls: controls,
+    };
+
+    let output = JsonFormatter::new().format(&report);
+    let value: serde_json::Value =
+        serde_json::from_str(&output).expect("the renderer must emit parseable JSON");
+
+    assert_eq!(value["report_framework"], "CIS");
+    assert_eq!(value["report_framework_name"], "CIS Benchmark");
+    assert_eq!(
+        value["report_controls"].as_array().map(Vec::len),
+        Some(1),
+        "controls must be an array of the controls, not a scalar"
+    );
+    assert_eq!(value["report_controls"][0]["control_id"], "1.5.1");
+    assert_eq!(
+        value["report_summary"]["summary_passing"], 1,
+        "the summary must stay nested under its own key"
+    );
+    assert!(
+        value.get("report_coverage_note").is_none(),
+        "a complete run omits the note rather than carrying a null"
+    );
+}
+
+/// `format_all` emits one array, and it is the entry point every consumer
+/// uses: the CLI, the report wizard and the desktop all call it, and no test
+/// in this crate entered it. The default trait implementation joins rendered
+/// documents with a blank line, which for JSON would be two objects in a row
+/// and parseable by nothing.
+#[test]
+fn format_all_emits_one_array_a_consumer_can_parse() {
+    let report_for = |framework| ComplianceReport {
+        report_framework: framework,
+        report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
+        report_generated_at: Utc::now(),
+        report_controls: vec![],
+        report_summary: ComplianceSummary {
+            summary_total_controls: 0,
+            summary_passing: 0,
+            summary_failing: 0,
+            summary_not_applicable: 0,
+            summary_manual_review: 0,
+            summary_score_percentage: 100.0,
+        },
+    };
+
+    let output = JsonFormatter::new().format_all(&[
+        report_for(ComplianceFramework::CIS),
+        report_for(ComplianceFramework::STIG),
+    ]);
+    let value: serde_json::Value =
+        serde_json::from_str(&output).expect("format_all must emit parseable JSON");
+
+    let reports = value.as_array().expect("format_all emits an array");
+    assert_eq!(reports.len(), 2, "every selected framework is carried");
+    assert_eq!(reports[0]["report_framework"], "CIS");
+    assert_eq!(reports[1]["report_framework"], "STIG");
+}
