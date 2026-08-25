@@ -162,11 +162,13 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/logging.rs` | Logging setup | `init_logger()` |
 | `src/file_utils.rs` | File utilities | `update_file_atomically()`, `read_config_file()`, `set_config_directive()`, `create_timestamped_backup()` |
 | `src/binary_utils.rs` | Safe binary path resolution (CWE-426 prevention) | `resolve_binary()`, `TRUSTED_PATH` |
+| `src/text.rs` | Shortens text to a column's budget, ellipsis included in the count. Lived twice until 2026-08-25, and the two copies disagreed about whether the marker was charged against the budget, so a parameter named `max_chars` returned `max_chars + 3` in the PDF renderer | `truncate_string()` |
 | `src/executor/mod.rs` | Executor abstraction (trait + types) | `SystemExecutor`, `CommandOutput`, `FileMetadata` |
 | `src/executor/mock.rs` | Virtual filesystem for unit testing | `MockExecutor` |
 | `src/vendor_config.rs` | Resolves configuration a distribution layers across `/etc` and `/usr/etc`. `/usr/etc` is consulted only on absence positively confirmed at `/etc`, because an `/etc` file that exists but cannot be read is still the file the system obeys, and answering with the vendor copy would report a configuration that is not in force | `ConfigLayer`, `LayeredRead`, `read_layered()`, `vendor_path_for()` |
 | `src/error/tests.rs` | Unit tests for `src/error.rs` | Test-only; `super` resolves to `crate::error` |
 | `src/binary_utils/tests.rs` | Unit tests for `src/binary_utils.rs` | Test-only; `super` resolves to `crate::binary_utils` |
+| `src/text/tests.rs` | Unit tests for `src/text.rs`, including that no budget from 0 to 40 is ever exceeded | Test-only; `super` resolves to `crate::text` |
 | `src/vendor_config/tests.rs` | Unit tests for `src/vendor_config.rs` | Test-only; `super` resolves to `crate::vendor_config` |
 | `src/file_utils/tests.rs` | Unit tests for `src/file_utils.rs`, the first of the two test modules that file carried | Test-only; `super` resolves to `crate::file_utils` |
 | `src/file_utils/global_scope_tests.rs` | The second, kept under its own name: that a directive written at global scope is not confused with the same directive inside an sshd `Match` block | Test-only; `super` resolves to `crate::file_utils` |
@@ -966,13 +968,13 @@ tree on **2026-08-22**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2128. The eleventh
+The table covers the ten crates under `crates/` and sums to 2134. The eleventh
 workspace member, `src-tauri`, carries 132 more, which is why the tree total the
-evidence ledger records is 2260 and not this table's sum.
+evidence ledger records is 2266 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
-| hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 128 |
+| hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `text.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 134 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 132 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 145 |
 | hardener-distro | `lib.rs` | - | 5 |

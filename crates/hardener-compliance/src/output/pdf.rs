@@ -5,6 +5,7 @@
 use super::{exclusion_note, group_controls_by_section, report_title};
 use crate::output::ReportFormatter;
 use crate::report::ComplianceReport;
+use hardener_common::text::truncate_string;
 use hardener_common::types::ControlStatus;
 use krilla::geom::{PathBuilder, Point};
 use krilla::num::NormalizedF32;
@@ -707,17 +708,6 @@ fn draw_horizontal_line(surface: &mut krilla::surface::Surface, y: f32, colour: 
             rule: FillRule::default(),
         }));
         surface.draw_path(&rect_path);
-    }
-}
-
-/// Truncates a string to the specified length, adding ellipsis if needed.
-fn truncate_string(s: &str, max_chars: usize) -> String {
-    let char_count = s.chars().count();
-    if char_count > max_chars {
-        let truncated: String = s.chars().take(max_chars).collect();
-        format!("{truncated}...")
-    } else {
-        s.to_string()
     }
 }
 

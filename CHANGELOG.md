@@ -2042,6 +2042,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`truncate_string` existed twice and the two copies disagreed about their
+  own budget.** Both shorten text to fill a fixed-width slot, a PDF table cell
+  at a known x offset and a `{:<24}` terminal column. `hardener-cli`'s counted
+  the ellipsis against the budget and returned exactly `max_len` characters;
+  `hardener-compliance`'s took `max_chars` characters and *then* appended
+  three more, so a parameter named `max_chars` returned `max_chars + 3` and a
+  70-character PDF title column was handed 73. Whether those three glyphs
+  actually overran the column depends on their widths and was not measured;
+  the function violating its own parameter needs no measurement. Neither
+  copy's tests could see the disagreement, because each tested only itself,
+  and the PDF one asserted `"this is a ..."` verbatim, dangling space and all,
+  which recorded what the code did rather than what the cell can hold. One
+  implementation now lives in `hardener_common::text`, both copies are
+  deleted, and its own tests sweep every budget from 0 to 40. Two edge cases
+  neither copy handled are now defined rather than accidental: a budget under
+  four characters cuts without a marker instead of returning three dots that
+  overflow it, and a cut landing mid-gap drops the trailing space.
+
 - **Exporting several frameworks as HTML produced several documents in one
   file.** `ReportFormatter`'s default `format_all` joins whole rendered
   documents with a blank line, and the HTML renderer emitted a complete

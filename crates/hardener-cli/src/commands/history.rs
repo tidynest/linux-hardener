@@ -6,6 +6,7 @@ use crate::cli::OutputFormat;
 use crate::commands::daemon::load_scheduler_config;
 use crate::output::format_timestamp;
 use anyhow::{Result, anyhow, bail};
+use hardener_common::text::truncate_string;
 use hardener_scheduler::{
     ScanHistoryManager,
     db::{ScanFindingRow, ScanSession, SessionFilter, is_worse, trend_direction},
@@ -552,15 +553,5 @@ fn print_session_detail(session: &ScanSession, findings: &[ScanFindingRow], quie
 }
 
 /// Truncates a string to max length with ellipsis (char-aware, safe for UTF-8).
-fn truncate_string(s: &str, max_len: usize) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= max_len {
-        s.to_string()
-    } else {
-        let end = max_len.saturating_sub(3);
-        format!("{}...", chars[..end].iter().collect::<String>())
-    }
-}
-
 #[cfg(test)]
 mod tests;

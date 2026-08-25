@@ -138,13 +138,20 @@ fn wrap_text_leaves_an_overlong_word_whole() {
     assert_eq!(wrap_text("", 10), Vec::<String>::new());
 }
 
+/// The budget covers the whole returned string, ellipsis included.
+///
+/// This asserted `"this is a ..."` until 2026-08-25: thirteen characters from
+/// a budget of ten, dangling space and all. It was recording what the function
+/// did rather than what the cell it fills can hold, which is why the two
+/// copies of this helper could disagree without either test noticing. The
+/// shared implementation and its own tests live in `hardener-common::text`.
 #[test]
 fn test_truncate_string() {
     assert_eq!(truncate_string("short", 10), "short");
-    assert_eq!(
-        truncate_string("this is a longer string", 10),
-        "this is a ..."
-    );
+
+    let cut = truncate_string("this is a longer string", 10);
+    assert_eq!(cut, "this is...");
+    assert_eq!(cut.chars().count(), 10, "the budget is the whole string");
 }
 
 /// One control under the named framework, enough to draw a page.
