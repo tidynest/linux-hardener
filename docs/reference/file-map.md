@@ -966,14 +966,14 @@ tree on **2026-08-22**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2126. The eleventh
+The table covers the ten crates under `crates/` and sums to 2128. The eleventh
 workspace member, `src-tauri`, carries 132 more, which is why the tree total the
-evidence ledger records is 2258 and not this table's sum.
+evidence ledger records is 2260 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 128 |
-| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 130 |
+| hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 132 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 145 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 107 |

@@ -2042,6 +2042,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Exporting several frameworks as HTML produced several documents in one
+  file.** `ReportFormatter`'s default `format_all` joins whole rendered
+  documents with a blank line, and the HTML renderer emitted a complete
+  `<!DOCTYPE html>` through `</html>` each time, so a three-framework export
+  wrote three document type declarations, three `<html>` roots, three `<head>`
+  sections and three copies of the whole embedded stylesheet into one file.
+  Browsers recover from that and show the content, which is why it went
+  unnoticed for as long as it did; no parser, validator or archive tool would
+  accept the file, and an auditor's toolchain is likelier to be one of those
+  than a browser. The renderer now overrides `format_all` to emit one header,
+  every report's markup, and one footer. `format` renders through the same
+  path over a one-element slice, so a single-framework export is unchanged.
+  Found while writing the multi-report test the PDF fix below called for.
+
 - **Exporting several frameworks as PDF kept the first and discarded the rest
   without saying so.** Selecting CIS, STIG and ISO 27001 and exporting as text,
   JSON, CSV or HTML gave an artefact carrying all three; exporting the same

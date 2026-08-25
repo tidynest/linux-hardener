@@ -24,113 +24,123 @@ impl Default for HtmlFormatter {
 
 impl ReportFormatter for HtmlFormatter {
     fn format(&self, report: &ComplianceReport) -> String {
-        let mut html = String::new();
+        self.format_all(std::slice::from_ref(report))
+    }
 
-        // HTML Header with embedded CSS
-        html.push_str(HTML_HEADER);
-
-        // Report Title
-        html.push_str(&format!(
-            "<h1>{}</h1>\n",
-            html_escape(&report_title(report))
-        ));
-        html.push_str(&format!(
-            "<p class=\"subtitle\">{}</p>\n",
-            html_escape(report.report_framework.description())
-        ));
-        html.push_str(&format!(
-            "<p class=\"generated\">Generated: {}</p>\n",
-            report.report_generated_at.format("%Y-%m-%d %H:%M:%S UTC")
-        ));
-
-        // Summary Box
-        html.push_str("<div class=\"summary\">\n");
-        html.push_str("<h2>Summary</h2>\n");
-        html.push_str(&format!(
-            "<div class=\"score\">{:.1}%</div>\n",
-            report.report_summary.summary_score_percentage
-        ));
-        html.push_str("<div class=\"stats\">\n");
-        html.push_str(&format!(
-            "<span class=\"pass\">Passing: {}</span>\n",
-            report.report_summary.summary_passing
-        ));
-        html.push_str(&format!(
-            "<span class=\"fail\">Failing: {}</span>\n",
-            report.report_summary.summary_failing
-        ));
-        if report.report_summary.summary_not_applicable > 0 {
-            html.push_str(&format!(
-                "<span class=\"na\">N/A: {}</span>\n",
-                report.report_summary.summary_not_applicable
-            ));
+    /// One document carrying every report, rather than several concatenated.
+    ///
+    /// The trait's default joins whole rendered documents with a blank line,
+    /// which for HTML meant a file with one `<!DOCTYPE html>`, `<html>`,
+    /// `<head>` and `<body>` per selected framework. A browser recovers from
+    /// that and shows the content, which is why it went unnoticed; it is still
+    /// not a document any parser, validator or archive tool would accept, and
+    /// the whole embedded stylesheet was repeated once per framework.
+    fn format_all(&self, reports: &[ComplianceReport]) -> String {
+        let mut html = String::from(HTML_HEADER);
+        for report in reports {
+            push_report_body(&mut html, report);
         }
-        html.push_str("</div>\n");
-
-        // Inside the summary box and under the figure, because it is that
-        // figure the sentence qualifies: an auditor who reads only the box
-        // must still learn that a human reduced the denominator.
-        if let Some(note) = exclusion_note(&report.report_summary) {
-            html.push_str(&format!(
-                "<p class=\"scope-note\">{}</p>\n",
-                html_escape(&note)
-            ));
-        }
-
-        html.push_str("</div>\n");
-
-        let sections_vec = super::group_controls_by_section(report);
-
-        for (section, controls) in &sections_vec {
-            html.push_str(&format!("<h2>{}</h2>\n", html_escape(section)));
-            html.push_str("<table>\n");
-            html.push_str(
-                "<thead><tr><th>Control ID</th><th>Title</th><th>Status</th></tr></thead>\n",
-            );
-            html.push_str("<tbody>\n");
-
-            for control in controls {
-                let (status_str, status_class) = match control.control_status {
-                    ControlStatus::Pass => ("PASS", "pass"),
-                    ControlStatus::Fail => ("FAIL", "fail"),
-                    ControlStatus::NotApplicable => ("N/A", "na"),
-                    ControlStatus::ManualReview => ("MANUAL", "manual"),
-                };
-
-                html.push_str(&format!(
-                    "<tr><td>{}</td><td>{}</td><td class=\"{}\">{}</td></tr>\n",
-                    html_escape(&control.control_id),
-                    html_escape(&control.control_title),
-                    status_class,
-                    status_str
-                ));
-
-                // Show the evidence behind the status. A control carrying only
-                // excepted findings passes, but the documented deviations are
-                // still listed (in their own style) so the pass is not mistaken
-                // for a clean one.
-                for finding in &control.control_findings {
-                    let row_class = if finding.is_policy_excepted() {
-                        "exception"
-                    } else {
-                        "finding"
-                    };
-                    html.push_str(&format!(
-                        "<tr class=\"{}\"><td></td><td colspan=\"2\">→ [{}] {}</td></tr>\n",
-                        row_class,
-                        html_escape(&finding.evidence_label()),
-                        html_escape(&finding.finding_title)
-                    ));
-                }
-            }
-
-            html.push_str("</tbody>\n</table>\n");
-        }
-
-        // HTML Footer
         html.push_str(HTML_FOOTER);
-
         html
+    }
+}
+
+/// Appends one report's markup, between the shared header and footer.
+fn push_report_body(html: &mut String, report: &ComplianceReport) {
+    // Report Title
+    html.push_str(&format!(
+        "<h1>{}</h1>\n",
+        html_escape(&report_title(report))
+    ));
+    html.push_str(&format!(
+        "<p class=\"subtitle\">{}</p>\n",
+        html_escape(report.report_framework.description())
+    ));
+    html.push_str(&format!(
+        "<p class=\"generated\">Generated: {}</p>\n",
+        report.report_generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+    ));
+
+    // Summary Box
+    html.push_str("<div class=\"summary\">\n");
+    html.push_str("<h2>Summary</h2>\n");
+    html.push_str(&format!(
+        "<div class=\"score\">{:.1}%</div>\n",
+        report.report_summary.summary_score_percentage
+    ));
+    html.push_str("<div class=\"stats\">\n");
+    html.push_str(&format!(
+        "<span class=\"pass\">Passing: {}</span>\n",
+        report.report_summary.summary_passing
+    ));
+    html.push_str(&format!(
+        "<span class=\"fail\">Failing: {}</span>\n",
+        report.report_summary.summary_failing
+    ));
+    if report.report_summary.summary_not_applicable > 0 {
+        html.push_str(&format!(
+            "<span class=\"na\">N/A: {}</span>\n",
+            report.report_summary.summary_not_applicable
+        ));
+    }
+    html.push_str("</div>\n");
+
+    // Inside the summary box and under the figure, because it is that
+    // figure the sentence qualifies: an auditor who reads only the box
+    // must still learn that a human reduced the denominator.
+    if let Some(note) = exclusion_note(&report.report_summary) {
+        html.push_str(&format!(
+            "<p class=\"scope-note\">{}</p>\n",
+            html_escape(&note)
+        ));
+    }
+
+    html.push_str("</div>\n");
+
+    let sections_vec = super::group_controls_by_section(report);
+
+    for (section, controls) in &sections_vec {
+        html.push_str(&format!("<h2>{}</h2>\n", html_escape(section)));
+        html.push_str("<table>\n");
+        html.push_str("<thead><tr><th>Control ID</th><th>Title</th><th>Status</th></tr></thead>\n");
+        html.push_str("<tbody>\n");
+
+        for control in controls {
+            let (status_str, status_class) = match control.control_status {
+                ControlStatus::Pass => ("PASS", "pass"),
+                ControlStatus::Fail => ("FAIL", "fail"),
+                ControlStatus::NotApplicable => ("N/A", "na"),
+                ControlStatus::ManualReview => ("MANUAL", "manual"),
+            };
+
+            html.push_str(&format!(
+                "<tr><td>{}</td><td>{}</td><td class=\"{}\">{}</td></tr>\n",
+                html_escape(&control.control_id),
+                html_escape(&control.control_title),
+                status_class,
+                status_str
+            ));
+
+            // Show the evidence behind the status. A control carrying only
+            // excepted findings passes, but the documented deviations are
+            // still listed (in their own style) so the pass is not mistaken
+            // for a clean one.
+            for finding in &control.control_findings {
+                let row_class = if finding.is_policy_excepted() {
+                    "exception"
+                } else {
+                    "finding"
+                };
+                html.push_str(&format!(
+                    "<tr class=\"{}\"><td></td><td colspan=\"2\">→ [{}] {}</td></tr>\n",
+                    row_class,
+                    html_escape(&finding.evidence_label()),
+                    html_escape(&finding.finding_title)
+                ));
+            }
+        }
+
+        html.push_str("</tbody>\n</table>\n");
     }
 }
 

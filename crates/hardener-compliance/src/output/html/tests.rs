@@ -158,3 +158,79 @@ fn test_html_escape() {
     assert_eq!(html_escape("<script>"), "&lt;script&gt;");
     assert_eq!(html_escape("a & b"), "a &amp; b");
 }
+
+/// One document per file, whatever the number of frameworks in it.
+///
+/// The trait's default `format_all` joins whole rendered documents with a
+/// blank line. For HTML that produced one `<!DOCTYPE html>`, `<html>`,
+/// `<head>` and `<body>` per selected framework in a single file, plus one
+/// copy of the whole embedded stylesheet each. A browser recovers from it and
+/// shows the content, which is exactly why no eyeball caught it and no
+/// substring assertion could: every framework's markup really was present.
+///
+/// Counting the structural landmarks is what a parser would object to,
+/// without taking a parser as a dependency.
+#[test]
+fn several_frameworks_render_as_one_document() {
+    let report_for = |framework| {
+        let controls = vec![ControlResult {
+            control_id: "1.5.1".to_string(),
+            control_title: "Ensure ASLR is enabled".to_string(),
+            control_section: "Initial Setup".to_string(),
+            control_status: ControlStatus::Pass,
+            control_findings: vec![],
+        }];
+        ComplianceReport {
+            report_framework: framework,
+            report_profile: ComplianceProfile::default(),
+            report_coverage_note: None,
+            report_generated_at: Utc::now(),
+            report_summary: ComplianceSummary::from_controls(&controls),
+            report_controls: controls,
+        }
+    };
+
+    let output = HtmlFormatter::new().format_all(&[
+        report_for(ComplianceFramework::CIS),
+        report_for(ComplianceFramework::STIG),
+    ]);
+
+    assert_eq!(
+        output.matches("<!DOCTYPE html>").count(),
+        1,
+        "a file carries one document type declaration, not one per framework"
+    );
+    assert_eq!(output.matches("<html").count(), 1, "one root element");
+    assert_eq!(output.matches("</html>").count(), 1, "closed once");
+    assert_eq!(output.matches("<body>").count(), 1, "one body");
+    assert_eq!(
+        output.matches("<style>").count(),
+        1,
+        "the stylesheet is shared, not repeated per framework"
+    );
+
+    // The point of one document is that it still carries every framework.
+    assert!(
+        output.contains("CIS Benchmark"),
+        "the first framework is present"
+    );
+    assert!(
+        output.contains("DISA STIG"),
+        "the second framework is present too, got:\n{output}"
+    );
+}
+
+/// A single-framework export is unchanged by the above.
+///
+/// `format` now delegates to `format_all` over a one-element slice, so this
+/// pins that the delegation added nothing and removed nothing: header once,
+/// body once, footer once, exactly as it was rendered before.
+#[test]
+fn a_single_framework_document_is_header_body_footer() {
+    let output = HtmlFormatter::new().format(&report_with_one_exclusion());
+
+    assert!(output.starts_with("<!DOCTYPE html>"));
+    assert!(output.trim_end().ends_with("</html>"));
+    assert_eq!(output.matches("<!DOCTYPE html>").count(), 1);
+    assert_eq!(output.matches("</html>").count(), 1);
+}

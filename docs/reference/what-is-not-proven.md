@@ -791,10 +791,23 @@ starting its own page. An empty set yields a contentless but structurally valid
 PDF instead of an index panic. Reverting the override to `generate_pdf(&reports[0])`
 fails both new tests, which is how the fix was believed.
 
+**Reading `format_all` for the PDF fix found a second thing wrong with it.**
+The default joins whole rendered documents with a blank line, which for HTML
+meant one `<!DOCTYPE html>`, `<html>`, `<head>`, `<body>` and copy of the
+embedded stylesheet per selected framework, all in one file. This one loses no
+data, and a browser recovers from it and shows every framework, which is why it
+survived: the substring assertions were right that the content was all there.
+It is still not a document any parser, validator or archive tool would accept,
+and an auditor's toolchain is likelier to be one of those than a browser. The
+HTML renderer overrides `format_all` now, and `format` goes through it over a
+one-element slice, so a single-framework export is unchanged. Reconstructing
+the old behaviour exactly fails the new test at two document type declarations
+against one, and fails nothing else.
+
 **What is still uncovered here.** `compare_control_ids`, the comparator
 ordering controls in every rendered report, is still reached by nothing per the
-coverage baseline. `format_all` is entered by tests for JSON only; the text,
-CSV and HTML renderers inherit the default implementation and no test drives it
+coverage baseline. `format_all` is entered by tests for JSON and HTML; text and
+CSV inherit the default implementation, correctly, and no test drives it
 through them.
 
 **A scope exclusion typed into `config.toml` by hand produces no audit entry.**
