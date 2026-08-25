@@ -1469,7 +1469,7 @@ pub async fn export_compliance_report(
 
     // Write file (PDF needs binary handling)
     if output_format == OutputFormat::Pdf {
-        let bytes = PdfFormatter::new().format_bytes(&reports[0]);
+        let bytes = PdfFormatter::new().format_all_bytes(&reports);
         std::fs::write(&final_path, bytes)
             .map_err(|e| safe_err(format!("Failed to write PDF: {}", e)))?;
     } else {

@@ -1,6 +1,6 @@
 # What This Release Does Not Prove
 
-**Last Updated**: 2026-08-24
+**Last Updated**: 2026-08-25
 
 This release does not claim to be proven bug-free, and no release of anything
 ever has been. It claims something narrower and checkable: every capability it
@@ -731,13 +731,23 @@ thing. On a derived framework it usually means a check could not run; on a
 curated one it usually means no check exists. The report's coverage note
 distinguishes them only in the first case.
 
-**No rendered report is ever parsed back by the consumer that will read it.**
-The JSON is handed to no deserialiser, the CSV to no CSV reader, the HTML to no
-parser, and the PDF row checks only that the output starts with `%PDF-` and
-exceeds 1000 bytes, so a structurally invalid document no viewer could open
-would pass. Of the fifteen output tests, ten assert on substrings of the
-rendered string, one asserts a prefix and a byte length on it, and four assert
-on a helper rather than on any rendered output.
+**Two of the four text formats are now parsed back by a reader. HTML and PDF
+are not.** The JSON goes through `serde_json::from_str` and is asserted by path
+rather than by substring, and the CSV goes through an RFC 4180 reader written
+in its own test file, which is pinned on five known documents before anything
+is judged by it. The HTML is still handed to no parser, and the PDF row still
+checks only that the output starts with `%PDF-` and exceeds 1000 bytes, so a
+structurally invalid document of either kind that no viewer could open would
+still pass.
+
+**What the substring assertions could not see, measured rather than argued.**
+Dropping `escape_csv_field` from the title column left every existing test in
+`output/csv/tests.rs` green while a title containing a comma shifted Status and
+Finding Count one place right, which is precisely the positional read
+`CSV_HEADER`'s own comment describes. Flattening `report_summary` to the top
+level of the JSON left every existing test in `output/json/tests.rs` green
+while breaking the documented shape for every consumer. Both mutations were
+applied and watched, and in each case only the new parse-back test went red.
 
 **All ten frameworks are now rendered on all six distributions.** This entry is
 kept rather than deleted because what it recorded was true for months and the
@@ -760,16 +770,32 @@ plugin unit tests, which is where a mapping error would show, and the three
 share the rendering path with the seven long exercised.
 
 **What the run does not say.** It says the report and the PDF render without
-error, which is what the checks assert. No rendered report is parsed back, here
-or anywhere, per the entry above this one, so a structurally invalid document
-no viewer could open would still pass. This document did not mention any of the
+error, which is what the checks assert. No rendered PDF is parsed back, here or
+anywhere, per the entry above this one, so a structurally invalid document no
+viewer could open would still pass. This document did not mention any of the
 three by name until 2026-08-16.
 
-**The entry point every real consumer calls is entered by no test.**
-`ReportFormatter::format_all` is the multi-report path used by `hardener report`,
-the report wizard and the desktop, and the coverage baseline records it and
-`compare_control_ids`, the comparator that orders controls in every rendered
-report, as reached by nothing.
+**The entry point every real consumer calls was entered by no test, and it was
+losing data.** `ReportFormatter::format_all` is the multi-report path used by
+`hardener report`, the report wizard and the desktop. Nothing entered it, and
+underneath it all five binary-output sites wrote `format_bytes(&reports[0])`:
+an operator selecting three frameworks and exporting PDF received the first
+one, with the other two dropped and nothing said, while the same selection
+through text, JSON, CSV or HTML carried all three. The same index panicked on
+an empty set, which `parse_frameworks` in the desktop can produce because it
+drops unknown framework identifiers silently.
+
+`format_all_bytes` on the trait is what those five sites call now, and the PDF
+renderer overrides it to draw every report into one document, each framework
+starting its own page. An empty set yields a contentless but structurally valid
+PDF instead of an index panic. Reverting the override to `generate_pdf(&reports[0])`
+fails both new tests, which is how the fix was believed.
+
+**What is still uncovered here.** `compare_control_ids`, the comparator
+ordering controls in every rendered report, is still reached by nothing per the
+coverage baseline. `format_all` is entered by tests for JSON only; the text,
+CSV and HTML renderers inherit the default implementation and no test drives it
+through them.
 
 **A scope exclusion typed into `config.toml` by hand produces no audit entry.**
 `hardener scope exclude` writes the `[compliance.not_applicable]` table and

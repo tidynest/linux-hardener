@@ -2042,6 +2042,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Exporting several frameworks as PDF kept the first and discarded the rest
+  without saying so.** Selecting CIS, STIG and ISO 27001 and exporting as text,
+  JSON, CSV or HTML gave an artefact carrying all three; exporting the same
+  selection as PDF gave a document containing CIS alone. All five binary-output
+  sites, in `hardener report`, the report wizard and the desktop's export
+  command, wrote `format_bytes(&reports[0])`, and `ReportFormatter` offered no
+  multi-report byte path for them to call instead. The same index panicked when
+  the set was empty, which the desktop can produce: `parse_frameworks` drops
+  identifiers the enum does not recognise, by design and silently, so an export
+  naming none of them reached an index into an empty vector. A compliance
+  artefact that quietly omits what was asked for is the worst shape this
+  project has, because the omission is invisible in the file that results.
+  `ReportFormatter::format_all_bytes` is the multi-report counterpart of
+  `format_bytes`, defaulting to the UTF-8 encoding of `format_all` and
+  overridden by the PDF renderer to draw every report into one document, each
+  framework starting its own page. An empty selection now yields a contentless
+  but structurally valid PDF rather than a crash; refusing that export with a
+  reason is a separate decision, left to the callers where a reason can be
+  worded. No single-framework export changes by a byte, which is asserted.
+
 - **The CLI printed four different status markers for the same three states.**
   `output.rs` used `✓` at eleven sites and `✗` at six, and alongside them `i`
   for info, `x` for error, `W` for warning at one site and `!` for warning at

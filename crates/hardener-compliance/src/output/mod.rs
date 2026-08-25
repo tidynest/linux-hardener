@@ -37,6 +37,18 @@ pub trait ReportFormatter {
             .collect::<Vec<_>>()
             .join("\n\n")
     }
+
+    /// Formats multiple reports as raw bytes.
+    ///
+    /// This is the multi-report counterpart of [`Self::format_bytes`], and it
+    /// exists because writing a binary format had no such counterpart: every
+    /// caller wanting bytes for a set of reports reached for
+    /// `format_bytes(&reports[0])`, which rendered the first framework, threw
+    /// the rest away without a word, and panicked on an empty set. A binary
+    /// renderer overrides this to combine the set into one document.
+    fn format_all_bytes(&self, reports: &[ComplianceReport]) -> Vec<u8> {
+        self.format_all(reports).into_bytes()
+    }
 }
 
 /// Report heading: the framework's full name plus the active profile's

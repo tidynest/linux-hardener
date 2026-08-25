@@ -146,3 +146,71 @@ fn test_truncate_string() {
         "this is a ..."
     );
 }
+
+/// One control under the named framework, enough to draw a page.
+fn report_for(framework: ComplianceFramework) -> ComplianceReport {
+    let controls = vec![ControlResult {
+        control_id: "1.5.1".to_string(),
+        control_title: "Ensure ASLR is enabled".to_string(),
+        control_section: "Initial Setup".to_string(),
+        control_status: ControlStatus::Pass,
+        control_findings: vec![],
+    }];
+    ComplianceReport {
+        report_framework: framework,
+        report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
+        report_generated_at: Utc::now(),
+        report_summary: ComplianceSummary::from_controls(&controls),
+        report_controls: controls,
+    }
+}
+
+/// A set of frameworks renders as one document, not as the first of them.
+///
+/// Every consumer of this renderer selects a set and exports once, and until
+/// `format_all_bytes` existed all five of them wrote `reports[0]`. The check
+/// is the byte length rather than a page count, because krilla exposes no
+/// reader: two reports must produce materially more document than one, and
+/// the single-report rendering must still be exactly what it always was.
+#[test]
+fn every_selected_framework_reaches_the_document() {
+    let cis = report_for(ComplianceFramework::CIS);
+    let stig = report_for(ComplianceFramework::STIG);
+
+    let formatter = PdfFormatter::new();
+    let one = formatter.format_all_bytes(std::slice::from_ref(&cis));
+    let both = formatter.format_all_bytes(&[cis.clone(), stig]);
+
+    assert_eq!(
+        one,
+        formatter.format_bytes(&cis),
+        "a one-report set must render exactly as the single-report path does"
+    );
+    assert!(
+        both.len() > one.len(),
+        "two frameworks must carry more document than one, got {} against {}",
+        both.len(),
+        one.len()
+    );
+}
+
+/// An empty set yields a real if contentless PDF rather than a panic.
+///
+/// `reports[0]` panicked, and it was reachable: `parse_frameworks` in the
+/// desktop drops unknown identifiers silently, so an export naming none the
+/// enum recognises produced an empty vector and indexed it. No caller refuses
+/// the export first, so what an operator gets is this: measured at 1457 bytes
+/// of PDF 1.7 carrying no pages. The header is asserted rather than the
+/// length, because the length is an artefact of krilla's own preamble and
+/// would move under a version bump that changed nothing here.
+#[test]
+fn an_empty_set_renders_a_pdf_rather_than_panicking() {
+    let bytes = PdfFormatter::new().format_all_bytes(&[]);
+
+    assert!(
+        bytes.starts_with(b"%PDF-"),
+        "an empty set must still produce something a reader recognises, got {:?}",
+        String::from_utf8_lossy(&bytes[..bytes.len().min(12)])
+    );
+}

@@ -112,6 +112,13 @@ impl ReportFormatter for PdfFormatter {
     fn format_bytes(&self, report: &ComplianceReport) -> Vec<u8> {
         generate_pdf(report)
     }
+
+    /// One document carrying every report, rather than the default's
+    /// UTF-8 encoding of concatenated Latin-1 page streams, which no PDF
+    /// reader could open.
+    fn format_all_bytes(&self, reports: &[ComplianceReport]) -> Vec<u8> {
+        generate_pdf_all(reports)
+    }
 }
 
 /// Tracks current Y position during PDF generation.
@@ -149,6 +156,24 @@ impl YTracker {
 
 /// Generates a PDF document from a compliance report.
 fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
+    generate_pdf_all(std::slice::from_ref(report))
+}
+
+/// Renders every report into one document, each framework starting a new page.
+///
+/// The multi-report case is the one every real consumer takes: the CLI, the
+/// report wizard and the desktop all select a set of frameworks and export
+/// once. Until this existed all five call sites rendered `reports[0]` and
+/// dropped the rest with nothing said, while the same selection through the
+/// text, JSON, CSV and HTML renderers carried every framework.
+///
+/// An empty slice yields a document with no pages rather than a panic, which
+/// `an_empty_set_renders_without_panicking` pins. No caller refuses the
+/// export first, so that is the behaviour an operator selecting no framework
+/// gets: a contentless file instead of the index-out-of-bounds `reports[0]`
+/// gave them. Refusing it with a reason is a separate decision, and belongs
+/// in the callers where a reason can be worded.
+fn generate_pdf_all(reports: &[ComplianceReport]) -> Vec<u8> {
     let font_regular = Font::new(FONT_DATA.to_vec().into(), 0).expect(
         "Failed to load regular font - ensure NotoSans-Regular.ttf is
   present",
@@ -159,6 +184,24 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
     );
 
     let mut document = Document::new();
+    for report in reports {
+        draw_report(&mut document, report, &font_regular, &font_bold);
+    }
+
+    document.finish().expect("Failed to generate PDF")
+}
+
+/// Appends one report's pages to `document`.
+///
+/// The vertical tracker is per report, so each one opens its own first page
+/// and carries its own footer, which is what keeps two frameworks from
+/// running into each other mid-page.
+fn draw_report(
+    document: &mut Document,
+    report: &ComplianceReport,
+    font_regular: &Font,
+    font_bold: &Font,
+) {
     let mut y = YTracker::new();
 
     let sections_vec = group_controls_by_section(report);
@@ -219,7 +262,7 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
     y.advance(SMALL_SIZE * LINE_HEIGHT + 20.0);
 
     // === Summary Box ===
-    draw_summary_box(&mut surface, &mut y, report, &font_regular, &font_bold);
+    draw_summary_box(&mut surface, &mut y, report, font_regular, font_bold);
     y.advance(30.0);
 
     // === Controls by Section ===
@@ -304,7 +347,7 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
                 surface = page.surface();
             }
 
-            draw_control(&mut surface, &mut y, control, &font_regular, &font_bold);
+            draw_control(&mut surface, &mut y, control, font_regular, font_bold);
         }
 
         y.advance(15.0);
@@ -331,8 +374,6 @@ fn generate_pdf(report: &ComplianceReport) -> Vec<u8> {
 
     surface.finish();
     page.finish();
-
-    document.finish().expect("Failed to generate PDF")
 }
 
 /// Draws the summary box with score and statistics.
