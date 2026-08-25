@@ -9,8 +9,8 @@ use hardener_compliance::{
 use hardener_core::config::scope::ComplianceConfig;
 use hardener_core::config_write::{WriteAudit, get_audit_logger, write_atomically};
 use hardener_core::{
-    ApplyResult, ConfigLoader, Context, Finding, PluginConfig, PluginMetadata, ScanResult,
-    UncheckedCheck, ValidationReport,
+    ApplyResult, ConfigLoader, Context, Finding, HardenerConfig, PluginConfig, PluginMetadata,
+    ScanResult, UncheckedCheck, ValidationReport,
 };
 use hardener_distro::Distribution;
 use hardener_plugins::create_plugin_registry;
@@ -2525,6 +2525,66 @@ pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotifi
 /// Validates a config file and returns a summary of its contents.
 ///
 /// Parses the TOML file using ConfigLoader and counts plugins,
+/// The config file's own eight plugin sections, each under the plugin id that
+/// owns it.
+///
+/// These are fields of `HardenerConfig` rather than a second copy of the
+/// registry, so naming them here is the only way to walk them. The ids must
+/// still match `get_plugin_config`'s arms, which is what
+/// `every_section_id_resolves_to_its_own_section` pins: an id that drifts
+/// falls through to that function's empty default, which reports enabled
+/// whatever the file says.
+fn plugin_sections(config: &HardenerConfig) -> [(&'static str, &PluginConfig); 8] {
+    [
+        ("kernel-hardening", &config.kernel),
+        ("ssh-hardening", &config.ssh),
+        ("firewall-hardening", &config.firewall),
+        ("pam-hardening", &config.pam),
+        ("service-minimisation", &config.services),
+        ("audit-hardening", &config.audit),
+        ("permissions-hardening", &config.permissions),
+        ("mac-hardening", &config.mac),
+    ]
+}
+
+/// Describes a loaded config the way the picker card reports it.
+///
+/// Split from the command so the decision can be driven: the command itself
+/// only resolves a path and reads a file.
+///
+/// **The enabled set is the one that will actually run.** It used to be each
+/// section's own `enabled` flag, which is one of the three things the real
+/// gate reads: `is_plugin_enabled` also honours `global.disabled_plugins` and
+/// the `global.enabled_plugins` allow list. So a config narrowing the set
+/// globally still reported all eight, and the card an operator reads to
+/// confirm they picked the right file said "8 plugins" for a file that runs
+/// one. It could only ever over-report, never claim a plugin was off while it
+/// ran, because a section disabled by its own flag fails the wider gate too.
+fn summarise_config(path: String, config: &HardenerConfig) -> ConfigSummary {
+    let sections = plugin_sections(config);
+
+    ConfigSummary {
+        config_path: path,
+        config_is_valid: true,
+        config_error: None,
+        config_enabled_plugins: sections
+            .iter()
+            .filter(|(id, _)| config.is_plugin_enabled(id))
+            .map(|(id, _)| (*id).to_string())
+            .collect(),
+        // Counts describe what the file declares, enabled or not: this is the
+        // "3 directives" on the card, not a prediction of what will apply.
+        config_directive_count: sections
+            .iter()
+            .map(|(_, section)| section.directives.len() as u32)
+            .sum(),
+        config_exception_count: sections
+            .iter()
+            .map(|(_, section)| section.exceptions.len() as u32)
+            .sum(),
+    }
+}
+
 /// directives, and exceptions. Returns error details if invalid.
 #[tauri::command]
 pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
@@ -2548,43 +2608,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
         .with_cli_config(file_path);
 
     match loader.load() {
-        Ok(config) => {
-            let plugin_sections = [
-                ("kernel", &config.kernel),
-                ("ssh", &config.ssh),
-                ("firewall", &config.firewall),
-                ("pam", &config.pam),
-                ("services", &config.services),
-                ("audit", &config.audit),
-                ("permissions", &config.permissions),
-                ("mac", &config.mac),
-            ];
-
-            let enabled_plugins: Vec<String> = plugin_sections
-                .iter()
-                .filter(|(_, plugin_config)| plugin_config.is_enabled())
-                .map(|(name, _)| (*name).to_string())
-                .collect();
-
-            let directive_count: u32 = plugin_sections
-                .iter()
-                .map(|(_, plugin_config)| plugin_config.directives.len() as u32)
-                .sum();
-
-            let exception_count: u32 = plugin_sections
-                .iter()
-                .map(|(_, plugin_config)| plugin_config.exceptions.len() as u32)
-                .sum();
-
-            Ok(ConfigSummary {
-                config_path: path,
-                config_is_valid: true,
-                config_error: None,
-                config_enabled_plugins: enabled_plugins,
-                config_directive_count: directive_count,
-                config_exception_count: exception_count,
-            })
-        }
+        Ok(config) => Ok(summarise_config(path, &config)),
         Err(e) => Ok(ConfigSummary {
             config_path: path,
             config_is_valid: false,
@@ -2852,3 +2876,6 @@ mod exception_args_tests;
 /// Tests for the audit detail the desktop's own config writes carry.
 #[cfg(test)]
 mod config_write_detail_tests;
+
+#[cfg(test)]
+mod config_summary_tests;

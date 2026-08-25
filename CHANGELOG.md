@@ -2042,6 +2042,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop's config picker reported plugins that the config file turns
+  off.** Choosing a config file shows a card reading "N plugins, X directives,
+  Y exceptions", which is what an operator reads to confirm they picked the
+  file they meant. That N came from each section's own `enabled` flag, and the
+  gate scan and apply actually use, `is_plugin_enabled`, reads two more things:
+  `global.disabled_plugins` and the `global.enabled_plugins` allow list. So a
+  file carrying `enabled_plugins = ["ssh-hardening"]` reported eight plugins
+  and ran one, and `disabled_plugins = ["mac-hardening"]`, the documented way
+  to decline the MAC plugin, reported eight and ran seven. It could only ever
+  over-report, never claim a plugin was off while it ran, because a section
+  disabled by its own flag fails the wider gate too.
+
+  **Correcting the predicate alone would have made it worse.** The sections
+  were listed under short names (`"kernel"`), and `get_plugin_config` matches
+  full plugin ids and falls through to a shared empty default for anything
+  else, which reports enabled whatever the file says. The two faults masked
+  each other: the short names were harmless only because the old predicate read
+  the section directly and never used them. Both are fixed together, and
+  `every_section_id_resolves_to_its_own_section` disables each of the eight in
+  turn and requires it to leave the reported set, so an id that drifts out of
+  step fails rather than silently reporting everything enabled. The decision
+  moved out of the `#[tauri::command]` body into `summarise_config`, which is
+  what let any of it be driven at all. The counts stay a description of what
+  the file declares rather than of what will run, which is now pinned.
+
 - **`truncate_string` existed twice and the two copies disagreed about their
   own budget.** Both shorten text to fill a fixed-width slot, a PDF table cell
   at a known x offset and a `{:<24}` terminal column. `hardener-cli`'s counted

@@ -775,6 +775,33 @@ anywhere, per the entry above this one, so a structurally invalid document no
 viewer could open would still pass. This document did not mention any of the
 three by name until 2026-08-16.
 
+**The desktop's largest untested file gave up a defect the moment a decision
+was lifted out of it.** `src-tauri/src/commands.rs` is 26.60 per cent covered
+with 1115 missed lines, and the coverage baseline explains why: 32
+`#[tauri::command]` bodies that need a Tauri runtime and `pkexec`. That is true
+of the parts which talk to the runtime, and it had been quietly extended to the
+decisions those bodies make. `validate_config` decided which plugins a chosen
+config file enables, and reported a set built from each section's own `enabled`
+flag while scan and apply gate on `is_plugin_enabled`, which also reads
+`global.disabled_plugins` and the `global.enabled_plugins` allow list. A file
+naming one plugin in its allow list was reported to the operator as running
+eight.
+
+The fix is the same shape the fleet path took in August: `summarise_config` is
+a plain function over a `HardenerConfig`, the command resolves a path and reads
+a file, and six tests drive the decision. **What the tests are worth is
+measurable rather than asserted**: restoring the old predicate fails exactly
+the two global-list tests and leaves the section-flag one green, which is the
+defect's own shape isolated.
+
+It also caught a second fault the first was hiding. The sections were listed
+under short names, which `get_plugin_config` does not match, so it returned its
+shared empty default, which reports enabled. The old code never noticed because
+its predicate read the section struct directly rather than through the id.
+**Correcting the predicate alone would have reported all eight plugins enabled
+for every config**, which is strictly worse than the bug being fixed. Two
+faults, each invisible while the other stood.
+
 **The entry point every real consumer calls was entered by no test, and it was
 losing data.** `ReportFormatter::format_all` is the multi-report path used by
 `hardener report`, the report wizard and the desktop. Nothing entered it, and
