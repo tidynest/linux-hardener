@@ -787,6 +787,18 @@ flag while scan and apply gate on `is_plugin_enabled`, which also reads
 naming one plugin in its allow list was reported to the operator as running
 eight.
 
+**Not every command in that file carries the same risk, and the split is
+checkable.** Of the 32, seven reach the CLI through `run_privileged_command`,
+`Command::new` or `run_fleet_mutation`, and a command that shells out to
+`hardener` inherits the CLI's rules and cannot disagree with them:
+`add_policy_exception` builds its argv through `exception_add_args`, which has
+its own tests, and `remove_policy_exception` is a pass-through. The remaining
+25 decide something in-process, and that is where a desktop answer can drift
+from the CLI's. Both defects found in this file, the fleet flatten in August
+and the plugin count above, were in-process decisions. The count is a filter
+rather than a proof: it comes from matching three call shapes, so a command
+reaching the CLI by some other helper is miscounted as in-process.
+
 The fix is the same shape the fleet path took in August: `summarise_config` is
 a plain function over a `HardenerConfig`, the command resolves a path and reads
 a file, and six tests drive the decision. **What the tests are worth is
