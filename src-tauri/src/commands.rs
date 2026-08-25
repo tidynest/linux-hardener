@@ -2522,9 +2522,6 @@ pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotifi
     }
 }
 
-/// Validates a config file and returns a summary of its contents.
-///
-/// Parses the TOML file using ConfigLoader and counts plugins,
 /// The config file's own eight plugin sections, each under the plugin id that
 /// owns it.
 ///
@@ -2585,7 +2582,11 @@ fn summarise_config(path: String, config: &HardenerConfig) -> ConfigSummary {
     }
 }
 
-/// directives, and exceptions. Returns error details if invalid.
+/// Validates a config file and returns a summary of its contents.
+///
+/// Parses the TOML file using `ConfigLoader` and counts plugins, directives
+/// and exceptions. Returns error details if invalid. The summary itself is
+/// built by [`summarise_config`], which is where the decisions live.
 #[tauri::command]
 pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
     validate_user_config_path(&path)?;
