@@ -967,14 +967,14 @@ purpose-named directories.
 Unit tests sit beside the source file they exercise, in a `#[cfg(test)]` module of their own file rather than inside it: `foo.rs` is accompanied by `foo/tests.rs`, and a `foo/mod.rs` by `foo/tests.rs` in the directory it already owns. They are still child modules, so they still read private items; only their location changed. Integration tests, which see the public API only, remain in each crate's `tests/` directory. The **Unit Tests** column below names the source files under test, not the files the tests live in.
 
 The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
-tree on **2026-08-22**, not a run total: a run also executes doctests and, for
+tree on **2026-08-26**, not a run total: a run also executes doctests and, for
 `hardener-ui`, `wasm_bindgen_test` cases that no annotation count here covers.
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2138. The eleventh
+The table covers the ten crates under `crates/` and sums to 2142. The eleventh
 workspace member, `src-tauri`, carries 157 more, which is why the tree total the
-evidence ledger records is 2295 and not this table's sum.
+evidence ledger records is 2299 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -987,7 +987,7 @@ evidence ledger records is 2295 and not this table's sum.
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 852 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 243 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 63 |
-| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 125 |
+| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 129 |
 
 ### Executor and Mock Test Files
 

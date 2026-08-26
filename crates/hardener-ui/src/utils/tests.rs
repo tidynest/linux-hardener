@@ -15,9 +15,10 @@
 
 use super::*;
 use crate::types::{
-    Change, ChangeType, CheckpointInfo, ComplianceSummary, ControlStatus, DivergenceState,
-    ExceptionOutcome, FileRestoreAction, FileRestoreResult, Finding, FindingCategory, PluginId,
-    RollbackDivergence, RollbackResult, ScanResult, ScanSessionInfo, Severity, WrittenException,
+    Change, ChangeType, CheckpointDetail, CheckpointFileInfo, CheckpointInfo, ComplianceSummary,
+    ControlStatus, DivergenceState, ExceptionOutcome, FileRestoreAction, FileRestoreResult,
+    Finding, FindingCategory, PluginId, RollbackDivergence, RollbackResult, ScanResult,
+    ScanSessionInfo, Severity, WrittenException,
 };
 
 #[test]
@@ -1593,4 +1594,73 @@ fn a_future_expiry_date_is_not_in_the_past() {
 #[test]
 fn an_absent_expiry_is_not_in_the_past() {
     assert!(!is_expiry_in_the_past("", "2026-08-10"));
+}
+
+/// A checkpoint detail carrying `n` captured files.
+fn preview_detail(n: usize) -> CheckpointDetail {
+    CheckpointDetail {
+        checkpoint_id: "01J0000000000000000000000A".to_string(),
+        checkpoint_name: "before ssh apply".to_string(),
+        checkpoint_created: "2026-08-26 20:00".to_string(),
+        checkpoint_user: "root".to_string(),
+        file_count: n,
+        files: (0..n)
+            .map(|i| CheckpointFileInfo {
+                path: format!("/etc/ssh/file{i}"),
+                permissions: "644".to_string(),
+                has_content: true,
+            })
+            .collect(),
+    }
+}
+
+/// A preview still in flight says so, and the button carries no count it does
+/// not have.
+#[test]
+fn a_loading_preview_says_it_is_loading() {
+    let (body, button) = rollback_preview_wording(None);
+    assert_eq!(body, "Loading captured files...");
+    assert_eq!(button, "Roll back");
+}
+
+/// A settled preview counts what the rollback would touch, in both places.
+#[test]
+fn a_ready_preview_counts_the_files_in_body_and_button() {
+    let ready = Ok(preview_detail(3));
+    let (body, button) = rollback_preview_wording(Some(&ready));
+    assert_eq!(
+        body,
+        "Restores 3 files to how they were then, overwriting the current configuration."
+    );
+    assert_eq!(button, "Roll back 3 files");
+}
+
+/// The defect this function exists for: a failed preview must not borrow the
+/// words of one still loading. Fold the failure back into the loading arm and
+/// this goes red while the loading test stays green.
+#[test]
+fn a_failed_preview_says_so_and_still_arms_the_button() {
+    let failed: Result<CheckpointDetail, String> = Err("Checkpoint not found".to_string());
+    let (body, button) = rollback_preview_wording(Some(&failed));
+    assert_eq!(
+        body,
+        "The captured file list could not be read, so what this restores is not listed below. \
+         The rollback itself is unaffected."
+    );
+    assert_eq!(button, "Roll back without preview");
+}
+
+/// Per-case assertions cannot see two states quietly merging into one, which
+/// is what the modal did. Three states, three distinct things said.
+#[test]
+fn the_three_preview_states_each_say_something_of_their_own() {
+    let ready = Ok(preview_detail(1));
+    let failed: Result<CheckpointDetail, String> = Err("denied".to_string());
+    let mut said: Vec<(String, String)> = [None, Some(&ready), Some(&failed)]
+        .into_iter()
+        .map(rollback_preview_wording)
+        .collect();
+    said.sort();
+    said.dedup();
+    assert_eq!(said.len(), 3, "a preview state repeated another's wording");
 }

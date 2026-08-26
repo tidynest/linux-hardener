@@ -2,10 +2,10 @@ pub mod theme;
 
 use crate::types::{ApplyOutcome as FleetApplyOutcome, RollbackOutcome as FleetRollbackOutcome};
 use crate::types::{
-    ApplyResult, Change, CheckpointInfo, ComplianceFramework, ComplianceProfile, ControlStatus,
-    ExceptionOutcome, FileRestoreAction, Finding, FindingPolicyException, FleetFrameworkPosture,
-    RollbackResult, ScanResult, ScanSessionInfo, Severity, ValidationIssue, ValidationReport,
-    WrittenException,
+    ApplyResult, Change, CheckpointDetail, CheckpointInfo, ComplianceFramework, ComplianceProfile,
+    ControlStatus, ExceptionOutcome, FileRestoreAction, Finding, FindingPolicyException,
+    FleetFrameworkPosture, RollbackResult, ScanResult, ScanSessionInfo, Severity, ValidationIssue,
+    ValidationReport, WrittenException,
 };
 use hardener_types::{ApplyStatus, RollbackStatus, UncheckedTally};
 
@@ -417,6 +417,47 @@ pub fn restore_kind(has_content: bool) -> &'static str {
         "content + permissions"
     } else {
         "permissions only"
+    }
+}
+
+/// What the rollback Confirm stage tells the operator about the captured file
+/// list, as (body sentence, danger button label), for each state of the
+/// preview.
+///
+/// `None` is a preview still arriving. `Some` is a settled answer, and a
+/// settled failure is not the same thing as one still in flight. The modal
+/// used to hold `Option<CheckpointDetail>` alone and drop the error, so a
+/// preview that had failed rendered exactly like one still loading: the
+/// "Loading captured files..." line stayed forever, beside an armed danger
+/// button. An operator could confirm an overwrite of their live configuration
+/// having been shown nothing at all.
+///
+/// A failure still labels a working button rather than a disabled one. A
+/// preview this process cannot read does not mean a rollback it cannot run:
+/// the restore goes out through `pkexec` against a database the desktop never
+/// opens, so refusing here would block rollbacks that would have succeeded.
+pub fn rollback_preview_wording(
+    preview: Option<&Result<CheckpointDetail, String>>,
+) -> (String, String) {
+    match preview {
+        None => (
+            "Loading captured files...".to_string(),
+            "Roll back".to_string(),
+        ),
+        Some(Ok(detail)) => (
+            format!(
+                "Restores {} files to how they were then, overwriting the \
+                 current configuration.",
+                detail.file_count
+            ),
+            format!("Roll back {} files", detail.file_count),
+        ),
+        Some(Err(_)) => (
+            "The captured file list could not be read, so what this restores \
+             is not listed below. The rollback itself is unaffected."
+                .to_string(),
+            "Roll back without preview".to_string(),
+        ),
     }
 }
 

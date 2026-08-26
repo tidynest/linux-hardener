@@ -12,7 +12,8 @@ use crate::state::AppState;
 use crate::tauri_bindings::{invoke_get_checkpoint_detail, invoke_rollback};
 use crate::types::{CheckpointDetail, CheckpointInfo, DivergenceState, RollbackResult};
 use crate::utils::{
-    is_auth_cancelled, restore_action_label, restore_kind, rollback_summary_sentence,
+    is_auth_cancelled, restore_action_label, restore_kind, rollback_preview_wording,
+    rollback_summary_sentence,
 };
 use leptos::html;
 use leptos::prelude::*;
@@ -38,7 +39,7 @@ pub fn RollbackModal(
     let app_state = expect_context::<AppState>();
 
     let stage = RwSignal::new(Stage::Confirm);
-    let detail = RwSignal::new(None::<CheckpointDetail>);
+    let detail = RwSignal::new(None::<Result<CheckpointDetail, String>>);
     let did_rollback = RwSignal::new(false);
     // Bound to the dialog element so it can be focused as soon as it mounts -
     // without this, a keydown listener on the dialog never fires because
@@ -54,18 +55,19 @@ pub fn RollbackModal(
             did_rollback.set(false);
             let id = cp.checkpoint_id.clone();
             leptos::task::spawn_local(async move {
-                if let Ok(d) = invoke_get_checkpoint_detail(id.clone()).await {
-                    // Guard a stale response: if the user closed this checkpoint
-                    // and opened a different one while the fetch was in flight,
-                    // drop the result rather than render one checkpoint's files
-                    // under another's confirm (a preview/action mismatch in a
-                    // destructive flow).
-                    let still_current = target
-                        .get_untracked()
-                        .is_some_and(|cp| cp.checkpoint_id == id);
-                    if still_current {
-                        detail.set(Some(d));
-                    }
+                let outcome = invoke_get_checkpoint_detail(id.clone()).await;
+                // Guard a stale response: if the user closed this checkpoint
+                // and opened a different one while the fetch was in flight,
+                // drop the result rather than render one checkpoint's files
+                // under another's confirm (a preview/action mismatch in a
+                // destructive flow). The guard covers the failure too: an
+                // error painted over a different checkpoint's confirm is the
+                // same mismatch, and the error used to be discarded here.
+                let still_current = target
+                    .get_untracked()
+                    .is_some_and(|cp| cp.checkpoint_id == id);
+                if still_current {
+                    detail.set(Some(outcome));
                 }
             });
         }
@@ -159,7 +161,7 @@ pub fn RollbackModal(
 /// The Confirm stage: title, capture summary, file preview, caveat, buttons.
 fn confirm_view(
     cp: CheckpointInfo,
-    detail: RwSignal<Option<CheckpointDetail>>,
+    detail: RwSignal<Option<Result<CheckpointDetail, String>>>,
     on_confirm: impl Fn(web_sys::MouseEvent) + 'static + Copy,
     close: impl Fn(bool) + 'static + Copy,
 ) -> impl IntoView {
@@ -169,41 +171,46 @@ fn confirm_view(
     view! {
         <h3 id="rollback-modal-title">{format!("Roll back to '{name}'?")}</h3>
         <p class="rollback-sub">{format!("Captured {created} by {user}.")}</p>
-        {move || match detail.get() {
-            None => view! { <p class="rollback-progress">"Loading captured files..."</p> }.into_any(),
-            Some(d) => {
-                let count = d.file_count;
-                let files = d.files.clone();
-                view! {
-                    <p class="rollback-body">
-                        {format!("Restores {count} files to how they were then, overwriting the current configuration.")}
-                    </p>
-                    <ul class="rollback-file-list">
-                        {files.iter().map(|f| {
-                            let path = f.path.clone();
-                            let kind = restore_kind(f.has_content);
-                            view! {
-                                <li>
-                                    <code>{path}</code>
-                                    <span class="rollback-file-kind">{kind}</span>
-                                </li>
-                            }
-                        }).collect::<Vec<_>>()}
-                    </ul>
-                    <p class="rollback-caveat">
-                        "Files saved as metadata only can have their permissions "
-                        "restored, not their contents."
-                    </p>
-                }.into_any()
+        {move || {
+            let preview = detail.get();
+            let (sentence, _) = rollback_preview_wording(preview.as_ref());
+            match preview {
+                None => view! { <p class="rollback-progress">{sentence}</p> }.into_any(),
+                // The reason goes in its own line rather than the sentence: the
+                // sentence is what the operator must decide on, the reason is
+                // what they would paste into a bug report.
+                Some(Err(e)) => view! {
+                    <p class="rollback-body">{sentence}</p>
+                    <p class="rollback-caveat">{e}</p>
+                }.into_any(),
+                Some(Ok(d)) => {
+                    let files = d.files.clone();
+                    view! {
+                        <p class="rollback-body">{sentence}</p>
+                        <ul class="rollback-file-list">
+                            {files.iter().map(|f| {
+                                let path = f.path.clone();
+                                let kind = restore_kind(f.has_content);
+                                view! {
+                                    <li>
+                                        <code>{path}</code>
+                                        <span class="rollback-file-kind">{kind}</span>
+                                    </li>
+                                }
+                            }).collect::<Vec<_>>()}
+                        </ul>
+                        <p class="rollback-caveat">
+                            "Files saved as metadata only can have their permissions "
+                            "restored, not their contents."
+                        </p>
+                    }.into_any()
+                }
             }
         }}
         <div class="modal-actions">
             <button class="btn btn-secondary" on:click=move |_| close(false)>"Cancel"</button>
             <button class="btn btn-danger" on:click=on_confirm>
-                {move || match detail.get() {
-                    Some(d) => format!("Roll back {} files", d.file_count),
-                    None => "Roll back".to_string(),
-                }}
+                {move || detail.with(|p| rollback_preview_wording(p.as_ref()).1)}
             </button>
         </div>
     }

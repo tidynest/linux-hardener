@@ -901,6 +901,45 @@ the only thing in the tree that fails on it. That is a genuine gap in
 `cargo test --workspace` runs both, so the tree is held, but a reader changing
 the mask and running `cargo test -p hardener-state` alone would see nothing.
 
+**The rollback modal could arm its danger button over a preview that had
+failed, and say nothing.** `rollback_modal.rs` held the captured file list in an
+`Option<CheckpointDetail>` and fetched it with `if let Ok(d) = ...`, so the error
+arm did not exist. `None` meant both "still arriving" and "failed", and the
+Confirm stage rendered the first: "Loading captured files..." stayed on screen
+indefinitely while the red button read "Roll back" and still fired a real
+`pkexec` restore. An operator could confirm an overwrite of their live
+configuration having been shown nothing. The stale-response guard directly above
+the drop was written for a preview/action mismatch in a destructive flow, and it
+guarded a response that arrived late rather than one that never arrived.
+
+`rollback_preview_wording` now decides the body sentence and the button label
+together for all three states, and four tests in `hardener-ui` assert the six
+strings as literals. The failure still labels a working button: a preview this
+process cannot read does not mean a rollback it cannot run, because the restore
+goes out through `pkexec` against a database the desktop never opens, so
+refusing there would block rollbacks that would have succeeded.
+
+**Which element each of those strings lands in is proven by nothing.**
+`gui-tests/tests/` carries no history or rollback spec, so the modal has no
+browser-level coverage at all, and the `view!` block that places the wording is
+`wasm32` only. The decision is held on the host; the rendering is held nowhere.
+
+**The reachable trigger is a race, not the privilege split, and saying so
+matters more than the fix.** A system-database checkpoint never reaches the
+list: `collect_checkpoints` cannot build a manager without
+`/etc/linux-hardener/signing.key`, which is 0400 root, so an unprivileged
+desktop reports `system_unreadable` and shows no such row to click. What is left
+is the row deleted by the CLI or another window between the list render and the
+click, or a locked database.
+
+**A sibling inconsistency was found beside it and deliberately left.**
+`get_checkpoint_detail` tests both databases with `Path::exists()`, where
+`get_checkpoints` and `system_database_denies` use `try_exists()` and carry the
+comment explaining why, naming a `drwx------ root` data directory. Correcting it
+alone changes no observable behaviour, because `create_checkpoint_manager` fails
+on that database whether or not the branch is entered. It is recorded here so a
+later reader takes it as a measured non-difference rather than an oversight.
+
 The fix is the same shape the fleet path took in August: `summarise_config` is
 a plain function over a `HardenerConfig`, the command resolves a path and reads
 a file, and six tests drive the decision. **What the tests are worth is

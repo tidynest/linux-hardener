@@ -2042,6 +2042,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The rollback dialog armed its confirm button over a preview that had
+  failed, and said nothing.** `rollback_modal.rs` held the captured file list in
+  an `Option<CheckpointDetail>` and fetched it with `if let Ok(d) = ...`, so the
+  error arm did not exist. `None` meant both "still arriving" and "failed", and
+  the Confirm stage rendered the first of those: "Loading captured files..."
+  stayed on screen indefinitely while the red button read "Roll back" and still
+  fired a real `pkexec` restore. An operator could confirm an overwrite of their
+  live configuration having been shown nothing at all. **The guard directly
+  above the drop was written for this exact hazard** and missed it: it discards
+  a response that arrives for the wrong checkpoint, and the failure it sat
+  beside was one that never arrived.
+
+  A failed preview is now its own state, and `rollback_preview_wording` decides
+  the body sentence and the button label together for all three. **The failure
+  still labels a working button**: a preview this process cannot read does not
+  mean a rollback it cannot run, because the restore goes out through `pkexec`
+  against a database the desktop never opens, so refusing there would block
+  rollbacks that would have succeeded. The button says
+  "Roll back without preview", the body says what could not be read, and the
+  error itself is printed below it rather than folded into the sentence.
+
+  The reachable trigger is a race rather than the privilege split: a
+  system-database checkpoint never reaches the list to be clicked, so what is
+  left is the row deleted by another window or by the CLI between the list
+  rendering and the click.
+
 - **The desktop's remote connection banner named the local account, not the one
   it connected as.** `connect_remote` filled
   `RemoteConnectionStatus::Connected`'s user with
