@@ -817,6 +817,27 @@ CLI.** Both readers now go through `FileState::restore_mode_string`, and the
 test asserting they agree compares them to each other rather than to a literal,
 because a literal would prove only that the desktop matches a literal.
 
+`test_notification`, read the same day, has no second reader at all:
+`send_test` has exactly one non-test consumer in the tree and it is that
+command. Where there is no counterpart, the reference is the data itself, and
+the summary was discarding two things out of it. It dropped
+`NotificationResult::channel`, which both notifiers populate and the webhook
+one populates per endpoint, so four configured channels produced
+`Failed: connection refused` and named none of them. It also collected the
+reasons with a `filter_map` over `error`, which drops a failure it cannot
+describe, and dropping the only failure empties the list, which is the branch
+that reports success.
+
+**That second one is not reachable and is recorded anyway.**
+`NotificationResult::failed` is the only constructor setting `success: false`
+and it always records a reason, so no row in the tree takes that path. The
+fields are `pub`, so it is a property of today's call sites rather than of the
+type, and the failure direction is a channel that did not deliver being
+reported as one that did. Two tests pin it. Both go red on the old reduction
+at `assertion failed: !verdict.success` rather than on a message comparison,
+which is the distinction worth keeping: the message was wrong, the verdict was
+inverted.
+
 It also measured something about the restore path. Narrowing that mask to
 `0o777` leaves **all 146 `hardener-state` tests green** while every rollback
 strips setuid, setgid and sticky from every binary it restores.

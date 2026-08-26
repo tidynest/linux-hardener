@@ -2042,6 +2042,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A failed test notification did not say which channel failed.** The settings
+  pane's "send test" reduces one result per configured channel to a single
+  line, and that line dropped `NotificationResult::channel`, which both
+  notifiers populate and the webhook one populates per endpoint. A host with
+  email and three webhooks configured was told `Failed: connection refused` and
+  could not tell which of the four to go and fix, nor that the other three had
+  worked. Every message names its channels now, and a partial failure counts
+  the rest: `1 of 4 channels failed. webhook:slack: connection refused`.
+
+  The reasons were also collected with a `filter_map` over `error`, which drops
+  a failure it cannot describe. Drop the only failure and the list is empty,
+  which is the branch reporting success, so a channel that failed without a
+  recorded reason was reported as sent. **Nothing in the tree builds such a
+  row**, `NotificationResult::failed` being the only constructor that sets
+  `success: false` and always recording a reason, so this was never reachable.
+  The fields are `pub`, which makes that a fact about today's call sites rather
+  than about the type, and the direction it fails in is the one that hides.
+
 - **The desktop listed a checkpointed file's mode as `100644`, under a column
   headed "permissions".** Expanding a checkpoint in the history section lists
   every captured path with the mode it was captured at. `file_permissions`

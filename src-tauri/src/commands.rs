@@ -2442,6 +2442,66 @@ fn drop_superseded_webhook_keys(scheduler: &mut toml::Value) {
     webhooks.remove("format");
 }
 
+/// Reduces one result per channel to the single line the settings pane shows.
+///
+/// A plain function over plain types, for the reason `summarise_config` is one:
+/// the command around it needs a config file, a temporary database and a live
+/// dispatcher, and none of that is the decision. The decision is what to tell
+/// an operator who pressed "send test" and is waiting to learn whether their
+/// notification setup works.
+///
+/// **Every message names its channels.** `NotificationResult::channel` is
+/// populated by both notifiers, and by the webhook one per endpoint, which is
+/// only worth doing if a reader sees it. It was dropped here until 2026-08-26,
+/// so a host with email and three webhooks configured was told
+/// "Failed: connection refused" and could not tell which of the four it was.
+///
+/// **A failure with no reason recorded is still a failure.** The reasons used
+/// to be collected with a `filter_map` over `error`, which drops a row it
+/// cannot describe, so a channel that failed without a message would have been
+/// counted into `results.len()` and reported as sent. Nothing builds such a row
+/// today, because `NotificationResult::failed` is the only constructor that
+/// sets `success: false` and it always carries a reason. The fields are `pub`
+/// though, so that is a property of the current call sites rather than of the
+/// type, and the failing direction is the one that hides.
+fn test_notification_verdict(
+    results: &[hardener_scheduler::notification::NotificationResult],
+) -> hardener_types::scheduler::TestNotificationResult {
+    if results.is_empty() {
+        return hardener_types::scheduler::TestNotificationResult {
+            success: false,
+            message: "No notification channels are enabled".into(),
+        };
+    }
+
+    let failures: Vec<String> = results
+        .iter()
+        .filter(|r| !r.success)
+        .map(|r| {
+            let reason = r.error.as_deref().unwrap_or("failed, no reason recorded");
+            format!("{}: {reason}", r.channel)
+        })
+        .collect();
+
+    if failures.is_empty() {
+        let names: Vec<&str> = results.iter().map(|r| r.channel.as_str()).collect();
+        return hardener_types::scheduler::TestNotificationResult {
+            success: true,
+            message: format!("Test sent to {}", names.join(", ")),
+        };
+    }
+
+    hardener_types::scheduler::TestNotificationResult {
+        success: false,
+        message: format!(
+            "{} of {} channels failed. {}",
+            failures.len(),
+            results.len(),
+            failures.join("; ")
+        ),
+    }
+}
+
 /// Sends a test notification through all enabled channels.
 ///
 /// Creates a temporary database so the test doesn't pollute real scan history.
@@ -2498,32 +2558,9 @@ pub async fn test_notification() -> Result<hardener_types::scheduler::TestNotifi
         std::sync::Arc::new(db_manager),
     );
 
-    let results = dispatcher.send_test(&summary).await;
-
-    if results.is_empty() {
-        return Ok(hardener_types::scheduler::TestNotificationResult {
-            success: false,
-            message: "No notification channels are enabled".into(),
-        });
-    }
-
-    let failures: Vec<&str> = results
-        .iter()
-        .filter(|r| !r.success)
-        .filter_map(|r| r.error.as_deref())
-        .collect();
-
-    if failures.is_empty() {
-        Ok(hardener_types::scheduler::TestNotificationResult {
-            success: true,
-            message: format!("Test sent to {} channel(s)", results.len()),
-        })
-    } else {
-        Ok(hardener_types::scheduler::TestNotificationResult {
-            success: false,
-            message: format!("Failed: {}", failures.join("; ")),
-        })
-    }
+    Ok(test_notification_verdict(
+        &dispatcher.send_test(&summary).await,
+    ))
 }
 
 /// The config file's own eight plugin sections, each under the plugin id that
@@ -2888,3 +2925,8 @@ mod config_summary_tests;
 /// Tests for `checkpoint_to_detail`, the mapping behind the history expander.
 #[cfg(test)]
 mod checkpoint_detail_tests;
+
+/// Tests for `test_notification_verdict`, the line the settings pane shows
+/// after a test send.
+#[cfg(test)]
+mod test_notification_tests;
