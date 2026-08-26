@@ -526,6 +526,93 @@ fn an_unanswerable_resolver_falls_back_to_the_legacy_key() {
     assert_eq!(key, legacy_checkpoint_host_key("web-01", 22));
 }
 
+/// The account a caller reports and the account the key files under are one
+/// resolution, not two that happen to agree.
+///
+/// This is the property the fix rests on, and the reason
+/// [`effective_ssh_user`](super::effective_ssh_user) exists rather than the
+/// desktop calling `resolve_ssh_user` for itself. A second resolution would
+/// agree in the resolved case and disagree in the fallback, `root` against the
+/// local username, which is the narrow failure that hides longest: correct on
+/// every machine whose ssh answers, wrong only where it does not.
+///
+/// Asserted over the three shapes rather than one, since the halves can only
+/// drift in a case some test does not visit.
+#[test]
+fn the_key_is_the_effective_user_framed_by_the_format() {
+    // A plain `fn` rather than `impl Fn`, so the three cases sit in one array
+    // instead of needing a binding each. Named because clippy reads the inline
+    // spelling as a complex type.
+    type Resolver = fn(&str) -> Option<String>;
+
+    let cases: [(Option<&str>, Resolver, u16); 3] = [
+        (
+            Some("admin"),
+            |_| panic!("named users are not resolved"),
+            22,
+        ),
+        (None, |_| Some("deploy".to_string()), 2222),
+        (None, |_| None, 22),
+    ];
+
+    for (named, resolve, port) in cases {
+        let user = effective_ssh_user_with(resolve, named, "web-01");
+        assert_eq!(
+            checkpoint_host_key_with(resolve, named, "web-01", port),
+            format!("ssh://{user}@web-01:{port}"),
+            "named {named:?} on port {port}",
+        );
+    }
+}
+
+/// An explicitly named account is reported as named, never looked up.
+#[test]
+fn effective_ssh_user_takes_a_named_account_at_its_word() {
+    assert_eq!(
+        effective_ssh_user_with(
+            |_| panic!("a target that names its user must not consult ssh"),
+            Some("admin"),
+            "web-01",
+        ),
+        "admin",
+    );
+}
+
+/// A bare target reports the account ssh would actually reach, which is the
+/// defect: the desktop's banner reported the *local* account instead, so an
+/// operator connecting to a host whose `~/.ssh/config` says `User deploy` was
+/// told their own name while every checkpoint went to `ssh://deploy@web-01:22`.
+#[test]
+fn effective_ssh_user_reports_what_the_operators_config_resolves() {
+    assert_eq!(
+        effective_ssh_user_with(
+            |host| {
+                assert_eq!(host, "web-01", "the resolver is asked about the target");
+                Some("deploy".to_string())
+            },
+            None,
+            "web-01",
+        ),
+        "deploy",
+    );
+}
+
+/// An unanswerable resolver falls back to the account the key falls back to.
+///
+/// `root`, not the local username. The fallback is what a second resolution
+/// would have got wrong: reporting `whoami` here would disagree with the key
+/// on exactly the machines where ssh cannot be run, and nowhere else.
+#[test]
+fn effective_ssh_user_falls_back_to_the_same_account_the_key_does() {
+    let user = effective_ssh_user_with(|_| None, None, "web-01");
+
+    assert_eq!(user, ASSUMED_USER);
+    assert_eq!(
+        legacy_checkpoint_host_key("web-01", 22),
+        format!("ssh://{user}@web-01:22"),
+    );
+}
+
 /// The `user` line is parsed out of what ssh really prints, and the answer is
 /// the one ssh gave rather than merely some answer.
 ///

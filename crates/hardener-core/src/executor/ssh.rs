@@ -133,6 +133,18 @@ impl SshExecutor {
         })
     }
 
+    /// The account this connection reaches the host as.
+    ///
+    /// Exactly the user [`SystemExecutor::description`] embeds, because both go
+    /// through [`effective_ssh_user`], so a caller reporting who it connected as
+    /// cannot name a different account than the checkpoints it takes are filed
+    /// under. Resolved on demand rather than stored: `connect` never learns the
+    /// account when the target names none, since `openssh` lets ssh itself pick
+    /// it, and asking `ssh -G` afterwards is the only way back to the answer.
+    pub fn effective_user(&self) -> String {
+        effective_ssh_user(self.user.as_deref(), &self.host)
+    }
+
     /// Helper to execute a remote command and get output.
     async fn run_command(&self, cmd: &str) -> Result<CommandOutput> {
         let output = self
@@ -188,6 +200,35 @@ pub fn legacy_checkpoint_host_key(host: &str, port: u16) -> String {
     format!("ssh://{ASSUMED_USER}@{host}:{port}")
 }
 
+/// The account ssh will reach `host` as, given what the target named.
+///
+/// The user half of [`checkpoint_host_key`], and the same string it embeds, so
+/// anything reporting "you are connected as X" agrees with the key that host's
+/// checkpoints are filed under. The desktop's connection banner said
+/// `whoami::username()` until 2026-08-26 while its checkpoints went to whatever
+/// `~/.ssh/config` resolved, so one connection gave two answers and the one an
+/// operator read was the one nothing depended on.
+pub fn effective_ssh_user(user: Option<&str>, host: &str) -> String {
+    effective_ssh_user_with(resolve_ssh_user, user, host)
+}
+
+/// [`effective_ssh_user`] with the resolver injected, so the precedence and the
+/// fallback can be tested without depending on the machine's `~/.ssh/config`.
+fn effective_ssh_user_with(
+    resolve: impl Fn(&str) -> Option<String>,
+    user: Option<&str>,
+    host: &str,
+) -> String {
+    match user {
+        Some(named) => named.to_string(),
+        // A resolver that cannot answer leaves the old fabrication in place
+        // rather than inventing a different one. That is the pre-existing
+        // behaviour, and the collision refusal in `batch` is what catches the
+        // two targets it can still merge.
+        None => resolve(host).unwrap_or_else(|| ASSUMED_USER.to_string()),
+    }
+}
+
 /// [`checkpoint_host_key`] with the resolver injected, so the format and the
 /// fallback can be tested without depending on the machine's `~/.ssh/config`.
 fn checkpoint_host_key_with(
@@ -196,14 +237,7 @@ fn checkpoint_host_key_with(
     host: &str,
     port: u16,
 ) -> String {
-    let effective = match user {
-        Some(named) => named.to_string(),
-        // A resolver that cannot answer leaves the old fabrication in place
-        // rather than inventing a different one. That is the pre-existing
-        // behaviour, and the collision refusal in `batch` is what catches the
-        // two targets it can still merge.
-        None => resolve(host).unwrap_or_else(|| ASSUMED_USER.to_string()),
-    };
+    let effective = effective_ssh_user_with(resolve, user, host);
     format!("ssh://{effective}@{host}:{port}")
 }
 

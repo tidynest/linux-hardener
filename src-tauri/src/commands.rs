@@ -1772,7 +1772,15 @@ pub async fn connect_remote(
 
     match hardener_core::SshExecutor::connect(ssh_config).await {
         Ok(executor) => {
-            let user_display = profile.user.clone().unwrap_or_else(whoami::username);
+            // The executor's own answer, not a guess at it. This read
+            // `profile.user.clone().unwrap_or_else(whoami::username)` until
+            // 2026-08-26, which is the local account rather than the remote
+            // one: a profile naming no user against a host whose `~/.ssh/config`
+            // says `User deploy` connects as `deploy` and files every checkpoint
+            // under `ssh://deploy@host:22`, while the banner claimed the
+            // operator's own name. `effective_user` is the same string
+            // `description` embeds, so the two cannot disagree again.
+            let user_display = executor.effective_user();
             let mut connection = state.active_connection.lock().await;
             *connection = Some(ActiveConnection {
                 executor: std::sync::Arc::new(executor),

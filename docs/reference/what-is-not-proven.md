@@ -845,27 +845,42 @@ wrong. The shared piece is now `OutputFormat::contradicted_by`, the decision
 alone, because the sentences cannot be shared: the CLI's names `--output` and
 there is no flag in front of a desktop operator to correct.
 
-**`connect_remote` gives a fourth answer to the same question and is not fixed.**
-Read on 2026-08-26 and left alone for want of session, so it is written down
-rather than left to be rediscovered. `RemoteConnectionStatus::Connected` carries
-the user the desktop banner shows at `hosts_page.rs:156`, and
-`connect_remote` fills it with `profile.user.clone().unwrap_or_else(whoami::username)`.
-The same connection files its checkpoints under `SshExecutor::description()`,
-which for a profile naming no user calls `resolve_ssh_user`, which runs
-`ssh -G` and takes the `user` line the operator's `~/.ssh/config` produces,
-falling back to `root` rather than to the local account.
+**`connect_remote` gave a fourth answer to the same question.**
+`RemoteConnectionStatus::Connected` carries the user the desktop banner shows
+at `hosts_page.rs:156`, and `connect_remote` filled it with
+`profile.user.clone().unwrap_or_else(whoami::username)`. The same connection
+files its checkpoints under `SshExecutor::description()`, which for a profile
+naming no user calls `resolve_ssh_user`, which runs `ssh -G` and takes the
+`user` line the operator's `~/.ssh/config` produces, falling back to `root`
+rather than to the local account.
 
 So a profile with no user against a host whose `~/.ssh/config` block says
-`User deploy` connects as `deploy`, files every checkpoint under
-`ssh://deploy@host:22`, and tells the operator they are connected as their own
-local username. Neither number is wrong on its own; they are answers to the
-same question from one connection, and the one the operator reads is the one
+`User deploy` connected as `deploy`, filed every checkpoint under
+`ssh://deploy@host:22`, and told the operator they were connected as their own
+local username. Neither string was wrong on its own; they were answers to the
+same question from one connection, and the one the operator read was the one
 that is not load bearing.
 
-The fix is an accessor rather than a second resolution: `description()` already
-embeds the effective user, so exposing it and reporting that is one source. A
-second call to `resolve_ssh_user` from the desktop would agree in the resolved
-case and disagree again in the fallback, `root` against `whoami`.
+**Fixed with an accessor rather than a second resolution.**
+`effective_ssh_user` is the user half of `checkpoint_host_key`, which now
+frames it rather than resolving separately, and `SshExecutor::effective_user`
+passes the same two fields `description` passes. A second call to
+`resolve_ssh_user` from the desktop would have been the tempting shape and the
+wrong one: it agrees wherever ssh answers and disagrees only in the fallback,
+`root` against the local username, which is correct on every machine that can
+run ssh and wrong exactly where nothing else works either. That is the narrow
+failure that survives longest.
+
+**The agreement test passes under the mutation, and that is the point of the
+other three.** `the_key_is_the_effective_user_framed_by_the_format` asserts the
+two halves match; replacing the resolution with `user.unwrap_or("bakri")`
+leaves it green, because both halves move together. Four tests go red, and all
+four assert against a literal. A test that two things agree cannot notice them
+agreeing on the wrong answer, which is why it is written beside literals rather
+than instead of them.
+
+Removing the guess left `whoami` with no caller. It was in the workspace
+manifest for `src-tauri` alone, and both entries are gone.
 
 **That second one is not reachable and is recorded anyway.**
 `NotificationResult::failed` is the only constructor setting `success: false`

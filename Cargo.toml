@@ -79,7 +79,6 @@ openssh = "0.11.5"
 procfs = "0.18.0"
 sysinfo = "0.37.2"
 tempfile = "3.23.0"
-whoami = "1.6.1"
 
 [profile.release]
 codegen-units = 1

@@ -2042,6 +2042,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop's remote connection banner named the local account, not the one
+  it connected as.** `connect_remote` filled
+  `RemoteConnectionStatus::Connected`'s user with
+  `profile.user.clone().unwrap_or_else(whoami::username)`. The same connection
+  files its checkpoints under `SshExecutor::description()`, which for a profile
+  naming no user resolves the account through `ssh -G`, reading whatever the
+  operator's `~/.ssh/config` says and falling back to `root`. So a profile with
+  no user against a host whose config block says `User deploy` connected as
+  `deploy`, filed every checkpoint under `ssh://deploy@host:22`, and told the
+  operator they were connected as themselves.
+
+  `SshExecutor::effective_user` is the executor's own answer, and
+  `checkpoint_host_key` now frames that same string rather than resolving
+  separately, so the banner and the key cannot disagree again. **A second call
+  to the resolver would have been the wrong fix**: it agrees wherever ssh
+  answers and disagrees only in the fallback, `root` against the local
+  username, which is correct on every machine that can run ssh and wrong
+  exactly where nothing else works either.
+
+  `whoami` was left with no caller and is removed from the workspace.
+
 - **The desktop wrote a compliance export into a file whose extension named a
   different document, which the CLI refuses.** `hardener report` has refused an
   `--output` path contradicting `--report-format` since
