@@ -140,6 +140,31 @@ pub struct FileState {
     pub file_content_absence: Option<ContentAbsence>,
 }
 
+/// The `st_mode` bits `chmod` accepts: permissions, setuid, setgid and sticky.
+///
+/// Everything above this is the file-type field, which `file_permissions`
+/// carries so a captured directory can be told from a captured file without a
+/// second column.
+const MODE_PERMISSION_BITS: u32 = 0o7777;
+
+impl FileState {
+    /// The mode as `chmod` takes it, which is also the mode to show a reader.
+    ///
+    /// One function rather than the mask written out at each site. Restore and
+    /// the desktop's checkpoint expander are the two callers, and they answer
+    /// the same question: what would this row set the path to. They disagreed
+    /// until 2026-08-26, because only restore masked, so a file captured at
+    /// 0644 was listed in the desktop as `100644`.
+    ///
+    /// Unpadded, so an ordinary file reads `644` rather than `0644`. A row with
+    /// no permission bits at all is `0`, which is how a path recorded as absent
+    /// renders; rollback reads that zero as "remove this path", so the row is a
+    /// record of a deletion rather than a file with no access.
+    pub fn restore_mode_string(&self) -> String {
+        format!("{:o}", self.file_permissions & MODE_PERMISSION_BITS)
+    }
+}
+
 // Rollback types are defined in hardener-types for WASM compatibility.
 // Re-exported here for backward compatibility with native code.
 pub use hardener_types::{FileRestoreAction, FileRestoreResult, RollbackResult};

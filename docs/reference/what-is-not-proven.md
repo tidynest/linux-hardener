@@ -794,10 +794,37 @@ checkable.** Of the 32, seven reach the CLI through `run_privileged_command`,
 `add_policy_exception` builds its argv through `exception_add_args`, which has
 its own tests, and `remove_policy_exception` is a pass-through. The remaining
 25 decide something in-process, and that is where a desktop answer can drift
-from the CLI's. Both defects found in this file, the fleet flatten in August
-and the plugin count above, were in-process decisions. The count is a filter
-rather than a proof: it comes from matching three call shapes, so a command
-reaching the CLI by some other helper is miscounted as in-process.
+from the CLI's. All three defects found in this file, the fleet flatten in
+August, the plugin count above and the mode string below, were in-process
+decisions. The count is a filter rather than a proof: it comes from matching
+three call shapes, so a command reaching the CLI by some other helper is
+miscounted as in-process.
+
+**The third one drifted from the rollback rather than from the CLI, which the
+split does not describe.** `get_checkpoint_detail` decides in-process and was
+read on 2026-08-26 for that reason, and what it disagreed with was not the CLI
+at all: `hardener checkpoint show` prints no mode in text output and serialises
+the raw `u32` in JSON, so there was nothing there to disagree with. It
+disagreed with `restore_file_state`. `file_permissions` holds the whole
+`st_mode`, and the expander printed it unmasked under a column headed
+"permissions", so a file captured at 0644 read `100644` and a directory at 0755
+read `40755`. The number shown was not the number the rollback would `chmod`,
+in the one view whose purpose is to say what a rollback will do.
+
+The lesson generalises past this file: **the reference an in-process decision
+must agree with is whoever else reads the same row, and that is not always the
+CLI.** Both readers now go through `FileState::restore_mode_string`, and the
+test asserting they agree compares them to each other rather than to a literal,
+because a literal would prove only that the desktop matches a literal.
+
+It also measured something about the restore path. Narrowing that mask to
+`0o777` leaves **all 146 `hardener-state` tests green** while every rollback
+strips setuid, setgid and sticky from every binary it restores.
+`the_setuid_setgid_and_sticky_bits_are_kept`, in the desktop's test file, is
+the only thing in the tree that fails on it. That is a genuine gap in
+`hardener-state`'s own coverage and it is now covered from the wrong crate:
+`cargo test --workspace` runs both, so the tree is held, but a reader changing
+the mask and running `cargo test -p hardener-state` alone would see nothing.
 
 The fix is the same shape the fleet path took in August: `summarise_config` is
 a plain function over a `HardenerConfig`, the command resolves a path and reads

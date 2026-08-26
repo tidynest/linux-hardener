@@ -1230,7 +1230,7 @@ impl CheckpointManager {
         // (content write itself uses `sudo tee`). The remote-root privilege model
         // is owned by the `batch apply` slice (the apply.rs euid gate); revisit
         // there if non-root remote restore is required.
-        let mode_str = format!("{:o}", file_state.file_permissions & 0o7777);
+        let mode_str = file_state.restore_mode_string();
         let chmod_warn =
             restore_command_refusal(executor, "chmod", &[mode_str.as_str(), path_str], path_str)
                 .await;

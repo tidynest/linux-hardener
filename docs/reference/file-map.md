@@ -699,6 +699,7 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | `src/commands/exception_args_tests.rs` | Tests for `exception_add_args`, the flag-construction helper behind `add_policy_exception`: an absent optional field must add no flag, not an empty one | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/config_write_detail_tests.rs` | Tests for the audit detail the desktop's three in-process config writes carry, 12 tests: what the scheduler entry names, the scheduler being turned off, recipient addresses and the webhook URL staying out of the log, the host endpoint and operation, host-key checking being turned off, a profile naming no user, and six that drive `write_scheduler_config`, `upsert_host` and `remove_host` against a temporary inventory and log so each descriptor is observed reaching the writer (a save, an upsert replacing rather than appending, a delete taking only the named host, and a name matching nothing still recorded). Ceiling: the six detail tests still pass on an entry that is never filed, and nothing here pins which path `writable_config_path` or `inventory_path` picks | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/config_summary_tests.rs` | Tests for what the config picker card reports about a file it just loaded, 6 tests. The enabled set is the one that will actually run: it read each section's own `enabled` flag alone until 2026-08-25, where the real gate `is_plugin_enabled` also honours `global.disabled_plugins` and the `global.enabled_plugins` allow list, so a file running one plugin was reported as running eight. `every_section_id_resolves_to_its_own_section` pins the second half: the ids were short names, and a short name falls through `get_plugin_config`'s empty default, which reports enabled whatever the file says, so correcting the predicate alone would have broken the one case that worked | Test-only; `super` resolves to `crate::commands` |
+| `src/commands/checkpoint_detail_tests.rs` | Tests for `checkpoint_to_detail`, the mapping behind the history expander's file list, 6 tests. `file_permissions` holds the whole `st_mode`, and the expander printed it unmasked under a column headed "permissions" until 2026-08-26, so a file captured at 0644 read `100644` and a directory at 0755 read `40755`. The mode now comes from `FileState::restore_mode_string`, the same function the rollback's `chmod` argument comes from, and `the_listed_mode_is_the_mode_rollback_would_chmod` asserts the two agree rather than asserting either against a literal. `the_setuid_setgid_and_sticky_bits_are_kept` is the guard on masking too narrowly, and is the only test in the tree that fails when the mask drops to `0o777`: all 146 `hardener-state` tests stay green while a rollback silently strips setuid from every restored binary | Test-only; `super` resolves to `crate::commands` |
 
 ### Tauri Commands
 ```rust
@@ -970,8 +971,8 @@ Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
 The table covers the ten crates under `crates/` and sums to 2134. The eleventh
-workspace member, `src-tauri`, carries 138 more, which is why the tree total the
-evidence ledger records is 2272 and not this table's sum.
+workspace member, `src-tauri`, carries 144 more, which is why the tree total the
+evidence ledger records is 2278 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|

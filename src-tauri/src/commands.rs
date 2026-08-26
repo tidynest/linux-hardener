@@ -1536,8 +1536,12 @@ fn checkpoint_to_detail(cp: Checkpoint, files: Vec<FileState>) -> CheckpointDeta
         files: files
             .into_iter()
             .map(|f| CheckpointFileInfo {
+                // `restore_mode_string`, not the raw mode: `file_permissions`
+                // carries the type field, so a file captured at 0644 read
+                // `100644` under a column headed "permissions", and the number
+                // the operator saw was not the one a rollback would chmod.
+                permissions: f.restore_mode_string(),
                 path: f.file_path,
-                permissions: format!("{:o}", f.file_permissions),
                 has_content: f.file_content.is_some(),
             })
             .collect(),
@@ -2880,3 +2884,7 @@ mod config_write_detail_tests;
 
 #[cfg(test)]
 mod config_summary_tests;
+
+/// Tests for `checkpoint_to_detail`, the mapping behind the history expander.
+#[cfg(test)]
+mod checkpoint_detail_tests;

@@ -2042,6 +2042,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop listed a checkpointed file's mode as `100644`, under a column
+  headed "permissions".** Expanding a checkpoint in the history section lists
+  every captured path with the mode it was captured at. `file_permissions`
+  holds the whole `st_mode`, type field included, which is deliberate and is
+  how a captured directory is told from a captured file without a second
+  column; rollback masks it down to the permission bits before it builds its
+  `chmod` argument, and the expander did not. So an ordinary file at 0644 read
+  `100644`, a directory at 0755 read `40755`, and a captured symlink read
+  `120777`. Nothing was lost and no rollback behaved differently: the number
+  the operator was shown simply was not the number the rollback would apply,
+  in the one view whose entire purpose is to say what a rollback will do.
+
+  The mode now comes from `FileState::restore_mode_string`, one function
+  masking `& 0o7777`, and the rollback's `chmod` argument comes from the same
+  one. Two readers of one row cannot be kept in step by writing the mask twice.
+  The setuid, setgid and sticky bits survive it, which matters more than it
+  looks: **narrowing the mask to `0o777` leaves all 146 `hardener-state` tests
+  green while every rollback silently strips setuid from every binary it
+  restores.** One test in the new file fails on that, and it is the only thing
+  in the tree that does.
+
 - **The desktop's config picker reported plugins that the config file turns
   off.** Choosing a config file shows a card reading "N plugins, X directives,
   Y exceptions", which is what an operator reads to confirm they picked the
