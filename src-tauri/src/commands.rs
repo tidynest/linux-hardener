@@ -1395,6 +1395,63 @@ pub async fn generate_compliance_report(
     Ok(generator.generate(&results, &[]))
 }
 
+/// Where an export is written, given the operator's path and the chosen format.
+///
+/// Three decisions, none of which needs a report, a scan or a filesystem, and
+/// all three of which an operator sees the consequence of.
+///
+/// **A path whose extension names a different document is refused**, in the
+/// wording of a window rather than of a flag. `hardener report` has refused
+/// this since `refuse_extension_that_contradicts` was added, because writing a
+/// text report into a file named `.json` and exiting 0 is a lie a consumer will
+/// act on. The desktop reached the same fork in-process and wrote the bytes,
+/// so choosing PDF and typing `audit.json` produced a PDF called `audit.json`
+/// and reported it saved. Both now decide through
+/// `OutputFormat::contradicted_by`, which is the only part of a refusal that
+/// can be shared: the CLI's sentence names `--output` and this one has no flag
+/// to name.
+///
+/// **An extension is appended only when the path has none**, matching
+/// `report.rs`. A dated stem like `q3.2026.08` has extension `08`, names no
+/// document, and is left alone rather than being read as a format.
+///
+/// **A path that was not given is built under Documents**, falling back to the
+/// home directory and then to the working directory, with a local timestamp so
+/// two exports in one session do not overwrite each other.
+fn export_destination(
+    output_path: Option<String>,
+    output_format: OutputFormat,
+    timestamp: &str,
+) -> Result<String, String> {
+    let Some(path) = output_path else {
+        let dir = dirs::document_dir()
+            .or_else(dirs::home_dir)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let name = format!(
+            "compliance-report-{timestamp}.{}",
+            output_format.extension()
+        );
+        return Ok(dir.join(name).to_string_lossy().to_string());
+    };
+
+    let as_path = std::path::Path::new(&path);
+    if let Some(named) = output_format.contradicted_by(as_path) {
+        return Err(format!(
+            "'{path}' names a {} file, but the chosen format is {}. \
+             Give the file the {} extension, or none at all, or export as {}.",
+            named.extension(),
+            output_format.extension(),
+            output_format.extension(),
+            named.extension(),
+        ));
+    }
+
+    if as_path.extension().is_none() {
+        return Ok(format!("{path}.{}", output_format.extension()));
+    }
+    Ok(path)
+}
+
 /// Exports compliance reports to a file in the specified format.
 ///
 /// Generates reports, formats them, and writes to the output path.
@@ -1414,6 +1471,15 @@ pub async fn export_compliance_report(
     }
 
     let output_format = parse_output_format(&format)?;
+    // Resolved before anything is rendered: a contradicting extension is
+    // refused, and scanning a host to build a report nobody may write is work
+    // done for a message.
+    let final_path = export_destination(
+        output_path,
+        output_format,
+        &chrono::Local::now().format("%Y%m%d-%H%M%S").to_string(),
+    )?;
+
     // Same sourcing as generate_compliance_report: an exported report must
     // match the one on screen.
     let results = latest_or_fresh_findings().await?;
@@ -1433,46 +1499,21 @@ pub async fn export_compliance_report(
     );
     let reports = generator.generate(&results, &[]);
 
-    // Format reports
-    let formatted: String = match output_format {
-        OutputFormat::Text => TextFormatter::new().format_all(&reports),
-        OutputFormat::Json => JsonFormatter::pretty().format_all(&reports),
-        OutputFormat::Csv => CsvFormatter::new().format_all(&reports),
-        OutputFormat::Html => HtmlFormatter::new().format_all(&reports),
-        OutputFormat::Pdf => PdfFormatter::new().format_all(&reports),
-    };
-
-    // Determine output file path
-    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let default_name = format!(
-        "compliance-report-{}.{}",
-        timestamp,
-        output_format.extension()
-    );
-
-    let final_path = match output_path {
-        Some(path) => {
-            if std::path::Path::new(&path).extension().is_none() {
-                format!("{}.{}", path, output_format.extension())
-            } else {
-                path
-            }
-        }
-        None => {
-            // Save to user's Documents or home directory
-            let dir = dirs::document_dir()
-                .or_else(dirs::home_dir)
-                .unwrap_or_else(|| std::path::PathBuf::from("."));
-            dir.join(&default_name).to_string_lossy().to_string()
-        }
-    };
-
-    // Write file (PDF needs binary handling)
+    // Rendered once, in the shape the file takes. PDF used to be rendered
+    // twice: through `format_all` into a lossy `String` that was then
+    // discarded, and again through `format_all_bytes` for the bytes written.
     if output_format == OutputFormat::Pdf {
         let bytes = PdfFormatter::new().format_all_bytes(&reports);
         std::fs::write(&final_path, bytes)
             .map_err(|e| safe_err(format!("Failed to write PDF: {}", e)))?;
     } else {
+        let formatted: String = match output_format {
+            OutputFormat::Text => TextFormatter::new().format_all(&reports),
+            OutputFormat::Json => JsonFormatter::pretty().format_all(&reports),
+            OutputFormat::Csv => CsvFormatter::new().format_all(&reports),
+            OutputFormat::Html => HtmlFormatter::new().format_all(&reports),
+            OutputFormat::Pdf => unreachable!("handled above"),
+        };
         std::fs::write(&final_path, &formatted)
             .map_err(|e| safe_err(format!("Failed to write report: {}", e)))?;
     }
@@ -2930,3 +2971,8 @@ mod checkpoint_detail_tests;
 /// after a test send.
 #[cfg(test)]
 mod test_notification_tests;
+
+/// Tests for `export_destination`, where a compliance export is written and
+/// when the path is refused.
+#[cfg(test)]
+mod export_destination_tests;

@@ -828,6 +828,23 @@ reasons with a `filter_map` over `error`, which drops a failure it cannot
 describe, and dropping the only failure empties the list, which is the branch
 that reports success.
 
+**`export_compliance_report` is the one that did disagree with the CLI, and it
+was found by reading the CLI first.** The desktop's path resolution is
+character-for-character the expression at `report.rs:165`, which reads as
+agreement and is where a comparison would ordinarily stop. Fifty lines further
+down that file is `refuse_extension_that_contradicts`, added because
+`report --output report.json` under the default text format wrote a text report
+into a `.json` file and exited 0. Three CLI callers use it. The desktop had
+none, so choosing PDF and typing `audit.json` produced a PDF named `audit.json`
+and reported it saved.
+
+The lesson is about where a comparison ends. **Matching the line is not
+matching the behaviour**: the CLI's guard is not at the site the desktop
+copied, it is upstream of it, and reading only the copied line finds nothing
+wrong. The shared piece is now `OutputFormat::contradicted_by`, the decision
+alone, because the sentences cannot be shared: the CLI's names `--output` and
+there is no flag in front of a desktop operator to correct.
+
 **That second one is not reachable and is recorded anyway.**
 `NotificationResult::failed` is the only constructor setting `success: false`
 and it always records a reason, so no row in the tree takes that path. The

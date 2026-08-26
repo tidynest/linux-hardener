@@ -124,6 +124,27 @@ impl OutputFormat {
             _ => None,
         }
     }
+
+    /// The document `path`'s extension names, when it names one this crate
+    /// renders and it is not `self`. `None` means the path raises no objection.
+    ///
+    /// The decision behind every "that extension contradicts the format you
+    /// chose" refusal, in one place, because the refusals themselves cannot be:
+    /// the CLI names `--output` in its message and the desktop has no flag to
+    /// name. Sharing the sentence would put a flag name in front of a desktop
+    /// operator; sharing nothing let the desktop write PDF bytes into a file
+    /// the CLI refuses to open, which is what it did until 2026-08-26.
+    ///
+    /// A path with no extension, or one naming no format this crate renders,
+    /// is not a contradiction. `report.2026.08.03` has extension `03` and the
+    /// operator was not asking for a document at all, which is the reason
+    /// [`from_extension`](Self::from_extension) is a closed list.
+    pub fn contradicted_by(self, path: &std::path::Path) -> Option<Self> {
+        path.extension()
+            .and_then(|e| e.to_str())
+            .and_then(Self::from_extension)
+            .filter(|named| *named != self)
+    }
 }
 
 /// Configuration for report generation.

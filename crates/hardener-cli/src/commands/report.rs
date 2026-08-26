@@ -212,16 +212,9 @@ pub(crate) fn refuse_extension_that_contradicts(
     path: &std::path::Path,
     selected: OutputFormat,
 ) -> anyhow::Result<()> {
-    let Some(named) = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .and_then(OutputFormat::from_extension)
-    else {
+    let Some(named) = selected.contradicted_by(path) else {
         return Ok(());
     };
-    if named == selected {
-        return Ok(());
-    }
     // The flag is not named: `report` selects with `--report-format` and the
     // `batch` verbs, which share this check, select with the global `--format`.
     // Naming one of them would be wrong for the other half of the callers.

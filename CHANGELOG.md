@@ -2042,6 +2042,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop wrote a compliance export into a file whose extension named a
+  different document, which the CLI refuses.** `hardener report` has refused an
+  `--output` path contradicting `--report-format` since
+  `refuse_extension_that_contradicts` was added, on the grounds that writing a
+  text report into a file called `.json` and exiting 0 is a lie the next
+  consumer acts on. `export_compliance_report` reached the same fork
+  in-process, appended an extension only when there was none, and never looked
+  at one that was there. So choosing PDF in the export dialog and typing
+  `audit.json` produced a PDF named `audit.json` and reported it saved.
+
+  Both decide through `OutputFormat::contradicted_by` now, and only the
+  decision is shared. The CLI's sentence names `--output`, and a desktop
+  operator has no flag to go and correct, so the two refusals are worded
+  separately on purpose. A path naming no document this tool renders is not a
+  contradiction and is left exactly as typed: `q3.2026.08` has extension `08`,
+  and the operator was not asking for a document at all.
+
+  The path is also resolved before anything is rendered, so a refusal no longer
+  arrives after a host has been scanned to build a report nobody may write.
+  **A PDF export rendered its report twice**, once through `format_all` into a
+  lossy `String` that was discarded and once through `format_all_bytes` for the
+  bytes actually written. Only the second runs now.
+
 - **A failed test notification did not say which channel failed.** The settings
   pane's "send test" reduces one result per configured channel to a single
   line, and that line dropped `NotificationResult::channel`, which both
