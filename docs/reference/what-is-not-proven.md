@@ -845,6 +845,28 @@ wrong. The shared piece is now `OutputFormat::contradicted_by`, the decision
 alone, because the sentences cannot be shared: the CLI's names `--output` and
 there is no flag in front of a desktop operator to correct.
 
+**`connect_remote` gives a fourth answer to the same question and is not fixed.**
+Read on 2026-08-26 and left alone for want of session, so it is written down
+rather than left to be rediscovered. `RemoteConnectionStatus::Connected` carries
+the user the desktop banner shows at `hosts_page.rs:156`, and
+`connect_remote` fills it with `profile.user.clone().unwrap_or_else(whoami::username)`.
+The same connection files its checkpoints under `SshExecutor::description()`,
+which for a profile naming no user calls `resolve_ssh_user`, which runs
+`ssh -G` and takes the `user` line the operator's `~/.ssh/config` produces,
+falling back to `root` rather than to the local account.
+
+So a profile with no user against a host whose `~/.ssh/config` block says
+`User deploy` connects as `deploy`, files every checkpoint under
+`ssh://deploy@host:22`, and tells the operator they are connected as their own
+local username. Neither number is wrong on its own; they are answers to the
+same question from one connection, and the one the operator reads is the one
+that is not load bearing.
+
+The fix is an accessor rather than a second resolution: `description()` already
+embeds the effective user, so exposing it and reporting that is one source. A
+second call to `resolve_ssh_user` from the desktop would agree in the resolved
+case and disagree again in the fallback, `root` against `whoami`.
+
 **That second one is not reachable and is recorded anyway.**
 `NotificationResult::failed` is the only constructor setting `success: false`
 and it always records a reason, so no row in the tree takes that path. The
