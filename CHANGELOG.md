@@ -2063,7 +2063,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrives after a host has been scanned to build a report nobody may write.
   **A PDF export rendered its report twice**, once through `format_all` into a
   lossy `String` that was discarded and once through `format_all_bytes` for the
-  bytes actually written. Only the second runs now.
+  bytes actually written. There is one render and one write now, PDF no longer
+  special-cased: every formatter answers `format_all_bytes`, the four text ones
+  through the trait's default, so there is no arm left over to except.
 
 - **A failed test notification did not say which channel failed.** The settings
   pane's "send test" reduces one result per configured channel to a single

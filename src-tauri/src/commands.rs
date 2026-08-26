@@ -1499,24 +1499,21 @@ pub async fn export_compliance_report(
     );
     let reports = generator.generate(&results, &[]);
 
-    // Rendered once, in the shape the file takes. PDF used to be rendered
-    // twice: through `format_all` into a lossy `String` that was then
-    // discarded, and again through `format_all_bytes` for the bytes written.
-    if output_format == OutputFormat::Pdf {
-        let bytes = PdfFormatter::new().format_all_bytes(&reports);
-        std::fs::write(&final_path, bytes)
-            .map_err(|e| safe_err(format!("Failed to write PDF: {}", e)))?;
-    } else {
-        let formatted: String = match output_format {
-            OutputFormat::Text => TextFormatter::new().format_all(&reports),
-            OutputFormat::Json => JsonFormatter::pretty().format_all(&reports),
-            OutputFormat::Csv => CsvFormatter::new().format_all(&reports),
-            OutputFormat::Html => HtmlFormatter::new().format_all(&reports),
-            OutputFormat::Pdf => unreachable!("handled above"),
-        };
-        std::fs::write(&final_path, &formatted)
-            .map_err(|e| safe_err(format!("Failed to write report: {}", e)))?;
-    }
+    // One arm per format, one render, one write. PDF used to be special-cased
+    // around a `String` match that had already rendered it: `format_all` into a
+    // lossy `String` which was then discarded, and `format_all_bytes` again for
+    // the bytes written. Every formatter answers `format_all_bytes`, the four
+    // text ones through the trait's default, so there is no case to except and
+    // no arm left over to make unreachable.
+    let bytes = match output_format {
+        OutputFormat::Text => TextFormatter::new().format_all_bytes(&reports),
+        OutputFormat::Json => JsonFormatter::pretty().format_all_bytes(&reports),
+        OutputFormat::Csv => CsvFormatter::new().format_all_bytes(&reports),
+        OutputFormat::Html => HtmlFormatter::new().format_all_bytes(&reports),
+        OutputFormat::Pdf => PdfFormatter::new().format_all_bytes(&reports),
+    };
+    std::fs::write(&final_path, bytes)
+        .map_err(|e| safe_err(format!("Failed to write report: {}", e)))?;
 
     Ok(final_path)
 }
