@@ -1183,20 +1183,16 @@ six distributions.
 
 The suite has grown since that baseline, and has since been rewritten. Every
 figure in the table above is superseded by the reading in the Reading table
-below, which is **166 of 166 on all six distributions** on 2026-08-22.
+below, which is **168 of 168 on all six distributions** on 2026-08-27.
 Restating the number here rather than only pointing at it is deliberate, and so
 is holding it to the collection count: a pointer that cannot go stale is a
 pointer nothing checks.
 
-**This site and the current Reading row are red as of 2026-08-27**, reading 166
-against a tree that collects 168. `T-HIST-14` and `T-HIST-15` were added that
-day, with the fix that stops the desktop listing another host's checkpoints and
-the one that makes a failed checkpoint detail say so, and no sweep has run
-either: the GUI suite runs only inside the nspawn containers and none was
-available.
-This is the same state the 2026-08-21 paragraph below describes, and it is left
-standing for the same reason. **Only a run can clear it.** Editing either number
-would replace a true statement about what has been executed with a false one.
+This site and the current Reading row stood red at 166 against a tree of 168 for
+the hours between `T-HIST-14` and `T-HIST-15` being written and the sweep that
+ran them, exactly as the 2026-08-21 paragraph below describes. Neither number
+was edited while it stood; the run cleared it, which is the only thing that
+can.
 
 This sentence named the 2026-08-16 reading of 154 until 2026-08-19. Summary had
 recorded the later reading on 2026-08-18, so the pointer stood stale for a day:
@@ -1228,7 +1224,8 @@ rather than measuring growth:
 | 2026-08-21 | 158 | 6 | superseded, taken twice at this count: once after the fix for that race and the test that pins it, and again after the fleet-apply fixture gained a failing host, which the nine `T-FAPPLY` cases read |
 | 2026-08-21 | 165 | 6 | superseded, 3.7 to 4.7 minutes each and 44 screenshots each. The theme sweep gained a sixth state, the rollback modal, so the whole modal surface is now captured in all seven themes instead of in one as a by-product of `T-DIVG-03`'s geometry check. **Seven cases from no new call site**: the count below stayed at 117 and every document said 158 with the validator green |
 | 2026-08-21 | 165 | 6 | superseded, against the two contrast routes that first open a MODAL and the `rollback_mode=partial` fixture they needed. Five distributions green in one sweep; openSUSE failed `T-FIND-10` on a 30 s `waitForApp` timeout and passed on a re-run at 165. **Kept rather than dropped, and it was NOT a distribution fault**: the identical `beforeEach` succeeded 24 times in that same file, run and container, with `T-FIND-09` and `T-FIND-11` passing either side of it in 2.6 s and 1.7 s. A real fault in a shared hook fails all 25. openSUSE took 5.6 minutes here against 4.7 in the sweep before, so it is load |
-| **2026-08-22** | **166** | **6** | **current**, the first execution of `T-FLEET-11`, which was authored unexecuted alongside the fleet profile badge and asserts the badge on a `rhel10` host and its suppression on a `generic` ad-hoc target. **All six green in one sweep with no re-run**, 44 screenshots each, and the run before this one needed an openSUSE re-run. The ad-hoc flow it drives, adding a target and scanning it, had no other spec exercising it |
+| 2026-08-22 | 166 | 6 | superseded. The first execution of `T-FLEET-11`, authored unexecuted alongside the fleet profile badge; all six green in one sweep with no re-run |
+| **2026-08-27** | **168** | **6** | **current**, against `b3caf49f`, the first execution of `T-HIST-14` and `T-HIST-15`. 44 screenshots each. **Debian needed one re-run**: `T-HIST-15` timed out in the shared `beforeEach` at 30 s waiting for `getByRole('main')`, with the page still on the WASM `Loading...` splash, so its own assertions never ran. The other five passed that spec, and the other twelve History specs passed on Debian through the identical hook, which is what says cold-start timing rather than a defect. Re-run alone: 168 of 168 |
 
 The Fedora-only row is kept because it records a rule rather than a result: it
 was deliberately never written into the table, since a six-distribution row
@@ -1286,7 +1283,8 @@ pointed somewhere other than its cause:
 
 ### Spec Inventory (11 Specs, 168 Tests)
 
-Counted off `npx playwright test --list` on 2026-08-21.
+Counted off `npx playwright test --list` on 2026-08-21, and confirmed by the
+2026-08-27 sweep, which executed all 168.
 **120 `test()` call sites produce 168 cases**, because three sites are
 parameterised and
 generate their cases at collection time: `themes.spec.js:200` produces 42
