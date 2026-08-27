@@ -23,6 +23,11 @@ pub fn HistorySection() -> impl IntoView {
     // Whether the root-owned system database was skipped. Rendered as a note
     // under the guidance bar; without it an incomplete list reads as complete.
     let system_unreadable = RwSignal::new(false);
+    // Rows in those databases that captured a different host, and so are not
+    // this machine's restore points. `batch apply --execute` writes every
+    // remote host's pre-apply checkpoints into the local user database, so this
+    // is a count an ordinary fleet operator sees, not an edge case.
+    let other_host_count = RwSignal::new(0usize);
     let checkpoint_name = RwSignal::new(String::new());
     let is_creating = RwSignal::new(false);
     let expanded_detail = RwSignal::new(None::<CheckpointDetail>);
@@ -39,6 +44,7 @@ pub fn HistorySection() -> impl IntoView {
                 Ok(list) => {
                     checkpoints.set(list.checkpoints);
                     system_unreadable.set(list.system_unreadable);
+                    other_host_count.set(list.other_host_count);
                 }
                 Err(e) => {
                     web_sys::console::error_1(&format!("Failed to load checkpoints: {}", e).into());
@@ -79,6 +85,7 @@ pub fn HistorySection() -> impl IntoView {
                     if let Ok(list) = invoke_get_checkpoints().await {
                         checkpoints.set(list.checkpoints);
                         system_unreadable.set(list.system_unreadable);
+                        other_host_count.set(list.other_host_count);
                     }
                 }
                 Err(e) => {
@@ -100,6 +107,7 @@ pub fn HistorySection() -> impl IntoView {
                     if let Ok(list) = invoke_get_checkpoints().await {
                         checkpoints.set(list.checkpoints);
                         system_unreadable.set(list.system_unreadable);
+                        other_host_count.set(list.other_host_count);
                     }
                 }
                 Err(e) => {
@@ -161,6 +169,17 @@ pub fn HistorySection() -> impl IntoView {
                         <code>"/var/lib/linux-hardener/checkpoints.db"</code>
                         ". To see them, run "
                         <code>"sudo hardener checkpoint list"</code>
+                        "."
+                    </p>
+                </Show>
+                // `!= 0`, not `> 0`: the `>` closes the tag inside `view!`.
+                <Show when=move || other_host_count.get() != 0>
+                    <p class="checkpoint-source-note">
+                        {move || format!(
+                            "{} checkpoint(s) here captured a different host and are not listed:                              a rollback on this machine cannot restore another machine's files.                              Roll them back from the Fleet view, or with ",
+                            other_host_count.get(),
+                        )}
+                        <code>"hardener batch rollback --host <name>"</code>
                         "."
                     </p>
                 </Show>

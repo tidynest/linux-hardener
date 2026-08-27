@@ -209,6 +209,34 @@ test.describe('History', () => {
     await expect(page.locator('.timeline-verify-bad')).toHaveText('Unverified');
   });
 
+  // T-HIST-14: a checkpoint of another host is withheld, and said to be
+  //
+  // `batch apply --execute` runs unprivileged and writes every remote host's
+  // pre-apply checkpoints into the local user database, which is the first
+  // source `get_checkpoints` reads. Listing them offered another machine's
+  // files as this machine's restore points, and the red button beside each one
+  // could only ever fail. They are withheld now, so what this asserts is the
+  // sentence that stops the withholding being silent: a list that shrank
+  // without a word is the same defect facing the other way.
+  //
+  // The count comes from the backend, not from the rows, precisely because
+  // there are no rows to count. `checkpoint_source=other_host` is the only
+  // fixture that raises it.
+  test('T-HIST-14: checkpoints belonging to another host are named, not dropped in silence', async ({ page }) => {
+    await loadApp(page, '/hardening', 'checkpoint_source=other_host');
+    await page.getByRole('tab', { name: 'History' }).click();
+
+    const note = page.locator('.checkpoint-source-note');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('3 checkpoint(s)');
+    await expect(note).toContainText('hardener batch rollback');
+
+    // Announced, not merely rendered, for the reason T-HIST-12 spells out.
+    const region = page.locator('[role="status"]', { has: page.locator('.checkpoint-source-note') });
+    await expect(region).toHaveCount(1);
+    await expect(region).toHaveAttribute('aria-live', 'polite');
+  });
+
   // T-HIST-02: The checkpoints, grouped by the day they were taken
   //
   // There is no checkpoints table. The redesign groups checkpoints under a

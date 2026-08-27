@@ -790,6 +790,12 @@
         return {
           checkpoints: CHECKPOINTS,
           system_unreadable: checkpointSource === 'unreadable',
+          // Rows the backend narrowed out because they captured another host.
+          // `checkpoint_source=other_host` is the only way to raise it: the
+          // backend never returns both a row and its own exclusion, so a
+          // fixture that set this alongside a full CHECKPOINTS list would be
+          // describing a state the command cannot produce.
+          other_host_count: checkpointSource === 'other_host' ? 3 : 0,
         };
 
       case 'create_checkpoint':

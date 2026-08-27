@@ -693,6 +693,7 @@ pub async fn invoke_pick_config_file() -> Result<Option<String>, String>;
 | `src/validation/tests.rs` | Unit tests for `src/validation.rs` | Test-only; `super` resolves to `crate::validation` |
 | `src/commands/fleet_tests.rs` | Fleet command tests, the first of the three test modules `src/commands.rs` carried | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/delete_escalation_tests.rs` | Tests for the guard deciding whether deleting a checkpoint is worth an authentication prompt | Test-only; `super` resolves to `crate::commands`. Takes the database path as a parameter so it runs the same on a host with a system database and one without |
+| `src/commands/checkpoint_host_tests.rs` | Tests for `restorable_here`, the rule narrowing the checkpoint list to this host | Test-only; `super` resolves to `crate::commands`. Generic in what travels beside the checkpoint, so the rule is exercised with no database and no executor |
 | `src/commands/fail_session_on_err_tests.rs` | Tests for `fail_session_on_err`, the helper that marks an aborted scan's history row Failed rather than orphaning it as running | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/compliance_source_tests.rs` | Tests for the compliance report's source selection | Test-only; `super` resolves to `crate::commands` |
 | `src/commands/webhook_shape_tests.rs` | Tests that what the desktop writes to `[scheduler.notifications.webhooks]` is what `hardener-scheduler` reads back | Test-only; `super` resolves to `crate::commands`. This crate depends on both, so it is the only place the two shapes meet |
@@ -973,8 +974,8 @@ Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
 The table covers the ten crates under `crates/` and sums to 2142. The eleventh
-workspace member, `src-tauri`, carries 158 more, which is why the tree total the
-evidence ledger records is 2300 and not this table's sum.
+workspace member, `src-tauri`, carries 163 more, which is why the tree total the
+evidence ledger records is 2305 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|

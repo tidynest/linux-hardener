@@ -37,6 +37,16 @@ pub struct CheckpointList {
     /// `DatabaseReach::Read` and `DatabaseReach::Absent`: one means the rows
     /// are present, the other that there are none to miss.
     pub system_unreadable: bool,
+    /// Rows in those databases that capture a **different** host, and so are
+    /// deliberately not in `checkpoints`.
+    ///
+    /// `batch apply --execute` runs unprivileged and writes every remote
+    /// host's pre-apply checkpoints into the local user database, the same one
+    /// this list reads. Offering them here presents another machine's files as
+    /// this machine's restore points. A count rather than silence, because a
+    /// list that quietly shrank would be indistinguishable from a host that
+    /// never took those checkpoints.
+    pub other_host_count: usize,
 }
 
 /// Detailed checkpoint information including captured files.

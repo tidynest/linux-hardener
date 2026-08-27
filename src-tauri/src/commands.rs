@@ -939,11 +939,53 @@ async fn collect_checkpoints(
     DatabaseReach::Read
 }
 
-/// Retrieves a list of all available checkpoints from both user and system databases.
+/// Splits collected rows into the ones a rollback here could restore and a
+/// count of the ones it could not.
 ///
-/// Checkpoints created by the GUI are in the user database, while checkpoints
-/// created by privileged CLI operations (via pkexec) are in the system database.
-/// This function merges both sources for a complete view.
+/// Every checkpoint records the host it captured. `CheckpointManager::rollback`
+/// refuses to restore one host's state onto another, so a row whose key is not
+/// this host's is not a restore point this desktop can offer: the red button
+/// beside it could only ever fail.
+///
+/// It is reachable, and not rarely. **`batch apply --execute` runs unprivileged
+/// and writes every remote host's pre-apply checkpoints into the local user
+/// database**, which is the first source this list reads. The database on the
+/// machine this was found on holds 84 such rows and no local one.
+///
+/// The operator does not even reach the cross-host refusal, because
+/// `run_rollback` escalates through `pkexec` first and the root CLI resolves to
+/// the system database alone, where a user-database row is simply absent. So
+/// the sequence was: pick a remote host's checkpoint from a list headed as this
+/// machine's, read a preview of that host's files, authenticate, and be told
+/// the checkpoint does not exist. `resolve_delete` states the principle for the
+/// neighbouring verb: raising an authentication dialog for an operation that
+/// cannot succeed is a prompt the operator can do nothing with.
+///
+/// Split out and taking the key as an argument so the rule can be tested
+/// without a database, an executor or a pkexec prompt. Generic in what travels
+/// beside the checkpoint for the same reason it is split out at all: the
+/// decision reads `host_key` and nothing else, and a `CheckpointManager` in the
+/// signature would have made that only testable against a real database.
+fn restorable_here<T>(
+    entries: Vec<(Checkpoint, T)>,
+    local_key: &str,
+) -> (Vec<(Checkpoint, T)>, usize) {
+    let total = entries.len();
+    let kept: Vec<_> = entries
+        .into_iter()
+        .filter(|(cp, _)| cp.host_key == local_key)
+        .collect();
+    let dropped = total - kept.len();
+    (kept, dropped)
+}
+
+/// Retrieves the checkpoints of THIS host from both user and system databases.
+///
+/// The system database holds what privileged operations captured, the desktop's
+/// own `create_checkpoint` included, since it goes through `pkexec`. The user
+/// database holds what an unprivileged CLI run captured, which today means the
+/// remote hosts `batch apply` reached. Both are merged and then narrowed to this
+/// host by `restorable_here`, which is where the reasoning for the narrowing is.
 #[tauri::command]
 pub async fn get_checkpoints() -> Result<CheckpointList, String> {
     let mut entries: Vec<(Checkpoint, CheckpointManager)> = Vec::new();
@@ -965,7 +1007,16 @@ pub async fn get_checkpoints() -> Result<CheckpointList, String> {
         );
     }
 
+    // Narrowed before the signature pass, not after: verifying a checkpoint
+    // this host can never restore is a database read and a signing-key lookup
+    // spent on a row nobody will be shown.
+    let (entries, other_host_count) = restorable_here(
+        entries,
+        &hardener_common::executor::host_key_for(&hardener_core::LocalExecutor::new()),
+    );
+
     // Sort by timestamp descending (newest first)
+    let mut entries = entries;
     entries.sort_by_key(|(cp, _)| std::cmp::Reverse(cp.checkpoint_timestamp));
 
     // Verify each checkpoint's signature and build response
@@ -985,6 +1036,7 @@ pub async fn get_checkpoints() -> Result<CheckpointList, String> {
     Ok(CheckpointList {
         checkpoints: result,
         system_unreadable,
+        other_host_count,
     })
 }
 
@@ -2942,6 +2994,10 @@ mod fleet_tests;
 /// authentication prompt.
 #[cfg(test)]
 mod delete_escalation_tests;
+
+/// Tests for the rule that narrows the checkpoint list to this host.
+#[cfg(test)]
+mod checkpoint_host_tests;
 
 /// Tests for `fail_session_on_err`, the helper `run_scan`/`run_deep_scan`
 /// use to mark an aborted scan's history row Failed instead of orphaning
