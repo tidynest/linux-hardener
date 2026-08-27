@@ -2072,6 +2072,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop offered another host's checkpoints as this machine's restore
+  points.** Every checkpoint records the host it captured, and
+  `CheckpointManager::rollback` refuses to restore one host's state onto
+  another. The checkpoint list ignored that field: it merged both local
+  databases and showed every row, each with a working file preview and an armed
+  red Roll back button. `batch apply --execute` runs unprivileged, so its
+  checkpoints of every remote host land in the local user database, which is
+  the first source that list reads. The machine this was found on holds 84 such
+  rows and no local one.
+
+  **The operator never reached the cross-host refusal.** The desktop's rollback
+  escalates through `pkexec` first, and the root CLI resolves to
+  `/var/lib/linux-hardener/checkpoints.db` alone, where a user-database row is
+  simply absent: pick a remote host's checkpoint, read a preview of that host's
+  files, authenticate, and be told the checkpoint does not exist. Delete already
+  refuses to raise an authentication dialog for an operation that cannot
+  succeed; rollback did not.
+
+  The list is narrowed to this host and reports how many rows it withheld,
+  because a list that quietly shrank would be indistinguishable from a host that
+  never took those checkpoints. The History tab states the count in the live
+  region the unreadable-database note already uses and names
+  `hardener batch rollback` as what can restore them. `T-HIST-14` covers that
+  note in the browser suite and has not been run: the GUI suite runs only inside
+  the nspawn containers.
+
 - **The rollback dialog armed its confirm button over a preview that had
   failed, and said nothing.** `rollback_modal.rs` held the captured file list in
   an `Option<CheckpointDetail>` and fetched it with `if let Ok(d) = ...`, so the
