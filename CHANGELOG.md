@@ -1495,6 +1495,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The desktop's real apply and its preview build one argv and read the answer
+  by one rule.** They built the same `hardener apply` vector twice, differing in
+  `--dry-run`, and the preview then interpreted the CLI's reply with a
+  hand-written copy of `accept_json_output` that skipped forward to the first
+  `[`. A comment gave the reason: a leading `{"info": "Dry run..."}` document.
+  That line has gone to stderr since `output::info`'s JSON arm was fixed, so the
+  skip stepped over nothing and left the preview the one path in the desktop
+  reading CLI output by a rule nothing tested. Both now call `apply_args`, whose
+  `--dry-run` argument is the only thing separating a preview from a real
+  modification of the host and is pinned by a test that goes red when it is
+  dropped, and the preview parses through the shared helper, which also gives it
+  the error the other three give when output is unparseable and stderr is empty
+  rather than an empty reason. `parse_outcomes`, the fleet path's parser, keeps
+  its own skip: it is exit-code agnostic where the helper is not, which is why
+  the two cannot merge, and its comment now says the skip is tolerance rather
+  than repeating the same claim about a stream `batch` does not produce. No
+  behaviour changes for any well formed CLI output.
+
 - **One rule now decides which plugin a `--plugin` entry names, for the CLI,
   both desktop scan paths and the Leptos label lookup.** It is
   `hardener_types::plugin_id_named_by`: the full id, or the segment before the
