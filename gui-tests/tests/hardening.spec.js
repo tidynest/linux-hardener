@@ -126,6 +126,72 @@ test.describe('Configure', () => {
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.getByRole('radiogroup', { name: 'Protection level' })).toBeVisible();
   });
+
+  // The config picker sits inside the "Advanced (optional)" disclosure, which
+  // is shut on load. Typing commits on blur, so the two tests below move focus
+  // rather than pressing anything.
+  const openAdvanced = async (page) => {
+    await page.getByText('Advanced (optional)').click();
+    return page.locator('.config-file-input');
+  };
+
+  // T-CONF-11: A valid config the escalating commands will not read says so
+  //
+  // One picked path feeds five commands under two rules. `run_scan` and
+  // `run_apply_dry_run` take any .toml outside a deny list; `run_apply` and
+  // `run_deep_scan` hand the file to root and take it only from
+  // /etc/linux-hardener/ or ~/.config/linux-hardener/. Until 2026-08-27 a
+  // config in the operator's own documents validated, summarised, scanned and
+  // previewed its changes, and only Apply refused it.
+  //
+  // The status line must still say Valid. A warning that arrived by marking the
+  // file invalid would be a different and wrong answer, and asserting only the
+  // note would pass on it.
+  test('T-CONF-11: a config outside the trusted directories says which buttons will read it', async ({ page }) => {
+    const input = await openAdvanced(page);
+    await input.fill('/home/user/Documents/hardening.toml');
+    await input.blur();
+
+    await expect(page.locator('.config-status.config-valid')).toBeVisible({ timeout: 10000 });
+    const note = page.locator('.config-apply-note');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('Apply and deep scan will not');
+    await expect(note).toContainText('/etc/linux-hardener/');
+  });
+
+  // T-CONF-12: The same card is silent for a config every command accepts
+  //
+  // The other direction, and the one that stops T-CONF-11 passing on a note
+  // rendered unconditionally.
+  test('T-CONF-12: no note for a config in a directory apply accepts', async ({ page }) => {
+    const input = await openAdvanced(page);
+    await input.fill('/home/user/.config/linux-hardener/config.toml');
+    await input.blur();
+
+    await expect(page.locator('.config-status.config-valid')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.config-apply-note')).toHaveCount(0);
+  });
+});
+
+// A file dialog that will not open used to write to the browser console and
+// set no signal, so the card was unchanged and the press read as a dead
+// button. Its own describe block because the failure is injected through the
+// URL, which `loadApp` takes as a query and the block above does not pass.
+test.describe('Configure config picker, dialog failure', () => {
+  // T-CONF-13: Browse failing is reported, and names what the operator can do
+  test('T-CONF-13: a file chooser that cannot open says so', async ({ page }) => {
+    await loadApp(page, '/hardening', 'error_mode=configPick');
+    await page.getByText('Advanced (optional)').click();
+
+    await page.getByRole('button', { name: 'Browse' }).click();
+
+    const status = page.locator('.config-status.config-invalid');
+    await expect(status).toBeVisible({ timeout: 10000 });
+    await expect(status).toContainText('file chooser could not open');
+    // The text field is the way round it, and a message that only reports
+    // leaves the operator guessing that.
+    await expect(status).toContainText('Type the path in the field instead');
+  });
 });
 
 // ---------------------------------------------------------------------------

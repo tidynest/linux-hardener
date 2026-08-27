@@ -46,6 +46,10 @@ pub fn ConfigFileCard() -> impl IntoView {
                             config_enabled_plugins: Vec::new(),
                             config_directive_count: 0,
                             config_exception_count: 0,
+                            // The command refused the path, so no summary of it
+                            // exists. Claiming the escalating commands would
+                            // take it would be a second answer invented here.
+                            config_apply_accepts: false,
                         }));
                 }
             }
@@ -64,17 +68,24 @@ pub fn ConfigFileCard() -> impl IntoView {
         }
     };
 
+    // A dialog that will not open used to go to the browser console and set
+    // nothing at all, so the card was unchanged and pressing Browse read as a
+    // dead button. Same defect as the rollback modal's and the checkpoint
+    // expander's, both fixed on 2026-08-27, and missed here because only the
+    // two history components were looked at. Cancelling is not a failure and
+    // clears this the same way a successful pick does.
+    let browse_error = RwSignal::new(None::<String>);
+
     let on_browse = move |_| {
         leptos::task::spawn_local(async move {
             match invoke_pick_config_file().await {
                 Ok(Some(path)) => {
+                    browse_error.set(None);
                     input_value.set(path.clone());
                     validate_path(path);
                 }
-                Ok(None) => {}
-                Err(e) => {
-                    web_sys::console::error_1(&format!("File dialog error: {}", e).into());
-                }
+                Ok(None) => browse_error.set(None),
+                Err(e) => browse_error.set(Some(e)),
             }
         });
     };
@@ -89,6 +100,23 @@ pub fn ConfigFileCard() -> impl IntoView {
         if is_validating.get() {
             return view! { <span class="config-status config-validating">"Validating..."</span> }
                 .into_any();
+        }
+
+        // Ahead of the summary, because a failed dialog leaves whatever was
+        // already chosen in place and the stale line would otherwise read as
+        // the answer to the press. Names the text field, since that is what the
+        // operator can still do; a message that only reports is one they can
+        // act on by guessing.
+        if let Some(error) = browse_error.get() {
+            return view! {
+                <span class="config-status config-invalid">
+                    <span class="config-status-icon">{"\u{2717}"}</span>
+                    " The file chooser could not open: "
+                    {error}
+                    ". Type the path in the field instead."
+                </span>
+            }
+            .into_any();
         }
 
         match app_state.config_summary.get() {
@@ -132,6 +160,27 @@ pub fn ConfigFileCard() -> impl IntoView {
         }
     };
 
+    // Shown only for a file that parsed, because the question this answers is
+    // "which of the buttons will honour it", and a file that parsed for nobody
+    // is not there yet. `config_apply_accepts` is decided by the path alone, so
+    // this promises one refusal out of the way rather than a successful apply.
+    let apply_note = move || {
+        let outside = app_state
+            .config_summary
+            .get()
+            .is_some_and(|summary| summary.config_is_valid && !summary.config_apply_accepts);
+
+        outside.then(|| {
+            view! {
+                <p class="config-apply-note">
+                    "Scans and previews will use this file. Apply and deep scan will not: \
+                     they hand the config to root, and only accept one from \
+                     /etc/linux-hardener/ or ~/.config/linux-hardener/."
+                </p>
+            }
+        })
+    };
+
     view! {
         <div class="config-file-fields">
             <div class="config-file-row">
@@ -160,6 +209,7 @@ pub fn ConfigFileCard() -> impl IntoView {
                     </button>
                 </Show>
             </div>
+            {apply_note}
         </div>
     }
 }

@@ -18,7 +18,7 @@ use super::*;
 use hardener_core::HardenerConfig;
 
 fn summary_of(config: &HardenerConfig) -> Vec<String> {
-    summarise_config("/tmp/whatever.toml".to_string(), config).config_enabled_plugins
+    summarise_config("/tmp/whatever.toml".to_string(), config, true).config_enabled_plugins
 }
 
 /// A stock config runs every plugin, which is the baseline the rest move from.
@@ -129,12 +129,89 @@ fn the_counts_describe_the_file_rather_than_the_run() {
         .insert("kernel.kptr_restrict".to_string(), "2".to_string());
     config.kernel.enabled = Some(false);
 
-    let summary = summarise_config("/tmp/whatever.toml".to_string(), &config);
+    let summary = summarise_config("/tmp/whatever.toml".to_string(), &config, true);
 
     assert_eq!(summary.config_directive_count, 1);
     assert!(
         !summary
             .config_enabled_plugins
             .contains(&"kernel-hardening".to_string())
+    );
+}
+
+/// The answer travels to the card rather than being decided at the card.
+///
+/// `config_apply_accepts` is what makes the picker say a file will be read by
+/// the scan and preview buttons and not by Apply. A summary that dropped it, or
+/// that hardcoded either answer, would render the same for both kinds of file,
+/// so both directions are asserted and neither is the type's default.
+#[test]
+fn the_apply_verdict_reaches_the_summary_unchanged() {
+    let config = HardenerConfig::default();
+
+    for verdict in [true, false] {
+        let summary = summarise_config("/tmp/whatever.toml".to_string(), &config, verdict);
+        assert_eq!(
+            summary.config_apply_accepts, verdict,
+            "the card renders this field, so it must carry what it was given"
+        );
+    }
+}
+
+/// The command joins the two rules, and the join is the line that can go
+/// missing.
+///
+/// `summarise_config` carrying its argument proves nothing on its own if
+/// `validate_config` hands it a constant, which is the shape this whole change
+/// would collapse into. A temporary `.toml` is refused by the privileged rule
+/// and accepted by the user one, so the command must report a valid file that
+/// Apply will not take. It runs the real loader over a real file, and the only
+/// thing it cannot reach is the opposite verdict, which needs a path inside
+/// `~/.config/linux-hardener/`.
+#[tokio::test]
+async fn a_valid_config_apply_would_refuse_is_reported_as_exactly_that() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let path = directory.path().join("hardening.toml");
+    std::fs::write(&path, "[global]\n").expect("write the config");
+
+    let summary = validate_config(path.to_string_lossy().into_owned())
+        .await
+        .expect("the user rule accepts a .toml under /tmp");
+
+    assert!(
+        summary.config_is_valid,
+        "the file parsed, so nothing is wrong with it: {:?}",
+        summary.config_error
+    );
+    assert!(
+        !summary.config_apply_accepts,
+        "the card would have offered no warning for a config Apply refuses"
+    );
+}
+
+/// The real validator refuses the paths this test can create.
+///
+/// The one direction drivable without moving `$HOME`, and the direction that
+/// matters: a config an operator picked from their own documents is the case
+/// the warning exists for. Asked of `validate_privileged_config_path` itself,
+/// which is the function `run_apply` asks, so this fails if the two ever stop
+/// being the same question.
+#[test]
+fn a_config_outside_the_allowed_directories_is_refused_by_the_apply_rule() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let path = directory.path().join("hardening.toml");
+    std::fs::write(&path, "[global]\n").expect("write the config");
+
+    let verdict = validate_privileged_config_path(&path.to_string_lossy());
+
+    assert!(
+        verdict.is_err(),
+        "a config outside /etc/linux-hardener and ~/.config/linux-hardener \
+         must not be handed to root: {verdict:?}"
+    );
+    assert!(
+        validate_user_config_path(&path.to_string_lossy()).is_ok(),
+        "and the same file must stay usable for the scan and the preview, \
+         which is the whole reason the card has something to explain"
     );
 }

@@ -2706,13 +2706,25 @@ fn plugin_sections(config: &HardenerConfig) -> [(&'static str, &PluginConfig); 8
 /// confirm they picked the right file said "8 plugins" for a file that runs
 /// one. It could only ever over-report, never claim a plugin was off while it
 /// ran, because a section disabled by its own flag fails the wider gate too.
-fn summarise_config(path: String, config: &HardenerConfig) -> ConfigSummary {
+///
+/// `apply_accepts` is passed in rather than asked here, for the reason
+/// `write_scheduler_config` takes its logger as an argument. The question is
+/// answered by `validate_privileged_config_path`, which canonicalises and reads
+/// `dirs::config_dir()`, so asking it inside this function would tie every test
+/// of the summary to the filesystem and to `$HOME`. **A ceiling worth naming:
+/// the refusing direction is drivable and the accepting one is not.** Any path
+/// a test can create lies outside both allowed directories, so proving the
+/// `true` arm end to end would mean moving `HOME` while the rest of this
+/// binary's tests run in threads beside it. The join is one line in
+/// `validate_config`.
+fn summarise_config(path: String, config: &HardenerConfig, apply_accepts: bool) -> ConfigSummary {
     let sections = plugin_sections(config);
 
     ConfigSummary {
         config_path: path,
         config_is_valid: true,
         config_error: None,
+        config_apply_accepts: apply_accepts,
         config_enabled_plugins: sections
             .iter()
             .filter(|(id, _)| config.is_plugin_enabled(id))
@@ -2736,19 +2748,31 @@ fn summarise_config(path: String, config: &HardenerConfig) -> ConfigSummary {
 /// Parses the TOML file using `ConfigLoader` and counts plugins, directives
 /// and exceptions. Returns error details if invalid. The summary itself is
 /// built by [`summarise_config`], which is where the decisions live.
+///
+/// Validates by the user rule and reports the privileged one. The card an
+/// operator reads before pressing anything is the only place both answers are
+/// available at once, and asking the escalating commands' own validator is what
+/// stops this becoming a third statement of where a config may live.
 #[tauri::command]
 pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
     validate_user_config_path(&path)?;
+    let apply_accepts = validate_privileged_config_path(&path).is_ok();
 
     use hardener_core::ConfigLoader;
 
     let file_path = std::path::PathBuf::from(&path);
 
+    // Carried into both failure arms as well, so the field never says "apply
+    // would refuse this path" on the strength of a `Default` when the reason
+    // the summary failed is the file's contents. A broken config inside
+    // `~/.config/linux-hardener/` is one the escalating commands accept by path
+    // and reject by parse, and those are different sentences.
     if !file_path.exists() {
         return Ok(ConfigSummary {
             config_path: path,
             config_is_valid: false,
             config_error: Some("File not found".to_string()),
+            config_apply_accepts: apply_accepts,
             ..Default::default()
         });
     }
@@ -2758,11 +2782,12 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String> {
         .with_cli_config(file_path);
 
     match loader.load() {
-        Ok(config) => Ok(summarise_config(path, &config)),
+        Ok(config) => Ok(summarise_config(path, &config, apply_accepts)),
         Err(e) => Ok(ConfigSummary {
             config_path: path,
             config_is_valid: false,
             config_error: Some(e.to_string()),
+            config_apply_accepts: apply_accepts,
             ..Default::default()
         }),
     }

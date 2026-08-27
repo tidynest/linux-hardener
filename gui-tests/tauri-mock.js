@@ -64,6 +64,13 @@
     // opened a modal. `all` cannot serve: it also fails run_scan, so there are
     // no findings, no accept control and no modal to fail a write in.
     if (errorMode === 'exception' && cmd === 'add_policy_exception') return true;
+    // `configPick` fails only the file dialog. Until 2026-08-27 that rejection
+    // went to the browser console and set no signal, so the card was unchanged
+    // and Browse read as a dead button; the message it now renders is only
+    // reachable through this mode. `all` cannot serve: it also fails
+    // validate_config, so the status line carries that rejection instead and
+    // the assertion would pass on the wrong sentence.
+    if (errorMode === 'configPick' && cmd === 'pick_config_file') return true;
     return false;
   }
 
@@ -1104,15 +1111,25 @@
         }));
       }
 
-      case 'validate_config':
+      case 'validate_config': {
+        const path = (args && args.path) || '/home/user/.config/linux-hardener/config.toml';
         return {
-          config_path: (args && args.path) || '/home/user/.config/linux-hardener/config.toml',
+          config_path: path,
           config_is_valid: true,
           config_error: null,
           config_enabled_plugins: ['kernel', 'ssh', 'firewall', 'pam', 'services', 'audit', 'permissions', 'mac'],
           config_directive_count: 3,
           config_exception_count: 1,
+          // Derived rather than fixed, because the whole point of the field is
+          // that it differs by path: the desktop takes any .toml for a scan or
+          // a preview and takes one for apply only from these two directories.
+          // An independent statement of the rule, like `ALL_IDS` in
+          // `scan/tests.rs`, and correctly so: a mock that asked the real
+          // validator would assert nothing about it.
+          config_apply_accepts:
+            path.startsWith('/etc/linux-hardener/') || path.includes('/.config/linux-hardener/'),
         };
+      }
 
       case 'pick_config_file':
         return '/home/user/.config/linux-hardener/config.toml';

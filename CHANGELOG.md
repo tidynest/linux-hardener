@@ -2090,6 +2090,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The config picker offered files that Apply would refuse, and said nothing
+  until Apply refused them.** One picked path feeds five commands under two
+  rules. `run_scan`, `run_apply_dry_run` and the validation behind the picker
+  card take any `.toml` outside a deny list. `run_apply` and `run_deep_scan`
+  hand the file to root through `pkexec`, so they take one only from
+  `/etc/linux-hardener/` or `~/.config/linux-hardener/`. A config in the
+  operator's own documents therefore validated, reported its plugins and
+  directives, ran a scan, showed a full preview of the changes it would make,
+  and was refused at the one step that changes the host. Both rules are right
+  and the narrower one is not going to widen: a config the operator can rewrite
+  between the preview and the apply is not one root should read. What was
+  missing is that nothing said so while the file was still being chosen.
+  `ConfigSummary` carries `config_apply_accepts`, answered by
+  `validate_privileged_config_path` itself rather than by a third statement of
+  where a config may live, and the card says which buttons will read the file.
+  Decided by the path alone, so it promises one refusal out of the way and not
+  a successful apply.
+
+- **A file dialog that could not open left the picker card unchanged.** The
+  rejection went to the browser console and set no signal, so pressing Browse
+  read as a dead button. It now says the chooser could not open and names the
+  text field, which is the way round it. Third instance of this shape fixed in
+  one day, after the rollback modal's and the checkpoint expander's, and missed
+  in both earlier passes because only the two history components were read.
+
 - **`ReportFormatter`'s two defaults were reached by every formatter and
   asserted by none.** Putting `format_all_bytes` back to
   `self.format_bytes(&reports[0])`, the exact shape its own doc records as the

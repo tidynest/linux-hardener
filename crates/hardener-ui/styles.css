@@ -3516,6 +3516,16 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-weight: bold;
 }
 
+/* A valid config the escalating commands will not read. Warning rather than
+   critical: nothing is wrong with the file, and the scan and preview buttons
+   beside it will honour it. */
+.config-apply-note {
+  margin-top: var(--space-xs);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  color: var(--color-warning);
+}
+
 .config-clear-btn {
   background: none;
   border: none;

@@ -1281,17 +1281,21 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (11 Specs, 168 Tests)
+### Spec Inventory (11 Specs, 171 Tests)
 
 Counted off `npx playwright test --list` on 2026-08-21, and confirmed by the
-2026-08-27 sweep, which executed all 168.
-**120 `test()` call sites produce 168 cases**, because three sites are
+2026-08-27 sweep, which executed 168 of them. **Three have never run**:
+`T-CONF-11`, `T-CONF-12` and `T-CONF-13`, written the same day for the config
+picker's two-rule warning and its silent Browse failure, and unexecuted because
+the suite needs root and no sweep followed. The Reading table above still says
+168, which is what it did, and it is the run that clears it.
+**123 `test()` call sites produce 171 cases**, because three sites are
 parameterised and
 generate their cases at collection time: `themes.spec.js:200` produces 42
 screenshots (6 states x 7 themes), `contrast.spec.js:765` produces one case per
-theme, and `hardening.spec.js:517` produces one per viewport width. Reading the
+theme, and `hardening.spec.js:583` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
-`test(` calls is 120 and understates the suite by 48.
+`test(` calls is 123 and understates the suite by 48.
 
 This is a **collection** count, and the sweep of 2026-08-22 has now executed
 all of it: `T-FLEET-11` was added with the fleet profile badge, stood unexecuted
@@ -1313,10 +1317,10 @@ editing the thing it names, and nothing checks these three.
 | Spec | Test IDs | Tests | Description |
 |------|----------|-------|-------------|
 | `themes.spec.js` | T-THEME-01..09 | 9 + 42 | All seven themes verified. The 42 screenshot tests are generated as 6 states x 7 themes. The sixth state is the rollback modal, added 2026-08-21 so that `.modal` is captured in every theme rather than in one: it had been shot only as a by-product of `T-DIVG-03`'s geometry check, which parameterises over viewport width and not over theme, so sentinel - where `.restore-error` read 3.25 before `04930f71` - had no modal shot at any width. Each state applies its own theme rather than the loop applying one afterwards, because `.modal-backdrop` covers the theme selector once a modal is open |
-| `hardening.spec.js` | T-CONF-01..10, T-HIST-01..06 and 11..13, T-APPLY-01..04, T-DIVG-01..05 | 29 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, signature verification and unread sources; what an executed apply produces; the rollback modal's divergence section. T-DIVG-03 runs once per viewport width, so this spec has 28 ids over 29 tests, and T-HIST-07..10 do not exist |
+| `hardening.spec.js` | T-CONF-01..13, T-HIST-01..06 and 11..15, T-APPLY-01..04, T-DIVG-01..05 | 34 | Profiles, plugin toggles, preview, cancel; checkpoints, rollback, signature verification, unread sources, another host's checkpoints and an unreadable detail; the config picker's apply-tier warning and its dialog failure; what an executed apply produces; the rollback modal's divergence section. T-DIVG-03 runs once per viewport width, so this spec has 33 ids over 34 tests, and T-HIST-07..10 do not exist. This row read 29 with ids to T-HIST-13 while the file held 31, because adding a test moves a total the validator checks and a per-spec row it does not |
 | `analysis.spec.js` | T-FIND-01..12, T-COMP-01..08, T-EXC-01..05 | 25 | Findings grouping and detail expander, framework selection, report generation, the per-finding accept/remove exception controls |
 | `dashboard.spec.js` | T-DASH-01..11 | 11 | Score display, scan trigger, navigation, activity feed, the header subtitle's scanned state, and T-DASH-11 asserting that only a framework carrying exclusions gets the excluded annotation |
-| `fleet.spec.js` | T-FLEET-01..10 | 10 | Fleet scan view, per-host results, row expander, delete confirmation, the expanded host's persisted history rail |
+| `fleet.spec.js` | T-FLEET-01..11 | 11 | Fleet scan view, per-host results, row expander, delete confirmation, the expanded host's persisted history rail |
 | `fleet-apply.spec.js` | T-FAPPLY-01..09 | 9 | Fleet Apply mode toggle, selection, confirm modal |
 | `settings.spec.js` | T-SET-01..08 | 8 | Settings page |
 | `contrast.spec.js` | T-CONTRAST | 7 | One case per theme over the computed cascade (#158). Carries two vacuity guards, because a sweep that collects nothing would otherwise pass: a floor on pairings measured, and since 2026-08-20 a separate one on partly-translucent fills, which the colour-only rules would otherwise clear on their behalf. **13 routes**, 11 of which need a state the default fixture does not produce: a scan, an apply under `apply_mode=mixed`, a failed export under `error_mode=export`, a fleet scan with the failing host expanded and the same host left open across a scan that fails it, three states of the fleet apply page, and a scan held mid-flight. The count in this cell said five until 2026-08-21, having gone stale twice while routes were added, and is registered in `validate_cross_document_facts.py` as of 2026-08-21 so that it cannot go stale a third time; the routes themselves are guarded by `MUST_REACH`. Several exist solely to render one rule: `.partial-row-badge-failed` and `.status-error` are the only rules in the stylesheet putting real text over a translucent fill, `.severity_low` is text on exactly one of its two call sites, and the fleet apply pair was added because `.host-row-error` has a second caller on a page nothing had ever loaded. Two of them, added 2026-08-21, are the first that open a MODAL: no route ever had, which is why `.restore-error` and `.exception-modal .modal-error` could fail WCAG permanently in five themes each with both checks silent. They are the only routes carrying a `scope`, confining the sweep to `.modal`, because `.modal-backdrop` is an overlay rather than an ancestor and the page behind an open dialog would otherwise be measured as though undimmed - a false pass, since compositing rgba(0, 0, 0, .5) over text and fill alike makes the rendered contrast worse than the computed number |
