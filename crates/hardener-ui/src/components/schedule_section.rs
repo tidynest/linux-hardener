@@ -181,7 +181,8 @@ mod tests {
     use super::*;
 
     /// The two tables are keyed differently on purpose: `PLUGIN_IDS` holds full
-    /// registry ids and `PLUGINS` holds short prefixes, joined by `starts_with`.
+    /// registry ids and `PLUGINS` holds short ids, joined by
+    /// `plugin_id_named_by`.
     /// A rename on either side leaves the join silently returning the fallback,
     /// which renders as "Unknown area" on a live checkbox and is exactly what a
     /// green suite would otherwise let through.

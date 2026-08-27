@@ -1,7 +1,8 @@
-//! One rule for resolving `--plugin` filter entries to plugins.
+//! What a `--plugin` filter entry is allowed to do once it names a plugin.
 //!
-//! The rule used to live in two places. `scan` refused an entry that named no
-//! plugin; `apply` and `batch` dropped it and carried on, so
+//! Which entries name which plugin is [`plugin_id_named_by`], one rule for the
+//! whole product. What lives here is the consequence: `scan` refused an entry
+//! that named no plugin; `apply` and `batch` dropped it and carried on, so
 //! `hardener apply --plugin services` hardened nothing, said nothing, and
 //! exited 0. Both halves now route through here, so a filter can only ever
 //! shrink because the operator asked it to.
@@ -9,23 +10,7 @@
 use anyhow::{Result, bail};
 use hardener_common::types::PluginId;
 use hardener_core::PluginMetadata;
-
-/// Whether a filter entry names this plugin: the full id
-/// (`"service-minimisation"`) or the short prefix before the first hyphen
-/// (`"service"`).
-///
-/// The trailing hyphen is what makes the prefix a whole segment rather than
-/// any leading substring. Without it `"serv"` would match
-/// `"service-minimisation"`, and `""` would match every plugin there is, so a
-/// filter naming nothing would quietly select something. With it, both match
-/// nothing and are refused.
-///
-/// The plural `"services"` matches nothing either way, which is why it is not
-/// the example: it is a real mistake an operator makes and it is refused, but
-/// it says nothing about what the hyphen does.
-pub(crate) fn matches(entry: &str, plugin_id: &str) -> bool {
-    plugin_id == entry || plugin_id.starts_with(&format!("{entry}-"))
-}
+use hardener_types::plugin_id_named_by;
 
 /// Rejects any filter entry that names no plugin, listing the valid ids.
 ///
@@ -34,7 +19,10 @@ pub(crate) fn matches(entry: &str, plugin_id: &str) -> bool {
 pub(crate) fn validate(filter: &[String], all: &[PluginMetadata]) -> Result<()> {
     let unknown: Vec<&str> = filter
         .iter()
-        .filter(|entry| !all.iter().any(|p| matches(entry, p.plugin_id.as_str())))
+        .filter(|entry| {
+            !all.iter()
+                .any(|p| plugin_id_named_by(p.plugin_id.as_str(), entry))
+        })
         .map(String::as_str)
         .collect();
 
@@ -62,7 +50,7 @@ pub(crate) fn expand(all: &[PluginMetadata], filter: &[String]) -> Result<Vec<Pl
         .iter()
         .filter_map(|entry| {
             all.iter()
-                .find(|p| matches(entry, p.plugin_id.as_str()))
+                .find(|p| plugin_id_named_by(p.plugin_id.as_str(), entry))
                 .map(|p| p.plugin_id.clone())
         })
         .collect())

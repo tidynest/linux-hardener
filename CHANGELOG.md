@@ -1495,6 +1495,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **One rule now decides which plugin a `--plugin` entry names, for the CLI,
+  both desktop scan paths and the Leptos label lookup.** It is
+  `hardener_types::plugin_id_named_by`: the full id, or the segment before the
+  first hyphen, and nothing else. The rule was written out four times. The CLI's
+  copy is the one that carries its reasoning, because the hyphen is what stops
+  `serv` naming `service-minimisation` and stops an empty entry naming every
+  plugin there is. The Leptos copy had no hyphen at all, so a plugin whose id
+  began with another plugin's short id would have been labelled as that other
+  one. **Nothing turned on that yet**, because no short id is a prefix of
+  another plugin's id today, and nothing was keeping it that way. No behaviour
+  changes for the eight plugins that ship.
+
+- **The desktop validates plugin ids against the registry rather than against a
+  list of them.** `validate_plugin_ids` held sixteen literals in two constants
+  under a doc comment calling them "the known plugin registry", while nothing
+  compared them to it. They agreed. Keeping them agreeing was nobody's job:
+  adding a plugin would have left the desktop refusing it as an unknown id, and
+  renaming one would have left an id that passed the guard and then matched no
+  plugin, which is a scan that runs nothing and reports success. The guard now
+  asks `create_plugin_registry`, and a test drives every id it admits through
+  the filter that follows it to prove each selects exactly one plugin. A
+  registry that cannot be listed refuses every id by name rather than admitting
+  them on the silence.
+
+  `ConfigLoader::KNOWN_PLUGIN_IDS`, which decides what
+  `HARDENER_DISABLED_PLUGINS` accepts, is the last copy of that set and stays
+  hand-written: `hardener-plugins` depends on `hardener-core`, so the dependency
+  cannot be turned round to read the registry there. It is now `pub`, and a test
+  in the crate that does hold the registry asserts set equality both ways.
+
 - **`hardener systemd install` and `uninstall` no longer print what `systemctl`
   said when it succeeded.** Both used to spawn `systemctl` with this process's
   streams inherited, so `Created symlink /etc/systemd/system/timers.target.wants/...`

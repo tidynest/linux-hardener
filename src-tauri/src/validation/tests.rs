@@ -88,8 +88,57 @@ fn plugin_ids_accepts_full_id() {
 }
 
 #[test]
-fn plugin_ids_accepts_short_prefix() {
+fn plugin_ids_accepts_short_id() {
     assert!(validate_plugin_ids(&["ssh".into(), "firewall".into()]).is_ok());
+}
+
+/// Every entry this guard admits selects exactly one plugin, and the plugin it
+/// selects is the one it was derived from. Driven from the registry, because a
+/// hand-written list of sixteen strings is precisely what this guard used to
+/// be, and the one failure such a list cannot see is itself disagreeing with
+/// the registry.
+///
+/// The pairing is the point, not the acceptance. An id this guard admits and
+/// the scan filter then matches against nothing is a scan that runs no plugin
+/// and reports success; one it matches against two is a scan that runs a plugin
+/// the operator did not name. Both are silent, and both become reachable the
+/// day a plugin is added or renamed and only one of the two lists is updated.
+///
+/// A plugin id with no hyphen has one spelling rather than two, and this test
+/// stays true of it: both derived entries are then the full id.
+#[test]
+fn every_admitted_id_selects_the_one_plugin_it_names() {
+    let registry = hardener_plugins::create_plugin_registry();
+    let ids: Vec<String> = registry
+        .list()
+        .expect("the registry lists its plugins")
+        .iter()
+        .map(|p| p.plugin_id.as_str().to_string())
+        .collect();
+    assert!(!ids.is_empty(), "an empty registry would pass vacuously");
+
+    for (index, full) in ids.iter().enumerate() {
+        let short = full.split('-').next().expect("split yields one part");
+        for entry in [full.as_str(), short] {
+            let owned = entry.to_string();
+            assert!(
+                validate_plugin_ids(std::slice::from_ref(&owned)).is_ok(),
+                "'{entry}' names {full} and must be admitted"
+            );
+
+            let selected: Vec<usize> = ids
+                .iter()
+                .enumerate()
+                .filter(|(_, id)| hardener_types::plugin_id_named_by(id, entry))
+                .map(|(i, _)| i)
+                .collect();
+            assert_eq!(
+                selected,
+                vec![index],
+                "'{entry}' must select {full} and nothing else"
+            );
+        }
+    }
 }
 
 #[test]

@@ -32,38 +32,38 @@ pub fn validate_ipc_string(s: &str, field_name: &str) -> Result<(), String> {
     Ok(())
 }
 
-const KNOWN_PLUGIN_IDS: &[&str] = &[
-    "audit-hardening",
-    "firewall-hardening",
-    "kernel-hardening",
-    "mac-hardening",
-    "pam-hardening",
-    "permissions-hardening",
-    "service-minimisation",
-    "ssh-hardening",
-];
-
-/// Short prefixes the frontend sends (mapped to full IDs via starts_with).
-const KNOWN_PLUGIN_PREFIXES: &[&str] = &[
-    "audit",
-    "firewall",
-    "kernel",
-    "mac",
-    "pam",
-    "permissions",
-    "service",
-    "ssh",
-];
-
-/// Validates plugin IDs against the known plugin registry.
+/// Validates plugin IDs against the plugin registry.
 ///
-/// Accepts both full IDs (`"kernel-hardening"`) and short prefixes (`"kernel"`).
+/// Accepts both full ids (`"kernel-hardening"`) and short ones (`"kernel"`),
+/// by the one rule `plugin_id_named_by` states: the same rule the scan this
+/// guard admits an id to will then filter with, so an id that passes here
+/// selects exactly the plugin the operator named.
+///
+/// It used to be two hand-written lists of eight strings, under a doc comment
+/// that called them "the known plugin registry" while nothing compared them to
+/// it. They agreed, and nothing was keeping them agreeing: adding a plugin
+/// would have left the desktop refusing it as unknown, and renaming one would
+/// have left an id that passed this guard and then matched no plugin, which is
+/// a scan that runs nothing and reports success.
+///
+/// An empty list is valid and means every plugin, so the registry is not built
+/// for it. If the registry cannot be listed, every id is refused by name rather
+/// than admitted on the silence.
 pub fn validate_plugin_ids(ids: &[String]) -> Result<(), String> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let registry = hardener_plugins::create_plugin_registry();
+    let plugins = registry
+        .list()
+        .map_err(|e| format!("Plugin registry unavailable, cannot validate plugin IDs: {e}"))?;
+
     for id in ids {
         validate_ipc_string(id, "plugin_id")?;
-        let is_known =
-            KNOWN_PLUGIN_IDS.contains(&id.as_str()) || KNOWN_PLUGIN_PREFIXES.contains(&id.as_str());
-        if !is_known {
+        if !plugins
+            .iter()
+            .any(|p| hardener_types::plugin_id_named_by(p.plugin_id.as_str(), id))
+        {
             return Err(format!("Unknown plugin ID: '{id}'"));
         }
     }

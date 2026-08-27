@@ -39,6 +39,32 @@ impl PluginId {
     }
 }
 
+/// Whether a plugin filter entry names the plugin with this id: either the
+/// full id (`"service-minimisation"`) or the short segment before the first
+/// hyphen (`"service"`).
+///
+/// The hyphen is what makes the short form a whole segment rather than any
+/// leading substring. Without it `"serv"` would name `"service-minimisation"`,
+/// and `""` would name every plugin there is, so a filter naming nothing would
+/// quietly select something. Both name nothing here, which is what lets a
+/// caller refuse them.
+///
+/// The plural `"services"` names nothing either way, which is why it is not the
+/// example: it is a real mistake an operator makes and it is refused, but it
+/// says nothing about what the hyphen does.
+///
+/// Lives here, beside [`PluginId`], because four callers ask this question and
+/// only one of them can see the CLI: `hardener-cli`'s `--plugin` filter, the
+/// desktop's local and remote scans, and the Leptos label lookup, which is
+/// WASM. Written out four times it drifted: the label lookup omitted the
+/// hyphen. Nothing turned on that yet, because no short form is a prefix of
+/// another plugin's id today, and nothing was keeping it that way.
+pub fn plugin_id_named_by(plugin_id: &str, entry: &str) -> bool {
+    plugin_id
+        .strip_prefix(entry)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'))
+}
+
 impl fmt::Display for PluginId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)

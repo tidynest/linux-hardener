@@ -227,7 +227,7 @@ fn select_enabled_plugins<'a>(
             plugin_filter.is_empty()
                 || plugin_filter
                     .iter()
-                    .any(|p| super::plugin_filter::matches(p, metadata.plugin_id.as_str()))
+                    .any(|p| hardener_types::plugin_id_named_by(metadata.plugin_id.as_str(), p))
         })
         .partition(|metadata| config.is_plugin_enabled(metadata.plugin_id.as_str()))
 }

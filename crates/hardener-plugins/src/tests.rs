@@ -110,6 +110,40 @@ fn every_registered_plugin_routes_to_its_own_config_section() {
     }
 }
 
+/// `HARDENER_ENABLED_PLUGINS` and `HARDENER_DISABLED_PLUGINS` are checked
+/// against `ConfigLoader::KNOWN_PLUGIN_IDS`, a hand-written list of eight
+/// literals, for the same reason the config routing above is hand-written:
+/// `hardener-core` cannot depend on the crate that holds the registry, so it
+/// cannot ask. This is the guard that asks on its behalf.
+///
+/// Set equality both ways, not a subset. An id the list is missing is an
+/// operator refused the plugin they named; an id the list has and the registry
+/// does not is an env var that accepts a plugin nothing will ever run.
+///
+/// It is the last hand-written copy of this set. The desktop's two lists were
+/// deleted when `validate_plugin_ids` began deriving from the registry, and the
+/// short-id rule they encoded is `plugin_id_named_by`.
+#[test]
+fn known_plugin_ids_are_the_registry_ids() {
+    use std::collections::BTreeSet;
+
+    let registered: BTreeSet<String> = crate::create_plugin_registry()
+        .list()
+        .expect("the registry lists its plugins")
+        .iter()
+        .map(|m| m.plugin_id.as_str().to_string())
+        .collect();
+    let declared: BTreeSet<String> = hardener_core::ConfigLoader::KNOWN_PLUGIN_IDS
+        .iter()
+        .map(|id| (*id).to_string())
+        .collect();
+
+    assert_eq!(
+        registered, declared,
+        "the plugin ids the env vars accept and the ids the registry runs must be the same set"
+    );
+}
+
 #[test]
 fn compliance_coverage_spans_multiple_frameworks() {
     use std::collections::HashSet;

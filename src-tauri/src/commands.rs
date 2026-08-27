@@ -22,7 +22,7 @@ use hardener_state::{
 use hardener_types::{
     ApplyOutcome, CheckpointDetail, CheckpointFileInfo, CheckpointInfo, CheckpointList,
     ConfigSummary, ControlOutcome, FleetFrameworkPosture, FleetHostScan, FleetHostStatus, PluginId,
-    RollbackOutcome, ScanSessionInfo, SeverityTallies,
+    RollbackOutcome, ScanSessionInfo, SeverityTallies, plugin_id_named_by,
     remote::{
         FLEET_PROGRESS_EVENT, FleetProgress, HostSessionInfo, HostsConfig, RemoteConnectionStatus,
         RemoteHostProfile,
@@ -614,13 +614,16 @@ pub async fn run_scan(
         let plugin_list = registry.list().map_err(safe_err)?;
 
         for metadata in plugin_list {
-            // Skip plugins not in the filter list (if a filter was provided)
+            // Skip plugins not in the filter list (if a filter was provided).
+            // `plugin_id_named_by` is the CLI's `--plugin` rule: this used to be
+            // its own copy of the expression, which is how the Leptos label
+            // lookup came to be missing the hyphen that makes a short id a
+            // whole segment.
             if let Some(ref ids) = plugin_ids
                 && !ids.is_empty()
-                && !ids.iter().any(|id| {
-                    metadata.plugin_id == (*id).clone().into()
-                        || metadata.plugin_id.as_str().starts_with(&format!("{}-", id))
-                })
+                && !ids
+                    .iter()
+                    .any(|id| plugin_id_named_by(metadata.plugin_id.as_str(), id))
             {
                 continue;
             }
@@ -1263,8 +1266,8 @@ async fn collect_findings() -> Result<Vec<ScanResult>, String> {
     let mut results = Vec::new();
     for metadata in plugin_list {
         // A plugin the config disables contributes no result at all, and
-        // `flatten_persisted_scans` reads that absence as "not assessed"
-        // rather than as a clean pass.
+        // `scan_evidence::flatten`, inside `ReportGenerator::generate`, reads
+        // that absence as "not assessed" rather than as a clean pass.
         if !config.is_plugin_enabled(metadata.plugin_id.as_str()) {
             continue;
         }
@@ -1285,7 +1288,7 @@ async fn collect_findings() -> Result<Vec<ScanResult>, String> {
 ///
 /// A scan that errored becomes a failed result rather than being dropped.
 /// Dropping it is indistinguishable from a plugin that found nothing, and the
-/// two are scored differently: `flatten_persisted_scans` reads an absent plugin
+/// two are scored differently: `scan_evidence::flatten` reads an absent plugin
 /// as `NotCovered` and a failed one as `ScanIncomplete` carrying its reason. On
 /// a remote host the `Err` arm is a transport failure part-way through, so the
 /// distinction is between "this host has no firewall backend" and "the
@@ -1822,10 +1825,9 @@ async fn scan_with_executor(
     for metadata in plugin_list {
         if let Some(ids) = plugin_ids
             && !ids.is_empty()
-            && !ids.iter().any(|id| {
-                metadata.plugin_id == (*id).clone().into()
-                    || metadata.plugin_id.as_str().starts_with(&format!("{}-", id))
-            })
+            && !ids
+                .iter()
+                .any(|id| plugin_id_named_by(metadata.plugin_id.as_str(), id))
         {
             continue;
         }

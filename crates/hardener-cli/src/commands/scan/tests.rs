@@ -31,7 +31,7 @@ const ALL_IDS: &[&str] = &[
 fn names_a_plugin(entry: &str) -> bool {
     ALL_IDS
         .iter()
-        .any(|id| crate::commands::plugin_filter::matches(entry, id))
+        .any(|id| hardener_types::plugin_id_named_by(id, entry))
 }
 
 #[test]

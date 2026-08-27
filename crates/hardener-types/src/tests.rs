@@ -1068,3 +1068,60 @@ mod rollback_divergence_tests {
         }
     }
 }
+
+mod plugin_id_filter_tests {
+    use crate::*;
+
+    /// Exactly two spellings name a plugin, and the test sweeps every prefix of
+    /// the id rather than naming a handful of literals. A per-case test cannot
+    /// see a rule that widened to admit a case nobody thought to write down,
+    /// and every wrong answer this rule can give is some prefix of the id it
+    /// ought to have refused: the empty string, a broken-off `"serv"`, a
+    /// `"service-"` with the hyphen but no plugin after it.
+    #[test]
+    fn exactly_the_full_id_and_the_leading_segment_name_a_plugin() {
+        let id = "service-minimisation";
+
+        let accepted: Vec<&str> = (0..=id.len())
+            .filter(|end| id.is_char_boundary(*end))
+            .map(|end| &id[..end])
+            .filter(|entry| plugin_id_named_by(id, entry))
+            .collect();
+
+        assert_eq!(
+            accepted,
+            vec!["service", "service-minimisation"],
+            "every other prefix of the id, the empty one included, names no plugin"
+        );
+    }
+
+    /// The four ways an entry misses that are not prefixes at all. The plural
+    /// is the one an operator actually types, and it is refused: `--plugin
+    /// services` selects nothing, which is only safe because the callers turn
+    /// selecting nothing into a refusal rather than into an empty run.
+    #[test]
+    fn an_entry_that_is_not_a_leading_segment_names_nothing() {
+        for entry in [
+            "services",
+            "minimisation",
+            "ssh",
+            "service-minimisation-extra",
+        ] {
+            assert!(
+                !plugin_id_named_by("service-minimisation", entry),
+                "'{entry}' must not name service-minimisation"
+            );
+        }
+    }
+
+    /// A one-segment id has one spelling, not two: there is no hyphen to cut
+    /// short, so the full id is the only entry that names it. Worth its own
+    /// case because the rule reads as "full id or short form" and a plugin
+    /// with no short form is the shape that phrasing hides.
+    #[test]
+    fn an_id_with_no_hyphen_is_named_only_by_itself() {
+        assert!(plugin_id_named_by("kernel", "kernel"));
+        assert!(!plugin_id_named_by("kernel", "kern"));
+        assert!(!plugin_id_named_by("kernel", ""));
+    }
+}

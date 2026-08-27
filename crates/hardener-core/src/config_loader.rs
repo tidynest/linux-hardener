@@ -445,7 +445,16 @@ impl ConfigLoader {
         Ok(config)
     }
 
-    const KNOWN_PLUGIN_IDS: &'static [&'static str] = &[
+    /// The plugin ids `HARDENER_ENABLED_PLUGINS` and `HARDENER_DISABLED_PLUGINS`
+    /// accept.
+    ///
+    /// Hand-written, and the only copy of this set left that is: the registry
+    /// lives in `hardener-plugins`, which depends on this crate, so the
+    /// dependency cannot be turned round to read it here. `pub` so the crate
+    /// that does hold the registry can check the two still agree, which
+    /// `known_plugin_ids_are_the_registry_ids` does. Without that check, adding
+    /// a plugin would leave the env vars refusing to name it.
+    pub const KNOWN_PLUGIN_IDS: &'static [&'static str] = &[
         "audit-hardening",
         "firewall-hardening",
         "kernel-hardening",

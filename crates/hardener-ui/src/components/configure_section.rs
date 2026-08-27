@@ -92,10 +92,12 @@ const PROFILES: &[(&str, &str)] = &[
 /// Maps a plugin id to its `PLUGINS` display name.
 ///
 /// The backend echoes back the FULL registry id (e.g. `"kernel-hardening"`),
-/// not the short id this file sends it (`"kernel"`) - `src-tauri`'s own
-/// `validate_plugin_ids` documents and relies on the same short-id-is-a-
-/// prefix-of-the-full-id relationship, so matching via `starts_with` here is
-/// the existing convention, not a new one. Falls back to a plain label only
+/// not the short id this file sends it (`"kernel"`), so the lookup asks
+/// `plugin_id_named_by`: the same question the CLI's `--plugin` filter and the
+/// desktop's two scan paths ask, and now the same code. This screen used to ask
+/// it with a bare `starts_with`, without the hyphen that makes a short id a
+/// whole segment, so a future plugin whose id began with another's short id
+/// would have been labelled as that other one. Falls back to a plain label only
 /// if the backend ever reports a plugin this build does not know about.
 ///
 /// `pub(crate)` for `schedule_section` and `fleet_apply_page`, which both
@@ -111,7 +113,7 @@ const PROFILES: &[(&str, &str)] = &[
 pub(crate) fn plugin_display_name(plugin_id: &str) -> &'static str {
     PLUGINS
         .iter()
-        .find(|p| plugin_id.starts_with(p.id))
+        .find(|p| hardener_types::plugin_id_named_by(plugin_id, p.id))
         .map(|p| p.name)
         .unwrap_or("Unknown area")
 }

@@ -958,12 +958,13 @@ fn fleet_posture_from(scan_results: Vec<ScanResult>) -> Vec<FleetFrameworkPostur
 }
 
 /// A fleet scan reaches a host over one short-lived SSH connection, and what it
-/// comes back with is not always every plugin: `scan_with_executor` drops a
-/// plugin whose scan errored, and the caller may have filtered to a subset in
-/// the first place. Those controls were not assessed on that host, and the rule
-/// this project scores by is that an unassessed control is ManualReview and
-/// never Pass. The local compliance path has said so since `flatten_persisted_scans`;
-/// the fleet path flattened the results by hand and said nothing.
+/// comes back with is not always every plugin: the caller may have filtered to
+/// a subset, and a plugin the registry cannot hand back never runs at all.
+/// Those controls were not assessed on that host, and the rule this project
+/// scores by is that an unassessed control is ManualReview and never Pass.
+/// `scan_evidence::flatten` has said so for every path that goes through
+/// `ReportGenerator::generate`; the fleet path flattened the results by hand
+/// and said nothing.
 #[test]
 fn a_fleet_row_cannot_pass_a_control_the_scan_never_assessed() {
     let every_plugin: Vec<ScanResult> = create_plugin_registry()
