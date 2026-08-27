@@ -139,3 +139,8 @@ pub(crate) fn group_controls_by_section<'a>(
 /// Fixtures shared by the formatter test modules.
 #[cfg(test)]
 pub(crate) mod test_support;
+
+/// Tests for the trait's own defaults, which every formatter reached and none
+/// asserted.
+#[cfg(test)]
+mod tests;

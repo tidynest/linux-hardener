@@ -2072,6 +2072,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`ReportFormatter`'s two defaults were reached by every formatter and
+  asserted by none.** Putting `format_all_bytes` back to
+  `self.format_bytes(&reports[0])`, the exact shape its own doc records as the
+  defect it was written to fix, left the whole workspace green at **2277
+  passed, 0 failed**: every non-PDF export would have rendered the first
+  selected framework and dropped the rest without a word, and panicked on an
+  empty set. Reducing the default `format_all`'s `join("\n\n")` to `join("")`
+  was equally invisible, running two text reports together with no boundary.
+
+  Only `PdfFormatter` was covered, and only because it overrides
+  `format_all_bytes` and its own module tests the override. An override being
+  proven says nothing about the default the other four inherit.
+
+  `output/tests.rs` asserts both defaults through a formatter that overrides
+  nothing, and adds a total check driving Text, JSON, CSV and HTML through
+  `format_all_bytes` with two frameworks. The per-formatter shape is what let
+  this hide: JSON, CSV and HTML override `format_all`, Text does not, and
+  testing the ones that override said nothing about the one that does not. No
+  behaviour changed.
+
 - **`hardener-state` could not see its own most dangerous mutation.**
   `FileState::restore_mode_string` produces the mode a rollback hands to
   `chmod`, and narrowing its `0o7777` mask to `0o777` left **all 146 tests in
