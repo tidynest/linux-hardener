@@ -1183,16 +1183,16 @@ six distributions.
 
 The suite has grown since that baseline, and has since been rewritten. Every
 figure in the table above is superseded by the reading in the Reading table
-below, which is **168 of 168 on all six distributions** on 2026-08-27.
+below, which is **171 of 171 on all six distributions** on 2026-08-27.
 Restating the number here rather than only pointing at it is deliberate, and so
 is holding it to the collection count: a pointer that cannot go stale is a
 pointer nothing checks.
 
-This site and the current Reading row stood red at 166 against a tree of 168 for
-the hours between `T-HIST-14` and `T-HIST-15` being written and the sweep that
-ran them, exactly as the 2026-08-21 paragraph below describes. Neither number
-was edited while it stood; the run cleared it, which is the only thing that
-can.
+This site and the current Reading row have now stood red twice in one day, at
+166 against a tree of 168 and then at 168 against a tree of 171, each time for
+the hours between the specs being written and the sweep that ran them. **Neither
+number was edited while it stood**, and both times the run cleared it, which is
+the only thing that can.
 
 This sentence named the 2026-08-16 reading of 154 until 2026-08-19. Summary had
 recorded the later reading on 2026-08-18, so the pointer stood stale for a day:
@@ -1225,7 +1225,8 @@ rather than measuring growth:
 | 2026-08-21 | 165 | 6 | superseded, 3.7 to 4.7 minutes each and 44 screenshots each. The theme sweep gained a sixth state, the rollback modal, so the whole modal surface is now captured in all seven themes instead of in one as a by-product of `T-DIVG-03`'s geometry check. **Seven cases from no new call site**: the count below stayed at 117 and every document said 158 with the validator green |
 | 2026-08-21 | 165 | 6 | superseded, against the two contrast routes that first open a MODAL and the `rollback_mode=partial` fixture they needed. Five distributions green in one sweep; openSUSE failed `T-FIND-10` on a 30 s `waitForApp` timeout and passed on a re-run at 165. **Kept rather than dropped, and it was NOT a distribution fault**: the identical `beforeEach` succeeded 24 times in that same file, run and container, with `T-FIND-09` and `T-FIND-11` passing either side of it in 2.6 s and 1.7 s. A real fault in a shared hook fails all 25. openSUSE took 5.6 minutes here against 4.7 in the sweep before, so it is load |
 | 2026-08-22 | 166 | 6 | superseded. The first execution of `T-FLEET-11`, authored unexecuted alongside the fleet profile badge; all six green in one sweep with no re-run |
-| **2026-08-27** | **168** | **6** | **current**, against `b3caf49f`, the first execution of `T-HIST-14` and `T-HIST-15`. 44 screenshots each. **Debian needed one re-run**: `T-HIST-15` timed out in the shared `beforeEach` at 30 s waiting for `getByRole('main')`, with the page still on the WASM `Loading...` splash, so its own assertions never ran. The other five passed that spec, and the other twelve History specs passed on Debian through the identical hook, which is what says cold-start timing rather than a defect. Re-run alone: 168 of 168 |
+| 2026-08-27 | 168 | 6 | superseded, against `b3caf49f`, the first execution of `T-HIST-14` and `T-HIST-15`. 44 screenshots each. **Debian needed one re-run**: `T-HIST-15` timed out in the shared `beforeEach` at 30 s waiting for `getByRole('main')`, with the page still on the WASM `Loading...` splash, so its own assertions never ran. The other five passed that spec, and the other twelve History specs passed on Debian through the identical hook, which is what says cold-start timing rather than a defect. Re-run alone: 168 of 168 |
+| **2026-08-27** | **171** | **6** | **current**, the first execution of `T-CONF-11`, `T-CONF-12` and `T-CONF-13`. All six green in one sweep with no re-run, 4.5 to 6.5 minutes each and 44 screenshots each. **Every log reports `624ce1a7` while the tree was at `25700268`**, and that is right rather than stale: the bundle is compiled from the working tree and stamps the last commit that existed when `trunk build` ran, which here was before the commit the same tree became. The `hardener-ui`, `styles.css` and `hardener-types` edits under test were all in the bundle; the only thing that changed after the build was documentation. Read the stamp as "which sources", not "which commit". The three new cases are what make the picker's warning observable at all: inverting the condition that decides it compiles and left every Rust test green |
 
 The Fedora-only row is kept because it records a rule rather than a result: it
 was deliberately never written into the table, since a six-distribution row
@@ -1284,11 +1285,10 @@ pointed somewhere other than its cause:
 ### Spec Inventory (11 Specs, 171 Tests)
 
 Counted off `npx playwright test --list` on 2026-08-21, and confirmed by the
-2026-08-27 sweep, which executed 168 of them. **Three have never run**:
-`T-CONF-11`, `T-CONF-12` and `T-CONF-13`, written the same day for the config
-picker's two-rule warning and its silent Browse failure, and unexecuted because
-the suite needs root and no sweep followed. The Reading table above still says
-168, which is what it did, and it is the run that clears it.
+second 2026-08-27 sweep, which executed all 171. The three added that day,
+`T-CONF-11`, `T-CONF-12` and `T-CONF-13`, cover the config picker's two-rule
+warning, its absence for a trusted path, and the dialog failure that used to
+reach only the browser console.
 **123 `test()` call sites produce 171 cases**, because three sites are
 parameterised and
 generate their cases at collection time: `themes.spec.js:200` produces 42
