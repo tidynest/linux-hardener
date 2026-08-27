@@ -180,3 +180,7 @@ impl From<String> for CheckpointId {
         Self(s)
     }
 }
+
+/// Unit tests for the mode rendering, which the rollback hands to `chmod`.
+#[cfg(test)]
+mod tests;

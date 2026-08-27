@@ -2072,6 +2072,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`hardener-state` could not see its own most dangerous mutation.**
+  `FileState::restore_mode_string` produces the mode a rollback hands to
+  `chmod`, and narrowing its `0o7777` mask to `0o777` left **all 146 tests in
+  the crate that owns it green** while every rollback stripped setuid, setgid
+  and sticky from every path it restored. `chmod 755` succeeds perfectly well,
+  so the rollback would have reported success.
+
+  The only test in the workspace that failed on it lived in `src-tauri`, two
+  crates away, and reaches the function through the desktop's checkpoint
+  expander. The expander merely **displays** the string; the rollback
+  **executes** it. A crate relying on a caller in another crate to notice is
+  relying on a test that could be deleted for reasons having nothing to do with
+  file modes.
+
+  `checkpoint/tests.rs` closes it: setuid, setgid and sticky asserted one bit at
+  a time as well as together, because all three at once alone would pass a mask
+  that kept any one of them. The call site was already covered, by mock
+  executors registering `chmod` with the exact mode string. No behaviour
+  changed.
+
 - **Pressing Details on a checkpoint the desktop could not read did nothing at
   all.** The History expander rendered from an `Option<CheckpointDetail>` and
   dropped the error: `handle_detail` logged to the browser console and set
