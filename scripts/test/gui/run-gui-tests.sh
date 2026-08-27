@@ -115,7 +115,19 @@ fi
 # exception line, which was absent from the page because it was absent from the
 # wasm. Same shape as the stale musl binary the cross-distro runner used to
 # serve.
+#
+# `hardener-types` is watched alongside `hardener-ui` because the bundle is
+# built from both: it is the only workspace crate `hardener-ui` depends on, and
+# it holds every type crossing the Tauri boundary. A change confined to it moves
+# the wasm without touching anything this check watched before 2026-08-27, so a
+# dist built after the last `hardener-ui/src` edit and before the
+# `hardener-types` one passed while being stale. That is not hypothetical: the
+# same day, `CheckpointList::other_host_count` was added there and read by
+# `history_section.rs`, and `plugin_id_named_by` beside it is called from
+# `configure_section.rs`. Read `crates/hardener-ui/Cargo.toml` before assuming
+# the list is still two entries; a new path dependency belongs here.
 NEWER_SOURCE=$(find "$PROJECT_DIR/crates/hardener-ui/src" "$PROJECT_DIR/crates/hardener-ui/styles.css" \
+    "$PROJECT_DIR/crates/hardener-types/src" \
     -newer "$PROJECT_DIR/crates/hardener-ui/dist/index.html" -print -quit 2>/dev/null)
 if [[ -n "$NEWER_SOURCE" ]]; then
     echo -e "${RED}ERROR: dist/ is older than the frontend source (${NEWER_SOURCE#"$PROJECT_DIR/"}).${NC}"
