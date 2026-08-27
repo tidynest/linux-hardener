@@ -5497,6 +5497,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration may not match the restored files, and a reboot resolves it.**
 
 ### Removed
+
+- **`ReportFormatter::format_bytes`, the single-report byte path.** Nothing
+  called it. The desktop and the CLI both take `format_all_bytes`, whose
+  default routes through `format_all`; `PdfFormatter::format_all_bytes` calls
+  `generate_pdf_all` directly and never went through it. The only calls left in
+  the tree were in `pdf/tests.rs`, reaching PDF's own override. Emptying the
+  default body left the whole workspace green at 2281, which is how this was
+  found.
+
+  `coverage-baseline.md` already excepted it as "an unreachable default" and
+  named five call sites taking the override. **Those five do not call it and
+  had not since `format_all_bytes` was introduced**, which is the change that
+  moved them; the paragraph recorded the state before it. Following the
+  document's own evidence to the source is what turned "defaulted past" into
+  "dead".
+
+  Its shape, `format_bytes(&reports[0])`, is the defect `format_all_bytes`
+  exists to prevent: the first selected framework rendered, the rest dropped
+  without a word, a panic on an empty set. Leaving the method in place kept that
+  mistake reachable for the next caller wanting bytes for one report, and the
+  mutation that reintroduces it no longer compiles. No behaviour changed; the
+  three PDF tests that used it as an entry point take a one-element slice.
+
 - `hardener_scheduler::systemd::user_unit_path` and `system_unit_path`, two
   accessors nothing in the workspace called. The first returned
   `/etc/systemd/user` under a doc comment promising a path relative to home,
