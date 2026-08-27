@@ -420,6 +420,33 @@ pub fn restore_kind(has_content: bool) -> &'static str {
     }
 }
 
+/// The line the History expander puts above a checkpoint's file list, for
+/// either outcome of asking for it.
+///
+/// The expander used to render on `Option<CheckpointDetail>` and drop the
+/// error: `handle_detail` logged to the browser console and set nothing, so a
+/// failed read left the panel closed and the click did nothing at all. The
+/// operator has no console, and a control that does nothing when pressed reads
+/// as a broken button rather than as a report they cannot get. It is the same
+/// defect [`rollback_preview_wording`] was written for, one row above in the
+/// same component, and it survived that fix because only the modal was looked
+/// at.
+///
+/// **The failure says the rollback is unaffected, and that is the same claim
+/// the modal makes**, for the same reason: the restore goes out through
+/// `pkexec` against a database this process never opens, so a list it cannot
+/// read says nothing about a rollback it does not perform. If one of those two
+/// sentences ever stops being true, both are wrong.
+pub fn checkpoint_detail_heading(outcome: &Result<CheckpointDetail, String>) -> String {
+    match outcome {
+        Ok(detail) => format!("{} files captured", detail.file_count),
+        Err(_) => "The captured file list could not be read, so what this \
+                   checkpoint holds is not shown. Rolling it back is \
+                   unaffected: the restore reads the checkpoint itself."
+            .to_string(),
+    }
+}
+
 /// What the rollback Confirm stage tells the operator about the captured file
 /// list, as (body sentence, danger button label), for each state of the
 /// preview.

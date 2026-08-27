@@ -1664,3 +1664,76 @@ fn the_three_preview_states_each_say_something_of_their_own() {
     said.dedup();
     assert_eq!(said.len(), 3, "a preview state repeated another's wording");
 }
+
+/// A detail that arrived says how much it holds.
+#[test]
+fn an_expander_that_loaded_counts_the_files() {
+    let loaded = Ok(preview_detail(7));
+    assert_eq!(checkpoint_detail_heading(&loaded), "7 files captured");
+}
+
+/// The defect this function exists for. The expander used to render nothing at
+/// all on a failed read, so pressing Details did nothing an operator could see;
+/// the reason went to a browser console they have no way to open.
+///
+/// Two claims are asserted, not one. The heading must say the list is missing,
+/// **and** must say the rollback still works, because a sentence that only
+/// reports the failure invites the operator to conclude the checkpoint is
+/// unusable. It is not: the restore reads the checkpoint itself, through
+/// `pkexec`, from a database this process never opens.
+#[test]
+fn an_expander_that_failed_says_so_and_says_the_rollback_still_works() {
+    let failed: Result<CheckpointDetail, String> = Err("Checkpoint not found".to_string());
+    let heading = checkpoint_detail_heading(&failed);
+
+    assert!(
+        heading.contains("could not be read"),
+        "the failure must be stated: {heading}"
+    );
+    assert!(
+        heading.contains("Rolling it back is unaffected"),
+        "and must not leave the checkpoint reading as unusable: {heading}"
+    );
+}
+
+/// A failure must not borrow the words of a detail that arrived, and must carry
+/// no count. Zero files is the case that would hide such a merge: `0 files
+/// captured` and a failed read are different answers about the same checkpoint,
+/// and a per-case test naming a non-empty count would never meet them.
+#[test]
+fn a_failed_expander_is_never_confused_with_an_empty_one() {
+    let empty = Ok(preview_detail(0));
+    let failed: Result<CheckpointDetail, String> = Err("denied".to_string());
+
+    let said = [
+        checkpoint_detail_heading(&empty),
+        checkpoint_detail_heading(&failed),
+    ];
+
+    assert_eq!(said[0], "0 files captured");
+    assert_ne!(
+        said[0], said[1],
+        "a checkpoint that captured nothing and one this process could not read \
+         must not say the same thing"
+    );
+}
+
+/// The two components that report a failed checkpoint read make the same
+/// promise about the rollback, and they must go on making it together. The
+/// expander's sentence was written from the modal's; if the restore ever stops
+/// re-reading the checkpoint, both are wrong and neither is the one you would
+/// think to check.
+#[test]
+fn the_expander_and_the_modal_agree_that_a_failed_read_does_not_block_a_rollback() {
+    let failed: Result<CheckpointDetail, String> = Err("denied".to_string());
+
+    let expander = checkpoint_detail_heading(&failed);
+    let (modal_body, modal_button) = rollback_preview_wording(Some(&failed));
+
+    assert!(expander.contains("unaffected"));
+    assert!(modal_body.contains("unaffected"));
+    assert!(
+        !modal_button.contains("Cannot") && modal_button.contains("Roll back"),
+        "the modal still arms a working button: {modal_button}"
+    );
+}

@@ -237,6 +237,31 @@ test.describe('History', () => {
     await expect(region).toHaveAttribute('aria-live', 'polite');
   });
 
+  // T-HIST-15: pressing Details on a checkpoint that cannot be read says so
+  //
+  // The expander rendered on an `Option<CheckpointDetail>` and dropped the
+  // error, so a failed read left the panel shut: the press did nothing an
+  // operator could see and the reason went to a browser console they have no
+  // way to open. A unit test on the wording cannot see that, because the
+  // wording was never reached.
+  //
+  // Asserts the second half of the sentence as well as the first. A heading
+  // that only reports the failure invites the conclusion that the checkpoint
+  // is unusable, and it is not: the restore reads the checkpoint itself.
+  test('T-HIST-15: a checkpoint whose detail cannot be read opens and says why', async ({ page }) => {
+    await loadApp(page, '/hardening', 'checkpoint_source=detail_denied');
+    await page.getByRole('tab', { name: 'History' }).click();
+
+    await page.getByRole('button', { name: 'Details' }).first().click();
+
+    const detail = page.locator('.timeline-detail');
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText('could not be read');
+    await expect(detail).toContainText('Rolling it back is unaffected');
+    // No file list and no copy button: there is nothing to list or copy.
+    await expect(page.locator('.detail-file-list')).toHaveCount(0);
+  });
+
   // T-HIST-02: The checkpoints, grouped by the day they were taken
   //
   // There is no checkpoints table. The redesign groups checkpoints under a

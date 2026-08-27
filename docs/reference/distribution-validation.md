@@ -1189,9 +1189,11 @@ is holding it to the collection count: a pointer that cannot go stale is a
 pointer nothing checks.
 
 **This site and the current Reading row are red as of 2026-08-27**, reading 166
-against a tree that collects 167. `T-HIST-14` was added that day with the fix
-that stops the desktop listing another host's checkpoints, and no sweep has run
-it: the GUI suite runs only inside the nspawn containers and none was available.
+against a tree that collects 168. `T-HIST-14` and `T-HIST-15` were added that
+day, with the fix that stops the desktop listing another host's checkpoints and
+the one that makes a failed checkpoint detail say so, and no sweep has run
+either: the GUI suite runs only inside the nspawn containers and none was
+available.
 This is the same state the 2026-08-21 paragraph below describes, and it is left
 standing for the same reason. **Only a run can clear it.** Editing either number
 would replace a true statement about what has been executed with a false one.
@@ -1282,16 +1284,16 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (11 Specs, 167 Tests)
+### Spec Inventory (11 Specs, 168 Tests)
 
 Counted off `npx playwright test --list` on 2026-08-21.
-**119 `test()` call sites produce 167 cases**, because three sites are
+**120 `test()` call sites produce 168 cases**, because three sites are
 parameterised and
 generate their cases at collection time: `themes.spec.js:200` produces 42
 screenshots (6 states x 7 themes), `contrast.spec.js:765` produces one case per
-theme, and `hardening.spec.js:492` produces one per viewport width. Reading the
+theme, and `hardening.spec.js:517` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
-`test(` calls is 119 and understates the suite by 48.
+`test(` calls is 120 and understates the suite by 48.
 
 This is a **collection** count, and the sweep of 2026-08-22 has now executed
 all of it: `T-FLEET-11` was added with the fleet profile badge, stood unexecuted

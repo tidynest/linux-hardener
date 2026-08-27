@@ -9,7 +9,7 @@ use crate::tauri_bindings::{
     invoke_get_checkpoints,
 };
 use crate::types::{CheckpointDetail, CheckpointInfo};
-use crate::utils::{checkpoint_time, group_checkpoints_by_date};
+use crate::utils::{checkpoint_detail_heading, checkpoint_time, group_checkpoints_by_date};
 use leptos::prelude::*;
 
 /// History section with apply results and checkpoints.
@@ -30,7 +30,12 @@ pub fn HistorySection() -> impl IntoView {
     let other_host_count = RwSignal::new(0usize);
     let checkpoint_name = RwSignal::new(String::new());
     let is_creating = RwSignal::new(false);
-    let expanded_detail = RwSignal::new(None::<CheckpointDetail>);
+    // The checkpoint whose expander is open, and what asking for its detail
+    // returned. Keyed by id because the answer arrives after the click and the
+    // operator may have opened another row by then; carried as a `Result`
+    // because a read that failed is not a row that is still closed, and used to
+    // be indistinguishable from one.
+    let expanded_detail = RwSignal::new(None::<(String, Result<CheckpointDetail, String>)>);
     // Tracks which checkpoint ID has a pending delete confirmation (None = no confirmation shown)
     let pending_delete = RwSignal::new(None::<String>);
     // Checkpoint currently open in the rollback modal (None = closed).
@@ -122,22 +127,23 @@ pub fn HistorySection() -> impl IntoView {
 
     // Detail toggle handler
     let handle_detail = move |checkpoint_id: String| {
-        // Toggle off if already showing this checkpoint
-        if let Some(ref detail) = expanded_detail.get()
-            && detail.checkpoint_id == checkpoint_id
+        // Toggle off if this row's expander is already open, whichever way it
+        // answered: a second press on a row showing the failure closes it, the
+        // same as a second press on one showing files.
+        if let Some((open_id, _)) = expanded_detail.get()
+            && open_id == checkpoint_id
         {
             expanded_detail.set(None);
             return;
         }
         leptos::task::spawn_local(async move {
-            match invoke_get_checkpoint_detail(checkpoint_id).await {
-                Ok(detail) => expanded_detail.set(Some(detail)),
-                Err(e) => {
-                    web_sys::console::error_1(
-                        &format!("Failed to load checkpoint detail: {}", e).into(),
-                    );
-                }
-            }
+            // Both arms are kept. The error arm used to log to the browser
+            // console and set nothing, so the panel stayed shut and the press
+            // did nothing an operator could see.
+            let outcome = invoke_get_checkpoint_detail(checkpoint_id.clone())
+                .await
+                .map_err(|e| e.to_string());
+            expanded_detail.set(Some((checkpoint_id, outcome)));
         });
     };
 
@@ -325,42 +331,47 @@ pub fn HistorySection() -> impl IntoView {
                                             <Show when=move || {
                                                 expanded_detail.get()
                                                     .as_ref()
-                                                    .is_some_and(|d| d.checkpoint_id == row_id)
+                                                    .is_some_and(|(id, _)| *id == row_id)
                                             }>
                                                 {move || {
-                                                    let detail = expanded_detail.get();
-                                                    let detail = detail.as_ref().expect("guarded by Show when=");
-                                                    let file_count = detail.file_count;
-                                                    let files = detail.files.clone();
-                                                    let copy_text = {
-                                                        let mut text = format!("Checkpoint: {} files\n", file_count);
-                                                        for f in &files {
+                                                    let open = expanded_detail.get();
+                                                    let (_, outcome) = open.as_ref().expect("guarded by Show when=");
+                                                    let heading = checkpoint_detail_heading(outcome);
+                                                    // The file list exists only for a detail that
+                                                    // arrived. A failure gets the heading alone,
+                                                    // which is the whole report there is.
+                                                    let files = outcome.as_ref().ok().map(|d| d.files.clone());
+                                                    let copy_text = files.as_ref().map(|files| {
+                                                        let mut text = format!("Checkpoint: {} files\n", files.len());
+                                                        for f in files {
                                                             text.push_str(&format!("  {} ({})\n", f.path, f.permissions));
                                                         }
                                                         text
-                                                    };
+                                                    });
                                                     view! {
                                                         <div class="timeline-detail">
                                                             <div class="detail-file-header">
-                                                                <p class="detail-file-count">
-                                                                    {format!("{} files captured", file_count)}
-                                                                </p>
-                                                                <CopyButton text=Signal::derive(move || copy_text.clone()) />
+                                                                <p class="detail-file-count">{heading}</p>
+                                                                {copy_text.map(|text| view! {
+                                                                    <CopyButton text=Signal::derive(move || text.clone()) />
+                                                                })}
                                                             </div>
-                                                            <ul class="detail-file-list">
-                                                                {files.iter().map(|f| {
-                                                                    let path = f.path.clone();
-                                                                    let perms = f.permissions.clone();
-                                                                    let has = f.has_content;
-                                                                    view! {
-                                                                        <li>
-                                                                            <code>{path}</code>
-                                                                            <span class="detail-file-perms">{perms}</span>
-                                                                            {if has { " (content saved)" } else { " (metadata only)" }}
-                                                                        </li>
-                                                                    }
-                                                                }).collect::<Vec<_>>()}
-                                                            </ul>
+                                                            {files.map(|files| view! {
+                                                                <ul class="detail-file-list">
+                                                                    {files.iter().map(|f| {
+                                                                        let path = f.path.clone();
+                                                                        let perms = f.permissions.clone();
+                                                                        let has = f.has_content;
+                                                                        view! {
+                                                                            <li>
+                                                                                <code>{path}</code>
+                                                                                <span class="detail-file-perms">{perms}</span>
+                                                                                {if has { " (content saved)" } else { " (metadata only)" }}
+                                                                            </li>
+                                                                        }
+                                                                    }).collect::<Vec<_>>()}
+                                                                </ul>
+                                                            })}
                                                         </div>
                                                     }
                                                 }}

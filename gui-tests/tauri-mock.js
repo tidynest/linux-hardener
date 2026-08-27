@@ -898,6 +898,12 @@
         return PLUGINS;
 
       case 'get_checkpoint_detail': {
+        // The failing read. Its own fixture because the defect it covers is
+        // the expander rendering NOTHING on a rejection, which no fixture
+        // returning a detail can reach.
+        if (checkpointSource === 'detail_denied') {
+          throw 'Checkpoint not found';
+        }
         const cpId = (args && args.checkpointId) || 'unknown';
         const cp = CHECKPOINTS.find((c) => c.checkpoint_id === cpId) || CHECKPOINTS[0];
         return {

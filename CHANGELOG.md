@@ -2072,6 +2072,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pressing Details on a checkpoint the desktop could not read did nothing at
+  all.** The History expander rendered from an `Option<CheckpointDetail>` and
+  dropped the error: `handle_detail` logged to the browser console and set
+  nothing, so the panel stayed shut. An operator has no console, and a control
+  that does nothing when pressed reads as a broken button rather than as a
+  report they cannot get.
+
+  It is the same defect the rollback modal was fixed for one row above in the
+  same component, and it survived that fix because only the modal was looked at.
+  The expander holds the outcome either way now, keyed by the checkpoint that
+  was asked for, and `checkpoint_detail_heading` says the list could not be read
+  **and** that rolling the checkpoint back is unaffected: the restore reads the
+  checkpoint itself, through `pkexec`, from a database this process never opens.
+  A sentence reporting only the failure would invite the conclusion that the
+  checkpoint is unusable.
+
+  Four tests, one of them asserting that the two components go on making the
+  same promise about the rollback, and one that a checkpoint capturing zero
+  files never says the same thing as one that could not be read. `T-HIST-15`
+  covers it in the browser suite and has not been run.
+
 - **The desktop offered another host's checkpoints as this machine's restore
   points.** Every checkpoint records the host it captured, and
   `CheckpointManager::rollback` refuses to restore one host's state onto
