@@ -23,12 +23,6 @@ pub trait ReportFormatter {
     /// Formats a single compliance report.
     fn format(&self, report: &ComplianceReport) -> String;
 
-    /// Formats a report as raw bytes. Defaults to UTF-8 encoding of `format()`.
-    /// Override for binary formats (e.g. PDF).
-    fn format_bytes(&self, report: &ComplianceReport) -> Vec<u8> {
-        self.format(report).into_bytes()
-    }
-
     /// Formats multiple compliance reports.
     fn format_all(&self, reports: &[ComplianceReport]) -> String {
         reports
@@ -38,14 +32,18 @@ pub trait ReportFormatter {
             .join("\n\n")
     }
 
-    /// Formats multiple reports as raw bytes.
+    /// Formats a set of reports as raw bytes. **The only byte path there is.**
     ///
-    /// This is the multi-report counterpart of [`Self::format_bytes`], and it
-    /// exists because writing a binary format had no such counterpart: every
-    /// caller wanting bytes for a set of reports reached for
-    /// `format_bytes(&reports[0])`, which rendered the first framework, threw
-    /// the rest away without a word, and panicked on an empty set. A binary
-    /// renderer overrides this to combine the set into one document.
+    /// There was a single-report `format_bytes` beside this, and every caller
+    /// wanting bytes for a set reached for `format_bytes(&reports[0])`, which
+    /// rendered the first framework, threw the rest away without a word, and
+    /// panicked on an empty set. This method was added to fix that, and the one
+    /// it replaced was left in place: by 2026-08-27 nothing outside
+    /// `pdf/tests.rs` called it, and emptying its body left the whole workspace
+    /// green at 2281. A method whose only remaining job is to be the shape of a
+    /// defect somebody might reach for again is worth less than its absence, so
+    /// it is gone. A binary renderer overrides this to combine the set into one
+    /// document.
     fn format_all_bytes(&self, reports: &[ComplianceReport]) -> Vec<u8> {
         self.format_all(reports).into_bytes()
     }

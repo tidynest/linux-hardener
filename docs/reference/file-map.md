@@ -338,7 +338,7 @@ pub struct FileState {
 | `src/profiles/tests.rs` | Unit tests for `src/profiles.rs` | Test-only; `super` resolves to `crate::profiles` |
 | `src/frameworks/iso27001/tests.rs` | Unit tests for `src/frameworks/iso27001.rs` | Test-only; `super` resolves to `crate::frameworks::iso27001` |
 | `src/output/test_support.rs` | Fixtures shared by the formatter test modules, split out of `src/output/mod.rs` | Test-only; that file *is* the module `output`, so this sits in the directory it already owns and the formatter tests still reach it as `crate::output::test_support` |
-| `src/output/tests.rs` | Unit tests for `ReportFormatter`'s own two defaults, 4 of them | Test-only; `super` resolves to `crate::output`. Added 2026-08-27: every formatter reached the defaults and none asserted them, so putting `format_all_bytes` back to `self.format_bytes(&reports[0])`, the defect its doc records as fixed, left the whole workspace green at 2277 |
+| `src/output/tests.rs` | Unit tests for `ReportFormatter`'s own two defaults, 4 of them | Test-only; `super` resolves to `crate::output`. Added 2026-08-27: every formatter reached the defaults and none asserted them, so putting `format_all_bytes` back to the single-report indexing its doc records as the defect it fixed left the whole workspace green at 2277. That single-report method, `format_bytes`, was deleted the same day: nothing called it |
 | `src/output/text/tests.rs` | Unit tests for `src/output/text.rs` | Test-only; `super` resolves to `crate::output::text` |
 | `src/output/json/tests.rs` | Unit tests for `src/output/json.rs` | Test-only; `super` resolves to `crate::output::json` |
 | `src/output/csv/tests.rs` | Unit tests for `src/output/csv.rs` | Test-only; `super` resolves to `crate::output::csv` |

@@ -307,16 +307,25 @@ the top of the sort:
   tests for 359 lines. The unit-file generation half needs no root and is not
   covered.
 
-**Reads like a gap and is not:** `ReportFormatter::format_bytes` sits in the
-same file as `format_all` and is likewise entered by nothing, but it belongs on
-neither list. Its default body in `output/mod.rs` is one line,
-`self.format(report).into_bytes()`, and every call site in the tree is
-`PdfFormatter::new().format_bytes(...)` (`commands/report.rs:138` and `:151`,
-`commands/report_wizard.rs:591` and `:608`, `src-tauri/src/commands.rs:1316`),
-all of which take the override at `output/pdf.rs:104`. The default is
-unreachable rather than merely unreached, so a test for it would raise a
-percentage and change nothing else. Named here so it is not mistaken for the
-gap next to it.
+**Read as a gap, and was neither a gap nor reachable. Deleted 2026-08-27.**
+`ReportFormatter::format_bytes` sat in the same file as `format_all` and was
+likewise entered by nothing. This paragraph said its call sites were all
+`PdfFormatter::new().format_bytes(...)` at `commands/report.rs:138` and `:151`,
+`commands/report_wizard.rs:591` and `:608`, and `src-tauri/src/commands.rs:1316`,
+taking the override rather than the default.
+
+**Those five sites do not call it and had not since `format_all_bytes` was
+introduced**, which is the change that moved them; this paragraph recorded the
+state before it. Read today, `report.rs:138` and `:151` are `format_all`. So the
+method was not merely defaulted past, it was dead: nothing in the tree called
+either the default or the override outside `pdf/tests.rs`. Emptying the default
+body left the whole workspace green at 2281.
+
+It is gone from the trait, and PDF's override with it. Its shape,
+`format_bytes(&reports[0])`, was the defect `format_all_bytes` exists to
+prevent, and a method whose only remaining job is to be reachable for that
+mistake is worth less than its absence. `format_all_bytes` is now the only byte
+path there is.
 
 ---
 
@@ -398,7 +407,7 @@ Three readings repeat, and are stated once here rather than 40 times below:
 | `crates/hardener-distro/src/package/mod.rs` | 29.35% | 65 / 92 | **[deleted #127]** No caller anywhere. The 27 covered lines were almost all `validate_package_name`, the shell-injection guard, which `package/tests.rs` entered 16 times over 6 tests across the Debian, RPM and Arch rule sets, injection cases (`package;rm`, `package;evil`, `package\|whoami`) included. Unreferenced from outside the module *and* well tested from inside was the argument for deleting it, not against: there was no test to write first. |
 | `crates/hardener-cli/src/commands/daemon.rs` | 37.42% | 102 / 163 | [needs privilege or a live service] Thin CLI wrapper over `hardener-scheduler`'s daemon; inherits that module's reading. |
 | `crates/hardener-cli/src/output.rs` | 46.17% | 253 / 470 | **Genuine gap.** 26 tests reach the string helpers; 11 renderers are entered by nothing. See "Where to start" for the list. |
-| `crates/hardener-compliance/src/output/mod.rs` | 47.27% | 29 / 55 | **Genuine gap, sharpest in the backend.** The default `ReportFormatter::format_all` and `compare_control_ids` are entered by no test, and `format_all` is what every real consumer calls. The uncovered `format_bytes` in this file is *not* part of that gap: it is an unreachable default, see "Where to start". |
+| `crates/hardener-compliance/src/output/mod.rs` | 47.27% | 29 / 55 | **Was the sharpest gap in the backend; half of it is closed.** The percentage and line counts are the 2026-08-18 reading and predate the change. `output/tests.rs`, added 2026-08-27, drives the defaults `format_all` and `format_all_bytes`, which is what every real consumer calls; `compare_control_ids` is still entered by no test. The `format_bytes` this row used to except as an unreachable default was deleted the same day, see "Where to start". |
 | `crates/hardener-scheduler/src/notification/email.rs` | 54.29% | 48 / 105 | Mostly innocent. The 2 tests in `notification/email/tests.rs` cover the free `format_subject`, `format_body` and the `sanitise_for_header` injection guard. Uncovered are `EmailNotifier::build_transport`, its method wrappers and `Notifier::send`, which need an SMTP peer. `build_transport` chooses TLS mode and applies credentials, so it is the one piece here worth separating out and testing without a server. |
 
 ---

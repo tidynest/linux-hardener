@@ -116,9 +116,9 @@ fn the_summary_box_carries_the_exclusion_clause() {
         "wrapping must not drop or reword a syllable of it"
     );
 
-    let with_clause = PdfFormatter::new().format_bytes(&excluded);
+    let with_clause = PdfFormatter::new().format_all_bytes(std::slice::from_ref(&excluded));
     let without =
-        PdfFormatter::new().format_bytes(&two_control_report(ControlStatus::ManualReview));
+        PdfFormatter::new().format_all_bytes(&[two_control_report(ControlStatus::ManualReview)]);
     assert!(
         with_clause.len() > without.len(),
         "the clause must actually be drawn: {} bytes with it, {} without",
@@ -189,10 +189,14 @@ fn every_selected_framework_reaches_the_document() {
     let one = formatter.format_all_bytes(std::slice::from_ref(&cis));
     let both = formatter.format_all_bytes(&[cis.clone(), stig]);
 
-    assert_eq!(
-        one,
-        formatter.format_bytes(&cis),
-        "a one-report set must render exactly as the single-report path does"
+    // This used to assert the one-report set against `format_bytes`, the
+    // single-report byte path. That method is gone: nothing outside these tests
+    // called it, and its shape was the defect `format_all_bytes` exists to
+    // prevent. What remains to assert is that one report is a real document,
+    // which the equality never said, and that two carry more than one.
+    assert!(
+        one.starts_with(b"%PDF-"),
+        "a one-report set must be a document a reader recognises"
     );
     assert!(
         both.len() > one.len(),

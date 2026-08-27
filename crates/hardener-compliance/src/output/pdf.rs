@@ -110,10 +110,6 @@ impl ReportFormatter for PdfFormatter {
         pdf_bytes.into_iter().map(|b| b as char).collect()
     }
 
-    fn format_bytes(&self, report: &ComplianceReport) -> Vec<u8> {
-        generate_pdf(report)
-    }
-
     /// One document carrying every report, rather than the default's
     /// UTF-8 encoding of concatenated Latin-1 page streams, which no PDF
     /// reader could open.
