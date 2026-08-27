@@ -365,9 +365,14 @@ impl std::fmt::Display for PrivilegedCommandError {
     }
 }
 
-/// Raw result of a pkexec-invoked hardener CLI call, before the caller
-/// interprets what a non-auth-related exit code means for that verb.
-struct PrivilegedOutput {
+/// Raw result of a hardener CLI call, before the caller interprets what a
+/// non-auth-related exit code means for that verb.
+///
+/// Named for the CLI rather than for pkexec because `run_apply_dry_run` builds
+/// one from an unprivileged spawn. It reads the same stream by the same rule,
+/// and the reason that command escalates nothing has no bearing on how its
+/// answer is parsed.
+struct CliOutput {
     stdout: String,
     stderr: String,
     exit_code: Option<i32>,
@@ -378,7 +383,7 @@ struct PrivilegedOutput {
 /// other exit code to the caller. Some verbs (`apply`, `rollback`) print a
 /// partial-result JSON payload to stdout before exiting 1 on partial failure,
 /// so "non-zero exit" alone cannot mean "no usable output" for them.
-async fn run_privileged(args: &[&str]) -> Result<PrivilegedOutput, PrivilegedCommandError> {
+async fn run_privileged(args: &[&str]) -> Result<CliOutput, PrivilegedCommandError> {
     let binary = get_hardener_binary_path().map_err(PrivilegedCommandError::ExecutionFailed)?;
     validate_binary_path(&binary).map_err(PrivilegedCommandError::ExecutionFailed)?;
 
@@ -410,7 +415,7 @@ async fn run_privileged(args: &[&str]) -> Result<PrivilegedOutput, PrivilegedCom
                 Err(PrivilegedCommandError::ExecutionFailed(stderr.to_string()))
             }
         }
-        exit_code => Ok(PrivilegedOutput {
+        exit_code => Ok(CliOutput {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             exit_code,
@@ -426,12 +431,19 @@ fn exit_code_may_carry_json(exit_code: Option<i32>) -> bool {
     matches!(exit_code, Some(0) | Some(1))
 }
 
-/// Interprets a privileged JSON-emitting command's raw output: accepts the
-/// payload on exit 0 always, and on exit 1 only when stdout still parses as
-/// `T` (a partial-failure payload). Anything else is a genuine error carrying
-/// stderr, sanitised by `PrivilegedCommandError`'s `Display` impl.
+/// Interprets a JSON-emitting command's raw output: accepts the payload on
+/// exit 0 always, and on exit 1 only when stdout still parses as `T` (a
+/// partial-failure payload). Anything else is a genuine error carrying stderr,
+/// sanitised by `PrivilegedCommandError`'s `Display` impl.
+///
+/// Parses the whole of stdout, and deliberately. Every JSON-emitting verb
+/// prints the payload and nothing else there: `output::info`, `warning` and
+/// `error` all write to stderr in JSON mode, which is what closed the
+/// "Extra data" defect their own comment records. A parser that skipped
+/// forward to the first `[` would accept a stream this project does not
+/// produce, and would go on accepting one if a verb ever started producing it.
 fn accept_json_output<T: serde::de::DeserializeOwned>(
-    raw: &PrivilegedOutput,
+    raw: &CliOutput,
 ) -> Result<T, PrivilegedCommandError> {
     if exit_code_may_carry_json(raw.exit_code)
         && let Ok(parsed) = serde_json::from_str(&raw.stdout)
@@ -751,6 +763,35 @@ impl CliScanEntry {
 ///
 /// Uses pkexec to run the CLI with root privileges.
 /// The user will be prompted for their password via the polkit agent.
+/// The argv for `hardener apply`, previewed or real.
+///
+/// One builder for both commands, which differed in `--dry-run` and in nothing
+/// else that mattered. Two hand-written copies of an argv whose most
+/// consequential flag is the one deciding whether the host is modified is a
+/// pair worth not keeping, and `--dry-run` leads the vector for the reason
+/// `enabled` leads `scheduler_details`: it is the entry a reader must not skim.
+///
+/// Returns owned strings. `apply`'s flags are all optional and all take values
+/// the caller owns, so a borrowed vector only pushes the buffer that keeps them
+/// alive back out to the call site, which is what both copies were doing.
+fn apply_args(dry_run: bool, plugin_ids: &[String], config_path: Option<&str>) -> Vec<String> {
+    let mut args = vec!["apply".to_string()];
+    if dry_run {
+        args.push("--dry-run".to_string());
+    }
+    args.push("--format".to_string());
+    args.push("json".to_string());
+    for id in plugin_ids {
+        args.push("--plugin".to_string());
+        args.push(id.clone());
+    }
+    if let Some(path) = config_path {
+        args.push("--config".to_string());
+        args.push(path.to_string());
+    }
+    args
+}
+
 #[tauri::command]
 pub async fn run_apply(
     plugin_ids: Vec<String>,
@@ -764,25 +805,8 @@ pub async fn run_apply(
 
     tracing::info!("=== run_apply called with plugins: {:?} ===", plugin_ids);
 
-    // Build CLI arguments
-    let mut args: Vec<&str> = vec!["apply", "--format", "json"];
-
-    // Convert plugin_ids to &str for the args
-    let plugin_args: Vec<String> = plugin_ids
-        .iter()
-        .flat_map(|id| vec!["--plugin".to_string(), id.clone()])
-        .collect();
-
-    let plugin_refs: Vec<&str> = plugin_args.iter().map(|s| s.as_str()).collect();
-    args.extend(plugin_refs);
-
-    // Inject config file path if set
-    let config_flag;
-    if let Some(ref path) = config_path {
-        config_flag = path.clone();
-        args.push("--config");
-        args.push(&config_flag);
-    }
+    let owned = apply_args(false, &plugin_ids, config_path.as_deref());
+    let args: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     // Execute with root privileges. Exit 1 with a parseable payload is a
     // partial-failure result, not a transport error: the CLI already printed
@@ -814,23 +838,7 @@ pub async fn run_apply_dry_run(
     );
 
     let binary = get_hardener_binary_path()?;
-
-    // Build CLI arguments - no pkexec needed for dry-run
-    let mut args = vec!["apply", "--dry-run", "--format", "json"];
-
-    // Add plugin arguments
-    for id in &plugin_ids {
-        args.push("--plugin");
-        args.push(id);
-    }
-
-    // Inject config file path if set
-    let config_flag;
-    if let Some(ref path) = config_path {
-        config_flag = path.clone();
-        args.push("--config");
-        args.push(&config_flag);
-    }
+    let args = apply_args(true, &plugin_ids, config_path.as_deref());
 
     // Execute without root privileges (dry-run is read-only)
     let output = Command::new(&binary)
@@ -839,22 +847,22 @@ pub async fn run_apply_dry_run(
         .await
         .map_err(|e| safe_err(format!("Failed to execute dry-run: {}", e)))?;
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| safe_err(format!("Invalid UTF-8 in output: {}", e)))?;
-
-    // Exit 1 with a parseable report array is a partial-failure result, not a
-    // transport error: `apply --dry-run` prints the array (skipping any
-    // leading info lines, e.g. `{"info": "Dry run..."}`) before `bail!`ing
-    // when a plugin's validation errors.
-    if exit_code_may_carry_json(output.status.code())
-        && let Some(json_start) = stdout.find('[')
-        && let Ok(results) = serde_json::from_str::<Vec<ValidationReport>>(&stdout[json_start..])
-    {
-        return Ok(results);
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(sanitise_error(&format!("Dry-run failed: {}", stderr)))
+    // Read by the same rule as every other JSON verb, which is the point of it
+    // being a rule. Exit 1 with a parseable report array is a partial-failure
+    // result, not a transport error: `apply --dry-run` prints the array before
+    // `bail!`ing when a plugin's validation errors.
+    //
+    // This used to skip forward to the first `[`, described in a comment as
+    // stepping over a leading `{"info": "Dry run..."}` line. That line has gone
+    // to stderr since `output::info`'s JSON arm was fixed, so the skip stepped
+    // over nothing and the tolerance was the only difference left between this
+    // path and the three that share the helper.
+    accept_json_output(&CliOutput {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        exit_code: output.status.code(),
+    })
+    .map_err(safe_err)
 }
 
 /// The argv for a privileged `hardener rollback`.
@@ -2978,10 +2986,20 @@ fn build_batch_args(
     args
 }
 
-/// Parses the JSON outcome array from CLI stdout, skipping any leading info
-/// lines. Exit-code agnostic by design: `batch apply/rollback` exit non-zero on
-/// per-host failures yet still print the array, so the array is the source of
-/// truth. Returns `Err` only when no array is present.
+/// Parses the JSON outcome array from CLI stdout.
+///
+/// Exit-code agnostic by design, which is why this is not `accept_json_output`:
+/// `batch apply/rollback` exit non-zero on per-host failures yet still print the
+/// array, so the array is the source of truth. That is the one difference, and
+/// it is why the two cannot merge.
+///
+/// The leading-bytes skip is tolerance, not a step over anything `batch`
+/// writes: it prints the rendered payload to stdout and every message it has to
+/// stderr. The comment here used to name "leading info lines" as the reason,
+/// which stopped being true when `output::info` moved to stderr. Left in place
+/// rather than tightened because the fleet path cannot be exercised outside a
+/// container, and a stricter parser is not worth an untested change to the one
+/// verb that reaches every host at once.
 fn parse_outcomes<T: serde::de::DeserializeOwned>(stdout: &str) -> Result<Vec<T>, String> {
     let start = stdout.find('[').ok_or("No JSON array in CLI output")?;
     serde_json::from_str(&stdout[start..]).map_err(|e| format!("Failed to parse CLI output: {e}"))
@@ -3018,6 +3036,11 @@ mod webhook_shape_tests;
 /// `add_policy_exception`.
 #[cfg(test)]
 mod exception_args_tests;
+
+/// Tests for `apply_args`, the argv `run_apply` and `run_apply_dry_run` share,
+/// and for the `--dry-run` flag that is now all that separates them.
+#[cfg(test)]
+mod apply_args_tests;
 
 /// Tests for the audit detail the desktop's own config writes carry.
 #[cfg(test)]

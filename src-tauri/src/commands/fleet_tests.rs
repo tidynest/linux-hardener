@@ -17,8 +17,8 @@
 
 use super::*;
 
-fn privileged_output(exit_code: Option<i32>, stdout: &str, stderr: &str) -> PrivilegedOutput {
-    PrivilegedOutput {
+fn privileged_output(exit_code: Option<i32>, stdout: &str, stderr: &str) -> CliOutput {
+    CliOutput {
         stdout: stdout.to_string(),
         stderr: stderr.to_string(),
         exit_code,
