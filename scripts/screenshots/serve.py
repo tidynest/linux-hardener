@@ -14,9 +14,14 @@ class SpaHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*a, directory=ROOT, **k)
 
     def do_GET(self):
-        rel = self.path.split("?", 1)[0].lstrip("/")
-        target = os.path.join(ROOT, rel)
-        if rel and os.path.isfile(target):
+        # translate_path, not a hand-built join: it is the same resolution the
+        # parent will use to serve the file, it strips the query and fragment,
+        # and it discards `..` components. Joining ROOT with the raw request
+        # path let an existence probe escape ROOT, which is what CodeQL #14
+        # flagged. Serving never escaped, because the parent re-resolved the
+        # path safely, so only the `isfile` answer was ever wrong.
+        target = self.translate_path(self.path)
+        if os.path.isfile(target):
             return super().do_GET()
         # Fallback: hand back index.html for client-side routes.
         self.path = "/index.html"
