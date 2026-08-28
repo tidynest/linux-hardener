@@ -812,6 +812,75 @@ fn fleet_targets_lets_an_inventory_host_win_a_name_collision() {
     assert_eq!(kept.key_file.as_deref(), Some("/keys/inventory"));
 }
 
+/// The rows agree with the keys, which is the half `fleet_targets` cannot
+/// state on its own.
+///
+/// The collision test above proves one key for a host named twice. Until
+/// 2026-08-28 the two lists were then chained straight into `scan_fleet`, which
+/// builds one row per entry, so that same host was connected to twice, scanned
+/// twice and counted twice in the progress total while its profile stayed
+/// single. Both halves are asserted here because either alone passes on the
+/// defect: the map was already right.
+#[test]
+fn a_host_named_in_both_lists_gets_one_row() {
+    let names = fleet_row_names(
+        vec!["db-01".to_string()],
+        vec!["db-01".to_string(), "root@web-02:22".to_string()],
+    );
+
+    assert_eq!(
+        names,
+        vec!["db-01".to_string(), "root@web-02:22".to_string()],
+        "the repeat must go, the distinct target must stay"
+    );
+
+    let targets = fleet_targets(
+        vec![saved_host("db-01", "db-01.internal")],
+        &["db-01".to_string(), "root@web-02:22".to_string()],
+    )
+    .expect("both targets are well formed");
+    assert_eq!(
+        names.len(),
+        targets.len(),
+        "one row per key, or a row is scanned with a profile no key named"
+    );
+}
+
+/// The same target typed twice is the same host too, and the inventory
+/// spelling is the one kept.
+///
+/// A dedup that only compared across the two lists would pass the test above
+/// and still scan a repeated ad-hoc target twice. Order matters as much as the
+/// count: a row is named the way its profile is keyed, and `fleet_targets`
+/// keeps the inventory profile, so the inventory spelling has to be the
+/// survivor.
+#[test]
+fn a_repeated_target_is_one_row_and_the_inventory_spelling_wins() {
+    let names = fleet_row_names(
+        vec!["alpha".to_string(), "beta".to_string()],
+        vec!["beta".to_string(), "gamma".to_string(), "gamma".to_string()],
+    );
+
+    assert_eq!(
+        names,
+        vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()],
+        "in order, inventory first, one entry each"
+    );
+}
+
+/// Nothing is dropped when nothing repeats, which is the direction a dedup
+/// gets wrong quietly: a host missing from a fleet scan reports nothing, and
+/// nothing is what a compliance control needs to look clean.
+#[test]
+fn distinct_hosts_all_survive() {
+    let names = fleet_row_names(
+        vec!["a".to_string(), "b".to_string()],
+        vec!["c".to_string(), "d".to_string()],
+    );
+
+    assert_eq!(names.len(), 4, "got {names:?}");
+}
+
 #[test]
 fn fleet_targets_rejects_an_invalid_adhoc_target() {
     // A rejected target fails the whole scan rather than being dropped: a

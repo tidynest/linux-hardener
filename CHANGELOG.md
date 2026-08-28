@@ -2090,6 +2090,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A host named in both fleet lists was scanned twice and shown twice.**
+  `fleet_targets` already decided that an inventory host and an ad-hoc target
+  spelling its name are one host, and a test pins that decision, but
+  `run_fleet_scan` then chained the two lists straight into `scan_fleet`, which
+  builds one row per entry. So the host was connected to twice, scanned twice
+  over two SSH sessions, counted twice in the progress total, and rendered as
+  two rows a reader had no way to tell apart, while its profile stayed single.
+  `scan_fleet`'s own comment calls this "the one-row-per-host contract", which
+  holds only when the entries are hosts rather than mentions of hosts. The names
+  are deduplicated in order now, inventory spelling first, so a row is named the
+  way its profile is keyed.
+
 - **The config picker offered files that Apply would refuse, and said nothing
   until Apply refused them.** One picked path feeds five commands under two
   rules. `run_scan`, `run_apply_dry_run` and the validation behind the picker

@@ -2151,6 +2151,31 @@ fn fleet_targets(
     Ok(profiles)
 }
 
+/// The rows a fleet scan produces: in order, and one per host rather than one
+/// per mention of a host.
+///
+/// [`fleet_targets`] has already decided that an inventory host and an ad-hoc
+/// target spelling its name are the same host, and
+/// `fleet_targets_lets_an_inventory_host_win_a_name_collision` pins that
+/// decision. The names reaching [`scan_fleet`] used to carry a different one:
+/// the two lists were chained, so a host named in both appeared twice, was
+/// connected to twice, scanned twice over two SSH sessions, counted twice in
+/// the progress total, and rendered as two rows a reader had no way to tell
+/// apart. `scan_fleet` builds one row per entry and calls that "the
+/// one-row-per-host contract", which holds only when the entries are hosts.
+///
+/// Inventory names come first, so the spelling that survives is the one whose
+/// profile `fleet_targets` kept, and the row is named the way its profile is
+/// keyed.
+fn fleet_row_names(host_names: Vec<String>, adhoc: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    host_names
+        .into_iter()
+        .chain(adhoc)
+        .filter(|name| seen.insert(name.clone()))
+        .collect()
+}
+
 /// Derives each scanned host's compliance posture from the findings already in
 /// hand: in memory, with no second trip over SSH. A host that failed keeps an
 /// empty posture, because a score derived from no findings is a claim about a
@@ -2159,12 +2184,21 @@ fn fleet_targets(
 /// Flattening goes through `flatten_scan_results`, the same path the local
 /// compliance tab uses, and not a hand-written pass over `scan_results`. A
 /// fleet scan does not always come back with every plugin: the caller may have
-/// filtered to a subset, and `scan_with_executor` drops a plugin whose scan
-/// errored on that host. Those plugins report nothing, and nothing is exactly
-/// what a control needs to look clean, so every registered plugin missing from
-/// a row contributes an unassessed entry and its controls report ManualReview.
-/// Flattened by hand this said nothing, and a row scanned with one plugin
-/// reported the same 38 passing CIS controls as a row scanned with all eight.
+/// filtered to a subset with `plugin_ids`, and `scan_with_executor` skips one
+/// whose registry lookup does not return it. Those plugins report nothing, and
+/// nothing is exactly what a control needs to look clean, so every registered
+/// plugin missing from a row contributes an unassessed entry and its controls
+/// report ManualReview. Flattened by hand this said nothing, and a row scanned
+/// with one plugin reported the same 38 passing CIS controls as a row scanned
+/// with all eight.
+///
+/// **A plugin whose scan errored is not one of those cases**, though this said
+/// it was until 2026-08-28. `scan_with_executor` records the failure through
+/// `recorded_scan` and pushes it, so it is present with `scan_success` false,
+/// and `scan_evidence::flatten` gives it a `ScanIncomplete` entry carrying its
+/// error rather than the `NotCovered` it gives an absent one. The same wrong
+/// sentence was corrected in the fleet test's doc on 2026-08-27 and left
+/// standing here, which is what a second copy does.
 ///
 /// `coverage` and `exclusions` are passed in rather than read here, so the
 /// caller does the one disk read and this stays a pure function of its inputs.
@@ -2228,8 +2262,10 @@ pub async fn run_fleet_scan(
     let profiles = std::sync::Arc::new(profiles);
     let scan_profiles = profiles.clone();
 
-    // Ad-hoc rows keep the full target string as their display name.
-    let all_names: Vec<String> = host_names.into_iter().chain(adhoc).collect();
+    // Ad-hoc rows keep the full target string as their display name, and a host
+    // named in both lists gets one row, matching the single key `fleet_targets`
+    // gave it.
+    let all_names = fleet_row_names(host_names, adhoc);
 
     // Best-effort live progress: a dead listener must never fail the scan.
     let on_progress = move |scan: &FleetHostScan, done: usize, total: usize| {
