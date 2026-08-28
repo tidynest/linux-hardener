@@ -1604,14 +1604,44 @@ fn session_to_info(s: ScanSession) -> ScanSessionInfo {
     }
 }
 
+/// The most history rows one desktop call asks for.
+///
+/// A ceiling rather than a preference: these lists render every row they are
+/// handed, and the databases behind them grow without bound. `get_host_history`
+/// has clamped at this number since it was written. `get_scan_history` passed
+/// its argument to SQL's `LIMIT` untouched, so the one command with no ceiling
+/// was also the one that could be asked to remove the ceiling it did not have.
+const HISTORY_ROW_CEILING: u32 = 100;
+
+/// How many rows a scan-history query asks for.
+///
+/// **Refuses a negative rather than clamping it.** In SQLite `LIMIT -1` is no
+/// limit at all and `LIMIT 0` returns nothing, so the sign carries a meaning
+/// no caller intends, and quietly reading it as 1 or as the default would turn
+/// an obviously wrong argument into a plausible answer. Zero is left alone: it
+/// asks for no rows and gets none, which is what it says.
+///
+/// Split out so the rule can be driven without a database. Its sibling
+/// `get_host_history` takes a `u32` and cannot be asked this at all; this one
+/// is on the IPC boundary with an `i32` that `tauri_bindings.rs` also spells,
+/// and changing that spelling would move the WASM bundle and owe a sweep for a
+/// guard that belongs on this side of the boundary anyway.
+fn scan_history_rows(requested: Option<i32>) -> Result<i32, String> {
+    let wanted = requested.unwrap_or(20);
+    if wanted < 0 {
+        return Err(format!(
+            "scan history limit must not be negative, got {wanted}"
+        ));
+    }
+    Ok(wanted.min(HISTORY_ROW_CEILING as i32))
+}
+
 /// Lists recent scan history sessions (metadata only).
 #[tauri::command]
 pub async fn get_scan_history(limit: Option<i32>) -> Result<Vec<ScanSessionInfo>, String> {
+    let take = scan_history_rows(limit)?;
     let manager = create_scan_history_manager().await?;
-    let sessions = manager
-        .list_sessions(limit.unwrap_or(20))
-        .await
-        .map_err(safe_err)?;
+    let sessions = manager.list_sessions(take).await.map_err(safe_err)?;
 
     Ok(sessions.into_iter().map(session_to_info).collect())
 }
@@ -2933,7 +2963,10 @@ pub async fn get_host_history(
     limit: Option<u32>,
 ) -> Result<Vec<HostSessionInfo>, String> {
     validate_ipc_string(&host, "host")?;
-    let take = limit.unwrap_or(10).min(100);
+    // Same ceiling as the scan-history list, from the one place it is stated.
+    // The default differs on purpose: this is a rail inside an expanded host
+    // row rather than a page of its own.
+    let take = limit.unwrap_or(10).min(HISTORY_ROW_CEILING);
 
     let db = hardener_scheduler::ScanHistoryManager::new(&scheduler_db_path()?)
         .await
@@ -3110,6 +3143,11 @@ mod exception_args_tests;
 /// and for the `--dry-run` flag that is now all that separates them.
 #[cfg(test)]
 mod apply_args_tests;
+
+/// Tests for `scan_history_rows`, the row count `get_scan_history` asks for,
+/// and for the ceiling it now shares with `get_host_history`.
+#[cfg(test)]
+mod history_limit_tests;
 
 /// Tests for the audit detail the desktop's own config writes carry.
 #[cfg(test)]

@@ -2090,6 +2090,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`get_scan_history` handed its argument to SQL's `LIMIT` without looking at
+  it.** Its sibling `get_host_history` has clamped at 100 rows since it was
+  written and takes an unsigned count, so it cannot be asked for a negative one.
+  This command took an `i32` and passed it through, and in SQLite `LIMIT -1`
+  means no limit at all: the argument that looks like the smallest possible
+  request asks for every session in the database, which the desktop then
+  renders. Both commands now read the ceiling from one place, and a negative is
+  refused rather than clamped, since reading it as 1 or as the default would
+  turn an obviously wrong argument into a plausible answer. Zero still asks for
+  no rows and gets none.
+
 - **The desktop read `checkpoint create`'s output by a key spelled at both
   ends.** It was the only CLI payload the desktop pulled out of an untyped
   `serde_json::Value` rather than deserialising into a type, and the failure
