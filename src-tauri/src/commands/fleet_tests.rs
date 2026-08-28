@@ -823,10 +823,11 @@ fn fleet_targets_lets_an_inventory_host_win_a_name_collision() {
 /// defect: the map was already right.
 #[test]
 fn a_host_named_in_both_lists_gets_one_row() {
-    let names = fleet_row_names(
-        vec!["db-01".to_string()],
-        vec!["db-01".to_string(), "root@web-02:22".to_string()],
-    );
+    let adhoc = vec!["db-01".to_string(), "root@web-02:22".to_string()];
+    let targets = fleet_targets(vec![saved_host("db-01", "db-01.internal")], &adhoc)
+        .expect("both targets are well formed");
+
+    let names = fleet_row_names(vec!["db-01".to_string()], adhoc, &targets);
 
     assert_eq!(
         names,
@@ -834,11 +835,6 @@ fn a_host_named_in_both_lists_gets_one_row() {
         "the repeat must go, the distinct target must stay"
     );
 
-    let targets = fleet_targets(
-        vec![saved_host("db-01", "db-01.internal")],
-        &["db-01".to_string(), "root@web-02:22".to_string()],
-    )
-    .expect("both targets are well formed");
     assert_eq!(
         names.len(),
         targets.len(),
@@ -856,9 +852,12 @@ fn a_host_named_in_both_lists_gets_one_row() {
 /// survivor.
 #[test]
 fn a_repeated_target_is_one_row_and_the_inventory_spelling_wins() {
+    // No profiles, so the endpoint rule cannot fire and the string rule is the
+    // only thing under test here.
     let names = fleet_row_names(
         vec!["alpha".to_string(), "beta".to_string()],
         vec!["beta".to_string(), "gamma".to_string(), "gamma".to_string()],
+        &std::collections::HashMap::new(),
     );
 
     assert_eq!(
@@ -868,14 +867,104 @@ fn a_repeated_target_is_one_row_and_the_inventory_spelling_wins() {
     );
 }
 
+/// One machine is one row however the operator reached it.
+///
+/// The dedup above compares the two lists as strings, which catches an ad-hoc
+/// target spelling a saved host's *name* and nothing else. An operator who
+/// ticks `web-01` and then types that host's endpoint has selected one machine
+/// twice, and the strings share no character. Two SSH sessions open, the
+/// progress total reads 2, and two rows appear for one host.
+///
+/// The CLI already decided this and by a different measure: `resolve_hosts`
+/// drops an inline target whose `target()` matches a selected profile, and its
+/// doc says why the name cannot serve as the identity. The same selection sent
+/// to `run_fleet_apply` reaches that code and comes back as one outcome, so the
+/// desktop currently reports two hosts scanned and one host applied.
+///
+/// The count is asserted against the distinct endpoints rather than against a
+/// literal, because a row per endpoint is the claim; a literal `1` would also
+/// be satisfied by a dedup that dropped the wrong one. The second assertion
+/// names which survivor is correct: the row is named the way its profile is
+/// keyed, and the saved profile carries the port and key file the ad-hoc parse
+/// cannot know.
+#[test]
+fn one_endpoint_selected_twice_is_one_row() {
+    let adhoc = vec!["ops@web-01.example.com:2022".to_string()];
+    let profiles = fleet_targets(vec![saved_host("web-01", "web-01.example.com")], &adhoc)
+        .expect("both targets are well formed");
+
+    let names = fleet_row_names(vec!["web-01".to_string()], adhoc, &profiles);
+
+    let endpoints: std::collections::HashSet<String> = names
+        .iter()
+        .filter_map(|n| profiles.get(n))
+        .map(|p| p.target())
+        .collect();
+    assert_eq!(
+        names.len(),
+        endpoints.len(),
+        "one row per endpoint, got rows {names:?} over endpoints {endpoints:?}"
+    );
+
+    assert_eq!(
+        names,
+        vec!["web-01".to_string()],
+        "the inventory spelling survives, so the row carries the saved port and key file"
+    );
+}
+
+/// Two inventory entries for one machine stay two rows.
+///
+/// The green half of the pair above, and the reason the endpoint rule is
+/// applied to ad-hoc targets alone. `resolve_hosts` in the CLI draws the line
+/// in the same place and says why: `--host` and `--all` are taken as the
+/// operator gave them. Two saved entries for one endpoint are two deliberate
+/// selections, and the harm they can do is not a duplicated row but two
+/// checkpoints filed under one key, which `colliding_host_key` refuses for a
+/// run that writes and deliberately allows for one that only reads.
+///
+/// A merge widened to cover this passes every assertion in the test above and
+/// silently drops a row the operator asked for.
+#[test]
+fn two_inventory_entries_for_one_endpoint_stay_two_rows() {
+    let both = vec![
+        saved_host("web-01", "web-01.example.com"),
+        saved_host("web-01-spare", "web-01.example.com"),
+    ];
+    let profiles = fleet_targets(both, &[]).expect("both profiles are well formed");
+    assert_eq!(
+        profiles["web-01"].target(),
+        profiles["web-01-spare"].target(),
+        "the fixture is only meaningful while the two endpoints are identical"
+    );
+
+    let names = fleet_row_names(
+        vec!["web-01".to_string(), "web-01-spare".to_string()],
+        Vec::new(),
+        &profiles,
+    );
+
+    assert_eq!(
+        names,
+        vec!["web-01".to_string(), "web-01-spare".to_string()],
+        "both selections keep their row"
+    );
+}
+
 /// Nothing is dropped when nothing repeats, which is the direction a dedup
 /// gets wrong quietly: a host missing from a fleet scan reports nothing, and
 /// nothing is what a compliance control needs to look clean.
+///
+/// The empty profile map is the second half of the same guarantee. A name
+/// resolving to no profile has no endpoint to compare, and an endpoint rule
+/// that treated "unknown" as "already seen" would drop every such row, turning
+/// the Failed row `scan_fleet` would have produced into silence.
 #[test]
 fn distinct_hosts_all_survive() {
     let names = fleet_row_names(
         vec!["a".to_string(), "b".to_string()],
         vec!["c".to_string(), "d".to_string()],
+        &std::collections::HashMap::new(),
     );
 
     assert_eq!(names.len(), 4, "got {names:?}");

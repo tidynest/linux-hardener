@@ -2090,6 +2090,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **One machine reached under both an inventory name and its own endpoint was
+  scanned twice by the desktop and applied to once.** The dedup added on
+  2026-08-28 compares the two host lists as strings, which catches an ad-hoc
+  target spelling a saved host's *name* and nothing else. An operator who ticks
+  `web-01` and then types that host's `user@host:port` has selected one machine
+  under two names sharing no character: two SSH sessions opened, the progress
+  total read one too many, and two rows appeared for one host. The CLI settled
+  this question first and by a different measure. `resolve_hosts` drops an
+  inline target whose canonical `target()` matches a selected profile, and its
+  doc says why a name cannot serve as the identity, so the same selection sent
+  to `run_fleet_apply`, which shells out to that code, came back as a single
+  outcome. The desktop's own scan was the last caller still asking only whether
+  the strings matched. `fleet_row_names` now takes the resolved profiles and
+  compares endpoints as well. **Ad-hoc targets only**, which is where
+  `resolve_hosts` draws the same line: two inventory entries for one machine
+  are two deliberate selections and stay two rows, and the harm they can do is
+  two checkpoints filed under one key, which `colliding_host_key` already
+  refuses for a run that writes. A name resolving to no profile keeps its row,
+  so a typo stays a visible Failed row rather than becoming a host that
+  silently reports nothing.
+
 - **`get_scan_history` handed its argument to SQL's `LIMIT` without looking at
   it.** Its sibling `get_host_history` has clamped at 100 rows since it was
   written and takes an unsigned count, so it cannot be asked for a negative one.

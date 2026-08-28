@@ -2205,13 +2205,57 @@ fn fleet_targets(
 /// Inventory names come first, so the spelling that survives is the one whose
 /// profile `fleet_targets` kept, and the row is named the way its profile is
 /// keyed.
-fn fleet_row_names(host_names: Vec<String>, adhoc: Vec<String>) -> Vec<String> {
+///
+/// **Two hosts are the same host by two different measures**, and matching the
+/// strings is only the first. An operator who ticks `web-01` and then types
+/// that host's endpoint has selected one machine twice under names sharing no
+/// character, so the second measure is the canonical `target()` of the profile
+/// each name resolves to. `resolve_hosts` in the CLI reached this first and
+/// says at its own definition why the name cannot serve as the identity;
+/// until 2026-08-28 the desktop asked only the string question, and the same
+/// selection scanned as two rows here and applied as one outcome through
+/// `run_fleet_apply`, which shells out to that code.
+///
+/// **Only ad-hoc targets are compared by endpoint**, which is `resolve_hosts`'
+/// rule as well. Two inventory entries for one machine are two selections the
+/// operator made deliberately and stay two rows; a run that writes refuses
+/// them further down, in the CLI's `colliding_host_key`, because the harm
+/// there is two checkpoints under one key rather than a duplicated row.
+///
+/// A name resolving to no profile keeps its row. It becomes a Failed row in
+/// [`scan_fleet`] saying the profile was not found, and dropping it here would
+/// turn a visible failure into a host that silently reports nothing.
+fn fleet_row_names(
+    host_names: Vec<String>,
+    adhoc: Vec<String>,
+    profiles: &std::collections::HashMap<String, RemoteHostProfile>,
+) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
-    host_names
-        .into_iter()
-        .chain(adhoc)
-        .filter(|name| seen.insert(name.clone()))
-        .collect()
+    let mut names: Vec<String> = Vec::with_capacity(host_names.len() + adhoc.len());
+    for name in host_names {
+        if seen.insert(name.clone()) {
+            names.push(name);
+        }
+    }
+
+    let mut endpoints: std::collections::HashSet<String> = names
+        .iter()
+        .filter_map(|name| profiles.get(name))
+        .map(|profile| profile.target())
+        .collect();
+    for target in adhoc {
+        if !seen.insert(target.clone()) {
+            continue;
+        }
+        let endpoint = profiles.get(&target).map(|profile| profile.target());
+        if let Some(endpoint) = endpoint
+            && !endpoints.insert(endpoint)
+        {
+            continue;
+        }
+        names.push(target);
+    }
+    names
 }
 
 /// Derives each scanned host's compliance posture from the findings already in
@@ -2300,10 +2344,11 @@ pub async fn run_fleet_scan(
     let profiles = std::sync::Arc::new(profiles);
     let scan_profiles = profiles.clone();
 
-    // Ad-hoc rows keep the full target string as their display name, and a host
+    // Ad-hoc rows keep the full target string as their display name. A host
     // named in both lists gets one row, matching the single key `fleet_targets`
-    // gave it.
-    let all_names = fleet_row_names(host_names, adhoc);
+    // gave it, and so does one reached under an inventory name and its own
+    // endpoint, which the profiles are needed to see.
+    let all_names = fleet_row_names(host_names, adhoc, &profiles);
 
     // Best-effort live progress: a dead listener must never fail the scan.
     let on_progress = move |scan: &FleetHostScan, done: usize, total: usize| {
