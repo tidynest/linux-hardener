@@ -558,8 +558,16 @@ fn checkpoint_list_footer(shown: usize, total: usize) -> Option<String> {
 
 pub fn checkpoint_created(format: &OutputFormat, id: &hardener_state::CheckpointId) {
     match format {
+        // Serialised from the shared struct rather than written as a literal
+        // object: the desktop reads this payload back, and it is the only one
+        // whose key used to be spelled out at both ends.
         OutputFormat::Json => {
-            println!("{}", serde_json::json!({ "checkpoint_id": id.as_str() }));
+            println!(
+                "{}",
+                serde_json::json!(hardener_state::CheckpointCreated {
+                    checkpoint_id: id.as_str().to_string(),
+                })
+            );
         }
         _ => {
             println!("{} Checkpoint created: {}", "✓".green(), id.as_str().cyan());

@@ -2090,6 +2090,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop read `checkpoint create`'s output by a key spelled at both
+  ends.** It was the only CLI payload the desktop pulled out of an untyped
+  `serde_json::Value` rather than deserialising into a type, and the failure
+  that invites is a bad one: renaming the CLI's key compiles, the checkpoint is
+  still written, and the desktop reports "Missing checkpoint_id in response".
+  An operator reads a failure for an operation that succeeded, and the obvious
+  answer is to make a second checkpoint. `hardener-cli` is a binary and cannot
+  be depended on, so `CheckpointCreated` lives in `hardener-state`, which both
+  ends already use and `hardener-ui` does not. A test pins the wire key,
+  because sharing the struct makes a mismatch a compile error but leaves a
+  rename silent, and that key is what `docs/reference/cli.md` publishes.
+
 - **A host named in both fleet lists was scanned twice and shown twice.**
   `fleet_targets` already decided that an inventory host and an ad-hoc target
   spelling its name are one host, and a test pins that decision, but

@@ -1051,6 +1051,18 @@ pub async fn get_checkpoints() -> Result<CheckpointList, String> {
 /// Creates a manual checkpoint of the current system state.
 ///
 /// Requires root privileges via pkexec since it reads protected system files.
+///
+/// The name goes last, behind `--`, so one beginning with a hyphen cannot be
+/// read as a flag, and nothing may be appended after it. `rollback_args`
+/// records what happens when something is: clap refuses the whole command.
+///
+/// Deserialised into `CheckpointCreated` rather than indexed out of an untyped
+/// `Value`. This was the one CLI payload the desktop read by a key spelled at
+/// both ends, and the shape it invited is a bad one: renaming the CLI's key
+/// still creates the checkpoint, and the desktop reports a failure for an
+/// operation that succeeded, whose obvious remedy is to make a second one.
+/// `hardener-cli` is a binary and cannot be depended on, so the struct lives in
+/// `hardener-state`, which both ends already use.
 #[tauri::command]
 pub async fn create_checkpoint(name: String) -> Result<String, String> {
     let _guard = PrivilegedOpGuard::acquire()?;
@@ -1060,14 +1072,10 @@ pub async fn create_checkpoint(name: String) -> Result<String, String> {
 
     let output = run_privileged_command(&args).await.map_err(safe_err)?;
 
-    // CLI outputs JSON: {"checkpoint_id": "..."}
-    let parsed: serde_json::Value = serde_json::from_str(&output)
-        .map_err(|e| safe_err(format!("Failed to parse response: {}", e)))?;
+    let created: hardener_state::CheckpointCreated = serde_json::from_str(output.trim())
+        .map_err(|e| safe_err(format!("Failed to parse response: {e}")))?;
 
-    parsed["checkpoint_id"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "Missing checkpoint_id in response".to_string())
+    Ok(created.checkpoint_id)
 }
 
 /// Deletes a checkpoint by ID.

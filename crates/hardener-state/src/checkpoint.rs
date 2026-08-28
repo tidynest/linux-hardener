@@ -21,6 +21,31 @@ impl CheckpointId {
     }
 }
 
+/// What `hardener checkpoint create --format json` prints on success.
+///
+/// One definition, because the two ends live in crates that cannot see each
+/// other. `hardener-cli` is a binary, so `src-tauri` cannot depend on it, and
+/// the desktop used to read this payload by indexing an untyped
+/// `serde_json::Value` with the key spelled out by hand. It was the only CLI
+/// payload in the desktop read that way; every other one deserialises into a
+/// type.
+///
+/// **The failure that shape invited is worse than it looks.** A rename on the
+/// CLI side compiles, the checkpoint is still created, and the desktop reports
+/// "Missing checkpoint_id in response". The operator reads a failure for an
+/// operation that succeeded, and the obvious response is to make another
+/// checkpoint. Sharing the struct turns that into a compile error.
+///
+/// Here rather than in `hardener-types` on purpose: both ends already depend on
+/// this crate, `hardener-ui` does not, and adding it there would put the WASM
+/// bundle and its six-container sweep in the path of a type the GUI never
+/// reads.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CheckpointCreated {
+    /// The id of the checkpoint that was written.
+    pub checkpoint_id: String,
+}
+
 /// A checkpoint representing system state at a point in time.
 ///
 /// Checkpoints capture file states before modifications, allowing

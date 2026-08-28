@@ -103,3 +103,30 @@ fn a_row_with_no_permission_bits_renders_a_bare_zero() {
         "a type field with no permission bits is still a deletion record"
     );
 }
+
+/// The wire key is `checkpoint_id`, and that is a published contract rather
+/// than an implementation detail.
+///
+/// Sharing the struct between `hardener-cli` and `src-tauri` makes a mismatch
+/// between the two a compile error, which is what it replaced: the desktop used
+/// to index an untyped `Value` with the key spelled by hand. It does not make a
+/// **rename** an error, though. Renaming the field recompiles cleanly at both
+/// ends and silently changes what `hardener checkpoint create --format json`
+/// prints, which `docs/reference/cli.md` describes and any script parsing that
+/// output depends on.
+///
+/// Both directions, because serialising alone would pass on a type that cannot
+/// read its own output back.
+#[test]
+fn the_created_payload_keeps_the_key_the_cli_publishes() {
+    let rendered = serde_json::to_string(&CheckpointCreated {
+        checkpoint_id: "cp-123".to_string(),
+    })
+    .expect("a struct of owned strings serialises");
+
+    assert_eq!(rendered, r#"{"checkpoint_id":"cp-123"}"#);
+
+    let parsed: CheckpointCreated =
+        serde_json::from_str(&rendered).expect("what the CLI prints is what the desktop reads");
+    assert_eq!(parsed.checkpoint_id, "cp-123");
+}
