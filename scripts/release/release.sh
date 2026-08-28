@@ -431,6 +431,31 @@ else
     git add scripts/README.md 2>/dev/null || true
     git add packaging/assets/hardener.1 2>/dev/null || true
     git add src-tauri/tauri.conf.json 2>/dev/null || true
+    # Step 3c writes three files and `git add docs/` above catches only two of
+    # them. The third, the generator, lives under scripts/.
+    git add scripts/badges/generate.js 2>/dev/null || true
+
+    # Anything still unstaged is a file this release wrote and did not stage.
+    #
+    # Step 0 refused to start on a dirty tree, so there is nothing else it could
+    # be. Without this the v1.6.0 attempt on 2026-08-28 tagged a commit carrying
+    # the two badge SVGs at 1.6.0 and 2300+ while the generator beside them
+    # still said 1.5.1 and 1400+; validate_badges.py compares exactly that pair,
+    # so the tag failed validation and regenerating would have reverted both
+    # badges. Listing the missing path fixes that instance. This makes the whole
+    # class loud: a future step that writes a file nobody remembered to add
+    # stops the release here rather than at the next validation run, or at a
+    # reader wondering why the badges went backwards.
+    unstaged=$(git diff --name-only)
+    if [[ -n "$unstaged" ]]; then
+        echo -e "${RED}Error: the release wrote files it did not stage:${NC}"
+        echo "$unstaged" | sed 's/^/  /'
+        echo ""
+        echo "Add them to the 'git add' list in step 6 of this script. Nothing"
+        echo "has been committed or tagged, so there is nothing to unwind."
+        exit 1
+    fi
+
     git commit -m "chore(release): bump version to ${NEW_VERSION}"
 fi
 
