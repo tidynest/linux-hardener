@@ -373,7 +373,13 @@ count, mode, version = sys.argv[1], sys.argv[2], sys.argv[3]
 # `npm --prefix scripts/badges install && npm --prefix scripts/badges run build`
 # when that day comes.
 targets = [
-    (Path("README.md"), r'(Rust workspace:\s+)\d+( passed)', rf'\g<1>{count}\g<2>'),
+    # `[^:\n]*` tolerates the command the README now names beside the figure,
+    # "Rust workspace (cargo nextest run --workspace):". The label gained that
+    # parenthetical on 2026-08-12 and this pattern still wanted a bare colon, so
+    # the first release attempt after it aborted here. Aborting is the designed
+    # outcome and the reason the hit count is asserted at all; matching the label
+    # loosely is what stops the same rewording costing a release next time.
+    (Path("README.md"), r'(Rust workspace[^:\n]*:\s+)\d+( passed)', rf'\g<1>{count}\g<2>'),
     (Path("docs/assets/badges/tests.svg"), r'\d+\+', f'{count}+'),
     (Path("scripts/badges/generate.js"), r"(file: 'tests'.*?message: ')\d+\+", rf"\g<1>{count}+"),
     (Path("scripts/badges/generate.js"), r"(file: 'version'.*?message: ')[^']+", rf"\g<1>{version}"),
