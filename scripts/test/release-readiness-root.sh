@@ -166,6 +166,13 @@ fi
 # comes to read as a green line.
 
 declare -A SUITE_STATUS SUITE_DETAIL
+# Rows recovered from the outgoing summary, for suites this invocation did not
+# select. Populated by read_previous_summary, displayed but never gated on.
+declare -A PREV_STATUS PREV_DETAIL
+PREV_DATE=""
+
+# Every suite that deserves a line in the table, whatever this run selected.
+ALL_DISPLAY_SUITES=("${SUITE_ORDER[@]}" rollback-booted)
 
 record_result() {
     local suite="$1" status="$2" detail="$3"
@@ -1018,8 +1025,35 @@ run_suite() {
 # Summary
 # =============================================================================
 
+# Resolves one table row. Sets ROW_STATUS, ROW_DETAIL and ROW_CARRIED for
+# `suite`: this invocation's result if it selected the suite, else the row
+# recovered from the outgoing summary, else NOTRUN.
+resolve_row() {
+    local suite="$1"
+    ROW_CARRIED=false
+    case " ${DISPLAY_SUITES[*]} " in
+        *" $suite "*)
+            ROW_STATUS="${SUITE_STATUS[$suite]:-NOTRUN}"
+            ROW_DETAIL="${SUITE_DETAIL[$suite]:-never reached}"
+            return ;;
+    esac
+    if [[ -n "${PREV_STATUS[$suite]:-}" ]]; then
+        ROW_CARRIED=true
+        ROW_STATUS="${PREV_STATUS[$suite]}"
+        ROW_DETAIL="${PREV_DETAIL[$suite]}"
+        # An already-carried row keeps the origin date it came with. Restamping
+        # it here would walk the date forward one invocation at a time until a
+        # month-old result claimed to be from tonight.
+        [[ "$ROW_DETAIL" == *"[carried from "* ]] ||
+            ROW_DETAIL="$ROW_DETAIL [carried from $PREV_DATE]"
+        return
+    fi
+    ROW_STATUS="NOTRUN"
+    ROW_DETAIL="never reached"
+}
+
 write_summary() {
-    local summary_file="$RR_DIR/summary.txt" suite failed=0 notrun=0
+    local summary_file="$RR_DIR/summary.txt" suite failed=0 notrun=0 carried=0
 
     {
         echo "Release Readiness Root Batch"
@@ -1031,11 +1065,17 @@ write_summary() {
         echo ""
         printf "%-14s %-8s %s\n" "Suite" "Status" "Detail"
         printf "%-14s %-8s %s\n" "-----" "------" "------"
-        for suite in "${DISPLAY_SUITES[@]}"; do
-            printf "%-14s %-8s %s\n" "$suite" \
-                "${SUITE_STATUS[$suite]:-NOTRUN}" \
-                "${SUITE_DETAIL[$suite]:-never reached}"
+        for suite in "${ALL_DISPLAY_SUITES[@]}"; do
+            resolve_row "$suite"
+            printf "%-14s %-8s %s\n" "$suite" "$ROW_STATUS" "$ROW_DETAIL"
         done
+        echo ""
+        echo "Rows marked [carried from ...] were NOT run by this invocation."
+        echo "They are the previous summary's rows, kept so a --only run does"
+        echo "not publish a one-row table that reads as though nothing else"
+        echo "was ever validated. Only the suites on the Suites: line above"
+        echo "were exercised against the binary named above, and only those"
+        echo "decided this run's exit code."
         echo ""
         echo "Logs: $RR_DIR/<suite>.log"
     } > "$summary_file"
@@ -1049,16 +1089,32 @@ write_summary() {
     printf "  ${BOLD}%-14s %-8s${NC} %s\n" "Suite" "Status" "Detail"
     printf "  %-14s %-8s %s\n" "-----" "------" "------"
 
-    for suite in "${DISPLAY_SUITES[@]}"; do
-        local status="${SUITE_STATUS[$suite]:-NOTRUN}"
-        local detail="${SUITE_DETAIL[$suite]:-never reached}"
+    for suite in "${ALL_DISPLAY_SUITES[@]}"; do
+        resolve_row "$suite"
         local colour="$GREEN"
-        case "$status" in
-            FAIL)   colour="$RED";    failed=$((failed + 1)) ;;
-            NOTRUN) colour="$YELLOW"; notrun=$((notrun + 1)) ;;
+        case "$ROW_STATUS" in
+            FAIL)   colour="$RED" ;;
+            NOTRUN) colour="$YELLOW" ;;
         esac
-        printf "  ${colour}%-14s %-8s${NC} %s\n" "$suite" "$status" "$detail"
+        # Carried rows are dimmed and never coloured green: whatever they say,
+        # this run did not witness it.
+        if [[ "$ROW_CARRIED" == true ]]; then
+            colour="$YELLOW"
+            carried=$((carried + 1))
+        else
+            case "$ROW_STATUS" in
+                FAIL)   failed=$((failed + 1)) ;;
+                NOTRUN) notrun=$((notrun + 1)) ;;
+            esac
+        fi
+        printf "  ${colour}%-14s %-8s${NC} %s\n" "$suite" "$ROW_STATUS" "$ROW_DETAIL"
     done
+
+    if [[ $carried -gt 0 ]]; then
+        echo ""
+        echo -e "  ${YELLOW}$carried row(s) carried from $PREV_DATE and not run tonight.${NC}"
+        echo -e "  ${YELLOW}They did not affect this run's exit code.${NC}"
+    fi
 
     echo ""
     echo -e "  Summary:  ${CYAN}$summary_file${NC}"
@@ -1067,8 +1123,20 @@ write_summary() {
 
     # A suite that did not run is not a suite that passed, and the exit code
     # says so. Anything other than all-PASS is a non-zero exit.
+    #
+    # Carried rows are excluded from both counters above, so a --only run that
+    # passes still exits 0. That is deliberate and it is why the success line
+    # below names what actually ran: "Every suite passed" printed after a
+    # one-suite run is the same lie this whole mechanism exists to stop.
     if [[ $failed -eq 0 && $notrun -eq 0 ]]; then
-        echo -e "${GREEN}Every suite passed.${NC}"
+        if [[ $carried -gt 0 ]]; then
+            echo -e "${GREEN}Every suite this run selected passed:" \
+                    "${SELECTED_SUITES[*]}.${NC}"
+            echo -e "${YELLOW}This is not a full-batch result. $carried row(s)" \
+                    "above were carried, not run.${NC}"
+        else
+            echo -e "${GREEN}Every suite passed.${NC}"
+        fi
         return 0
     fi
     if [[ $failed -gt 0 ]]; then
@@ -1128,6 +1196,38 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 mkdir -p "$RR_DIR"
+
+# Read the outgoing summary before deleting it, so a --only run can carry the
+# suites it did not touch instead of publishing a table with one row in it.
+#
+# Three times on 2026-08-28 a summary said something its own directory
+# contradicted. A --only cross-distro run that was interrupted left
+# "Suites: cross-distro / NOTRUN", which reads as "nothing was validated" when
+# five suites had passed hours earlier with their logs alongside it; and a
+# single-distro GUI re-run overwrote a six-distro table with one arch row. Each
+# time the conclusion drawn from the summary was the opposite of the truth.
+#
+# Carried rows are marked and are NEVER counted toward the exit code: the gate
+# still speaks only for what this invocation ran. Making the table readable must
+# not make it authoritative about work it did not do.
+read_previous_summary() {
+    local file="$RR_DIR/summary.txt" line suite status detail
+    [[ -f "$file" ]] || return 0
+    PREV_DATE=$(sed -n 's/^Date:[[:space:]]*//p' "$file" | head -1)
+    [[ -n "$PREV_DATE" ]] || PREV_DATE="an undated earlier run"
+    while IFS= read -r line; do
+        suite=$(awk '{print $1}' <<< "$line")
+        case " ${SUITE_ORDER[*]} rollback-booted " in
+            *" $suite "*) ;;
+            *) continue ;;
+        esac
+        status=$(awk '{print $2}' <<< "$line")
+        detail=$(awk '{$1=""; $2=""; sub(/^ +/, ""); print}' <<< "$line")
+        PREV_STATUS[$suite]="$status"
+        PREV_DETAIL[$suite]="$detail"
+    done < "$file"
+}
+read_previous_summary
 
 # summary.txt is written only when a traversal completes, so a run interrupted
 # at hour three would otherwise leave the PREVIOUS run's summary sitting beside
