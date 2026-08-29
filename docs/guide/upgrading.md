@@ -211,7 +211,8 @@ Fixed in **1.5.1**.
 
 ## 1.5.1 and earlier: the package and the project are renamed
 
-**Affects** everyone, and it needs no action from you.
+**Affects** everyone, and **it needs one action from you**: installing the new
+package. This line said "no action" until 2026-08-29 and was wrong.
 
 The project answered to two names. The repository and the package were
 `linux-system-hardener`; every path on your host, the systemd units, the polkit
@@ -244,6 +245,39 @@ Your package manager will then offer to remove `linux-system-hardener` as part
 of installing the new one. That is the rename working, not a mistake: the new
 package carries `replaces`/`conflicts` on Arch, `Replaces`/`Breaks` in the deb
 and `Obsoletes` in the rpm, and all three are honoured when you install it.
+Say yes; declining aborts the install rather than leaving you with both.
+
+### Back up `/etc/linux-hardener/config.toml` first if you edited it
+
+**On Arch only, and only if you changed that file.** Check before you upgrade:
+
+```bash
+pacman -Qii linux-system-hardener | grep -A2 'Backup Files'
+diff /etc/linux-hardener/config.toml \
+     /usr/share/doc/linux-system-hardener/config.toml.example
+```
+
+If `Backup Files` reads `None` and the `diff` shows changes, copy the file
+somewhere safe before upgrading:
+
+```bash
+sudo cp /etc/linux-hardener/config.toml ~/config.toml.bak
+```
+
+**Why.** The `backup=` array that tells pacman to preserve a modified
+configuration was added to the packaging *after* 1.5.1 was published, so the
+1.5.1 package on your host does not carry it while still owning that file. A
+package's own files are removed with it, and the protection that would normally
+turn a modified one into a `.pacsave` is exactly the thing that release is
+missing. Rather than assert what pacman does in that case, the cheap move is to
+have a copy.
+
+**Most people need not bother.** The file is installed as the shipped default
+and there is nothing in it you must change: the per-user configuration at
+`~/.config/linux-hardener/config.toml` overrides it, and neither that file nor
+`hosts.toml` is owned by any package, so an upgrade cannot touch either. Every
+release from 1.6.0 onward carries `backup=`, so this applies to crossing 1.5.1
+and to nothing after it.
 
 **What that metadata does not do is find you.** An upgrade sweep reads it from
 a *repository*, and there is no repository serving this project on any
