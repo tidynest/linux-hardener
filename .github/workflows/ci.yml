@@ -247,6 +247,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y openssh-server
+          # The privilege-separation directory sshd -t requires. It is
+          # created by the service starting, which a fresh install never
+          # does, and without it every `sshd -t` fails with "Missing
+          # privilege separation directory: /run/sshd" - which the plugin's
+          # apply validation reads as a failed change.
+          sudo mkdir -p /run/sshd
 
       - name: Cache cargo registry
         uses: actions/cache@v4
