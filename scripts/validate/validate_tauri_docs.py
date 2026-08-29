@@ -12,6 +12,22 @@ Exit codes:
 Checks:
     - commands.rs Tauri commands match file-map.md documentation
     - tauri_bindings.rs invoke calls match actual command names
+    - every command is registered in all three places that must know about it
+
+Why the third check exists
+--------------------------
+Adding a Tauri command means editing four files, and this check read one of
+them. `commands.rs` defines the handler, `main.rs` lists it in
+`generate_handler!`, `build.rs` names it in COMMANDS, and
+`capabilities/default.json` grants `allow-<command>`. The last is the
+per-command ACL from SAM-039; without it Tauri denies the call.
+
+A command defined, bound and documented but absent from the capabilities file
+therefore passed every check here and failed only when a user clicked the
+thing. Nothing compared the four lists. They agree today, at 32 commands
+each, which is what makes this the right moment to pin them: a check added
+while the tree is clean states a property, where one added during an outage
+only reproduces a bug.
 """
 
 import re
@@ -157,6 +173,51 @@ def parse_documented_commands(root: Path) -> dict[str, dict]:
     return commands
 
 
+def parse_registrations(root: Path) -> dict[str, tuple[set[str], str]]:
+    """Every command name each registration site names, keyed by site.
+
+    Returned as a set per site rather than a merged verdict so a disagreement
+    can say which file is missing which name. The value carries the remedy,
+    because knowing `foo` is absent from `build.rs` is not the same as knowing
+    what to type.
+
+    A site whose pattern matches nothing yields an empty set, and main() treats
+    that as a failure rather than as a site that agreed: three empty sets and
+    an empty command list would otherwise be perfect agreement about nothing.
+    """
+    tauri = root / "src-tauri"
+
+    handler = re.search(
+        r"generate_handler!\[(.*?)\]", (tauri / "src" / "main.rs").read_text(), re.S
+    )
+    registered = set(re.findall(r"\b(\w+)\b", handler.group(1))) if handler else set()
+
+    commands = re.search(
+        r"COMMANDS[^=]*=\s*&?\[(.*?)\]", (tauri / "build.rs").read_text(), re.S
+    )
+    declared = set(re.findall(r'"([\w-]+)"', commands.group(1))) if commands else set()
+
+    # The ACL spells commands with hyphens: `allow-run-scan` for `run_scan`.
+    granted = {
+        permission.removeprefix("allow-").replace("-", "_")
+        for permission in re.findall(
+            r'"(allow-[\w-]+)"', (tauri / "capabilities" / "default.json").read_text()
+        )
+    }
+
+    return {
+        "src-tauri/src/main.rs": (registered, "add it to generate_handler!"),
+        "src-tauri/build.rs": (
+            {name.replace("-", "_") for name in declared},
+            "add it to COMMANDS",
+        ),
+        "src-tauri/capabilities/default.json": (
+            granted,
+            "grant allow-<command>, or Tauri denies the call at runtime",
+        ),
+    }
+
+
 def main():
     print(f"{BLUE}Validating Tauri command documentation...{NC}\n")
 
@@ -243,6 +304,32 @@ def main():
             print(f"    - {msg}")
     else:
         print(f"  {GREEN}✓ All {len(bindings)} bindings call valid commands{NC}")
+    print()
+
+    # Check 3: Every command is registered everywhere it has to be
+    print(f"{BLUE}Checking the three registration sites...{NC}")
+    registration_errors = []
+    for site, (names, remedy) in sorted(parse_registrations(root).items()):
+        if not names:
+            registration_errors.append(
+                f"{site}: nothing matched. The list moved or changed shape, so "
+                f"this site was compared against nothing"
+            )
+            continue
+        for missing in sorted(source_names - names):
+            registration_errors.append(f"{site}: '{missing}' is not registered, {remedy}")
+        for extra in sorted(names - source_names):
+            registration_errors.append(
+                f"{site}: registers '{extra}', which no #[tauri::command] defines"
+            )
+
+    if registration_errors:
+        has_errors = True
+        print(f"  {RED}Registration sites that disagree with commands.rs:{NC}")
+        for msg in registration_errors:
+            print(f"    - {msg}")
+    else:
+        print(f"  {GREEN}✓ All {len(source_names)} commands registered in all 3 sites{NC}")
     print()
 
     # Summary
