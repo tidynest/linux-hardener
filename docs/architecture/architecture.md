@@ -23,14 +23,18 @@ Linux Hardener is a modular security hardening tool for Linux systems, providing
 │                        User Interfaces                          │
 ├────────────────────┬──────────────────────┬─────────────────────┤
 │  CLI (hardener-cli)│  GUI (src-tauri)     │  Programmatic API   │
-│   └─ Scan          │   └─ Leptos + Tauri  │   └─ hardener-core  │
-│   └─ Apply         │   └─ Dashboard       │   └─ hardener-state │
-│   └─ Rollback      │   └─ Analysis        │                     │
-│   └─ Checkpoint    │   └─ Hardening       │                     │
-│   └─ Report        │   └─ Hosts           │                     │
-│   └─ Batch         │   └─ Fleet Apply     │                     │
-│                    │   └─ Scheduler       │                     │
-│                    │   └─ Settings        │                     │
+│   └─ Scan          │   └─ hardener-ui     │   └─ hardener-core  │
+│   └─ Apply         │      (Leptos + WASM) │   └─ hardener-state │
+│   └─ Rollback      │   └─ Dashboard       │   └─ hardener-types │
+│   └─ Checkpoint    │   └─ Analysis        │                     │
+│   └─ Report        │   └─ Hardening       │                     │
+│   └─ Batch         │   └─ Hosts           │                     │
+│   └─ Scope         │   └─ Fleet Apply     │                     │
+│   └─ Exception     │   └─ Scheduler       │                     │
+│   └─ History       │   └─ Settings        │                     │
+│   └─ Plugins       │                      │                     │
+│   └─ Daemon        │                      │                     │
+│   └─ Systemd       │                      │                     │
 └────────────────────┴──────────────────────┴─────────────────────┘
                               │
                               ▼
