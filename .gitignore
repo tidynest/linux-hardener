@@ -102,6 +102,14 @@ packaging/*.tar.zst
 mutants.out/
 mutants.out.old/
 
+# cargo-fuzz artefacts: the sanitizer builds, corpora and crash files. The
+# targets themselves are tracked; everything cargo-fuzz writes while running
+# is machine-local.
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/coverage/
+
 # Screenshot harness working output (scripts/screenshots). The harness itself is
 # tracked; what it assembles and writes is not. `serve/` is a copy of the built
 # frontend, `shots/` is regenerated on every run and lands in

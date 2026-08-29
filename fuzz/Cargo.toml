@@ -1,0 +1,32 @@
+[package]
+name = "hardener-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+hardener-common = { path = "../crates/hardener-common" }
+
+# Detached from the root workspace deliberately: cargo-fuzz builds with
+# nightly sanitizer flags the workspace's release profile (LTO, strip) has
+# no business inheriting, and the targets are not part of any shipped
+# artefact. `cargo fuzz run <target>` from this directory.
+[workspace]
+
+[[bin]]
+name = "config_directives"
+path = "fuzz_targets/config_directives.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vendor_path_for"
+path = "fuzz_targets/vendor_path_for.rs"
+test = false
+doc = false
+bench = false

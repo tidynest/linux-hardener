@@ -1,0 +1,6 @@
+# cargo-fuzz spawns plain `cargo` for the sanitizer build, and `-Zsanitizer`
+# is nightly-only: without this file the outer `cargo +nightly fuzz build`
+# resolves nightly for itself while the inner build falls back to the default
+# toolchain and fails with "1 nightly option were parsed".
+[toolchain]
+channel = "nightly"
