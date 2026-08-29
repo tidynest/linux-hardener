@@ -18,7 +18,9 @@ use libfuzzer_sys::fuzz_target;
 fuzz_target!(|path: &str| {
     match vendor_path_for(path) {
         Some(mapped) => {
-            let rest = path.strip_prefix("/etc/").expect("Some implies /etc/ prefix");
+            let rest = path
+                .strip_prefix("/etc/")
+                .expect("Some implies /etc/ prefix");
             assert!(!rest.is_empty(), "the directory itself maps to None");
             assert_eq!(mapped, format!("/usr/etc/{rest}"));
         }

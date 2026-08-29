@@ -32,7 +32,7 @@ const SSH_CONFIG_DIR: &str = "/etc/ssh";
 
 /// Where one directive's effective value comes from.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct EffectiveValue {
+pub struct EffectiveValue {
     /// The value sshd will use.
     pub value: String,
     /// The file supplying it.
@@ -41,7 +41,7 @@ pub(super) struct EffectiveValue {
 
 /// sshd_config as sshd processes it: the main file with each `Include`
 /// replaced, in place, by the files it names.
-pub(super) struct ResolvedConfig {
+pub struct ResolvedConfig {
     /// `(path, content)` in sshd's processing order. The main file
     /// contributes several entries once it is split at its Include lines.
     segments: Vec<(String, String)>,
@@ -52,7 +52,7 @@ impl ResolvedConfig {
     ///
     /// Only the global scope of each segment is consulted: a value inside a
     /// `Match` block applies to particular connections, not to the host.
-    pub(super) fn effective(&self, directive_name: &str) -> Option<EffectiveValue> {
+    pub fn effective(&self, directive_name: &str) -> Option<EffectiveValue> {
         self.first_value(directive_name, |_| true)
     }
 
@@ -65,7 +65,7 @@ impl ResolvedConfig {
     /// vendor fragment is still waiting underneath it. The question that
     /// decides whether the main file is a usable target is what would win
     /// without the fragment, which is this.
-    pub(super) fn effective_without(
+    pub fn effective_without(
         &self,
         directive_name: &str,
         ignored_path: &str,
@@ -95,6 +95,15 @@ impl ResolvedConfig {
                 })
             })
     }
+
+    /// Fuzz-only construction from raw segments, so the resolution order can
+    /// be held to first-wins without an executor: the targets under `fuzz/`
+    /// build configurations directly and ask `effective` what sshd would
+    /// read.
+    #[cfg(fuzzing)]
+    pub fn from_segments(segments: Vec<(String, String)>) -> Self {
+        Self { segments }
+    }
 }
 
 /// The `Include` patterns on a line, or `None` when it is not a live
@@ -102,7 +111,7 @@ impl ResolvedConfig {
 ///
 /// A commented line includes nothing. Multiple pathnames on one line are
 /// permitted and are processed left to right.
-fn include_patterns(line: &str) -> Option<Vec<String>> {
+pub fn include_patterns(line: &str) -> Option<Vec<String>> {
     let trimmed = line.trim();
     if trimmed.starts_with('#') {
         return None;
@@ -123,7 +132,7 @@ fn include_patterns(line: &str) -> Option<Vec<String>> {
 /// reintroduce the very false pass this module exists to remove. Character
 /// classes are deliberately unsupported and are reported by
 /// [`pattern_is_supported`] instead of being guessed at.
-fn glob_matches(pattern: &str, name: &str) -> bool {
+pub fn glob_matches(pattern: &str, name: &str) -> bool {
     let (pattern, name): (Vec<char>, Vec<char>) =
         (pattern.chars().collect(), name.chars().collect());
     let (mut p, mut n) = (0usize, 0usize);
@@ -154,7 +163,7 @@ fn glob_matches(pattern: &str, name: &str) -> bool {
 /// A glob(7) character class would need real parsing, and treating an
 /// unexpandable pattern as "matches nothing" would hide exactly the drop-in
 /// the caller is asking about, so such a pattern is refused instead.
-fn pattern_is_supported(pattern: &str) -> bool {
+pub fn pattern_is_supported(pattern: &str) -> bool {
     !pattern.contains('[') && !pattern.contains(']')
 }
 
@@ -176,7 +185,7 @@ fn relative_base(including_path: &str) -> Option<&'static str> {
 /// Absolute form of an include pattern, per sshd_config(5).
 ///
 /// `None` where the pattern is relative and its base cannot be determined.
-fn absolute_pattern(pattern: &str, including_path: &str) -> Option<PathBuf> {
+pub fn absolute_pattern(pattern: &str, including_path: &str) -> Option<PathBuf> {
     let path = Path::new(pattern);
     if path.is_absolute() {
         return Some(path.to_path_buf());

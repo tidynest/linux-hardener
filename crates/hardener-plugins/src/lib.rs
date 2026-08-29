@@ -37,6 +37,15 @@ pub(crate) mod shell_config;
 pub mod ssh;
 pub(crate) mod strictness;
 
+/// Re-exports for the fuzz targets under `fuzz/`, and for nothing else.
+///
+/// cargo-fuzz builds the whole graph with `--cfg fuzzing`, and only such a
+/// build compiles this module: the parsers it exposes stay unreachable from
+/// every other consumer, so the crate's public surface is unchanged where it
+/// ships. See the module's own docs for why these parsers are worth fuzzing.
+#[cfg(fuzzing)]
+pub mod fuzz_seams;
+
 pub use scan_outcome::{failed_scan, plugin_inventory};
 
 /// Common rollback helper for plugins.

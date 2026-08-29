@@ -10,6 +10,11 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 hardener-common = { path = "../crates/hardener-common" }
+# For the parser targets: the seams compile only under cargo-fuzz's
+# `--cfg fuzzing`, which this crate's builds always carry.
+hardener-plugins = { path = "../crates/hardener-plugins" }
+# For ChangeType, read in the pam target's assertions.
+hardener-core = { path = "../crates/hardener-core" }
 
 # Detached from the root workspace deliberately: cargo-fuzz builds with
 # nightly sanitizer flags the workspace's release profile (LTO, strip) has
@@ -20,6 +25,27 @@ hardener-common = { path = "../crates/hardener-common" }
 [[bin]]
 name = "config_directives"
 path = "fuzz_targets/config_directives.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nftables_include_line"
+path = "fuzz_targets/nftables_include_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pam_stack_parsing"
+path = "fuzz_targets/pam_stack_parsing.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ssh_include_resolution"
+path = "fuzz_targets/ssh_include_resolution.rs"
 test = false
 doc = false
 bench = false

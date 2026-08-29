@@ -5,6 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+# `fuzzing` is set by cargo-fuzz for every crate in its build graph, and the
+# crate's fuzz-seam module compiles only under it. Declaring it here keeps
+# `unexpected_cfgs` strict about every other name while accepting this one.
+[lints.rust]
+unexpected_cfgs = { level = "deny", check-cfg = ['cfg(fuzzing)'] }
+
 [dependencies]
 hardener-common = { path = "../hardener-common" }
 hardener-core   = { path = "../hardener-core" }

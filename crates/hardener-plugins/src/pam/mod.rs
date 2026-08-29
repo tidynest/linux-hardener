@@ -9,13 +9,14 @@ mod apply;
 mod assess;
 mod layer_drift;
 mod login_defs;
+// pub(crate) so the crate's fuzz-seam can re-export the pure parsing
+// halves; every other consumer meets them through the readers below.
+pub(crate) mod parsing;
 mod validate;
 
 use crate::strictness::Strictness;
 use async_trait::async_trait;
-use hardener_common::file_utils::{
-    ConfigFormat, Duplicates, parse_config_value, set_config_directive,
-};
+use hardener_common::file_utils::{ConfigFormat, parse_config_value};
 use hardener_common::{
     error::{HardeningError, Result},
     types::{ComplianceFramework, ComplianceMapping, FindingCategory, PluginId, Severity},
@@ -1223,11 +1224,7 @@ async fn read_module_presence(ctx: &Context, conf_path: &str) -> ModulePresence 
         match read_conf_classified(ctx, file).await {
             ConfRead::Content(content, _) => {
                 read_one = true;
-                if content
-                    .lines()
-                    .map(str::trim)
-                    .any(|line| !line.starts_with('#') && line.contains(module))
-                {
+                if parsing::stack_loads_module(&content, module) {
                     return ModulePresence::InStack;
                 }
             }
@@ -1284,21 +1281,12 @@ async fn read_pamd_inline(ctx: &Context, conf_path: &str, arg: &str) -> InlineRe
                 continue;
             }
         };
-        for line in content.lines() {
-            let line = line.trim();
-            if line.starts_with('#') || !line.contains(module) {
-                continue;
-            }
-            if let Some(value) = line
-                .split_whitespace()
-                .find_map(|tok| tok.strip_prefix(arg).and_then(|r| r.strip_prefix('=')))
-            {
-                // A value actually seen is the answer even if another candidate
-                // was unreadable: the list is a set of alternatives, not a
-                // precedence chain, so finding one settles that an inline
-                // override exists and what it says.
-                return InlineRead::Value(value.to_string());
-            }
+        // A value actually seen is the answer even if another candidate
+        // was unreadable: the list is a set of alternatives, not a
+        // precedence chain, so finding one settles that an inline
+        // override exists and what it says.
+        if let Some(value) = parsing::inline_arg_in_content(&content, module, arg) {
+            return InlineRead::Value(value.to_string());
         }
     }
     match unread {
@@ -1797,65 +1785,6 @@ async fn observed_pam_value(
             }
         }
     }
-}
-
-/// State-aware exact-match apply for a config held in memory: mutates `content`
-/// and records a real change when the file's current value differs from the
-/// target, when the file defines the key more than once, or when the line
-/// holding an already-correct value needs its separator repaired in place;
-/// anything else records a Skipped no-op instead. The third case means the
-/// count this produces is not always a count of hardening successes, since a
-/// cosmetic repair reports the same as a load-bearing one. `format` is the
-/// syntax the file accepts, which is the caller's to know: writing a
-/// directive in a syntax its file does not parse leaves the insecure value in
-/// force.
-fn apply_exact_directive(
-    content: &mut String,
-    changed: &mut bool,
-    changes: &mut Vec<Change>,
-    name: &str,
-    target: &str,
-    format: ConfigFormat,
-    file_label: &str,
-) {
-    let current = parse_config_value(content, name, ConfigFormat::Auto, true);
-    let updated = set_config_directive(content, name, target, format, true, Duplicates::Remove);
-    // A correct value alone is not enough to leave the file alone: these files
-    // take one definition per key, and an earlier release appended a second
-    // one in a syntax they do not parse. Skipping on the value would leave that
-    // repair undone on every run, so the file never converges. With the value
-    // already correct the writer can still rewrite a line where it stands,
-    // repair the syntax of that line, or drop a duplicate, and only comparing
-    // the lines themselves tells "nothing to do" apart from all three: a
-    // repaired line leaves the count of lines exactly as it was, which is how a
-    // file whose only definition is the appended one stayed broken and green.
-    // Blank lines are excluded. The reason they had to be is gone: the writer
-    // dropped the file's terminator, so a compliant file came back one byte
-    // short, read as a change, and was rewritten on every run. The writer
-    // terminates its output now and that hazard is closed. The filter stays
-    // because the comparison it serves is about directive lines rather than
-    // layout, and a run that only moved a blank line still has nothing to say.
-    fn lines_with_text(text: &str) -> Vec<&str> {
-        text.lines().filter(|l| !l.trim().is_empty()).collect()
-    }
-    if current.as_deref() == Some(target) && lines_with_text(&updated) == lines_with_text(content) {
-        changes.push(Change {
-            change_type: ChangeType::Skipped,
-            change_description: format!("{} already set to {} in {}", name, target, file_label),
-            change_success: true,
-            change_error: None,
-        });
-        return;
-    }
-
-    *content = updated;
-    *changed = true;
-    changes.push(Change {
-        change_type: ChangeType::ConfigFile,
-        change_description: format!("Set {} = {} in {}", name, target, file_label),
-        change_success: true,
-        change_error: None,
-    });
 }
 
 /// Backs up `path` and writes `content` to it, recording the backup outcome

@@ -269,22 +269,35 @@ async fn ensure_include_line(ctx: &Context, boot_path: &str) -> Result<()> {
         })?,
     };
 
-    if existing
-        .lines()
-        .any(|line| line.trim() == HARDENER_INCLUDE_LINE)
-    {
+    let appended = with_include_line(&existing, HARDENER_INCLUDE_LINE);
+    if appended == existing {
         return Ok(());
+    }
+    ctx.executor()
+        .write_file(path, &appended)
+        .await
+        .map_err(|e| HardeningError::Plugin(format!("Failed to append to {boot_path}: {e}")))
+}
+
+/// The content `ensure_include_line` would leave in place: unchanged when a
+/// live include line is already there, otherwise the same content with
+/// exactly one include line appended behind a separator that keeps the
+/// existing final line intact.
+///
+/// Pure, and `pub` for one consumer: the fuzz target under `fuzz/`, which
+/// holds it to the two properties an append-to-remote-file has to keep
+/// (idempotence, and never losing a byte of what was already there). Every
+/// in-tree caller reaches it through `ensure_include_line`.
+pub fn with_include_line(existing: &str, include_line: &str) -> String {
+    if existing.lines().any(|line| line.trim() == include_line) {
+        return existing.to_string();
     }
 
     let separator = match existing.is_empty() || existing.ends_with('\n') {
         true => "",
         false => "\n",
     };
-    let appended = format!("{existing}{separator}{HARDENER_INCLUDE_LINE}\n");
-    ctx.executor()
-        .write_file(path, &appended)
-        .await
-        .map_err(|e| HardeningError::Plugin(format!("Failed to append to {boot_path}: {e}")))
+    format!("{existing}{separator}{include_line}\n")
 }
 
 /// Nftables firewall backend for modern Linux systems.

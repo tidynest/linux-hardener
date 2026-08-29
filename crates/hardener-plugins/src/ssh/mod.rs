@@ -14,7 +14,9 @@ mod apply;
 mod assess;
 mod divergence;
 mod dropin;
-mod include;
+// pub(crate) so the crate's fuzz-seam module can re-export the include
+// parsers; every other consumer meets them through scan, apply and validate.
+pub(crate) mod include;
 mod validate;
 
 /// Where an administrator's sshd_config lives. Not necessarily where the one

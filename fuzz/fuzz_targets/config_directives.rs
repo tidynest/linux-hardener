@@ -36,7 +36,8 @@ fn split(data: &[u8]) -> (&[u8], &[u8]) {
 
 fn simple(s: &str) -> bool {
     !s.is_empty()
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 fuzz_target!(|data: &[u8]| {
@@ -60,11 +61,7 @@ fuzz_target!(|data: &[u8]| {
     // boundary (or the whole content when no live Match line exists).
     let scope = global_scope(&content);
     assert!(content.starts_with(scope));
-    assert!(
-        scope.is_empty()
-            || scope.len() == content.len()
-            || scope.ends_with('\n')
-    );
+    assert!(scope.is_empty() || scope.len() == content.len() || scope.ends_with('\n'));
 
     // Reading arbitrary content for arbitrary directive names must not
     // panic whatever the flags. `get` rather than slicing: three flag bytes
@@ -74,9 +71,8 @@ fuzz_target!(|data: &[u8]| {
         let _ = parse_config_value(&content, name, format, case_sensitive);
 
         if simple(name) && simple(value) {
-            let written = set_config_directive(
-                &content, name, value, format, case_sensitive, duplicates,
-            );
+            let written =
+                set_config_directive(&content, name, value, format, case_sensitive, duplicates);
             // Invariant: the result is always newline-terminated.
             assert!(written.ends_with('\n'));
             // Invariant: what was set can be read back, in the written

@@ -6,11 +6,12 @@
 //! inline override there is reported as a manual action, never written.
 //! The trait method in `mod.rs` delegates here.
 
+use super::parsing::apply_exact_directive;
 use super::{
     ConfRead, InlineRead, ModulePresence, PAM_BACKED_UP_FILES, PAM_DIRECTIVES, PamConfigFile,
-    PamHardeningPlugin, apply_exact_directive, backup_and_write, clamped_baseline,
-    conf_is_writable, module_not_loaded_message, module_presence_by_file, observed_pam_value,
-    pam_backup_prefix, read_conf_classified, read_pamd_inline, write_changed_conf,
+    PamHardeningPlugin, backup_and_write, clamped_baseline, conf_is_writable,
+    module_not_loaded_message, module_presence_by_file, observed_pam_value, pam_backup_prefix,
+    read_conf_classified, read_pamd_inline, write_changed_conf,
 };
 
 use hardener_common::error::Result;
