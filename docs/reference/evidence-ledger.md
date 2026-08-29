@@ -38,7 +38,7 @@ them; do not copy a figure from an older document.
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 63 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 29 validations passed |
 | Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2356 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2356 across 336 files |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2356 across 338 files |
 
 Three of these rows are re-derived from the tree on every `validate_all.py` run
 by `scripts/validate/validate_test_counts.py`: the annotation count, the

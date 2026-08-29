@@ -10,14 +10,14 @@ Exit codes:
     1: Discrepancies found
 
 Checks:
-    - commands.rs Tauri commands match file-map.md documentation
+    - Tauri commands across the `commands/` tree match file-map.md documentation
     - tauri_bindings.rs invoke calls match actual command names
     - every command is registered in all three places that must know about it
 
 Why the third check exists
 --------------------------
 Adding a Tauri command means editing four files, and this check read one of
-them. `commands.rs` defines the handler, `main.rs` lists it in
+them. The `commands/` tree defines the handler, `main.rs` lists it in
 `generate_handler!`, `build.rs` names it in COMMANDS, and
 `capabilities/default.json` grants `allow-<command>`. The last is the
 per-command ACL from SAM-039; without it Tauri denies the call.
@@ -239,7 +239,7 @@ def main():
     bindings = parse_tauri_bindings(root)
     documented_commands = parse_documented_commands(root)
 
-    print(f"Found {GREEN}{len(source_commands)}{NC} Tauri commands in commands.rs:")
+    print(f"Found {GREEN}{len(source_commands)}{NC} Tauri commands in the commands tree:")
     for name, info in sorted(source_commands.items()):
         args = ", ".join(f"{a['name']}: {a['type']}" for a in info['args'])
         print(f"  - {name}({args}) -> {info['return_type']}")
@@ -305,7 +305,7 @@ def main():
     for fn_name, invoked_cmd in bindings.items():
         if invoked_cmd not in source_commands:
             binding_errors.append(
-                f"{fn_name}() calls '{invoked_cmd}' which doesn't exist in commands.rs"
+                f"{fn_name}() calls '{invoked_cmd}' which doesn't exist in the commands tree"
             )
 
     if binding_errors:
@@ -336,7 +336,7 @@ def main():
 
     if registration_errors:
         has_errors = True
-        print(f"  {RED}Registration sites that disagree with commands.rs:{NC}")
+        print(f"  {RED}Registration sites that disagree with the commands tree:{NC}")
         for msg in registration_errors:
             print(f"    - {msg}")
     else:

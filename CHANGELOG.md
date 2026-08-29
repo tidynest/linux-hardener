@@ -30,9 +30,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over the SSH executor, which is input the operator does not control. The
   targets assert the parsers' documented invariants, not only survival, and
   CI builds them on nightly so they cannot silently rot.
+- **Three more fuzz targets cover the parsers that read remote hosts, which
+  was the case that motivated fuzzing here at all.** The first two targets
+  fuzzed the write-path directive parsers and the `/usr/etc` mapping; the
+  sshd_config include resolution, the PAM stack lines and the nftables
+  include append all consume content that arrives over the SSH executor,
+  input the operator does not control, and none was reachable by a target.
+  The new ones assert the semantics each parser exists to keep: first-wins
+  over sshd's include order and the structural facts of the glob matcher,
+  comment decoys and whole-token `arg=` matching in PAM stacks plus the
+  conffile writer's convergence, and the include append's idempotence and
+  refusal to lose a byte of the distribution's own boot file. The parsers
+  are re-exported through a `cfg(fuzzing)`-gated seam, so the crate's
+  public surface is unchanged in every build that ships, and each target's
+  invariants also run on fixed inputs in a plain test beside them, because
+  CI builds the targets and never runs them.
 
 ### Changed
 
+- **CI and the release workflow run `cargo test --workspace` as one
+  invocation, GUI crates included.** The Test job excluded them and the
+  Desktop job tested the desktop crate against its own selection, so the
+  unified feature graph, the one build a developer runs locally, was
+  executed by no job: two green jobs each covered a slice and the
+  combination was covered by neither, which is precisely the build in
+  which a test-support or feature-gating mistake surfaces. The Test job
+  installs the GTK libraries and builds the frontend bundle to get there;
+  the Desktop job keeps its unique work, check and clippy, dropping its
+  `-p` test step as subsumed; and the release workflow's test job, which
+  already carried every prerequisite, runs the single invocation too.
 - **The mock executor no longer compiles into release binaries.** It is
   feature-gated behind `test-support`, which the workspace's
   dev-dependencies enable, so every test build keeps it while `cargo build
@@ -67,6 +93,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`validate_tauri_docs.py` no longer says the commands live in
+  `commands.rs`.** The validator has read the `commands/` tree since the
+  split; its banner, its error messages and its docstrings still named the
+  file that no longer exists.
 - **`scan --format json` has carried `scan_success` and `scan_error` on every
   entry since `685cf305` (2026-07-27), and the README's known limitations spent
   a month saying it did not.** The sentence was added at 10:02 that morning,
