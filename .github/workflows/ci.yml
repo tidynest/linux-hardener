@@ -143,6 +143,60 @@ jobs:
       - name: Check WASM compilation
         run: cargo check -p hardener-ui --target wasm32-unknown-unknown
 
+  # Compiles the desktop backend, which no other job in this file can: they
+  # all carry WORKSPACE_EXCLUDE for want of the GTK and WebKitGTK system
+  # libraries, so through late August 2026 a tree where `commands.rs` stopped
+  # compiling passed this workflow green, and only a developer's local
+  # `cargo clippy --workspace` stood in the gap. Installing those libraries
+  # here is the whole difference between this job and the exclude.
+  #
+  # The frontend bundle is built first, because `tauri::generate_context!`
+  # embeds `frontendDist` at compile time and a checkout carries no `dist/`
+  # (Trunk generates it, and it is gitignored): without this step the check
+  # fails with `frontendDist ... doesn't exist`, which is how the job's need
+  # for it was established rather than assumed. Building the real bundle
+  # rather than stubbing the directory also gives CI its only execution of
+  # `trunk build`, which the wasm-check job's `cargo check` does not
+  # exercise.
+  desktop-check:
+    name: Desktop Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+
+      - name: Install trunk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-desktop-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-desktop-cargo-
+
+      - name: Build the frontend bundle the backend embeds
+        run: trunk build --release
+        working-directory: crates/hardener-ui
+
+      - name: Check the desktop backend
+        run: cargo check -p linux-hardener-desktop --all-targets
+
   # Builds on the version `rust-version` declares, which no other job does: every
   # one of them installs @stable, so a tree that quietly starts requiring a newer
   # release compiles everywhere in CI and fails only for the person on the floor.
