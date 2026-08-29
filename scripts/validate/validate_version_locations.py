@@ -106,6 +106,12 @@ UNREGISTERED_OK = {
     "gui-tests/package.json": "npm manifest, unrelated to the release version",
     "scripts/badges/package.json": "npm manifest for the badge generator",
     "scripts/badges/package-lock.json": "npm lockfile",
+    # The fuzz crate is deliberately version 0.0.0 and never published; the
+    # 1.7.0 shapes in both files are the hardener-common dependency it
+    # path-references, carried from the workspace, not version sites anyone
+    # bumps on release.
+    "fuzz/Cargo.toml": "fuzz crate, version 0.0.0 by design, markers are dependency paths",
+    "fuzz/Cargo.lock": "fuzz crate lockfile, generated",
 }
 
 
