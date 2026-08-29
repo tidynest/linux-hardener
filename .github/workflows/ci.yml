@@ -237,6 +237,17 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # The SSH root test's apply path validates the hardened configuration
+      # through the sshd binary. Stock runners carry the client only, so
+      # without the server package every change reports failed and the test
+      # panics at "All changes should succeed with root privileges" - the
+      # same precondition the distro containers satisfy for the cross-distro
+      # suite. The postinst generates the host keys the validator reads.
+      - name: Install openssh-server for the SSH root test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
