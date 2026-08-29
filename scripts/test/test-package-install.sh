@@ -151,8 +151,16 @@ install -Dm644 "$PROJECT_DIR/packaging/assets/config.toml.example" \
     /etc/linux-hardener/config.toml
 log_pass "Installed config.toml"
 
-# State and log directories
-install -dm755 /var/lib/linux-hardener
+# State and log directories.
+#
+# These modes are a hand-kept THIRD copy of the packaging: PKGBUILD, the rpm
+# spec and debian/rules all state them, and this file mirrors PKGBUILD's
+# package() so the container can be populated without building a package. Both
+# halves live here, the install and the check below, so they agree with each
+# other whatever the real packaging says. 0700 for /var/lib went into the three
+# real packagings on 2026-08-29 and not into this mirror, and the suite kept
+# passing against 755: a copy that validates itself.
+install -dm700 /var/lib/linux-hardener
 install -dm700 /var/log/linux-hardener
 log_pass "Created state/log directories"
 
@@ -169,7 +177,7 @@ check_file /usr/share/applications/linux-hardener.desktop 644
 check_file /usr/share/man/man1/hardener.1 644
 check_file /usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy 644
 check_file /etc/linux-hardener/config.toml 644
-check_dir  /var/lib/linux-hardener 755
+check_dir  /var/lib/linux-hardener 700
 check_dir  /var/log/linux-hardener 700
 
 if [[ -x /usr/bin/linux-hardener-desktop ]]; then
