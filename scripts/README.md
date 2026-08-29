@@ -741,10 +741,10 @@ Validating facts stated in more than one document...
     OK docs/reference/distribution-validation.md agrees at 42
     OK docs/reference/file-map.md agrees at 42
     OK scripts/README.md agrees at 42
-  registered sites: the tree says 25
+  registered sites: the tree says 26
     OK scripts/README.md agrees at 25
 
-All 25 registered sites agree with their source
+All 26 registered sites agree with their source
   Dated readings are deliberately not registered.
 ```
 

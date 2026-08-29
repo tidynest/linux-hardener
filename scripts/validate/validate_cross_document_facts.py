@@ -519,6 +519,16 @@ REGISTRY = [
                 "recorded the new count, which is the correct reading of that "
                 "state rather than an inconvenience",
             ),
+            (
+                "README.md",
+                r"driven by the (\d+)-case Playwright suite",
+                "the screenshot caption, which cites the suite as its warrant "
+                "for the images being reproducible. Unregistered until "
+                "2026-08-29, and it had rotted to 165 against a tree of 171 by "
+                "the time v1.6.0 was cut. The other four sites all agreed, "
+                "which is exactly why nobody looked: a fact can be checked in "
+                "four documents and stale in the one most people read",
+            ),
         ],
     ),
     (
