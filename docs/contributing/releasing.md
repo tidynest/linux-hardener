@@ -165,12 +165,15 @@ achieved, and the published count fell 86 tests behind across several releases.
 ./scripts/release/release.sh --verify
 ```
 
-Compares the workspace version in `Cargo.toml` against three files and no
+Compares the workspace version in `Cargo.toml` against six files and no
 others: `docs/architecture/architecture.md` (`**Version:**`),
-`packaging/assets/hardener.1` (the `.TH` header) and
-`src-tauri/tauri.conf.json`. No changes are made. The packaging versions listed
-further down (`PKGBUILD`, the RPM spec, `debian/changelog`) are **not** checked
-here and are not touched by the release script at all.
+`packaging/assets/hardener.1` (the `.TH` header),
+`src-tauri/tauri.conf.json`, `packaging/linux-hardener.spec` (`Version:`),
+`packaging/debian/changelog` (the top stanza) and `docs/NEXT.md` (the
+`**Current Version**` marker). No changes are made. `PKGBUILD` and
+`.SRCINFO` are **not** checked here and are not touched by the release
+script at all: they track the published AUR package, not the workspace
+version.
 
 `./scripts/release/release.sh --help` prints the full option list.
 
@@ -326,19 +329,22 @@ Version is defined in the workspace root and inherited by all crates:
 | `scripts/badges/generate.js` | `version` `message` | Badge declaration | Yes, step 3c |
 | `docs/assets/badges/version.svg` | rendered label | README version badge | Yes, step 3c |
 | `packaging/PKGBUILD` | `pkgver` (reset `pkgrel=1`) | Arch/AUR package version | No, manual |
-| `packaging/linux-hardener.spec` | `Version:` + `%changelog` | RPM package version | No, manual |
-| `packaging/debian/changelog` | top stanza `(X.Y.Z-1)` | Debian package version | No, manual |
+| `packaging/linux-hardener.spec` | `Version:` + `%changelog` | RPM package version | `Version:` yes, step 3d; `%changelog` manual |
+| `packaging/debian/changelog` | top stanza `(X.Y.Z-1)` | Debian package version | header yes, step 3d; bullets manual |
 | `scripts/badges/generate.js` | `aur` `message` | AUR badge declaration | No, manual, tracks `PKGBUILD` |
 | `docs/assets/badges/aur.svg` | rendered label | README AUR badge | No, manual, tracks `PKGBUILD` |
 | `SECURITY.md` | supported-versions table | Security policy | No, manual |
-| `docs/NEXT.md` | `**Current Version**:` and the opening prose | Working notes | No, manual |
+| `docs/NEXT.md` | `**Current Version**:` and the opening prose | Working notes | the number yes, step 3d; prose manual |
 | `docs/ROADMAP.md` | current-release prose | Working notes | No, manual |
 
-The three packaging files, the AUR badge pair and the three remaining manual
-markers (SECURITY.md's supported-versions table, `docs/NEXT.md` and
-`docs/ROADMAP.md`) are the ones a release forgets: nothing in `release.sh`
-writes them and `--verify` does not read them, so they drift silently until
-somebody installs the package or reads the wrong number.
+What remains manual is manual because it cannot be a version substitution:
+the AUR badge pair tracks `PKGBUILD` rather than the tag, SECURITY.md's
+supported-versions table is a table, and the prose in `docs/NEXT.md` and
+`docs/ROADMAP.md` says things a number cannot. The pure version strings in
+the spec, the debian stanza header and NEXT.md's marker are written by
+step 3d and read back by `--verify`, so they can no longer drift between
+two hand-edits; the `%changelog` stanza, the debian bullets and the prose
+still wait on the checklist below.
 
 The first four doc rows arrive through `update_all_docs.py`, which owns them
 (architecture.md, data-flow.md and README.md's `**Version**` markers, plus
@@ -398,12 +404,14 @@ document.
 Three phases, in order. The first is the one that used to be the whole list,
 and a release that stops there ships correct crates with stale packaging.
 
-Every item after the tag exists because nothing automates it: `release.sh` does
-not write the packaging files or the prose markers, and `--verify` does not read
-them, so they drift until somebody installs the package or reads the wrong
-number. The rows are the "No, manual" half of [Version
-Locations](#version-locations), which is the table to consult rather than this
-list when you want to know what holds a version string.
+Every item after the tag exists because nothing automates it: the AUR
+publish is a submission, the changelog stanzas and the prose markers need a
+human's sentences, and `PKGBUILD` moves only when the package does. (The
+pure version strings - the spec's `Version:`, the debian stanza header,
+NEXT.md's marker - are written by step 3d since 2026-08-29 and read back by
+`--verify`; the rows are the manual half of [Version
+Locations](#version-locations), which is the table to consult rather than
+this list when you want to know what holds a version string.)
 
 ### Before the tag
 
@@ -461,8 +469,10 @@ failing gate meant retracting a published tag rather than deleting a local one.
 ### After the tag, all by hand
 
 - [ ] `packaging/PKGBUILD`: bump `pkgver`, reset `pkgrel=1`
-- [ ] `packaging/linux-hardener.spec`: `Version:` and a new `%changelog` stanza
-- [ ] `packaging/debian/changelog`: new top stanza `(X.Y.Z-1)`
+- [ ] `packaging/linux-hardener.spec`: a new `%changelog` stanza (`Version:` was
+      already bumped by step 3d at the tag)
+- [ ] `packaging/debian/changelog`: fill the bullets of the top stanza step 3d
+      inserted with a TODO header
 - [ ] Publish to the AUR, following the note under [Version
       Locations](#version-locations). Read it before starting: while the
       one-time rename note stands, publishing is a **new submission** and not a
@@ -530,4 +540,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-08-29
+**Last Updated**: 2026-08-30

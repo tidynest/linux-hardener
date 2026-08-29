@@ -58,6 +58,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`release.sh` writes the three packaging version strings that were
+  hand-edited at every release through v1.7.0.** The RPM spec's `Version:`
+  field, the debian changelog's top stanza header and `docs/NEXT.md`'s
+  `Current Version` marker hold nothing but the version, and each was typed
+  by hand while nine other files moved mechanically - the shape of drift
+  where a number is right everywhere a check reads it and wrong in the one
+  place a package builds from. Step 3d rewrites the spec field and the
+  marker, inserts the new debian stanza header (append-only: the previous
+  stanza is history, not an edit target) with the maintainer and date from
+  the packaging itself, and asserts every substitution matched exactly once;
+  `--verify` reads all three back. Deliberately not automated: `PKGBUILD`
+  and `.SRCINFO`, which are the authority for the AUR badge and move only
+  when that package does, and the `%changelog` stanza and debian bullets,
+  which need a human's sentences.
 - **CI and the release workflow run `cargo test --workspace` as one
   invocation, GUI crates included.** The Test job excluded them and the
   Desktop job tested the desktop crate against its own selection, so the
@@ -7876,4 +7890,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-08-29
+**Last Updated**: 2026-08-30

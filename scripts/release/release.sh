@@ -69,6 +69,41 @@ verify_versions() {
         fi
     fi
 
+    # The three packaging version strings step 3d writes. Read back here so
+    # --verify covers what the release owns end to end; PKGBUILD and
+    # .SRCINFO stay out on purpose (they track the published AUR package,
+    # not the workspace version).
+    if [[ -f "packaging/linux-hardener.spec" ]]; then
+        local spec_version
+        spec_version=$(grep -m1 '^Version:' packaging/linux-hardener.spec | sed 's/^[^0-9]*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*$/\1/' || echo "NOT_FOUND")
+        if [[ "$spec_version" != "$cargo_version" ]]; then
+            all_match=false
+            mismatches+=("packaging/linux-hardener.spec: $spec_version")
+        fi
+    fi
+    if [[ -f "packaging/debian/changelog" ]]; then
+        local debian_version
+        debian_version=$(sed -n 's/^linux-hardener (\([0-9]\+\.[0-9]\+\.[0-9]\+\)-[0-9]\+.*$/\1/p' packaging/debian/changelog | head -1)
+        if [[ -z "$debian_version" ]]; then
+            debian_version="NOT_FOUND"
+        fi
+        if [[ "$debian_version" != "$cargo_version" ]]; then
+            all_match=false
+            mismatches+=("packaging/debian/changelog: $debian_version")
+        fi
+    fi
+    if [[ -f "docs/NEXT.md" ]]; then
+        local next_version
+        next_version=$(sed -n 's/.*\*\*Current Version\*\*: \([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' docs/NEXT.md | head -1)
+        if [[ -z "$next_version" ]]; then
+            next_version="NOT_FOUND"
+        fi
+        if [[ "$next_version" != "$cargo_version" ]]; then
+            all_match=false
+            mismatches+=("docs/NEXT.md: $next_version")
+        fi
+    fi
+
     # Report results
     echo -e "  Cargo.toml (workspace): ${GREEN}${cargo_version}${NC}"
 
@@ -76,6 +111,9 @@ verify_versions() {
         echo -e "  architecture.md:        ${GREEN}${cargo_version}${NC}"
         echo -e "  packaging/assets/hardener.1:        ${GREEN}${cargo_version}${NC}"
         echo -e "  tauri.conf.json:        ${GREEN}${cargo_version}${NC}"
+        echo -e "  linux-hardener.spec:    ${GREEN}${cargo_version}${NC}"
+        echo -e "  debian/changelog:       ${GREEN}${cargo_version}${NC}"
+        echo -e "  docs/NEXT.md:           ${GREEN}${cargo_version}${NC}"
         echo -e "\n${GREEN}✓ All version references match${NC}"
         return 0
     else
@@ -443,6 +481,93 @@ else
     exit 1
 fi
 
+# Step 3d: The packaging version strings that are pure version
+echo -e "\n${BLUE}Step 3d: Updating the packaging version strings...${NC}"
+# The three sites below were hand-edited at every release through v1.7.0,
+# which is how a number can be right in nine files and wrong in the tenth:
+# the spec's `Version:`, the debian stanza header and NEXT.md's marker hold
+# nothing but the version, so the release owns them now. What is NOT here is
+# deliberate: PKGBUILD and .SRCINFO are the authority for the aur badge and
+# move only when the AUR package does, and the spec's `%changelog` stanza and
+# the debian stanza's bullets are prose a human writes - the after-the-tag
+# checklist item is where.
+RELEASE_MODE="write"
+$DRY_RUN && RELEASE_MODE="check"
+STANZA_DATE=$(date -u '+%a, %d %b %Y %H:%M:%S +0000')
+python3 - "$RELEASE_MODE" "$NEW_VERSION" "$STANZA_DATE" <<'PYEOF' || exit 1
+import re, sys
+from pathlib import Path
+
+mode, version, stanza_date = sys.argv[1], sys.argv[2], sys.argv[3]
+
+# The debian stanza's trailer names the maintainer; control is the one
+# place the packaging already records it.
+maintainer = None
+for line in Path("packaging/debian/control").read_text().splitlines():
+    if line.startswith("Maintainer:"):
+        maintainer = line[len("Maintainer:"):].strip()
+        break
+if maintainer is None:
+    sys.exit("  packaging/debian/control: no Maintainer line to sign the new stanza")
+
+changed = []
+
+# The spec's own Version: field. Rewritten in place; the %changelog stanza
+# below it is prose and stays with the checklist.
+spec = Path("packaging/linux-hardener.spec")
+text, hits = re.subn(r'(?m)^(Version:\s*)[\d.]+', rf'\g<1>{version}', spec.read_text())
+if hits != 1:
+    sys.exit(f"  {spec}: expected exactly one Version: field, matched {hits}")
+changed.append(f"{spec}: Version -> {version}")
+
+# NEXT.md's marker: the leading number only. The parenthetical after it is
+# prose about what PKGBUILD holds, and that is the checklist's, not a sed's.
+nextmd = Path("docs/NEXT.md")
+next_text, next_hits = re.subn(
+    r'(\*\*Current Version\*\*:\s*)[\d.]+', rf'\g<1>{version}', nextmd.read_text()
+)
+if next_hits != 1:
+    sys.exit(f"  {nextmd}: expected exactly one Current Version marker, matched {next_hits}")
+changed.append(f"{nextmd}: marker -> {version}")
+
+# The debian changelog is append-only history: a new release adds a new top
+# stanza rather than editing the old one, because rewriting the previous
+# stanza's version would falsify what shipped. The header and trailer are
+# mechanical; the bullets are the checklist's. A retry after an unwind finds
+# the stanza already inserted and leaves it be.
+changelog = Path("packaging/debian/changelog")
+body = changelog.read_text()
+top = re.match(r'linux-hardener \(([\d.]+)-\d+\)', body)
+if top is None:
+    sys.exit(f"  {changelog}: no top stanza header to read")
+inserted = False
+if top.group(1) == version:
+    print(f"  {changelog}: top stanza already {version}; left as is")
+else:
+    stanza = (
+        f"linux-hardener ({version}-1) unstable; urgency=medium\n"
+        f"\n"
+        f"  * TODO: the {version} release notes, mirroring CHANGELOG.md's\n"
+        f"    [{version}] section. Fill in before packaging; this is the\n"
+        f"    after-the-tag checklist item.\n"
+        f"\n"
+        f" -- {maintainer}  {stanza_date}\n"
+        f"\n"
+    )
+    body = stanza + body
+    inserted = True
+    changed.append(f"{changelog}: new {version}-1 stanza header (bullets are a TODO)")
+
+if mode == "write":
+    spec.write_text(text)
+    nextmd.write_text(next_text)
+    if inserted:
+        changelog.write_text(body)
+verb = "Would update" if mode == "check" else "Updated"
+for line in changed:
+    print(f"  {verb}: {line}")
+PYEOF
+
 # Step 4: Update CHANGELOG.md
 echo -e "\n${BLUE}Step 4: Updating CHANGELOG.md...${NC}"
 TODAY=$(date +%Y-%m-%d)
@@ -475,6 +600,9 @@ else
     # Step 3c writes three files and `git add docs/` above catches only two of
     # them. The third, the generator, lives under scripts/.
     git add scripts/badges/generate.js 2>/dev/null || true
+    # Step 3d's packaging sites: docs/NEXT.md is already caught by
+    # `git add docs/` above; the spec and the debian changelog are not.
+    git add packaging/linux-hardener.spec packaging/debian/changelog 2>/dev/null || true
 
     # Anything still unstaged is a file this release wrote and did not stage.
     #
