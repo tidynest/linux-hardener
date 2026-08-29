@@ -828,9 +828,8 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 
 | File | Purpose |
 |------|---------|
-| `.github/workflows/ci.yml` | GitHub Actions: check, test, clippy, fmt, security audit, build |
+| `.github/workflows/ci.yml` | GitHub Actions: check, test, clippy, fmt, security audit, WASM and desktop checks, MSRV, build |
 | `.github/workflows/release.yml` | GitHub Actions: multi-target builds, GitHub releases on tag push |
-| `.gitlab-ci.yml` | GitLab CI: check, test, build, release stages |
 
 ---
 

@@ -236,17 +236,8 @@ cargo release major --execute
 > push/PR to the `main` branch for continuous integration. For releases, you can
 > either push a version tag to trigger automated builds or use `./scripts/release/release.sh`.
 
-### GitLab CI
-
-| Stage | Jobs | Purpose |
-|-------|------|---------|
-| check | check, fmt, clippy | Code quality |
-| test | test, security-audit, scheduled-audit | Testing |
-| build | build:linux-x86_64, build:linux-musl | Release binaries |
-| release | release | Create GitLab release |
-
-`scheduled-audit` runs `cargo audit` only on scheduled pipelines
-(`$CI_PIPELINE_SOURCE == "schedule"`); the build jobs run on `main` and on tags.
+GitLab has no CI of its own; it receives `main` and the release tag as a push
+mirror only, and `cargo audit` runs in GitHub CI on every push.
 
 ### Artifacts
 

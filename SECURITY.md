@@ -176,7 +176,7 @@ The Tauri desktop application uses `pkexec` (polkit) for operations that require
 
 The project follows these security practices:
 
-- All dependencies are regularly audited: `cargo audit` runs in CI on both remotes (`.github/workflows/ci.yml`, `.gitlab-ci.yml`), `cargo deny check` runs from the release checklist, and `deny.toml` pins the licence/advisory policy. Nothing in this repository blocks a push, so CI is where an advisory is caught rather than before it
+- All dependencies are regularly audited: `cargo audit` runs in GitHub CI (`.github/workflows/ci.yml`), `cargo deny check` runs from the release checklist, and `deny.toml` pins the licence/advisory policy. GitLab is a push mirror carrying no pipeline of its own, so GitHub is the only place CI catches anything. Nothing in this repository blocks a push, so CI is where an advisory is caught rather than before it
 - Code is reviewed before merging
 - No use of `unsafe` Rust without justification
 - Error handling avoids information disclosure

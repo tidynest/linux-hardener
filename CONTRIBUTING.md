@@ -334,12 +334,7 @@ linux-hardener/
 ├── packaging/                # PKGBUILD, RPM spec, Debian, polkit policy, man page
 ├── scripts/                  # Development utilities
 ├── docs/                     # Documentation
-├── .github/workflows/        # GitHub Actions CI/CD (connected and functional)
-└── .gitlab-ci.yml            # GitLab CI/CD (check/clippy/test run --workspace on a
-                               # bare rust:latest image, unlike GitHub CI, with no
-                               # GTK/WebKitGTK install step and no exclusion of the
-                               # desktop or hardener-ui crates; not independently
-                               # verified to pass)
+└── .github/workflows/        # GitHub Actions CI/CD (connected and functional)
 ```
 
 ## Releasing

@@ -725,15 +725,6 @@ pub struct PolicyException {
 > push/PR to the `main` branch, running check, test, clippy, fmt, security audit,
 > and multi-platform builds.
 
-### GitLab CI
-
-| Stage | Jobs | Purpose |
-|-------|------|---------|
-| check | check, fmt, clippy | Code quality |
-| test | test, security-audit | Testing |
-| build | build:linux-* | Release binaries |
-| release | release | Create GitLab release |
-
 ### Release Artifacts
 
 | Artifact | Target | Description |
@@ -744,7 +735,7 @@ pub struct PolicyException {
 
 ### Branch Strategy
 
-The `main` branch is kept in sync on GitHub and GitLab. The release script (`scripts/release/release.sh`) automatically pushes to both remotes.
+The `main` branch is kept in sync on GitHub and GitLab. The release script (`scripts/release/release.sh`) automatically pushes to both remotes. GitLab carries no CI of its own: its `.gitlab-ci.yml` was removed after drifting into a state worse than no config, with `allow_failure` on clippy and the security audit, an unpinned `rust:latest` image, and a JUnit artifact path that plain `cargo test` never writes. GitHub Actions is the single CI authority, and the mirror mirrors the code, not a second opinion about it.
 
 ---
 
