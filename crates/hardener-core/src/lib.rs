@@ -58,8 +58,13 @@ pub use context::{Context, PluginAuditEntry, SystemInfo};
 // Re-export executor types
 pub use executor::{
     local::LocalExecutor,
-    {CommandOutput, FileMetadata, MockExecutor, SystemExecutor, session_is_root},
+    {CommandOutput, FileMetadata, SystemExecutor, session_is_root},
 };
+// Gated beside its definition: the mock is test infrastructure, and a
+// release build that re-exported it would ship a pretend executor it can
+// never reach.
+#[cfg(feature = "test-support")]
+pub use executor::MockExecutor;
 
 #[cfg(feature = "system")]
 pub use executor::ssh::{SshConfig, SshExecutor};

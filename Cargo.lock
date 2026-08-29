@@ -2134,6 +2134,7 @@ version = "1.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "hardener-common",
  "hardener-types",
  "serde_json",
  "tempfile",

@@ -58,3 +58,6 @@ tracing = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 async-trait = { workspace = true }
+# The mock executor the suite injects, feature-gated in the crates that
+# define it so release builds never carry it.
+hardener-core = { path = "../hardener-core", features = ["test-support"] }

@@ -16,7 +16,17 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+[features]
+# Compiles the mock executor into this crate. Nothing in production code
+# selects it; the workspace's dev-dependencies do, so test builds keep the
+# mock while `cargo build --release` leaves it out of the shipped binaries.
+test-support = []
+
 [dev-dependencies]
+# The crate's own tests exercise the mock, which the feature above gates. A
+# self dev-dependency is how a crate turns its own feature on for its tests
+# without turning it on for everyone who depends on it.
+hardener-common = { path = ".", features = ["test-support"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

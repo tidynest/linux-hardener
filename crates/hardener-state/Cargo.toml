@@ -41,3 +41,6 @@ zeroize = "1.8.2"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 tempfile = "3.23.0"
+# The mock executor the checkpoint and rollback suites inject, feature-gated
+# where it is defined so release builds never carry it.
+hardener-common = { workspace = true, features = ["test-support"] }

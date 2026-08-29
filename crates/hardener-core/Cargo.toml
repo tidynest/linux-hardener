@@ -26,7 +26,12 @@ tempfile = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+# The crate's tests inject the mock executor, which only exists under the
+# feature. Forwarding it here keeps `cargo test -p hardener-core` working
+# standalone rather than only inside a workspace-wide run.
+hardener-common = { workspace = true, features = ["test-support"] }
 
 [features]
 default = ["system"]
 system = ["hostname", "nix", "petgraph", "hardener-state", "openssh"]
+test-support = ["hardener-common/test-support"]

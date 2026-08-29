@@ -36,3 +36,6 @@ tempfile = { workspace = true }
 [dev-dependencies]
 tauri = { version = "2.11.1", features = ["test"] }
 tempfile = { workspace = true }
+# The command suites inject the mock executor, feature-gated where it is
+# defined so release builds never carry it.
+hardener-core = { path = "../crates/hardener-core", features = ["test-support"] }

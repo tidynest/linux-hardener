@@ -4,7 +4,15 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 
+/// A pretend filesystem and command environment for tests, compiled only
+/// when `test-support` is requested. A hardening tool's release binaries
+/// have no business carrying a make-believe executor: nothing user-facing
+/// can select it, but every byte of it ships in `hardener` and the desktop
+/// backend unless a feature gate keeps it out. Dev-dependencies across the
+/// workspace turn the feature on, so every test build still sees it.
+#[cfg(feature = "test-support")]
 pub mod mock;
+#[cfg(feature = "test-support")]
 pub use mock::MockExecutor;
 
 /// Output from executing a system command.
