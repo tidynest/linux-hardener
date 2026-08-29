@@ -57,10 +57,11 @@ paru -S linux-hardener
 
 This installs both the `hardener` CLI and the `linux-hardener-desktop` GUI.
 
-Already have `linux-system-hardener`? A `-Syu` swaps it for this package on its
-own. The AUR does not redirect, so the rename needed a fresh submission and the
-old package stays published at 1.5.1; `provides`, `conflicts` and `replaces`
-carry the existing install across rather than stranding it.
+**Already have `linux-system-hardener`? Run the command above; nothing moves
+you across on its own.** The AUR is not a sync database, so `-Syu` never reads
+the new package's `replaces` and you would sit on the old one indefinitely,
+frozen at 1.5.1. Installing `linux-hardener` explicitly does work: your package
+manager offers to remove the old package as part of it.
 
 ### Everything else
 

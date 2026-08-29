@@ -30,9 +30,10 @@ The desktop application additionally requires:
 > **On the AUR the package is `linux-hardener`, submitted at 1.6.0.** The rename
 > needed a fresh submission rather than a push, because the AUR does not
 > redirect the way the git remotes do, so `linux-system-hardener` remains
-> published at 1.5.1 and is no longer updated. An existing install swaps across
-> on `-Syu` without any action from you, because the new package carries
-> `provides`/`conflicts`/`replaces`. See
+> published at 1.5.1 and is no longer updated. **An existing install does not
+> move across on its own**: the AUR is not a sync database, so `-Syu` never
+> reads the new package's `replaces`. Install `linux-hardener` explicitly and
+> your package manager will offer to remove the old one. See
 > [upgrading](upgrading.md#151-and-earlier-the-package-and-the-project-are-renamed).
 > The RPM and deb packages have been named `linux-hardener` throughout.
 

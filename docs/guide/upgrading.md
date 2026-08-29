@@ -224,23 +224,41 @@ other one. `/etc/linux-hardener`, `/var/lib/linux-hardener`,
 are your checkpoints, your signing key, the units and the polkit actions. The
 command is still `hardener`.
 
-What you will see is your package manager replacing one package with another:
+**You have to install the new package yourself. Nothing moves you across.**
 
-| Distribution | What happens |
-|---|---|
-| Arch | `linux-hardener` carries `replaces=`, so a normal `-Syu` swaps it |
-| Debian/Ubuntu | the deb carries `Replaces`/`Breaks`, so `apt upgrade` swaps it |
-| Fedora/RHEL/openSUSE | the rpm carries `Obsoletes`, so `dnf upgrade` swaps it |
+That is the whole of the action needed, and this section said the opposite
+until 2026-08-29:
 
-That replacement is expected. If your package manager asks you to confirm
-removing `linux-system-hardener` while installing `linux-hardener`, that is the
-rename and not a mistake.
+```bash
+# Arch
+yay -S linux-hardener
 
-**On Arch that swap arrived with 1.6.0.** The AUR does not redirect the way the
-git remotes do, so the new name had to be submitted as a fresh package rather
-than pushed. `linux-hardener` is now published there and is the one that gets
-updates; `linux-system-hardener` remains visible, frozen at 1.5.1, and a `-Syu`
-moves you off it without any action. The rpm and deb were renamed earlier.
+# Debian/Ubuntu
+sudo dpkg -i linux-hardener_*.deb
+
+# Fedora/RHEL/openSUSE
+sudo dnf install ./linux-hardener-*.rpm
+```
+
+Your package manager will then offer to remove `linux-system-hardener` as part
+of installing the new one. That is the rename working, not a mistake: the new
+package carries `replaces`/`conflicts` on Arch, `Replaces`/`Breaks` in the deb
+and `Obsoletes` in the rpm, and all three are honoured when you install it.
+
+**What that metadata does not do is find you.** An upgrade sweep reads it from
+a *repository*, and there is no repository serving this project on any
+distribution. On Arch the AUR is not a sync database, so `pacman -Syu` never
+sees the new package's `replaces` and an AUR helper only checks your installed
+packages against the AUR by name. The deb and the rpm are files you download
+and install, so `apt upgrade` and `dnf upgrade` have nothing to read either.
+
+The practical consequence, and the reason this is worth a paragraph: **if you
+do nothing, you stay on `linux-system-hardener` indefinitely.** It is frozen at
+1.5.1 and gets no further updates, and nothing will tell you that 1.6.0 exists.
+
+**On Arch the new package arrived with 1.6.0.** The AUR does not redirect the
+way the git remotes do, so the new name had to be submitted as a fresh package
+rather than pushed. The rpm and deb were renamed earlier.
 
 If you installed from source or from a git clone, the repository moved to
 `https://github.com/tidynest/linux-hardener`. The old address redirects, so an
