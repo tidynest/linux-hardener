@@ -1936,7 +1936,10 @@ fn the_privilege_note_promises_nothing() {
 
     assert!(line.contains("may still have changes"), "got: {line}");
     assert!(!line.contains("will have changes"), "got: {line}");
-    assert!(!line.contains("run with sudo"), "must not name a remedy: {line}");
+    assert!(
+        !line.contains("run with sudo"),
+        "must not name a remedy: {line}"
+    );
 }
 
 /// And a genuinely clean selection says none of it. The privilege note belongs
