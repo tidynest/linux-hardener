@@ -195,18 +195,56 @@ if $DRY_RUN; then
     echo -e "\n${YELLOW}=== DRY RUN - No changes will be made ===${NC}\n"
 fi
 
-# Step 1: Run tests (and capture test count for README update)
+# Step 1: Run tests (and capture test counts for the release markers)
+#
+# TWO counts, because the tree publishes two and they are not the same number.
+# `cargo test --workspace` includes doctests; `cargo nextest run --workspace`
+# does not. The evidence ledger records both, beside the command that produces
+# each, and forbids deriving one from the other.
+#
+# The README line step 3c rewrites is labelled "Rust workspace (cargo nextest
+# run --workspace)", so it needs NEXTEST_COUNT. Feeding it TEST_COUNT publishes
+# a figure no reader can reproduce with the command printed next to it, which is
+# what the v1.6.0 attempt on 2026-08-28 did: it wrote 2300, the cargo test
+# total, into a line naming nextest, which reports 2294. Nothing caught it
+# before the tag except validate_test_counts afterwards.
 echo -e "\n${BLUE}Step 1: Running tests...${NC}"
 TEST_COUNT=0
+NEXTEST_COUNT=0
 if $DRY_RUN; then
     echo "Would run: cargo test --workspace"
+    echo "Would run: cargo nextest run --workspace"
     TEST_COUNT="(dry-run)"
+    NEXTEST_COUNT="(dry-run)"
 else
     TEST_OUTPUT=$(cargo test --workspace 2>&1)
     echo "$TEST_OUTPUT"
     # Extract total test count from "test result:" lines
     TEST_COUNT=$(echo "$TEST_OUTPUT" | grep -E "^test result:" | awk '{sum += $4} END {print sum}')
     echo -e "\n${GREEN}Total tests passed: ${TEST_COUNT}${NC}"
+
+    echo -e "\n${BLUE}Step 1b: Measuring the nextest figure the README quotes...${NC}"
+    if ! command -v cargo-nextest > /dev/null 2>&1; then
+        echo -e "${RED}Error: cargo-nextest is not installed.${NC}"
+        echo "The README quotes 'cargo nextest run --workspace' beside its"
+        echo "figure, so the release must measure it rather than substitute"
+        echo "the cargo test total. Install it, or correct the README label."
+        exit 1
+    fi
+    NEXTEST_OUTPUT=$(cargo nextest run --workspace 2>&1)
+    NEXTEST_COUNT=$(echo "$NEXTEST_OUTPUT" |
+        grep -oE '[0-9]+ (tests? )?passed' | grep -oE '^[0-9]+' | tail -1)
+    echo -e "${GREEN}Nextest passed: ${NEXTEST_COUNT}${NC}"
+
+    # Catches a swapped variable, the one mistake this split invites. nextest
+    # skips doctests, so its total can never exceed cargo test's.
+    if [[ ! "$NEXTEST_COUNT" =~ ^[0-9]+$ ]] || (( NEXTEST_COUNT > TEST_COUNT )); then
+        echo -e "${RED}Error: nextest reported '${NEXTEST_COUNT}' against" \
+                "cargo test's '${TEST_COUNT}'.${NC}"
+        echo "nextest runs no doctests, so its total must be the smaller one."
+        echo "Either the parse above broke or the two were swapped."
+        exit 1
+    fi
 fi
 
 # Step 2: Run clippy
@@ -334,7 +372,7 @@ fi
 
 # Step 3c: Update the test count and the badges that track a released number
 echo -e "\n${BLUE}Step 3c: Updating test count and version badges...${NC}"
-if $DRY_RUN || [[ "$TEST_COUNT" =~ ^[0-9]+$ ]]; then
+if $DRY_RUN || [[ "$NEXTEST_COUNT" =~ ^[0-9]+$ ]]; then
     # Asserts on the match count rather than trusting the substitution.
     # This step used to `sed` for a "Total Tests:" line that README.md
     # stopped having in ea1a0c4, so it matched nothing, exited 0 and
@@ -350,7 +388,10 @@ if $DRY_RUN || [[ "$TEST_COUNT" =~ ^[0-9]+$ ]]; then
     # been rewritten.
     RELEASE_MODE="write"
     $DRY_RUN && RELEASE_MODE="check"
-    python3 - "$TEST_COUNT" "$RELEASE_MODE" "$NEW_VERSION" <<'PYEOF' || exit 1
+    # NEXTEST_COUNT, not TEST_COUNT: every target below sits beside the words
+    # "cargo nextest run --workspace", in the README line and in the tests
+    # badge the same block renders. See step 1's comment.
+    python3 - "$NEXTEST_COUNT" "$RELEASE_MODE" "$NEW_VERSION" <<'PYEOF' || exit 1
 import re, sys
 from pathlib import Path
 
@@ -457,6 +498,38 @@ else
     fi
 
     git commit -m "chore(release): bump version to ${NEW_VERSION}"
+
+    # Then repair the stamps this commit just staled, and fold the repair into
+    # it rather than leaving a follow-up.
+    #
+    # validate_last_updated compares each "Last Updated" marker against
+    # `git log -1` for that file, so editing SECURITY.md, architecture.md and
+    # data-flow.md to carry the new version makes their own stamps stale the
+    # moment the commit lands. Every previous release left that for a separate
+    # "docs: stamp ..." commit, which is fine for ordinary work and not fine
+    # here: it means checking out the tag and running validate_all reports a
+    # failure. A release tag has to validate as it stands.
+    #
+    # The order matters and only works this way round. --fix reads the dates
+    # from git, so it has to run AFTER the commit exists; amending then folds
+    # the corrected stamps into that same commit, whose date they now name.
+    if python3 scripts/validate/validate_last_updated.py --fix > /dev/null 2>&1; then
+        echo "  Stamps already current."
+    fi
+    if [[ -n "$(git diff --name-only)" ]]; then
+        echo "  Folding $(git diff --name-only | wc -l) repaired stamp(s) into the bump commit."
+        git add -u
+        git commit --amend --no-edit
+    fi
+
+    if ! python3 scripts/validate/validate_last_updated.py > /dev/null 2>&1; then
+        echo -e "${RED}Error: stamps are still stale after the repair.${NC}"
+        python3 scripts/validate/validate_last_updated.py 2>&1 | tail -20
+        echo ""
+        echo "The tag has not been created yet. Unwind with:"
+        echo "  git reset --hard HEAD~1"
+        exit 1
+    fi
 fi
 
 # Step 7: Create tag
