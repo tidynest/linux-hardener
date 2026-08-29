@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`scan --format json` has carried `scan_success` and `scan_error` on every
+  entry since `685cf305` (2026-07-27), and the README's known limitations spent
+  a month saying it did not.** The sentence was added at 10:02 that morning,
+  when it was true; the renderer was taught the fields at 14:31 the same day
+  and the document was not swept again, so the limitation outlived its own
+  defect and told the readers who pipe the output into `jq` to work around a
+  problem that was not there. The bullet now states the limitation that is
+  real: the payload is a bare array with no schema version, so a consumer
+  cannot tell which shape it is reading without inspecting it.
+- **The commit that corrected that bullet, `da41777e`, misdated both facts in
+  its message, and the record is set straight here rather than by rewriting
+  history already pushed to both remotes.** "In the CLI output since
+  2025-11-25" is the struct field's birthday, arrived at by taking the oldest
+  search hit for the name; the renderer emitted nothing until `685cf305`.
+  "It was false the day it was written" is wrong by four and a half hours: the
+  claim was true at 10:02 and false from 14:31.
+
 ## [1.7.0] - 2026-08-29
 
 ### Added
