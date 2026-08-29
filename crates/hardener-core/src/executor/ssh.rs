@@ -107,6 +107,20 @@ impl SshExecutor {
         builder.port(config.port);
         builder.known_hosts_check(config.known_hosts.clone());
 
+        // The one place every connection passes through, whichever front end
+        // built the config. The CLI prints a warning on stderr when its own
+        // flag lowers the policy, but the desktop builds the same permissive
+        // variant with no such warning, and stderr is not where a later audit
+        // of the log looks. This line is the durable record that the run
+        // skipped host-key verification, and it fires once per connection
+        // however the config was assembled.
+        if matches!(config.known_hosts, KnownHosts::Accept) {
+            tracing::warn!(
+                host = %config.host,
+                "SSH host key verification is disabled for this connection; it is vulnerable to on-path impersonation"
+            );
+        }
+
         if let Some(ref identity) = config.identity_file {
             builder.keyfile(identity);
         }
