@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-The current release is **1.6.0**. Only the 1.5 series receives security fixes.
+The current release is **1.7.0**. Only the 1.5 series receives security fixes.
 
 | Version           | Supported          | Notes                                                |
 | ----------------- | ------------------ | ---------------------------------------------------- |

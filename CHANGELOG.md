@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-08-29
+
 ### Added
 
 - **The Analysis tab now says when a registered plugin produced no result.**
