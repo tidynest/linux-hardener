@@ -10,14 +10,15 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # Exclude GUI crates that require GTK/system libraries
-  WORKSPACE_EXCLUDE: --exclude linux-hardener-desktop --exclude hardener-ui
 
 jobs:
-  # Run tests before releasing. The desktop backend is tested here too,
-  # behind the same dependency install ci.yml's desktop job carries: a
-  # release whose GUI half never ran a test is a release of the CLI alone,
-  # whatever the tag says it contains.
+  # Run tests before releasing. The whole workspace is tested in one
+  # invocation, GUI crates included: this job already installs the GTK
+  # libraries and builds the frontend bundle for the desktop crate, and the
+  # unified feature graph is the one build a developer runs locally. Until
+  # August 2026 this ran as two selections, the excluded workspace and the
+  # desktop crate alone, so the unified graph was never what gated a
+  # release, whatever the tag says it contains.
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -44,10 +45,7 @@ jobs:
         working-directory: crates/hardener-ui
 
       - name: Run tests
-        run: cargo test --workspace $WORKSPACE_EXCLUDE
-
-      - name: Run desktop tests
-        run: cargo test -p linux-hardener-desktop
+        run: cargo test --workspace
 
   # Build release binaries for multiple platforms
   build:

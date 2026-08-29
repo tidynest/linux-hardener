@@ -39,6 +39,17 @@ jobs:
       - name: Run cargo check
         run: cargo check --workspace $WORKSPACE_EXCLUDE
 
+  # The one invocation that builds the whole workspace at once, GUI crates
+  # included. Every other job that tests or checks carries WORKSPACE_EXCLUDE,
+  # so through late August 2026 the unified feature graph was built by no job
+  # at all: this job tested the headless crates, the desktop job tested the
+  # desktop crate against its own selection, and both were green while the
+  # one build a developer runs locally, `cargo test --workspace`, was never
+  # executed by CI. Feature unification across every member at once is
+  # precisely where a test-support or feature-gating mistake surfaces, which
+  # is why this job pays for the GTK libraries and the frontend bundle rather
+  # than excluding them: closing the desktop gap as a separate job looked
+  # complete and was not quite.
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -47,6 +58,21 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # The desktop crate links GTK and WebKitGTK, and its embedded frontend
+      # bundle must exist before it compiles: same prerequisites as the
+      # desktop job, for the same reasons its comment block records.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+
+      - name: Install trunk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -55,12 +81,16 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-test-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-test-cargo-
+
+      - name: Build the frontend bundle the backend embeds
+        run: trunk build --release
+        working-directory: crates/hardener-ui
 
       - name: Run tests
-        run: cargo test --workspace $WORKSPACE_EXCLUDE
+        run: cargo test --workspace
 
   clippy:
     name: Clippy
@@ -150,14 +180,20 @@ jobs:
       - name: Lint the frontend crate
         run: cargo clippy -p hardener-ui --target wasm32-unknown-unknown -- -D warnings
 
-  # Compiles, lints and tests the desktop backend, which no other job in
-  # this file can touch: they all carry WORKSPACE_EXCLUDE for want of the
-  # GTK and WebKitGTK system libraries, so through late August 2026 a tree
-  # where `commands.rs` stopped compiling passed this workflow green, and
-  # only a developer's local `cargo clippy --workspace` stood in the gap.
-  # Installing those libraries is the whole difference between this job and
-  # the exclude. Clippy and tests run here too, both with `-D warnings` and
-  # plain, because nowhere else executes them for this crate at all.
+  # Compiles and lints the desktop backend, which the check and clippy jobs
+  # cannot touch: they carry WORKSPACE_EXCLUDE for want of the GTK and
+  # WebKitGTK system libraries, so through late August 2026 a tree where
+  # `commands.rs` stopped compiling passed this workflow green, and only a
+  # developer's local `cargo clippy --workspace` stood in the gap. Installing
+  # those libraries is the whole difference between this job and the exclude.
+  # Clippy with `-D warnings` runs here because no other job lints this crate.
+  #
+  # The desktop crate's TESTS run in the test job's single
+  # `cargo test --workspace` invocation, which builds the unified feature
+  # graph this crate's own `-p` selection never did: unification over every
+  # workspace member is a superset of unification over this crate's
+  # dependency graph, so the tests run against at least the features they ran
+  # against before, in the one configuration a developer runs locally.
   #
   # The frontend bundle is built first, because `tauri::generate_context!`
   # embeds `frontendDist` at compile time and a checkout carries no `dist/`
@@ -209,9 +245,6 @@ jobs:
 
       - name: Lint the desktop backend
         run: cargo clippy -p linux-hardener-desktop --all-targets -- -D warnings
-
-      - name: Test the desktop backend
-        run: cargo test -p linux-hardener-desktop
 
   # Runs the ignored-by-default integration tests that need root, which
   # otherwise run only inside the local cross-distro containers: those are
