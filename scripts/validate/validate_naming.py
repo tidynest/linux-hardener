@@ -227,37 +227,29 @@ class NamingValidator:
                 'order to forbid it',
             ),
 
-            # Temporary: prose that is accurate only until the AUR
-            # resubmission lands, at which point the old package stops being
-            # the one to install and every entry below becomes false. The
-            # cleanup step in docs/contributing/releasing.md names each of
-            # them, because a deferral nothing points at goes stale in
-            # silence.
+            # Permanent, and formerly temporary. Until 1.6.0 these five held
+            # prose that named the old package as the one to install, accurate
+            # only until the AUR resubmission landed. It landed on 2026-08-29,
+            # `linux-hardener` is published, and the cleanup those entries were
+            # waiting for is done: docs/contributing/releasing.md and
+            # scripts/test/polkit/test-polkit-matrix.sh no longer name the old
+            # package at all and have no entry here any more.
+            #
+            # The three below still name it and always will, because an
+            # operator crossing the rename has to be told what they are
+            # crossing from. That is a permanent need rather than a deferred
+            # cleanup, so `temporary` is gone with the deadline it described.
             'README.md': NameExemption(
-                'TEMPORARY: names the AUR package to install until the '
-                'resubmission lands',
-                temporary=True,
+                'one sentence telling an existing installer that -Syu carries '
+                'them across; the install command itself is the new name',
             ),
             'docs/guide/installation.md': NameExemption(
-                'TEMPORARY: install, upgrade and removal commands against '
-                'the old AUR package',
-                temporary=True,
+                'records that the old package stays published at 1.5.1 and '
+                'stops being updated, which a reader finding it needs to know',
             ),
             'docs/guide/upgrading.md': NameExemption(
-                'TEMPORARY: explains the rename to an operator upgrading '
-                'across it',
-                temporary=True,
-            ),
-            'docs/contributing/releasing.md': NameExemption(
-                'TEMPORARY: the one-time AUR resubmission note, including the '
-                'not-yet-existing linux-hardener.git remote it will be '
-                'pushed to',
-                temporary=True,
-            ),
-            'scripts/test/polkit/test-polkit-matrix.sh': NameExemption(
-                'TEMPORARY: operator-facing remedy strings naming the package '
-                'that currently ships the policy and the binary',
-                temporary=True,
+                'the section written for an operator crossing the rename, '
+                'which cannot describe the crossing without naming both sides',
             ),
         }
 

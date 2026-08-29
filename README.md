@@ -52,16 +52,15 @@ plugins, four distribution families.
 ### Arch Linux, from the AUR
 
 ```bash
-paru -S linux-system-hardener
+paru -S linux-hardener
 ```
 
 This installs both the `hardener` CLI and the `linux-hardener-desktop` GUI.
 
-The project renamed to `linux-hardener`, but the AUR package has not been
-resubmitted under the new name yet, and the AUR does not redirect the way the
-git remotes do. Until it lands, `linux-system-hardener` is the package that
-exists; installing it now is carried across by the new one's
-`provides`/`conflicts`/`replaces` metadata rather than stranding you.
+Already have `linux-system-hardener`? A `-Syu` swaps it for this package on its
+own. The AUR does not redirect, so the rename needed a fresh submission and the
+old package stays published at 1.5.1; `provides`, `conflicts` and `replaces`
+carry the existing install across rather than stranding it.
 
 ### Everything else
 

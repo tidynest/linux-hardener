@@ -368,45 +368,6 @@ All crates use `version.workspace = true` to inherit the workspace version.
 **AUR** (separate repo `ssh://aur@aur.archlinux.org/linux-hardener.git`): after the
 `vX.Y.Z` tag is pushed, bump `pkgver`, run `updpkgsums` to fill `sha256sums` from the tag
 tarball, regenerate `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`), then commit and push.
-
-> **One-time, for the release that follows the 1.5.1 rename (#51).** The AUR
-> package is named `linux-hardener` and the old `linux-system-hardener` package
-> **does not redirect**, unlike the git remotes. Publishing means a *new* AUR
-> submission rather than a push to the existing one, and `packaging/PKGBUILD`
-> already carries the `provides`/`conflicts`/`replaces` metadata that swaps an
-> existing install. All three are needed together: `replaces` alone leaves a
-> dependency on the old name unsatisfiable, and `provides` alone never triggers
-> the swap.
->
-> **Leave `linux-system-hardener` published until the new package has landed and
-> the release is out**, so an operator upgrading is carried across rather than
-> stranded on an orphaned package. Only then request deletion or merge of the
-> old one.
->
-> **Then clean up every file that names the old package temporarily.** Each of
-> these is accurate only while the old package is still the one to install, and
-> none of them is reached by deleting this note:
->
-> - `README.md`, the AUR install command and the sentence explaining why it is
->   still that one
-> - `docs/guide/installation.md`, the install, upgrade and removal commands and
->   the note above them
-> - `docs/guide/upgrading.md`, the section written for an operator crossing the
->   rename
-> - `scripts/test/polkit/test-polkit-matrix.sh:102-103`, the operator-facing
->   remedy strings naming the package that ships the policy file and the
->   binary. Correct today, and named by no other checklist, so it is the one
->   that would go stale unread
-> - this file, both the note you are reading and the AUR remote quoted above it,
->   which is written as `linux-hardener.git` because that is what it will be
->
-> `scripts/validate/validate_naming.py` holds those same five paths in
-> `old_name_allowlist`, each marked `temporary=True`, and refuses the old name
-> anywhere else. Remove each entry as you clean its file: the check then reports
-> whatever the cleanup missed, rather than leaving it to be noticed.
->
-> Delete this note once that release has shipped.
-
 ---
 
 ## Hotfix Process

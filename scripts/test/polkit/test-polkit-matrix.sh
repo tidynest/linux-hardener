@@ -99,8 +99,8 @@ skip_absent() {
 # reports on the code rather than on this host's package list.
 
 POLKIT_PACKAGE="the polkit package (Arch: polkit, Debian: policykit-1, Fedora/RHEL: polkit, openSUSE: polkit)"
-POLICY_REMEDY="the linux-system-hardener package, or from the project root: sudo install -Dm644 packaging/assets/$(basename "$POLICY_PATH") $POLICY_PATH"
-BINARY_REMEDY="the linux-system-hardener package, or: cargo build --release -p hardener-cli"
+POLICY_REMEDY="the linux-hardener package, or from the project root: sudo install -Dm644 packaging/assets/$(basename "$POLICY_PATH") $POLICY_PATH"
+BINARY_REMEDY="the linux-hardener package, or: cargo build --release -p hardener-cli"
 
 # polkit counts as present when any one of the three things it ships is here.
 # A disjunction on purpose: a distribution that splits the daemon from the

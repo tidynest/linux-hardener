@@ -236,11 +236,11 @@ That replacement is expected. If your package manager asks you to confirm
 removing `linux-system-hardener` while installing `linux-hardener`, that is the
 rename and not a mistake.
 
-**On Arch that swap arrives with the release after 1.5.1, not before it.** The
-AUR does not redirect the way the git remotes do, so the new name has to be
-submitted as a fresh package rather than pushed, and until it is published
-`linux-system-hardener` remains the package to install and upgrade. The rpm and
-deb were renamed already.
+**On Arch that swap arrived with 1.6.0.** The AUR does not redirect the way the
+git remotes do, so the new name had to be submitted as a fresh package rather
+than pushed. `linux-hardener` is now published there and is the one that gets
+updates; `linux-system-hardener` remains visible, frozen at 1.5.1, and a `-Syu`
+moves you off it without any action. The rpm and deb were renamed earlier.
 
 If you installed from source or from a git clone, the repository moved to
 `https://github.com/tidynest/linux-hardener`. The old address redirects, so an
