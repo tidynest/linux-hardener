@@ -371,6 +371,16 @@ itself reversible.
 Checkpoints are Ed25519-signed rows in SQLite. The audit log is a hash chain, so
 a deleted or edited entry does not verify.
 
+A checkpoint signature attests to less than it might sound like. The signing
+key is encrypted at rest under a key derived from this host's machine
+identity, so a valid signature proves a checkpoint was written by this tool
+on this host and was not edited afterwards by a process without root. Root
+on the host can re-derive the key and re-sign, so this is tamper-evidence
+against non-root modification, not proof against the host itself. That
+boundary is the honest limit of the design, and
+[what this release does not prove](docs/reference/what-is-not-proven.md)
+records the rest.
+
 ```mermaid
 graph TD
     subgraph binaries [Binaries]

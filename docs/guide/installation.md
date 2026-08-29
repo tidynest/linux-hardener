@@ -224,6 +224,9 @@ sudo zypper install cargo rust gcc libopenssl-devel libxcb-devel libxkbcommon-de
 ```bash
 git clone https://github.com/tidynest/linux-hardener.git
 cd linux-hardener
+# The directory name is yours: a checkout made before the project was
+# renamed from linux-system-hardener keeps working under its old name, and
+# nothing in the build reads it.
 
 # CLI only (static musl binary)
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli

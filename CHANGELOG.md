@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The desktop backend is compiled, linted and tested by CI for the first
+  time, and release runs test it too.** Every workflow job excluded the
+  crate for want of GTK and WebKitGTK system libraries, so a tree where it
+  stopped compiling passed green; the desktop job installs them, builds the
+  embedded frontend bundle, and runs check, clippy with `-D warnings` and
+  the test suite. The frontend crate gains a clippy gate beside its
+  existing compile check. The security-audit job installs a prebuilt
+  cargo-audit instead of compiling it from source on every run.
+- **The root-gated integration tests run in CI.** The tests marked
+  `#[ignore]` for needing root ran only inside the local cross-distro
+  containers, so a regression in a root-only apply path could sit between
+  container runs with nothing automated watching. A curated set - the
+  kernel, permissions, PAM and SSH tests that operate on files a stock
+  runner carries - now runs under sudo, in its own target directory so the
+  shared cache stays unprivileged.
+- **Fuzz targets exist for the configuration directive parsers.**
+  `set_config_directive`, `parse_config_value` and `global_scope`, and the
+  `/etc` to `/usr/etc` mapping, consume files that arrive from remote hosts
+  over the SSH executor, which is input the operator does not control. The
+  targets assert the parsers' documented invariants, not only survival, and
+  CI builds them on nightly so they cannot silently rot.
+
+### Changed
+
+- **The mock executor no longer compiles into release binaries.** It is
+  feature-gated behind `test-support`, which the workspace's
+  dev-dependencies enable, so every test build keeps it while `cargo build
+  --release` leaves a make-believe executor out of the shipped `hardener`
+  and desktop binaries. Verified in the feature graph and the binary: the
+  release build carries no mock symbol, the test build carries 232.
+- **Disabling SSH host-key verification now leaves a warning in the log at
+  every connection.** The CLI printed one to stderr when its own flag
+  lowered the policy, but the desktop built the same permissive
+  configuration with no warning anywhere, and stderr is not where a later
+  audit looks. The warning now fires at the executor, the one place every
+  connection passes through, whichever front end built the configuration.
+- **The README states what a checkpoint signature attests.** The signing
+  key is encrypted under a key derived from the host's machine identity,
+  so a signature proves a checkpoint was written by this tool on this host
+  and not edited by a process without root; root can re-derive and re-sign.
+  Saying only "Ed25519-signed rows" invited the stronger reading.
+- **The desktop's command surface is ten files rather than one.** The
+  3,262-line `commands.rs` is split along the seams its fourteen test files
+  had already named: nine domain modules beside a `mod.rs` holding the
+  shared plumbing. No behaviour change; the 187 desktop tests and the
+  three-site registration check pass unchanged.
+
 ### Fixed
 
 - **`scan --format json` has carried `scan_success` and `scan_error` on every
