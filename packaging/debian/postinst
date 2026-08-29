@@ -3,7 +3,7 @@ set -e
 
 case "$1" in
     configure)
-        install -dm755 /var/lib/linux-hardener
+        install -dm700 /var/lib/linux-hardener
         chown root:root /var/lib/linux-hardener
         install -dm700 /var/log/linux-hardener
         chown root:root /var/log/linux-hardener

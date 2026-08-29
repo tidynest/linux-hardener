@@ -46,7 +46,7 @@ override_dh_auto_install:
 	    debian/linux-hardener/etc/linux-hardener/config.toml
 	# Directories
 	install -dm755 debian/linux-hardener/etc/linux-hardener
-	install -dm755 debian/linux-hardener/var/lib/linux-hardener
+	install -dm700 debian/linux-hardener/var/lib/linux-hardener
 	install -dm700 debian/linux-hardener/var/log/linux-hardener
 
 override_dh_auto_test:

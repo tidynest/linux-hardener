@@ -84,7 +84,7 @@ install -Dm644 packaging/assets/config.toml.example \
     %{buildroot}%{_sysconfdir}/linux-hardener/config.toml
 
 install -d -m 755 %{buildroot}%{_sysconfdir}/linux-hardener
-install -d -m 755 %{buildroot}%{_localstatedir}/lib/linux-hardener
+install -d -m 700 %{buildroot}%{_localstatedir}/lib/linux-hardener
 install -d -m 700 %{buildroot}%{_localstatedir}/log/linux-hardener
 
 %post
@@ -111,7 +111,7 @@ systemctl daemon-reload || true
 %{_datadir}/polkit-1/actions/com.tidynest.linux-hardener.policy
 %config(noreplace) %{_sysconfdir}/linux-hardener/config.toml
 %dir %{_sysconfdir}/linux-hardener
-%dir %{_localstatedir}/lib/linux-hardener
+%dir %attr(700,root,root) %{_localstatedir}/lib/linux-hardener
 %dir %attr(700,root,root) %{_localstatedir}/log/linux-hardener
 %dir %{_libdir}/linux-hardener
 

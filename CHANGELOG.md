@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Every packaging shipped `/var/lib/linux-hardener` as `0755` while the code
+  set it to `0700` the moment it was used.** That directory holds
+  `checkpoints.db`, which stores captured contents of files including
+  `/etc/shadow`, and `init_db` chmods the directory to `0700` and the database
+  itself to `0600` on creation. So the mode a host ends up with was always
+  `0700` and **no install was ever exposed**: the only window at `0755` is
+  between installing the package and the first checkpoint, when the directory
+  is empty. What the mismatch did produce was a `directory permissions differ
+  on /var/lib/linux-hardener/ filesystem: 700 package: 755` warning on every
+  upgrade, for a discrepancy the tool silently corrected. All four sites now
+  declare `0700`, matching `/var/log/linux-hardener`, which already did.
+  `/etc/linux-hardener` deliberately stays `0755`: the configuration is read
+  unprivileged and the signing key inside it is `0400`. Found by installing the
+  packaged build on a real host, which is the release-checklist step that
+  exists for exactly this and had never turned anything up before.
+
 ## [1.6.0] - 2026-08-29
 
 ### Security
