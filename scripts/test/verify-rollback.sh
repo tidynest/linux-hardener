@@ -1069,15 +1069,15 @@ else
     # regardless of what ran before it.
     #
     # MaxAuthTries is the directive chosen. Raising it is a real loosening
-    # (fewer retries is stricter: ssh/mod.rs:107-114, Strictness::AtMost
+    # (fewer retries is stricter: ssh/mod.rs:104-111, Strictness::AtMost
     # against a "3" baseline), it takes any non-negative integer so `sshd -t`
     # has no fixed token list to reject it against the way it could reject a
     # typo'd yes/no value, and unlike PermitRootLogin it never changes
     # whether the session running this script can log back in
-    # (ssh/mod.rs:365-366 warns about PermitRootLogin specifically, not this
+    # (ssh/mod.rs:363-364 warns about PermitRootLogin specifically, not this
     # one). `sshd -t` is still asked to confirm rather than assumed, because
     # that is the same check the plugin's own apply runs before it writes
-    # anything (ssh/mod.rs:2086), and this scenario must not fail differently
+    # anything (ssh/apply.rs:691), and this scenario must not fail differently
     # than the thing it is testing.
     #
     # sshd keeps the first value it finds for a repeated directive, and this

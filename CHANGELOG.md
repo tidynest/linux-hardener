@@ -55,6 +55,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   had already named: nine domain modules beside a `mod.rs` holding the
   shared plumbing. No behaviour change; the 187 desktop tests and the
   three-site registration check pass unchanged.
+- **The pam and ssh plugins' method bodies live one module each.** The two
+  largest plugin files (2,935 and 2,622 lines) each held a whole
+  `HardeningPlugin` impl whose scan, apply and validate bodies dwarfed the
+  helpers around them; a trait impl cannot span files, so each impl stays
+  whole in its `mod.rs` and the three bodies moved into `assess.rs`,
+  `apply.rs` and `validate.rs` as free functions the trait methods delegate
+  to. No behaviour change; every moved body was verified token-identical to
+  its original, the write-site registry keys moved with the two ssh sites
+  that changed file, and the workspace suite passes unchanged.
 
 ### Fixed
 

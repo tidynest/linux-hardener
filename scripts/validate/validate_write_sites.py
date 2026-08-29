@@ -164,7 +164,7 @@ that overstates itself is worse than no check:
     services/mod.rs does with `service_paths.extend(...)`, is not read at
     all.
   - The directory search is per plugin directory rather than per file because
-    ssh/dropin.rs writes a path that ssh/mod.rs declares. That is deliberate,
+    ssh/dropin.rs writes a path that ssh/apply.rs declares. That is deliberate,
     and it is also the loosest part of the check: two plugins are never
     conflated, but two apply paths within one plugin are.
   - It does not see a file created by `execute_command` through any means other
@@ -411,7 +411,7 @@ REGISTRY = {
     ),
     ("ssh/dropin.rs", "write_file(Path::new(DROPIN_PATH)"): (
         ("ensured", "DROPIN_DIR"),
-        # Declared by ssh/mod.rs rather than by the file holding the write,
+        # Declared by ssh/apply.rs rather than by the file holding the write,
         # which is why the search is per plugin directory.
         ("declared", ("dropin::DROPIN_PATH",)),
     ),
@@ -569,7 +569,7 @@ REGISTRY = {
             "and /tmp is outside the rollback allowlist in any case",
         ),
     ),
-    ("ssh/mod.rs", "write_file(Path::new(config_path)"): (
+    ("ssh/apply.rs", "write_file(Path::new(config_path)"): (
         (
             "exempt",
             "sshd_config itself, whose content was read into `main` above; the "
@@ -580,7 +580,7 @@ REGISTRY = {
         # this run resolved to is the one the capture holds.
         ("declared", ("config_path",)),
     ),
-    ("ssh/mod.rs", 'execute_command("cp"'): (
+    ("ssh/apply.rs", 'execute_command("cp"'): (
         (
             "exempt",
             BACKUP_BESIDE_SOURCE.format("config_path"),
@@ -734,7 +734,7 @@ def main():
 
     # One declaration text per plugin directory, because a checkpoint belongs to
     # a plugin rather than to a file: ssh/dropin.rs writes the fragment that
-    # ssh/mod.rs declares. Keyed on the first path component, which is the
+    # ssh/apply.rs declares. Keyed on the first path component, which is the
     # plugin directory for every source that holds a site.
     declared_in_plugin = {}
     for relative, text in contents.items():

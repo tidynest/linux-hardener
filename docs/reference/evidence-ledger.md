@@ -38,7 +38,7 @@ them; do not copy a figure from an older document.
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 63 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 29 validations passed |
 | Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2356 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2356 across 330 files |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2356 across 336 files |
 
 Three of these rows are re-derived from the tree on every `validate_all.py` run
 by `scripts/validate/validate_test_counts.py`: the annotation count, the
@@ -234,7 +234,7 @@ what the Phase 4 triage rule makes of them:
 **The two that were killed, and why these first.** `session_is_root` survived
 replacement of the whole function with **both** `true` and `false`, meaning the
 fail-closed privilege probe behind `hardener-plugins/src/lib.rs:49` and the ssh
-plugin's remote-root check at `ssh/mod.rs:419` was pinned by nothing at all: it
+plugin's remote-root check at `ssh/mod.rs:416` was pinned by nothing at all: it
 had no test. Four now stand in `hardener-common/src/executor/tests.rs`, and the
 shape of them is the point. The contract is fail-closed, so the three ways it
 must refuse are worth more than the one way it may agree: a uid of zero on a

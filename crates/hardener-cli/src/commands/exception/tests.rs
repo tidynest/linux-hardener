@@ -322,7 +322,7 @@ async fn rescan_finding(
 /// reads.
 ///
 /// `PasswordAuthentication` is deliberate, not `PermitRootLogin`
-/// (`SSH_DIRECTIVES[0]`, `crates/hardener-plugins/src/ssh/mod.rs:86`): the
+/// (`SSH_DIRECTIVES[0]`, `crates/hardener-plugins/src/ssh/mod.rs:83`): the
 /// mock's `sshd_config` sets only `PermitRootLogin`, which is enough on its
 /// own to make it the first finding the scan pushes, so a build that ignored
 /// `key` entirely and pinned `findings[0]` would still pass a test that used

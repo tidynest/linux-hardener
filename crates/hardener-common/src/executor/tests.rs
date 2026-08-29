@@ -869,7 +869,7 @@ async fn a_negative_exit_code_refuses_even_with_well_formed_stdout() {
 // session_is_root
 //
 // The privilege probe behind `hardener-plugins/src/lib.rs:49` and the ssh
-// plugin's remote-root check at `ssh/mod.rs:419`. It had no test at all, which
+// plugin's remote-root check at `ssh/mod.rs:416`. It had no test at all, which
 // the 2026-08-11 mutation pass found by surviving replacement of the whole
 // function with BOTH `true` and `false`: a constant in either direction was
 // indistinguishable from the real thing.
