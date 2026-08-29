@@ -87,6 +87,15 @@ def main():
         ("Unit State Reads", "validate_unit_state_reads.py", []),
         ("Doc Sync Targets", "validate_doc_targets.py", []),
         ("Badges", "validate_badges.py", []),
+        # README's "Known limitations" against the code each bullet
+        # describes. Every other check here reads structure, and a claim of
+        # absence has none: the sentence saying `scan --format json` did not
+        # serialise per-plugin success survived a month after `685cf305`
+        # taught the renderer the very field it named. Both landed on
+        # 2026-07-27 four and a half hours apart, the doc at 10:02 and the
+        # fix at 14:31, and the sentence stayed put until an outside review
+        # recommended implementing what already existed.
+        ("README Limitations", "validate_readme_claims.py", []),
         # `--all` is the whole tree. Without it the check globbed the
         # integration suites alone and exempted every inline `#[cfg(test)]`
         # module under `src/`, which is where most of this workspace's tests
