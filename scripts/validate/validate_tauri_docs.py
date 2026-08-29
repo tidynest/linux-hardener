@@ -54,9 +54,20 @@ def find_project_root() -> Path:
 
 
 def parse_tauri_commands(root: Path) -> dict[str, dict]:
-    """Parse #[tauri::command] functions from commands.rs."""
-    commands_file = root / "src-tauri" / "src" / "commands.rs"
-    content = commands_file.read_text()
+    """Parse #[tauri::command] functions from the commands tree.
+
+    The tree is `src-tauri/src/commands/`: `mod.rs` plus one file per
+    domain, split along the seams the test files named. The `*_tests.rs`
+    siblings are excluded because they define no commands - reading them
+    would only risk mistaking a test's shape for a command's.
+    """
+    commands_dir = root / "src-tauri" / "src" / "commands"
+    contents = [
+        path.read_text()
+        for path in sorted(commands_dir.glob("*.rs"))
+        if not path.stem.endswith("_tests")
+    ]
+    content = "\n".join(contents)
 
     commands = {}
 

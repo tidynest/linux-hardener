@@ -176,7 +176,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Readiness Tooling | `test-readiness-summary.sh` | Two properties of the root-only readiness batch, checked unprivileged in about a second because nothing else can reach them without containers. First, a summary row carried from a previous run is marked and never counted, so a `--only` run cannot publish a one-row table that reads as though nothing else was validated, and a carried PASS is not evidence. Second, every suite log states which binary it exercised: `run-cross-distro-tests.sh`, `run-package-tests.sh` and `gui/run-gui-tests.sh` each call `print_run_identity`, and that helper prints the tree commit and the artefact's version and build time. A log's timestamp records when it ran, not what it ran, and six logs dated 2026-08-22 all exercised a binary built on the 19th, which made five suites 143 commits stale look three days old. The functions and call sites are read out of the real scripts, so this cannot pass against a copy that has drifted |
 | file-map.md Completeness | `validate_file_map.py` | All source files documented |
 | Plugin Documentation | `validate_plugin_docs.py` | Plugin tables match source |
-| Tauri Commands | `validate_tauri_docs.py` | Every `#[tauri::command]` in `commands.rs` is documented in `file-map.md`, every `tauri_bindings.rs` invoke names a command that exists, and every command is registered in all three places that must know about it: the `generate_handler!` block in `main.rs`, `COMMANDS` in `build.rs`, and an `allow-<command>` grant in `capabilities/default.json`. That third check was added on 2026-08-29 by a sweep asking what else states a value each validator reads. Adding a command means editing four files and this read one of them, so a command defined, bound and documented but missing its ACL grant passed everything here and failed only when a user clicked it, because Tauri denies an ungranted call at runtime (SAM-039). The four lists agreed at 32 when it was added; a site whose list is renamed or reshaped fails rather than reporting agreement with nothing |
+| Tauri Commands | `validate_tauri_docs.py` | Every `#[tauri::command]` in the `src-tauri/src/commands/` tree (mod.rs plus the nine domain files; the `*_tests.rs` siblings define none) is documented in `file-map.md`, every `tauri_bindings.rs` invoke names a command that exists, and every command is registered in all three places that must know about it: the `generate_handler!` block in `main.rs`, `COMMANDS` in `build.rs`, and an `allow-<command>` grant in `capabilities/default.json`. That third check was added on 2026-08-29 by a sweep asking what else states a value each validator reads. Adding a command means editing four files and this read one of them, so a command defined, bound and documented but missing its ACL grant passed everything here and failed only when a user clicked it, because Tauri denies an ungranted call at runtime (SAM-039). The four lists agreed at 32 when it was added; a site whose list is renamed or reshaped fails rather than reporting agreement with nothing |
 | Last Updated Dates | `validate_last_updated.py` | Dates current with git |
 | Doc Comment Attachment | `validate_doc_attachment.py` | No `///` block silently reassigned to the following item |
 | File Creation Sites | `validate_write_sites.py` | Every file-creating plugin call site carries a written reason its parent directory exists, and a written answer to whether a rollback reaches what it creates; every literal `cp` copies with both `-p` and `--no-dereference` |
@@ -768,7 +768,7 @@ This block said 156 across 4 sites until 2026-08-20, two days after the suite re
 
 **Script**: `validate_tauri_docs.py`
 
-**Purpose**: Validates that Tauri command documentation in file-map.md matches actual implementations in `commands.rs`, and that frontend bindings call valid commands.
+**Purpose**: Validates that Tauri command documentation in file-map.md matches actual implementations in the `src-tauri/src/commands/` tree, and that frontend bindings call valid commands.
 
 **Usage**:
 ```bash
@@ -777,7 +777,7 @@ This block said 156 across 4 sites until 2026-08-20, two days after the suite re
 ```
 
 **What It Checks**:
-- All `#[tauri::command]` functions in `src-tauri/src/commands.rs` are documented in file-map.md
+- All `#[tauri::command]` functions in the `src-tauri/src/commands/` tree are documented in file-map.md
 - Command signatures (arguments, return types) match between source and documentation
 - All `invoke_command()` calls in `tauri_bindings.rs` reference valid command names
 
