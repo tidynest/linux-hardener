@@ -253,9 +253,16 @@ jobs:
       # one ignored root-gated test, and `-- --ignored` runs only those,
       # which is the whole curation. The other ignored tests live in other
       # binaries and are never loaded here.
+      # RUSTUP_HOME travels with CARGO_HOME because sudo strips the
+      # environment: without it the rustup proxy runs as root, looks in
+      # /root/.rustup, and dies with "no default is configured". The
+      # variables expand in the step shell before sudo sees them.
       - name: Run the root-gated integration tests
         run: |
-          sudo env PATH="$PATH" CARGO_HOME="$HOME/.cargo" \
+          sudo env PATH="$PATH" \
+            CARGO_HOME="$HOME/.cargo" \
+            RUSTUP_HOME="$HOME/.rustup" \
+            RUSTUP_TOOLCHAIN=stable \
             CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target-root" \
             cargo test -p hardener-plugins --locked \
               --test kernel_tests --test permissions_tests \
