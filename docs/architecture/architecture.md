@@ -512,7 +512,7 @@ that decides.
 
 | Component | Root location | Unprivileged location | Purpose |
 |-----------|---------------|-----------------------|---------|
-| Checkpoints | `/var/lib/linux-hardener/checkpoints.db` (0755 dir) | `~/.local/share/linux-hardener/checkpoints.db` | System state snapshots |
+| Checkpoints | `/var/lib/linux-hardener/checkpoints.db` (0700 dir) | `~/.local/share/linux-hardener/checkpoints.db` | System state snapshots |
 | Audit Log | `/var/log/linux-hardener/audit.log` (0700 dir) | `~/.local/share/linux-hardener/audit.log` | Tamper-evident action history (JSONL) |
 | Signing Keys | `/etc/linux-hardener/signing.key` (0755 dir, 0400 key) | `~/.local/share/linux-hardener/signing.key` | Ed25519 keys |
 

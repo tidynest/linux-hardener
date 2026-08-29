@@ -97,7 +97,7 @@ sudo install -Dm755 hardener /usr/bin/hardener
 
 # Create required directories
 sudo install -dm755 /etc/linux-hardener
-sudo install -dm755 /var/lib/linux-hardener
+sudo install -dm700 /var/lib/linux-hardener
 sudo install -dm700 /var/log/linux-hardener
 
 # Optional: install default config
@@ -263,7 +263,7 @@ Packages create these automatically. For manual installs:
 
 ```bash
 sudo install -dm755 /etc/linux-hardener
-sudo install -dm755 /var/lib/linux-hardener
+sudo install -dm700 /var/lib/linux-hardener
 sudo install -dm700 /var/log/linux-hardener
 ```
 

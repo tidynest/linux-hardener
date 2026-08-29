@@ -99,6 +99,11 @@ def main():
         # nothing read until eight drifts had accumulated in it.
         ("GUI Mock Fixtures", "validate_gui_mock_fixtures.py", []),
         (".SRCINFO", "validate_srcinfo.py", []),
+        # .SRCINFO above pins one value the packaging states twice. This pins
+        # the other: three directory modes stated across ten sites, one of
+        # which is a test that mirrors the packaging and so agreed with itself
+        # while disagreeing with everything that ships.
+        ("Directory Modes", "validate_directory_modes.py", []),
         ("CHANGELOG Headings", "validate_changelog_headings.py", []),
         ("Markdown Links", "validate_doc_links.py", []),
         # A claim that a path is ignored is an instruction here, not a

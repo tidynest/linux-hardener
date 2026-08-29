@@ -177,6 +177,7 @@ check_file /usr/share/applications/linux-hardener.desktop 644
 check_file /usr/share/man/man1/hardener.1 644
 check_file /usr/share/polkit-1/actions/com.tidynest.linux-hardener.policy 644
 check_file /etc/linux-hardener/config.toml 644
+check_dir  /etc/linux-hardener 755
 check_dir  /var/lib/linux-hardener 700
 check_dir  /var/log/linux-hardener 700
 
