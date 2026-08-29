@@ -31,6 +31,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The hardening preview claimed a host was compliant while the Analysis tab
+  showed nine findings.** Reported from a real host running v1.6.0. With no
+  changes staged, the summary under the preview read "Nothing to apply.
+  Everything in this selection is already compliant", and it read that whenever
+  the change count was zero, whatever the reason. Zero has two causes and only
+  one is good news: everything really is compliant, or an area produced no
+  estimate because something stopped it.
+  The per-area rows had this right and say so at their own definition, refusing
+  to print "Already compliant" for an area carrying issues. **The summary
+  seventy lines below them did not, and contradicted them.** On the reported
+  host, `pam-hardening` came back with zero changes and eight HIGH warnings,
+  which the CLI prints in full and marks the plugin failed over; the desktop
+  showed "0 changes" on the row, kept the warnings behind an expander, and
+  then declared the whole selection clean.
+  The summary is three-way now: changes staged, none with areas blocked, none
+  with nothing blocked. Only the last says compliant, and the blocked case
+  names how many areas to go and look at. It stays silent about the cause,
+  because the causes differ: some of those warnings are a privilege the preview
+  does not take, and two are structural, since no privileged re-run fixes a PAM
+  stack that does not load `pam_pwquality.so`.
+  **Not fixed here, and the reason the two screens disagreed at all:**
+  `run_apply_dry_run` deliberately does not escalate, so a privileged scan
+  followed by a preview compares a root reading against an unprivileged one.
+  That is a design decision rather than a defect, and nothing yet tells the
+  operator it happened.
+
+
 - **The desktop's two scan buttons disagreed about a config that disables
   everything.** `hardener scan` refuses that state and says how to leave it:
   "Config disabled every selected plugin (...). Nothing was scanned." The

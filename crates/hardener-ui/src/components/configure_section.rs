@@ -20,7 +20,7 @@ use crate::types::ApplyResult;
 use crate::utils::{
     ApplyOutcome, PreviewDecision, annotate_preview, applied_settings_and_areas,
     apply_change_summary, apply_fully_successful, classify_apply_result, is_auth_cancelled,
-    is_manual_action, partial_summary_sentence, score_delta_label,
+    is_manual_action, nothing_to_apply_line, partial_summary_sentence, score_delta_label,
 };
 use leptos::prelude::*;
 use std::cell::Cell;
@@ -765,6 +765,17 @@ pub fn ConfigureSection() -> impl IntoView {
     let total_changes = Signal::derive(move || total_estimated_changes(&get_decisions()));
     let has_changes = Signal::derive(move || total_changes.get() != 0);
 
+    // How many areas produced no estimate because something stopped them,
+    // rather than because they were clean. The rows below already refuse to
+    // call such an area compliant; the summary needs the same fact or it
+    // contradicts them, which it did for every selection with zero changes.
+    let areas_with_issues = Signal::derive(move || {
+        get_decisions()
+            .iter()
+            .filter(|d| !d.issues.is_empty())
+            .count()
+    });
+
     // Done view (Step 4) - the Hardening page's tab-section signal, read
     // via `use_context` (not `expect_context`) so this component still
     // works if it is ever mounted outside `HardeningPage`; "View in
@@ -1158,9 +1169,9 @@ pub fn ConfigureSection() -> impl IntoView {
                         // not. Say why there is nothing to confirm instead.
                         <Show
                             when=move || has_changes.get()
-                            fallback=|| view! {
+                            fallback=move || view! {
                                 <p class="review-confirm-reassurance">
-                                    "Nothing to apply. Everything in this selection is already compliant."
+                                    {move || nothing_to_apply_line(areas_with_issues.get())}
                                 </p>
                             }
                         >

@@ -638,6 +638,42 @@ pub fn adhoc_canonical(target: &str) -> String {
     RemoteHostProfile::from_target(target, 22, None, true).target()
 }
 
+/// The sentence under a preview that staged no changes.
+///
+/// **Nothing staged has two causes and only one is good news.** Either every
+/// selected area really is compliant, or an area produced no estimate because
+/// it could not determine anything: unreadable configuration, a value that
+/// needs root, a remedy the plugin deliberately does not automate.
+///
+/// The per-area rows already draw that distinction and say so at their own
+/// definition, refusing to print "Already compliant" for an area carrying
+/// issues. The summary beneath them did not, and asserted
+/// "Everything in this selection is already compliant" for the whole selection
+/// whenever the change count was zero. An operator reading nine findings on the
+/// Analysis tab was told on the next screen that there was nothing wrong, which
+/// is the reading this project forbids everywhere else.
+///
+/// Deliberately silent about the cause. The issues carry it and the rows print
+/// them; guessing "run with sudo" here would be wrong for the two PAM warnings
+/// that are structural, and no privileged re-run fixes a stack that does not
+/// load `pam_pwquality.so`.
+pub fn nothing_to_apply_line(areas_with_issues: usize) -> String {
+    if areas_with_issues == 0 {
+        return "Nothing to apply. Everything in this selection is already compliant.".to_string();
+    }
+    format!(
+        "Nothing can be applied, and this is not a clean bill of health: {} {} \
+         reported problems that stopped an estimate being made. Expand {} above to see what.",
+        areas_with_issues,
+        if areas_with_issues == 1 {
+            "area"
+        } else {
+            "areas"
+        },
+        if areas_with_issues == 1 { "it" } else { "them" },
+    )
+}
+
 /// The registered plugins a scan produced no result for, by display name.
 ///
 /// **Absence is the only signal there is, and it is enough.** A scan returns

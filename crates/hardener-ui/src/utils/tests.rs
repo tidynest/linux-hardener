@@ -1857,3 +1857,59 @@ fn every_plugin_missing_is_reported_in_full() {
     assert_eq!(missing.len(), 3, "got {missing:?}");
     assert!(missing.contains(&"SSH Hardening".to_string()));
 }
+
+// --- nothing_to_apply_line ---------------------------------------------------
+//
+// Zero staged changes has two causes and only one is good news. Until
+// 2026-08-29 the summary asserted the good one unconditionally, so a host with
+// nine findings and eight blocked PAM warnings was told, on the screen after
+// the findings list, that everything was already compliant.
+
+/// The state that was being misreported. Reported on a real host running
+/// v1.6.0: a privileged scan showed nine findings, the unprivileged preview
+/// could not read /etc/security/pwquality.conf, and every area came back with
+/// no estimate.
+#[test]
+fn areas_with_issues_are_not_called_compliant() {
+    let line = nothing_to_apply_line(1);
+
+    assert!(
+        !line.contains("already compliant"),
+        "an area that could not be assessed is not a compliant one: {line}"
+    );
+    assert!(line.contains("not a clean bill of health"), "got: {line}");
+}
+
+/// The green half. With nothing blocked, zero changes really does mean
+/// compliant, and softening that would make a clean host read as a suspicious
+/// one.
+#[test]
+fn a_genuinely_clean_selection_still_says_so() {
+    let line = nothing_to_apply_line(0);
+
+    assert_eq!(
+        line,
+        "Nothing to apply. Everything in this selection is already compliant."
+    );
+}
+
+/// The count is named, so the operator knows how much of the selection to go
+/// and look at rather than expanding all eight areas to find the two.
+#[test]
+fn the_line_names_how_many_areas_are_blocked() {
+    let line = nothing_to_apply_line(3);
+
+    assert!(line.contains('3'), "got: {line}");
+    assert!(line.contains("areas"), "got: {line}");
+}
+
+/// One blocked area reads as one, not as "1 areas". A summary that cannot
+/// count is one an operator stops reading.
+#[test]
+fn a_single_blocked_area_reads_in_the_singular() {
+    let line = nothing_to_apply_line(1);
+
+    assert!(line.contains("1 area "), "got: {line}");
+    assert!(!line.contains("areas"), "got: {line}");
+    assert!(line.contains("Expand it above"), "got: {line}");
+}
