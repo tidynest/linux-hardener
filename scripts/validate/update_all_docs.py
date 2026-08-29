@@ -108,6 +108,52 @@ def changed_more_than_the_stamp(root: Path, sha: str, filepath: Path) -> bool:
     return any(not STAMP_LINE.match(line) for line in changed)
 
 
+_STAMP = re.compile(r'(\*\*Last Updated\*\*:\s*)(\d{4}-\d{2}-\d{2})')
+_FENCE = re.compile(r'^\s*(```|~~~)')
+
+
+def _stamp_lines(content: str):
+    """Yield `(line, is_stamp)` with anything inside a fenced block never a stamp.
+
+    `scripts/README.md` documents the stamp formats this updater accepts, and it
+    does so inside a fence using a real-looking date. A plain `re.sub` over the
+    whole file rewrote that example on every run: the sample demonstrating the
+    format drifted to whatever git last said, and each release carried a diff
+    nobody meant to make. A date inside a fence is an example of a stamp, not
+    one.
+    """
+    in_fence = False
+    for line in content.splitlines(keepends=True):
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            yield line, False
+            continue
+        yield line, not in_fence and bool(_STAMP.search(line))
+
+
+def first_stamp(content: str) -> str | None:
+    """The first real stamp's date, ignoring fenced examples."""
+    for line, is_stamp in _stamp_lines(content):
+        if is_stamp:
+            return _STAMP.search(line).group(2)
+    return None
+
+
+def restamp(content: str, date: str) -> tuple[str, int]:
+    """Every real stamp moved to `date`, and how many moved.
+
+    Every one, not just the first: `data-flow.md` and `file-map.md` each carry
+    two, and `validate_last_updated.py` checks both.
+    """
+    out, moved = [], 0
+    for line, is_stamp in _stamp_lines(content):
+        if is_stamp:
+            line, n = _STAMP.subn(rf'\g<1>{date}', line)
+            moved += n
+        out.append(line)
+    return "".join(out), moved
+
+
 def git_content_date(root: Path, filepath: Path) -> str | None:
     """Date of the last commit that changed this file's *content*.
 
@@ -191,18 +237,13 @@ class DocumentationUpdater:
             if not git_date:
                 continue
 
-            # Find current documented date
-            match = re.search(r'\*\*Last Updated\*\*:\s*(\d{4}-\d{2}-\d{2})', content)
-            if match:
-                doc_date = match.group(1)
+            # Find current documented date, ignoring fenced examples
+            doc_date = first_stamp(content)
+            if doc_date:
                 # Only update if git date is newer (don't go backwards)
                 if doc_date < git_date:
                     if self.apply:
-                        new_content = re.sub(
-                            r'(\*\*Last Updated\*\*:\s*)\d{4}-\d{2}-\d{2}',
-                            rf'\g<1>{git_date}',
-                            content
-                        )
+                        new_content, _ = restamp(content, git_date)
                         filepath.write_text(new_content)
                     self.log_update("dates", f"{rel_path}: {doc_date} → {git_date}")
 
@@ -549,7 +590,8 @@ class DocumentationUpdater:
 
 
 def _selftest() -> int:
-    """Prove `_get_git_date` ignores commits that only stamp a date (#172).
+    """Prove `_get_git_date` ignores stamp-only commits (#172), and that a
+    stamp inside a fence is an example rather than a stamp.
 
     Drives a real throwaway repository rather than a mocked `git log`, because
     the defect was in what the command was asked, not in how its output was
@@ -560,13 +602,49 @@ def _selftest() -> int:
     import tempfile
 
     failures: list[str] = []
+    ran = 0
 
     def check(label: str, got, want):
+        nonlocal ran
+        ran += 1
         if got == want:
             print(f"  {GREEN}✓{NC} {label}: {got}")
             return
         failures.append(f"{label}: got {got}, want {want}")
         print(f"  {RED}✗{NC} {label}: got {got}, want {want}")
+
+    # A date inside a fence is an example of a stamp, not one. scripts/README.md
+    # documents the accepted formats that way, and until 2026-08-29 every run
+    # rewrote the example along with the real stamp.
+    fenced = (
+        "# Doc\n\n"
+        "**Last Updated**: 2026-01-01\n\n"
+        "Body.\n\n"
+        "```markdown\n"
+        "**Last Updated**: 2026-08-18\n"
+        "```\n\n"
+        "**Last Updated**: 2026-01-01\n"
+    )
+    check("first stamp skips the fenced example", first_stamp(fenced), "2026-01-01")
+    moved_text, moved_n = restamp(fenced, "2026-09-09")
+    check("both real stamps move", moved_n, 2)
+    check(
+        "the fenced example is untouched",
+        "**Last Updated**: 2026-08-18" in moved_text,
+        True,
+    )
+    check(
+        "no real stamp is left behind",
+        "2026-01-01" in moved_text,
+        False,
+    )
+    # A document that is nothing but a fenced example has no stamp to move, and
+    # must not be reported as having one.
+    check(
+        "a fence-only document has no stamp",
+        first_stamp("# D\n\n```\n**Last Updated**: 2026-08-18\n```\n"),
+        None,
+    )
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -629,7 +707,9 @@ def _selftest() -> int:
         for f in failures:
             print(f"  {RED}✗{NC} {f}")
         return 1
-    print(f"{GREEN}Self-test passed: 6 of 6{NC}")
+    # Counted, not written down. This line read "6 of 6" while eleven checks
+    # printed above it, because adding a check never moved the literal.
+    print(f"{GREEN}Self-test passed: {ran - len(failures)} of {ran}{NC}")
     return 0
 
 
