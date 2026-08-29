@@ -583,6 +583,35 @@ where
     }
 }
 
+/// Refuses a scan whose every selected plugin the config disables.
+///
+/// `hardener scan` bails on this state and says how to leave it. `run_scan` did
+/// not, so the same host answered two ways depending on which button was
+/// pressed: the deep scan shells out and inherited the CLI's refusal, while the
+/// local scan returned an empty result set. The Analysis tab renders that as
+/// "No findings yet. Run a Security Scan above", so an operator who had just
+/// run one was told to run one.
+///
+/// **`scanned == 0` alone is not this state.** A registry that hands back
+/// nothing, or a filter matching no plugin, also produces no results and is a
+/// different fault with a different remedy. The refusal needs both halves:
+/// nothing ran, and the reason is that the config disabled what was asked for.
+///
+/// The wording follows the CLI's rather than paraphrasing it. An operator who
+/// hits this in the desktop and then reaches for the terminal should not have
+/// to work out that the two messages describe one condition.
+fn scan_selection_refusal(scanned: usize, skipped_by_config: &[String]) -> Result<(), String> {
+    if scanned > 0 || skipped_by_config.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "Config disabled every selected plugin ({}). Nothing was scanned. \
+         Remove them from [global] disabled_plugins, add them to \
+         [global] enabled_plugins, or select a plugin the config enables.",
+        skipped_by_config.join(", ")
+    ))
+}
+
 /// Executes a security scan across all enabled plugins.
 ///
 /// Persists results to the database for GUI state restoration.
@@ -621,6 +650,10 @@ pub async fn run_scan(
         let registry = create_plugin_registry();
 
         let mut results = Vec::new();
+        // Collected rather than counted: the refusal names them, which is the
+        // difference between "nothing was scanned" and a message the operator
+        // can act on.
+        let mut skipped_by_config: Vec<String> = Vec::new();
 
         // Get list of all plugin metadata
         let plugin_list = registry.list().map_err(safe_err)?;
@@ -640,8 +673,10 @@ pub async fn run_scan(
                 continue;
             }
 
-            // Skip plugins disabled by config
+            // Skip plugins disabled by config, remembering which, so a run that
+            // scanned nothing can say why instead of returning an empty list.
             if !config.is_plugin_enabled(metadata.plugin_id.as_str()) {
+                skipped_by_config.push(metadata.plugin_id.to_string());
                 continue;
             }
             // Retrieve the actual plugin
@@ -658,6 +693,11 @@ pub async fn run_scan(
                 results.push(recorded_scan(&metadata.plugin_id, outcome));
             }
         }
+
+        // Inside fail_session_on_err, so the refusal marks the session Failed
+        // rather than leaving a 'running' row behind. A refused scan is a scan
+        // that did not happen, which is what that row should say.
+        scan_selection_refusal(results.len(), &skipped_by_config)?;
 
         Ok(results)
     })
@@ -3193,6 +3233,12 @@ mod apply_args_tests;
 /// and for the ceiling it now shares with `get_host_history`.
 #[cfg(test)]
 mod history_limit_tests;
+
+/// Tests for `scan_selection_refusal`, the refusal `run_scan` owes when the
+/// config disables every plugin the operator selected. The CLI has always
+/// bailed on that state; the desktop's local scan returned an empty list.
+#[cfg(test)]
+mod scan_selection_tests;
 
 /// Tests for the audit detail the desktop's own config writes carry.
 #[cfg(test)]

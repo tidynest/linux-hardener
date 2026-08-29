@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop's two scan buttons disagreed about a config that disables
+  everything.** `hardener scan` refuses that state and says how to leave it:
+  "Config disabled every selected plugin (...). Nothing was scanned." The
+  desktop's deep scan shells out to the CLI and inherited the refusal, while
+  the local scan returned an empty result set, which the Analysis tab renders
+  as "No findings yet. Run a Security Scan above", telling an operator who had
+  just run a scan to run a scan. `run_scan` now applies the same rule, in the
+  CLI's own wording so the two messages read as one condition rather than two
+  problems, and inside `fail_session_on_err` so a refused scan marks its history
+  session Failed instead of leaving a `running` row. The predicate needs both
+  halves: nothing scanned **and** the config is why. An empty registry or a
+  filter matching no plugin also scans nothing and has a different remedy.
+  **Compliance reporting was never affected** and is why the bare `continue`
+  read as safe when it was examined on its own: `scan_evidence::flatten` pushes
+  an unassessed entry for any absent plugin, so a report says ManualReview
+  rather than Pass. It is the findings list that was silent. **Still open, and
+  needing more than a guard:** a partial disable tells the operator nothing in
+  either desktop path, because `Vec<ScanResult>` has no channel to carry what
+  was skipped, where the CLI prints "Skipped by config" on stderr.
+
 - **Every packaging shipped `/var/lib/linux-hardener` as `0755` while the code
   set it to `0700` the moment it was used.** That directory holds
   `checkpoints.db`, which stores captured contents of files including
