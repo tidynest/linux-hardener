@@ -27,7 +27,7 @@ const BADGES = [
   { file: 'version',  label: 'version',  message: '1.7.0',      color: TEAL },
   { file: 'license',  label: 'license',  message: 'Apache-2.0', color: TEAL },
   { file: 'rust',     label: 'rust',     message: '1.88+',      color: TEAL,       logo: 'rust' },
-  { file: 'aur',      label: 'AUR',      message: '1.6.0',      color: TEAL,       logo: 'archlinux' },
+  { file: 'aur',      label: 'AUR',      message: '1.7.0',      color: TEAL,       logo: 'archlinux' },
   { file: 'platform', label: 'platform', message: 'Linux',      color: TEAL,       logo: 'linux' },
   { file: 'tests',    label: 'tests',    message: '2314+',      color: TEAL_TESTS },
 ]
