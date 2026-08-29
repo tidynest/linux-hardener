@@ -1,8 +1,0 @@
-# Pins the toolchain local development uses, so a contributor on a newer
-# release and one on the floor build with the same compiler. CI is unaffected:
-# every workflow installs its toolchain through dtolnay/rust-toolchain, which
-# exports RUSTUP_TOOLCHAIN, and an environment variable outranks this file.
-# The declared minimum lives in Cargo.toml's `rust-version` and is enforced by
-# the msrv job, which is a different question from what developers build with.
-[toolchain]
-channel = "1.98"
