@@ -2,15 +2,14 @@
 
 ---
 
-## Current State (as of 2026-08-11)
+## Current State (as of 2026-08-29)
 
-**Read this first: the last release is v1.5.1 (2026-07-27) and a substantial
-body of work on `main` is past it, none of it released.** No count is given
-here on purpose: it changes with every commit, and the figure that used to
-stand in this sentence was stale within days. Read it live with
-`git rev-list --count --no-merges v1.5.1..main`. The version in the tree is
-still `1.5.1`, so none of the work described in this section is in a build a
-user can install. `CHANGELOG.md` `[Unreleased]` is the authoritative record of that work;
+**Read this first: the last release is v1.6.0 (2026-08-29), and the month of
+work that had piled up behind v1.5.1 is in it.** No count is given here on
+purpose: it changes with every commit, and the figure that used to stand in
+this sentence was stale within days. Read whatever has accumulated since the
+tag live, with `git rev-list --count --no-merges v1.6.0..main`. `CHANGELOG.md`
+is the authoritative record of what shipped;
 this section only orients. The bulk of it is defect repair proved on the five
 test containers: firewall boot persistence (a ufw enable that never asked
 systemd to want the unit at boot, and a Debian activity probe that read a

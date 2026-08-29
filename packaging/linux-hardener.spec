@@ -1,5 +1,5 @@
 Name:           linux-hardener
-Version:        1.5.1
+Version:        1.6.0
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -116,6 +116,19 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Fri Aug 28 2026 Eric Jingryd <tidynest@proton.me> - 1.6.0-1
+- Security: a compliance report can no longer be scored from a hand-flattened scan. The rule that stops a control passing on silence sat in front of the report generator, so every caller had to remember it and one did not; a fleet row scanned with one plugin reported the same 38 passing CIS controls as a row scanned with all eight. The generator now flattens the scan results itself and there is no flattened pair a new caller can hand to scoring. Regenerate any report kept, filed or forwarded
+- Security: hardener systemd install put a root timer on the host and recorded nothing, and uninstall took it away in the same silence. Both are audited now, and the unit files are written atomically so a daemon-reload cannot read a half-written unit
+- Security: two files sharing a stem in one directory shared a temporary write path, so concurrent writes could interleave
+- Security: the desktop wrote three kinds of host state in process and recorded none of them. All three are audited and atomic now
+- Security: exception add and exception remove wrote a root-owned configuration without an audit entry
+- Security: an unprivileged scan and a root apply silently resolved different configuration sources, and a source that could not be reached was indistinguishable from one that was empty
+- Added: hardener scope exclude|include, declaring a compliance control not applicable to this host, with the declaration itself audited
+- Added: a finding can be accepted as a documented policy exception without editing the configuration by hand, from the CLI or the Analysis tab
+- Added: multi-host SSH fleet operations reach the desktop: fleet scan with per-host compliance columns, fleet apply behind a mandatory dry run and confirmation, and per-host history
+- Changed: remote checkpoints capture and restore over SSH, keyed by host, and a cross-host rollback is refused
+- 978 non-merge commits since 1.5.1. The full list is in CHANGELOG.md
+
 * Mon Jul 27 2026 Eric Jingryd <tidynest@proton.me> - 1.5.1-1
 - Security: compliance reports could mark controls as passed for a plugin that produced no evidence. From the command line this needed a plugin's scan to fail; in the desktop it needed no failure at all, as disabling a plugin or scanning a subset was enough. Regenerate any report kept, filed or forwarded
 - Security: on openSUSE, apply created a short /etc/login.defs, /etc/security/faillock.conf and /etc/security/pwhistory.conf, which mask the vendor files under /usr/etc whole rather than per setting; 35 settings including ENCRYPT_METHOD and UMASK silently stopped applying. Apply now refuses to create these files rather than masking the vendor copy
