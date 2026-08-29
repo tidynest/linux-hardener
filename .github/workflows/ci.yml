@@ -237,11 +237,6 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -253,12 +248,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-root-cargo-
 
+      # cargo test with explicit --test selection rather than nextest's
+      # filter DSL: each of these four integration binaries holds exactly
+      # one ignored root-gated test, and `-- --ignored` runs only those,
+      # which is the whole curation. The other ignored tests live in other
+      # binaries and are never loaded here.
       - name: Run the root-gated integration tests
         run: |
           sudo env PATH="$PATH" CARGO_HOME="$HOME/.cargo" \
             CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target-root" \
-            cargo nextest run -p hardener-plugins --run-ignored=only \
-            -E 'test(target(kernel_tests)) or test(target(permissions_tests)) or test(target(pam_tests)) or test(target(ssh_tests))'
+            cargo test -p hardener-plugins --locked \
+              --test kernel_tests --test permissions_tests \
+              --test pam_tests --test ssh_tests -- --ignored
 
       - name: Fix target directory ownership
         run: sudo chown -R "$(id -u):$(id -g)" target-root
@@ -295,8 +296,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-fuzz-cargo-
 
+      # The gnu target is named explicitly because cargo-fuzz otherwise
+      # picked musl on the runner, where the address sanitizer is
+      # incompatible with statically linked libc.
       - name: Build the fuzz targets
-        run: cargo fuzz build
+        run: cargo fuzz build --target x86_64-unknown-linux-gnu
         working-directory: fuzz
 
   # Builds on the version `rust-version` declares, which no other job does: every
