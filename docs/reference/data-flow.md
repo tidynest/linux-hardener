@@ -1,7 +1,7 @@
 # Linux Hardener - Data Flow Documentation
 
-**Last Updated**: 2026-08-29
-**Version:** 1.7.0
+**Last Updated**: 2026-08-30
+**Version:** 1.8.0
 
 This document describes the data flow for all major operations in the system.
 
@@ -1552,4 +1552,4 @@ compares the two behaviours, not two separate screens.
 
 ---
 
-**Last Updated**: 2026-08-29
+**Last Updated**: 2026-08-30

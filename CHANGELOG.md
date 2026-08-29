@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-30
+
 ### Added
 
 - **The desktop backend is compiled, linted and tested by CI for the first
