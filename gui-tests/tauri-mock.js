@@ -25,6 +25,12 @@
   // root-owned file the desktop cannot read, which a browser fixture has no
   // way to produce, so the flag is set directly.
   const checkpointSource = params.get('checkpoint_source') || '';
+  // `?preview_mode=blocked` makes the dry run stage NOTHING while reporting
+  // issues, which is the state a real host reaches when a plugin cannot read
+  // the file it would have to compare against. The default fixture stages
+  // changes, so the preview's zero-change summary was unreachable and the
+  // sentence under it went unasserted while claiming the host was compliant.
+  const previewMode = params.get('preview_mode') || '';
   // `?rollback_mode=partial` makes one of the two files fail to restore.
   // Selected the same way as `apply_mode`, and for the same reason: the
   // default fixture restores everything, so `.restore-error` never renders in
@@ -471,6 +477,30 @@
     },
   ];
 
+  // Zero staged changes with issues present: nothing to apply, and NOT a clean
+  // bill of health. Mirrors what a real pam-hardening returns when
+  // /etc/security/pwquality.conf cannot be read.
+  const DRY_RUN_BLOCKED = [
+    {
+      validation_report_plugin_id: 'pam-hardening',
+      validation_report_is_valid: false,
+      validation_report_issues: [
+        {
+          validation_issue_severity: 'High',
+          validation_issue_message:
+            'minlen will not be set to 14: /etc/security/pwquality.conf could not be read (current value requires root)',
+        },
+      ],
+      validation_report_estimated_changes: [],
+    },
+    {
+      validation_report_plugin_id: 'kernel-hardening',
+      validation_report_is_valid: true,
+      validation_report_issues: [],
+      validation_report_estimated_changes: [],
+    },
+  ];
+
   const DRY_RUN_RESULTS = [
     {
       validation_report_plugin_id: 'kernel-hardening',
@@ -791,7 +821,7 @@
         return applyMode === 'mixed' ? MIXED_APPLY_RESULTS : APPLY_RESULTS;
 
       case 'run_apply_dry_run':
-        return DRY_RUN_RESULTS;
+        return previewMode === 'blocked' ? DRY_RUN_BLOCKED : DRY_RUN_RESULTS;
 
       case 'get_checkpoints':
         return {

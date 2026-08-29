@@ -177,6 +177,37 @@ test.describe('Configure', () => {
 // set no signal, so the card was unchanged and the press read as a dead
 // button. Its own describe block because the failure is injected through the
 // URL, which `loadApp` takes as a query and the block above does not pass.
+// A preview that stages nothing is not automatically good news. It means
+// either everything is compliant, or an area could not produce an estimate at
+// all. `?preview_mode=blocked` reaches the second, which the default fixture
+// cannot: it stages changes, so the zero-change summary was unreachable and
+// went unasserted while claiming the host was compliant.
+//
+// Reported from a real host on v1.6.0: a privileged scan showed nine findings
+// and the preview beneath it said everything was already compliant.
+test.describe('Configure preview, nothing stageable', () => {
+  test.beforeEach(async ({ page }) => {
+    await loadApp(page, '/hardening', 'preview_mode=blocked');
+    await page.getByRole('button', { name: /Preview Changes/i }).click();
+  });
+
+  // T-CONF-14: the summary must not call a blocked selection compliant.
+  test('T-CONF-14: a blocked preview is not called compliant', async ({ page }) => {
+    const box = page.locator('.review-confirm-box');
+    await expect(box).toBeVisible({ timeout: 10000 });
+    await expect(box).not.toContainText('already compliant');
+  });
+
+  // T-CONF-15: and it says how much of the selection to go and look at, so the
+  // operator is not left expanding every area to find the one that failed.
+  test('T-CONF-15: a blocked preview names how many areas reported problems', async ({ page }) => {
+    const box = page.locator('.review-confirm-box');
+    await expect(box).toBeVisible({ timeout: 10000 });
+    await expect(box).toContainText('not a clean bill of health');
+    await expect(box).toContainText('1 area');
+  });
+});
+
 test.describe('Configure config picker, dialog failure', () => {
   // T-CONF-13: Browse failing is reported, and names what the operator can do
   test('T-CONF-13: a file chooser that cannot open says so', async ({ page }) => {

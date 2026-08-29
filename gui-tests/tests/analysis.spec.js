@@ -294,6 +294,33 @@ test.describe('Findings', () => {
     await expect(page.getByRole('button', { name: 'Accept This Finding', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Remove Exception', exact: true })).toHaveCount(0);
   });
+
+  // T-FIND-13/14: a plugin that produced no result is named, not left silent.
+  //
+  // The fixture's inventory is 8 plugins and its scan covers 6, so audit and
+  // MAC are absent. That is exactly the state the notice exists for: a domain
+  // nobody scanned shows no findings, which looks the same as a clean one.
+  //
+  // Asserted rather than screenshotted. The theme sweep captures this view and
+  // captured it happily on every run before the notice existed, so a green
+  // sweep says nothing about whether it renders.
+  test('T-FIND-13: names the plugins that produced no result', async ({ page }) => {
+    await runScan(page);
+    const notice = page.locator('.findings-not-run');
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('Audit Hardening');
+    await expect(notice).toContainText('MAC Hardening');
+    await expect(notice).toContainText('2 of the 8');
+  });
+
+  // The green half. Before a scan every plugin is trivially absent, and saying
+  // so under "No findings yet" would announce a gap where there is simply no
+  // scan yet. Without this, a notice that fired unconditionally would pass the
+  // test above.
+  test('T-FIND-14: says nothing about missing plugins before a scan', async ({ page }) => {
+    await expect(page.getByText('No findings yet')).toBeVisible();
+    await expect(page.locator('.findings-not-run')).toHaveCount(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
