@@ -51,11 +51,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because the causes differ: some of those warnings are a privilege the preview
   does not take, and two are structural, since no privileged re-run fixes a PAM
   stack that does not load `pam_pwquality.so`.
-  **Not fixed here, and the reason the two screens disagreed at all:**
-  `run_apply_dry_run` deliberately does not escalate, so a privileged scan
-  followed by a preview compares a root reading against an unprivileged one.
-  That is a design decision rather than a defect, and nothing yet tells the
-  operator it happened.
+  **The reason the two screens disagreed at all is now stated too.**
+  `run_apply_dry_run` deliberately does not escalate, because a run that
+  changes nothing should not cost a password prompt, while `run_apply` goes
+  through `run_privileged`. So a privileged scan followed by a preview compares
+  a root reading against an unprivileged one, which is exactly what produced
+  the report: nine findings from a sudo scan, then a preview that could not
+  read the file they came from. The blocked message says so.
+  It says it as a fact about the two commands, not about any issue. Claiming
+  per-issue that root is the cause would repeat the mistake
+  `UncheckedTally::privilege_would_help` exists to prevent, where four
+  renderers each named root as the cause of every entry; `ValidationIssue`
+  carries no structured blocker the way `UncheckedCheck` does, so the producer
+  has not said and guessing from the wording is worse. Phrased as "may", not
+  "will", because some blocked areas are structural and no privileged re-run
+  fixes a PAM stack that does not load `pam_pwquality.so`.
 
 
 - **The desktop's two scan buttons disagreed about a config that disables

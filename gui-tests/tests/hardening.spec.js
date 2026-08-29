@@ -205,6 +205,12 @@ test.describe('Configure preview, nothing stageable', () => {
     await expect(box).toBeVisible({ timeout: 10000 });
     await expect(box).toContainText('not a clean bill of health');
     await expect(box).toContainText('1 area');
+    // And why this screen can disagree with a privileged scan: the preview
+    // does not escalate and Apply does. Asserted here rather than as its own
+    // case, so the suite size does not move for one more sentence in a banner
+    // two cases already reach.
+    await expect(box).toContainText('without elevated privileges');
+    await expect(box).toContainText('may still have changes');
   });
 });
 

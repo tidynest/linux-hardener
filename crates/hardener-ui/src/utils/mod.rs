@@ -653,17 +653,35 @@ pub fn adhoc_canonical(target: &str) -> String {
 /// Analysis tab was told on the next screen that there was nothing wrong, which
 /// is the reading this project forbids everywhere else.
 ///
-/// Deliberately silent about the cause. The issues carry it and the rows print
-/// them; guessing "run with sudo" here would be wrong for the two PAM warnings
-/// that are structural, and no privileged re-run fixes a stack that does not
-/// load `pam_pwquality.so`.
+/// Deliberately silent about **which** issue is which. The issues carry that
+/// and the rows print them. Asserting "run with sudo" per issue would repeat
+/// the mistake `UncheckedTally::privilege_would_help` exists to prevent, where
+/// four renderers each named root as the cause of every entry;
+/// `ValidationIssue` has no structured blocker the way `UncheckedCheck` does,
+/// so the producer has not said, and guessing from the wording is worse than
+/// not guessing.
+///
+/// It does state one thing no per-issue signal is needed for and the operator
+/// cannot otherwise know: **this preview runs unprivileged and Apply does
+/// not.** `run_apply_dry_run` takes no `PrivilegedOpGuard` and spawns the CLI
+/// directly, deliberately, because a run that changes nothing should not cost
+/// a password prompt. `run_apply` goes through `run_privileged`. So a
+/// privileged scan followed by a preview compares a root reading against an
+/// unprivileged one, which is exactly what was reported on 2026-08-29: nine
+/// findings from a sudo scan, then a preview that could not read the file they
+/// came from.
+///
+/// Phrased as "may", not "will". Some blocked areas are structural, and no
+/// privileged re-run fixes a PAM stack that does not load `pam_pwquality.so`.
 pub fn nothing_to_apply_line(areas_with_issues: usize) -> String {
     if areas_with_issues == 0 {
         return "Nothing to apply. Everything in this selection is already compliant.".to_string();
     }
     format!(
         "Nothing can be applied, and this is not a clean bill of health: {} {} \
-         reported problems that stopped an estimate being made. Expand {} above to see what.",
+         reported problems that stopped an estimate being made. Expand {} above to see what. \
+         This preview runs without elevated privileges and Apply does not, so an area that \
+         could not read its current value here may still have changes to make.",
         areas_with_issues,
         if areas_with_issues == 1 {
             "area"

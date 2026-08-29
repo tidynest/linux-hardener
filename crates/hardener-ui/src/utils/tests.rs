@@ -1913,3 +1913,38 @@ fn a_single_blocked_area_reads_in_the_singular() {
     assert!(!line.contains("areas"), "got: {line}");
     assert!(line.contains("Expand it above"), "got: {line}");
 }
+
+/// The fact the operator cannot get anywhere else: the preview and Apply run
+/// at different privilege levels, so a privileged scan and this screen are not
+/// answering the same question. Reported 2026-08-29 as nine findings from a
+/// sudo scan followed by a preview that read nothing.
+#[test]
+fn a_blocked_preview_says_it_ran_unprivileged() {
+    let line = nothing_to_apply_line(1);
+
+    assert!(line.contains("without elevated privileges"), "got: {line}");
+    assert!(line.contains("Apply does not"), "got: {line}");
+}
+
+/// "may", not "will". Some blocked areas are structural and no privileged
+/// re-run touches them, so promising changes would send the operator after a
+/// remedy that cannot work, which is the mistake privilege_would_help exists
+/// to prevent on the scan side.
+#[test]
+fn the_privilege_note_promises_nothing() {
+    let line = nothing_to_apply_line(2);
+
+    assert!(line.contains("may still have changes"), "got: {line}");
+    assert!(!line.contains("will have changes"), "got: {line}");
+    assert!(!line.contains("run with sudo"), "must not name a remedy: {line}");
+}
+
+/// And a genuinely clean selection says none of it. The privilege note belongs
+/// to the blocked branch only; on a compliant host it would be noise implying
+/// the result is provisional when it is not.
+#[test]
+fn a_clean_selection_carries_no_privilege_note() {
+    let line = nothing_to_apply_line(0);
+
+    assert!(!line.contains("privileges"), "got: {line}");
+}

@@ -1,6 +1,6 @@
 # Distribution Validation Results
 
-**Last Updated**: 2026-08-27
+**Last Updated**: 2026-08-29
 
 This document tracks validation testing across supported Linux distributions.
 
@@ -1294,7 +1294,7 @@ reach only the browser console.
 parameterised and
 generate their cases at collection time: `themes.spec.js:200` produces 42
 screenshots (6 states x 7 themes), `contrast.spec.js:765` produces one case per
-theme, and `hardening.spec.js:614` produces one per viewport width. Reading the
+theme, and `hardening.spec.js:620` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
 `test(` calls is 127 and understates the suite by 48.
 
@@ -1384,4 +1384,4 @@ test-results/gui/
 
 ---
 
-**Last Updated**: 2026-08-27
+**Last Updated**: 2026-08-29
