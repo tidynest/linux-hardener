@@ -136,6 +136,12 @@ if [[ -n "$NEWER_SOURCE" ]]; then
     exit 1
 fi
 
+# After the staleness guard, so the recorded build time is one this run accepted.
+# The artefact is the wasm bundle rather than a binary and answers no --version;
+# the app renders the build string in its own footer, which is why gui.log was
+# the only one of these four that could be dated at all, and that was luck.
+print_run_identity "gui" "$PROJECT_DIR/crates/hardener-ui/dist/index.html"
+
 mkdir -p "$RESULTS_DIR/screenshots/webui"
 
 if [[ -n "$SINGLE_DISTRO" ]]; then

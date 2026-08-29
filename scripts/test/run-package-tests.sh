@@ -111,6 +111,11 @@ if [[ ! -x "$MUSL_BINARY" ]] && [[ ! -x "$TARGET_DIR/release/hardener" ]]; then
     exit 1
 fi
 
+# The binary the packages are built around. What the suite finally exercises is
+# the copy the package manager installed inside the container, which is a fact
+# only that container can report; this names the input it was built from.
+print_run_identity "package" "$MUSL_BINARY"
+
 # A redirected target dir sits outside the /project bind; mount it where the
 # in-container scripts expect ./target.
 TARGET_BIND=()

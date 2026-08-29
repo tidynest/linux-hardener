@@ -119,7 +119,7 @@ CROSS_DOCUMENT_SITES: list[tuple[str, str, str, str]] = [
         r"Runs all (\d+) checks in the table above",
         "validators",
         "the Modes section. The Python figure beside it is this total minus "
-        "the one shell check, and is not separately captured",
+        "the two shell checks, and is not separately captured",
     ),
     (
         "README.md",
@@ -183,15 +183,17 @@ def validators(root: Path) -> int:
 
     Reads the registered tuples rather than the summary line, so the count is
     what the runner would run and not what it last printed.
+
+    Matched on the tuple's shape, not on what the script is called. The pattern
+    used to name `validate_*.py` or the one shell check by its exact path, so
+    registering `../test/test-readiness-summary.sh` as a second shell check
+    added a validator this counter could not see: the registry went to 28 while
+    every document saying 27 kept passing. A counter blind to the thing it
+    counts is worse than no counter, because the documents it clears read as
+    checked.
     """
     text = (root / "scripts/validate/validate_all.py").read_text()
-    return len(
-        re.findall(
-            r'^\s+\("[^"]+", "(?:validate_[a-z_]+\.py|\.\./release/release\.sh)"',
-            text,
-            re.M,
-        )
-    )
+    return len(re.findall(r'^\s+\("[^"]+",\s*"[^"]+",\s*\[', text, re.M))
 
 
 MEASURES = {"annotations": annotations, "ignored": ignored, "validators": validators}

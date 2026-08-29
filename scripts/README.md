@@ -173,6 +173,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Validator | Script | Description |
 |-----------|--------|-------------|
 | Version Synchronisation | `release.sh --verify` | Checks version numbers match |
+| Readiness Tooling | `test-readiness-summary.sh` | Two properties of the root-only readiness batch, checked unprivileged in about a second because nothing else can reach them without containers. First, a summary row carried from a previous run is marked and never counted, so a `--only` run cannot publish a one-row table that reads as though nothing else was validated, and a carried PASS is not evidence. Second, every suite log states which binary it exercised: `run-cross-distro-tests.sh`, `run-package-tests.sh` and `gui/run-gui-tests.sh` each call `print_run_identity`, and that helper prints the tree commit and the artefact's version and build time. A log's timestamp records when it ran, not what it ran, and six logs dated 2026-08-22 all exercised a binary built on the 19th, which made five suites 143 commits stale look three days old. The functions and call sites are read out of the real scripts, so this cannot pass against a copy that has drifted |
 | file-map.md Completeness | `validate_file_map.py` | All source files documented |
 | Plugin Documentation | `validate_plugin_docs.py` | Plugin tables match source |
 | Tauri Commands | `validate_tauri_docs.py` | Tauri commands documented |
@@ -201,7 +202,7 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 cargo tauri dev
 | Test Counts | `validate_test_counts.py` | The test-count figures in `docs/reference/evidence-ledger.md` against the tree, without running cargo. Counts a `grep` can reproduce are reproduced; the rest are pinned to each other by the identities the ledger states in prose, so a figure edited alone fails even though nothing about it was measured. Other documents stating a count as current, rather than as a dated reading, are held to the ledger. Every other validator here reads structure, so a number in a sentence was invisible to all of them: one count reached four values across six documents, and the ledger's own validator row sat two behind the registry |
 
 **Modes**:
-- Default: Runs all 27 checks in the table above, which are 26 Python validators plus the one shell check, `release.sh --verify`
+- Default: Runs all 28 checks in the table above, which are 26 Python validators plus two shell checks, `release.sh --verify` and `test-readiness-summary.sh`
 - `--quick`: Skips CLI and Compliance validators (faster)
 - `--fix`: Passes `--fix` to validators that support it
 
@@ -234,7 +235,7 @@ Running: Version Synchronisation
   ✓ CLI Documentation: passed
   ✓ Compliance Framework List: passed
 
-All 27 validations passed!
+All 28 validations passed!
 ```
 
 **Integration with CI/CD**:

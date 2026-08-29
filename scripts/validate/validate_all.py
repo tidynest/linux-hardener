@@ -71,6 +71,13 @@ def main():
     # validators live next to this file, release.sh in scripts/release/)
     validators = [
         ("Version Synchronisation", "../release/release.sh", ["--verify"]),
+        # The second shell check. Unprivileged, about a second, and it covers
+        # two properties of the root-only readiness batch that nothing else
+        # can: that a carried summary row is never counted as evidence, and
+        # that every suite log says which binary it exercised. Both defects it
+        # guards produced confidently wrong conclusions from a green run, and
+        # registering it here is what makes it run at all.
+        ("Readiness Tooling", "../test/test-readiness-summary.sh", []),
         ("file-map.md Completeness", "validate_file_map.py", []),
         ("Plugin Documentation", "validate_plugin_docs.py", []),
         ("Tauri Command Documentation", "validate_tauri_docs.py", []),

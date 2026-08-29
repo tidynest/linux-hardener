@@ -118,6 +118,62 @@ check "$ROW_CARRIED" "false" "and is not counted as carried"
 
 rm -rf "$RR_DIR" "$FNS"
 
+# =============================================================================
+# Every suite log says what it exercised
+# =============================================================================
+# A log's timestamp records when it ran, not what it ran. On 2026-08-22 six
+# cross-distro logs dated that day all exercised a binary built on the 19th,
+# which made five stale suites look three days old instead of 143 commits old.
+# The identity was in the pre-flight, in a different file, and the file people
+# open is the failing suite's own log.
+#
+# Removing a `print_run_identity` call is silent: the suite still passes and the
+# log still looks complete. This is what notices. Asserted against the real
+# runners, not a copy.
+
+echo ""
+echo "Suite logs carry their own identity"
+echo "==================================="
+
+# shellcheck disable=SC2016  # the $MUSL_BINARY here is text to grep for, not an expansion
+STAMPED=(
+    "run-cross-distro-tests.sh|cross-distro and differential"
+    "run-package-tests.sh|package"
+    "gui/run-gui-tests.sh|gui"
+)
+
+for entry in "${STAMPED[@]}"; do
+    runner="${entry%%|*}"
+    suites="${entry##*|}"
+    path="$SCRIPT_DIR/$runner"
+    if [[ ! -f "$path" ]]; then
+        fail "$runner does not exist, so the $suites log(s) cannot be checked"
+        continue
+    fi
+    if /usr/bin/grep -q '^[[:space:]]*print_run_identity' "$path"; then
+        pass "$runner stamps its log ($suites)"
+    else
+        fail "$runner never calls print_run_identity, so the $suites log(s) say only when they ran"
+    fi
+done
+
+# The helper has to exist and print the two facts a reader needs: which commit
+# the tree was at, and what the artefact actually is. A call to a function that
+# prints neither would pass the loop above.
+COMMON="$SCRIPT_DIR/../lib/common.sh"
+if /usr/bin/grep -q '^print_run_identity() {' "$COMMON"; then
+    pass "print_run_identity is defined in lib/common.sh"
+    BODY="$(awk '/^print_run_identity\(\) \{/,/^\}/' "$COMMON")"
+    [[ "$BODY" == *"Tree commit:"* ]] \
+        && pass "the identity names the tree commit" \
+        || fail "the identity does not print a tree commit"
+    [[ "$BODY" == *"Artefact version:"* && "$BODY" == *"Artefact built:"* ]] \
+        && pass "the identity names the artefact's version and build time" \
+        || fail "the identity does not print both the artefact version and its build time"
+else
+    fail "print_run_identity is not defined in lib/common.sh"
+fi
+
 echo ""
 if [[ $FAILURES -eq 0 ]]; then
     echo "All checks passed."

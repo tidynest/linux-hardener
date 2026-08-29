@@ -577,6 +577,14 @@ if [[ ! -x "$MUSL_BINARY" ]] && [[ ! -x "$TARGET_DIR/release/hardener" ]]; then
     exit 1
 fi
 
+# After --rebuild, so the identity names the binary the containers will get
+# rather than the one that was there when the script started. This script backs
+# two suites in the readiness batch, which write to different logs, so the label
+# follows the flag.
+print_run_identity \
+    "$([[ "$DO_DIFFERENTIAL" == "true" ]] && echo "differential" || echo "cross-distro")" \
+    "$MUSL_BINARY"
+
 # A redirected target dir sits outside the /project bind; mount it where the
 # in-container scripts expect ./target.
 TARGET_BIND=()

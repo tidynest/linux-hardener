@@ -146,6 +146,54 @@ binary_version_line() {
     printf '%s' "${output%%$'\n'*}"
 }
 
+# print_run_identity LABEL [ARTEFACT]
+#
+# What a suite is about to exercise, written into that suite's OWN log.
+#
+# Every one of these facts was already recorded, once, in the release-readiness
+# pre-flight. That is a different file. Reading cross-distro.log on its own told
+# you when the run happened and nothing about what it ran, and on 2026-08-22 six
+# such logs dated that day all exercised a binary built on the 19th: five suites
+# looked three days stale when they were 143 commits stale. The pre-flight was
+# right and nobody was reading it, because the failing suite's log is what you
+# open.
+#
+# A log's timestamp records when it ran, not what it ran. This is what records
+# what it ran.
+#
+# ARTEFACT is optional and need not be a binary: the GUI suite's is the built
+# frontend. The path and its build time are printed for whatever is passed, and
+# a version line is added only if the thing answers --version, so one call shape
+# covers a musl binary and a dist/index.html without branching at the call site.
+print_run_identity() {
+    local label="$1" artefact="${2:-}" line built status
+    status="$(git -C "$PROJECT_DIR" status --porcelain 2>/dev/null | wc -l)"
+    echo "--- what this run exercises ---"
+    echo "Suite:            $label"
+    echo "Date:             $(date)"
+    echo "Tree version:     $(workspace_version)"
+    echo "Tree commit:      $(git -C "$PROJECT_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+    echo "Tree status:      ${status} modified path(s)"
+    if [[ -n "$artefact" ]]; then
+        echo "Artefact:         $artefact"
+        if [[ -e "$artefact" ]]; then
+            built="$(date -r "$artefact" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")"
+            echo "Artefact built:   $built"
+            if [[ -x "$artefact" ]] && line="$(binary_version_line "$artefact" 2>/dev/null)"; then
+                echo "Artefact version: $line"
+            fi
+        else
+            # Not fatal here. Every runner already refuses to proceed without
+            # its artefact, and saying so twice in different words would put two
+            # error messages on one cause. Recorded because a log claiming to
+            # exercise something absent must not read as one that exercised it.
+            echo "Artefact built:   ABSENT at the time the identity was recorded"
+        fi
+    fi
+    echo "-------------------------------"
+    echo
+}
+
 # The first tracked source file that is newer than the binary, or nothing.
 #
 # A commit check cannot see an uncommitted edit: the binary carries the commit
