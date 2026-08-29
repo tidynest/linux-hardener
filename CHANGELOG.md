@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An inserted directive no longer glues itself to an unterminated
+  trailing `Match` line.** When a configuration file's final line was a
+  live `Match` block the file never newline-terminated, the writer's
+  insert-above-boundary path gave the inserted directive the boundary
+  line's terminator - which was none - producing `PermitRootLogin
+  noMatch Address 10.0.0.0/8`: one line, an sshd value that refuses to
+  parse, written by the code that exists to keep the global region
+  separate from the block. An inserted line is never the file's final
+  line and always takes a real newline now. Found by the
+  `config_directives` fuzz target's round-trip assertion on the first CI
+  run that had an accumulated corpus; the regression test pins both the
+  realistic shape and the target's exact input.
+
 ## [1.8.0] - 2026-08-30
 
 ### Added

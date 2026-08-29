@@ -485,7 +485,18 @@ pub fn set_config_directive(
         // Appending would drop the directive inside the trailing block, so
         // the new line takes the ending style of the line it lands above.
         (None, Some(index)) => {
-            let terminator = line_terminator(&lines[index]);
+            // The ending style of the line the directive is inserted above,
+            // so a CRLF file stays uniformly CRLF. An unterminated boundary
+            // line can only be the file's final line, and the inserted line
+            // is not final: it takes a real newline rather than the
+            // boundary's none. Without this the directive glued itself to
+            // the Match line ("PermitRootLogin noMatch User deploy"), which
+            // the round-trip assertion in the config_directives fuzz target
+            // caught on the first run that had an accumulated corpus.
+            let terminator = match line_terminator(&lines[index]) {
+                "" => "\n",
+                terminator => terminator,
+            };
             lines.insert(index, format!("{new_line}{terminator}"));
         }
         (None, None) => {

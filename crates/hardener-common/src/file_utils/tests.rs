@@ -817,6 +817,62 @@ fn a_commented_directive_is_not_read_as_a_value() {
     );
 }
 
+/// A file whose final line is a live `Match` with no terminator is the one
+/// shape the insert-above-boundary path can glue itself to: the inserted
+/// directive took the boundary line's terminator, which was none, and came
+/// out as `PermitRootLogin noMatch Address 10.0.0.0/8` - a value sshd
+/// refuses, written by the very code that exists to keep the global region
+/// separate. Found by the `config_directives` fuzz target's round-trip
+/// assertion on the first run that had an accumulated corpus (`MatCh`, no
+/// newline, case-insensitive). An inserted line is never the file's final
+/// line, so it always takes a real newline.
+#[test]
+fn an_inserted_directive_never_glues_to_an_unterminated_match_line() {
+    // The realistic shape: a trailing Match block the file never terminated.
+    let once = set_config_directive(
+        "Match Address 10.0.0.0/8",
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(
+        once, "PermitRootLogin no\nMatch Address 10.0.0.0/8\n",
+        "the directive and the boundary must be two lines"
+    );
+    assert_eq!(
+        parse_config_value(&once, "PermitRootLogin", ConfigFormat::SpaceSeparated, true),
+        Some("no".to_string()),
+        "what was set must read back as it was set:\n{once}"
+    );
+    let twice = set_config_directive(
+        &once,
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(twice, once, "a second pass must be a no-op");
+
+    // The fuzz target's exact input: case-insensitive, boundary-only file.
+    let fuzzed = set_config_directive(
+        "MatCh",
+        "ciii",
+        "0",
+        ConfigFormat::SpaceSeparated,
+        false,
+        Duplicates::Keep,
+    );
+    assert_eq!(fuzzed, "ciii 0\nMatCh\n");
+    assert_eq!(
+        parse_config_value(&fuzzed, "ciii", ConfigFormat::SpaceSeparated, false),
+        Some("0".to_string()),
+        "the round trip the target asserts must hold"
+    );
+}
+
 /// Two replacement characters are six bytes, so the fifth byte of such a
 /// string sits inside the second character. The case-insensitive arm of
 /// `strip_prefix_with_case` slices at the prefix's byte length before it
