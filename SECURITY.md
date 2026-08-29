@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-The current release is **1.5.1**. Only the 1.5 series receives security fixes.
+The current release is **1.6.0**. Only the 1.5 series receives security fixes.
 
 | Version           | Supported          | Notes                                                |
 | ----------------- | ------------------ | ---------------------------------------------------- |
@@ -286,4 +286,4 @@ For security concerns: [private vulnerability report](https://github.com/tidynes
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-hardener/issues)
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-08-29
