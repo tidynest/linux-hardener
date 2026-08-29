@@ -103,6 +103,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The configuration writer no longer panics when a case-insensitive
+  directive match would end inside a multi-byte character.** The
+  case-insensitive prefix matcher sliced at the directive name's byte
+  length before comparing, and content from a remote host decoded with
+  replacement characters put that index mid-character: the slice panicked
+  rather than answering no-match, taking the scan or apply path down with
+  it. A true match always ends on a character boundary, so a non-boundary
+  index now reads as no match. Found by the `config_directives` fuzz
+  target on its first executed run.
+- **Setting a directive no longer rewrites the line endings the file
+  already had.** The writer rebuilt content from `str::lines`, which eats
+  a carriage return sitting before a newline, so a CRLF file had every
+  ending normalised by any pass and a run of bare carriage returns shrank
+  by one byte per application: a compliant file reported a change on
+  every run until the bytes stopped moving, and the change was recorded
+  as a hardening success it was not. Untouched lines now carry their
+  terminators through the rebuild, a rewritten line keeps its own, and a
+  new line takes the ending style of the line it lands beside. Found by
+  the `pam_stack_parsing` fuzz target on its first executed run; both
+  crash inputs are pinned as fixed cases in the invariant smoke tests.
 - **`validate_tauri_docs.py` no longer says the commands live in
   `commands.rs`.** The validator has read the `commands/` tree since the
   split; its banner, its error messages and its docstrings still named the

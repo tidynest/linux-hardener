@@ -324,10 +324,20 @@ fn split_directive(line: &str) -> (&str, &str) {
 
 /// Strips `prefix` from `s`, comparing it with or without regard to case.
 /// `None` when `s` does not begin with it under the chosen comparison.
+///
+/// The case-insensitive arm slices at `prefix.len()` bytes, which can land
+/// inside a multi-byte character: content from a remote host is not
+/// promised UTF-8 text with ASCII line starts, and a replacement character
+/// from a lossy decode made that slice panic where no match existed. A
+/// true match always ends on a char boundary - equal chars occupy equal
+/// bytes - so a non-boundary index answers `None` and loses nothing.
 fn strip_prefix_with_case<'a>(s: &'a str, prefix: &str, case_sensitive: bool) -> Option<&'a str> {
     if case_sensitive {
         s.strip_prefix(prefix)
-    } else if s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix) {
+    } else if s.len() >= prefix.len()
+        && s.is_char_boundary(prefix.len())
+        && s[..prefix.len()].eq_ignore_ascii_case(prefix)
+    {
         Some(&s[prefix.len()..])
     } else {
         None
@@ -390,7 +400,22 @@ pub fn set_config_directive(
     case_sensitive: bool,
     duplicates: Duplicates,
 ) -> String {
-    let mut lines: Vec<String> = content.lines().map(String::from).collect();
+    // Lines are split with their terminators attached rather than through
+    // `str::lines`, which eats a `\r` sitting before a `\n`. Rebuilding
+    // from stripped lines rewrote the ending of every line a CRLF file
+    // held, and a run of bare `\r`s shrank by one byte per application, so
+    // the writer kept changing a file whose directive was already correct
+    // and reported the byte shuffle as a hardening change. Terminators are
+    // whitespace, so the trimming the scan does below is unchanged; only
+    // the rebuild differs, because each line now carries its own ending
+    // through to the output. An empty content yields no lines rather than
+    // one empty one, so appending to an absent file starts the directive
+    // at byte zero instead of under a stray separator newline.
+    let mut lines: Vec<String> = if content.is_empty() {
+        Vec::new()
+    } else {
+        content.split_inclusive('\n').map(String::from).collect()
+    };
 
     let new_line = match format {
         ConfigFormat::SpaceSeparated | ConfigFormat::Auto => {
@@ -450,10 +475,37 @@ pub fn set_config_directive(
     }
 
     match (live.or(commented), boundary) {
-        (Some(index), _) => lines[index] = new_line,
-        // Appending would drop the directive inside the trailing block.
-        (None, Some(index)) => lines.insert(index, new_line),
-        (None, None) => lines.push(new_line),
+        (Some(index), _) => {
+            // The rewritten line keeps the terminator the original had: a
+            // CRLF file must not lose its endings to a rewrite that is
+            // about nothing but the value.
+            let terminator = line_terminator(&lines[index]);
+            lines[index] = format!("{new_line}{terminator}");
+        }
+        // Appending would drop the directive inside the trailing block, so
+        // the new line takes the ending style of the line it lands above.
+        (None, Some(index)) => {
+            let terminator = line_terminator(&lines[index]);
+            lines.insert(index, format!("{new_line}{terminator}"));
+        }
+        (None, None) => {
+            // The ending style of the line the directive is appended
+            // after, so a CRLF file stays uniformly CRLF. An unterminated
+            // final line contributes none: the separator below becomes its
+            // ending and the final-terminator check closes the file.
+            let terminator = lines.last().map_or_else(
+                || "\n".to_string(),
+                |line| line_terminator(line).to_string(),
+            );
+            if let Some(last) = lines.last_mut() {
+                // The file's final line may be unterminated, and the
+                // appended directive has to start on a line of its own.
+                if !last.ends_with('\n') {
+                    last.push('\n');
+                }
+            }
+            lines.push(format!("{new_line}{terminator}"));
+        }
     }
 
     // Only when the caller says a second definition cannot be meaningful.
@@ -465,20 +517,38 @@ pub fn set_config_directive(
         }
     }
 
-    // `str::lines` discards the terminator and `join` does not put one back, so
-    // every rewrite used to come back one byte short: not only an appended
-    // directive, but a line rewritten where it already stood. Whatever was
-    // appended to that file next landed on the last directive, which is how an
-    // sshd_config ended in
+    // `str::lines` used to discard the terminator and `join("\n")` did not
+    // put one back, so every rewrite came back one byte short: not only an
+    // appended directive, but a line rewritten where it already stood.
+    // Whatever was appended to that file next landed on the last directive,
+    // which is how an sshd_config ended in
     // `MACs ...umac-128-etm@openssh.comMaxAuthTries` and sshd refused to start.
     //
-    // Pushing one newline rather than restoring what was there is exact, not
-    // approximate: a blank line at the end of the input survives `lines` as an
-    // empty element, so `"a\n\n"` round-trips through join to `"a\n"` and back
-    // to `"a\n\n"`. Only the single final terminator is ever missing.
-    let mut out = lines.join("\n");
-    out.push('\n');
+    // Concatenation rather than `join`, because every line already carries
+    // the terminator it arrived with or was given: a join would add a
+    // second newline after each one. A blank line at the end of the input
+    // survives as a bare `\n` chunk, so `"a\n\n"` round-trips unchanged.
+    // After the concat only one terminator can be missing - a final line
+    // rewritten in place whose original had none - and the writer's output
+    // is always newline-terminated, because what a caller does with it is
+    // write it to a file and something else will append to that file later.
+    let mut out = lines.concat();
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
     out
+}
+
+/// The terminator a `split_inclusive('\n')` line carries: CRLF, LF, or
+/// nothing at all for a final line the file never terminated.
+fn line_terminator(line: &str) -> &str {
+    if line.ends_with("\r\n") {
+        "\r\n"
+    } else if line.ends_with('\n') {
+        "\n"
+    } else {
+        ""
+    }
 }
 
 /// Creates a timestamped backup of a file.

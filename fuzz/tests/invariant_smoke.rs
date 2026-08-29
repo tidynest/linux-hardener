@@ -1,14 +1,13 @@
 //! Runs the fuzz targets' asserted invariants on fixed inputs, without
 //! libfuzzer.
 //!
-//! `cargo fuzz build` proves the targets compile and nothing else, and this
-//! laptop cannot run cargo-fuzz (wrapper, rustup and argv[0] interplay), so
-//! the expectations the targets assert are otherwise unexercised until some
-//! future run: a target whose expectation is wrong fails on every input,
-//! which reads as a parser bug and is not one. Each case here walks the same
-//! invariants over a hand-checked input, so the wrong-expection failure is
-//! caught by `RUSTFLAGS="--cfg fuzzing" cargo test` in this directory.
-//! The flag is required because the seams it reaches compile only under it.
+//! CI bursts every target for 60 seconds a push, which finds inputs but
+//! says nothing deterministic; and this laptop cannot run cargo-fuzz at
+//! all (wrapper, rustup and argv[0] interplay). Each case here walks the
+//! same invariants over a hand-checked input, so a wrong expectation is
+//! caught by `RUSTFLAGS="--cfg fuzzing" cargo test` in this directory
+//! rather than read as a parser bug. The flag is required because the
+//! seams it reaches compile only under it.
 
 use hardener_common::file_utils::{ConfigFormat, parse_config_value};
 use hardener_core::ChangeType;
@@ -186,4 +185,45 @@ fn the_include_append_is_idempotent_and_loses_nothing() {
         "trim matches"
     );
     assert_eq!(with_include_line("", INCLUDE), format!("{INCLUDE}\n"));
+}
+
+/// The two inputs the fuzz-run job's first execution crashed on, held as
+/// fixed cases so the regressions stay caught wherever cargo-fuzz cannot
+/// run. Both are remote-input shapes: bytes decoded lossily, and line
+/// endings a conffile can carry that no fixture hand-written from the same
+/// reading as the code would have planted.
+#[test]
+fn findings_from_the_first_executed_run_stay_fixed() {
+    // pam_stack_parsing, `-\r\r\r`: the writer rebuilt content through
+    // `str::lines`, which eats a `\r` before a `\n`, so each application
+    // after the first reported a change and ate a byte.
+    let mut file = "-\r\r\r".to_string();
+    let mut changed = false;
+    let mut changes = Vec::new();
+    for _ in 0..3 {
+        apply_exact_directive(
+            &mut file,
+            &mut changed,
+            &mut changes,
+            "minlen",
+            "-",
+            ConfigFormat::SpaceSeparated,
+            "fuzz.conf",
+        );
+    }
+    assert_eq!(file, "-\r\r\r\nminlen -\n", "no byte is eaten after the first pass");
+    assert_eq!(
+        changes.last().map(|c| c.change_type),
+        Some(ChangeType::Skipped),
+        "an already-correct file records the no-op"
+    );
+
+    // config_directives: the case-insensitive prefix matcher sliced at the
+    // prefix's byte length before comparing, and a line whose bytes put
+    // that index inside a character panicked instead of answering unset.
+    assert_eq!(
+        parse_config_value("\u{FFFD}\u{FFFD}x\n", "umask", ConfigFormat::Auto, false),
+        None,
+        "a partial character is not a directive and must not be a panic"
+    );
 }

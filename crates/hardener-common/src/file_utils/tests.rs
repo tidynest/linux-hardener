@@ -816,3 +816,105 @@ fn a_commented_directive_is_not_read_as_a_value() {
         "a live line below a commented one is the value that counts"
     );
 }
+
+/// Two replacement characters are six bytes, so the fifth byte of such a
+/// string sits inside the second character. The case-insensitive arm of
+/// `strip_prefix_with_case` slices at the prefix's byte length before it
+/// compares anything, and that slice panicked rather than answering `None`.
+/// The input class is remote-host content decoded lossily, and this is the
+/// finding the `config_directives` fuzz target produced on its first run:
+/// before it, nothing anywhere executed these parsers on hostile bytes.
+#[test]
+fn a_case_insensitive_prefix_never_slices_inside_a_character() {
+    assert_eq!(
+        strip_prefix_with_case("\u{FFFD}\u{FFFD}x", "umask", false),
+        None,
+        "a prefix ending mid-character is not a match, and must not be a panic"
+    );
+}
+
+/// A CRLF file's endings belong to the file. Rebuilding the content from
+/// `str::lines`, which eats a `\r` before a `\n`, rewrote the ending of
+/// every line on every pass: a compliant file reported a change each run
+/// and the bytes shuffled under a value that never moved.
+#[test]
+fn a_rewrite_preserves_the_crlf_endings_the_file_already_had() {
+    let once = set_config_directive(
+        "PermitRootLogin yes\r\nPort 22\r\n",
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(
+        once, "PermitRootLogin no\r\nPort 22\r\n",
+        "the rewritten line and the untouched one keep the endings they had"
+    );
+
+    let twice = set_config_directive(
+        &once,
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(twice, once, "a second pass must be a no-op");
+}
+
+/// An appended line takes the ending style of the file it lands in, so a
+/// CRLF file stays uniformly CRLF rather than growing a lone LF line.
+#[test]
+fn an_appended_directive_keeps_a_crlf_file_uniform() {
+    let once = set_config_directive(
+        "Port 22\r\n",
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(once, "Port 22\r\nPermitRootLogin no\r\n");
+
+    let twice = set_config_directive(
+        &once,
+        "PermitRootLogin",
+        "no",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(twice, once, "a second pass must be a no-op");
+}
+
+/// A run of bare carriage returns is not a line ending, and rebuilding
+/// through `str::lines` ate one `\r` per application wherever a `\r` stood
+/// before a `\n`. This is the exact input the `pam_stack_parsing` fuzz
+/// target crashed on (`-\r\r\r`): the first application appended the
+/// directive, the second ate a byte, and the file never stopped changing.
+#[test]
+fn a_bare_carriage_return_run_survives_its_own_rewrite() {
+    let once = set_config_directive(
+        "-\r\r\r",
+        "minlen",
+        "-",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(
+        once, "-\r\r\r\nminlen -\n",
+        "nothing is eaten, the directive is appended"
+    );
+
+    let twice = set_config_directive(
+        &once,
+        "minlen",
+        "-",
+        ConfigFormat::SpaceSeparated,
+        true,
+        Duplicates::Keep,
+    );
+    assert_eq!(twice, once, "the second pass must be byte-identical");
+}
