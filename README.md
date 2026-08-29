@@ -211,7 +211,7 @@ The finding prints the command that copies the file into `/etc` for you. See the
   <img src="docs/assets/screenshots/analysis-findings.png" alt="Security Analysis: findings grouped by severity" width="49%">
 </p>
 
-<p align="center"><sub>The real Leptos/WASM interface on the Midnight Teal theme, captured at 1.5.1 (2026-08-21) against the test fixture rather than a live scan, which is why the hosts read <code>web-01</code> and <code>db-01</code>. The fixture is <code>gui-tests/tauri-mock.js</code>, held to the Rust types by <code>validate_gui_mock_fixtures.py</code> and driven by the 171-case Playwright suite, so these are reproducible on any machine and contain no data from anyone's system. The Hosts and Scheduler screens are in <a href="docs/assets/screenshots/">docs/assets/screenshots</a>, along with the states these five do not reach: the finding detail expander, the per-control compliance view, the checkpoint timeline and its rollback confirmation, the expanded host panel, and the two Scheduler notes that appear only while scheduled scanning is off.</sub></p>
+<p align="center"><sub>The real Leptos/WASM interface on the Midnight Teal theme, captured at 1.6.0 (2026-08-29) against the test fixture rather than a live scan, which is why the hosts read <code>web-01</code> and <code>db-01</code>. The fixture is <code>gui-tests/tauri-mock.js</code>, held to the Rust types by <code>validate_gui_mock_fixtures.py</code> and driven by the 171-case Playwright suite, so these are reproducible on any machine and contain no data from anyone's system. The Hosts and Scheduler screens are in <a href="docs/assets/screenshots/">docs/assets/screenshots</a>, along with the states these five do not reach: the finding detail expander, the per-control compliance view, the checkpoint timeline and its rollback confirmation, the expanded host panel, and the two Scheduler notes that appear only while scheduled scanning is off.</sub></p>
 
 ---
 
@@ -467,7 +467,7 @@ and where the two differ this page follows the tree.
 
 ### Releases
 
-**Version**: 1.5.1
+**Version**: 1.6.0
 
 Install a release unless you have a reason not to. Per-release detail is in
 [CHANGELOG.md](CHANGELOG.md), and anything a release fixed that your already
@@ -538,4 +538,4 @@ Drawing on [Lynis](https://cisofy.com/lynis/),
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-hardener
 
-**Last Updated**: 2026-08-28
+**Last Updated**: 2026-08-29
