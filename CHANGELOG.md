@@ -43,8 +43,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refusal to lose a byte of the distribution's own boot file. The parsers
   are re-exported through a `cfg(fuzzing)`-gated seam, so the crate's
   public surface is unchanged in every build that ships, and each target's
-  invariants also run on fixed inputs in a plain test beside them, because
-  CI builds the targets and never runs them.
+  invariants also run on fixed inputs in a plain test beside them, which
+  held the expectations honest until CI began executing the targets.
+- **CI executes the fuzz targets, not only compiling them.** The fuzz job
+  built every target on each push while nothing anywhere ran a single
+  iteration, so a wrong expectation inside a target, or a parser bug on
+  inputs the fixed-input tests do not hold, would have failed only for
+  whoever first ran the fuzzer, in a crisis rather than in CI. Every
+  target now gets a 60-second burst per push, all targets run even after
+  one crashes, and the job fails when a burst ends by crashing rather than
+  by its timer. The corpus accumulates across runs through the Actions
+  cache, so each burst starts where the last one left off instead of
+  rediscovering the same shallow inputs from empty.
 
 ### Changed
 

@@ -321,15 +321,20 @@ jobs:
       - name: Fix target directory ownership
         run: sudo chown -R "$(id -u):$(id -g)" target-root
 
-  # Builds the fuzz targets rather than running them: proving they compile
-  # under the sanitizer flags is what rots silently, because nothing else in
-  # this workflow touches nightly at all, and a target that stopped building
-  # would otherwise sit unnoticed until someone wanted it in a crisis. The
-  # targets assert documented invariants of the directive parsers apply
-  # writes through, which consume files arriving from remote hosts over the
-  # SSH executor - input the operator does not control.
-  fuzz-build:
-    name: Fuzz Build
+  # Runs every fuzz target for a short bounded burst. The job this one
+  # replaced compiled the targets on every push while nothing anywhere
+  # executed a single iteration, so a wrong expectation inside a target, or
+  # a parser bug on inputs the fixed-input smoke tests do not hold, would
+  # have surfaced only for whoever first ran the fuzzer in a crisis.
+  # `cargo fuzz run` compiles with the same sanitizer flags the build-only
+  # job used, so a target that stops building still fails this job; 60
+  # seconds a target keeps the whole job inside a few minutes while
+  # executing millions of inputs for parsers this small. Every remaining
+  # target still runs after one crashes, because one bad parser must not
+  # hide the state of the rest; the job fails if any burst ended by
+  # crashing rather than by its timer.
+  fuzz-run:
+    name: Fuzz Run
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -353,12 +358,42 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-fuzz-cargo-
 
+      # The corpus accumulates across runs: the exact key is unique per run
+      # so the post-job save always happens, and the prefix restore pulls
+      # back the most recent corpus an earlier run saved. A key fixed on
+      # the lockfile would restore the first corpus ever saved and never
+      # re-save, and every 60-second burst would start from empty and
+      # rediscover the same shallow inputs forever.
+      - name: Cache the accumulated corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-
+
       # The gnu target is named explicitly because cargo-fuzz otherwise
       # picked musl on the runner, where the address sanitizer is
-      # incompatible with statically linked libc.
-      - name: Build the fuzz targets
-        run: cargo fuzz build --target x86_64-unknown-linux-gnu
+      # incompatible with statically linked libc. The target list is read
+      # from fuzz_targets/ itself, so a target added later is run rather
+      # than merely compiled.
+      - name: Run every target for a short burst
         working-directory: fuzz
+        run: |
+          failed=0
+          for path in fuzz_targets/*.rs; do
+            target="${path##*/}"
+            target="${target%.rs}"
+            echo "::group::cargo fuzz run $target"
+            if cargo fuzz run "$target" --target x86_64-unknown-linux-gnu -- -max_total_time=60; then
+              echo "$target: burst completed"
+            else
+              echo "$target: FAILED"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$failed"
 
   # Builds on the version `rust-version` declares, which no other job does: every
   # one of them installs @stable, so a tree that quietly starts requiring a newer
