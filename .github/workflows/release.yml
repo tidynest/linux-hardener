@@ -14,7 +14,10 @@ env:
   WORKSPACE_EXCLUDE: --exclude linux-hardener-desktop --exclude hardener-ui
 
 jobs:
-  # Run tests before releasing
+  # Run tests before releasing. The desktop backend is tested here too,
+  # behind the same dependency install ci.yml's desktop job carries: a
+  # release whose GUI half never ran a test is a release of the CLI alone,
+  # whatever the tag says it contains.
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -23,9 +26,28 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev
+
+      - name: Install trunk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+
+      - name: Build the frontend bundle the backend embeds
+        run: trunk build --release
+        working-directory: crates/hardener-ui
 
       - name: Run tests
         run: cargo test --workspace $WORKSPACE_EXCLUDE
+
+      - name: Run desktop tests
+        run: cargo test -p linux-hardener-desktop
 
   # Build release binaries for multiple platforms
   build:

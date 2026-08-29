@@ -107,16 +107,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A prebuilt binary rather than `cargo install cargo-audit`, which
+      # compiled the tool from source on every run: minutes of unpinned
+      # work whose failure mode was the retry loop this step used to carry.
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
 
       - name: Run security audit
-        run: |
-          for i in 1 2 3 4 5; do
-            cargo audit && break
-            echo "Attempt $i failed, retrying in 10s..."
-            sleep 10
-          done
+        run: cargo audit
 
   wasm-check:
     name: WASM Check
@@ -143,12 +143,21 @@ jobs:
       - name: Check WASM compilation
         run: cargo check -p hardener-ui --target wasm32-unknown-unknown
 
-  # Compiles the desktop backend, which no other job in this file can: they
-  # all carry WORKSPACE_EXCLUDE for want of the GTK and WebKitGTK system
-  # libraries, so through late August 2026 a tree where `commands.rs` stopped
-  # compiling passed this workflow green, and only a developer's local
-  # `cargo clippy --workspace` stood in the gap. Installing those libraries
-  # here is the whole difference between this job and the exclude.
+      # Nowhere else lints this crate: the workspace clippy job carries
+      # WORKSPACE_EXCLUDE, so without this step a warning the frontend
+      # compiles with ships. Verified clean before the step was added, so
+      # the gate starts strict rather than landing red.
+      - name: Lint the frontend crate
+        run: cargo clippy -p hardener-ui --target wasm32-unknown-unknown -- -D warnings
+
+  # Compiles, lints and tests the desktop backend, which no other job in
+  # this file can touch: they all carry WORKSPACE_EXCLUDE for want of the
+  # GTK and WebKitGTK system libraries, so through late August 2026 a tree
+  # where `commands.rs` stopped compiling passed this workflow green, and
+  # only a developer's local `cargo clippy --workspace` stood in the gap.
+  # Installing those libraries is the whole difference between this job and
+  # the exclude. Clippy and tests run here too, both with `-D warnings` and
+  # plain, because nowhere else executes them for this crate at all.
   #
   # The frontend bundle is built first, because `tauri::generate_context!`
   # embeds `frontendDist` at compile time and a checkout carries no `dist/`
@@ -158,8 +167,8 @@ jobs:
   # rather than stubbing the directory also gives CI its only execution of
   # `trunk build`, which the wasm-check job's `cargo check` does not
   # exercise.
-  desktop-check:
-    name: Desktop Check
+  desktop:
+    name: Desktop
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -168,6 +177,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
 
       - name: Install Tauri system dependencies
         run: |
@@ -196,6 +206,98 @@ jobs:
 
       - name: Check the desktop backend
         run: cargo check -p linux-hardener-desktop --all-targets
+
+      - name: Lint the desktop backend
+        run: cargo clippy -p linux-hardener-desktop --all-targets -- -D warnings
+
+      - name: Test the desktop backend
+        run: cargo test -p linux-hardener-desktop
+
+  # Runs the ignored-by-default integration tests that need root, which
+  # otherwise run only inside the local cross-distro containers: those are
+  # booted systemd environments built by hand, so a plain regression could
+  # sit in a root-only apply path between container runs and nothing in CI
+  # would see it. Curated to the tests that operate on files a stock
+  # ubuntu-latest runner carries (sysctl.d, sshd_config, PAM stacks,
+  # permission modes); the services, audit, MAC and firewall tests are left
+  # out because they need a booted systemd, an audit-capable kernel, a MAC
+  # system or a specific firewall backend, and ssh_integration is left out
+  # because it needs a live SSH host. Widen the filter only after a green
+  # run of what is here.
+  #
+  # The build runs as root into its own target directory: the default
+  # target/ belongs to the unprivileged jobs, and root-owned artefacts in
+  # it would poison every later cache hit.
+  root-tests:
+    name: Root-Gated Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target-root
+          key: ${{ runner.os }}-root-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-root-cargo-
+
+      - name: Run the root-gated integration tests
+        run: |
+          sudo env PATH="$PATH" CARGO_HOME="$HOME/.cargo" \
+            CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target-root" \
+            cargo nextest run -p hardener-plugins --run-ignored=only \
+            -E 'test(target(kernel_tests)) or test(target(permissions_tests)) or test(target(pam_tests)) or test(target(ssh_tests))'
+
+      - name: Fix target directory ownership
+        run: sudo chown -R "$(id -u):$(id -g)" target-root
+
+  # Builds the fuzz targets rather than running them: proving they compile
+  # under the sanitizer flags is what rots silently, because nothing else in
+  # this workflow touches nightly at all, and a target that stopped building
+  # would otherwise sit unnoticed until someone wanted it in a crisis. The
+  # targets assert documented invariants of the directive parsers apply
+  # writes through, which consume files arriving from remote hosts over the
+  # SSH executor - input the operator does not control.
+  fuzz-build:
+    name: Fuzz Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            fuzz/target
+          key: ${{ runner.os }}-fuzz-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-fuzz-cargo-
+
+      - name: Build the fuzz targets
+        run: cargo fuzz build
+        working-directory: fuzz
 
   # Builds on the version `rust-version` declares, which no other job does: every
   # one of them installs @stable, so a tree that quietly starts requiring a newer
