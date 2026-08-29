@@ -442,9 +442,11 @@ evasion.
   `/usr/etc` that the tool deliberately never writes. `scan` reports it and
   prints the command that copies it into `/etc`; `apply` stays silent about it
   by design.
-- `scan --format json` reports a plugin whose scan failed identically to one
-  that passed, because the per-plugin success flag is not serialised. The text
-  output does name such a plugin.
+- `scan --format json` emits a bare array with no schema version, so a consumer
+  cannot detect which shape of output it is reading. The fields themselves have
+  been stable, and every entry carries `scan_success` and `scan_error`, so a
+  failed plugin is distinguishable; what is missing is a way to know that
+  without inspecting the payload.
 
 Open defects are tracked as
 [GitHub issues](https://github.com/tidynest/linux-hardener/issues),
