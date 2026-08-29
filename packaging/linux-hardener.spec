@@ -1,5 +1,5 @@
 Name:           linux-hardener
-Version:        1.6.0
+Version:        1.7.0
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
@@ -116,6 +116,13 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Sat Aug 29 2026 Eric Jingryd <tidynest@proton.me> - 1.7.0-1
+- Added: the Analysis tab names any registered plugin that produced no result. A domain nobody scanned shows no findings, which looks the same as a clean one; the CLI has always said so on stderr, which the desktop discards
+- Fixed: a scan whose every selected plugin the configuration disables is refused with the CLI's own wording, rather than returning an empty result the interface rendered as "No findings yet"
+- Fixed: a hardening preview that could stage nothing no longer claims the host is already compliant. Zero changes has two causes and only one is good news; the per-area rows already drew that distinction and the summary beneath them did not
+- Fixed: the preview says that it runs unprivileged while Apply does not, which is why a privileged scan and the preview beneath it can disagree
+- Fixed: every packaging shipped /var/lib/linux-hardener at 0755 while the code sets it to 0700 on first use. No install was exposed, since the directory is empty until then, but the packaged mode contradicted the enforced one
+
 * Fri Aug 28 2026 Eric Jingryd <tidynest@proton.me> - 1.6.0-1
 - Security: a compliance report can no longer be scored from a hand-flattened scan. The rule that stops a control passing on silence sat in front of the report generator, so every caller had to remember it and one did not; a fleet row scanned with one plugin reported the same 38 passing CIS controls as a row scanned with all eight. The generator now flattens the scan results itself and there is no flattened pair a new caller can hand to scoring. Regenerate any report kept, filed or forwarded
 - Security: hardener systemd install put a root timer on the host and recorded nothing, and uninstall took it away in the same silence. Both are audited now, and the unit files are written atomically so a daemon-reload cannot read a half-written unit

@@ -4,11 +4,11 @@
 
 ## Current State (as of 2026-08-29)
 
-**Read this first: the last release is v1.6.0 (2026-08-29), and the month of
+**Read this first: the last release is v1.7.0 (2026-08-29), and the month of
 work that had piled up behind v1.5.1 is in it.** No count is given here on
 purpose: it changes with every commit, and the figure that used to stand in
 this sentence was stale within days. Read whatever has accumulated since the
-tag live, with `git rev-list --count --no-merges v1.6.0..main`. `CHANGELOG.md`
+tag live, with `git rev-list --count --no-merges v1.7.0..main`. `CHANGELOG.md`
 is the authoritative record of what shipped;
 this section only orients. The bulk of it is defect repair proved on the five
 test containers: firewall boot persistence (a ufw enable that never asked
@@ -473,13 +473,13 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
   2026-08-04 with `cargo test --workspace --no-fail-fast`; re-measure before
   quoting it, this number moves most weeks
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.6.0 (code and tag; the repo packaging's `PKGBUILD` and
+- **Current Version**: 1.7.0 (code and tag; the repo packaging's `PKGBUILD` and
   `.SRCINFO` still read 1.5.1 on purpose, because they are the authority for the
   aur badge and must not move until that package is live). **No count here**,
   per this file's own opening rule: the pair read "189 commits, 178 excluding
   merges" from 2026-08-02 and measured 819 and 778 on 2026-08-18. Read whatever
   has accumulated since the tag with
-  `git rev-list --count --no-merges v1.6.0..main`
+  `git rev-list --count --no-merges v1.7.0..main`
 - **WASM Support**: GUI frontend compiles to `wasm32-unknown-unknown`
 
 For version history and detailed feature tracking, see [ROADMAP.md](ROADMAP.md).

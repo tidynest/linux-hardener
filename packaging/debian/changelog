@@ -1,3 +1,19 @@
+linux-hardener (1.7.0-1) unstable; urgency=medium
+
+  * Added: the Analysis tab names any registered plugin that produced no
+    result. A domain nobody scanned shows no findings, which looks the same as
+    a clean one.
+  * Fixed: a scan whose every selected plugin the configuration disables is
+    refused rather than returning an empty result the interface rendered as
+    "No findings yet".
+  * Fixed: a hardening preview that could stage nothing no longer claims the
+    host is already compliant, and says that it runs unprivileged while Apply
+    does not.
+  * Fixed: every packaging shipped /var/lib/linux-hardener at 0755 while the
+    code sets it to 0700 on first use. No install was exposed.
+
+ -- Eric Jingryd <tidynest@proton.me>  Sat, 29 Aug 2026 12:00:00 +0000
+
 linux-hardener (1.6.0-1) unstable; urgency=high
 
   * SECURITY: a compliance report could be scored from a hand-flattened scan.
