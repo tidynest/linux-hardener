@@ -4302,6 +4302,25 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-size: var(--font-size-sm);
 }
 
+/* The "did not run" notice. Shares .findings-unchecked's type scale because it
+   says the same kind of thing, what the list above does not cover, but it sits
+   at the TOP of the tab rather than as a footer: it qualifies how to read the
+   whole list, including the empty state, so it cannot be below it.
+
+   The footer's border-top is therefore undone and a left rule takes its place.
+   No new colour pair is introduced: the accent reuses --color-medium-bright,
+   the caution hue already defined for both themes, and the text stays on
+   --text-secondary, which .findings-unchecked already pairs with this
+   background. */
+.findings-not-run {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-top: none;
+  border-left: 3px solid var(--color-medium-bright);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
 .findings-unchecked {
   margin: var(--space-md) 0 0;
   padding-top: var(--space-md);

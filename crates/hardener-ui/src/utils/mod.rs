@@ -638,6 +638,49 @@ pub fn adhoc_canonical(target: &str) -> String {
     RemoteHostProfile::from_target(target, 22, None, true).target()
 }
 
+/// The registered plugins a scan produced no result for, by display name.
+///
+/// **Absence is the only signal there is, and it is enough.** A scan returns
+/// one entry per plugin that ran, so a registered plugin missing from that list
+/// did not run. The commonest reason is the config disabling it, and the CLI
+/// says so on stderr, which the desktop never sees; a registry lookup that
+/// returns nothing lands here too. The two have different remedies and the
+/// same consequence, which is what this exists to surface: the findings list
+/// shows nothing for that domain, and **nothing renders exactly like a clean
+/// one**.
+///
+/// Derived rather than reported, deliberately. Carrying it on the wire would
+/// mean a new type crossing the Tauri boundary and a matching change in the
+/// CLI's `scan --format json`, whose top level is a bare array that users pipe
+/// into `jq`. Inventory minus results needs neither, reads no config, and is
+/// therefore correct for the unprivileged scan and the pkexec one alike, which
+/// resolve their configuration differently and must not be assumed to agree.
+///
+/// A plugin the operator filtered out with an explicit selection is **not**
+/// reported: they know, and saying so on every filtered scan is noise that
+/// trains people to ignore the notice. Pass the filter they used as
+/// `selected`, or an empty slice when they selected everything.
+pub fn plugins_that_did_not_run(
+    inventory: &[hardener_types::PluginMetadata],
+    results: &[ScanResult],
+    selected: &[String],
+) -> Vec<String> {
+    let ran: std::collections::HashSet<&str> =
+        results.iter().map(|r| r.scan_plugin_id.as_str()).collect();
+    inventory
+        .iter()
+        .filter(|meta| {
+            let id = meta.plugin_id.as_str();
+            let asked_for = selected.is_empty()
+                || selected
+                    .iter()
+                    .any(|s| hardener_types::plugin_id_named_by(id, s));
+            asked_for && !ran.contains(id)
+        })
+        .map(|meta| meta.plugin_name.clone())
+        .collect()
+}
+
 /// Header subtitle for the last scan: the most recent session's `completed_at`
 /// shown as-is, or "Not scanned yet" when there is none.
 ///

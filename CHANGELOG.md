@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Analysis tab now says when a registered plugin produced no result.**
+  A scan returns one entry per plugin that ran, so a plugin missing from that
+  list did not run, and the findings list shows nothing for its domain.
+  **Nothing renders exactly like a clean one**, which is the reading this
+  closes. `hardener scan` has always printed "Skipped by config" for this, on
+  stderr, which the desktop discards.
+  Derived from the registered inventory minus the results rather than reported
+  over the wire. Carrying it would have meant a new type crossing the Tauri
+  boundary **and** a change to `scan --format json`, whose top level is a bare
+  array that the installation guide shows users piping into `jq`. Subtraction
+  needs neither, reads no configuration, and is therefore correct for the
+  unprivileged scan and the pkexec one alike, which resolve configuration
+  differently and must not be assumed to agree.
+  It cannot separate "disabled by config" from a registry lookup returning
+  nothing. Those have different remedies and the same consequence, and the
+  consequence is what the operator needs. A plugin that ran and *failed* is
+  present in the results and reports itself, so it is not listed here. The
+  notice sits above the findings list rather than below it, because it
+  qualifies how to read that list including its empty state.
+
 ### Fixed
 
 - **The desktop's two scan buttons disagreed about a config that disables

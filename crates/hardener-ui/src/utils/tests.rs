@@ -1737,3 +1737,123 @@ fn the_expander_and_the_modal_agree_that_a_failed_read_does_not_block_a_rollback
         "the modal still arms a working button: {modal_button}"
     );
 }
+
+// --- plugins_that_did_not_run ------------------------------------------------
+//
+// A registered plugin absent from a scan's results did not run, and the
+// findings list shows nothing for that domain. Nothing renders exactly like a
+// clean one, which is the reading these guard against. `hardener scan` prints
+// "Skipped by config" on stderr; the desktop discards stderr, so it derives the
+// same fact from inventory minus results.
+
+fn plugin_meta(plugin_id: &str, plugin_name: &str) -> hardener_types::PluginMetadata {
+    hardener_types::PluginMetadata {
+        plugin_category: hardener_types::FindingCategory::Kernel,
+        plugin_description: String::new(),
+        plugin_id: PluginId::new(plugin_id.to_string()),
+        plugin_name: plugin_name.to_string(),
+        plugin_version: "0.1.0".to_string(),
+    }
+}
+
+fn three_plugins() -> Vec<hardener_types::PluginMetadata> {
+    vec![
+        plugin_meta("kernel-hardening", "Kernel Hardening"),
+        plugin_meta("ssh-hardening", "SSH Hardening"),
+        plugin_meta("audit-hardening", "Audit Rules Hardening"),
+    ]
+}
+
+/// The state this exists for: a plugin the config turned off is simply absent,
+/// and the operator is told which.
+#[test]
+fn a_plugin_absent_from_the_results_is_reported_by_name() {
+    let ran = vec![
+        scan_result_for("kernel-hardening", vec![]),
+        scan_result_for("audit-hardening", vec![]),
+    ];
+
+    let missing = plugins_that_did_not_run(&three_plugins(), &ran, &[]);
+
+    assert_eq!(missing, vec!["SSH Hardening".to_string()]);
+}
+
+/// The green half. A scan that reached every plugin reports nothing, or the
+/// notice fires on every healthy run and stops being read.
+#[test]
+fn a_complete_scan_reports_nothing_missing() {
+    let ran = vec![
+        scan_result_for("kernel-hardening", vec![]),
+        scan_result_for("ssh-hardening", vec![]),
+        scan_result_for("audit-hardening", vec![]),
+    ];
+
+    assert!(plugins_that_did_not_run(&three_plugins(), &ran, &[]).is_empty());
+}
+
+/// A plugin that ran and FAILED is present in the results, so it is not
+/// missing. It carries `scan_success: false` and reports itself; saying it did
+/// not run would be a second, wrong claim about the same plugin.
+#[test]
+fn a_failed_scan_is_not_a_missing_one() {
+    let mut failed = scan_result_for("ssh-hardening", vec![]);
+    failed.scan_success = false;
+    failed.scan_error = Some("permission denied".to_string());
+    let ran = vec![
+        scan_result_for("kernel-hardening", vec![]),
+        failed,
+        scan_result_for("audit-hardening", vec![]),
+    ];
+
+    assert!(plugins_that_did_not_run(&three_plugins(), &ran, &[]).is_empty());
+}
+
+/// A plugin the operator filtered out is not missing, it is unselected. Saying
+/// so on every filtered scan is noise that trains people past the notice.
+#[test]
+fn a_deselected_plugin_is_not_reported() {
+    let ran = vec![scan_result_for("kernel-hardening", vec![])];
+
+    let missing =
+        plugins_that_did_not_run(&three_plugins(), &ran, &["kernel-hardening".to_string()]);
+
+    assert!(missing.is_empty(), "got {missing:?}");
+}
+
+/// But a plugin inside the filter that still did not run IS reported. This is
+/// the case a filter-aware check gets wrong by exempting too much: the operator
+/// asked for it by name and did not get it.
+#[test]
+fn a_selected_plugin_that_did_not_run_is_still_reported() {
+    let ran = vec![scan_result_for("kernel-hardening", vec![])];
+
+    let missing = plugins_that_did_not_run(
+        &three_plugins(),
+        &ran,
+        &["kernel-hardening".to_string(), "ssh-hardening".to_string()],
+    );
+
+    assert_eq!(missing, vec!["SSH Hardening".to_string()]);
+}
+
+/// The filter accepts the CLI's short-name rule, so a selection written the way
+/// `--plugin` accepts it must not report every long-named plugin as missing.
+#[test]
+fn a_short_selection_matches_the_same_plugin_the_cli_would() {
+    let ran = vec![scan_result_for("kernel-hardening", vec![])];
+
+    let missing = plugins_that_did_not_run(&three_plugins(), &ran, &["kernel".to_string()]);
+
+    assert!(missing.is_empty(), "got {missing:?}");
+}
+
+/// Every plugin missing, which is the all-disabled state the backend now
+/// refuses outright. Reported in full rather than truncated, because a list
+/// that stops at one hides how much of the host went unassessed.
+#[test]
+fn every_plugin_missing_is_reported_in_full() {
+    let missing = plugins_that_did_not_run(&three_plugins(), &[], &[]);
+
+    assert_eq!(missing.len(), 3, "got {missing:?}");
+    assert!(missing.contains(&"SSH Hardening".to_string()));
+}

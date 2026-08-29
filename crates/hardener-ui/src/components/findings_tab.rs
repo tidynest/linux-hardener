@@ -10,14 +10,14 @@ use super::icons::IconChevron;
 use super::{ExceptionDraft, ExceptionModal};
 use crate::state::{AppState, unchecked_tally};
 use crate::tauri_bindings::{
-    invoke_add_policy_exception, invoke_deep_scan, invoke_generate_report,
+    invoke_add_policy_exception, invoke_deep_scan, invoke_generate_report, invoke_list_plugins,
     invoke_remove_policy_exception,
 };
 use crate::types::{ExceptionOutcome, Finding, Severity};
 use crate::utils::{
     PluginFinding, apply_written_exception, clear_exception, group_findings_by_severity,
-    is_auth_cancelled, severity_class, severity_label, split_policy_excepted,
-    unchecked_honesty_line,
+    is_auth_cancelled, plugins_that_did_not_run, severity_class, severity_label,
+    split_policy_excepted, unchecked_honesty_line,
 };
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -130,8 +130,55 @@ pub fn FindingsTab() -> impl IntoView {
     // split by whether a privileged re-run would reach them.
     let tally = move || unchecked_tally(&app_state.scan_results.get());
 
+    // The registered plugin set, so a plugin that produced no result at all can
+    // be named. The CLI prints "Skipped by config" on stderr and the desktop
+    // never sees it, so this is derived from inventory minus results instead.
+    // Fetched once: the registry is compiled in and cannot change under a
+    // running desktop.
+    let inventory = RwSignal::new(Vec::<crate::types::PluginMetadata>::new());
+    leptos::task::spawn_local(async move {
+        if let Ok(plugins) = invoke_list_plugins().await {
+            inventory.set(plugins);
+        }
+        // A failure here costs the notice and nothing else. Findings still
+        // render, so an inventory the desktop could not read must not be
+        // allowed to empty the page.
+    });
+
+    // Gated on a scan having produced something. Before the first scan every
+    // plugin is trivially absent, and saying so under "No findings yet" would
+    // announce a gap where there is simply no scan. The all-disabled case that
+    // would otherwise reach here is refused by the backend now, so an empty
+    // result set means nobody has scanned rather than nothing ran.
+    let did_not_run = move || {
+        let results = app_state.scan_results.get();
+        if results.is_empty() {
+            return Vec::new();
+        }
+        // No filter: every scan the desktop starts passes an empty plugin list,
+        // at all six call sites. Stated rather than assumed, because the day one
+        // of them gains a filter this argument is what stops the notice
+        // reporting a deliberately deselected plugin as one that went missing.
+        plugins_that_did_not_run(&inventory.get(), &results, &[])
+    };
+
     view! {
         <div class="findings-tab">
+
+            <Show when=move || !did_not_run().is_empty()>
+                <p class="findings-unchecked findings-not-run" role="status">
+                    {move || {
+                        let missing = did_not_run();
+                        format!(
+                            "{} of the {} registered plugins produced no result and                                  {} not assessed: {}. A domain nobody scanned shows no                                  findings, which looks the same as a clean one. The                                  commonest cause is the configuration disabling them.",
+                            missing.len(),
+                            inventory.get().len(),
+                            if missing.len() == 1 { "was" } else { "were" },
+                            missing.join(", "),
+                        )
+                    }}
+                </p>
+            </Show>
             <Show
                 when=has_findings
                 fallback=|| view! {
@@ -189,6 +236,7 @@ pub fn FindingsTab() -> impl IntoView {
                         groups
                     }}
                 </ol>
+
 
                 <Show when=move || tally().total != 0>
                     <p class="findings-unchecked">
