@@ -473,7 +473,7 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
   2026-08-04 with `cargo test --workspace --no-fail-fast`; re-measure before
   quoting it, this number moves most weeks
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.8.0 (code, tag and AUR package together: `PKGBUILD`
+- **Current Version**: 1.8.1 (code, tag and AUR package together: `PKGBUILD`
   and `.SRCINFO` moved to 1.7.0 when `linux-hardener 1.7.0-1` went live). **No
   count here**,
   per this file's own opening rule: the pair read "189 commits, 178 excluding
