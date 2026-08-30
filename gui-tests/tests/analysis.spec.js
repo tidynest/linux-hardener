@@ -444,7 +444,7 @@ test.describe('Compliance', () => {
   });
 });
 
-  // T-FIND-13: A config-skipped plugin is named with its remedy, apart from
+  // T-FIND-15: A config-skipped plugin is named with its remedy, apart from
   // absences the payload does not explain
   //
   // The `?skip_marker=1` fixture swaps PAM's scanned entry for the marker a
@@ -454,7 +454,7 @@ test.describe('Compliance', () => {
   // claim PAM, whose absence the marker explains. Before the skip channel,
   // both groups collapsed into one notice that named config as the
   // commonest cause of everything.
-  test('T-FIND-13: a skip marker is reported as skipped by config, not unexplained', async ({ page }) => {
+  test('T-FIND-15: a skip marker is reported as skipped by config, not unexplained', async ({ page }) => {
     await loadApp(page, '/analysis', 'skip_marker=1');
     await runScan(page);
 
