@@ -1914,28 +1914,33 @@ fn a_single_blocked_area_reads_in_the_singular() {
     assert!(line.contains("Expand it above"), "got: {line}");
 }
 
-/// The fact the operator cannot get anywhere else: the preview and Apply run
-/// at different privilege levels, so a privileged scan and this screen are not
-/// answering the same question. Reported 2026-08-29 as nine findings from a
-/// sudo scan followed by a preview that read nothing.
+/// The fact the operator cannot get anywhere else: the preview and Apply now
+/// read the host at the same privilege level, so this screen's blocked
+/// estimates are not a privilege gap. Until 2026-08-30 the line said the
+/// opposite, because the preview really did run unprivileged then.
 #[test]
-fn a_blocked_preview_says_it_ran_unprivileged() {
+fn a_blocked_preview_says_it_already_ran_privileged() {
     let line = nothing_to_apply_line(1);
 
-    assert!(line.contains("without elevated privileges"), "got: {line}");
-    assert!(line.contains("Apply does not"), "got: {line}");
+    assert!(
+        line.contains("already ran with the elevated privileges Apply will use"),
+        "got: {line}"
+    );
 }
 
-/// "may", not "will". Some blocked areas are structural and no privileged
-/// re-run touches them, so promising changes would send the operator after a
-/// remedy that cannot work, which is the mistake privilege_would_help exists
-/// to prevent on the scan side.
+/// What blocked an estimate is a condition of the host, so the line must not
+/// promise changes another run could find, which is the mistake
+/// privilege_would_help exists to prevent on the scan side. "may still have
+/// changes" was true when the preview ran unprivileged and is false now.
 #[test]
 fn the_privilege_note_promises_nothing() {
     let line = nothing_to_apply_line(2);
 
-    assert!(line.contains("may still have changes"), "got: {line}");
-    assert!(!line.contains("will have changes"), "got: {line}");
+    assert!(line.contains("condition of the host itself"), "got: {line}");
+    assert!(
+        !line.contains("may still have changes"),
+        "the preview had Apply's privileges; nothing is waiting on elevation: {line}"
+    );
     assert!(
         !line.contains("run with sudo"),
         "must not name a remedy: {line}"

@@ -256,16 +256,28 @@ pub async fn run_apply(
 
 /// Performs a dry-run of hardening changes for preview.
 ///
-/// Unlike run_apply, this does NOT use pkexec because dry-run doesn't
-/// modify the system. Returns estimated changes for user review.
+/// Runs through the same pkexec channel as `run_apply`, because the preview
+/// has to estimate what the privileged apply would actually do. The
+/// unprivileged dry-run this command used to spawn reads the host as the
+/// desktop user, and on a privilege-gated host that estimate is zero in
+/// every area (root-only config files, a firewall ruleset that needs root
+/// to read), which left the wizard's confirm step gated on nothing while
+/// the real apply had work waiting: found on the release host on 2026-08-30
+/// as nine findings and a permanently disabled apply button.
+///
+/// Still read-only under root. `apply --dry-run` takes no checkpoint and
+/// runs each plugin's `validate` only, never `apply` (crates/hardener-cli
+/// `commands/apply.rs`), so the elevation buys the preview the apply's
+/// reading of the host and not a write.
 #[tauri::command]
 pub async fn run_apply_dry_run(
     plugin_ids: Vec<String>,
     config_path: Option<String>,
 ) -> Result<Vec<ValidationReport>, String> {
+    let _guard = PrivilegedOpGuard::acquire()?;
     validate_plugin_ids(&plugin_ids)?;
     if let Some(ref path) = config_path {
-        validate_user_config_path(path)?;
+        validate_privileged_config_path(path)?;
     }
 
     tracing::info!(
@@ -273,32 +285,17 @@ pub async fn run_apply_dry_run(
         plugin_ids
     );
 
-    let binary = get_hardener_binary_path()?;
-    let args = apply_args(true, &plugin_ids, config_path.as_deref());
-
-    // Execute without root privileges (dry-run is read-only)
-    let output = Command::new(&binary)
-        .args(&args)
-        .output()
-        .await
-        .map_err(|e| safe_err(format!("Failed to execute dry-run: {}", e)))?;
+    let owned = apply_args(true, &plugin_ids, config_path.as_deref());
+    let args: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     // Read by the same rule as every other JSON verb, which is the point of it
     // being a rule. Exit 1 with a parseable report array is a partial-failure
     // result, not a transport error: `apply --dry-run` prints the array before
-    // `bail!`ing when a plugin's validation errors.
-    //
-    // This used to skip forward to the first `[`, described in a comment as
-    // stepping over a leading `{"info": "Dry run..."}` line. That line has gone
-    // to stderr since `output::info`'s JSON arm was fixed, so the skip stepped
-    // over nothing and the tolerance was the only difference left between this
-    // path and the three that share the helper.
-    accept_json_output(&CliOutput {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        exit_code: output.status.code(),
-    })
-    .map_err(safe_err)
+    // `bail!`ing when a plugin's validation errors. (This path used to build
+    // its own `CliOutput` from a direct, unprivileged spawn; moving onto
+    // `run_privileged` changed who runs the CLI, not how its output is read.)
+    let raw = run_privileged(&args).await.map_err(safe_err)?;
+    accept_json_output(&raw).map_err(safe_err)
 }
 
 /// The argv for a privileged `hardener rollback`.

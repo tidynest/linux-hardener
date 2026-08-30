@@ -1283,20 +1283,20 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (11 Specs, 175 Tests)
+### Spec Inventory (11 Specs, 176 Tests)
 
 Counted off `npx playwright test --list` on 2026-08-21, and confirmed by the
 second 2026-08-27 sweep, which executed all 171. The three added that day,
 `T-CONF-11`, `T-CONF-12` and `T-CONF-13`, cover the config picker's two-rule
 warning, its absence for a trusted path, and the dialog failure that used to
 reach only the browser console.
-**127 `test()` call sites produce 175 cases**, because three sites are
+**128 `test()` call sites produce 176 cases**, because three sites are
 parameterised and
 generate their cases at collection time: `themes.spec.js:200` produces 42
 screenshots (6 states x 7 themes), `contrast.spec.js:765` produces one case per
-theme, and `hardening.spec.js:620` produces one per viewport width. Reading the
+theme, and `hardening.spec.js:643` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
-`test(` calls is 127 and understates the suite by 48.
+`test(` calls is 128 and understates the suite by 48.
 
 This is a **collection** count, and the sweep of 2026-08-22 has now executed
 all of it: `T-FLEET-11` was added with the fleet profile badge, stood unexecuted

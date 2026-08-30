@@ -4,7 +4,7 @@
 // Injected before WASM loads to simulate window.__TAURI__.core.invoke().
 // Field names match Rust struct definitions exactly (serde snake_case).
 //
-// Error mode: add ?error_mode=scan|apply|checkpoint|export|exception|all to
+// Error mode: add ?error_mode=scan|apply|authCancel|checkpoint|export|exception|all to
 // URL to trigger errors. Outcome shape: ?apply_mode=mixed,
 // ?rollback_mode=partial, ?checkpoint_source=unreadable, ?fleet_scan=hold.
 // =============================================================================
@@ -26,10 +26,13 @@
   // way to produce, so the flag is set directly.
   const checkpointSource = params.get('checkpoint_source') || '';
   // `?preview_mode=blocked` makes the dry run stage NOTHING while reporting
-  // issues, which is the state a real host reaches when a plugin cannot read
-  // the file it would have to compare against. The default fixture stages
-  // changes, so the preview's zero-change summary was unreachable and the
-  // sentence under it went unasserted while claiming the host was compliant.
+  // issues. Since the preview elevates through the same pkexec channel as
+  // Apply (2026-08-30), a blocked estimate is no longer reachable through
+  // privilege: the fixture's issue is the structural refusal shape, a PAM
+  // stack that loads no module for the file, which root does not fix. The
+  // default fixture stages changes, so the preview's zero-change summary was
+  // unreachable and the sentence under it went unasserted while claiming the
+  // host was compliant.
   const previewMode = params.get('preview_mode') || '';
   // `?rollback_mode=partial` makes one of the two files fail to restore.
   // Selected the same way as `apply_mode`, and for the same reason: the
@@ -53,6 +56,14 @@
     if (errorMode === 'all') return true;
     if (errorMode === 'scan' && cmd === 'run_scan') return true;
     if (errorMode === 'apply' && (cmd === 'run_apply' || cmd === 'run_apply_dry_run')) return true;
+    // `authCancel` rejects both apply commands with the backend's exact
+    // AuthCancelled text, so the dismiss-the-prompt arm each of them now
+    // carries can be reached by a browser test: the preview's polkit prompt
+    // is the one that became reachable on 2026-08-30, when the preview moved
+    // onto the same pkexec channel as the apply.
+    if (errorMode === 'authCancel' && (cmd === 'run_apply' || cmd === 'run_apply_dry_run')) {
+      return true;
+    }
     if (errorMode === 'checkpoint' && cmd === 'get_checkpoints') return true;
     // `export` fails only the export itself, deliberately narrower than `all`.
     // `.status-error` renders the rejection message, and it is one of the two
@@ -488,7 +499,7 @@
         {
           validation_issue_severity: 'High',
           validation_issue_message:
-            'minlen will not be set to 14: /etc/security/pwquality.conf could not be read (current value requires root)',
+            '/etc/security/pwquality.conf is written but not read: the PAM stack does not load pam_pwquality.so. The settings in it take effect only once that module is added to the stack, which this plugin does not edit',
         },
       ],
       validation_report_estimated_changes: [],
@@ -790,7 +801,9 @@
           throw 'Scan failed: permission denied reading /proc/sys';
         case 'run_apply':
         case 'run_apply_dry_run':
-          throw 'Authentication required: pkexec agent not available';
+          throw errorMode === 'authCancel'
+            ? 'Authentication cancelled. Root privileges are required for this operation.'
+            : 'Authentication required: pkexec agent not available';
         case 'get_checkpoints':
           throw 'Failed to load checkpoints: database locked';
         default:

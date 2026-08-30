@@ -161,7 +161,9 @@ pub async fn invoke_apply(
 
 /// Invokes the run_apply_dry_run Tauri command.
 ///
-/// Performs a dry-run preview of hardening changes without modifying the system.
+/// Performs a dry-run preview of hardening changes without modifying the
+/// system. Runs through the same pkexec channel as the apply it previews,
+/// so the estimate reflects what the privileged apply would do.
 /// Pass a config path to use a custom configuration file.
 pub async fn invoke_apply_dry_run(
     plugin_ids: Vec<String>,

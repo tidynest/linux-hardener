@@ -662,26 +662,28 @@ pub fn adhoc_canonical(target: &str) -> String {
 /// not guessing.
 ///
 /// It does state one thing no per-issue signal is needed for and the operator
-/// cannot otherwise know: **this preview runs unprivileged and Apply does
-/// not.** `run_apply_dry_run` takes no `PrivilegedOpGuard` and spawns the CLI
-/// directly, deliberately, because a run that changes nothing should not cost
-/// a password prompt. `run_apply` goes through `run_privileged`. So a
-/// privileged scan followed by a preview compares a root reading against an
-/// unprivileged one, which is exactly what was reported on 2026-08-29: nine
-/// findings from a sudo scan, then a preview that could not read the file they
-/// came from.
+/// cannot otherwise know: **this preview already ran with the elevated
+/// privileges Apply will use** (`run_apply_dry_run` goes through `run_privileged`
+/// like `run_apply` and `run_deep_scan`). So a blocked estimate here is not a
+/// privilege gap another run could close: it is a condition of the host itself,
+/// and the line says so rather than implying the CLI might still find work to
+/// do. That is the honesty the unprivileged-preview wording used to carry from
+/// the other direction, before 2026-08-30 made preview and apply read the host
+/// the same way.
 ///
-/// Phrased as "may", not "will". Some blocked areas are structural, and no
-/// privileged re-run fixes a PAM stack that does not load `pam_pwquality.so`.
+/// Definite, not hedged. Since the preview runs at the apply's privilege, no
+/// blocked area is waiting on elevation, and no privileged re-run fixes a PAM
+/// stack that does not load `pam_pwquality.so` anyway.
 pub fn nothing_to_apply_line(areas_with_issues: usize) -> String {
     if areas_with_issues == 0 {
         return "Nothing to apply. Everything in this selection is already compliant.".to_string();
     }
     format!(
         "Nothing can be applied, and this is not a clean bill of health: {} {} \
-         reported problems that stopped an estimate being made. Expand {} above to see what. \
-         This preview runs without elevated privileges and Apply does not, so an area that \
-         could not read its current value here may still have changes to make.",
+         reported problems that stopped an estimate being made. Expand {} above to see \
+         what. This preview already ran with the elevated privileges Apply will use, so \
+         each problem is a condition of the host itself, not one Apply would push through \
+         or a privilege gap another run could close; the rows above say what each one needs.",
         areas_with_issues,
         if areas_with_issues == 1 {
             "area"

@@ -665,6 +665,16 @@ pub fn ConfigureSection() -> impl IntoView {
                         app_state.show_preview.set(true);
                     }
                 }
+                Err(e) if is_auth_cancelled(&e) => {
+                    // The preview's polkit prompt was dismissed. Mirror
+                    // on_confirm_apply's arm for the same outcome: a
+                    // cancelled prompt is a choice, not a failure, so the
+                    // wizard returns to the selection view without an
+                    // error banner.
+                    if !checking_cancelled.get_untracked() {
+                        web_sys::console::info_1(&"Preview cancelled by user.".into());
+                    }
+                }
                 Err(e) => {
                     // Mirror the Ok arm: a cancelled run's outcome is
                     // discarded silently, whether it resolves or fails.
@@ -982,6 +992,12 @@ pub fn ConfigureSection() -> impl IntoView {
                     // rows are a cosmetic top-down reveal, not a completion
                     // counter. Only the area count and the area names
                     // themselves are real (the current selection).
+                    //
+                    // The preview elevates through the same pkexec channel as
+                    // the apply it previews, so the polkit prompt can appear
+                    // while this view is up; the reassurance says so, because
+                    // a password dialog with no warning reads as a change
+                    // starting rather than a read.
                     <Show
                         when=move || !app_state.is_previewing.get()
                         fallback=move || {
@@ -989,7 +1005,7 @@ pub fn ConfigureSection() -> impl IntoView {
                             let count = areas.len();
                             view! {
                                 <div class="checking-view" aria-live="polite">
-                                    <p class="checking-reassurance">"Nothing is changed yet"</p>
+                                    <p class="checking-reassurance">"Nothing is changed yet. You may be asked for your password, which is used to read the settings the same way Apply will read them."</p>
                                     <p class="checking-heading">
                                         {format!("Checking {} area{}", count, if count == 1 { "" } else { "s" })}
                                     </p>

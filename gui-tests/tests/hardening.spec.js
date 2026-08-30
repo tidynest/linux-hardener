@@ -205,12 +205,35 @@ test.describe('Configure preview, nothing stageable', () => {
     await expect(box).toBeVisible({ timeout: 10000 });
     await expect(box).toContainText('not a clean bill of health');
     await expect(box).toContainText('1 area');
-    // And why this screen can disagree with a privileged scan: the preview
-    // does not escalate and Apply does. Asserted here rather than as its own
-    // case, so the suite size does not move for one more sentence in a banner
-    // two cases already reach.
-    await expect(box).toContainText('without elevated privileges');
-    await expect(box).toContainText('may still have changes');
+    // And that privilege is no longer the explanation: the preview escalates
+    // through the same channel Apply does (2026-08-30), so a blocked estimate
+    // is a condition of the host. Asserted here rather than as its own case,
+    // so the suite size does not move for one more sentence in a banner two
+    // cases already reach.
+    await expect(box).toContainText('already ran with the elevated privileges Apply will use');
+    await expect(box).toContainText('condition of the host itself');
+  });
+});
+
+// The preview's polkit prompt can be dismissed, and dismissing it is a choice
+// rather than a failure. The arm exists because the preview moved onto the
+// pkexec channel (2026-08-30), which made the prompt reachable at all.
+test.describe('Configure preview, prompt dismissed', () => {
+  // T-CONF-16: a cancelled password prompt returns to the selection, not an error
+  test('T-CONF-16: dismissing the preview password prompt returns to the selection, not an error', async ({ page }) => {
+    await loadApp(page, '/hardening', 'error_mode=authCancel');
+    await page.getByRole('button', { name: /Preview Changes/i }).click();
+
+    // The wizard comes back to the selection view, with the preview action
+    // usable again. Retried first, so the banner assertion below reads a
+    // settled state rather than a not-yet-started one.
+    const previewButton = page.getByRole('button', { name: /Preview Changes/i });
+    await expect(previewButton).toBeVisible({ timeout: 10000 });
+    await expect(previewButton).toBeEnabled();
+
+    // A dismissed prompt is not a failure, so nothing may render a banner
+    // claiming one.
+    await expect(page.locator('.error-banner')).toHaveCount(0);
   });
 });
 

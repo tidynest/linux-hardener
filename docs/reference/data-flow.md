@@ -697,7 +697,7 @@ command is added or removed: `src/main.rs` (`generate_handler!`), `build.rs`
 | `run_deep_scan` | `plugin_ids: Option<Vec<String>>`, `config_path: Option<String>` | `Vec<ScanResult>` (pkexec, privileged) |
 | `get_latest_scan` | None | `Option<Vec<ScanResult>>` |
 | `run_apply` | `plugin_ids: Vec<String>`, `config_path: Option<String>` | `Vec<ApplyResult>` |
-| `run_apply_dry_run` | `plugin_ids: Vec<String>`, `config_path: Option<String>` | `Vec<ValidationReport>` |
+| `run_apply_dry_run` | `plugin_ids: Vec<String>`, `config_path: Option<String>` | `Vec<ValidationReport>` (pkexec, privileged since 2026-08-30, read-only: `apply --dry-run` takes no checkpoint and runs `validate` only) |
 | `run_rollback` | `checkpoint_id: String` | `RollbackResult` |
 
 **Checkpoints**
