@@ -93,6 +93,7 @@ fn plugin_result(
         scan_unchecked: unchecked,
         scan_duration_us: 0,
         scan_error: None,
+        scan_skipped: None,
     }
 }
 
@@ -1249,4 +1250,59 @@ async fn scan_with_executor_treats_an_empty_filter_as_no_filter() {
         empty_filter.len(),
         "an empty id list means no filter, not no plugins"
     );
+}
+
+/// A deep scan's payload now carries one marker entry per config-skipped
+/// plugin. The marker must survive the desktop parser as a skip, not as a
+/// failed scan: the two route to different remedies in every consumer
+/// downstream of this type.
+#[test]
+fn a_cli_skip_marker_stays_a_skip_through_the_desktop_parser() {
+    let json = r#"[{
+            "plugin_id": "ssh-hardening",
+            "plugin_name": "SSH Hardening",
+            "findings": [],
+            "unchecked": [],
+            "scan_success": false,
+            "scan_error": null,
+            "scan_skipped": "DisabledByConfig"
+        }]"#;
+    let result: ScanResult = serde_json::from_str::<Vec<CliScanEntry>>(json)
+        .unwrap()
+        .into_iter()
+        .map(CliScanEntry::into_scan_result)
+        .next()
+        .unwrap();
+
+    assert_eq!(
+        result.scan_skipped,
+        Some(SkipReason::DisabledByConfig),
+        "the marker's reason is the payload"
+    );
+    assert!(
+        result.scan_findings.is_empty(),
+        "a marker never carries findings to misread as a scanned-clean entry"
+    );
+}
+
+/// Output from a CLI predating the marker has no `scan_skipped` key at all,
+/// and must parse as an ordinary scanned entry rather than error or guess.
+#[test]
+fn a_payload_predating_skip_markers_parses_as_an_ordinary_entry() {
+    let json = r#"[{
+            "plugin_id": "ssh-hardening",
+            "plugin_name": "SSH Hardening",
+            "findings": [],
+            "unchecked": [],
+            "scan_success": true,
+            "scan_error": null
+        }]"#;
+    let result: ScanResult = serde_json::from_str::<Vec<CliScanEntry>>(json)
+        .unwrap()
+        .into_iter()
+        .map(CliScanEntry::into_scan_result)
+        .next()
+        .unwrap();
+
+    assert_eq!(result.scan_skipped, None);
 }

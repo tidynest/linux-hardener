@@ -657,6 +657,22 @@ a checkpoint or a skip is never counted as a hardening change.
 └──────────────────┘
 ```
 
+**Skipped plugins travel in the results (2026-08-30):** a plugin the
+configuration disables produces no scan, and its absence used to render
+exactly like a clean one. Every scan path now carries one marker entry per
+skipped plugin - `ScanResult` with `scan_skipped: Some(DisabledByConfig)`
+and nothing else - so the reason survives the wire and the persisted
+session: `hardener scan --format json` emits the entries (the "Skipped by
+config" stderr line prints nothing under `--format json`), the desktop's
+`run_scan` appends them after its refusal check, `run_deep_scan` passes the
+CLI's entries through, and `store_results` records the reason in
+`scan_results.skipped_reason` for read-back. Compliance routes a marker to
+the same `DisabledByConfig` unassessed entry the `skipped` parameter
+produces (`scan_evidence::flatten`), so controls a disabled plugin covers
+score ManualReview rather than passing on its silence. The findings tab
+splits its notice by the reason: skipped-by-config names the config edit,
+and an absence the payload does not explain names an investigation.
+
 **Deep scan (privileged re-scan):** if any scan result carries unchecked
 checks, `SecurityScore` (components/security_score.rs) renders an inline
 honesty line beneath the score bar on the Dashboard, naming the count. Its

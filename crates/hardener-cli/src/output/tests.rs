@@ -303,6 +303,7 @@ fn scan_result(
         scan_unchecked: unchecked,
         scan_duration_us: 0,
         scan_error: (!success).then(|| "auditctl -l: permission denied".to_string()),
+        scan_skipped: None,
     }
 }
 
@@ -890,5 +891,51 @@ fn an_expected_row_prints_its_reason() {
     assert!(
         joined.contains("a rollback never starts a unit"),
         "{joined}"
+    );
+}
+
+// --- skip markers ------------------------------------------------------------
+//
+// A marker entry is a plugin the config turned off, riding in the results so
+// wire consumers and persisted sessions receive the reason. These pin both
+// faces: the machine contract carries the key, and the terminal renders the
+// marker as neither a failure nor a clean tick.
+
+/// The wire half: a marker names itself in JSON, and every ordinary entry
+/// carries the key as null, so a consumer can trust its presence rather
+/// than infer from absence.
+#[test]
+fn json_entry_carries_scan_skipped() {
+    let mut marker = scan_result(false, vec![], vec![]);
+    marker.scan_skipped = Some(hardener_types::SkipReason::DisabledByConfig);
+
+    let entries = scan_json(&[(metadata("Audit Rules Hardening"), marker.clone())]);
+    assert_eq!(
+        entries[0]["scan_skipped"],
+        serde_json::json!("DisabledByConfig")
+    );
+
+    let ordinary = scan_json(&[(
+        metadata("Audit Rules Hardening"),
+        scan_result(true, vec![], vec![]),
+    )]);
+    assert_eq!(ordinary[0]["scan_skipped"], serde_json::json!(null));
+}
+
+/// The terminal half: a plugin that never ran renders as skipped, not as a
+/// scan that did not complete, because the remedies are different edits.
+#[test]
+fn a_skip_marker_renders_as_skipped_by_config_not_as_a_failure() {
+    let mut marker = scan_result(false, vec![], vec![]);
+    marker.scan_skipped = Some(hardener_types::SkipReason::DisabledByConfig);
+
+    let lines = scan_plugin_lines(&metadata("Audit Rules Hardening"), &marker);
+
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].contains("skipped by config"));
+    assert!(
+        !lines[0].contains("did not complete"),
+        "a plugin that never ran did not fail: {}",
+        lines[0]
     );
 }

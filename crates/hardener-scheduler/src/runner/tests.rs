@@ -121,6 +121,7 @@ fn make_scan_result(plugin_id: &str, findings: Vec<Finding>, success: bool) -> S
             Some("Test error".to_string())
         },
         scan_unchecked: vec![],
+        scan_skipped: None,
     }
 }
 

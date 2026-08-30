@@ -255,6 +255,7 @@ impl PluginManager {
                         scan_unchecked: vec![],
                         scan_duration_us: 0,
                         scan_error: Some(e.to_string()),
+                        scan_skipped: None,
                     });
                 }
             }

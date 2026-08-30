@@ -87,6 +87,7 @@ fn scanned(
             scan_unchecked: vec![],
             scan_duration_us: 0,
             scan_error: None,
+            scan_skipped: None,
         },
     )
 }

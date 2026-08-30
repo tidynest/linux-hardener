@@ -12,6 +12,7 @@ use hardener_core::{
 };
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
+use hardener_types::SkipReason;
 use std::{path::PathBuf, sync::Arc};
 
 pub struct ScanOptions<'a> {
@@ -154,10 +155,32 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
                         scan_unchecked: Vec::new(),
                         scan_duration_us: 0,
                         scan_error: Some(e.to_string()),
+                        scan_skipped: None,
                     },
                 ));
             }
         }
+    }
+
+    // One marker entry per config-skipped plugin, so the reason travels
+    // inside the payload. The "Skipped by config" stderr line reaches no
+    // JSON consumer (output::status prints nothing under --format json),
+    // and a plugin merely absent from the array is indistinguishable from
+    // one that scanned clean. The all-disabled refusal has already fired
+    // above, so at least one scanned entry precedes these.
+    for metadata in &skipped_by_config {
+        all_results.push((
+            (*metadata).clone(),
+            ScanResult {
+                scan_plugin_id: metadata.plugin_id.clone(),
+                scan_success: false,
+                scan_findings: Vec::new(),
+                scan_unchecked: Vec::new(),
+                scan_duration_us: 0,
+                scan_error: None,
+                scan_skipped: Some(SkipReason::DisabledByConfig),
+            },
+        ));
     }
 
     output::scan_results(&opts.format, &all_results);
@@ -256,8 +279,11 @@ async fn persist_scan_session(
         Err(_) => return,
     };
 
+    // Marker entries ride in `results` for the wire's sake; the session row
+    // counts plugins that scanned, and a disabled one did not.
     let plugins: Vec<String> = results
         .iter()
+        .filter(|(_, r)| r.scan_skipped.is_none())
         .map(|(m, _)| m.plugin_id.to_string())
         .collect();
     let hostname = session_host_key(executor).await;

@@ -1816,7 +1816,7 @@ async fn scan_host(executor: MockExecutor) -> hardener_core::plugin::ScanResult 
 }
 
 /// [`scan_host`] against a configuration, for the tests that have to rescan
-/// the same host once an exception has been written.
+/// the host once an exception has been written.
 async fn scan_host_with(
     executor: MockExecutor,
     config: &PluginConfig,

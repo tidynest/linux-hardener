@@ -37,6 +37,7 @@ pub fn failed_scan(plugin_id: &PluginId, error: &str) -> ScanResult {
         scan_unchecked: Vec::new(),
         scan_duration_us: 0,
         scan_error: Some(error.to_string()),
+        scan_skipped: None,
     }
 }
 

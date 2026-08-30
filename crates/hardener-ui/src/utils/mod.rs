@@ -694,47 +694,73 @@ pub fn nothing_to_apply_line(areas_with_issues: usize) -> String {
     )
 }
 
-/// The registered plugins a scan produced no result for, by display name.
+/// Plugins this run says nothing about, split by whether the results
+/// themselves say why.
 ///
-/// **Absence is the only signal there is, and it is enough.** A scan returns
-/// one entry per plugin that ran, so a registered plugin missing from that list
-/// did not run. The commonest reason is the config disabling it, and the CLI
-/// says so on stderr, which the desktop never sees; a registry lookup that
-/// returns nothing lands here too. The two have different remedies and the
-/// same consequence, which is what this exists to surface: the findings list
-/// shows nothing for that domain, and **nothing renders exactly like a clean
-/// one**.
+/// One entry per plugin that ran used to be the whole story: a registered
+/// plugin missing from that list did not run, the CLI said so on stderr, and
+/// the desktop never saw it. Skip-marker entries now ride in the results, so
+/// a plugin the configuration disabled is reported with its remedy, and only
+/// a plugin with neither an entry nor a marker remains an unexplained
+/// absence. In both cases the findings list shows nothing for the domain,
+/// and **nothing renders exactly like a clean one**.
 ///
-/// Derived rather than reported, deliberately. Carrying it on the wire would
-/// mean a new type crossing the Tauri boundary and a matching change in the
-/// CLI's `scan --format json`, whose top level is a bare array that users pipe
-/// into `jq`. Inventory minus results needs neither, reads no config, and is
-/// therefore correct for the unprivileged scan and the pkexec one alike, which
-/// resolve their configuration differently and must not be assumed to agree.
+/// The split is what the derivation alone could not do: "disabled by config"
+/// and "absent for reasons the payload does not state" have the same
+/// consequence and different remedies, and an operator told only the
+/// consequence goes looking in the wrong place.
 ///
 /// A plugin the operator filtered out with an explicit selection is **not**
 /// reported: they know, and saying so on every filtered scan is noise that
 /// trains people to ignore the notice. Pass the filter they used as
 /// `selected`, or an empty slice when they selected everything.
-pub fn plugins_that_did_not_run(
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UnrunPlugins {
+    /// Plugins whose marker entries rode in with the results: the
+    /// configuration disabled them, and the remedy is a config edit.
+    pub skipped_by_config: Vec<String>,
+    /// Plugins with neither an entry nor a marker. A session recorded
+    /// before markers existed cannot separate these from disabled ones, and
+    /// a registry lookup that returns nothing lands here too.
+    pub unexplained: Vec<String>,
+}
+
+/// Partitions the registered plugins a run says nothing about, by whether
+/// the results themselves say why. Names, not ids: this exists to be read.
+pub fn unrun_plugins(
     inventory: &[hardener_types::PluginMetadata],
     results: &[ScanResult],
     selected: &[String],
-) -> Vec<String> {
-    let ran: std::collections::HashSet<&str> =
-        results.iter().map(|r| r.scan_plugin_id.as_str()).collect();
-    inventory
-        .iter()
-        .filter(|meta| {
-            let id = meta.plugin_id.as_str();
-            let asked_for = selected.is_empty()
-                || selected
-                    .iter()
-                    .any(|s| hardener_types::plugin_id_named_by(id, s));
-            asked_for && !ran.contains(id)
-        })
-        .map(|meta| meta.plugin_name.clone())
-        .collect()
+) -> UnrunPlugins {
+    let mut marked: Vec<&str> = Vec::new();
+    let mut present = std::collections::HashSet::new();
+    for result in results {
+        // Every skip reason currently names the same remedy, so one group
+        // serves it; the day a second reason exists, this is the arm that
+        // learns it.
+        if result.scan_skipped.is_some() {
+            marked.push(result.scan_plugin_id.as_str());
+        }
+        present.insert(result.scan_plugin_id.as_str());
+    }
+
+    let mut unrun = UnrunPlugins::default();
+    for meta in inventory {
+        let id = meta.plugin_id.as_str();
+        let asked_for = selected.is_empty()
+            || selected
+                .iter()
+                .any(|s| hardener_types::plugin_id_named_by(id, s));
+        if !asked_for {
+            continue;
+        }
+        if marked.contains(&id) {
+            unrun.skipped_by_config.push(meta.plugin_name.clone());
+        } else if !present.contains(id) {
+            unrun.unexplained.push(meta.plugin_name.clone());
+        }
+    }
+    unrun
 }
 
 /// Header subtitle for the last scan: the most recent session's `completed_at`

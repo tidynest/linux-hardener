@@ -91,6 +91,23 @@ pub async fn run_scan(
         // that did not happen, which is what that row should say.
         scan_selection_refusal(results.len(), &skipped_by_config)?;
 
+        // One marker entry per skipped plugin, appended after the refusal so
+        // its count stays "plugins that scanned". The marker carries the
+        // reason into the UI and, through persist_scan_results below, into
+        // the history the compliance report reads: without it, a disabled
+        // plugin is indistinguishable from one that scanned clean.
+        for plugin_id in &skipped_by_config {
+            results.push(ScanResult {
+                scan_plugin_id: PluginId::new(plugin_id.clone()),
+                scan_success: false,
+                scan_findings: Vec::new(),
+                scan_unchecked: Vec::new(),
+                scan_duration_us: 0,
+                scan_error: None,
+                scan_skipped: Some(SkipReason::DisabledByConfig),
+            });
+        }
+
         Ok(results)
     })
     .await?;
@@ -173,6 +190,11 @@ pub(crate) struct CliScanEntry {
     scan_success: bool,
     #[serde(default)]
     scan_error: Option<String>,
+    /// Why the entry ran no checks, on entries the config skipped. Absent
+    /// from output predating the marker, and `None` there, same as on every
+    /// entry a plugin actually produced.
+    #[serde(default)]
+    scan_skipped: Option<SkipReason>,
 }
 
 impl CliScanEntry {
@@ -187,6 +209,7 @@ impl CliScanEntry {
             scan_unchecked: self.unchecked,
             scan_duration_us: 0,
             scan_error: self.scan_error,
+            scan_skipped: self.scan_skipped,
         }
     }
 }

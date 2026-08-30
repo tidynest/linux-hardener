@@ -150,6 +150,7 @@ impl HardeningPlugin for MockPlugin {
             scan_unchecked: vec![],
             scan_duration_us: 10,
             scan_error: None,
+            scan_skipped: None,
         })
     }
 

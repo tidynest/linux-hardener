@@ -7,7 +7,7 @@ use crate::scan_history::{ScanSession, ScanSessionId, ScanStatus};
 use hardener_common::error::{HardeningError, Result};
 use hardener_types::{
     ComplianceMapping, ExceptionOutcome, Finding, FindingCategory, FindingExceptionDeclined,
-    FindingPolicyException, PluginId, ScanResult, Severity, UncheckedCheck,
+    FindingPolicyException, PluginId, ScanResult, Severity, SkipReason, UncheckedCheck,
 };
 use sqlx::{Row, SqlitePool};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -70,9 +70,17 @@ impl ScanHistoryManager {
                 serde_json::to_string(&result.scan_unchecked).ok()
             };
 
+            // The skip reason serialises as the variant name, so a future
+            // variant is a string this build can read back as the closest
+            // truth it knows rather than a number it would misread.
+            let skipped_json = match result.scan_skipped {
+                None => None,
+                Some(reason) => serde_json::to_string(&reason).ok(),
+            };
+
             let result_row = sqlx::query(
-                "INSERT INTO scan_results (session_id, plugin_id, success, duration_us, error_message, unchecked_json)
-                 VALUES (?, ?, ?, ?, ?, ?)
+                "INSERT INTO scan_results (session_id, plugin_id, success, duration_us, error_message, unchecked_json, skipped_reason)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
                  RETURNING id",
             )
             .bind(session_id.as_str())
@@ -81,6 +89,7 @@ impl ScanHistoryManager {
             .bind(result.scan_duration_us as i64)
             .bind(&result.scan_error)
             .bind(unchecked_json)
+            .bind(skipped_json)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
@@ -223,7 +232,7 @@ impl ScanHistoryManager {
     /// Retrieves all scan results for a given session.
     pub async fn get_session_results(&self, session_id: &ScanSessionId) -> Result<Vec<ScanResult>> {
         let result_rows = sqlx::query(
-            "SELECT id, plugin_id, success, duration_us, error_message, unchecked_json
+            "SELECT id, plugin_id, success, duration_us, error_message, unchecked_json, skipped_reason
              FROM scan_results
              WHERE session_id = ?",
         )
@@ -250,6 +259,21 @@ impl ScanHistoryManager {
                 })?
                 .unwrap_or_default();
 
+            // A reason this build does not know parses to an error, which
+            // surfaces as a corrupt row rather than a guess: the honest
+            // fallbacks on either side are "not skipped" (overstating a
+            // scan) or a wrong reason, and neither is ours to pick silently.
+            let skipped: Option<SkipReason> = row
+                .get::<Option<String>, _>("skipped_reason")
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(|e| {
+                    HardeningError::Database(format!(
+                        "Corrupted skipped_reason for result {result_id}: {e}"
+                    ))
+                })?;
+
             results.push(ScanResult {
                 scan_plugin_id: PluginId::new(row.get::<String, _>("plugin_id")),
                 scan_success: row.get("success"),
@@ -257,6 +281,7 @@ impl ScanHistoryManager {
                 scan_unchecked: unchecked,
                 scan_duration_us: row.get::<i64, _>("duration_us") as u64,
                 scan_error: row.get("error_message"),
+                scan_skipped: skipped,
             });
         }
 

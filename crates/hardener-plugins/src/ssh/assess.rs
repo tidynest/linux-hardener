@@ -64,6 +64,7 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
                     ),
                     scan_duration_us: duration_us,
                     scan_error: None,
+                    scan_skipped: None,
                 });
             }
             // Not a refusal, but not a clean host either: the read failed
@@ -82,6 +83,7 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
                 ),
                 scan_duration_us: duration_us,
                 scan_error: Some(format!("Failed to read {path}: {reason}")),
+                scan_skipped: None,
             });
         }
         // The error alone is not enough. `coverage()` declares every SSH
@@ -105,6 +107,7 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
                 scan_unchecked: unchecked_ssh_checks(&reason, UncheckedBlocker::Environment),
                 scan_duration_us: duration_us,
                 scan_error: Some(format!("Failed to read {SSHD_ADMIN_CONFIG_PATH}: {reason}")),
+                scan_skipped: None,
             });
         }
     };
@@ -143,6 +146,7 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
                 scan_error: Some(format!(
                     "Cannot resolve sshd_config Include directives: {e}"
                 )),
+                scan_skipped: None,
             });
         }
     };
@@ -290,5 +294,6 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
         scan_unchecked: vec![],
         scan_duration_us: duration_us,
         scan_error: None,
+        scan_skipped: None,
     })
 }

@@ -1252,6 +1252,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                     scan_unchecked: vec![],
                     scan_duration_us: start_time.elapsed().as_micros() as u64,
                     scan_error: Some(format!("No firewall backend: {}", e)),
+                    scan_skipped: None,
                 });
             }
         };
@@ -1264,6 +1265,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
                 scan_unchecked: vec![],
                 scan_duration_us: start_time.elapsed().as_micros() as u64,
                 scan_error: Some(format!("No firewall backend: {}", no_backend_error())),
+                scan_skipped: None,
             });
         }
 
@@ -1358,6 +1360,7 @@ impl HardeningPlugin for FirewallHardeningPlugin {
             scan_unchecked: unchecked,
             scan_duration_us: duration_us,
             scan_error: None,
+            scan_skipped: None,
         })
     }
 

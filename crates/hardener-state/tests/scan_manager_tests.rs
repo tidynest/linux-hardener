@@ -36,6 +36,7 @@ fn sample_results() -> Vec<ScanResult> {
         scan_duration_us: 1000,
         scan_error: None,
         scan_unchecked: vec![],
+        scan_skipped: None,
     }]
 }
 
@@ -291,6 +292,7 @@ async fn unchecked_checks_survive_store_and_restore() {
         }],
         scan_duration_us: 1,
         scan_error: None,
+        scan_skipped: None,
     };
     manager.store_results(&session_id, &[result]).await.unwrap();
     let restored = manager.get_session_results(&session_id).await.unwrap();
@@ -536,4 +538,45 @@ async fn a_row_with_both_columns_populated_reads_as_declined_not_applied() {
              corrupt row should be able to buy that excuse, got {other:?}"
         ),
     }
+}
+
+#[tokio::test]
+async fn a_skip_marker_round_trips_its_reason_through_the_latest_scan() {
+    // The desktop's findings notice and the compliance flatten both read the
+    // reason from the results a persisted session hands back. A session that
+    // recorded a config-disabled plugin must say so again on read, in the
+    // same get_latest_scan path the compliance report uses.
+    let (manager, _dir) = create_test_manager().await;
+    let session_id = manager.start_session().await.unwrap();
+
+    let mut results = sample_results();
+    results.push(hardener_types::ScanResult {
+        scan_plugin_id: hardener_types::PluginId::new("ssh-hardening"),
+        scan_success: false,
+        scan_findings: vec![],
+        scan_unchecked: vec![],
+        scan_duration_us: 0,
+        scan_error: None,
+        scan_skipped: Some(hardener_types::SkipReason::DisabledByConfig),
+    });
+
+    manager.store_results(&session_id, &results).await.unwrap();
+    manager
+        .complete_session(&session_id, ScanStatus::Completed, 1, 1)
+        .await
+        .unwrap();
+
+    let (_, restored) = manager.get_latest_scan().await.unwrap().unwrap();
+    let marker = restored
+        .iter()
+        .find(|r| r.scan_plugin_id.as_str() == "ssh-hardening")
+        .expect("the marker row survives the round-trip");
+    assert_eq!(
+        marker.scan_skipped,
+        Some(hardener_types::SkipReason::DisabledByConfig)
+    );
+    assert!(
+        marker.scan_findings.is_empty(),
+        "a marker carries no findings to misread as a scanned-clean entry"
+    );
 }

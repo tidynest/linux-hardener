@@ -701,6 +701,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
                     scan_unchecked: unchecked_all_services(&e.to_string()),
                     scan_plugin_id: self.metadata().plugin_id,
                     scan_success: false,
+                    scan_skipped: None,
                 });
             }
         };
@@ -762,6 +763,7 @@ impl HardeningPlugin for ServicesHardeningPlugin {
             scan_unchecked: vec![],
             scan_plugin_id: self.metadata().plugin_id,
             scan_success: true,
+            scan_skipped: None,
         })
     }
 

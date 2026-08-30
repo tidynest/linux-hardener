@@ -29,7 +29,7 @@
 
 use hardener_common::types::FindingCategory;
 use hardener_types::{
-    Finding, PluginCoverage, PluginId, PluginInventory, ScanResult, UncheckedBlocker,
+    Finding, PluginCoverage, PluginId, PluginInventory, ScanResult, SkipReason, UncheckedBlocker,
     UncheckedCheck,
 };
 
@@ -57,12 +57,15 @@ pub enum Unassessed<'a> {
 /// This exists for callers that need the list itself rather than a score:
 /// `batch scan` publishes it as JSON and never builds a report.
 ///
-/// `skipped` names plugins the config disabled, which never ran and so appear
-/// nowhere in `results`. Without an entry of their own, disabling a plugin
-/// would quietly pass every control it covers. A caller reading a persisted
-/// session has no such list, because a stored session records only what ran:
-/// there, absence alone is the signal, and every reason for it means the same
-/// thing to a report.
+/// `skipped` names plugins the config disabled, which never ran. The same
+/// fact can also arrive inside `results`, as a skip-marker entry the runner
+/// emitted for each disabled plugin so the reason survives the wire and the
+/// persisted session. Without one of the two, disabling a plugin would
+/// quietly pass every control it covers. A caller that resolved the
+/// configuration in-process passes `skipped`; a caller reading stored or
+/// foreign results relies on the markers, and a session predating them
+/// falls back to absence alone, where every reason means the same thing
+/// to a report.
 pub fn flatten(
     inventory: &PluginInventory,
     results: &[ScanResult],
@@ -76,6 +79,28 @@ pub fn flatten(
     };
 
     for result in results {
+        // A skip marker is the reason travelling with the results, stating
+        // the same fact the `skipped` parameter states for a caller that
+        // knows it out of band. Route it to its stand-in and read nothing
+        // else from the entry, because there is nothing else on it: the
+        // failure arm below would classify a plugin that never ran as a
+        // scan that did not complete. An unregistered plugin gets no
+        // stand-in, same as the failure arm below it.
+        if let Some(reason) = result.scan_skipped {
+            if let Some(plugin) = plugins
+                .iter()
+                .find(|p| p.metadata.plugin_id == result.scan_plugin_id)
+            {
+                unchecked.push(unassessed_check(
+                    plugin,
+                    match reason {
+                        SkipReason::DisabledByConfig => Unassessed::DisabledByConfig,
+                    },
+                ));
+            }
+            continue;
+        }
+
         findings.extend(result.scan_findings.iter().cloned());
         unchecked.extend(result.scan_unchecked.iter().cloned());
 
@@ -104,7 +129,10 @@ pub fn flatten(
         }
         // Disabled by the operator and merely not covered are the same silence
         // to a score, and are reported apart only so the reason an auditor
-        // reads is the true one.
+        // reads is the true one. A plugin named by a marker entry above is
+        // present in `results`, so this arm cannot double it; a scan and a
+        // marker for one plugin never coexist, because the runner emits the
+        // marker exactly when it does not scan.
         let why = if skipped.contains(&plugin.metadata.plugin_id) {
             Unassessed::DisabledByConfig
         } else {

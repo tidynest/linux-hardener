@@ -906,6 +906,7 @@ impl HardeningPlugin for MacHardeningPlugin {
             scan_unchecked: unchecked,
             scan_duration_us: duration_us,
             scan_error: None,
+            scan_skipped: None,
         })
     }
 

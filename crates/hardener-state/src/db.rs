@@ -222,6 +222,16 @@ const MIGRATIONS: &[Migration] = &[
         ddl: "unchecked_json TEXT",
         absent: None,
     },
+    // A scan result written before this column existed ran its plugin, and
+    // NULL reads back as exactly that: not skipped. A row that did not run
+    // stores the reason here instead, so a session read back from history
+    // can say why a plugin is absent rather than infer it.
+    Migration {
+        table: "scan_results",
+        column: "skipped_reason",
+        ddl: "skipped_reason TEXT",
+        absent: None,
+    },
     // A checkpoint taken before this column existed leaves it NULL, which
     // reads back as "not a symlink" and restores exactly as it did before, so
     // an existing checkpoint keeps working rather than becoming unreadable.

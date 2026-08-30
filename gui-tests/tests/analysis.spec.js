@@ -443,3 +443,26 @@ test.describe('Compliance', () => {
     await expect(compliancePanel(page).getByRole('heading', { level: 3 })).toHaveCount(10);
   });
 });
+
+  // T-FIND-13: A config-skipped plugin is named with its remedy, apart from
+  // absences the payload does not explain
+  //
+  // The `?skip_marker=1` fixture swaps PAM's scanned entry for the marker a
+  // config-disabled plugin arrives as. The skipped notice must name PAM with
+  // the config-edit remedy, and the unexplained notice - which this fixture
+  // still raises for Audit and MAC, absent from every variant - must not
+  // claim PAM, whose absence the marker explains. Before the skip channel,
+  // both groups collapsed into one notice that named config as the
+  // commonest cause of everything.
+  test('T-FIND-13: a skip marker is reported as skipped by config, not unexplained', async ({ page }) => {
+    await loadApp(page, '/analysis', 'skip_marker=1');
+    await runScan(page);
+
+    const skipped = page.locator('.findings-not-run', { hasText: 'skipped by configuration' });
+    await expect(skipped).toContainText('PAM Hardening');
+    await expect(skipped).toContainText('enabled_plugins');
+
+    const unexplained = page.locator('.findings-not-run', { hasText: 'produced no result' });
+    await expect(unexplained).toContainText('Audit Hardening');
+    await expect(unexplained).not.toContainText('PAM');
+  });

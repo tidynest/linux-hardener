@@ -64,9 +64,10 @@ fn the_refusal_says_how_to_leave_the_state() {
 /// The green half, and the one that stops this refusing real scans.
 ///
 /// A partial disable is not this state. Plugins ran, findings exist, and the
-/// scan is a scan. The operator is still not told what was skipped, which is a
-/// separate gap that needs a channel `Vec<ScanResult>` does not have, but
-/// refusing here would break every host with one plugin turned off.
+/// scan is a scan. What was skipped now travels beside the findings, as a
+/// marker entry per disabled plugin, so the operator is told without this
+/// refusal having to fire; refusing here would break every host with one
+/// plugin turned off.
 #[test]
 fn a_partial_disable_is_not_refused() {
     scan_selection_refusal(3, &["ssh-hardening".to_string()])

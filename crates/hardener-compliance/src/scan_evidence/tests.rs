@@ -58,6 +58,7 @@ fn scan_of(plugin_id: &str, success: bool) -> ScanResult {
         scan_unchecked: vec![],
         scan_duration_us: 0,
         scan_error: (!success).then(|| "permission denied".to_string()),
+        scan_skipped: None,
     }
 }
 
@@ -286,4 +287,69 @@ fn the_assessed_set_is_the_union_of_what_the_plugins_declare() {
         vec!["1.1", "1.2", "2.1"],
         "a shared control counts once"
     );
+}
+
+// --- skip-marker entries -----------------------------------------------------
+//
+// A marker entry is the reason travelling inside `results`: the same fact the
+// `skipped` parameter states, but one a wire consumer or a persisted session
+// can also receive. These pin the routing: by reason, never through the
+// failure arm, and never doubled by the absent-plugin arm.
+
+/// The marker's whole payload is the reason. It must arrive as
+/// DisabledByConfig, not as a scan that did not complete, and its controls
+/// route to manual review exactly as the `skipped` parameter's would.
+#[test]
+fn a_skip_marker_is_routed_by_its_reason_not_as_a_failure() {
+    let mut marker = scan_of("ssh-hardening", false);
+    marker.scan_skipped = Some(SkipReason::DisabledByConfig);
+    let results = vec![marker, scan_of("kernel-hardening", true)];
+
+    let (_, unchecked) = flatten(&inventory(), &results, &[]);
+
+    assert_eq!(ids(&unchecked), vec!["ssh-hardening-not-assessed"]);
+    assert!(
+        unchecked[0]
+            .unchecked_reason
+            .contains("disabled by configuration")
+    );
+    assert!(
+        !unchecked[0].unchecked_title.contains("did not complete"),
+        "a plugin that never ran did not fail: {}",
+        unchecked[0].unchecked_title
+    );
+}
+
+/// A marker for a plugin this build no longer registers declares no coverage,
+/// so it stands in for nothing, exactly as an absent unregistered plugin
+/// would.
+#[test]
+fn a_skip_marker_for_an_unregistered_plugin_stands_in_for_nothing() {
+    let mut marker = scan_of("retired-plugin", false);
+    marker.scan_skipped = Some(SkipReason::DisabledByConfig);
+    let results = vec![
+        marker,
+        scan_of("ssh-hardening", true),
+        scan_of("kernel-hardening", true),
+    ];
+
+    let (_, unchecked) = flatten(&inventory(), &results, &[]);
+
+    assert!(unchecked.is_empty(), "{:?}", ids(&unchecked));
+}
+
+/// The CLI resolves configuration in-process and passes `skipped`, while its
+/// own results now also carry markers. One stand-in must come out of that
+/// redundancy, not two: presence consumed the marker, and the absent arm must
+/// not fire again for a plugin the results already name.
+#[test]
+fn a_plugin_both_marked_and_passed_as_skipped_yields_one_entry() {
+    let mut marker = scan_of("ssh-hardening", false);
+    marker.scan_skipped = Some(SkipReason::DisabledByConfig);
+    let skipped = vec![PluginId::new("ssh-hardening")];
+    let results = vec![marker, scan_of("kernel-hardening", true)];
+
+    let (_, unchecked) = flatten(&inventory(), &results, &skipped);
+
+    assert_eq!(ids(&unchecked), vec!["ssh-hardening-not-assessed"]);
 }

@@ -26,6 +26,7 @@ fn failed_scan_of(plugin_id: &str) -> ScanResult {
         scan_unchecked: vec![],
         scan_duration_us: 0,
         scan_error: Some("reading /etc/ssh/sshd_config requires root".to_string()),
+        scan_skipped: None,
     }
 }
 
@@ -98,6 +99,7 @@ fn a_completed_scan_of_every_plugin_does_pass_controls() {
             scan_unchecked: vec![],
             scan_duration_us: 0,
             scan_error: None,
+            scan_skipped: None,
         })
         .collect();
 

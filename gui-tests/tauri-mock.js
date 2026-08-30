@@ -110,6 +110,12 @@
     },
   };
 
+  // `?skip_marker=1` rewrites the PAM entry into a skip marker, the shape a
+  // config-disabled plugin has arrived in since the skip channel existed. A
+  // dedicated scenario, so the default fixture every other test relies on
+  // keeps its six scanned entries.
+  const skipMarker = params.get('skip_marker') === '1';
+
   // ---- Mock Data ----
 
   // Field names match the Rust types exactly, and the frontend deserialises
@@ -341,6 +347,24 @@
       scan_error: null,
     },
   ];
+
+  // Serves every scan command; `skip_marker` swaps PAM's scanned entry for
+  // its marker, leaving the other five untouched.
+  const scanResults = skipMarker
+    ? SCAN_RESULTS.map((entry) =>
+        entry.scan_plugin_id === 'pam-hardening'
+          ? {
+              scan_plugin_id: 'pam-hardening',
+              scan_success: false,
+              scan_findings: [],
+              scan_unchecked: [],
+              scan_duration_us: 0,
+              scan_error: null,
+              scan_skipped: 'DisabledByConfig',
+            }
+          : entry,
+      )
+    : SCAN_RESULTS;
 
   const APPLY_RESULTS = [
     {
@@ -814,21 +838,21 @@
     switch (cmd) {
       case 'run_scan':
         scanHasRun = true;
-        return SCAN_RESULTS;
+        return scanResults;
 
       case 'run_scan_filtered': {
         scanHasRun = true;
         const ids = (args && args.plugin_ids) || [];
-        if (ids.length === 0) return SCAN_RESULTS;
-        return SCAN_RESULTS.filter((r) => ids.includes(r.scan_plugin_id));
+        if (ids.length === 0) return scanResults;
+        return scanResults.filter((r) => ids.includes(r.scan_plugin_id));
       }
 
       case 'run_scan_with_options':
         scanHasRun = true;
-        return SCAN_RESULTS;
+        return scanResults;
 
       case 'get_latest_scan':
-        return scanHasRun ? SCAN_RESULTS : null;
+        return scanHasRun ? scanResults : null;
 
       case 'run_apply':
         return applyMode === 'mixed' ? MIXED_APPLY_RESULTS : APPLY_RESULTS;

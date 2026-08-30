@@ -76,6 +76,7 @@ fn scan(
         scan_unchecked: unchecked,
         scan_duration_us: 0,
         scan_error: None,
+        scan_skipped: None,
     }
 }
 
@@ -1459,6 +1460,7 @@ fn scan_result_for(plugin_id: &str, findings: Vec<Finding>) -> ScanResult {
         scan_unchecked: vec![],
         scan_duration_us: 0,
         scan_error: None,
+        scan_skipped: None,
     }
 }
 
@@ -1738,13 +1740,14 @@ fn the_expander_and_the_modal_agree_that_a_failed_read_does_not_block_a_rollback
     );
 }
 
-// --- plugins_that_did_not_run ------------------------------------------------
+// --- unrun_plugins -----------------------------------------------------------
 //
-// A registered plugin absent from a scan's results did not run, and the
+// A registered plugin a scan's results say nothing about did not run, and the
 // findings list shows nothing for that domain. Nothing renders exactly like a
-// clean one, which is the reading these guard against. `hardener scan` prints
-// "Skipped by config" on stderr; the desktop discards stderr, so it derives the
-// same fact from inventory minus results.
+// clean one, which is the reading these guard against. Results now carry
+// marker entries for plugins the config disabled, so the reason splits in
+// two: skipped-by-config names a config edit, and an absence the payload
+// does not explain names an investigation.
 
 fn plugin_meta(plugin_id: &str, plugin_name: &str) -> hardener_types::PluginMetadata {
     hardener_types::PluginMetadata {
@@ -1764,18 +1767,19 @@ fn three_plugins() -> Vec<hardener_types::PluginMetadata> {
     ]
 }
 
-/// The state this exists for: a plugin the config turned off is simply absent,
-/// and the operator is told which.
+/// An absence the payload does not explain: reported by name, in the group
+/// whose remedy is an investigation rather than a config edit.
 #[test]
-fn a_plugin_absent_from_the_results_is_reported_by_name() {
+fn a_plugin_absent_from_the_results_is_reported_as_unexplained() {
     let ran = vec![
         scan_result_for("kernel-hardening", vec![]),
         scan_result_for("audit-hardening", vec![]),
     ];
 
-    let missing = plugins_that_did_not_run(&three_plugins(), &ran, &[]);
+    let unrun = unrun_plugins(&three_plugins(), &ran, &[]);
 
-    assert_eq!(missing, vec!["SSH Hardening".to_string()]);
+    assert_eq!(unrun.unexplained, vec!["SSH Hardening".to_string()]);
+    assert!(unrun.skipped_by_config.is_empty());
 }
 
 /// The green half. A scan that reached every plugin reports nothing, or the
@@ -1788,7 +1792,13 @@ fn a_complete_scan_reports_nothing_missing() {
         scan_result_for("audit-hardening", vec![]),
     ];
 
-    assert!(plugins_that_did_not_run(&three_plugins(), &ran, &[]).is_empty());
+    let unrun = unrun_plugins(&three_plugins(), &ran, &[]);
+    assert!(unrun.unexplained.is_empty(), "got {:?}", unrun.unexplained);
+    assert!(
+        unrun.skipped_by_config.is_empty(),
+        "got {:?}",
+        unrun.skipped_by_config
+    );
 }
 
 /// A plugin that ran and FAILED is present in the results, so it is not
@@ -1805,7 +1815,13 @@ fn a_failed_scan_is_not_a_missing_one() {
         scan_result_for("audit-hardening", vec![]),
     ];
 
-    assert!(plugins_that_did_not_run(&three_plugins(), &ran, &[]).is_empty());
+    let unrun = unrun_plugins(&three_plugins(), &ran, &[]);
+    assert!(unrun.unexplained.is_empty(), "got {:?}", unrun.unexplained);
+    assert!(
+        unrun.skipped_by_config.is_empty(),
+        "got {:?}",
+        unrun.skipped_by_config
+    );
 }
 
 /// A plugin the operator filtered out is not missing, it is unselected. Saying
@@ -1814,10 +1830,9 @@ fn a_failed_scan_is_not_a_missing_one() {
 fn a_deselected_plugin_is_not_reported() {
     let ran = vec![scan_result_for("kernel-hardening", vec![])];
 
-    let missing =
-        plugins_that_did_not_run(&three_plugins(), &ran, &["kernel-hardening".to_string()]);
+    let unrun = unrun_plugins(&three_plugins(), &ran, &["kernel-hardening".to_string()]);
 
-    assert!(missing.is_empty(), "got {missing:?}");
+    assert_eq!(unrun, UnrunPlugins::default(), "got {unrun:?}");
 }
 
 /// But a plugin inside the filter that still did not run IS reported. This is
@@ -1827,13 +1842,13 @@ fn a_deselected_plugin_is_not_reported() {
 fn a_selected_plugin_that_did_not_run_is_still_reported() {
     let ran = vec![scan_result_for("kernel-hardening", vec![])];
 
-    let missing = plugins_that_did_not_run(
+    let unrun = unrun_plugins(
         &three_plugins(),
         &ran,
         &["kernel-hardening".to_string(), "ssh-hardening".to_string()],
     );
 
-    assert_eq!(missing, vec!["SSH Hardening".to_string()]);
+    assert_eq!(unrun.unexplained, vec!["SSH Hardening".to_string()]);
 }
 
 /// The filter accepts the CLI's short-name rule, so a selection written the way
@@ -1842,9 +1857,9 @@ fn a_selected_plugin_that_did_not_run_is_still_reported() {
 fn a_short_selection_matches_the_same_plugin_the_cli_would() {
     let ran = vec![scan_result_for("kernel-hardening", vec![])];
 
-    let missing = plugins_that_did_not_run(&three_plugins(), &ran, &["kernel".to_string()]);
+    let unrun = unrun_plugins(&three_plugins(), &ran, &["kernel".to_string()]);
 
-    assert!(missing.is_empty(), "got {missing:?}");
+    assert_eq!(unrun, UnrunPlugins::default(), "got {unrun:?}");
 }
 
 /// Every plugin missing, which is the all-disabled state the backend now
@@ -1852,10 +1867,47 @@ fn a_short_selection_matches_the_same_plugin_the_cli_would() {
 /// that stops at one hides how much of the host went unassessed.
 #[test]
 fn every_plugin_missing_is_reported_in_full() {
-    let missing = plugins_that_did_not_run(&three_plugins(), &[], &[]);
+    let unrun = unrun_plugins(&three_plugins(), &[], &[]);
 
-    assert_eq!(missing.len(), 3, "got {missing:?}");
-    assert!(missing.contains(&"SSH Hardening".to_string()));
+    assert_eq!(unrun.unexplained.len(), 3, "got {:?}", unrun.unexplained);
+    assert!(unrun.unexplained.contains(&"SSH Hardening".to_string()));
+}
+
+/// The marker's whole point: a plugin the config disabled arrives as an
+/// entry, so it is reported as skipped with its remedy, never as an
+/// unexplained absence and never as silently clean.
+#[test]
+fn a_marker_entry_reports_the_plugin_as_skipped_by_config() {
+    let mut marker = scan_result_for("ssh-hardening", vec![]);
+    marker.scan_skipped = Some(hardener_types::SkipReason::DisabledByConfig);
+    let ran = vec![
+        scan_result_for("kernel-hardening", vec![]),
+        marker,
+        scan_result_for("audit-hardening", vec![]),
+    ];
+
+    let unrun = unrun_plugins(&three_plugins(), &ran, &[]);
+
+    assert_eq!(
+        unrun.skipped_by_config,
+        vec!["SSH Hardening".to_string()],
+        "the marker names its plugin and its remedy"
+    );
+    assert!(unrun.unexplained.is_empty(), "got {:?}", unrun.unexplained);
+}
+
+/// A run with one marked, one absent and one scanned plugin: each lands in
+/// exactly one group, and presence via a marker suppresses the absent arm.
+#[test]
+fn a_marker_explains_only_itself_and_an_absence_stays_unexplained() {
+    let mut marker = scan_result_for("ssh-hardening", vec![]);
+    marker.scan_skipped = Some(hardener_types::SkipReason::DisabledByConfig);
+    let ran = vec![marker, scan_result_for("kernel-hardening", vec![])];
+
+    let unrun = unrun_plugins(&three_plugins(), &ran, &[]);
+
+    assert_eq!(unrun.skipped_by_config, vec!["SSH Hardening".to_string()]);
+    assert_eq!(unrun.unexplained, vec!["Audit Rules Hardening".to_string()]);
 }
 
 // --- nothing_to_apply_line ---------------------------------------------------

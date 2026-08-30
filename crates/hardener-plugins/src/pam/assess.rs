@@ -203,5 +203,6 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
         scan_unchecked: unchecked,
         scan_duration_us: duration_us,
         scan_error: None,
+        scan_skipped: None,
     })
 }

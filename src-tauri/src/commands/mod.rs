@@ -22,7 +22,7 @@ use hardener_state::{
 use hardener_types::{
     ApplyOutcome, CheckpointDetail, CheckpointFileInfo, CheckpointInfo, CheckpointList,
     ConfigSummary, ControlOutcome, FleetFrameworkPosture, FleetHostScan, FleetHostStatus, PluginId,
-    RollbackOutcome, ScanSessionInfo, SeverityTallies, plugin_id_named_by,
+    RollbackOutcome, ScanSessionInfo, SeverityTallies, SkipReason, plugin_id_named_by,
     remote::{
         FLEET_PROGRESS_EVENT, FleetProgress, HostSessionInfo, HostsConfig, RemoteConnectionStatus,
         RemoteHostProfile,

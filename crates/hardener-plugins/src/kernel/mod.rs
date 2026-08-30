@@ -1091,6 +1091,7 @@ impl HardeningPlugin for KernelHardeningPlugin {
             scan_unchecked: unchecked,
             scan_duration_us: start_time.elapsed().as_micros() as u64,
             scan_error: None,
+            scan_skipped: None,
         })
     }
 

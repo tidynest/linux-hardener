@@ -1096,6 +1096,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 scan_unchecked: unchecked,
                 scan_plugin_id: self.metadata().plugin_id,
                 scan_success: true,
+                scan_skipped: None,
             });
         }
 
@@ -1152,6 +1153,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 scan_unchecked: unchecked,
                 scan_plugin_id: self.metadata().plugin_id,
                 scan_success: true,
+                scan_skipped: None,
             });
         }
 
@@ -1311,6 +1313,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
             scan_unchecked: unchecked,
             scan_plugin_id: self.metadata().plugin_id,
             scan_success: true,
+            scan_skipped: None,
         })
     }
 

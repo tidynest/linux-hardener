@@ -712,6 +712,21 @@ pub fn unchecked_summary<'a>(
     }
 }
 
+/// Why a scan entry ran no checks.
+///
+/// One variant today, held in an enum rather than a flag because the
+/// distinction it names is the entire payload: a plugin the config
+/// turned off never ran, which is a different fact from a scan that ran
+/// and did not complete, and consumers downstream of the wire need the
+/// difference stated rather than inferred from absence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+pub enum SkipReason {
+    /// The configuration disabled the plugin, so it was never asked to
+    /// scan. The remedy is an edit to `[global] disabled_plugins`, not a
+    /// re-run.
+    DisabledByConfig,
+}
+
 /// Result of a scan operation.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ScanResult {
@@ -728,6 +743,15 @@ pub struct ScanResult {
     pub scan_duration_us: u64,
     /// Optional error message if scan failed.
     pub scan_error: Option<String>,
+    /// Why this entry ran no checks, on an entry that carries no scan.
+    /// `None` on every entry a plugin actually produced, failed ones
+    /// included: a scan that ran and did not complete is
+    /// [`Self::scan_success`] set false, not a skip. Carried in the result
+    /// rather than a side channel so a JSON consumer or a persisted
+    /// session, which cannot see the runner's stderr, still receives the
+    /// reason.
+    #[serde(default)]
+    pub scan_skipped: Option<SkipReason>,
 }
 
 /// A single security finding from a scan.

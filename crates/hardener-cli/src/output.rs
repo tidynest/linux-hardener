@@ -66,10 +66,15 @@ pub fn scan_results(format: &OutputFormat, results: &[(PluginMetadata, ScanResul
             }
 
             println!("\n{}", "═══════════════════".dimmed());
+            // A marker entry is a plugin the scan never reached, so counting
+            // it here would report a disabled plugin as a scanned one.
+            let scanned = results
+                .iter()
+                .filter(|(_, r)| r.scan_skipped.is_none())
+                .count();
             println!(
                 "Total: {} finding(s) across {} plugin(s)",
-                total_findings,
-                results.len()
+                total_findings, scanned
             );
 
             let unchecked = results.iter().flat_map(|(_, r)| r.scan_unchecked.iter());
@@ -77,7 +82,27 @@ pub fn scan_results(format: &OutputFormat, results: &[(PluginMetadata, ScanResul
                 println!("{}", note.dimmed());
             }
 
-            let failed = results.iter().filter(|(_, r)| !r.scan_success).count();
+            let skipped = results
+                .iter()
+                .filter(|(_, r)| r.scan_skipped.is_some())
+                .count();
+            if skipped > 0 {
+                println!(
+                    "{}",
+                    format!(
+                        "{skipped} plugin(s) skipped by config; \
+                         their controls were not assessed"
+                    )
+                    .yellow()
+                );
+            }
+
+            // A marker already has its note above; this line is for a plugin
+            // that ran and did not complete.
+            let failed = results
+                .iter()
+                .filter(|(_, r)| r.scan_skipped.is_none() && !r.scan_success)
+                .count();
             if failed > 0 {
                 println!(
                     "{}",
@@ -109,6 +134,7 @@ fn scan_json(results: &[(PluginMetadata, ScanResult)]) -> Vec<serde_json::Value>
                 "unchecked": r.scan_unchecked,
                 "scan_success": r.scan_success,
                 "scan_error": r.scan_error,
+                "scan_skipped": r.scan_skipped,
             })
         })
         .collect()
@@ -128,6 +154,19 @@ fn scan_json(results: &[(PluginMetadata, ScanResult)]) -> Vec<serde_json::Value>
 fn scan_plugin_lines(metadata: &PluginMetadata, result: &ScanResult) -> Vec<String> {
     let findings = &result.scan_findings;
     let unchecked = &result.scan_unchecked;
+
+    // A marker is not an outcome to colour: the plugin never ran, and the
+    // remedy is a config edit rather than an investigation. It must not
+    // fall through to the did-not-complete line below, which is for a
+    // plugin that ran.
+    if result.scan_skipped.is_some() {
+        return vec![format!(
+            "\n{} {} - {}",
+            "○".dimmed(),
+            metadata.plugin_name.bold(),
+            "skipped by config".dimmed()
+        )];
+    }
 
     // A plugin whose own scan failed carries no findings, which is exactly
     // what a compliant host looks like. Never let that render as a tick.

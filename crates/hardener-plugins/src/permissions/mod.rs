@@ -1416,6 +1416,7 @@ impl HardeningPlugin for PermissionsHardeningPlugin {
             scan_unchecked: unchecked,
             scan_plugin_id: PluginId::new("permissions-hardening"),
             scan_success: true,
+            scan_skipped: None,
         })
     }
 
