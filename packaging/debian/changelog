@@ -1,16 +1,32 @@
 linux-hardener (1.8.1-1) unstable; urgency=medium
 
-  * TODO: the 1.8.1 release notes, mirroring CHANGELOG.md's
-    [1.8.1] section. Fill in before packaging; this is the
-    after-the-tag checklist item.
+  * Fixed: setting a directive in a configuration file whose final line is
+    a live Match block with no trailing newline no longer fuses the inserted
+    directive onto the Match line, which produced a value sshd refuses to
+    parse. Found by the fuzz targets' first CI run with an accumulated
+    corpus
 
  -- Eric Jingryd <tidynest@proton.me>  Sun, 30 Aug 2026 07:44:27 +0000
 
 linux-hardener (1.8.0-1) unstable; urgency=medium
 
-  * TODO: the 1.8.0 release notes, mirroring CHANGELOG.md's
-    [1.8.0] section. Fill in before packaging; this is the
-    after-the-tag checklist item.
+  * Added: five fuzz targets cover the configuration parsers on both sides
+    of apply, asserting their documented invariants, and CI executes every
+    target for a short burst on each push with the corpus accumulating
+    between runs
+  * Added: the desktop backend is compiled, linted and tested by CI for the
+    first time, the root-gated integration tests run in CI, and CI runs
+    cargo test --workspace as one invocation, GUI crates included
+  * Fixed: the case-insensitive directive matcher no longer panics when a
+    remote host's bytes decode with a replacement character inside the
+    prefix it compares
+  * Fixed: setting a directive preserves the line endings the file already
+    had. CRLF files were ending-normalised by every pass and runs of bare
+    carriage returns shrank a byte per application, each reported as a
+    hardening change
+  * Changed: release.sh writes the RPM spec's Version:, the debian stanza
+    header and NEXT.md's Current Version marker itself, with --verify
+    reading all six version sites back
 
  -- Eric Jingryd <tidynest@proton.me>  Sat, 29 Aug 2026 22:27:34 +0000
 

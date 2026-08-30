@@ -2,14 +2,14 @@
 
 ## Supported Versions
 
-The current release is **1.8.1**. Only the 1.5 series receives security fixes.
+The current release is **1.8.1**. Only the current release series receives
+security fixes; there are no backports, so upgrade rather than pin.
 
-| Version           | Supported          | Notes                                                |
-| ----------------- | ------------------ | ---------------------------------------------------- |
-| 1.5.x             | :white_check_mark: | Current release series                               |
-| 1.4.x             | :x:                | Affected by GHSA-x4xp-32mf-xwjh, fixed only in 1.5.0 |
-| 1.3.x             | :x:                | Affected by GHSA-x4xp-32mf-xwjh                      |
-| 1.2.x and earlier | :x:                | End of life                                          |
+| Version           | Supported          | Notes                                                 |
+| ----------------- | ------------------ | ----------------------------------------------------- |
+| 1.8.x             | :white_check_mark: | Current release series                                |
+| 1.7.x and earlier | :x:                | End of life; upgrade                                  |
+| 1.4.x and earlier | :x:                | Also affected by GHSA-x4xp-32mf-xwjh, fixed in 1.5.0 |
 
 There are no backported patches. GHSA-x4xp-32mf-xwjh applies to every release up
 to and including 1.4.0 and was fixed in 1.5.0, so any installation still on 1.4.x

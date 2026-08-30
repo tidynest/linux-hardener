@@ -116,6 +116,14 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Sun Aug 30 2026 Eric Jingryd <tidynest@proton.me> - 1.8.1-1
+- Fixed: setting a directive in a file whose final line is a live Match block with no trailing newline no longer fuses the inserted directive onto the Match line, a value sshd refuses to parse
+* Sat Aug 29 2026 Eric Jingryd <tidynest@proton.me> - 1.8.0-1
+- Added: five fuzz targets cover the configuration parsers, and CI executes every target for a short burst per push with the corpus accumulating between runs
+- Added: the desktop backend is compiled, linted and tested by CI for the first time, the root-gated integration tests run in CI, and cargo test --workspace runs as one invocation
+- Fixed: the case-insensitive directive matcher no longer panics on remote bytes that decode with a replacement character inside the compared prefix
+- Fixed: setting a directive preserves the line endings the file already had; CRLF files were normalised per pass and bare carriage returns shrank a byte per application
+- Changed: release.sh writes the spec's Version:, the debian stanza header and NEXT.md's marker itself
 * Sat Aug 29 2026 Eric Jingryd <tidynest@proton.me> - 1.7.0-1
 - Added: the Analysis tab names any registered plugin that produced no result. A domain nobody scanned shows no findings, which looks the same as a clean one; the CLI has always said so on stderr, which the desktop discards
 - Fixed: a scan whose every selected plugin the configuration disables is refused with the CLI's own wording, rather than returning an empty result the interface rendered as "No findings yet"
