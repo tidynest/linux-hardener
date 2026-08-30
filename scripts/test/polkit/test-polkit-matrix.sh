@@ -327,20 +327,32 @@ else
 
     section "Interactive: Tauri Error Handling"
 
-    echo -e "  ${YELLOW}This test verifies the Tauri desktop app shows the correct error"
-    echo -e "  when auth is cancelled. Start the desktop app, click Apply, then"
-    echo -e "  cancel the polkit dialog.${NC}"
+    # The privileged preview (2026-08-30) is what gives this arm its subject:
+    # the wizard's Preview Changes now raises the same polkit prompt Apply
+    # always did, and a dismissed prompt must read as a choice, not a failure.
+    # The pre-fix wording expected an "Authentication cancelled" banner; that
+    # wording described a prompt the wizard never raised at preview, and the
+    # calm-return behaviour it would now contradict is pinned by T-CONF-16.
+    echo -e "  ${YELLOW}This test verifies the desktop wizard treats a cancelled polkit"
+    echo -e "  prompt as a choice rather than a failure. Start the desktop app"
+    echo -e "  built from this tree (not an installed release predating the"
+    echo -e "  privileged preview), open Hardening, select at least one area,"
+    echo -e "  click Preview Changes, then CANCEL the polkit dialog.${NC}"
     echo ""
-    echo -e "  Expected: Toast/banner says \"Authentication cancelled. Root privileges"
-    echo -e "  are required for this operation.\"${NC}"
+    echo -e "  Expected: the wizard returns to the selection view with the"
+    echo -e "  Preview Changes button usable again, and NO error banner appears."
+    echo -e "  (A cancelled prompt is not a failure; the browser suite pins this"
+    echo -e "  as T-CONF-16. Authenticating instead should reach the review step"
+    echo -e "  with staged changes - which is the dead-end this fixes - but that"
+    echo -e "  half modifies nothing until Apply is confirmed.)"
     echo ""
-    echo -e "  ${YELLOW}Did the correct error message appear? [y/N]${NC}"
+    echo -e "  ${YELLOW}Did the wizard return to the selection view with no error banner? [y/N]${NC}"
     read -r -n 1 answer
     echo ""
     if [[ "${answer,,}" == "y" ]]; then
-        pass "Tauri shows auth-cancelled error message"
+        pass "Tauri returns calmly from a cancelled preview prompt"
     else
-        fail "Tauri shows auth-cancelled error message"
+        fail "Tauri returns calmly from a cancelled preview prompt"
     fi
 fi
 
