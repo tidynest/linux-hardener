@@ -281,18 +281,44 @@ if [[ "$INTERACTIVE" != "true" ]]; then
     # Not a precondition: the caller chose this mode, and release-readiness-root.sh
     # chooses it deliberately because the three tests below block on a human at
     # an authentication dialog. A plain skip, so it does not move the verdict.
-    skip "Auth success test (use --interactive)"
     skip "Auth cancel test (use --interactive)"
+    skip "Auth success test (use --interactive)"
     skip "Tauri error handling test (use --interactive)"
 elif [[ -z "$HARDENER_BIN" ]]; then
     # Without a binary there is nothing for pkexec to run. Each test below would
     # raise a dialog for an empty command and report whatever came back as a
     # verdict on this project.
     section "Interactive Tests"
-    for interactive_test in "Auth success test" "Auth cancel test" "Tauri error handling test"; do
+    for interactive_test in "Auth cancel test" "Auth success test" "Tauri error handling test"; do
         skip_absent "$interactive_test" "$BINARY_ABSENT" "$BINARY_REMEDY"
     done
 else
+    # Cancel runs BEFORE success, and this is not cosmetic. The project's own
+    # policy annotates both actions with org.freedesktop.policykit.exec.path =
+    # /usr/bin/hardener, so a pkexec of this binary resolves to
+    # com.tidynest.linux-hardener.* rather than the generic pkexec action, and
+    # those actions set allow_active = auth_admin_keep: the success test's
+    # authentication buys roughly five minutes of credential caching during
+    # which the cancel test cannot raise a dialog to cancel and its pkexec
+    # simply runs, exit 0, reading as a failure. Found on a real desktop on
+    # 2026-08-30 (issue #18's first execution of these arms), where the
+    # original order failed exactly this way.
+    section "Interactive: Auth Cancel"
+
+    echo -e "  ${YELLOW}A polkit dialog will appear. Click CANCEL (do not authenticate).${NC}"
+    echo -e "  ${YELLOW}If NO dialog appears, authentication is still cached from a recent${NC}"
+    echo -e "  ${YELLOW}run (auth_admin_keep, about five minutes): wait it out and re-run.${NC}"
+    echo -e "  ${YELLOW}Press Enter to continue...${NC}"
+    read -r
+
+    pkexec "$HARDENER_BIN" scan --format json &>/dev/null
+    cancel_exit=$?
+    if [[ $cancel_exit -eq 126 ]]; then
+        pass "pkexec auth cancel returns exit code 126"
+    else
+        fail "pkexec auth cancel (expected exit 126, got $cancel_exit)"
+    fi
+
     section "Interactive: Auth Success"
 
     echo -e "  ${YELLOW}A polkit dialog will appear. Enter your password to authenticate.${NC}"
@@ -309,20 +335,6 @@ else
         else
             fail "pkexec auth success (exit code: $exit_code)"
         fi
-    fi
-
-    section "Interactive: Auth Cancel"
-
-    echo -e "  ${YELLOW}A polkit dialog will appear. Click CANCEL (do not authenticate).${NC}"
-    echo -e "  ${YELLOW}Press Enter to continue...${NC}"
-    read -r
-
-    pkexec "$HARDENER_BIN" scan --format json &>/dev/null
-    cancel_exit=$?
-    if [[ $cancel_exit -eq 126 ]]; then
-        pass "pkexec auth cancel returns exit code 126"
-    else
-        fail "pkexec auth cancel (expected exit 126, got $cancel_exit)"
     fi
 
     section "Interactive: Tauri Error Handling"
