@@ -8,4 +8,33 @@
 # but this project only uses SQLite (sqlx with sqlite feature). The vulnerable
 # code path is not exercised. Additionally, this tool does not expose an RSA
 # server that would be susceptible to network timing attacks.
-ignore = ["RUSTSEC-2023-0071"]
+#
+# RUSTSEC-2026-0097: rand is unsound with a custom logger using rand::rng()
+# Status: No fix reachable for the one vulnerable copy that remains. The
+# lockfile's rand 0.8.5 was bumped to 0.8.8 on 2026-08-30; what is left is
+# rand 0.7.3, a build-time transitive dependency of tauri's CSS selector
+# codegen (tauri-utils -> kuchikiki 0.8.8-speedreader -> selectors 0.24 ->
+# phf 0.8 -> phf_generator 0.8, which requires rand ^0.7 and has no patched
+# 0.7.x). tauri-utils depends on kuchiki ^0.8.8-speedreader, a prerelease-
+# tagged requirement that kuchikiki 0.8.9-speedreader (selectors 0.32) can
+# never satisfy, so only a future tauri-utils release can retire this.
+# Risk assessment: the advisory's preconditions are absent here. phf_generator
+# runs in build scripts with no custom logger, no log feature and no
+# thread_rng reseed inside a logger callback; the project's own rand usage is
+# 0.9.x (hardener-state signing), outside the vulnerable range.
+#
+# RUSTSEC-2024-0429: unsoundness in glib::VariantStrIter's Iterator impls
+# Status: No fix reachable. First patched in glib 0.20.0, but every released
+# member of the tauri stack still requires the gtk-rs 0.18 generation (tauri
+# 2.11.5, wry 0.56.1, tao 0.37.0, muda 0.19.3 and webkit2gtk 2.0.2 all
+# require gtk ^0.18 / glib ^0.18), and cargo cannot cross a 0.x minor
+# boundary while any of them does. Revisit when tauri moves to gtk-rs 0.20
+# or newer.
+# Risk assessment: glib is purely transitive here, pulled by the webview
+# layer. This tree contains no direct glib usage and no VariantStrIter call
+# site, so the unsound iterator is never exercised.
+ignore = [
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2026-0097",
+    "RUSTSEC-2024-0429",
+]
