@@ -116,6 +116,11 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Mon Aug 31 2026 Eric Jingryd <tidynest@proton.me> - 1.8.2-1
+- Added: a plugin the configuration disables rides in the scan results as a marker entry naming its remedy, across the CLI's JSON, the desktop's scans and the persisted session, and compliance scores its controls ManualReview rather than passing them on their own silence
+- Changed: the polkit test matrix's three interactive arms are rewritten and field-executed on the real desktop; the cancel arm runs first because the policy's auth_admin_keep caches a successful authentication for five minutes, inside which no dialog can be raised to cancel
+- Fixed: the Hardening wizard's preview runs through pkexec with Apply's privileges, so the confirm step no longer dead-ends on a privilege-gated host whose unprivileged dry-run estimated zero changes; a dismissed prompt returns to the selection view without an error banner
+- Security: rand 0.8.5 updated to 0.8.8 for RUSTSEC-2026-0097 / GHSA-cq8v-f236-94qc, and the two upstream-blocked advisories (rand 0.7.3 under tauri's kuchiki pin, glib 0.18.5 under the gtk-rs 0.18 pin) are recorded as accepted in .cargo/audit.toml
 * Sun Aug 30 2026 Eric Jingryd <tidynest@proton.me> - 1.8.1-1
 - Fixed: setting a directive in a file whose final line is a live Match block with no trailing newline no longer fuses the inserted directive onto the Match line, a value sshd refuses to parse
 * Sat Aug 29 2026 Eric Jingryd <tidynest@proton.me> - 1.8.0-1
