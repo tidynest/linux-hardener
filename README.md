@@ -479,7 +479,7 @@ and where the two differ this page follows the tree.
 
 ### Releases
 
-**Version**: 1.8.1
+**Version**: 1.8.2
 
 Install a release unless you have a reason not to. Per-release detail is in
 [CHANGELOG.md](CHANGELOG.md), and anything a release fixed that your already
@@ -550,4 +550,4 @@ Drawing on [Lynis](https://cisofy.com/lynis/),
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-hardener
 
-**Last Updated**: 2026-08-30
+**Last Updated**: 2026-08-31

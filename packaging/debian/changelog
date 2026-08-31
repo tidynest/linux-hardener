@@ -1,3 +1,11 @@
+linux-hardener (1.8.2-1) unstable; urgency=medium
+
+  * TODO: the 1.8.2 release notes, mirroring CHANGELOG.md's
+    [1.8.2] section. Fill in before packaging; this is the
+    after-the-tag checklist item.
+
+ -- Eric Jingryd <tidynest@proton.me>  Mon, 31 Aug 2026 16:16:37 +0000
+
 linux-hardener (1.8.1-1) unstable; urgency=medium
 
   * Fixed: setting a directive in a configuration file whose final line is

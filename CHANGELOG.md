@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-08-31
+
 ### Added
 
 - **A plugin the config disables now rides in the scan results as a marker

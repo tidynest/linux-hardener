@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-The current release is **1.8.1**. Only the current release series receives
+The current release is **1.8.2**. Only the current release series receives
 security fixes; there are no backports, so upgrade rather than pin.
 
 | Version           | Supported          | Notes                                                 |
@@ -286,4 +286,4 @@ For security concerns: [private vulnerability report](https://github.com/tidynes
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-hardener/issues)
 
-**Last Updated**: 2026-08-30
+**Last Updated**: 2026-08-31

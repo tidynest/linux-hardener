@@ -1,7 +1,7 @@
 # Linux Hardener - Architecture Documentation
 
-**Last Updated**: 2026-08-30
-**Version:** 1.8.1
+**Last Updated**: 2026-08-31
+**Version:** 1.8.2
 
 ---
 

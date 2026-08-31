@@ -1,5 +1,5 @@
 Name:           linux-hardener
-Version:        1.8.1
+Version:        1.8.2
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
 License:        Apache-2.0
