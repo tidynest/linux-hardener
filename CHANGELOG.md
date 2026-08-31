@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A plugin the config disables now rides in the scan results as a marker
+  entry that names its remedy, instead of vanishing.** The CLI printed
+  `Skipped by config` to stderr, which `--format json` suppresses entirely,
+  so a deep scan's payload and the persisted session carried no signal, and
+  the desktop derived absence from inventory minus results: the consequence
+  without the reason, unable to separate disabled by config from an absence
+  the payload does not explain. `ScanResult` gains `scan_skipped`
+  (serde-defaulted, so every pre-marker payload parses unchanged), and each
+  path that knows the reason emits one marker entry per skipped plugin: the
+  CLI's JSON array, the desktop's scan and deep scan, and the persisted
+  session, where an unknown reason surfaces as a corrupt row rather than a
+  guess. Compliance routes markers to the same unassessed entry the skipped
+  parameter produces, so a disabled plugin's controls score ManualReview,
+  never a pass on their own silence; the findings tab splits its notice by
+  reason - a skip names the config edit, an unexplained absence names an
+  investigation.
+
+### Changed
+
+- **The polkit test matrix's three interactive arms are rewritten and have
+  been field-executed.** The arms had drifted from the app: the wizard
+  stopped showing an error banner for a dismissed prompt long ago, and
+  since the preview moved onto the same pkexec channel the prompt an
+  operator meets first is the one Preview Changes raises, so the Tauri arm
+  now drives that prompt and expects the calm return to the selection
+  view. Executing them on the real desktop (issue #18, 2026-08-30) found
+  that the order mattered: the project's polkit policy annotates both
+  actions with `auth_admin_keep`, which caches a successful authentication
+  for about five minutes, and inside that window a cancel arm cannot raise
+  a dialog to cancel. Cancel now runs first, and each arm says what a
+  missing dialog means - a warm credential cache, wait five minutes and
+  re-run - instead of letting an uncanceled run report a defect that is
+  not there. Field result: 12 pass, 0 fail, 1 skip, the skip being the
+  agent/DE match line, permanent on a desktop the script's matrix does
+  not enumerate.
+
+### Fixed
+
+- **The Hardening wizard's preview runs with Apply's privileges, so the
+  confirm step no longer dead-ends on a privilege-gated host.** The scan
+  and the real apply both elevate, but the confirm step was gated on the
+  unprivileged dry-run staging a change, and that dry-run estimated zero
+  across every plugin - root-only configuration files, a firewall ruleset
+  that needs root to read - leaving nine findings and a permanently
+  disabled "Nothing to Apply" button, found by the operator on the release
+  host the day 1.8.1 shipped. The preview now elevates through the same
+  pkexec channel and estimates what the privileged apply would actually
+  do; read-only under root is the CLI's own guarantee, because
+  `apply --dry-run` takes no checkpoint and runs each plugin's validate
+  only, never apply. A dismissed polkit prompt returns the wizard to the
+  selection view without an error banner, and the "Nothing to Apply" line
+  states the preview already ran with Apply's privileges, so a blocked
+  estimate reads as a condition of the host, not a privilege gap another
+  run could close. Browser test T-CONF-16 pins the dismissed prompt, and
+  the field execution above ran the fixed build through a real polkit
+  prompt.
+
+### Security
+
+- **RUSTSEC-2026-0097 / GHSA-cq8v-f236-94qc**: Updated `rand` 0.8.5 → 0.8.8
+  (unsound output when a custom logger uses `rand::rng()`, patched in
+  0.8.6; reachable here through tauri's selector codegen).
+- **Two upstream-blocked advisories are recorded as accepted in
+  `.cargo/audit.toml` rather than force-bumped.** `rand` 0.7.3 is required
+  by `phf_generator` 0.8 under tauri's prerelease-tagged `kuchiki`
+  requirement, which no newer line can satisfy, and it runs in build
+  scripts with no logger, so the advisory's preconditions are absent.
+  `glib` 0.18.5 (RUSTSEC-2024-0429) is held by the released tauri stack's
+  gtk-rs 0.18 pin and is transitive-only in this tree. `cargo audit` exits
+  clean with both accepted; revisit when tauri moves.
+
 ## [1.8.1] - 2026-08-30
 
 ### Fixed
@@ -7909,4 +7982,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-08-30
+**Last Updated**: 2026-08-31
