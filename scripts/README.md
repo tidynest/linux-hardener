@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-08-30
+**Last Updated**: 2026-09-01
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -1717,7 +1717,7 @@ Four scripts orchestrate Playwright-based GUI testing of the Web UI inside nspaw
 
 **Script**: `run-gui-tests.sh`
 
-**Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. The suite is **177 tests in 11 files**, and that is a result rather than a static count: it ran **171 of 171** on all six distributions on 2026-08-27, none failed, skipped or flaky, one worker and no name filter, Ubuntu included, 44 screenshots each, 4.5 to 6.5 minutes per distribution. That sweep was the first to execute `T-CONF-11`, `T-CONF-12` and `T-CONF-13`, authored earlier the same day for the config picker; the sweep before it, at 168, was the first to execute `T-HIST-14` and `T-HIST-15`. That sweep was the first to execute `T-FLEET-11`, which had been authored unexecuted the day before with the fleet profile badge. Recorded in [distribution-validation.md](../docs/reference/distribution-validation.md). The count is still mostly generated rather than literal, which is why `npx playwright test --list` is the way to read it: `themes.spec.js` produces 42 from 7 themes x 6 states, and `hardening.spec.js`'s T-DIVG-03 produces 2 from two viewport widths. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
+**Purpose**: Host orchestrator that runs the Playwright Web UI suite across every distro in `DISTRO_ORDER`. The suite is **186 tests in 12 files**, and that is a result rather than a static count: it ran **171 of 171** on all six distributions on 2026-08-27, none failed, skipped or flaky, one worker and no name filter, Ubuntu included, 44 screenshots each, 4.5 to 6.5 minutes per distribution. That sweep was the first to execute `T-CONF-11`, `T-CONF-12` and `T-CONF-13`, authored earlier the same day for the config picker; the sweep before it, at 168, was the first to execute `T-HIST-14` and `T-HIST-15`. That sweep was the first to execute `T-FLEET-11`, which had been authored unexecuted the day before with the fleet profile badge. The 177 of the 2026-08-30/31 sweeps became 186 with `rollback-modal.spec.js` (T-RBM-01..09, the rollback modal's lifecycle), authored 2026-09-01 and executed by the next sweep. Recorded in [distribution-validation.md](../docs/reference/distribution-validation.md). The count is still mostly generated rather than literal, which is why `npx playwright test --list` is the way to read it: `themes.spec.js` produces 42 from 7 themes x 6 states, and `hardening.spec.js`'s T-DIVG-03 produces 2 from two viewport widths. For each distro, copies the WASM build and test files into the container, then delegates to `gui-test-inner.sh` via `systemd-nspawn --pipe`.
 
 **Four verdicts, not two.** `PASS` (exit 0), `DEGRADED` (98), `MISSING` (99, no container), `FAIL` (anything else). **`DEGRADED` means every test passed AND a package install did not**: `run_install` in `gui-test-inner.sh` records the failed step in `DEPS_FAILED`, and the run is rescued only because the container was already provisioned, so the next one may not be. Repair rather than rebuild, then re-run:
 

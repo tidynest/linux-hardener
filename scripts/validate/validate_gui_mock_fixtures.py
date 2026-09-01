@@ -74,6 +74,17 @@ PROBES = [
         "rollback_files[]",
         "FileRestoreResult",
     ),
+    # Added with the reload section's coverage (2026-09-01): the mock omitted
+    # `rollback_reloads` until then, and `#[serde(default)]` read the absence
+    # as an empty vec - legal for serde, invisible to every check, and the
+    # reason the Result stage's reload section had never rendered with data.
+    # This probe is what turns that particular silence into a failure.
+    (
+        "run_rollback",
+        {"checkpointId": "cp_mock_1234"},
+        "rollback_reloads[]",
+        "ReloadResult",
+    ),
     # The enum-valued field is the reason this one matters: `divergence_state`
     # is a bare Rust enum, so the mock has to spell a real variant and nothing
     # else would have said so.

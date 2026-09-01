@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Rollback modal lifecycle browser coverage (T-RBM-01..09).** The
+  divergence section of the rollback modal's Result stage had its own tests
+  since #143/#152; everything around it shipped on reading alone. Nine
+  Playwright cases now drive the Confirm preview and its file kinds, Cancel
+  proven not to have invoked the rollback (the mock records every command),
+  the unreadable-preview arm, the Restoring stage with Escape held inert
+  mid-flight, the cancelled-auth return to Confirm, the hard-error banner,
+  the reload section the mock never returned before (`rollback_reloads` was
+  absent and `#[serde(default)]` read it empty, so the section had never
+  rendered with data), the `reloads_ok()` half of the failure header posed by
+  a fixture whose files all restore, and Done dismissing into a live history
+  list. The mock grows `rollback_mode=reload_failed|error|cancelled|hold` and
+  a default kernel reload; `validate_gui_mock_fixtures.py` gains the
+  `ReloadResult` probe the field's absence used to slip past. Authored and
+  collection-counted at 186 cases; first execution owed to the next
+  six-distribution sweep, and the two dated reading sites in
+  `distribution-validation.md` deliberately stay at 177 until it runs.
+
 ## [1.8.2] - 2026-08-31
 
 ### Added
@@ -7984,4 +8004,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-08-31
+**Last Updated**: 2026-09-01

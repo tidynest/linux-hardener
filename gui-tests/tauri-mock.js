@@ -6,7 +6,8 @@
 //
 // Error mode: add ?error_mode=scan|apply|authCancel|checkpoint|export|exception|all to
 // URL to trigger errors. Outcome shape: ?apply_mode=mixed,
-// ?rollback_mode=partial, ?checkpoint_source=unreadable, ?fleet_scan=hold.
+// ?rollback_mode=partial|reload_failed|error|cancelled|hold,
+// ?checkpoint_source=unreadable, ?fleet_scan=hold.
 // =============================================================================
 
 (function () {
@@ -43,6 +44,17 @@
   // a run measuring fourteen `.restore-error` pairings measured
   // `--color-critical-bright` in none of them. That is what the first modal
   // contrast route found on 2026-08-21, while passing.
+  //
+  // The other four values reach the modal's lifecycle rather than its list,
+  // and each is the only route to the branch it poses:
+  // `reload_failed` restores every file and fails the kernel reload, which is
+  // the `reloads_ok()` half of the Result header's failure predicate - a
+  // header that says "Rollback failed" over an all-green file list, and the
+  // one shape a fixture that only ever failed files could not produce.
+  // `error` rejects with a cause no operator caused, `cancelled` rejects with
+  // the backend's exact auth-cancel text so `is_auth_cancelled` matches, and
+  // `hold` parks the promise on `window.__releaseRollback()` so the Restoring
+  // stage and the inert Escape can be stood inside rather than raced.
   const rollbackMode = params.get('rollback_mode') || '';
   // `?fleet_scan=hold` leaves `run_fleet_scan` pending after its progress
   // events, so the Hosts page stays mid-scan instead of settling in the same
@@ -798,6 +810,14 @@
   // ---- Command Handler ----
 
   async function handleInvoke(cmd, args) {
+    // Every command, in order, for tests that must prove a command was NEVER
+    // reached rather than only that its effects are absent. T-RBM-02 is the
+    // first: Cancel closing the modal could pass forever on "the dialog is
+    // gone" while a rollback ran behind it, because a result that never
+    // rendered looks exactly like a rollback that never started.
+    if (!window.__mockCalls) window.__mockCalls = [];
+    window.__mockCalls.push(cmd);
+
     // serde_wasm_bindgen serialises `json!({...})` args as a JS Map, not a plain
     // object (struct-derived args come through as objects). Normalise so the
     // handlers below can read args.field uniformly regardless of binding style.
@@ -878,14 +898,41 @@
       case 'delete_checkpoint':
         return true;
 
-      case 'run_rollback':
+      case 'run_rollback': {
+        // The lifecycle modes, before the payload: each rejects or parks the
+        // promise, and none of them can be expressed as a RollbackResult
+        // without inventing a payload shape the backend never produces.
+        //
+        // `cancelled` throws the backend's exact auth-cancel text - the same
+        // string `error_mode=authCancel` uses - because the modal matches it
+        // by substring (`is_auth_cancelled`), and a paraphrase would test the
+        // mock rather than the predicate. `error` throws a transport-shaped
+        // cause so the banner prefix the modal adds ("Rollback failed: ") is
+        // the thing under test. `hold` parks on a resolve function the test
+        // calls, rather than on a timeout, so the Restoring stage can be
+        // stood in for as long as the assertions need and resumes on command.
+        if (rollbackMode === 'error') {
+          throw 'rollback of cp_mock_1234 failed: checkpoint database could not be opened (locked by another process)';
+        }
+        if (rollbackMode === 'cancelled') {
+          throw 'Authentication cancelled. Root privileges are required for this operation.';
+        }
+        if (rollbackMode === 'hold') {
+          await new Promise((resolve) => {
+            window.__releaseRollback = resolve;
+          });
+        }
+        const partialRestore = rollbackMode === 'partial';
+        const reloadFailed = rollbackMode === 'reload_failed';
         return {
           rollback_checkpoint_id: (args && args.checkpoint_id) || 'cp_mock_1234',
           rollback_checkpoint_name: 'kernel-hardening-pre-apply',
-          // `rollback_modal.rs:218` reads this AND `reloads_ok()`, so a partial
-          // run has to say so here or the header would claim "Restored" over a
-          // file list showing a failure.
-          rollback_success: rollbackMode !== 'partial',
+          // `result_view` reads this AND `reloads_ok()`, so a partial run has
+          // to say so here or the header would claim "Restored" over a file
+          // list showing a failure - and a `reload_failed` run has to keep it
+          // true, because that mode exists to pose the OTHER half of the
+          // predicate: every file green, the header still "Rollback failed".
+          rollback_success: !partialRestore,
           rollback_files: [
             {
               restore_path: '/etc/sysctl.d/99-hardener.conf',
@@ -896,16 +943,34 @@
             {
               restore_path: '/proc/sys/kernel/kptr_restrict',
               restore_action: 'Restored',
-              restore_success: rollbackMode !== 'partial',
+              restore_success: !partialRestore,
               // The real shape of this failure: `/proc/sys` is writable only by
               // root and a rollback running unprivileged cannot restore it. A
               // stand-in like "error" would render the same colour and prove the
               // same ratio while telling an operator nothing, and this list is
               // read by people as well as by the sweep.
               restore_error:
-                rollbackMode === 'partial'
+                partialRestore
                   ? 'Permission denied writing /proc/sys/kernel/kptr_restrict: the value was left as the apply set it'
                   : null,
+            },
+          ],
+          // The kernel reload the restored paths actually trigger
+          // (`reloads_for_path` keys on /etc/sysctl.d), so the reload section
+          // renders with data and `reloads_ok()` stops being vacuously true.
+          // Until 2026-09-01 this field was absent, which `#[serde(default)]`
+          // read as an empty vec: the section had never rendered and the
+          // header predicate had only ever been half-tested. The failure shape
+          // is the registry's own (`reload_action: 'reload failed'` + cause),
+          // not an invented one.
+          rollback_reloads: [
+            {
+              reload_plugin_id: 'kernel-hardening',
+              reload_action: reloadFailed ? 'reload failed' : 'sysctl --system',
+              reload_success: !reloadFailed,
+              reload_error: reloadFailed
+                ? 'sysctl --system could not be executed: failed to start command (os error 2)'
+                : null,
             },
           ],
           // The rollback modal's divergence section had no fixture, so it had
@@ -939,6 +1004,7 @@
             },
           ],
         };
+      }
 
       case 'generate_compliance_report': {
         const frameworks = (args && args.frameworks) || ['cis'];
