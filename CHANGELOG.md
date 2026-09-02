@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The audit dry-run now previews the rules file the apply will write (#180).**
+  The apply compared the whole generated file with the one on disk and
+  rewrote on any difference; the dry-run estimated from which rule
+  categories `auditctl -l` showed loaded. A template change that kept every
+  category, the backlog fix above, previewed as 0 changes on the host it was
+  measured on and applied as a rewrite and reload. One renderer now serves
+  both, and the dry-run reports `Create`, `Rewrite`, or nothing by the same
+  comparison the apply makes; when the file cannot be read (it is held at
+  0640, so every unprivileged dry-run on an applied host) it says the apply
+  rewrites in that case and why the preview could not compare. Four tests,
+  the prelude-only difference among them, shown red first.
 - **A compliance report request naming no known framework is refused, not
   answered with nothing.** The desktop commands parse the selection by
   dropping unknown spellings, and nothing downstream refused the empty result:

@@ -420,9 +420,13 @@ async fn validate_folds_unrecognised_auditctl_failure_to_empty_rules() {
         .await
         .expect("validate must not error on an unrecognised auditctl failure");
 
+    // The mock holds no rules file, so the file estimate (#180) is the create.
     assert_eq!(
         report.validation_report_estimated_changes,
-        vec![format!("Add {} audit-rules", AUDIT_RULES.len())],
+        vec![
+            format!("Add {} audit-rules", AUDIT_RULES.len()),
+            format!("Create {AUDIT_RULES_PATH}"),
+        ],
         "an unrecognised auditctl failure must be folded to Rules(Vec::new()), \
          reporting every configured audit rule as a pending change, got: {:?}",
         report.validation_report_estimated_changes
@@ -1025,5 +1029,91 @@ async fn the_written_rules_open_with_the_backlog_prelude() {
     assert!(
         prelude_at < first_rule_at,
         "the prelude must precede the first rule, got:\n{written}"
+    );
+}
+
+/// The host #180 was measured on: auditd installed, enabled and running, and
+/// every rule already loaded, so the category count has nothing to add and
+/// the rules file is the only estimate left to make.
+fn validate_mock_with_every_rule_loaded() -> MockExecutor {
+    let ok = |stdout: &str| CommandOutput {
+        stdout: stdout.to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let loaded: String = AUDIT_RULES
+        .iter()
+        .map(|rule| format!("{}\n", rule.audit_rule_content))
+        .collect();
+    MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command("systemctl", &["is-enabled", "auditd"], ok("enabled\n"))
+        .with_command("systemctl", &["is-active", "auditd"], ok("active\n"))
+        .with_command("auditctl", &["-l"], ok(&loaded))
+}
+
+async fn validate_estimates(mock: MockExecutor) -> Vec<String> {
+    let ctx = Context::with_executor(Arc::new(mock));
+    AuditHardeningPlugin::new()
+        .validate(&ctx, &PluginConfig::default())
+        .await
+        .expect("validate must not error")
+        .validation_report_estimated_changes
+}
+
+/// #180. The apply compares the whole file and rewrites on any difference,
+/// while the dry-run counted loaded categories and saw nothing to do. The
+/// file here differs from the rendered one in the prelude only, with every
+/// category loaded, which is the exact state the issue was measured in.
+#[tokio::test]
+async fn validate_estimates_a_rewrite_when_only_the_prelude_differs() {
+    let (desired, _) = rendered_rules_file(&PluginConfig::default());
+    let stale = desired.replace(AUDIT_BACKLOG_PRELUDE, "");
+    assert_ne!(
+        stale, desired,
+        "the fixture must differ from the rendered file"
+    );
+    let estimates = validate_estimates(
+        validate_mock_with_every_rule_loaded().with_file(AUDIT_RULES_PATH, &stale),
+    )
+    .await;
+    assert_eq!(estimates, vec![format!("Rewrite {AUDIT_RULES_PATH}")]);
+}
+
+/// The green half: a file that already matches must estimate nothing, or the
+/// test above would pass against a validate that always says "rewrite".
+#[tokio::test]
+async fn validate_estimates_nothing_when_the_rules_file_matches() {
+    let (desired, _) = rendered_rules_file(&PluginConfig::default());
+    let estimates = validate_estimates(
+        validate_mock_with_every_rule_loaded().with_file(AUDIT_RULES_PATH, &desired),
+    )
+    .await;
+    assert!(estimates.is_empty(), "{estimates:?}");
+}
+
+/// A first apply creates the file; the preview says so in that word.
+#[tokio::test]
+async fn validate_estimates_a_create_when_the_rules_file_is_absent() {
+    let estimates = validate_estimates(validate_mock_with_every_rule_loaded()).await;
+    assert_eq!(estimates, vec![format!("Create {AUDIT_RULES_PATH}")]);
+}
+
+/// The apply fails toward "differs" when the file cannot be read, so the
+/// preview estimates the rewrite the apply will make and names why it could
+/// not compare, rather than estimating nothing.
+#[tokio::test]
+async fn validate_names_the_reason_when_the_rules_file_cannot_be_read() {
+    let estimates = validate_estimates(
+        validate_mock_with_every_rule_loaded()
+            .with_path_exists(AUDIT_RULES_PATH, true)
+            .with_read_permission_denied(AUDIT_RULES_PATH),
+    )
+    .await;
+    assert_eq!(estimates.len(), 1, "{estimates:?}");
+    assert!(
+        estimates[0].starts_with(&format!("Rewrite {AUDIT_RULES_PATH}"))
+            && estimates[0].contains("could not be read"),
+        "{estimates:?}"
     );
 }
