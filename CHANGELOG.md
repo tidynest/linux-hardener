@@ -44,8 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `-F auid>=1000 -F auid!=unset`, the CIS form. Identity, time-change,
   network-change, privileged and modules rules are unchanged. Two tests pin
   the shape and the prelude's position in the written file; the prelude test
-  was shown red with the emit line removed. The live acceptance run (regenerate,
-  reload, build while sampling `auditctl -s`) needs root and is owed.
+  was shown red with the emit line removed. Accepted live on the same host
+  the same day: the apply rewrote the file and loaded it (the plugin's
+  flush-and-retry absorbed the "Rule exists" collision with the old set),
+  `auditctl -s` read `backlog_limit 65536`, the loaded set carried the four
+  `auid>=1000` rules and no b32 `perm-mod`/`delete` rule, `lost` stayed at
+  809751 across the apply, a `hardener-plugins` rebuild and forty 5-second
+  samples with `backlog 0` at every one, and a `sudo` exec and an
+  `/etc/passwd` touch each landed under their key.
 
 ### Added
 
