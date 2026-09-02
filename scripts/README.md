@@ -53,6 +53,7 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **GUI tests (Web UI)** | `sudo ./scripts/test/gui/run-gui-tests.sh` |
 | **Tauri GUI tests** | `sudo ./scripts/test/gui/run-tauri-gui-tests.sh` |
 | **Desktop tests (host)** | `./scripts/test/run-desktop-tests.sh` |
+| **SSH ignored tests (booted fixture)** | `./scripts/test/ssh-ignored-suite.sh` |
 | **PARALLEL: All tests** | `sudo ./scripts/test/run-all-tests-parallel.sh --apply` |
 | **PARALLEL: All + desktop** | `sudo ./scripts/test/run-all-tests-parallel.sh --apply --desktop` |
 | **PARALLEL: All + kitty** | `sudo ./scripts/test/run-all-tests-parallel.sh --apply --kitty` |
@@ -1177,6 +1178,25 @@ sudo ./scripts/test/verify-rollback.sh
 - Container environment. The runner, `release-readiness-root.sh --only rollback`,
   builds and uses the arch container, which is what the readings above
   were taken on
+
+---
+
+### SSH Ignored Suite
+
+**Script**: `ssh-ignored-suite.sh`
+
+**Purpose**: Runs the `#[ignore]` tests that need the booted SSH fixture, all three binaries in one invocation: `hardener-core`'s `ssh_executor_tests`, `hardener-plugins`' `ssh_integration_tests` and `hardener-cli`'s `batch_ssh_integration`. Each of those ran only when someone booted the fixture, exported its four variables and named the binary by hand. The script boots the fixture through `containers/boot-ssh-test-container.sh`, reads the `export` line that script prints rather than restating the variable names, adds the key to the agent, runs the three binaries in turn, and stops the machine. The two tests gated on `NFTABLES_LIVE_APPLY_HOST` panic without it by design (they apply a default-drop firewall to whatever it names), so they are skipped by name unless the variable is set.
+
+**Usage**:
+```bash
+# As yourself, not root: cargo has to go through the PATH shim. Sudo is asked once, for the boot.
+./scripts/test/ssh-ignored-suite.sh
+
+# Against a different booted container
+./scripts/test/ssh-ignored-suite.sh hardener-test-debian
+```
+
+**Exit status**: the first failing binary's, after all three have run and the machine is stopped.
 
 ---
 
