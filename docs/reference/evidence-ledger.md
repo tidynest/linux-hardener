@@ -24,21 +24,21 @@ has not been thought about hard enough.
 
 ---
 
-## Baseline, as measured on 2026-08-18
+## Baseline, as measured on 2026-09-02
 
 Numbers taken from commands rather than from prose. Re-measure before amending
 them; do not copy a figure from an older document.
 
 | Measurement | Command | Reading |
 |---|---|---|
-| Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.5.1 |
-| Tests the default suite runs | `cargo nextest run --workspace` | 2329 passed, 42 skipped |
-| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2335 passed, 0 failed, 49 ignored |
+| Workspace version measured | `grep -m1 '^version' Cargo.toml` | 1.8.2 |
+| Tests the default suite runs | `cargo nextest run --workspace` | 2331 passed, 42 skipped |
+| Tests `cargo test` runs, doctests included (nextest total plus 6 doctests) | `cargo test --workspace`, summing every `test result:` line | 2337 passed, 0 failed, 49 ignored |
 | Doctests, which nextest does not run at all | `cargo test --doc --workspace` | 6 passed, 7 ignored |
 | Test binaries reporting a result | `cargo test --workspace` piped through `grep -c "^test result:"` | 63 |
 | Documentation and naming validators | `python3 scripts/validate/validate_all.py` | All 29 validations passed |
-| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2371 |
-| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2371 across 338 files |
+| Test annotations in the tree | `grep -rEc '^\s*#\[(tokio::)?test\]' crates src-tauri` summed | 2373 |
+| Tests the assertion check reads | `python3 scripts/validate/validate_test_assertions.py --all` | 2373 across 338 files |
 
 Three of these rows are re-derived from the tree on every `validate_all.py` run
 by `scripts/validate/validate_test_counts.py`: the annotation count, the
@@ -51,7 +51,7 @@ The rows a build produces are not re-measured there, and are not therefore
 unchecked: they are pinned to each other by the identities this section states,
 so a figure edited alone fails even though nothing about it was measured.
 
-The gap between 2371 annotations and 2329 executions is exactly 42, and all 42
+The gap between 2373 annotations and 2331 executions is exactly 42, and all 42
 are `#[ignore]`d tests, listed by
 `cargo nextest list --workspace --run-ignored ignored-only`. Every one of them
 is named in the rows below. Nothing in the tree is skipped for a reason this
@@ -66,7 +66,7 @@ one it reads. A walk total below the annotation count would mean tests were
 going unread, which is what issue #130 was. And `cargo test --workspace` reports
 6 more passes and 7 more ignores than `cargo nextest run --workspace` does;
 those 13 are doctests, which nextest does not run and which no annotation count
-covers. 2329 + 6 = 2335 and 42 + 7 = 49.
+covers. 2331 + 6 = 2337 and 42 + 7 = 49.
 
 ---
 

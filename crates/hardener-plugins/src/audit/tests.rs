@@ -962,10 +962,16 @@ fn a_file_the_reload_removed_is_not_resurrected() {
 /// the flood without a test going red.
 #[test]
 fn the_high_volume_families_are_64_bit_only_and_scoped_to_users() {
-    for rule in AUDIT_RULES
+    let high_volume: Vec<_> = AUDIT_RULES
         .iter()
         .filter(|r| matches!(r.audit_rule_category, "delete" | "perm-mod"))
-    {
+        .collect();
+    assert_eq!(
+        high_volume.len(),
+        4,
+        "three perm-mod rules and one delete rule; a fifth is a mirror creeping back"
+    );
+    for rule in high_volume {
         let content = rule.audit_rule_content;
         assert!(
             content.contains("arch=b64") && !content.contains("arch=b32"),
