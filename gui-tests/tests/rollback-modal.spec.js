@@ -150,6 +150,12 @@ test.describe('Rollback modal: Restoring and the inert Escape', () => {
     await expect(page.locator('.modal')).toHaveCount(1);
     await expect(page.locator('.rollback-restoring')).toBeVisible();
 
+    // The mock sleeps 150-350 ms before it reaches the `hold` arm that
+    // installs the release function, while the Restoring stage renders on
+    // the click itself, so the three assertions above pass inside that sleep.
+    // First execution (2026-09-02, all six distributions) called the release
+    // before it existed: "window.__releaseRollback is not a function".
+    await page.waitForFunction(() => typeof window.__releaseRollback === 'function');
     await page.evaluate(() => window.__releaseRollback());
     await expect(page.locator('.rollback-summary')).toBeVisible({ timeout: 15000 });
   });
