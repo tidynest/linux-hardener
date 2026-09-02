@@ -1185,7 +1185,7 @@ sudo ./scripts/test/verify-rollback.sh
 
 **Script**: `ssh-ignored-suite.sh`
 
-**Purpose**: Runs the `#[ignore]` tests that need the booted SSH fixture, all three binaries in one invocation: `hardener-core`'s `ssh_executor_tests`, `hardener-plugins`' `ssh_integration_tests` and `hardener-cli`'s `batch_ssh_integration`. Each of those ran only when someone booted the fixture, exported its four variables and named the binary by hand. The script boots the fixture through `containers/boot-ssh-test-container.sh`, reads the `export` line that script prints rather than restating the variable names, adds the key to the agent, runs the three binaries in turn, and stops the machine. The two tests gated on `NFTABLES_LIVE_APPLY_HOST` panic without it by design (they apply a default-drop firewall to whatever it names), so they are skipped by name unless the variable is set.
+**Purpose**: Runs the `#[ignore]` tests that need the booted SSH fixture, all three binaries in one invocation: `hardener-core`'s `ssh_executor_tests`, `hardener-plugins`' `ssh_integration_tests` and `hardener-cli`'s `batch_ssh_integration`. Each of those ran only when someone booted the fixture, exported its four variables and named the binary by hand. The script boots the fixture through `containers/boot-ssh-test-container.sh`, reads the `export` line that script prints rather than restating the variable names, adds the key to the agent, runs the three binaries in turn, and stops the machine. The tests gated on `NFTABLES_LIVE_APPLY_HOST` panic without it by design (they apply a default-drop firewall to whatever it names), so they are skipped unless the variable is set; their names are read from the test source at run time, the function enclosing each `env::var` read, because a hand-kept list missed the third of them on the script's first run. Each binary runs with `--test-threads=1`: the tests share one sshd, and an apply that restarts it while a sibling connects reads as "Connection refused" on the sibling, which is how three of ten failed on that first run. **Run it against a freshly created container**: one test applies the SSH plugin and asserts the config changed, and on a container an earlier run already hardened nothing changes, a true reading the test cannot tell from a broken apply.
 
 **Usage**:
 ```bash
@@ -1194,6 +1194,10 @@ sudo ./scripts/test/verify-rollback.sh
 
 # Against a different booted container
 ./scripts/test/ssh-ignored-suite.sh hardener-test-debian
+
+# Fresh container first, or the apply-then-assert test fails on a true reading
+sudo ./scripts/containers/create-container.sh arch clean
+sudo ./scripts/containers/create-container.sh arch
 ```
 
 **Exit status**: the first failing binary's, after all three have run and the machine is stopped.
