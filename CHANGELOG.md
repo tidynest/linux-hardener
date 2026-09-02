@@ -55,6 +55,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`scripts/test/ssh-ignored-suite.sh`: the SSH fixture's `#[ignore]` tests in
+  one command.** Three binaries gate on `SSH_TEST_HOST` and ran only when
+  someone booted the fixture, exported its variables and named each binary
+  by hand. The script boots the fixture, reads the `export` line it prints,
+  runs the three binaries single-threaded (they share one sshd, and an apply
+  restarting it reads as "Connection refused" on a parallel sibling), skips
+  the `NFTABLES_LIVE_APPLY_HOST` tests by names read from the test source,
+  and stops the machine. Run against a freshly created container, since one
+  test asserts an apply changed `sshd_config`. First clean run 2026-09-02
+  against a recreated arch container: 14, 9 and 4 passed, none failed,
+  three nftables tests skipped.
 - **Rollback modal lifecycle browser coverage (T-RBM-01..09).** The
   divergence section of the rollback modal's Result stage had its own tests
   since #143/#152; everything around it shipped on reading alone. Nine
