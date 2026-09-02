@@ -146,35 +146,33 @@ const AUDIT_RULES: &[AuditRuleDirective] = &[
     },
     // ============================================================================
     // PERMISSION MODIFICATIONS - Monitor file permission and ownership changes
+    //
+    // These and the deletion rules below are the two high-volume families,
+    // and they are the ones auditd collapsed under: see [`AUDIT_BACKLOG_PRELUDE`].
+    // They carry the CIS `auid>=1000 -F auid!=unset` scope, which keeps
+    // daemons (journald, package hooks, browsers' service workers) out of
+    // the log while every event a logged-in user causes still lands, and
+    // they have no 32-bit mirror. A b32 rule on a pure x86_64 host doubles
+    // the rule count the kernel walks per syscall and matches nothing;
+    // the time-change and network-change families keep theirs because
+    // they fire a few times a day.
     // ============================================================================
     AuditRuleDirective {
         audit_rule_category: "perm-mod",
-        audit_rule_content: "-a always,exit -F arch=b64 -S chmod -S fchmod -S fchmodat -k perm-mod",
-        audit_rule_description: "Monitor file permission changes (64-bit)",
+        audit_rule_content: "-a always,exit -F arch=b64 -S chmod -S fchmod -S fchmodat -F auid>=1000 -F auid!=unset -k perm-mod",
+        audit_rule_description: "Monitor file permission changes by users",
         audit_rule_severity: Severity::Medium,
     },
     AuditRuleDirective {
         audit_rule_category: "perm-mod",
-        audit_rule_content: "-a always,exit -F arch=b32 -S chmod -S fchmod -S fchmodat -k perm-mod",
-        audit_rule_description: "Monitor file permission changes (32-bit)",
+        audit_rule_content: "-a always,exit -F arch=b64 -S chown -S fchown -S fchownat -S lchown -F auid>=1000 -F auid!=unset -k perm-mod",
+        audit_rule_description: "Monitor file ownership changes by users",
         audit_rule_severity: Severity::Medium,
     },
     AuditRuleDirective {
         audit_rule_category: "perm-mod",
-        audit_rule_content: "-a always,exit -F arch=b64 -S chown -S fchown -S fchownat -S lchown -k perm-mod",
-        audit_rule_description: "Monitor file ownership changes (64-bit)",
-        audit_rule_severity: Severity::Medium,
-    },
-    AuditRuleDirective {
-        audit_rule_category: "perm-mod",
-        audit_rule_content: "-a always,exit -F arch=b32 -S chown -S fchown -S fchownat -S lchown -k perm-mod",
-        audit_rule_description: "Monitor file ownership changes (32-bit)",
-        audit_rule_severity: Severity::Medium,
-    },
-    AuditRuleDirective {
-        audit_rule_category: "perm-mod",
-        audit_rule_content: "-a always,exit -F arch=b64 -S setxattr -S lsetxattr -S fsetxattr -k perm-mod",
-        audit_rule_description: "Monitor extended attribute changes (64-bit)",
+        audit_rule_content: "-a always,exit -F arch=b64 -S setxattr -S lsetxattr -S fsetxattr -F auid>=1000 -F auid!=unset -k perm-mod",
+        audit_rule_description: "Monitor extended attribute changes by users",
         audit_rule_severity: Severity::Medium,
     },
     // ============================================================================
@@ -203,14 +201,8 @@ const AUDIT_RULES: &[AuditRuleDirective] = &[
     // ============================================================================
     AuditRuleDirective {
         audit_rule_category: "delete",
-        audit_rule_content: "-a always,exit -F arch=b64 -S unlink -S unlinkat -S rename -S renameat -k delete",
-        audit_rule_description: "Monitor file deletion operations (64-bit)",
-        audit_rule_severity: Severity::Medium,
-    },
-    AuditRuleDirective {
-        audit_rule_category: "delete",
-        audit_rule_content: "-a always,exit -F arch=b32 -S unlink -S unlinkat -S rename -S renameat -k delete",
-        audit_rule_description: "Monitor file deletion operations (32-bit)",
+        audit_rule_content: "-a always,exit -F arch=b64 -S unlink -S unlinkat -S rename -S renameat -F auid>=1000 -F auid!=unset -k delete",
+        audit_rule_description: "Monitor file deletion and renaming by users",
         audit_rule_severity: Severity::Medium,
     },
     // ============================================================================
@@ -249,6 +241,26 @@ const AUDITD_AT_BOOT_EXCEPTION: &str = "auditd-at-boot";
 const AUDITD_RUNNING_EXCEPTION: &str = "auditd-running";
 
 const AUDIT_RULES_PATH: &str = "/etc/audit/rules.d/hardening.rules";
+
+/// The kernel-side settings the generated file opens with.
+///
+/// auditd's stock backlog of 8192 is sized for a server that deletes a few
+/// files an hour. On a 16-core build host measured on 2026-09-02 it pinned at
+/// its limit from twenty minutes after boot and `audit_lost` passed 564,000,
+/// with three 8.1 MB log rotations stamped the same minute a cargo run
+/// started. A larger backlog absorbs a burst such as a build tree being
+/// swept; the zero wait time makes a burst that still overflows drop events
+/// rather than park every writer on the box in D state. augenrules hoists the
+/// last `-b` it reads to the top of the compiled file and sorts this file
+/// after the numbered ones, so this value wins over a stray `-b` elsewhere in
+/// the directory.
+const AUDIT_BACKLOG_PRELUDE: &str = "\
+# BACKLOG
+# Kernel audit queue: absorb bursts, drop rather than stall on overflow
+-b 65536
+--backlog_wait_time 0
+
+";
 
 /// The directory holding the rules file, which the audit package owns.
 const AUDIT_RULES_DIR: &str = "/etc/audit/rules.d";
@@ -1562,6 +1574,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
         let mut rules_content = String::new();
         rules_content.push_str("# Audit rules generated by Linux Hardening Tool\n");
         rules_content.push_str("# DO NOT EDIT - Changes will be overwritten\n\n");
+        rules_content.push_str(AUDIT_BACKLOG_PRELUDE);
 
         for category in [
             "time-change",

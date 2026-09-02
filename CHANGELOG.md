@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Audit rules no longer saturate the kernel backlog on a build host.**
+  Measured 2026-09-02 on a 16-core box: the backlog sat at its 8192 limit from
+  twenty minutes after boot, `audit_lost` passed 564,000, and three 8.1 MB log
+  rotations carried the same minute a push gate's cargo cycle ran. The flood
+  came from the `delete` and `perm-mod` families, which fired unscoped on
+  both arches for every build artefact, SQLite journal rename and browser
+  cache sweep. The generated template now opens with `-b 65536` and
+  `--backlog_wait_time 0` (augenrules hoists the last `-b` it reads, and
+  `hardening.rules` sorts after the numbered files, so the value wins), drops
+  the b32 mirrors of those two families, and scopes them to
+  `-F auid>=1000 -F auid!=unset`, the CIS form. Identity, time-change,
+  network-change, privileged and modules rules are unchanged. Two tests pin
+  the shape and the prelude's position in the written file; the prelude test
+  was shown red with the emit line removed. The live acceptance run (regenerate,
+  reload, build while sampling `auditctl -s`) needs root and is owed.
+
 ### Added
 
 - **Rollback modal lifecycle browser coverage (T-RBM-01..09).** The

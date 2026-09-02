@@ -954,3 +954,70 @@ fn a_file_the_reload_removed_is_not_resurrected() {
         "a path that disappeared across the reload is not one the reload created"
     );
 }
+
+/// The delete and perm-mod families are the two that fire on every build
+/// and every browser cache sweep, and the shape that let them saturate the
+/// kernel backlog was a b32 mirror plus no scope. Pinning the shape here
+/// keeps a benchmark-driven "add the 32-bit rule back" from reintroducing
+/// the flood without a test going red.
+#[test]
+fn the_high_volume_families_are_64_bit_only_and_scoped_to_users() {
+    for rule in AUDIT_RULES
+        .iter()
+        .filter(|r| matches!(r.audit_rule_category, "delete" | "perm-mod"))
+    {
+        let content = rule.audit_rule_content;
+        assert!(
+            content.contains("arch=b64") && !content.contains("arch=b32"),
+            "{content}: high-volume rules have no 32-bit mirror"
+        );
+        assert!(
+            content.contains("-F auid>=1000 -F auid!=unset"),
+            "{content}: high-volume rules carry the CIS user scope"
+        );
+    }
+}
+
+/// The backlog prelude is what keeps a burst from becoming a lost-event
+/// counter, so it has to be in the file the apply writes and ahead of the
+/// first rule, where augenrules and `auditctl -R` both expect control
+/// options.
+#[tokio::test]
+async fn the_written_rules_open_with_the_backlog_prelude() {
+    let ok = |stdout: &str| CommandOutput {
+        stdout: stdout.to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor = Arc::new(
+        MockExecutor::new()
+            .with_command_exists("auditd", true)
+            .with_command_exists("augenrules", true)
+            .with_command("systemctl", &["is-enabled", "auditd"], ok("enabled\n"))
+            .with_command("systemctl", &["is-active", "auditd"], ok("active\n"))
+            .with_command("chmod", &[AUDIT_RULES_MODE, AUDIT_RULES_PATH], ok(""))
+            .with_command("augenrules", &["--load"], ok(""))
+            .with_directory(AUDIT_RULES_DIR),
+    );
+    let mut ctx = Context::with_executor(executor.clone());
+
+    AuditHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("audit apply should not error");
+
+    let log = executor.log();
+    let (_, written) = log
+        .files_written
+        .iter()
+        .find(|(path, _)| path == Path::new(AUDIT_RULES_PATH))
+        .expect("the apply writes the rules file");
+    let prelude_at = written
+        .find(AUDIT_BACKLOG_PRELUDE)
+        .expect("the written rules carry the backlog prelude");
+    let first_rule_at = written.find("\n-").expect("the written rules carry a rule");
+    assert!(
+        prelude_at < first_rule_at,
+        "the prelude must precede the first rule, got:\n{written}"
+    );
+}
