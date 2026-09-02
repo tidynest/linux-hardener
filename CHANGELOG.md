@@ -62,10 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a fixture whose files all restore, and Done dismissing into a live history
   list. The mock grows `rollback_mode=reload_failed|error|cancelled|hold` and
   a default kernel reload; `validate_gui_mock_fixtures.py` gains the
-  `ReloadResult` probe the field's absence used to slip past. Authored and
-  collection-counted at 186 cases; first execution owed to the next
-  six-distribution sweep, and the two dated reading sites in
-  `distribution-validation.md` deliberately stay at 177 until it runs.
+  `ReloadResult` probe the field's absence used to slip past. First executed
+  2026-09-02 on all six distributions: 185 of 186, T-RBM-04 calling the
+  hold fixture's release function inside the mock's latency sleep, before it
+  existed. The test now waits for it; the re-run read 186 of 186 on all
+  six, and the two dated reading sites in `distribution-validation.md` moved
+  to 186.
 
 ## [1.8.2] - 2026-08-31
 
