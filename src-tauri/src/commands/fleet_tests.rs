@@ -649,6 +649,34 @@ fn parse_frameworks_drops_unknown_silently() {
     assert_eq!(parsed, vec![ComplianceFramework::CIS]);
 }
 
+// `parse_frameworks` drops what it does not know by contract, so the refusal
+// has to sit on its RESULT: an empty parsed list used to run the generator
+// over zero frameworks and hand back an empty report list or a contentless
+// export. The two causes get two sentences, because "select something" and
+// "nothing you typed is a framework" send an operator to different places.
+#[test]
+fn selected_frameworks_refuses_an_empty_selection() {
+    assert_eq!(
+        selected_frameworks(&[]),
+        Err("No framework selected.".to_string())
+    );
+}
+
+#[test]
+fn selected_frameworks_refuses_a_selection_nothing_matches() {
+    let err = selected_frameworks(&["nonsense".to_string()]).unwrap_err();
+    assert!(err.starts_with("No known framework"), "{err}");
+    assert!(err.contains("nonsense"), "{err}");
+}
+
+#[test]
+fn selected_frameworks_keeps_the_known_part_of_a_mixed_selection() {
+    assert_eq!(
+        selected_frameworks(&["nonsense".to_string(), "cis".to_string()]),
+        Ok(vec![ComplianceFramework::CIS])
+    );
+}
+
 #[test]
 fn cli_scan_entries_parse_into_scan_results() {
     let json = r#"[{

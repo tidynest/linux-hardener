@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A compliance report request naming no known framework is refused, not
+  answered with nothing.** The desktop commands parse the selection by
+  dropping unknown spellings, and nothing downstream refused the empty result:
+  the generator ran over zero frameworks and returned an empty report list,
+  or wrote a contentless export file. Both commands now refuse before any
+  scan is sourced, with one sentence for an empty selection and another,
+  naming the spellings, for a selection nothing matched. The compliance tab
+  already disables both buttons on an empty selection (T-COMP-07), so the
+  refusal is the second door, reached by any other caller of the commands.
+  The CLI needed nothing: `hardener report --framework` already refuses an
+  unknown name and has no empty form.
 - **Audit rules no longer saturate the kernel backlog on a build host.**
   Measured 2026-09-02 on a 16-core box: the backlog sat at its 8192 limit from
   twenty minutes after boot, `audit_lost` passed 564,000, and three 8.1 MB log

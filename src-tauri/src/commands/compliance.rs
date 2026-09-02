@@ -14,6 +14,30 @@ pub(crate) fn parse_frameworks(frameworks: &[String]) -> Vec<ComplianceFramework
         .collect()
 }
 
+/// The frameworks a report request names, refused when it names none the
+/// tool knows. `parse_frameworks` drops unknown spellings by contract, so the
+/// refusal sits on its result rather than its input; an empty result used to
+/// run the generator over zero frameworks and return an empty list or write a
+/// contentless export. The two causes get two sentences, because "select
+/// something" and "nothing you sent is a framework" are different remedies.
+/// The compliance tab disables both buttons on an empty selection, so this is
+/// the second door, reachable by any other caller of the commands.
+pub(crate) fn selected_frameworks(
+    frameworks: &[String],
+) -> Result<Vec<ComplianceFramework>, String> {
+    let parsed = parse_frameworks(frameworks);
+    if !parsed.is_empty() {
+        return Ok(parsed);
+    }
+    if frameworks.is_empty() {
+        return Err("No framework selected.".to_string());
+    }
+    Err(sanitise_error(&format!(
+        "No known framework in the selection: {}",
+        frameworks.join(", ")
+    )))
+}
+
 /// Parses a format string into an `OutputFormat`.
 pub(crate) fn parse_output_format(format: &str) -> Result<OutputFormat, String> {
     match format.to_lowercase().as_str() {
@@ -161,8 +185,10 @@ pub(crate) fn local_exclusions() -> ComplianceConfig {
 pub async fn generate_compliance_report(
     frameworks: Vec<String>,
 ) -> Result<Vec<ComplianceReport>, String> {
+    // Refused before the findings are sourced: a fresh scan for a report
+    // nobody asked a framework of is work done for a message.
+    let parsed_frameworks = selected_frameworks(&frameworks)?;
     let results = latest_or_fresh_findings().await?;
-    let parsed_frameworks = parse_frameworks(&frameworks);
 
     let config = ReportConfig {
         scenario: Scenario::Custom(parsed_frameworks),
@@ -255,6 +281,7 @@ pub async fn export_compliance_report(
     }
 
     let output_format = parse_output_format(&format)?;
+    let parsed_frameworks = selected_frameworks(&frameworks)?;
     // Resolved before anything is rendered: a contradicting extension is
     // refused, and scanning a host to build a report nobody may write is work
     // done for a message.
@@ -267,7 +294,6 @@ pub async fn export_compliance_report(
     // Same sourcing as generate_compliance_report: an exported report must
     // match the one on screen.
     let results = latest_or_fresh_findings().await?;
-    let parsed_frameworks = parse_frameworks(&frameworks);
 
     let config = ReportConfig {
         scenario: Scenario::Custom(parsed_frameworks),
