@@ -20,6 +20,23 @@ pub use config_picker::*;
 pub use remote::*;
 
 // ============================================================================
+// Error-text markers read on both sides of the IPC boundary
+// ============================================================================
+
+/// What a privileged desktop command returns when the operator dismisses the
+/// polkit prompt. Errors cross Tauri IPC as plain strings, so the backend
+/// writes this text and the interface matches on it. One definition means a
+/// rewording on either side cannot silently turn a dismissed prompt into a
+/// reported failure.
+pub const AUTH_CANCELLED_MESSAGE: &str =
+    "Authentication cancelled. Root privileges are required for this operation.";
+
+/// The `change_error` the PAM plugin records when it refuses to auto-edit a
+/// directive that an inline `pam.d` argument already overrides. The interface
+/// reads it to render that change as a manual step rather than a failure.
+pub const PAM_INLINE_OVERRIDE_MARKER: &str = "inline pam.d override present";
+
+// ============================================================================
 // Plugin Types (from hardener-common)
 // ============================================================================
 

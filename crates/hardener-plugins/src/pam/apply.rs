@@ -309,7 +309,7 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
                             name = directive.pam_directive_name,
                         ),
                         change_success: false,
-                        change_error: Some("inline pam.d override present".to_string()),
+                        change_error: Some(hardener_types::PAM_INLINE_OVERRIDE_MARKER.to_string()),
                     });
                     continue;
                 }

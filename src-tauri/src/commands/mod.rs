@@ -356,10 +356,7 @@ impl std::fmt::Display for PrivilegedCommandError {
                 Then add to your window manager startup:\n  \
                 exec /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
             ),
-            Self::AuthCancelled => write!(
-                f,
-                "Authentication cancelled. Root privileges are required for this operation."
-            ),
+            Self::AuthCancelled => f.write_str(hardener_types::AUTH_CANCELLED_MESSAGE),
             Self::ExecutionFailed(msg) => write!(f, "Command failed: {}", sanitise_error(msg)),
         }
     }

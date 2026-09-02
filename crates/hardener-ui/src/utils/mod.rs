@@ -153,11 +153,11 @@ pub fn group_sessions_by_date(sessions: &[ScanSessionInfo]) -> Vec<(String, Vec<
 /// than a genuine failure.
 ///
 /// Errors cross the Tauri IPC boundary as plain strings, so this matches on
-/// the fixed text emitted by `PrivilegedCommandError::AuthCancelled`'s
-/// `Display` impl in `src-tauri/src/commands.rs`. If that text changes, this
-/// must be updated to match.
+/// the text `PrivilegedCommandError::AuthCancelled` displays. Both sides read
+/// [`hardener_types::AUTH_CANCELLED_MESSAGE`], so the backend cannot reword
+/// the sentence without this arm following.
 pub fn is_auth_cancelled(err: &str) -> bool {
-    err.contains("Authentication cancelled")
+    err.contains(hardener_types::AUTH_CANCELLED_MESSAGE)
 }
 
 /// Literal prefix of the backend's rate-limit error message.
@@ -245,13 +245,13 @@ pub fn score_delta_label(previous: Option<i32>, current: i32) -> String {
 /// inline `pam.d` directive already overrides it (see the PAM plugin's
 /// effective-value scan).
 ///
-/// ponytail: this hard-couples the UI to a literal backend error string.
-/// If that literal ever drifts, `is_manual_action` silently stops matching
-/// and every such change falls back to rendering as a genuine "Failed" -
-/// the deliberately safe direction, since a manual step mislabelled
-/// Failed is a lesser sin than a real failure mislabelled as the gentler
-/// "needs a manual step".
-const MANUAL_ACTION_MARKERS: &[&str] = &["inline pam.d override present"];
+/// The marker is the same constant the PAM plugin writes, so the two cannot
+/// drift apart. Were a second plugin to gain a manual-step refusal, its marker
+/// joins this list. A failed change carrying any other text renders as a
+/// genuine "Failed", the deliberately safe direction: a manual step
+/// mislabelled Failed is a lesser sin than a real failure mislabelled as the
+/// gentler "needs a manual step".
+const MANUAL_ACTION_MARKERS: &[&str] = &[hardener_types::PAM_INLINE_OVERRIDE_MARKER];
 
 /// Whether `change` is the one real "Manual step" the backend can report: a
 /// FAILED change whose `change_error` exactly matches a known

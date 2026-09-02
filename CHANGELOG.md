@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The two backend error texts the interface matches on are one definition
+  each.** `is_auth_cancelled` recognised a dismissed polkit prompt by a
+  substring of a sentence written in the desktop backend, and the "manual
+  step" rendering recognised PAM's inline-override refusal by a literal the
+  PAM plugin wrote; a rewording on either side would have turned a cancelled
+  prompt or a manual step into a reported failure with nothing to say so.
+  Both texts now live in `hardener-types` as `AUTH_CANCELLED_MESSAGE` and
+  `PAM_INLINE_OVERRIDE_MARKER`, read by the writer and the reader alike.
+
 ### Fixed
 
 - **Audit rules no longer saturate the kernel backlog on a build host.**
