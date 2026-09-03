@@ -58,9 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prompt or a manual step into a reported failure with nothing to say so.
   Both texts now live in `hardener-types` as `AUTH_CANCELLED_MESSAGE` and
   `PAM_INLINE_OVERRIDE_MARKER`, read by the writer and the reader alike.
-
-### Fixed
-
 - **The audit dry-run now previews the rules file the apply will write (#180).**
   The apply compared the whole generated file with the one on disk and
   rewrote on any difference; the dry-run estimated from which rule
