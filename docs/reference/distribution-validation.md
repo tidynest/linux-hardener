@@ -1183,7 +1183,11 @@ six distributions.
 
 The suite has grown since that baseline, and has since been rewritten. Every
 figure in the table above is superseded by the reading in the Reading table
-below, which is **186 of 186 on all six distributions** on 2026-09-02.
+below, which is **187 of 187 on all six distributions** as the next sweep is
+expected to read it: 187 is the collection count on 2026-09-03, the last
+sweep (2026-09-02 in that table) executed all 186 then collected on all six,
+and `T-DASH-12`, authored with the console redesign's area map, stands
+unexecuted until the next sweep records it.
 Restating the number here rather than only pointing at it is deliberate, and so
 is holding it to the collection count: a pointer that cannot go stale is a
 pointer nothing checks.
@@ -1230,7 +1234,8 @@ rather than measuring growth:
 | 2026-08-29 | 175 | 6 | superseded, against `6126bb42`. The first execution of `T-FIND-13`, `T-FIND-14`, `T-CONF-14` and `T-CONF-15`, all four authored the same day for two defects the suite could not previously see. All six green in one sweep with no re-run, 4.2 to 5.3 minutes each, every log stamping `6126bb42`. **The two T-FIND cases assert a notice the theme sweep had been screenshotting happily while it did not exist**, which is the difference between capturing a view and checking it. The two T-CONF cases need `?preview_mode=blocked`, a fixture added with them: the default stages changes, so the zero-change summary was unreachable and went unasserted while telling an operator with nine findings that the host was already compliant |
 | 2026-08-30 | 176 | 6 | superseded, for the wizard's privileged-preview fix (`a2cc4039`; the openSUSE leg re-ran at `4e132d8f`, a lockfile-and-audit-only delta). The first execution of `T-CONF-16`, and the first sweep of the reworded `T-CONF-14`/`T-CONF-15`, which now assert the preview escalates rather than that it does not. Five distributions green in one sweep at 4.5 minutes each; **openSUSE ran separately forty minutes later and is a full reading, not a retry of a test failure**: `cdn.opensuse.org` served 503 for the Leap 16.0 repository throughout, zypper could install nothing, and the font probe refused to start a suite that could not draw a letter. The repair was not the obvious one: the container's `openSUSE:*` repos are materialised by a local RIS service (`services.d/openSUSE.service`, index under `/usr/share/zypp/local/service/openSUSE`) whose index carries the CDN URLs, so editing `repos.d` is silently reverted by the next service auto-refresh, mid-session, between one zypper command and the next. Durable fix: disable the service, re-enable the repos, repoint at a healthy mirror, refresh. The leg then passed 176 of 176 in 5.4 minutes. Two traps worth naming: a leg that never started still reports the previous run's 44 screenshots (Playwright clears `outputDir` only when it runs), and the bundle stamps `44def90a` because trunk built before the commit the same tree became -  the documented "read the stamp as which sources" precedent |
 | 2026-08-30 | 177 | 6 | superseded, for the skip channel (`b607825e`). The first execution of the skip-marker notice test, which splits "skipped by configuration" from "produced no result" on the `?skip_marker=1` fixture. Containers recreated first per the recreate-then-measure rule, and the CLI suites read 117 of 117 on all six before the GUI half. **The first GUI invocation refused to run**: the stale-dist guard caught that a doc-comment edit to `utils/mod.rs` postdated the bundle, so the CLI readings stand from that run while the GUI legs re-ran after a rebuild - the guard refusing on any source change rather than judging which changes matter is the right side to err on. All six green, 4.6 to 5.4 minutes each, 44 screenshots each, every log stamping `b607825e`. **The new test was authored as T-FIND-13 and renamed T-FIND-15 after the sweep**: the id was already taken by 2026-08-29's notice test, Playwright does not enforce uniqueness, and the green run proved nothing about the collision. A title-only rename the recorded reading still describes |
-| **2026-09-02** | **186** | **6** | **current**, for the rollback modal's lifecycle coverage (T-RBM-01..09, `faf0264e`, run at the #179 head with the bundle stamping `ce776d84`). **The first sweep read 185 of 186 on all six distributions**: T-RBM-04 failed everywhere with `window.__releaseRollback is not a function`, because the mock sleeps 150-350 ms before the `hold` arm installs the release function while the Restoring stage renders on the click, so the test called the release inside the sleep. An authoring error, the component behaved; fixed by waiting on the function (`08a59e56`), and the full serial sweep re-ran green on all six, 4.5 to 5.7 minutes each, 44 screenshots each. The eight other T-RBM cases passed first time. Containers were not recreated for this run (created 2026-08-31); the CLI suites were not run |
+| **2026-09-03** | **187** | **0** | **current**, a collection count and not a run: `T-DASH-12` (the Dashboard area map's eight tiles and the kernel tile's band, authored with the console redesign on `feat/gui-console`) is counted off `npx playwright test --list` and has not been executed anywhere. The next sweep records it; until then this row says exactly that |
+| 2026-09-02 | 186 | 6 | superseded, for the rollback modal's lifecycle coverage (T-RBM-01..09, `faf0264e`, run at the #179 head with the bundle stamping `ce776d84`). **The first sweep read 185 of 186 on all six distributions**: T-RBM-04 failed everywhere with `window.__releaseRollback is not a function`, because the mock sleeps 150-350 ms before the `hold` arm installs the release function while the Restoring stage renders on the click, so the test called the release inside the sleep. An authoring error, the component behaved; fixed by waiting on the function (`08a59e56`), and the full serial sweep re-ran green on all six, 4.5 to 5.7 minutes each, 44 screenshots each. The eight other T-RBM cases passed first time. Containers were not recreated for this run (created 2026-08-31); the CLI suites were not run |
 
 The Fedora-only row is kept because it records a rule rather than a result: it
 was deliberately never written into the table, since a six-distribution row
@@ -1286,7 +1291,7 @@ pointed somewhere other than its cause:
 - **Browser**: System Chromium auto-detected per distribution (no bundled browser)
 - **Test Runner**: Playwright (npm) with `gui-tests/playwright.config.js`
 
-### Spec Inventory (12 Specs, 186 Tests)
+### Spec Inventory (12 Specs, 187 Tests)
 
 Counted off `npx playwright test --list` on 2026-08-21, and confirmed by the
 second 2026-08-27 sweep, which executed all 171. The three added that day,
@@ -1297,13 +1302,13 @@ reach only the browser console. The twelfth spec, added 2026-09-01, is
 the divergence section T-DIVG already covered); it is authored and
 collection-counted, and the nine stand unexecuted until the next sweep, which
 is the same state `T-FLEET-11` stood in below.
-**138 `test()` call sites produce 186 cases**, because three sites are
+**139 `test()` call sites produce 187 cases**, because three sites are
 parameterised and
 generate their cases at collection time: `themes.spec.js:200` produces 42
 screenshots (6 states x 7 themes), `contrast.spec.js:765` produces one case per
 theme, and `hardening.spec.js:643` produces one per viewport width. Reading the
 runner rather than grepping the sources is therefore deliberate: a count of
-`test(` calls is 138 and understates the suite by 48.
+`test(` calls is 139 and understates the suite by 48.
 
 This is a **collection** count, and the sweep of 2026-08-22 has now executed
 all of it: `T-FLEET-11` was added with the fleet profile badge, stood unexecuted

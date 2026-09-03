@@ -211,7 +211,7 @@ The finding prints the command that copies the file into `/etc` for you. See the
   <img src="docs/assets/screenshots/analysis-findings.png" alt="Security Analysis: findings grouped by severity" width="49%">
 </p>
 
-<p align="center"><sub>The real Leptos/WASM interface on the Midnight Teal theme, captured at 1.6.0 (2026-08-29) against the test fixture rather than a live scan, which is why the hosts read <code>web-01</code> and <code>db-01</code>. The build string in the footer names the commit the bundle was built from, which necessarily precedes the tag: committing the images changes the commit, so a screenshot cannot display the hash of the commit that carries it. The fixture is <code>gui-tests/tauri-mock.js</code>, held to the Rust types by <code>validate_gui_mock_fixtures.py</code> and driven by the 186-case Playwright suite, so these are reproducible on any machine and contain no data from anyone's system. The Hosts and Scheduler screens are in <a href="docs/assets/screenshots/">docs/assets/screenshots</a>, along with the states these five do not reach: the finding detail expander, the per-control compliance view, the checkpoint timeline and its rollback confirmation, the expanded host panel, and the two Scheduler notes that appear only while scheduled scanning is off.</sub></p>
+<p align="center"><sub>The real Leptos/WASM interface on the Midnight Teal theme, captured at 1.6.0 (2026-08-29) against the test fixture rather than a live scan, which is why the hosts read <code>web-01</code> and <code>db-01</code>. The build string in the footer names the commit the bundle was built from, which necessarily precedes the tag: committing the images changes the commit, so a screenshot cannot display the hash of the commit that carries it. The fixture is <code>gui-tests/tauri-mock.js</code>, held to the Rust types by <code>validate_gui_mock_fixtures.py</code> and driven by the 187-case Playwright suite, so these are reproducible on any machine and contain no data from anyone's system. The Hosts and Scheduler screens are in <a href="docs/assets/screenshots/">docs/assets/screenshots</a>, along with the states these five do not reach: the finding detail expander, the per-control compliance view, the checkpoint timeline and its rollback confirmation, the expanded host panel, and the two Scheduler notes that appear only while scheduled scanning is off.</sub></p>
 
 ---
 
@@ -488,7 +488,7 @@ hardened host still carries is in [upgrading](docs/guide/upgrading.md).
 ### Tests
 
 ```
-Rust workspace (cargo nextest run --workspace):  2338 passed, 0 failed, 42 skipped
+Rust workspace (cargo nextest run --workspace):  2343 passed, 0 failed, 42 skipped
 ```
 
 The 42 skipped tests need root, a live SSH host, or a specific firewall backend,

@@ -999,9 +999,9 @@ tree on **2026-08-28**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2188. The eleventh
+The table covers the ten crates under `crates/` and sums to 2193. The eleventh
 workspace member, `src-tauri`, carries 192 more, which is why the tree total the
-evidence ledger records is 2380 and not this table's sum.
+evidence ledger records is 2385 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -1014,7 +1014,7 @@ evidence ledger records is 2380 and not this table's sum.
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 859 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 243 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 66 |
-| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs` | - | 149 |
+| hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs`, `components/area_map.rs`, `components/security_score.rs` | - | 154 |
 
 ### Executor and Mock Test Files
 
