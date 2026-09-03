@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The desktop interface reads as one system: a type scale, tonal depth, one
+  primary button, one focus ring.** Page titles set at 24px with tight
+  tracking and the score at a 52px mono display size, the only display-size
+  object in the app; the tracked all-caps labels (sidebar groups, table
+  headers, the Recent Activity heading, timeline dates) are sentence case at
+  their normal weight. Surfaces are a change of tone with a faint `--edge`
+  rather than a full `--border` (the light and high-contrast themes keep a
+  real line), cards no longer light up on hover, and the boxed tab bar is an
+  underline strip. The primary button is ink on paper (`--text-primary` fill,
+  `--bg-primary` label) instead of a fixed green, which in Guardian was the
+  same green as a pass. Radii are three tokens (chips, controls, surfaces),
+  every control inherits the one global focus ring, no transition animates
+  `all`, and `prefers-reduced-motion` has a floor that stops every animation
+  and transition. The Dashboard hero carries a "Security score" label, its
+  empty state reads "No score yet" (the header subtitle names the last
+  recorded scan; the hero is session-backed, and "Not scanned yet" under
+  "Last scanned 2026-02-23" was two true lines that contradicted each
+  other), and the Hardening summary column lists the selected areas by name
+  under the count. Sidebar icons are 18px so their stroke matches the label
+  weight. Hosts and scheduler rules that carried `rem` and `px` literals use
+  the shared tokens. `T-DASH-02` asserts the new hero text.
+- **No web fonts.** `index.html` linked Inter and JetBrains Mono from Google
+  Fonts, and the Tauri CSP (`default-src 'self'`, no `font-src`) blocked that
+  stylesheet on every launch, so the app has always rendered in the
+  desktop's own fonts while the link only phoned home from browser previews.
+  The link is gone. The font stacks name the faces to bundle under `fonts/`
+  when the files are added (Geist, IBM Plex) and then the local faces a
+  Linux desktop has (Adwaita Sans and Mono, Cantarell, Noto), so the rendered
+  result is chosen rather than accidental.
+
+### Fixed
+
+- **A 2px accent stripe down the sidebar's right edge on every screen.** The
+  routed `<main>` takes focus on navigation so a screen reader lands on the
+  new page, Chromium treats programmatic focus as focus-visible, and the
+  global focus ring drew a 2px accent outline around the whole content area,
+  2px outside it, over the sidebar. It appears in every container screenshot
+  since the shell was built and no stylesheet rule drew it, so nothing in the
+  stylesheet could be found for it. `.app-main:focus-visible` now has no
+  outline; a landmark is not a control.
+
 - **The two backend error texts the interface matches on are one definition
   each.** `is_auth_cancelled` recognised a dismissed polkit prompt by a
   substring of a sentence written in the desktop backend, and the "manual

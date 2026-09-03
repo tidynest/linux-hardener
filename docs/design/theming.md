@@ -183,18 +183,34 @@ background tier and must not hide it.
 
 | Variable | Purpose |
 |----------|---------|
-| `--border` | Hairline separators, themed per file |
+| `--border` | Separators between things on one surface: rows, cells, inputs |
 | `--border-strong` | Emphasis and hover borders |
+| `--edge` | The outline of a surface itself: cards, panels, the plugin list |
 
-Every theme overrides both. A light theme is not a special case here: `daywatch`
-sets `--border: #d6d3d1` through the same variable the dark themes use.
+Every theme overrides the first two. A light theme is not a special case
+here: `daywatch` sets `--border: #d6d3d1` through the same variable the dark
+themes use.
+
+`--edge` is different. On the six dark themes it is one faint value,
+`rgba(255, 255, 255, 0.06)`, inherited from the base block: a card is a change
+of tone, and the edge only crisps it where two tones meet. Two themes set it
+to a real line because tone alone does not separate there: `daywatch` to
+`rgba(28, 25, 23, 0.1)` and `high-contrast` to its own `--border`. A rule
+that outlines a region uses `--edge`; a rule that divides one region into
+rows uses `--border`.
 
 ### Button Styles
 
-`.btn-primary` is the one hard-coded button colour, at `#065f46` with `#047857`
-on hover. It was chosen over the default green to meet the WCAG AA contrast
-requirement (4.5:1) for white text on a coloured background, and it does not
-change with the theme.
+`.btn-primary` is ink on paper: the theme's `--text-primary` as the fill and
+its `--bg-primary` as the label, so the one pair every theme already
+guarantees at 13:1 or better is the one the primary action wears, and no
+theme needs a correction for it. It used to be a fixed dark green (`#065f46`),
+which two things argued against. A status colour on a button claims a state
+an unpressed button has not earned, and in Guardian `--color-accent` and
+`--color-good` are the same green, so the primary button was
+indistinguishable from a pass. Hover mixes 15% of the page colour back into
+the fill with `color-mix()`, a step down rather than a colour change.
+`.btn-danger` keeps its own pair, `--danger-fill` and `--danger-on-fill`.
 
 ---
 
@@ -501,6 +517,7 @@ block defines and a single theme each overrides:
 --color-medium-bright /* Medium severity text; Daywatch only */
 --danger-fill         /* Destructive button fill; High Contrast only */
 --danger-on-fill      /* Text on that fill; High Contrast only */
+--edge                /* Surface outline; Daywatch and High Contrast */
 ```
 
 Set once in the base block and **not** themed, so a theme block should leave
@@ -508,11 +525,12 @@ them alone:
 
 ```css
 --font-sans, --font-mono
---font-size-caption .. --font-size-title, --leading-ui, --leading-prose
+--font-size-caption .. --font-size-display, --tracking-title, --tracking-display
+--leading-ui, --leading-prose
 --header-height, --content-padding, --sidebar-width, --sidebar-rail-width
 --space-xs .. --space-2xl
 --control-height, --control-pad-x, --row-gap, --section-gap
---radius-sm, --radius-md, --radius-lg, --radius-full, --border-radius
+--radius-sm, --radius-md, --radius-lg, --radius-full
 --z-skip-link, --z-modal, --z-sticky, --z-dropdown
 --shadow-sm, --shadow-md
 --transition-fast, --transition-normal, --transition-slow
