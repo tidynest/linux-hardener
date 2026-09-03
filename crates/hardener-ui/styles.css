@@ -1040,6 +1040,14 @@ h1 {
   border-color: var(--ink-muted);
 }
 
+/* The select's visually hidden label. The generic `label` rule paints
+   --text-secondary, which on the light theme is dark ink on the ink rail:
+   1.70:1 in the container's contrast sweep. Screen readers do not care, the
+   sweep does, and the ink token is right in any case. */
+.sidebar-settings-content label {
+  color: var(--ink-muted);
+}
+
 /* Build identity at the sidebar foot: legible but visually quiet, so a
    stale installed build is spottable without competing with the wordmark. */
 .app-version {
@@ -1184,9 +1192,16 @@ h1 {
 }
 
 /* Not a data page: a 1700px-wide hero around a two-digit number is a banner,
-   not a figure. The page measure holds four area tiles across and no more. */
+   not a figure. The page measure holds four area tiles across and no more.
+   The page grows with its content and .app-main scrolls it: the shared
+   page-container rule above caps the column at the viewport, and with the
+   area map the Dashboard is taller than a 720px window, so the last item
+   (Recent Activity, which used to be its own scroll box) was squeezed to
+   zero height and T-DASH-05 could not reach the View link. */
 .dashboard-page {
   max-width: var(--width-page);
+  flex: 0 0 auto;
+  min-height: auto;
 }
 
 /* ============================================================
@@ -2956,7 +2971,6 @@ tbody tr:hover {
   padding: 0;
   background: none;
   border: none;
-  overflow-y: auto;
 }
 
 .recent-activity h2 {
