@@ -30,7 +30,7 @@ mod tauri_bindings;
 mod types;
 mod utils;
 
-use components::Sidebar;
+use components::{PostureStrip, Sidebar};
 use pages::{
     AnalysisPage, DashboardPage, FleetApplyPage, HardeningPage, HostsPage, SchedulerPage,
     SettingsPage,
@@ -63,6 +63,26 @@ pub fn App() -> impl IntoView {
         let theme = app_state.theme.get();
         utils::theme::apply_theme(&theme);
         utils::theme::store_theme(&theme);
+    });
+
+    // History-backed "last scanned" stamp: the single owner. Re-read whenever
+    // a scan finishes, from any of the three places one can start (the hero,
+    // the Analysis header, the keyboard shortcut). `is_scanning` starts
+    // false, so this also performs the initial read. `deep_scan_running` is
+    // in the key because the deep scan never sets `is_scanning`, which is
+    // why the Dashboard's old per-page effect went stale after a privileged
+    // run.
+    Effect::new(move |_| {
+        if app_state.is_scanning.get() || app_state.deep_scan_running.get() {
+            return;
+        }
+        leptos::task::spawn_local(async move {
+            if let Ok(sessions) = tauri_bindings::invoke_get_scan_history(Some(1)).await {
+                app_state
+                    .last_scan_completed_at
+                    .set(utils::last_scan_completed_at(&sessions));
+            }
+        });
     });
 
     // Load persisted scan results from database on app mount
@@ -113,6 +133,8 @@ pub fn App() -> impl IntoView {
                 <Sidebar/>
 
                 <div class="app-content">
+                    <PostureStrip/>
+
                     // Global error notification banner
                     <Show when=move || app_state.error_message.get().is_some()>
                         <div class="error-banner" role="alert">

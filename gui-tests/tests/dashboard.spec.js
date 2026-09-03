@@ -183,4 +183,23 @@ test.describe('Dashboard', () => {
     await expect(cis.locator('.compliance-manual')).toBeVisible();
     await expect(cis.locator('.compliance-excluded')).toHaveCount(0);
   });
+
+  // T-DASH-12: The area map keeps one tile per hardening area, and a tile
+  // reports the scan rather than the absence of one
+  //
+  // Eight tiles before any scan, all unscanned, so an area nobody measured
+  // never reads as clean. After the scan the fixture's kernel plugin carries a
+  // critical finding and its tile takes the critical band, while `audit`,
+  // which the mock never returns, stays unscanned. Both directions again: a
+  // map that painted every tile good would pass a tile-count check alone.
+  test('T-DASH-12: the area map is eight tiles and takes its band from the scan', async ({ page }) => {
+    const tiles = page.locator('.area-tile');
+    await expect(tiles).toHaveCount(8);
+    await expect(page.locator('.area-tile.area-unscanned')).toHaveCount(8);
+
+    await runScan(page);
+    await expect(tiles).toHaveCount(8);
+    await expect(page.locator('.area-tile[data-area="kernel"]')).toHaveClass(/area-critical/);
+    await expect(page.locator('.area-tile[data-area="audit"]')).toHaveClass(/area-unscanned/);
+  });
 });

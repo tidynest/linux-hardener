@@ -118,6 +118,13 @@ pub(crate) fn plugin_display_name(plugin_id: &str) -> &'static str {
         .unwrap_or("Unknown area")
 }
 
+/// The eight areas in the order this screen lists them, as (short id,
+/// display name). The Dashboard area map iterates this so its tiles carry
+/// the same names in the same order as the rows here.
+pub(crate) fn hardening_areas() -> impl Iterator<Item = (&'static str, &'static str)> {
+    PLUGINS.iter().map(|p| (p.id, p.name))
+}
+
 /// Lockout risk class for a plugin id, if any.
 ///
 /// SSH and the firewall are the only two areas that can affect how the user

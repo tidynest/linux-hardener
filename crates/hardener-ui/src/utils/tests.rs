@@ -44,10 +44,12 @@ fn session(completed: Option<&str>) -> ScanSessionInfo {
 
 #[test]
 fn last_scanned_label_cases() {
-    assert_eq!(last_scanned_label(&[]), "Not scanned yet");
-    assert_eq!(last_scanned_label(&[session(None)]), "Not scanned yet");
+    assert_eq!(last_scan_completed_at(&[]), None);
+    assert_eq!(last_scan_completed_at(&[session(None)]), None);
+    assert_eq!(last_scanned_label(None), "Not scanned yet");
+    let stamp = last_scan_completed_at(&[session(Some("2026-07-22 14:05:00 UTC"))]);
     assert_eq!(
-        last_scanned_label(&[session(Some("2026-07-22 14:05:00 UTC"))]),
+        last_scanned_label(stamp.as_deref()),
         "Last scanned 2026-07-22 14:05:00 UTC"
     );
 }

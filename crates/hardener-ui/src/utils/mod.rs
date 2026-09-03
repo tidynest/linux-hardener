@@ -763,13 +763,20 @@ pub fn unrun_plugins(
     unrun
 }
 
-/// Header subtitle for the last scan: the most recent session's `completed_at`
-/// shown as-is, or "Not scanned yet" when there is none.
+/// The most recent session's `completed_at`: the one stamp every "last
+/// scanned" reading derives from. Kept in `AppState::last_scan_completed_at`
+/// by the `Effect` in `App`.
+pub fn last_scan_completed_at(sessions: &[ScanSessionInfo]) -> Option<String> {
+    sessions.first().and_then(|s| s.completed_at.clone())
+}
+
+/// Header subtitle for the last scan: the stamp shown as-is, or "Not scanned
+/// yet" when there is none.
 ///
 // ponytail: absolute UTC as-is, no relative "2h ago" - a relative label needs
 // the current clock (js_sys::Date), which a pure, testable helper avoids.
-pub fn last_scanned_label(sessions: &[ScanSessionInfo]) -> String {
-    match sessions.first().and_then(|s| s.completed_at.as_deref()) {
+pub fn last_scanned_label(completed_at: Option<&str>) -> String {
+    match completed_at {
         Some(t) => format!("Last scanned {t}"),
         None => "Not scanned yet".to_string(),
     }

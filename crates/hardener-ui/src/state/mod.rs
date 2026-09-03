@@ -81,6 +81,13 @@ pub struct AppState {
     /// page grid; a lone `Effect` in `App` applies it to `<html>` and persists
     /// it.
     pub theme: RwSignal<String>,
+    /// `completed_at` of the most recent persisted scan session, `None` when
+    /// history is empty. History-backed, where `scan_results` is
+    /// session-backed, so the two can disagree on a fresh launch and both be
+    /// right. Written by one `Effect` in `App`; read by the posture strip
+    /// and the Dashboard and Analysis subtitles, which used to fetch it
+    /// separately.
+    pub last_scan_completed_at: RwSignal<Option<String>>,
 }
 
 impl Default for AppState {
@@ -109,6 +116,7 @@ impl Default for AppState {
             config_summary: RwSignal::new(None),
             deep_scan_running: RwSignal::new(false),
             theme: RwSignal::new("default".to_string()),
+            last_scan_completed_at: RwSignal::new(None),
         }
     }
 }

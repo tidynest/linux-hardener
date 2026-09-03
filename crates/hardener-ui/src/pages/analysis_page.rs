@@ -4,7 +4,7 @@
 
 use crate::components::{ComplianceTab, FindingsTab, ScanHistoryTab, TabBar, TabDef, TabPanel};
 use crate::state::AppState;
-use crate::tauri_bindings::{invoke_generate_report, invoke_get_scan_history, invoke_scan};
+use crate::tauri_bindings::{invoke_generate_report, invoke_scan};
 use crate::utils::last_scanned_label;
 use leptos::prelude::*;
 
@@ -15,13 +15,6 @@ pub fn AnalysisPage() -> impl IntoView {
 
     // Tab state: 0 = Findings, 1 = Compliance, 2 = History
     let active_tab = RwSignal::new(0_usize);
-
-    let last_scanned = RwSignal::new(String::from("Not scanned yet"));
-    leptos::task::spawn_local(async move {
-        if let Ok(sessions) = invoke_get_scan_history(Some(1)).await {
-            last_scanned.set(last_scanned_label(&sessions));
-        }
-    });
 
     // Finding count for badge
     let finding_count = move || {
@@ -54,12 +47,6 @@ pub fn AnalysisPage() -> impl IntoView {
                                 &format!("Compliance report generation failed: {e}").into(),
                             );
                         }
-                    }
-
-                    // Refresh the header subtitle so it reflects this scan
-                    // rather than the value fetched once on mount.
-                    if let Ok(sessions) = invoke_get_scan_history(Some(1)).await {
-                        last_scanned.set(last_scanned_label(&sessions));
                     }
                 }
                 Err(e) => {
@@ -102,7 +89,9 @@ pub fn AnalysisPage() -> impl IntoView {
             <header class="analysis-header">
                 <div class="header-content">
                     <h1>"Analysis"</h1>
-                    <p class="header-subtitle">{move || last_scanned.get()}</p>
+                    <p class="header-subtitle">
+                        {move || last_scanned_label(app_state.last_scan_completed_at.get().as_deref())}
+                    </p>
                 </div>
                 <button
                     class="btn btn-primary"
