@@ -26,12 +26,14 @@ test.describe('Dashboard', () => {
   // is now a bar that is simply absent until there is something to plot, so the
   // placeholder it used to assert no longer exists to be checked.
   // Asserts the score hero by class rather than by text through `.first()`.
-  // Two unrelated elements read "Not scanned yet", the hero and the header
-  // subtitle, so `.first()` silently decided which one this test was about and
-  // would have passed on either. The subtitle is T-DASH-10's subject and says
-  // something different; this one is only about the hero.
+  // Two unrelated elements used to read "Not scanned yet", the hero and the
+  // header subtitle, so `.first()` silently decided which one this test was
+  // about and would have passed on either. The subtitle is T-DASH-10's subject
+  // and is history-backed; the hero is session-backed and now says so with
+  // its own words, because "Not scanned yet" under "Last scanned 2026-02-23"
+  // was two true statements that read as a contradiction.
   test('T-DASH-02: initial state reports nothing scanned', async ({ page }) => {
-    await expect(page.locator('.score-empty-title')).toHaveText('Not scanned yet');
+    await expect(page.locator('.score-empty-title')).toHaveText('No score yet');
     await expect(page.getByRole('status')).toHaveCount(0);
   });
 

@@ -1041,10 +1041,16 @@ pub fn ConfigureSection() -> impl IntoView {
                                         <p class="apply-summary-text apply-summary-empty">"Select at least one area"</p>
                                     }.into_any()
                                 } else {
+                                    // The names, not only the count: this column
+                                    // is the live "what will change" summary, and
+                                    // a count alone left it empty below the
+                                    // button. The names are the same selection
+                                    // the checking view lists a moment later.
                                     view! {
                                         <p class="apply-summary-text">
                                             {format!("{} area{} selected", n, if n == 1 { "" } else { "s" })}
                                         </p>
+                                        <p class="apply-summary-areas">{checking_areas().join(", ")}</p>
                                     }.into_any()
                                 }
                             }}

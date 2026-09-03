@@ -949,13 +949,11 @@ h1 {
   gap: var(--section-gap);
 }
 
-.dashboard-page > h1 {
-  font-size: var(--font-size-title);
-  font-weight: 600;
-  flex-shrink: 0;
+/* Not a data page: a 1700px-wide hero around a two-digit number is a banner,
+   not a figure, so the dashboard takes the form measure and centres nothing. */
+.dashboard-page {
+  max-width: var(--width-form);
 }
-
-/* .dashboard-section removed - now using Card component */
 
 /* ============================================================
    8. SECURITY SCORE
@@ -1373,16 +1371,26 @@ tbody tr:hover {
   border-radius: var(--radius-full);
 }
 
+/* Accent, not --color-good: this tick means "chosen", and chosen is a
+   selection, which is the one meaning the accent is reserved for. Green
+   here would claim "applied" on a row nothing has touched yet. */
 .plugin-row-check-icon {
   width: 1.15em;
   height: 1.15em;
-  color: var(--color-good);
+  color: var(--color-accent);
 }
 
+/* A chosen row reads in the primary text colour; an unchosen one recedes to
+   secondary. Eight identical rows gave the eye nothing to sort by, and the
+   only cue was a 14px ring beside each name. */
 .plugin-row-name {
   font-size: var(--font-size-body);
   font-weight: 500;
   color: var(--text-primary);
+}
+
+.plugin-row[aria-checked="false"] .plugin-row-name {
+  color: var(--text-secondary);
 }
 
 .plugin-row-help {
@@ -1401,7 +1409,7 @@ tbody tr:hover {
 
 .plugin-row-help:hover,
 .plugin-row-help[aria-expanded="true"] {
-  color: var(--color-accent);
+  color: var(--text-primary);
   background-color: var(--bg-elevated);
   border-color: var(--border);
 }
@@ -1500,6 +1508,15 @@ tbody tr:hover {
 .apply-summary-empty {
   color: var(--text-muted);
   font-weight: 500;
+}
+
+/* The selected area names under the count, in the secondary tone so the
+   count stays the headline. Prose line-height because eight names wrap. */
+.apply-summary-areas {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  line-height: var(--leading-prose);
+  color: var(--text-secondary);
 }
 
 /* Shared with .applying-panel's "keep this window open" note below - both
@@ -2715,6 +2732,21 @@ tbody tr:hover {
   margin-bottom: var(--space-xs);
 }
 
+/* The empty state sits where the list would, left-aligned like everything
+   else on this page; centred in a 200px box it floated in the middle of
+   nothing. */
+.recent-activity .empty-state {
+  align-items: flex-start;
+  text-align: left;
+  min-height: 0;
+  padding: var(--space-sm) 0;
+}
+
+.recent-activity .empty-state-title {
+  font-size: var(--font-size-body);
+  font-weight: 500;
+}
+
 /* ============================================================
    18. COMPLIANCE PAGE
    ============================================================ */
@@ -3118,6 +3150,17 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 *:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+/* The routed <main> takes focus programmatically (lib.rs moves it there on
+   navigation so a screen reader lands on the new page), and Chromium treats
+   that as focus-visible: a 2px accent ring around the entire content area,
+   sitting 2px outside it, which rendered as a bright vertical stripe down
+   the sidebar's edge on every screenshot since the shell was built. Nothing
+   in this file drew it, so nothing in this file could be found for it. A
+   landmark is not a control; the ring belongs on what the reader can act on. */
+.app-main:focus-visible {
+  outline: none;
 }
 
 /* Motion off means off. The specific rules elsewhere in this file still
@@ -3848,6 +3891,13 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    Dashboard - security score hero (Phase 3)
    ============================================================ */
 
+/* The score is the one display-size object in the app, and the hero is
+   built around it: a label above so the number is never a bare figure, the
+   band pill beside it, the action on the right, the bar beneath. Set in the
+   mono face at 700, because in this app mono is what a measured fact looks
+   like (paths, keys, host targets, the version line), and the score is the
+   most measured fact on the screen. tabular-nums keeps 87 and 100 the same
+   width so the count-up does not jitter. */
 .score-hero {
   display: flex;
   flex-direction: column;
@@ -3856,37 +3906,62 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .score-hero-main {
-  padding: var(--space-lg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: var(--space-xl);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
   background: var(--bg-secondary);
 }
 
 .score-hero-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.score-figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.score-label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.score-figure-row {
+  display: flex;
+  align-items: baseline;
   gap: var(--space-md);
   flex-wrap: wrap;
 }
 
 .score-number {
-  font-size: 24px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-display);
+  font-weight: 700;
+  letter-spacing: var(--tracking-display);
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .score-max {
-  font-size: var(--font-size-sm);
-  font-weight: 400;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sub);
+  font-weight: 500;
+  letter-spacing: 0;
   color: var(--text-muted);
-  margin-left: 2px;
+  margin-left: var(--space-xs);
 }
 
 .score-pill {
   font-size: var(--font-size-caption);
   font-weight: 600;
   padding: 2px var(--space-sm);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   border: 1px solid currentColor;
 }
 
@@ -3895,10 +3970,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .score-bar {
-  margin-top: var(--space-md);
+  margin-top: var(--space-lg);
   height: 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   overflow: hidden;
   background: var(--bg-tertiary);
 }
@@ -3944,21 +4018,38 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .link-button:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
 
+/* Before the first scan the hero keeps its size and its label, so the page
+   does not change shape when the number arrives. The title takes the
+   display slot at head size: an empty state is still the page's lead. */
 .score-empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-md);
-  padding: var(--space-lg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  gap: var(--space-sm);
+  padding: var(--space-xl);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
   background: var(--bg-secondary);
 }
 
 .score-empty-title {
   margin: 0;
-  font-size: var(--font-size-sub);
+  font-size: var(--font-size-head);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.score-empty-hint {
+  margin: 0 0 var(--space-sm);
   color: var(--text-secondary);
+}
+
+/* A text disclosure under the hero, not a second box. The generic
+   details/summary rules paint a bordered, filled bar, which beneath the
+   score card read as a second card holding one line of text. */
+.compliance-disclosure {
+  border: none;
+  margin: 0;
 }
 
 .compliance-disclosure > summary {
@@ -3967,6 +4058,11 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-weight: 600;
   color: var(--text-secondary);
   padding: var(--space-sm) 0;
+  background: none;
+}
+
+.compliance-disclosure[open] > summary {
+  border-bottom: none;
 }
 
 .compliance-list {

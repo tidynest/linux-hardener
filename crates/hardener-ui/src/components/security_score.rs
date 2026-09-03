@@ -204,7 +204,15 @@ pub fn SecurityScore() -> impl IntoView {
                 when=has_compliance_data
                 fallback=move || view! {
                     <div class="score-empty">
-                        <p class="score-empty-title">"Not scanned yet"</p>
+                        <span class="score-label">"Security score"</span>
+                        // "No score yet" rather than "Not scanned yet": the
+                        // header subtitle above is history-backed and can name
+                        // a scan from a previous session while this hero,
+                        // which is session-backed, is empty. Both were true
+                        // and together they contradicted each other. The
+                        // score really is absent until a scan runs here.
+                        <p class="score-empty-title">"No score yet"</p>
+                        <p class="score-empty-hint">"Run a security scan to measure this host."</p>
                         <button
                             class="btn btn-primary"
                             on:click=on_run_scan
@@ -218,10 +226,15 @@ pub fn SecurityScore() -> impl IntoView {
             >
                 <div class=move || format!("score-hero-main {}", score_band_class(band()))>
                     <div class="score-hero-head">
-                        <output class="score-number">
-                            {score}<span class="score-max">"/100"</span>
-                        </output>
-                        <span class="score-pill">{move || score_band_label(band())}</span>
+                        <div class="score-figure">
+                            <span class="score-label">"Security score"</span>
+                            <div class="score-figure-row">
+                                <output class="score-number">
+                                    {score}<span class="score-max">"/100"</span>
+                                </output>
+                                <span class="score-pill">{move || score_band_label(band())}</span>
+                            </div>
+                        </div>
                         <button
                             class="btn btn-primary score-scan-btn"
                             on:click=on_run_scan
