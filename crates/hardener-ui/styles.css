@@ -71,17 +71,31 @@
   --color-accent-hover: #67e8f9;
   --color-focus: rgba(34, 211, 238, 0.4);
 
-  /* Typography */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  /* Typography. Nothing here is fetched: the Tauri CSP is `default-src
+     'self'` with no font-src, so the Google Fonts link index.html used to
+     carry was blocked on every launch and the app rendered in whatever the
+     desktop had. The stacks now say so honestly. The first names are the
+     faces to bundle under fonts/ when the files are added (Geist, then IBM
+     Plex, both OFL); after them come the desktop faces a Linux box actually
+     has, in the order they resemble the intended ones. Adwaita Sans is a
+     tuned Inter and Adwaita Mono an Iosevka, so a GNOME-era system lands
+     close to the design without a download. */
+  --font-sans: "Geist", "IBM Plex Sans", "Inter", "Adwaita Sans", "Cantarell", "Noto Sans", system-ui, sans-serif;
+  --font-mono: "Geist Mono", "IBM Plex Mono", "JetBrains Mono", "JetBrainsMono Nerd Font", "Adwaita Mono", "Noto Sans Mono", monospace;
 
-  /* Type size scale */
+  /* Type size scale. Body to title is 14 to 24, and display is the one size
+     reserved for a single number per screen: the score. Three sizes that
+     read as one paragraph (12, 13, 14) carry captions, secondary lines and
+     body; two headline sizes (18, 24) carry section and page. */
   --font-size-caption: 12px;
   --font-size-sm: 13px;
   --font-size-body: 14px;
   --font-size-sub: 16px;
   --font-size-head: 18px;
-  --font-size-title: 22px;
+  --font-size-title: 24px;
+  --font-size-display: 52px;
+  --tracking-title: -0.015em;
+  --tracking-display: -0.03em;
   --leading-ui: 1.4;
   --leading-prose: 1.6;
 
@@ -440,6 +454,15 @@ body {
   overflow-x: hidden;  /* Content should wrap/shrink, not overflow */
 }
 
+/* One page title per screen, one rule for it. The per-page header rules
+   below only add margins now; size, weight and tracking are decided here. */
+h1 {
+  font-size: var(--font-size-title);
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
+  line-height: 1.2;
+}
+
 /* ============================================================
    2b. UTILITY CLASSES - Overflow & Accessibility (Session 1)
    ============================================================ */
@@ -754,10 +777,8 @@ body {
 
 .sidebar-group-label-text {
   font-size: var(--font-size-caption);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .sidebar.rail .sidebar-group-label {
@@ -811,8 +832,10 @@ body {
   border-left-color: var(--color-accent);
 }
 
+/* 18px beside a 14px/500 label. At 16px the 2-unit stroke of a 24-unit
+   glyph rendered at 1.33px and read lighter than the words it sat next to. */
 .sidebar-link-icon {
-  font-size: var(--font-size-sub);
+  font-size: var(--font-size-head);
   width: 1em;
   height: 1em;
   flex-shrink: 0;
@@ -1076,10 +1099,7 @@ th, td {
 th {
   font-size: var(--font-size-caption);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--text-muted);
-  background-color: var(--bg-tertiary);
 }
 
 tbody tr {
@@ -1173,7 +1193,6 @@ tbody tr:hover {
 }
 
 .header-content h1 {
-  font-size: var(--font-size-title);
   margin-bottom: var(--space-sm);
 }
 
@@ -1222,7 +1241,6 @@ tbody tr:hover {
 }
 
 .hardening-header h1 {
-  font-size: var(--font-size-title);
   margin-bottom: var(--space-sm);
 }
 
@@ -1981,8 +1999,6 @@ tbody tr:hover {
 .timeline-date {
   font-size: var(--font-size-caption);
   font-weight: 600;
-  letter-spacing: .03em;
-  text-transform: uppercase;
   color: var(--text-muted);
   margin: 0 0 var(--space-sm) 0;
 }
@@ -3224,7 +3240,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 /* Page header */
 .scheduler-header { margin-bottom: var(--space-lg); }
 .scheduler-title {
-  font-size: var(--font-size-title);
   color: var(--text-primary);
   margin: 0;
 }
@@ -4129,10 +4144,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .dashboard-header h1 {
   margin: 0;
-  /* The old .dashboard-page > h1 rule no longer matches (h1 now nests in
-     <header>); restore the app-wide header size to match the other pages. */
-  font-size: var(--font-size-title);
-  font-weight: 600;
 }
 
 .dashboard-subtitle {
@@ -4490,8 +4501,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .conn-dot-connected { background: var(--color-accent); }
 
 .host-section-label {
-  font-size: 0.7rem; font-weight: 500; text-transform: uppercase;
-  letter-spacing: 0.04em; color: var(--text-muted, #888);
+  font-size: var(--font-size-caption); font-weight: 600; color: var(--text-muted);
 }
 .host-collapse { margin-top: var(--space-lg, 20px); }
 .host-collapse-sub { margin: 8px 0 0; }
@@ -4668,8 +4678,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    it again inset this page by 32px while every other page sat at 16px. The
    host list is tabular, so it fills the width like the other data pages
    instead of stopping at a 960px of its own. */
-.hosts-header h1 { font-size: 1.4rem; font-weight: 500; margin: 0; }
-.hosts-subtitle { font-size: 0.82rem; color: var(--text-secondary); margin: 2px 0 0; }
+.hosts-header h1 { margin: 0; }
+.hosts-subtitle { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 2px 0 0; }
 
 /* Action bar: primary scan + add + ad-hoc disclosure + right-aligned count. */
 .hosts-actions { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; flex-wrap: wrap; }
@@ -4711,8 +4721,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .settings-title {
   margin: 0;
-  font-size: var(--font-size-title);
-  font-weight: 600;
   color: var(--text-primary);
 }
 
