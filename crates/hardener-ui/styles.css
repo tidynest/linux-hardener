@@ -5,8 +5,40 @@
  * HTML Structure (Leptos components):
  *   #app (trunk-injected)
  *     div.app-shell > aside.sidebar (grouped nav + icon rail, see components/sidebar.rs)
- *       + div.app-content > main.app-main > Routes (dashboard-page | analysis-page | hardening-page | remote-page)
+ *       + div.app-content > section.posture-strip (read-only statusline, components/posture_strip.rs)
+ *                         + main.app-main > Routes (dashboard-page | analysis-page | hardening-page | ...)
+ *
+ * The strip and the sidebar share one dark surface, the ink frame, in every
+ * theme including the light one; the routed page sits inside it.
  */
+
+/* ============================================================
+   0. BUNDLED FONTS
+   Two variable files under fonts/, copied by the data-trunk copy-dir link
+   in index.html and served from the app's own origin, which the Tauri CSP
+   (default-src 'self') already allows. Latin subset only. Both OFL; the
+   licences sit beside the files.
+   Martian Mono carries a width axis, so one file is both the wide display
+   cut (the score, the strip, page titles) and the narrow data cut (paths,
+   keys, hosts) through font-stretch. IBM Plex Sans is the body face.
+   ============================================================ */
+
+@font-face {
+  font-family: "Martian Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-stretch: 75% 112.5%;
+  font-display: swap;
+  src: url("fonts/martian-mono-latin-wdth-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-latin-wght-normal.woff2") format("woff2");
+}
 
 /* ============================================================
    1a. CSS CUSTOM PROPERTIES
@@ -15,15 +47,15 @@
 :root,
 [data-theme="default"] {
   /* Background tiers (darkest to lightest) */
-  --bg-primary: #0f1419;
-  --bg-secondary: #151b23;
-  --bg-tertiary: #1e252e;
-  --bg-elevated: #2a323c;
+  --bg-primary: #0b1016;
+  --bg-secondary: #111820;
+  --bg-tertiary: #18222c;
+  --bg-elevated: #22303d;
 
   /* Text colors - adjusted for WCAG AA (4.5:1 contrast ratio) */
-  --text-primary: #e8edf4;
-  --text-secondary: #a8b8c8;  /* Brightened from #a1aebe for better contrast */
-  --text-muted: #8a9aae;      /* Brightened from #7a8a9e for WCAG AA compliance */
+  --text-primary: #e6edf3;
+  --text-secondary: #a3b3c2;
+  --text-muted: #8899a8;
 
   /* Semantic colors */
   --color-good: #10b981;
@@ -71,17 +103,16 @@
   --color-accent-hover: #67e8f9;
   --color-focus: rgba(34, 211, 238, 0.4);
 
-  /* Typography. Nothing here is fetched: the Tauri CSP is `default-src
-     'self'` with no font-src, so the Google Fonts link index.html used to
-     carry was blocked on every launch and the app rendered in whatever the
-     desktop had. The stacks now say so honestly. The first names are the
-     faces to bundle under fonts/ when the files are added (Geist, then IBM
-     Plex, both OFL); after them come the desktop faces a Linux box actually
-     has, in the order they resemble the intended ones. Adwaita Sans is a
-     tuned Inter and Adwaita Mono an Iosevka, so a GNOME-era system lands
-     close to the design without a download. */
-  --font-sans: "Geist", "IBM Plex Sans", "Inter", "Adwaita Sans", "Cantarell", "Noto Sans", system-ui, sans-serif;
-  --font-mono: "Geist Mono", "IBM Plex Mono", "JetBrains Mono", "JetBrainsMono Nerd Font", "Adwaita Mono", "Noto Sans Mono", monospace;
+  /* Typography. The first name of each stack is bundled (section 0); the
+     rest are the desktop faces a Linux box has, in the order they resemble
+     it, so a failed font load degrades to the previous look rather than to
+     nothing. Display and mono are the same family: Martian Mono at its full
+     width for headline figures, and narrowed by --stretch-data for data,
+     where a wide mono would eat the row. */
+  --font-sans: "IBM Plex Sans", "Adwaita Sans", "Inter", "Cantarell", "Noto Sans", system-ui, sans-serif;
+  --font-display: "Martian Mono", "JetBrainsMono Nerd Font", "JetBrains Mono", "Adwaita Mono", monospace;
+  --font-mono: "Martian Mono", "JetBrainsMono Nerd Font", "JetBrains Mono", "Adwaita Mono", "Noto Sans Mono", monospace;
+  --stretch-data: 87.5%;
 
   /* Type size scale. Body to title is 14 to 24, and display is the one size
      reserved for a single number per screen: the score. Three sizes that
@@ -93,7 +124,8 @@
   --font-size-sub: 16px;
   --font-size-head: 18px;
   --font-size-title: 24px;
-  --font-size-display: 52px;
+  --font-size-display: 64px;
+  --font-size-strip: 13px;
   --tracking-title: -0.015em;
   --tracking-display: -0.03em;
   --leading-ui: 1.4;
@@ -101,7 +133,7 @@
 
   /* Layout */
   --header-height: 52px;
-  --content-padding: 16px;
+  --content-padding: 24px;
   --sidebar-width: 220px;
   --sidebar-rail-width: 56px;
   /* Two page measures, by page kind. Single-column form pages use
@@ -112,6 +144,10 @@
      number: settings, scheduler and hosts previously carried 900px, 760px and
      960px set independently, with the intent recorded nowhere. */
   --width-form: 900px;
+  /* The dashboard measure: wide enough for four area tiles in a row at a
+     readable size, narrower than the data pages so the score stays a figure
+     and not a banner. */
+  --width-page: 1080px;
 
   /* Spacing - one 4px scale */
   --space-xs: 4px;
@@ -148,9 +184,28 @@
      the dark themes: a card is a change of tone, and the edge only crisps it
      where two tones meet. The light theme and the high-contrast theme set
      --edge to a real line because tone alone does not separate there. */
-  --border: #1e252e;        /* hairline; themed per file */
-  --border-strong: #2a323c; /* emphasis/hover */
+  --border: #18222c;        /* hairline; themed per file */
+  --border-strong: #22303d; /* emphasis/hover */
   --edge: rgba(255, 255, 255, 0.06);
+
+  /* The ink frame: the posture strip and the sidebar share this surface in
+     every theme, the light one included, so the page reads as a pane inside
+     a dark chrome. Literal hex rather than var() chains so the static
+     contrast validator can resolve every pair. The three status tokens are
+     the ones painted as text on ink; the dark themes reuse their bright
+     status values, the light theme cannot (its status set is dark on cream)
+     and sets light ones. */
+  --bg-ink: #06090d;
+  --ink-fg: #e6edf3;
+  --ink-muted: #8899a8;
+  --ink-hover: rgba(255, 255, 255, 0.08);
+  --ink-good: #34d399;
+  --ink-warning: #fbbf24;
+  --ink-critical: #f87171;
+  /* The accent as painted on ink: the active nav link and the scanning
+     segment. Same value as --color-accent on the dark themes; the light
+     theme's accent is a dark teal chosen for cream and vanishes on ink. */
+  --ink-accent: #22d3ee;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.25);
 
@@ -164,15 +219,17 @@
    1b. THEME OVERRIDES - data-theme attribute selectors
    ============================================================ */
 
-/* Fortress - Deep slate-blue with gold accents */
+/* Fortress - Neutral slate with a steel-blue accent. Was a blue-black with
+   gold, which made it a twin of Midnight Teal with an accent that read as a
+   warning. */
 [data-theme="fortress"] {
-    --bg-primary: #0c1222;
-    --bg-secondary: #131c2e;
-    --bg-tertiary: #1a2640;
-    --bg-elevated: #243352;
-    --text-primary: #e2e8f0;
-    --text-secondary: #a8b5c4;
-    --text-muted: #919eae; /* Brightened for WCAG AA on this theme's darkest surface; the default was brightened for the same reason and the other themes were not swept with it. */
+    --bg-primary: #111315;
+    --bg-secondary: #181b1f;
+    --bg-tertiary: #21262c;
+    --bg-elevated: #2b323a;
+    --text-primary: #e7e9ec;
+    --text-secondary: #a9b0b8;
+    --text-muted: #969da5;
     --color-good: #22c55e;
     --color-good-bright: #4ade80;
     --color-warning: #eab308;
@@ -181,26 +238,36 @@
     --color-critical-bright: #f87171;
     --color-info: #60a5fa;
     --color-pending: #64748b;
-    --color-accent: #fbbf24;
-    --color-accent-hover: #fcd34d;
-    --color-focus: rgba(251, 191, 36, 0.4);
-    --border: #1a2640;
-    --border-strong: #243352;
+    --color-accent: #7cb8ff;
+    --color-accent-hover: #a8d0ff;
+    --color-focus: rgba(124, 184, 255, 0.4);
+    --border: #21262c;
+    --border-strong: #2b323a;
     --color-good-bg: rgba(34, 197, 94, .15);
     --color-warning-bg: rgba(234, 179, 8, .15);
     --color-critical-bg: rgba(239, 68, 68, .15);
-    --color-accent-bg: rgba(251, 191, 36, .12);
+    --color-accent-bg: rgba(124, 184, 255, .12);
+    --bg-ink: #0a0b0d;
+    --ink-fg: #e7e9ec;
+    --ink-muted: #969da5;
+    --ink-hover: rgba(255, 255, 255, 0.08);
+    --ink-good: #4ade80;
+    --ink-warning: #facc15;
+    --ink-critical: #f87171;
+    --ink-accent: #7cb8ff;
 }
 
-/* Sentinel - Warm charcoal with amber accents */
+/* Sentinel - Warm umber with a rose accent. The accent used to be the same
+   amber as the warning colour, so a selected thing and a warned thing
+   were painted alike. */
 [data-theme="sentinel"] {
-    --bg-primary: #1a1614;
-    --bg-secondary: #231f1c;
-    --bg-tertiary: #2e2926;
-    --bg-elevated: #3a3432;
-    --text-primary: #f5f0eb;
-    --text-secondary: #b8a89a;
-    --text-muted: #a89d92; /* Brightened for WCAG AA on this theme's darkest surface; the default was brightened for the same reason and the other themes were not swept with it. */
+    --bg-primary: #171210;
+    --bg-secondary: #1f1916;
+    --bg-tertiary: #2a221e;
+    --bg-elevated: #362c27;
+    --text-primary: #f4ede6;
+    --text-secondary: #bfae9f;
+    --text-muted: #a3948a;
     --color-good: #22c55e;
     --color-good-bright: #4ade80;
     --color-warning: #f59e0b;
@@ -209,26 +276,36 @@
     --color-critical-bright: #f87171;
     --color-info: #fb923c;
     --color-pending: #78716c;
-    --color-accent: #f59e0b;
-    --color-accent-hover: #fbbf24;
-    --color-focus: rgba(245, 158, 11, 0.4);
-    --border: #2e2926;
-    --border-strong: #3a3432;
+    --color-accent: #f472b6;
+    --color-accent-hover: #f9a8d4;
+    --color-focus: rgba(244, 114, 182, 0.4);
+    --border: #2a221e;
+    --border-strong: #362c27;
     --color-good-bg: rgba(34, 197, 94, .15);
     --color-warning-bg: rgba(245, 158, 11, .15);
     --color-critical-bg: rgba(239, 68, 68, .15);
-    --color-accent-bg: rgba(245, 158, 11, .12);
+    --color-accent-bg: rgba(244, 114, 182, .12);
+    --bg-ink: #0f0c0a;
+    --ink-fg: #f4ede6;
+    --ink-muted: #a3948a;
+    --ink-hover: rgba(255, 255, 255, 0.08);
+    --ink-good: #4ade80;
+    --ink-warning: #fbbf24;
+    --ink-critical: #f87171;
+    --ink-accent: #f472b6;
 }
 
-/* Command - Deep navy with ice-blue accents */
+/* Command - Deep indigo with a violet accent. The surfaces lean blue on
+   purpose, so it and Midnight Teal are told apart by hue, not by accent
+   alone. */
 [data-theme="command"] {
-    --bg-primary: #0a0e1a;
-    --bg-secondary: #101626;
-    --bg-tertiary: #1a2238;
-    --bg-elevated: #252e48;
-    --text-primary: #e0e7f1;
-    --text-secondary: #94a3b8;
-    --text-muted: #8e9aaa; /* Brightened for WCAG AA on this theme's darkest surface; the default was brightened for the same reason and the other themes were not swept with it. */
+    --bg-primary: #0a0c1c;
+    --bg-secondary: #10132a;
+    --bg-tertiary: #181c3a;
+    --bg-elevated: #222750;
+    --text-primary: #e3e6f5;
+    --text-secondary: #9ea6c9;
+    --text-muted: #8a92b8;
     --color-good: #10b981;
     --color-good-bright: #34d399;
     --color-warning: #f59e0b;
@@ -237,26 +314,37 @@
     --color-critical-bright: #f87171;
     --color-info: #38bdf8;
     --color-pending: #64748b;
-    --color-accent: #38bdf8;
-    --color-accent-hover: #7dd3fc;
-    --color-focus: rgba(56, 189, 248, 0.4);
-    --border: #1a2238;
-    --border-strong: #252e48;
+    --color-accent: #a78bfa;
+    --color-accent-hover: #c4b5fd;
+    --color-focus: rgba(167, 139, 250, 0.4);
+    --border: #181c3a;
+    --border-strong: #222750;
     --color-good-bg: rgba(16, 185, 129, .15);
     --color-warning-bg: rgba(245, 158, 11, .15);
     --color-critical-bg: rgba(239, 68, 68, .15);
-    --color-accent-bg: rgba(56, 189, 248, .12);
+    --color-accent-bg: rgba(167, 139, 250, .12);
+    --bg-ink: #06071a;
+    --ink-fg: #e3e6f5;
+    --ink-muted: #8a92b8;
+    --ink-hover: rgba(255, 255, 255, 0.08);
+    --ink-good: #34d399;
+    --ink-warning: #fbbf24;
+    --ink-critical: #f87171;
+    --ink-accent: #a78bfa;
 }
 
-/* Guardian - Forest black with emerald accents */
+/* Guardian - Forest black with an ivory accent. The accent used to be the
+   same emerald as the good colour, so a selected row and a passing check
+   were the same green; ivory on forest keeps the identity and cannot be
+   mistaken for a status. */
 [data-theme="guardian"] {
-    --bg-primary: #0c120e;
-    --bg-secondary: #131c16;
-    --bg-tertiary: #1a2620;
-    --bg-elevated: #24332a;
-    --text-primary: #e2f0e8;
-    --text-secondary: #94b8a3;
-    --text-muted: #80a08d; /* Brightened for WCAG AA on this theme's darkest surface; the default was brightened for the same reason and the other themes were not swept with it. */
+    --bg-primary: #0b120e;
+    --bg-secondary: #111a15;
+    --bg-tertiary: #18241d;
+    --bg-elevated: #22322a;
+    --text-primary: #e3efe7;
+    --text-secondary: #9ab8a7;
+    --text-muted: #86a493;
     --color-good: #10b981;
     --color-good-bright: #34d399;
     --color-warning: #eab308;
@@ -265,15 +353,23 @@
     --color-critical-bright: #f87171;
     --color-info: #34d399;
     --color-pending: #64748b;
-    --color-accent: #10b981;
-    --color-accent-hover: #34d399;
-    --color-focus: rgba(16, 185, 129, 0.4);
-    --border: #1a2620;
-    --border-strong: #24332a;
+    --color-accent: #f2e9d8;
+    --color-accent-hover: #fbf6ec;
+    --color-focus: rgba(242, 233, 216, 0.4);
+    --border: #18241d;
+    --border-strong: #22322a;
     --color-good-bg: rgba(16, 185, 129, .15);
     --color-warning-bg: rgba(234, 179, 8, .15);
     --color-critical-bg: rgba(239, 68, 68, .15);
-    --color-accent-bg: rgba(16, 185, 129, .12);
+    --color-accent-bg: rgba(242, 233, 216, .1);
+    --bg-ink: #060b08;
+    --ink-fg: #e3efe7;
+    --ink-muted: #86a493;
+    --ink-hover: rgba(255, 255, 255, 0.08);
+    --ink-good: #34d399;
+    --ink-warning: #facc15;
+    --ink-critical: #f87171;
+    --ink-accent: #f2e9d8;
 }
 
 /* Daywatch - Light mode with warm off-white */
@@ -396,6 +492,18 @@
     --color-warning-bg: rgba(217, 119, 6, .15);
     --color-critical-bg: rgba(220, 38, 38, .15);
     --color-accent-bg: rgba(13, 148, 136, .12);
+    /* The frame stays ink on the light theme: that is the one place the
+       design is allowed to be dark here, and it is what makes the page read
+       as a pane. The status trio is the dark themes' bright set, because
+       this theme's own set is dark on cream and vanishes on ink. */
+    --bg-ink: #1c1917;
+    --ink-fg: #f8f6f2;
+    --ink-muted: #a8a29e;
+    --ink-hover: rgba(255, 255, 255, 0.1);
+    --ink-good: #34d399;
+    --ink-warning: #fbbf24;
+    --ink-critical: #f87171;
+    --ink-accent: #2dd4bf;
 }
 
 /* High Contrast - WCAG AAA accessibility theme */
@@ -430,6 +538,14 @@
     --color-warning-bg: rgba(253, 224, 71, .25);
     --color-critical-bg: rgba(252, 165, 165, .25);
     --color-accent-bg: rgba(103, 232, 249, .2);
+    --bg-ink: #000000;
+    --ink-fg: #ffffff;
+    --ink-muted: #d4d4d4;
+    --ink-hover: rgba(255, 255, 255, 0.15);
+    --ink-good: #4ade80;
+    --ink-warning: #fde047;
+    --ink-critical: #fca5a5;
+    --ink-accent: #67e8f9;
 }
 
 /* ============================================================
@@ -457,6 +573,10 @@ body {
   height: 100%;
   min-height: 100%;
   font-family: var(--font-sans);
+  /* Inherited by every mono rule below: Martian Mono narrowed for data.
+     Plex has no width axis, so this is a no-op on body text. The display
+     rules (score, strip, tiles, h1) set 100% back explicitly. */
+  font-stretch: var(--stretch-data);
   font-size: var(--font-size-body);
   line-height: 1.5;
   color: var(--text-primary);
@@ -467,6 +587,8 @@ body {
 /* One page title per screen, one rule for it. The per-page header rules
    below only add margins now; size, weight and tracking are decided here. */
 h1 {
+  font-family: var(--font-display);
+  font-stretch: 100%;
   font-size: var(--font-size-title);
   font-weight: 600;
   letter-spacing: var(--tracking-title);
@@ -636,6 +758,9 @@ h1 {
    4. SIDEBAR SHELL
    Grouped left navigation (Local / Fleet / Settings) that collapses to a
    narrow icon rail. See crates/hardener-ui/src/components/sidebar.rs.
+   Painted on --bg-ink: with the posture strip it forms the ink frame the
+   page sits inside, so every colour here is an --ink-* token, never a
+   --text-* one.
    ============================================================ */
 
 /* Row that holds aside.sidebar and the main content column side by side. */
@@ -662,8 +787,9 @@ h1 {
   flex-direction: column;
   flex-shrink: 0;
   width: var(--sidebar-width);
-  background-color: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  background-color: var(--bg-ink);
+  color: var(--ink-fg);
+  border-right: 1px solid var(--edge);
   overflow-x: hidden;
   overflow-y: auto;
   transition: width var(--transition-normal);
@@ -684,7 +810,7 @@ h1 {
   gap: var(--space-sm);
   min-height: var(--header-height);
   padding: var(--space-md) var(--space-lg);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--ink-hover);
   flex-shrink: 0;
 }
 
@@ -698,9 +824,14 @@ h1 {
   align-items: center;
   gap: var(--space-sm);
   min-width: 0;
-  color: var(--color-accent);
-  font-family: var(--font-mono);
+  color: var(--ink-fg);
+  font-family: var(--font-display);
+  font-stretch: 100%;
   font-weight: 700;
+}
+
+.sidebar-wordmark-icon {
+  color: var(--ink-accent);
 }
 
 .sidebar-wordmark-icon {
@@ -727,17 +858,17 @@ h1 {
   height: var(--control-height);
   padding: 0;
   background: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ink-hover);
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  color: var(--ink-muted);
   cursor: pointer;
   transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .sidebar-collapse-toggle:hover {
-  color: var(--text-primary);
-  background-color: var(--bg-tertiary);
-  border-color: var(--color-accent);
+  color: var(--ink-fg);
+  background-color: var(--ink-hover);
+  border-color: var(--ink-accent);
 }
 
 .sidebar-collapse-icon {
@@ -775,16 +906,18 @@ h1 {
 }
 
 .sidebar-group-label-text {
+  font-family: var(--font-display);
+  font-stretch: 100%;
   font-size: var(--font-size-caption);
-  font-weight: 600;
-  color: var(--text-muted);
+  font-weight: 500;
+  color: var(--ink-muted);
 }
 
 .sidebar.rail .sidebar-group-label {
   height: 1px;
   padding: 0;
   margin: var(--space-sm) var(--space-md);
-  background-color: var(--border);
+  background-color: var(--ink-hover);
   overflow: hidden;
 }
 
@@ -812,7 +945,7 @@ h1 {
   padding: var(--space-sm) var(--space-md);
   border-left: 3px solid transparent;
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  color: var(--ink-muted);
   font-size: var(--font-size-body);
   font-weight: 500;
   text-decoration: none;
@@ -821,14 +954,15 @@ h1 {
 }
 
 .sidebar-link:hover {
-  color: var(--text-primary);
-  background-color: var(--bg-tertiary);
+  color: var(--ink-fg);
+  background-color: var(--ink-hover);
 }
 
+/* The one accent on the rail: the page you are on. */
 .sidebar-link[aria-current="page"] {
-  color: var(--text-primary);
-  background-color: var(--color-accent-bg);
-  border-left-color: var(--color-accent);
+  color: var(--ink-accent);
+  background-color: var(--ink-hover);
+  border-left-color: var(--ink-accent);
 }
 
 /* 18px beside a 14px/500 label. At 16px the 2-unit stroke of a 24-unit
@@ -876,7 +1010,7 @@ h1 {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--ink-hover);
   padding: var(--space-md) 0;
 }
 
@@ -897,6 +1031,13 @@ h1 {
 
 .sidebar-settings-content .theme-select {
   width: 100%;
+  background-color: var(--bg-ink);
+  color: var(--ink-fg);
+  border-color: var(--ink-hover);
+}
+
+.sidebar-settings-content .theme-select:hover {
+  border-color: var(--ink-muted);
 }
 
 /* Build identity at the sidebar foot: legible but visually quiet, so a
@@ -905,8 +1046,101 @@ h1 {
   padding: var(--space-sm) var(--space-lg) 0;
   font-family: var(--font-mono);
   font-size: var(--font-size-caption);
-  color: var(--text-muted);
+  color: var(--ink-muted);
+  /* Wraps: the build identity is longer than the rail in the wide mono,
+     and a clipped hash is worse than a second line. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   4b. POSTURE STRIP
+   The statusline across the top of the content column, on the same ink
+   as the sidebar. Read-only: score and band, live critical and high
+   counts, the last-scan stamp, and a scanning segment. Set in the display
+   face at strip size with tabular digits, so a value changing width never
+   moves its neighbours. See components/posture_strip.rs for why it holds
+   no button, no heading and no live region.
+   ============================================================ */
+
+.posture-strip {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 var(--space-sm);
+  background-color: var(--bg-ink);
+  color: var(--ink-fg);
+  border-bottom: 1px solid var(--edge);
+  font-family: var(--font-display);
+  font-stretch: 100%;
+  font-size: var(--font-size-strip);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  overflow-x: auto;
+}
+
+.posture-seg {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  padding: 0 var(--space-lg);
+}
+
+.posture-seg + .posture-seg {
+  border-left: 1px solid var(--ink-hover);
+}
+
+/* The stamp sits at the far end, the way a statusline keeps the clock. */
+.posture-stamp {
+  margin-left: auto;
+}
+
+.posture-key {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.posture-value {
+  color: var(--ink-fg);
+  font-weight: 700;
+}
+
+.posture-band {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.posture-band-label {
+  font-weight: 500;
+}
+
+.posture-band.score-good .posture-value,
+.posture-band.score-good .posture-band-label { color: var(--ink-good); }
+.posture-band.score-warning .posture-value,
+.posture-band.score-warning .posture-band-label { color: var(--ink-warning); }
+.posture-band.score-critical .posture-value,
+.posture-band.score-critical .posture-band-label { color: var(--ink-critical); }
+
+.posture-count-critical .posture-value { color: var(--ink-critical); }
+.posture-count-high .posture-value { color: var(--ink-warning); }
+
+.posture-empty,
+.posture-zero,
+.posture-count-critical .posture-zero,
+.posture-count-high .posture-zero {
+  color: var(--ink-muted);
+  font-weight: 500;
+}
+
+.posture-activity {
+  color: var(--ink-accent);
+  font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .posture-stamp { display: none; }
 }
 
 /* ============================================================
@@ -950,9 +1184,9 @@ h1 {
 }
 
 /* Not a data page: a 1700px-wide hero around a two-digit number is a banner,
-   not a figure, so the dashboard takes the form measure and centres nothing. */
+   not a figure. The page measure holds four area tiles across and no more. */
 .dashboard-page {
-  max-width: var(--width-form);
+  max-width: var(--width-page);
 }
 
 /* ============================================================
@@ -3940,7 +4174,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .score-number {
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
+  font-stretch: 100%;
   font-size: var(--font-size-display);
   font-weight: 700;
   letter-spacing: var(--tracking-display);
@@ -4642,7 +4877,11 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    putting the expanded case at 5.20 to 5.71 and lifting the collapsed case
    with it. */
 .host-row-failed { color: var(--color-critical-bright); }
-.host-row-tallies { display: flex; gap: 9px; }
+.host-row-tallies {
+  display: flex; gap: 9px;
+  font-family: var(--font-display); font-stretch: 100%;
+  font-variant-numeric: tabular-nums; font-weight: 600;
+}
 /* `--color-critical` #ef4444 read 3.82:1 in Sentinel, 4.00 Fortress, 4.11
    Midnight Teal, 4.16 Guardian and 4.20 Command against the surfaces the host
    row paints, all short of 4.5, and was invisible until the `fleet, host
@@ -4807,21 +5046,45 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   margin-top: var(--space-xs);
 }
 
+/* Each card carries its own data-theme, so inside it every token is that
+   theme's. The card is a miniature of the shell: an ink strip across the
+   top and an ink rail down the left, the page colour inside, and the four
+   colour chips as bars on the page. What the picker shows is the frame the
+   theme actually draws, not four dots on a neutral card. */
 .theme-swatch {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  padding: var(--space-md);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  padding: var(--space-lg) var(--space-md) var(--space-md) calc(var(--space-md) + 10px);
+  background: var(--bg-primary);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-md);
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
+  overflow: hidden;
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast);
+}
+
+.theme-swatch::before,
+.theme-swatch::after {
+  content: "";
+  position: absolute;
+  background: var(--bg-ink);
+  pointer-events: none;
+}
+
+.theme-swatch::before {
+  inset: 0 0 auto 0;
+  height: 8px;
+}
+
+.theme-swatch::after {
+  inset: 0 auto 0 0;
+  width: 10px;
 }
 
 .theme-swatch:hover {
@@ -4839,9 +5102,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .theme-chip {
-  width: 1.25rem;
-  height: 1.25rem;
-  border: 1px solid var(--border-strong);
+  width: 1.5rem;
+  height: 6px;
   border-radius: var(--radius-full);
 }
 
@@ -4868,7 +5130,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .theme-swatch-check {
   position: absolute;
-  top: var(--space-sm);
+  top: var(--space-md);
   right: var(--space-sm);
   visibility: hidden;
   color: var(--color-accent);
@@ -4902,4 +5164,132 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   color: var(--text-primary);
   font-size: var(--font-size-sm);
   font-family: var(--font-mono);
+}
+
+/* ============================================================
+   27. HARDENING AREA MAP
+   The Dashboard's second object after the score: one tile per plugin area
+   in Hardening page order (components/area_map.rs). The 3px stripe along
+   the top carries the band; the digit row is critical, high, medium, low
+   in the display face, zeros muted so a clean tile reads as quiet. Three
+   unmeasured states (not scanned, disabled by config, scan failed) get
+   their own looks so none can pass for a clean one.
+   ============================================================ */
+
+.area-map {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.area-map-title {
+  margin: 0;
+  font-size: var(--font-size-sub);
+  font-weight: 600;
+}
+
+.area-grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin: 0;
+  padding: 0;
+}
+
+.area-tile {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.area-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--border-strong);
+}
+
+.area-good::before { background: var(--color-good); }
+.area-warning::before { background: var(--color-warning); }
+.area-critical::before { background: var(--color-critical); }
+.area-disabled::before { background: var(--color-pending); }
+/* Failed is red like critical but broken, the way a dropped link is drawn. */
+.area-failed::before {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-critical) 0 8px,
+    transparent 8px 14px
+  );
+}
+
+.area-unscanned {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+
+.area-unscanned::before { background: transparent; }
+
+.area-tile-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-height: 118px;
+  padding: var(--space-lg);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color var(--transition-fast);
+}
+
+.area-tile-link:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.area-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.area-status {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.area-unscanned .area-name,
+.area-disabled .area-name { color: var(--text-secondary); }
+.area-unscanned .area-status,
+.area-disabled .area-status { color: var(--text-muted); }
+.area-failed .area-status { color: var(--color-critical); }
+
+.area-counts {
+  display: flex;
+  gap: var(--space-lg);
+  margin-top: auto;
+  padding-top: var(--space-sm);
+  font-family: var(--font-display);
+  font-stretch: 100%;
+  font-size: var(--font-size-head);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.area-count-critical { color: var(--color-critical-bright); }
+.area-count-high { color: var(--color-warning-bright); }
+.area-count-medium { color: var(--color-medium-bright); }
+.area-count-low { color: var(--text-secondary); }
+.area-count-zero,
+.area-counts .area-count-zero { color: var(--text-muted); font-weight: 500; }
+
+.area-excepted {
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
+}
+
+@media (max-width: 1024px) {
+  .area-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
