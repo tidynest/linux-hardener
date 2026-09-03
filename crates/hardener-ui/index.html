@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Linux Hardener</title>
-    <!-- No web fonts. The Tauri CSP (default-src 'self', no font-src) blocked
-         the Google Fonts stylesheet that used to be linked here, so it never
-         loaded in the app and only phoned home from browser previews. The
-         font stacks in styles.css name the faces to bundle under fonts/. -->
+    <!-- Bundled under fonts/ and served from the app's own origin, which the
+         Tauri CSP (default-src 'self', no font-src) allows. A remote font
+         stylesheet would be blocked, which is what happened to the Google
+         Fonts link that used to sit here. -->
+    <link data-trunk rel="copy-dir" href="fonts">
     <link data-trunk rel="css" href="styles.css">
 </head>
 <body>
