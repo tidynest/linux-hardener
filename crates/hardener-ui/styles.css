@@ -127,7 +127,10 @@
   --row-gap: 8px;
   --section-gap: 16px;
 
-  /* Border radius scale */
+  /* Border radius scale: sm for inline chips and code, md for every control
+     (buttons, inputs, selects, segments), lg for every surface (cards,
+     panels, modals), full for pills. A rule that needs a fourth radius is
+     drawing a fourth kind of thing, and there is no fourth kind. */
   --radius-sm: 0.25rem;  /* 4px */
   --radius-md: 0.5rem;   /* 8px */
   --radius-lg: 0.75rem;  /* 12px */
@@ -573,7 +576,7 @@ h1 {
     background-position: right 0.5rem center;
     color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     padding: var(--space-xs) var(--space-sm);
     padding-right: 1.75rem;
     font-size: var(--font-size-body);
@@ -587,14 +590,6 @@ h1 {
 .form-select:hover,
 .format-select:hover {
     border-color: var(--color-accent);
-}
-
-.theme-select:focus-visible,
-.findings-filters select:focus-visible,
-.form-select:focus-visible,
-.format-select:focus-visible {
-    outline: 0.125rem solid var(--color-accent);
-    outline-offset: 0.125rem;
 }
 
 .theme-select option,
@@ -985,9 +980,9 @@ h1 {
   font-size: var(--font-size-body);
   font-weight: 600;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .btn:disabled,
@@ -996,15 +991,24 @@ h1 {
   cursor: not-allowed;
 }
 
+/* The primary action is ink on paper: the theme's text colour as the fill,
+   its page colour as the label. Two reasons it is not a green or an accent
+   fill. A status colour on a button claims a state ("this is good") that an
+   unpressed button has not earned, and in Guardian the accent IS the good
+   green, so the old fill was indistinguishable from a pass. And ink is the
+   one pair every theme already guarantees at 13:1 or better, so the button
+   needs no per-theme correction and none of the daywatch special-casing the
+   green fill did. Hover mixes 15% of the page back in, a step down rather
+   than a colour change. */
 .btn-primary {
-  background-color: #065f46;
-  color: #d1fae5;
-  border-color: #065f46;
+  background-color: var(--text-primary);
+  color: var(--bg-primary);
+  border-color: var(--text-primary);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: #047857;
-  border-color: #047857;
+  background-color: color-mix(in srgb, var(--text-primary) 85%, var(--bg-primary));
+  border-color: transparent;
 }
 
 .btn-secondary {
@@ -1020,7 +1024,7 @@ h1 {
 
 .btn-large {
   height: auto;
-  padding: 11px 22px;
+  padding: var(--space-md) var(--space-xl);
   font-size: var(--font-size-sub);
 }
 
@@ -1035,7 +1039,7 @@ button {
 
 fieldset {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: var(--space-md);
   margin-bottom: var(--space-md);
 }
@@ -1821,7 +1825,7 @@ tbody tr:hover {
   color: var(--text-secondary);
   padding: var(--space-sm) var(--space-md);
   background-color: var(--bg-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
 }
 
@@ -1881,7 +1885,7 @@ tbody tr:hover {
   padding: var(--space-sm) var(--space-md);
   background-color: var(--color-warning-bg);
   border-left: 2px solid var(--color-warning);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .review-group-issue-severity {
@@ -2726,7 +2730,7 @@ tbody tr:hover {
 
 .status-success {
   color: var(--color-good);
-  background-color: rgba(16, 185, 129, 0.1);
+  background-color: var(--color-good-bg);
 }
 
 /* Same closed question as `.partial-row-badge-failed`: the one render site,
@@ -2736,7 +2740,7 @@ tbody tr:hover {
    spread. Re-open if any of those four gains a fill. */
 .status-error {
   color: var(--color-critical-bright);
-  background-color: rgba(239, 68, 68, 0.1);
+  background-color: var(--color-critical-bg);
 }
 
 /* Expandable sections */
@@ -2797,9 +2801,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   background: var(--bg-secondary);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  outline: none;
-  transition: border-color 0.15s ease;
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition-fast);
 }
 
 .input-text:focus {
@@ -2820,9 +2823,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   background: var(--danger-fill);
   color: var(--danger-on-fill);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-fast);
 }
 
 .btn-danger:hover {
@@ -2907,10 +2910,10 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-md);
   background-color: var(--color-critical-bg);
-  border: 1px solid var(--color-critical-bright, #dc3545);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-critical-bright);
+  border-radius: var(--radius-md);
   margin: var(--space-sm) var(--space-md) 0;
-  color: var(--color-critical-bright, #dc3545);
+  color: var(--color-critical-bright);
   font-size: var(--font-size-body);
   animation: slide-down 200ms ease-out;
 }
@@ -2923,7 +2926,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .error-banner-dismiss {
   background: none;
   border: none;
-  color: var(--color-critical-bright, #dc3545);
+  color: var(--color-critical-bright);
   cursor: pointer;
   padding: var(--space-xs);
   font-size: var(--font-size-sub);
@@ -2979,19 +2982,13 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   background-color: var(--color-accent);
   color: var(--bg-primary);
   font-weight: 500;
-  border-radius: var(--border-radius);
+  border-radius: var(--radius-md);
   text-decoration: none;
-  transition: background-color var(--transition-fast), transform var(--transition-fast);
+  transition: background-color var(--transition-fast);
 }
 
 .error-page a:hover {
   background-color: var(--color-accent-hover);
-  transform: translateY(-1px);
-}
-
-.error-page a:focus-visible {
-  outline: 0.125rem solid var(--color-accent);
-  outline-offset: 2px;
 }
 
 /* Guidance text */
@@ -3007,9 +3004,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-size: var(--font-size-body);
   background-color: var(--bg-secondary);
   border-left: 3px solid var(--color-info);
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   margin-bottom: var(--space-lg);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
@@ -3029,9 +3026,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
      theme and stays neutral, where .section-guidance's --color-info would
      claim an emphasis this note deliberately does not want. */
   border-left: 3px solid var(--text-muted);
-  padding: 12px 16px;
+  padding: var(--space-md) var(--space-lg);
   margin-bottom: var(--space-lg);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   word-wrap: break-word;
 }
 
@@ -3056,16 +3053,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 /* Large tablets - stack dashboard grid earlier for better readability */
 @media (max-width: 1024px) {
-
-  /* Compact security score section in single-column mode */
-  .security-score {
-    padding: var(--space-md);
-  }
-
-  .security-score h2 {
-    margin-bottom: var(--space-md);
-  }
-
   /* Hardening selection: narrow/tiled window stacks to a single calm
      column (level -> rows -> advanced -> summary+Preview); the live
      summary only earns a dedicated right pane once the window is wide. */
@@ -3124,10 +3111,25 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   }
 }
 
-/* Focus states */
+/* Focus states: one ring for everything. Controls that used to declare
+   their own (selects, the 404 link, text inputs with `outline: none`) now
+   inherit this, so the keyboard shows the same 2px accent ring at the same
+   offset on every element it lands on. */
 *:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+/* Motion off means off. The specific rules elsewhere in this file still
+   fix the resting states that matter (a skeleton row that starts at opacity
+   0, a count-up skipped in Rust); this is the floor beneath them, so a
+   transition added later without its own guard cannot reintroduce motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Custom scrollbar */
@@ -3142,7 +3144,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 ::-webkit-scrollbar-thumb {
   background: var(--bg-elevated);
-  border-radius: 4px;
+  border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -3341,22 +3343,22 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .notification-section {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--space-lg);
 }
 
 .subsection-title {
   font-size: var(--font-size-sub);
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0.5rem 0 0;
-  padding-top: 0.75rem;
+  margin: var(--space-sm) 0 0;
+  padding-top: var(--space-md);
   border-top: 1px solid var(--border);
 }
 
 .form-row {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-xs);
 }
 
 .form-label {
@@ -3366,20 +3368,21 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .form-input {
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-sm) var(--space-md);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: var(--font-size-body);
   font-family: inherit;
   max-width: 400px;
 }
 
+/* Accent, like every other field: a green focus border was the one place
+   the form used a status colour for a state that is not a status. The ring
+   itself is the global focus-visible rule. */
 .form-input:focus {
-  outline: none;
-  border-color: var(--color-good);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+  border-color: var(--color-accent);
 }
 
 /* .form-select themed rules (option popup, appearance, focus outline) live
@@ -3401,13 +3404,13 @@ details[open] summary { border-bottom: 1px solid var(--border); }
      Minimisation". */
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: 0.75rem;
+  gap: var(--space-md);
 }
 
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--space-xs);
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   cursor: pointer;
@@ -3419,8 +3422,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .form-actions {
   display: flex;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
 }
 
 /* =============================================================
@@ -3449,9 +3452,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 .config-file-input:focus {
-  outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 15%, transparent);
 }
 
 .config-file-input::placeholder {
@@ -3547,7 +3548,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .confirm-delete-label {
   font-size: var(--font-size-sm);
   font-weight: 600;
-  color: var(--color-critical, #ef4444);
+  color: var(--color-critical);
 }
 
 @keyframes confirm-fade-in {
@@ -3749,10 +3750,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
      15.14-21.00. */
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  outline: none;
+  border-radius: var(--radius-md);
   box-sizing: border-box;
-  transition: border-color 0.15s ease;
+  transition: border-color var(--transition-fast);
 }
 
 .exception-modal .field-input:focus {
@@ -3763,7 +3763,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .exception-modal .field-error {
   margin: var(--space-xs) 0 0;
   font-size: var(--font-size-sm);
-  color: var(--color-critical-bright, #dc3545);
+  color: var(--color-critical-bright);
 }
 
 /* A failed write, rendered inside the dialog rather than the global banner:
@@ -3773,9 +3773,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   margin: var(--space-sm) 0 0;
   padding: var(--space-xs) var(--space-sm);
   background-color: var(--color-critical-bg);
-  border: 1px solid var(--color-critical-bright, #dc3545);
+  border: 1px solid var(--color-critical-bright);
   border-radius: var(--radius-sm);
-  color: var(--color-critical-bright, #dc3545);
+  color: var(--color-critical-bright);
   font-size: var(--font-size-sm);
 }
 
@@ -4435,26 +4435,26 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 }
 
 /* --- Hosts: expanded per-host panel --- */
-.host-panel { padding: 0 var(--space-md, 14px) var(--space-md, 16px) 44px; }
+.host-panel { padding: 0 var(--space-md) var(--space-md) 44px; }
 .host-panel-strip {
-  display: flex; align-items: center; gap: var(--space-sm, 10px);
-  padding: var(--space-md, 14px) 0 var(--space-md, 16px);
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: var(--space-md) 0 var(--space-md);
 }
 .host-conn { display: inline-flex; align-items: center; gap: 8px; }
-.host-conn-label { font-size: 0.85rem; }
+.host-conn-label { font-size: var(--font-size-sm); }
 .host-panel-actions { margin-left: auto; display: flex; gap: 8px; }
 
 .conn-dot {
   width: 7px; height: 7px; border-radius: 50%;
-  background: var(--border-strong, #888); flex: none;
+  background: var(--border-strong); flex: none;
 }
-.conn-dot-connecting { background: var(--text-secondary, #999); }
+.conn-dot-connecting { background: var(--text-secondary); }
 .conn-dot-connected { background: var(--color-accent); }
 
 .host-section-label {
   font-size: var(--font-size-caption); font-weight: 600; color: var(--text-muted);
 }
-.host-collapse { margin-top: var(--space-lg, 20px); }
+.host-collapse { margin-top: var(--space-lg); }
 .host-collapse-sub { margin: 8px 0 0; }
 .host-collapse > summary {
   list-style: none; cursor: pointer; display: flex; align-items: center;
@@ -4463,18 +4463,18 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .host-collapse > summary::-webkit-details-marker { display: none; }
 .host-collapse-chev {
   width: 0; height: 0; border-left: 4px solid transparent;
-  border-right: 4px solid transparent; border-top: 5px solid var(--text-muted, #888);
-  transition: transform 0.15s ease;
+  border-right: 4px solid transparent; border-top: 5px solid var(--text-muted);
+  transition: transform var(--transition-fast);
 }
 .host-collapse[open] > summary .host-collapse-chev { transform: rotate(180deg); }
 
 .host-compliance-scroll { overflow-x: auto; }
-.host-compliance-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.host-compliance-table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
 .host-compliance-table th {
-  text-align: right; font-weight: 400; color: var(--text-muted, #888);
+  text-align: right; font-weight: 400; color: var(--text-muted);
   padding: 3px 8px;
 }
-.host-compliance-table td { text-align: right; padding: 4px 8px; border-top: 0.5px solid var(--border); }
+.host-compliance-table td { text-align: right; padding: 4px 8px; border-top: 1px solid var(--border); }
 .host-col-left { text-align: left !important; }
 
 /* Which identifier scheme scored the framework on this row, e.g. "DISA RHEL 10
@@ -4489,8 +4489,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    to a measured pairing rather than a colour that has never been weighed. */
 .host-profile-badge {
   margin-left: 6px;
-  font-size: 0.72rem;
-  color: var(--text-muted, #888);
+  font-size: var(--font-size-caption);
+  color: var(--text-muted);
   font-family: var(--font-mono);
   white-space: nowrap;
 }
@@ -4504,18 +4504,18 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 .host-finding-row {
   display: flex; align-items: baseline; gap: 8px; padding: 5px 0;
-  border-top: 0.5px solid var(--border);
+  border-top: 1px solid var(--border);
 }
 .host-finding-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-.host-finding-title { font-size: 0.85rem; }
+.host-finding-title { font-size: var(--font-size-sm); }
 .host-finding-plugin {
-  margin-left: auto; font-size: 0.72rem; color: var(--text-muted, #888);
+  margin-left: auto; font-size: var(--font-size-caption); color: var(--text-muted);
   font-family: var(--font-mono);
 }
-.host-severity-label { font-size: 0.78rem; font-weight: 500; }
+.host-severity-label { font-size: var(--font-size-caption); font-weight: 500; }
 
 /* --- Hosts: inventory row --- */
-.host-row { border-bottom: 0.5px solid var(--border); }
+.host-row { border-bottom: 1px solid var(--border); }
 .host-row:last-child { border-bottom: none; }
 .host-row-open { background: var(--bg-tertiary); }
 .host-row-main { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; }
@@ -4523,13 +4523,13 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .host-row-chev {
   display: inline-block; width: 0; height: 0;
   border-top: 4px solid transparent; border-bottom: 4px solid transparent;
-  border-left: 6px solid var(--text-muted); transition: transform 0.15s ease;
+  border-left: 6px solid var(--text-muted); transition: transform var(--transition-fast);
 }
 .host-row-chev-open { transform: rotate(90deg); }
 .host-row-id { min-width: 0; }
-.host-row-name { font-size: 0.9rem; font-weight: 500; }
-.host-row-detail { font-size: 0.78rem; color: var(--text-secondary); font-family: var(--font-mono); }
-.host-row-posture { margin-left: auto; font-size: 0.78rem; display: flex; align-items: center; gap: 9px; }
+.host-row-name { font-size: var(--font-size-body); font-weight: 500; }
+.host-row-detail { font-size: var(--font-size-caption); color: var(--text-secondary); font-family: var(--font-mono); }
+.host-row-posture { margin-left: auto; font-size: var(--font-size-caption); display: flex; align-items: center; gap: 9px; }
 .host-row-unscanned { color: var(--text-muted); }
 /* Measured 2026-08-20 once a route scanned db-01, the fixture's failing host.
    Collapsed on the page background it cleared, 4.77:1 in Sentinel up to 11.06
@@ -4585,7 +4585,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .host-prog-failed { color: var(--color-critical-bright); }
 .host-row-strip {
   display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 0 14px 10px 56px;
-  font-size: 0.78rem; font-family: var(--font-mono);
+  font-size: var(--font-size-caption); font-family: var(--font-mono);
 }
 .host-strip-item b { font-weight: 500; }
 /* The SSH failure message. It sits OUTSIDE the expanded panel in
@@ -4605,7 +4605,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
    `--bg-primary`, both Sentinel. Computed for `--bg-secondary`: 5.91. */
 .host-row-error {
   padding: 0 14px 10px 56px;
-  font-size: 0.78rem;
+  font-size: var(--font-size-caption);
   color: var(--color-critical-bright);
   overflow-wrap: anywhere;
 }
@@ -4635,24 +4635,24 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 /* Action bar: primary scan + add + ad-hoc disclosure + right-aligned count. */
 .hosts-actions { display: flex; align-items: center; gap: 10px; margin: 18px 0 14px; flex-wrap: wrap; }
 .hosts-adhoc-toggle {
-  background: none; border: none; cursor: pointer; font-size: 0.78rem;
+  background: none; border: none; cursor: pointer; font-size: var(--font-size-caption);
   color: var(--text-muted);
 }
-.hosts-count { margin-left: auto; font-size: 0.78rem; color: var(--text-secondary); }
+.hosts-count { margin-left: auto; font-size: var(--font-size-caption); color: var(--text-secondary); }
 .hosts-adhoc-input { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-.hosts-progress { font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 10px; }
+.hosts-progress { font-size: var(--font-size-sm); color: var(--text-secondary); margin: 0 0 10px; }
 
 /* Inventory list: one hairline-bordered card wrapping the rows. */
 .hosts-list { border: 1px solid var(--edge); border-radius: var(--radius-lg); background: var(--bg-secondary); overflow: hidden; }
 .hosts-list-head { display: flex; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); }
 .hosts-select-all {
-  background: none; border: none; cursor: pointer; font-size: 0.76rem;
+  background: none; border: none; cursor: pointer; font-size: var(--font-size-caption);
   color: var(--text-secondary);
 }
 
 /* Empty state: centred, with the three onboarding steps left-aligned. */
 .hosts-empty { padding: 32px 20px; text-align: center; }
-.hosts-empty-steps { text-align: left; display: inline-block; margin: 12px auto; font-size: 0.85rem; }
+.hosts-empty-steps { text-align: left; display: inline-block; margin: 12px auto; font-size: var(--font-size-sm); }
 
 /* ============================================================
    Settings page - Appearance (theme grid) + About
