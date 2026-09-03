@@ -139,10 +139,15 @@
   --z-sticky: 200;
   --z-dropdown: 100;
 
-  /* Borders & Effects */
-  --border-radius: 8px;
+  /* Borders & Effects.
+     --border separates things that sit on one surface (rows, table cells,
+     inputs). --edge outlines a surface itself and is deliberately faint on
+     the dark themes: a card is a change of tone, and the edge only crisps it
+     where two tones meet. The light theme and the high-contrast theme set
+     --edge to a real line because tone alone does not separate there. */
   --border: #1e252e;        /* hairline; themed per file */
   --border-strong: #2a323c; /* emphasis/hover */
+  --edge: rgba(255, 255, 255, 0.06);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.25);
 
@@ -383,6 +388,7 @@
     --color-focus: rgba(13, 148, 136, 0.3);
     --border: #d6d3d1;
     --border-strong: #a8a29e;
+    --edge: rgba(28, 25, 23, 0.1);
     --color-good-bg: rgba(5, 150, 105, .15);
     --color-warning-bg: rgba(217, 119, 6, .15);
     --color-critical-bg: rgba(220, 38, 38, .15);
@@ -416,6 +422,7 @@
     --color-focus: rgba(103, 232, 249, 0.6);
     --border: #767676;
     --border-strong: #8f8f8f;
+    --edge: var(--border);
     --color-good-bg: rgba(74, 222, 128, .25);
     --color-warning-bg: rgba(253, 224, 71, .25);
     --color-critical-bg: rgba(252, 165, 165, .25);
@@ -518,17 +525,14 @@ h1 {
    Reusable container with consistent styling
    ============================================================ */
 
-/* Base card - default variant */
+/* Base card. A tone change with a faint edge, and no hover: a card is a
+   region, not a control, and a region that lights up under the pointer
+   promises a click it cannot honour. */
 .card {
     background-color: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: var(--border-radius);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-lg);
     padding: var(--space-lg);
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.card:hover {
-    border-color: var(--text-muted);
 }
 
 .card-title {
@@ -960,33 +964,10 @@ h1 {
 
 /* ============================================================
    8. SECURITY SCORE
-   ============================================================ */
-
-.security-score {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.security-score h2 {
-  font-size: var(--font-size-sub);
-  font-weight: 500;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: var(--space-lg);
-}
-
-.score-critical { border-color: var(--color-critical); box-shadow: 0 0 20px rgba(239, 68, 68, 0.3); }
-
-.score-warning { border-color: var(--color-warning); box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
-
-.score-good { border-color: var(--color-good); box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
-
-/* ============================================================
-   9. QUICK ACTIONS
+   The hero lives in the "Dashboard - security score hero" block further
+   down. The circular gauge that used to sit here, and the bare .score-good /
+   .score-warning / .score-critical glow rules it needed, are gone: the band
+   classes now only mark, and each consumer colours its own element.
    ============================================================ */
 
 /* ============================================================
@@ -1211,7 +1192,7 @@ tbody tr:hover {
 .finding-detail {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--border-radius);
+  border-radius: var(--radius-lg);
   padding: var(--space-lg);
   position: sticky;
   top: calc(var(--header-height) + var(--space-xl));
@@ -1310,7 +1291,7 @@ tbody tr:hover {
   gap: var(--space-xs);
   padding: var(--space-xs);
   background-color: var(--bg-tertiary);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-md);
 }
 
@@ -1345,8 +1326,8 @@ tbody tr:hover {
 .plugin-rows {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
   background-color: var(--bg-secondary);
   padding: var(--space-xs) 0;
 }
@@ -1437,8 +1418,8 @@ tbody tr:hover {
 /* Advanced (optional) disclosure - houses the config file picker, collapsed
    by default. Native <details>/<summary>, same pattern as .score-breakdown. */
 .advanced-disclosure {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
   background-color: var(--bg-secondary);
 }
 
@@ -1538,8 +1519,8 @@ tbody tr:hover {
   gap: var(--space-sm);
   padding: var(--space-md);
   background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
   animation: fadeIn var(--transition-normal);
 }
 
@@ -1728,7 +1709,7 @@ tbody tr:hover {
 }
 
 .review-group {
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-md);
   background-color: var(--bg-tertiary);
 }
@@ -2105,8 +2086,8 @@ tbody tr:hover {
 .timeline-detail {
   margin-top: var(--space-sm);
   padding: var(--space-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
   background: var(--bg-secondary);
 }
 
@@ -2639,54 +2620,41 @@ tbody tr:hover {
    16. TAB COMPONENTS
    ============================================================ */
 
+/* An underline strip, not a box of pills. The previous bar was a filled,
+   bordered container whose two buttons stretched to half the page width
+   each, so the tabs were the largest object on the Hardening screen and
+   said the least. Tabs are labels along a rule; the active one carries a
+   2px accent line, and the rule is the only edge. */
 .tab-bar {
   display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: var(--bg-tertiary);
-  border-radius: var(--border-radius);
-  border: 1px solid var(--border);
+  gap: var(--space-xl);
+  border-bottom: 1px solid var(--border);
 }
 
 .tab-button {
-  flex: 1;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: var(--space-sm);
-  padding: 12px 24px;
+  margin-bottom: -1px;
+  padding: var(--space-sm) 0 var(--space-md);
   background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-sans);
   font-size: var(--font-size-body);
   font-weight: 500;
   border: none;
-  border-radius: 6px;
+  border-bottom: 2px solid transparent;
   cursor: pointer;
-  transition: all var(--transition-fast);
-  position: relative;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .tab-button:hover {
   color: var(--text-primary);
-  background: var(--bg-elevated);
 }
 
 .tab-button.tab-active {
-  background: var(--bg-secondary);
   color: var(--text-primary);
-}
-
-.tab-button.tab-active::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 40%;
-  height: 2px;
-  background: linear-gradient(90deg, var(--color-accent), var(--color-good-bright));
-  border-radius: 9999px;
+  border-bottom-color: var(--color-accent);
 }
 
 .tab-badge {
@@ -2700,10 +2668,8 @@ tbody tr:hover {
   color: var(--bg-primary);
   font-size: var(--font-size-caption);
   font-weight: 700;
-  border-radius: 9999px;
+  border-radius: var(--radius-full);
 }
-
-.tab-active .tab-badge { background: var(--color-good); }
 
 .tab-content {
   position: relative;
@@ -2725,21 +2691,24 @@ tbody tr:hover {
    17. RECENT ACTIVITY
    ============================================================ */
 
-/* .recent-activity container styles removed - now using Card component */
-/* Keep layout-specific styles */
-.recent-activity {
+/* Rendered through Card for its heading semantics, drawn flat: on a page
+   whose one surface is the score hero, a second bordered box beneath it
+   competed with the hero and framed a two-row list that needs no frame.
+   ponytail: a CSS override rather than a Card variant nobody else asks for. */
+.card.recent-activity {
   display: flex;
   flex-direction: column;
+  padding: 0;
+  background: none;
+  border: none;
   overflow-y: auto;
 }
 
 .recent-activity h2 {
   font-size: var(--font-size-sub);
-  font-weight: 500;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: var(--space-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--space-xs);
 }
 
 /* ============================================================
@@ -2772,8 +2741,8 @@ tbody tr:hover {
 
 /* Expandable sections */
 details {
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-md);
   margin-bottom: var(--space-sm);
 }
 
@@ -3191,8 +3160,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
     flex-direction: column;
     gap: var(--space-sm);
     padding: var(--space-md);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-lg);
     background: var(--bg-secondary);
 }
 
@@ -3252,7 +3221,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 /* Section block */
 .scheduler-block {
   background: var(--bg-secondary);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-lg);
   padding: var(--space-lg);
   margin-bottom: var(--space-md);
@@ -3353,8 +3322,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   margin-top: var(--space-md);
   padding: var(--space-sm) var(--space-md);
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
 }
 .scheduler-save-status { font-size: var(--font-size-sm); }
 .scheduler-save-status.is-ok { color: var(--color-good-bright); }
@@ -3660,8 +3629,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   margin-top: var(--space-md);
   padding: var(--space-sm) var(--space-md);
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
 }
 
 .fleet-apply-summary {
@@ -3727,7 +3696,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   background: var(--bg-secondary);
   border: 1px solid var(--border-strong);
   padding: var(--space-lg);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   max-width: 40rem;
   /* The modal scrolls, rather than a list inside it. With the inner cap gone a
    * rollback reporting many divergences would otherwise grow past the viewport
@@ -3812,8 +3781,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 
 /* Per-host outcome row - dry-run preview and executed results share it. */
 .fleet-outcome {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
   background: var(--bg-secondary);
   margin-top: var(--space-sm);
 }
@@ -3860,9 +3829,9 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
 }
-.fleet-stat.score-good { color: var(--color-good-bright); box-shadow: none; }
-.fleet-stat.score-warning { color: var(--color-warning-bright); box-shadow: none; }
-.fleet-stat.score-critical { color: var(--color-critical-bright); box-shadow: none; }
+.fleet-stat.score-good { color: var(--color-good-bright); }
+.fleet-stat.score-warning { color: var(--color-warning-bright); }
+.fleet-stat.score-critical { color: var(--color-critical-bright); }
 
 .fleet-glyph {
   font-weight: 700;
@@ -4066,20 +4035,6 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   color: var(--text-muted);
   font-style: italic;
   font-weight: 500;
-}
-
-/* The legacy bare .score-good/.score-warning/.score-critical rules (old circular
-   gauge) carry a 20px glow box-shadow. The hero card and each compliance row also
-   wear those bare band classes, so suppress the inherited glow here. Higher
-   specificity (0,2,0) beats the bare rule (0,1,0); mini-score and fleet-table use
-   their own scoped selectors and are untouched. */
-.score-hero-main.score-good,
-.score-hero-main.score-warning,
-.score-hero-main.score-critical,
-.compliance-item.score-good,
-.compliance-item.score-warning,
-.compliance-item.score-critical {
-  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -4391,14 +4346,10 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   color: var(--text-muted);
 }
 
-/* Reuse the hero score bar; colour the fill by band, and suppress the legacy
-   bare .score-* glow that the band class would otherwise pull onto the section. */
+/* Reuse the hero score bar; colour the fill by band. */
 .compliance-report.score-good .score-bar-fill { background: var(--color-good); }
 .compliance-report.score-warning .score-bar-fill { background: var(--color-warning); }
 .compliance-report.score-critical .score-bar-fill { background: var(--color-critical); }
-.compliance-report.score-good,
-.compliance-report.score-warning,
-.compliance-report.score-critical { box-shadow: none; }
 
 .compliance-report-score {
   margin-top: var(--space-sm);
@@ -4692,8 +4643,8 @@ details[open] summary { border-bottom: 1px solid var(--border); }
 .hosts-progress { font-size: 0.82rem; color: var(--text-secondary); margin: 0 0 10px; }
 
 /* Inventory list: one hairline-bordered card wrapping the rows. */
-.hosts-list { border: 0.5px solid var(--border); border-radius: 12px; overflow: hidden; }
-.hosts-list-head { display: flex; padding: 8px 14px; border-bottom: 0.5px solid var(--border); }
+.hosts-list { border: 1px solid var(--edge); border-radius: var(--radius-lg); background: var(--bg-secondary); overflow: hidden; }
+.hosts-list-head { display: flex; padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); }
 .hosts-select-all {
   background: none; border: none; cursor: pointer; font-size: 0.76rem;
   color: var(--text-secondary);
@@ -4736,7 +4687,7 @@ details[open] summary { border-bottom: 1px solid var(--border); }
   gap: var(--space-sm);
   padding: var(--space-lg);
   background: var(--bg-secondary);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-lg);
 }
 
