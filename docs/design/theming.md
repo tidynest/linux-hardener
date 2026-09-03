@@ -77,7 +77,8 @@ User selects theme
 
 | File | Purpose |
 |------|---------|
-| `crates/hardener-ui/styles.css` | All theme CSS variables |
+| `crates/hardener-ui/styles.css` | All theme CSS variables, and the two `@font-face` rules at the top |
+| `crates/hardener-ui/fonts/` | The bundled faces, latin subset, OFL licences beside them: Martian Mono (variable weight and width; the display face at full width, the data mono at `--stretch-data`) and IBM Plex Sans (variable weight; the body face). Copied into `dist/` by the `copy-dir` link in `index.html` and served from the app's own origin, which the Tauri CSP allows |
 | `crates/hardener-ui/src/utils/theme.rs` | `THEMES` list plus the `apply_theme`/`get_stored_theme`/`store_theme` helpers; the only writer of `<html data-theme>` and the `theme` localStorage key |
 | `crates/hardener-ui/src/components/theme_picker.rs` | Settings page swatch grid (`ThemePicker`), the primary theme selector |
 | `crates/hardener-ui/src/components/theme_toggle.rs` | Sidebar quick-switch dropdown (`ThemeToggle`); writes `AppState.theme` |
@@ -89,12 +90,12 @@ User selects theme
 
 ## Colour Variable Categories
 
-The theme system defines six categories of themed variable. Four of the six
-override themes set the same 24 variables, so a new theme that sets fewer will
-inherit the default's value for the rest and look subtly wrong rather than
-obviously broken.
+The theme system defines seven categories of themed variable. Every override
+theme sets the same 32: the 24 palette variables and the eight ink-frame ones
+(category 7 below), so a new theme that sets fewer will inherit the default's
+value for the rest and look subtly wrong rather than obviously broken.
 
-**Daywatch sets 25 and High Contrast 26**, and the extras are the point of those
+**Daywatch sets 33 and High Contrast 34**, and the extras are the point of those
 two themes rather than an inconsistency. `--danger-fill` and `--danger-on-fill`
 are defined in the default block and overridden by High Contrast alone, because
 a destructive button carrying the shared token sat at 1.9:1 there.
@@ -199,6 +200,29 @@ to a real line because tone alone does not separate there: `daywatch` to
 that outlines a region uses `--edge`; a rule that divides one region into
 rows uses `--border`.
 
+### 7. The ink frame
+
+The posture strip across the top and the sidebar down the left are one dark
+surface in every theme, the light one included, and the routed page sits
+inside it. Nothing on that surface reads a `--text-*` or `--bg-*` token; it
+has its own set, so a light theme can keep a dark frame without its page
+palette having to serve two grounds at once.
+
+| Variable | Purpose |
+|----------|---------|
+| `--bg-ink` | The frame's surface; darker than `--bg-primary` on the dark themes, `#1c1917` on Daywatch |
+| `--ink-fg` | Primary text on ink: values in the strip, the wordmark |
+| `--ink-muted` | Secondary text on ink: strip keys, nav links at rest, the version line |
+| `--ink-hover` | Translucent white wash for hovered and active nav links, and the frame's own dividers |
+| `--ink-accent` | The accent as painted on ink: the active nav link, the scanning segment |
+| `--ink-good`, `--ink-warning`, `--ink-critical` | Status text on ink: the strip's band and counts |
+
+All eight are literal values in every theme block, never `var()` chains, so
+`validate_contrast.py` can resolve each pair on paper. The dark themes reuse
+their bright status set and their accent; Daywatch cannot, because its status
+set and accent are tuned dark for cream and vanish on ink, so it sets light
+ones (`#34d399`, `#fbbf24`, `#f87171`, and `#2dd4bf` for the accent).
+
 ### Button Styles
 
 `.btn-primary` is ink on paper: the theme's `--text-primary` as the fill and
@@ -207,8 +231,10 @@ guarantees at 13:1 or better is the one the primary action wears, and no
 theme needs a correction for it. It used to be a fixed dark green (`#065f46`),
 which two things argued against. A status colour on a button claims a state
 an unpressed button has not earned, and in Guardian `--color-accent` and
-`--color-good` are the same green, so the primary button was
-indistinguishable from a pass. Hover mixes 15% of the page colour back into
+`--color-good` were at the time the same green, so the primary button was
+indistinguishable from a pass. That collision is gone (see the accent rule
+under Theme Overrides), and the button stays ink because ink cannot collide
+with any status in any future theme either. Hover mixes 15% of the page colour back into
 the fill with `color-mix()`, a step down rather than a colour change.
 `.btn-danger` keeps its own pair, `--danger-fill` and `--danger-on-fill`.
 
@@ -226,29 +252,40 @@ never overridden per theme.
 ```css
 :root,
 [data-theme="default"] {
-  --bg-primary: #0f1419;
+  --bg-primary: #0b1016;
   --color-accent: #22d3ee;
+  --bg-ink: #06090d;
   /* ... */
 }
 ```
 
 ### Theme Overrides
 
-Each theme overrides the same 24 base variables. Daywatch overrides one more
+Each theme overrides the same 32 base variables. Daywatch overrides one more
 (`--color-medium-bright`) and High Contrast two more (`--danger-fill`,
 `--danger-on-fill`):
 
-| Theme | id | Identity | Accent Colour | Background Family |
-|-------|----|----------|---------------|-------------------|
-| **Fortress** | `fortress` | Strategic, vault-like | Gold #fbbf24 | Deep slate-blue #0c1222 |
-| **Sentinel** | `sentinel` | Vigilant, warm | Amber #f59e0b | Warm charcoal #1a1614 |
-| **Command** | `command` | Military precision | Ice-blue #38bdf8 | Deep navy #0a0e1a |
-| **Guardian** | `guardian` | Protective, natural | Emerald #10b981 | Forest black #0c120e |
-| **Daywatch** | `daywatch` | Light, productive | Teal #0d9488 | Warm off-white #f8f6f2 |
-| **High Contrast** | `high-contrast` | Maximum contrast, WCAG AAA | Cyan #67e8f9 | Pure black #000000 |
+| Theme | id | Identity | Accent Colour | Background Family | Ink |
+|-------|----|----------|---------------|-------------------|-----|
+| **Fortress** | `fortress` | Neutral, vault-like | Steel blue #7cb8ff | Slate #111315 | #0a0b0d |
+| **Sentinel** | `sentinel` | Vigilant, warm | Rose #f472b6 | Umber #171210 | #0f0c0a |
+| **Command** | `command` | Precise, cool | Violet #a78bfa | Indigo #0a0c1c | #06071a |
+| **Guardian** | `guardian` | Protective, natural | Ivory #f2e9d8 | Forest black #0b120e | #060b08 |
+| **Daywatch** | `daywatch` | Light, productive | Teal #096961 | Warm off-white #f8f6f2 | #1c1917 |
+| **High Contrast** | `high-contrast` | Maximum contrast, WCAG AAA | Cyan #67e8f9 | Pure black #000000 | #000000 |
 
 Daywatch is the only light theme, and High Contrast is the only theme targeting
 WCAG AAA rather than AA.
+
+**The accent rule.** Every accent is a hue no status colour uses, and no two
+themes share one: teal, steel blue, rose, violet, ivory, dark teal, cyan.
+Selection and the active nav link therefore never read as pass, warn or fail.
+Two themes broke this before the 2026-09 re-palette: Guardian's accent was the
+same emerald as `--color-good`, so a selected row and a passing check were one
+green, and Sentinel's was the same amber as `--color-warning`. Fortress,
+Command and Midnight Teal were also three near-identical blue-blacks told
+apart by accent alone; Fortress is now a neutral slate and Command a real
+indigo, so the surfaces carry the identity and the accent only confirms it.
 
 ---
 
@@ -473,7 +510,7 @@ them.
 
 ## Theme Variable Reference
 
-The 24 variables every override theme sets, followed by the three the default
+The 32 variables every override theme sets, followed by the three the default
 block defines and a single theme each overrides:
 
 ```css
@@ -513,6 +550,16 @@ block defines and a single theme each overrides:
 --color-critical-bg /* Error fills */
 --color-accent-bg   /* Selected surfaces */
 
+/* The ink frame: posture strip and sidebar */
+--bg-ink            /* The frame's surface */
+--ink-fg            /* Primary text on ink */
+--ink-muted         /* Secondary text on ink */
+--ink-hover         /* Hover and active wash, frame dividers (rgba) */
+--ink-accent        /* Accent as painted on ink */
+--ink-good          /* Status text on ink */
+--ink-warning
+--ink-critical
+
 /* Default block defines these; one theme each overrides them */
 --color-medium-bright /* Medium severity text; Daywatch only */
 --danger-fill         /* Destructive button fill; High Contrast only */
@@ -524,10 +571,12 @@ Set once in the base block and **not** themed, so a theme block should leave
 them alone:
 
 ```css
---font-sans, --font-mono
---font-size-caption .. --font-size-display, --tracking-title, --tracking-display
+--font-sans, --font-display, --font-mono, --stretch-data
+--font-size-caption .. --font-size-display, --font-size-strip
+--tracking-title, --tracking-display
 --leading-ui, --leading-prose
 --header-height, --content-padding, --sidebar-width, --sidebar-rail-width
+--width-form, --width-page
 --space-xs .. --space-2xl
 --control-height, --control-pad-x, --row-gap, --section-gap
 --radius-sm, --radius-md, --radius-lg, --radius-full

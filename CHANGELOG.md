@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The console redesign: an ink frame, seven re-paletted themes, bundled
+  fonts.** The posture strip and the sidebar are one dark surface in every
+  theme, the light one included, and the page sits inside it; eight new
+  `--ink-*` tokens carry it, literal per theme so the static contrast
+  validator can weigh them. Every accent is now a hue no status colour uses
+  and no two themes share: Guardian's accent was the same emerald as a pass
+  and Sentinel's the same amber as a warning, and Fortress, Command and
+  Midnight Teal were three near-identical blue-blacks. Fortress is a neutral
+  slate with steel blue, Command an indigo with violet, Guardian a forest
+  with ivory, Sentinel an umber with rose. Martian Mono (variable weight and
+  width) is the display face at full width for the score, the strip, page
+  titles and the tile digits, and the data mono at 87.5% width; IBM Plex
+  Sans is the body face. The score is 64px. The Settings swatches are
+  miniatures of the frame each theme draws. All 322 declared colour pairs
+  pass in all seven themes.
 - **The desktop interface reads as one system: a type scale, tonal depth, one
   primary button, one focus ring.** Page titles set at 24px with tight
   tracking and the score at a 52px mono display size, the only display-size
@@ -30,14 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under the count. Sidebar icons are 18px so their stroke matches the label
   weight. Hosts and scheduler rules that carried `rem` and `px` literals use
   the shared tokens. `T-DASH-02` asserts the new hero text.
-- **No web fonts.** `index.html` linked Inter and JetBrains Mono from Google
-  Fonts, and the Tauri CSP (`default-src 'self'`, no `font-src`) blocked that
-  stylesheet on every launch, so the app has always rendered in the
-  desktop's own fonts while the link only phoned home from browser previews.
-  The link is gone. The font stacks name the faces to bundle under `fonts/`
-  when the files are added (Geist, IBM Plex) and then the local faces a
-  Linux desktop has (Adwaita Sans and Mono, Cantarell, Noto), so the rendered
-  result is chosen rather than accidental.
+- **Fonts are bundled, not fetched.** `index.html` linked Inter and JetBrains
+  Mono from Google Fonts, and the Tauri CSP (`default-src 'self'`, no
+  `font-src`) blocked that stylesheet on every launch, so the app had always
+  rendered in the desktop's own fonts while the link only phoned home from
+  browser previews. The link is gone; two variable woff2 files (Martian Mono,
+  IBM Plex Sans, latin subset, OFL, about 85 KB) live under
+  `crates/hardener-ui/fonts/`, reach `dist/` through a `copy-dir` link and
+  are served from the app's own origin. The stacks fall back to the local
+  faces a Linux desktop has (Adwaita Sans and Mono, JetBrainsMono Nerd Font,
+  Cantarell, Noto), so a failed load degrades to the previous look.
 
 ### Fixed
 
@@ -104,6 +121,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A posture strip on every route and a hardening area map on the
+  Dashboard.** The strip is a read-only statusline above the page: score and
+  band, live critical and high counts, the last-scan stamp, and a scanning
+  segment. It holds no button, heading or live region, so the one scan
+  button per page and the hero's status region stay unique for the test
+  suite. The area map is one tile per hardening area in the order the
+  Hardening page lists them, banded by the worst live severity, with a
+  digit row for critical, high, medium and low; an area the scan did not
+  reach, one disabled by configuration and one whose scan failed each get
+  their own look so none can pass for clean. Policy-excepted findings are
+  counted aside, matching the Findings tab's split. Both read a new
+  `AppState::last_scan_completed_at`, owned by one `Effect` in `App`, which
+  replaces the Dashboard's and Analysis's private history fetches and now
+  also refreshes after a privileged deep scan. Five unit tests on the pure
+  half, and `T-DASH-12` asserts eight tiles and the kernel tile's band.
 - **`scripts/test/ssh-ignored-suite.sh`: the SSH fixture's `#[ignore]` tests in
   one command.** Three binaries gate on `SSH_TEST_HOST` and ran only when
   someone booted the fixture, exported its variables and named each binary

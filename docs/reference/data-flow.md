@@ -817,6 +817,7 @@ All GUI state lives in `AppState` (`hardener-ui/src/state/mod.rs`). Each field i
 | `config_path` | `RwSignal<Option<String>>` | Selected config file path |
 | `config_summary` | `RwSignal<Option<ConfigSummary>>` | Validated config file summary |
 | `deep_scan_running` | `RwSignal<bool>` | Shared privileged deep-scan button state |
+| `last_scan_completed_at` | `RwSignal<Option<String>>` | History-backed stamp of the last completed scan; one `Effect` in `App` re-reads it whenever a scan or deep scan finishes, and the posture strip, Dashboard and Analysis subtitles all read it |
 | `theme` | `RwSignal<String>` | Active colour theme id (see `utils::theme::THEMES`); shared by the sidebar quick-switch and the Settings page grid, applied to `<html data-theme>` and persisted by a single `Effect` in `App` |
 
 **Not in `AppState`, deliberately.** Two results that a reader might expect here
