@@ -474,9 +474,7 @@ failing gate meant retracting a published tag rather than deleting a local one.
 - [ ] `packaging/debian/changelog`: fill the bullets of the top stanza step 3d
       inserted with a TODO header
 - [ ] Publish to the AUR, following the note under [Version
-      Locations](#version-locations). Read it before starting: while the
-      one-time rename note stands, publishing is a **new submission** and not a
-      push to the existing package
+      Locations](#version-locations)
 - [ ] AUR badge pair once that package is live, not before: the `aur` `message`
       in `scripts/badges/generate.js` and `docs/assets/badges/aur.svg`. They
       track `PKGBUILD` rather than the tag, so a badge updated at the tag
@@ -491,9 +489,6 @@ failing gate meant retracting a published tag rather than deleting a local one.
       instead of a number
 - [ ] **Install the first packaged build on a real host and run it** before
       announcing anything. A package that builds is not a package that installs
-- [ ] Delete the one-time rename note in this file once the release carrying it
-      has shipped. A one-time note left in place is a permanent instruction to
-      do a one-time thing
 
 ---
 
