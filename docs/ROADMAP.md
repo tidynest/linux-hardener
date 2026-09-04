@@ -527,10 +527,10 @@ across all eight plugins, honest unchecked reporting, remote privilege probing),
 fixes), and **v1.5.1** (`scan --exit-code` fails on an incomplete scan,
 `scan --compliance` removed, and the openSUSE vendor-configuration fix).
 
-**v1.8.2 is the current release.** No count is given here on purpose: it
+**v1.9.0 is the current release.** No count is given here on purpose: it
 changes with every commit, and the two figures that used to stand in this
 sentence were both stale within days. Read whatever has accumulated since
-the tag with `git rev-list --count v1.8.2..main`.
+the tag with `git rev-list --count v1.9.0..main`.
 `CHANGELOG.md` `[Unreleased]` describes unreleased work.
 
 ### GUI/UX Redesign (Desktop) ✅ (shipped in v1.5.0)

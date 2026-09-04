@@ -7,8 +7,8 @@ security fixes; there are no backports, so upgrade rather than pin.
 
 | Version           | Supported          | Notes                                                 |
 | ----------------- | ------------------ | ----------------------------------------------------- |
-| 1.8.x             | :white_check_mark: | Current release series                                |
-| 1.7.x and earlier | :x:                | End of life; upgrade                                  |
+| 1.9.x             | :white_check_mark: | Current release series                                |
+| 1.8.x and earlier | :x:                | End of life; upgrade                                  |
 | 1.4.x and earlier | :x:                | Also affected by GHSA-x4xp-32mf-xwjh, fixed in 1.5.0 |
 
 There are no backported patches. GHSA-x4xp-32mf-xwjh applies to every release up

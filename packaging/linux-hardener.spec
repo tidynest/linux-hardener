@@ -116,6 +116,11 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Fri Sep 04 2026 Eric Jingryd <tidynest@proton.me> - 1.9.0-1
+- Added: a posture strip on every route (score and band, live critical and high counts, the last-scan stamp, a scanning segment) and a Dashboard area map, one tile per hardening area banded by the worst live severity, with not-scanned, disabled-by-config and scan-failed states that cannot pass for clean
+- Added: scripts/test/ssh-ignored-suite.sh runs the SSH fixture's ignored tests in one command, and the rollback modal's lifecycle has browser coverage (T-RBM-01..09)
+- Changed: the desktop's console redesign: an ink frame (the strip and the sidebar are one dark surface in every theme, the light one included), seven re-paletted themes whose accents no status colour shares, Martian Mono and IBM Plex Sans bundled and served from the app's own origin, a 64px score, tonal surfaces with a faint edge, an underline tab strip, one ink primary button, one focus ring and a reduced-motion floor
+- Fixed: the accent stripe the focus ring drew down the sidebar's edge on every screen; the audit dry-run previews the rules file the apply writes (#180); a compliance report request naming no known framework is refused rather than answered with nothing; audit rules no longer saturate the kernel backlog (-b 65536, auid-scoped delete and perm-mod rules, no b32 mirrors); the two backend error texts the interface matches on are one definition each in hardener-types
 * Mon Aug 31 2026 Eric Jingryd <tidynest@proton.me> - 1.8.2-1
 - Added: a plugin the configuration disables rides in the scan results as a marker entry naming its remedy, across the CLI's JSON, the desktop's scans and the persisted session, and compliance scores its controls ManualReview rather than passing them on their own silence
 - Changed: the polkit test matrix's three interactive arms are rewritten and field-executed on the real desktop; the cancel arm runs first because the policy's auth_admin_keep caches a successful authentication for five minutes, inside which no dialog can be raised to cancel
