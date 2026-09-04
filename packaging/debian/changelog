@@ -1,3 +1,11 @@
+linux-hardener (1.9.0-1) unstable; urgency=medium
+
+  * TODO: the 1.9.0 release notes, mirroring CHANGELOG.md's
+    [1.9.0] section. Fill in before packaging; this is the
+    after-the-tag checklist item.
+
+ -- Eric Jingryd <tidynest@proton.me>  Fri, 04 Sep 2026 16:28:55 +0000
+
 linux-hardener (1.8.2-1) unstable; urgency=medium
 
   * Added: a plugin the configuration disables now rides in the scan

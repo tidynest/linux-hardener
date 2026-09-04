@@ -473,7 +473,7 @@ See `docs/plans/archive/2026-02-24-gui-cli-parity.md`: all 6 phases complete.
   2026-08-04 with `cargo test --workspace --no-fail-fast`; re-measure before
   quoting it, this number moves most weeks
 - **Multi-Distribution Support**: Debian, Red Hat, Arch, SUSE families
-- **Current Version**: 1.8.2 (code, tag and packaging; the AUR package
+- **Current Version**: 1.9.0 (code, tag and packaging; the AUR package
   followed on 2026-08-31). **No count here**,
   per this file's own opening rule: the pair read "189 commits, 178 excluding
   merges" from 2026-08-02 and measured 819 and 778 on 2026-08-18. Read whatever
@@ -550,4 +550,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-08-31
+**Last Updated**: 2026-09-04

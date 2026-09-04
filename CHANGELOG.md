@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-09-04
+
 ### Changed
 
 - **The console redesign: an ink frame, seven re-paletted themes, bundled
@@ -8144,4 +8146,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-09-03
+**Last Updated**: 2026-09-04
