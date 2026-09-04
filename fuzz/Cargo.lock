@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-common"
-version = "1.8.2"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -550,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-core"
-version = "1.8.2"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-plugins"
-version = "1.8.2"
+version = "1.9.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-state"
-version = "1.8.2"
+version = "1.9.0"
 dependencies = [
  "chrono",
  "ed25519-dalek",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "hardener-types"
-version = "1.8.2"
+version = "1.9.0"
 dependencies = [
  "chrono",
  "serde",
