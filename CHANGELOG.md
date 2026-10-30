@@ -25,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now makedepends. rustup provides both names, so a rustup toolchain still
   satisfies them. The Arch line in the installation guide lists them too.
 
+### Security
+
+- **Notification TLS no longer trusts distrusted intermediates (#184).**
+  `rustls-webpki` 0.103.16 fixes RUSTSEC-2026-0382, where certificate
+  verification could accept distrusted intermediates, and `webpki-roots`
+  1.0.11 fixes RUSTSEC-2026-0381, whose bundled roots trusted distrusted
+  emSign intermediates. Both reach the binaries through the scheduler's
+  webhook and email clients, `reqwest` and `lettre`. `tokio` moves from
+  1.48.0 to 1.54.1 for RUSTSEC-2026-0386, an unsound `AsyncFd` constructor
+  nothing in the project calls directly, and brings `mio`, `socket2`, `libc`
+  and `tokio-macros` forward with it. The detached fuzz lockfile gets the
+  same three fixes.
+
 ## [1.9.0] - 2026-09-04
 
 ### Changed
