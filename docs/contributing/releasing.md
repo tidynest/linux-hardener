@@ -535,4 +535,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-08-30
+**Last Updated**: 2026-09-04
