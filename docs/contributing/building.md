@@ -47,6 +47,17 @@ Binary paths below assume the default cargo target directory (`./target`). With
 lands under the configured directory instead; the repository's test scripts
 resolve this automatically (see `docs/contributing/testing.md`).
 
+**On a fresh clone, build the frontend first.** `cargo build`, `cargo check`,
+`cargo clippy` and `cargo test` run from the root or with `--workspace` all
+compile the desktop crate, and `tauri::generate_context!()` in
+`src-tauri/src/main.rs` embeds `crates/hardener-ui/dist/` as it does. Trunk
+generates that directory and `.gitignore` excludes it, so until the
+[production WASM build](#production-wasm-build) has run, each of those commands
+stops with `frontendDist ... this path doesn't exist`. `cargo tauri build` runs
+that step itself and plain `cargo` does not. Rerun it after frontend changes too,
+since the desktop binary embeds whatever `dist/` holds when it compiles. Commands
+scoped with `-p` to any other crate are unaffected.
+
 ---
 
 ## CLI Binary
@@ -76,7 +87,7 @@ cargo build                    # Debug, all crates
 cargo build --release          # Release, all crates
 ```
 
-Builds every crate in the workspace including CLI, core, plugins, state, and the Tauri backend.
+Builds every crate in the workspace including CLI, core, plugins, state, and the Tauri backend. The Tauri backend needs `crates/hardener-ui/dist/` to exist, so on a fresh clone run the [production WASM build](#production-wasm-build) first.
 
 ### Cross-compilation targets
 
@@ -143,7 +154,7 @@ Prints Tauri version, system dependencies, and environment details for debugging
 
 ## WASM Frontend (Trunk)
 
-The Leptos frontend in `crates/hardener-ui/` is compiled to WASM via Trunk. You rarely need these directly; `cargo tauri dev` and `cargo tauri build` run them automatically.
+The Leptos frontend in `crates/hardener-ui/` is compiled to WASM via Trunk. `cargo tauri dev` and `cargo tauri build` run these automatically, but a plain `cargo` build of the workspace does not, which is why a fresh clone needs the production build below before anything else.
 
 ### Dev server
 
@@ -247,4 +258,4 @@ rustup target list --installed               # List currently installed targets
 cargo update --workspace                     # Update all dependencies in Cargo.lock
 ```
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-10-30

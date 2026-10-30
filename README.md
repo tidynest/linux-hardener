@@ -89,18 +89,28 @@ Details in [`packaging/docker/README.md`](packaging/docker/README.md).
 
 ### From source
 
-Rust 1.88 or newer, with the `wasm32-unknown-unknown` and
-`x86_64-unknown-linux-musl` targets plus a musl toolchain for the static binary.
+Rust 1.88 or newer with the `wasm32-unknown-unknown` target, and
+[trunk](https://trunkrs.dev) for the desktop app's frontend. The system
+libraries each distribution needs are in the
+[installation guide](docs/guide/installation.md#install-from-source).
 
 ```bash
 git clone https://github.com/tidynest/linux-hardener.git
 cd linux-hardener
+cd crates/hardener-ui && trunk build --release && cd ../..
 cargo build --release
 cargo test
 ```
 
-Cross-compilation, the desktop build and development mode are in
-[docs/contributing/building.md](docs/contributing/building.md).
+The trunk step has to come first. The desktop crate embeds
+`crates/hardener-ui/dist/` when it compiles, and that directory comes from
+Trunk rather than from git, so on a fresh clone `cargo build` stops with
+`frontendDist ... this path doesn't exist`. The command-line tool on its own,
+`cargo build --release -p hardener-cli`, needs neither trunk nor the WASM
+target.
+
+Cross-compilation, the static musl binary, the desktop build and development
+mode are in [docs/contributing/building.md](docs/contributing/building.md).
 
 ---
 
@@ -550,4 +560,4 @@ Drawing on [Lynis](https://cisofy.com/lynis/),
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-hardener
 
-**Last Updated**: 2026-09-04
+**Last Updated**: 2026-10-30

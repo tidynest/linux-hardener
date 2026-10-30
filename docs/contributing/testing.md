@@ -22,6 +22,11 @@ ignored ones are mostly the root-only and live-sshd tests described further down
 with a few that want a particular firewall backend installed; they are not
 failures and an ordinary `cargo test` does not run them.
 
+On a fresh clone, run the
+[production WASM build](building.md#production-wasm-build) before this. Without
+it the desktop crate fails to compile, because it embeds the bundle that build
+creates.
+
 Any count in this file is a record of one measurement on one day, not a property
 of the tree. Where a number matters, run the command and read what it says.
 
@@ -1726,4 +1731,4 @@ in `build-mode: none`, on every push and pull request to `main` and on a schedul
 (Mondays, 06:00 UTC). It has no local reproduction: results go to the
 repository's security tab.
 
-**Last Updated**: 2026-08-22
+**Last Updated**: 2026-10-30

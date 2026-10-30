@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Building from source the way the README describes works on a fresh clone
+  (#183).** The README went straight to `cargo build --release`, but the
+  desktop crate embeds `crates/hardener-ui/dist/` when it compiles, and that
+  directory comes from Trunk and is gitignored, so a fresh clone stopped with
+  `frontendDist ... this path doesn't exist`. The README, `CONTRIBUTING.md`,
+  `docs/contributing/building.md` and `docs/contributing/testing.md` now run
+  `trunk build --release` first, the order CI and every packaging recipe
+  already used.
+
 ## [1.9.0] - 2026-09-04
 
 ### Changed

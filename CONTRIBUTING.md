@@ -11,6 +11,7 @@ This project adheres to a code of conduct that all contributors are expected to 
 ### Prerequisites
 
 - Rust 1.88 or later
+- [trunk](https://trunkrs.dev) and the `wasm32-unknown-unknown` target, for the desktop crate
 - Linux system (for full functionality testing)
 - Git
 
@@ -20,6 +21,9 @@ This project adheres to a code of conduct that all contributors are expected to 
 # Clone the repository
 git clone https://github.com/tidynest/linux-hardener.git
 cd linux-hardener
+
+# Build the frontend bundle the desktop crate embeds (see below)
+cd crates/hardener-ui && trunk build --release && cd ../..
 
 # Format code
 cargo fmt --all
@@ -34,8 +38,8 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-Those four commands are the full local gate. Run all four before opening a pull
-request, in that order.
+The four commands after the trunk build are the full local gate. Run all four
+before opening a pull request, in that order.
 
 This is a virtual workspace, so `cargo build` and `cargo test` without
 `--workspace` already select every member. The flag is written out because the
@@ -44,10 +48,18 @@ easy to see.
 
 `--workspace` includes `linux-hardener-desktop` (the Tauri backend under
 `src-tauri/`) and `hardener-ui` (the Leptos frontend), which need GTK and
-WebKitGTK development packages present on the host. CI skips both crates for
-exactly that reason (see `WORKSPACE_EXCLUDE` in `.github/workflows/ci.yml`). If
+WebKitGTK development packages present on the host. Several CI jobs skip both
+crates for that reason, through `WORKSPACE_EXCLUDE` in
+`.github/workflows/ci.yml`. The test job does not. It installs the packages and
+runs the same trunk build as above before `cargo test --workspace`. If
 you have not installed those system packages, scope your commands to the crate
-you are changing, for example `cargo test -p hardener-plugins`. System packages,
+you are changing, for example `cargo test -p hardener-plugins`.
+
+The desktop crate also embeds `crates/hardener-ui/dist/` when it compiles, which
+is why the trunk build comes first. Trunk generates that directory and git does
+not carry it, so on a fresh clone every workspace command from clippy onwards
+stops with `frontendDist ... this path doesn't exist`. Rerun the trunk build after changing
+the frontend, or the desktop binary embeds the old bundle. System packages,
 rustup targets and the desktop and WASM builds are covered in
 [docs/contributing/building.md](docs/contributing/building.md).
 
@@ -366,4 +378,4 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 Thank you for contributing to Linux Hardener!
 
-**Last Updated**: 2026-08-29
+**Last Updated**: 2026-10-30
