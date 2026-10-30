@@ -116,6 +116,9 @@ systemctl daemon-reload || true
 %dir %{_libdir}/linux-hardener
 
 %changelog
+* Fri Oct 30 2026 Eric Jingryd <tidynest@proton.me> - 1.9.1-1
+- Security: rustls-webpki 0.103.16 and webpki-roots 1.0.11 for RUSTSEC-2026-0382 and RUSTSEC-2026-0381, which weakened TLS verification in the scheduler's webhook and email clients (#184), and tokio 1.54.1 for RUSTSEC-2026-0386
+- Fixed: the README's from-source steps build the frontend with trunk before cargo, so a fresh clone builds (#183), and the PKGBUILD's makedepends name rust-musl and rust-wasm, so it builds with Arch's own rust package
 * Fri Sep 04 2026 Eric Jingryd <tidynest@proton.me> - 1.9.0-1
 - Added: a posture strip on every route (score and band, live critical and high counts, the last-scan stamp, a scanning segment) and a Dashboard area map, one tile per hardening area banded by the worst live severity, with not-scanned, disabled-by-config and scan-failed states that cannot pass for clean
 - Added: scripts/test/ssh-ignored-suite.sh runs the SSH fixture's ignored tests in one command, and the rollback modal's lifecycle has browser coverage (T-RBM-01..09)
