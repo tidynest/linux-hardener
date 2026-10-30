@@ -489,7 +489,7 @@ and where the two differ this page follows the tree.
 
 ### Releases
 
-**Version**: 1.9.0
+**Version**: 1.9.1
 
 Install a release unless you have a reason not to. Per-release detail is in
 [CHANGELOG.md](CHANGELOG.md), and anything a release fixed that your already

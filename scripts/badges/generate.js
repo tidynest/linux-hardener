@@ -24,7 +24,7 @@ const logoURI = name => {
 
 // Bump `message` on release for version / aur / tests; the rest are constant.
 const BADGES = [
-  { file: 'version',  label: 'version',  message: '1.9.0',      color: TEAL },
+  { file: 'version',  label: 'version',  message: '1.9.1',      color: TEAL },
   { file: 'license',  label: 'license',  message: 'Apache-2.0', color: TEAL },
   { file: 'rust',     label: 'rust',     message: '1.88+',      color: TEAL,       logo: 'rust' },
   { file: 'aur',      label: 'AUR',      message: '1.9.0',      color: TEAL,       logo: 'archlinux' },

@@ -1,3 +1,11 @@
+linux-hardener (1.9.1-1) unstable; urgency=medium
+
+  * TODO: the 1.9.1 release notes, mirroring CHANGELOG.md's
+    [1.9.1] section. Fill in before packaging; this is the
+    after-the-tag checklist item.
+
+ -- Eric Jingryd <tidynest@proton.me>  Fri, 30 Oct 2026 19:34:45 +0000
+
 linux-hardener (1.9.0-1) unstable; urgency=medium
 
   * Added: a posture strip on every route (score and band, live critical
