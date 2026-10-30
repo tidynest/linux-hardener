@@ -1,6 +1,6 @@
 # Installation Guide
 
-**Last Updated**: 2026-08-29
+**Last Updated**: 2026-10-30
 
 ## Requirements
 
@@ -201,8 +201,13 @@ compiles the Leptos frontend to WASM. Arch packages it; elsewhere install it wit
 
 **Arch:**
 ```bash
-sudo pacman -S rust cargo musl trunk pkg-config openssl gtk3 webkit2gtk-4.1 libxcb libxkbcommon librsvg
+sudo pacman -S rust cargo rust-musl rust-wasm musl trunk pkg-config openssl gtk3 webkit2gtk-4.1 libxcb libxkbcommon librsvg
 ```
+
+Arch's `rust` carries only the host target, so the musl and WASM targets come
+from `rust-musl` and `rust-wasm`. With rustup instead, leave out the four Rust
+packages and run
+`rustup target add x86_64-unknown-linux-musl wasm32-unknown-unknown`.
 
 **Fedora/RHEL:**
 ```bash

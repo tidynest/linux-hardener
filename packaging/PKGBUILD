@@ -48,6 +48,12 @@ makedepends=(
     'librsvg'
     'rust'
     'cargo'
+    # Arch's rust package carries only the host target, and build() compiles
+    # for two more: the CLI for x86_64-unknown-linux-musl and the frontend for
+    # wasm32-unknown-unknown. rustup provides both names, so a rustup
+    # toolchain satisfies them, but only `rustup target add` installs them.
+    'rust-musl'
+    'rust-wasm'
     'trunk'
     'pkg-config'
 )

@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/contributing/building.md` and `docs/contributing/testing.md` now run
   `trunk build --release` first, the order CI and every packaging recipe
   already used.
+- **The PKGBUILD builds with Arch's own Rust package, not only with rustup.**
+  `build()` compiles the CLI for `x86_64-unknown-linux-musl` and the frontend
+  for `wasm32-unknown-unknown`, but Arch's `rust` carries only the host target
+  and the makedepends named nothing else, so without rustup the first
+  `cargo build` had no musl standard library. `rust-musl` and `rust-wasm` are
+  now makedepends. rustup provides both names, so a rustup toolchain still
+  satisfies them. The Arch line in the installation guide lists them too.
 
 ## [1.9.0] - 2026-09-04
 
