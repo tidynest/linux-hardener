@@ -889,11 +889,15 @@ suite_rollback() {
     # the runtime sysctl one and pam where login.defs is absent, and a sentence
     # listing what was read has to be corrected every time another is added or
     # it starts overstating again. Pointing at the log cannot rot.
+    #
+    # It does name rollback-booted, though. The arms that skip under --pipe for
+    # want of systemd as PID 1 run in that pass, and a reader of the table alone
+    # otherwise saw a hole where the next row holds the answer.
     case $exit_code in
         0) record_result rollback PASS \
             "kernel (file and runtime), ssh, permissions, pam and firewall (config and live) read back after rollback" ;;
         2) record_result rollback PASS \
-            "passed, but at least one arm was not asked, see $logfile" ;;
+            "passed, but at least one arm was not asked here, the arms that need a booted service manager are the rollback-booted row, see $logfile" ;;
         *) record_result rollback FAIL \
             "exit $exit_code, see $logfile (first ever run: baseline, not a regression)" ;;
     esac

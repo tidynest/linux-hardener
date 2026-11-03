@@ -70,7 +70,7 @@ cross-distro   PASS     6 distros, booted, apply
 differential   PASS     6 distros, booted
 package        PASS     6 distros, installed binary applied and rolled back
 gui            FAIL     exit 1, see gui.log
-rollback       PASS     passed, but at least one arm was not asked
+rollback       PASS     passed, but at least one arm was not asked here, the arms that need a booted service manager are the rollback-booted row, see rollback.log
 rollback-booted PASS     ssh, service-minimisation and audit divergence arms
 
 Logs: <suite>.log
@@ -81,6 +81,15 @@ check "$PREV_DATE" "Fri 28 Aug 22:59:46 CEST 2026" "the previous run's date is r
 check "${PREV_STATUS[gui]:-}" "FAIL" "a previous FAIL is recovered as a FAIL"
 check "${PREV_DETAIL[cross-distro]:-}" "6 distros, booted, apply" "a detail containing spaces survives the parse"
 check "${PREV_STATUS[rollback-booted]:-}" "PASS" "the display-only rollback-booted row is recovered"
+
+# The unbooted rollback pass skips the arms that need systemd as PID 1, and
+# rollback-booted is where they run. A row that says only "not asked" reads as
+# a hole to anyone who opens the table alone, so the real runner's exit 2
+# detail has to name its partner.
+ROLLBACK_SKIP_DETAIL="$(/usr/bin/grep -A1 '^[[:space:]]*2) record_result rollback PASS' "$TARGET" | tail -1)"
+[[ "$ROLLBACK_SKIP_DETAIL" == *"not asked"* && "$ROLLBACK_SKIP_DETAIL" == *"rollback-booted"* ]] \
+    && pass "the rollback row's skip detail points at rollback-booted" \
+    || fail "the rollback row's skip detail does not name rollback-booted: ${ROLLBACK_SKIP_DETAIL:-nothing matched}"
 
 # The case that started this: sudo release-readiness-root.sh --only gui, passing.
 DISPLAY_SUITES=(gui)
