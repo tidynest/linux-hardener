@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`event-listener` moves from 5.4.1 to 5.4.2 for RUSTSEC-2026-0221.** The
+  older version marked its stack listener `Send` and `Sync` whatever tag it
+  carried, so a `!Send` tag could cross threads in safe code. It reaches the
+  binaries through `sqlx-core` and through `async-lock` under Leptos, and no
+  workspace crate depends on it directly. 5.4.2 also drops `concurrent-queue`,
+  which leaves the lockfile. The detached fuzz lockfile was already on 5.4.2.
+
 ## [1.9.1] - 2026-10-30
 
 ### Fixed
@@ -8179,4 +8188,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-11-03
