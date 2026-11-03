@@ -1,6 +1,6 @@
 # Linux Hardener - File Map
 
-**Last Updated**: 2026-09-03
+**Last Updated**: 2026-11-03
 
 This document lists all source files with their purpose and key exports.
 
@@ -341,6 +341,7 @@ pub struct FileState {
 | `src/output/pdf.rs` | PDF formatter | `PdfFormatter` |
 | `src/fonts/NotoSans-Regular.ttf` | Embedded font | Regular weight |
 | `src/fonts/NotoSans-Bold.ttf` | Embedded font | Bold weight |
+| `src/fonts/LICENSE-noto-sans.txt` | SIL OFL 1.1 text for both Noto Sans weights, which every package installs beside its own licence | Noto Project Authors copyright line |
 | `src/generator/tests.rs` | Unit tests for `src/generator.rs` | Test-only; `super` resolves to `crate::generator`, so its imports carried across unchanged. They call `score` rather than `generate`, being about the scoring rules: `generate` would flatten first and add a stand-in for the plugin that declared their synthetic coverage and produced no result |
 | `src/scan_evidence/tests.rs` | Unit tests for `src/scan_evidence.rs`, 14 tests: the coverage an incomplete scan carries, a disabled plugin not reading as a failed one, a full scan contributing nothing, an absent plugin being reported unassessed, disabled against uncovered, the three blockers, a result from an unknown plugin, both directions of an unenumerable registry, the assessed set being a deduplicated union, a skip marker routing by its reason rather than through the failure arm, a marker for an unregistered plugin standing in for nothing, and a plugin both marked and passed as skipped yielding one stand-in | Test-only; ported from `hardener-plugins/src/scan_outcome/tests.rs` with the flatten. They build their inventory by hand, so the assertions do not move when the real eight plugins change what they declare |
 | `src/profiles/tests.rs` | Unit tests for `src/profiles.rs` | Test-only; `super` resolves to `crate::profiles` |
@@ -1085,4 +1086,4 @@ counts measured the same way and on the same date as the table above.
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-09-03
+**Last Updated**: 2026-11-03

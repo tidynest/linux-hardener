@@ -160,7 +160,12 @@ WRAPPER
     install -dm700 "$pkgdir/var/lib/linux-hardener"
     install -dm700 "$pkgdir/var/log/linux-hardener"
 
-    # Licence and docs
+    # Licence and docs. The three fonts the binaries embed are under the SIL
+    # OFL 1.1, which requires its text to travel with every copy.
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname/" \
+        crates/hardener-compliance/src/fonts/LICENSE-noto-sans.txt \
+        crates/hardener-ui/fonts/LICENSE-ibm-plex-sans.txt \
+        crates/hardener-ui/fonts/LICENSE-martian-mono.txt
     install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

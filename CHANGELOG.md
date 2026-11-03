@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The packages carry the licences of the fonts the binaries embed.** The
+  PDF report embeds Noto Sans and the desktop embeds Martian Mono and IBM Plex
+  Sans, all three under the SIL Open Font License 1.1, which requires its text
+  to accompany every copy. Noto Sans had no licence text in the tree at all and
+  now has `crates/hardener-compliance/src/fonts/LICENSE-noto-sans.txt`. The
+  PKGBUILD and the RPM spec install all three licence files beside the
+  project's own, and the Debian copyright file gains a stanza per font and the
+  OFL text.
+
 ### Security
 
 - **`event-listener` moves from 5.4.1 to 5.4.2 for RUSTSEC-2026-0221.** The

@@ -99,6 +99,9 @@ systemctl daemon-reload || true
 
 %files
 %license LICENSE
+%license crates/hardener-compliance/src/fonts/LICENSE-noto-sans.txt
+%license crates/hardener-ui/fonts/LICENSE-ibm-plex-sans.txt
+%license crates/hardener-ui/fonts/LICENSE-martian-mono.txt
 %doc README.md
 %doc packaging/assets/config.toml.example
 %{_bindir}/hardener
