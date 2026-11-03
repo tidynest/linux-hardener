@@ -551,7 +551,8 @@ Apache License, Version 2.0. See [LICENSE](LICENSE).
 Some fonts ride along under the SIL Open Font License, Version 1.1. Both
 binaries embed Noto Sans for the PDF reports, and the desktop app also embeds
 Martian Mono and IBM Plex Sans. Each font's licence text sits beside it in the
-tree, and every package installs those texts next to `LICENSE`.
+tree, and every package installs those texts next to `LICENSE`. The release
+tarballs hold only the CLI, so they carry `LICENSE` and the Noto Sans text.
 
 ## Acknowledgements
 

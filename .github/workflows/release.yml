@@ -93,11 +93,17 @@ jobs:
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
+      # The binary embeds Noto Sans for PDF reports, and the font's SIL OFL 1.1
+      # requires its text in every copy, so the archive carries that licence
+      # beside the project's own. --transform drops the source directories,
+      # which leaves all three files at the archive root where the binary
+      # always was.
       - name: Create tarball
         run: |
-          cd target/${{ matrix.target }}/release
-          tar -czvf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
-          cd ../../..
+          tar -czvf ${{ matrix.asset_name }}.tar.gz --transform 's|.*/||' \
+            target/${{ matrix.target }}/release/${{ matrix.artifact_name }} \
+            LICENSE \
+            crates/hardener-compliance/src/fonts/LICENSE-noto-sans.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

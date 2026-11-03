@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Tauri bundle settings carry the same expression. The README and the man page
   now say which fonts the binaries embed. The other crates keep `Apache-2.0`,
   since they hold only the project's own code.
+- **The release tarballs carry `LICENSE` and the Noto Sans licence.** Each
+  archive held the `hardener` binary and nothing else, though the binary embeds
+  Noto Sans for PDF reports. The two licence texts now sit beside it at the
+  archive root, so extracting and installing works as before.
 
 ### Security
 

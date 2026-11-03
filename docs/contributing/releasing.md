@@ -252,6 +252,11 @@ Releases produce these artifacts:
 | `hardener-linux-x86_64-musl.tar.gz` | x86_64-unknown-linux-musl | Static binary (portable) |
 | `hardener-linux-aarch64.tar.gz` | aarch64-unknown-linux-gnu | ARM64 Linux binary |
 
+Each archive holds the `hardener` binary with `LICENSE` and
+`LICENSE-noto-sans.txt` beside it. The second is there because the binary
+embeds Noto Sans for PDF reports, and the font's licence asks for its text to
+travel with every copy.
+
 ### Branch Synchronisation
 
 The `main` branch is kept in sync on both GitHub and GitLab. The release script handles this automatically:
@@ -535,4 +540,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-09-04
+**Last Updated**: 2026-11-03

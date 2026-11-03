@@ -1,6 +1,6 @@
 # Installation Guide
 
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-11-03
 
 ## Requirements
 
@@ -89,7 +89,8 @@ A portable musl-linked binary works on any Linux distribution without dependenci
 # Download the latest release
 curl -LO https://github.com/tidynest/linux-hardener/releases/latest/download/hardener-linux-x86_64-musl.tar.gz
 
-# Extract
+# Extract: the binary, LICENSE, and LICENSE-noto-sans.txt for the font it
+# embeds in PDF reports
 tar xzf hardener-linux-x86_64-musl.tar.gz
 
 # Install system-wide
