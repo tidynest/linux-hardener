@@ -71,8 +71,8 @@ install from source are all covered in the
 
 ### Docker, for a read-only audit
 
-A `FROM scratch` image carrying only the static binary can audit the host
-without being able to change it:
+A `FROM scratch` image holding only the static binary and its licence texts
+can audit the host without being able to change it:
 
 ```bash
 docker build -f packaging/docker/Dockerfile -t linux-hardener .

@@ -1,7 +1,10 @@
 # Docker image
 
-Minimal `FROM scratch` image carrying only the static musl `hardener` binary,
-for read-only scans and compliance reports against the host.
+Minimal `FROM scratch` image carrying the static musl `hardener` binary and
+its two licence texts, for read-only scans and compliance reports against the
+host. The binary embeds Noto Sans for PDF reports, so the image ships that
+font's licence beside `LICENSE`, and its `org.opencontainers.image.licenses`
+label reads `Apache-2.0 AND OFL-1.1`.
 
 Build from the **repository root** (the build context must be the repository
 root, where `.dockerignore` lives):

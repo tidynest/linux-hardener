@@ -110,8 +110,10 @@ sudo install -Dm644 packaging/assets/config.toml.example /etc/linux-hardener/con
 ## Run with Docker (Scan and Report Only)
 
 A minimal container image supports read-only auditing of the host. The image
-is built `FROM scratch` and contains a single file: the statically linked
-musl `hardener` binary. No shell, no libraries, no package manager.
+is built `FROM scratch` and contains the statically linked musl `hardener`
+binary, plus `LICENSE` and the Noto Sans licence under
+`/usr/share/licenses/linux-hardener/`. No shell, no libraries, no package
+manager.
 
 ### Build
 

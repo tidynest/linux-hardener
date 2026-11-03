@@ -142,6 +142,12 @@ cargo tauri build
 
 Produces distributable packages: `.AppImage`, `.deb`, and `.rpm` (configured in `src-tauri/tauri.conf.json`).
 
+The desktop binary embeds Noto Sans, Martian Mono and IBM Plex Sans, which are
+under the SIL OFL 1.1, so `bundle.license` reads `Apache-2.0 AND OFL-1.1` and
+each bundle carries the licence texts. The `.deb` gets `packaging/debian/copyright`
+as its copyright file. The `.rpm` and the AppImage get `LICENSE` and the three
+font licences under `/usr/share/licenses/linux-hardener/`.
+
 ### Environment info
 
 ```bash
@@ -258,4 +264,4 @@ rustup target list --installed               # List currently installed targets
 cargo update --workspace                     # Update all dependencies in Cargo.lock
 ```
 
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-11-03

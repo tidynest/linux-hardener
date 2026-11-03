@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   archive held the `hardener` binary and nothing else, though the binary embeds
   Noto Sans for PDF reports. The two licence texts now sit beside it at the
   archive root, so extracting and installing works as before.
+- **The Tauri bundles and the Docker image carry the licence texts too.**
+  `cargo tauri build` made a `.deb`, an `.rpm` and an AppImage with no licence
+  file in any of them. The `.deb` now installs `packaging/debian/copyright` as
+  its copyright file, and the other two install `LICENSE` and the three font
+  licences under `/usr/share/licenses/linux-hardener/`. The Docker image adds
+  `LICENSE` and the Noto Sans licence there, and labels itself
+  `Apache-2.0 AND OFL-1.1`.
 
 ### Security
 

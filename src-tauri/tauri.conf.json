@@ -37,6 +37,29 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/doc/linux-hardener/copyright": "../packaging/debian/copyright"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/share/licenses/linux-hardener/LICENSE": "../LICENSE",
+          "/usr/share/licenses/linux-hardener/LICENSE-noto-sans.txt": "../crates/hardener-compliance/src/fonts/LICENSE-noto-sans.txt",
+          "/usr/share/licenses/linux-hardener/LICENSE-ibm-plex-sans.txt": "../crates/hardener-ui/fonts/LICENSE-ibm-plex-sans.txt",
+          "/usr/share/licenses/linux-hardener/LICENSE-martian-mono.txt": "../crates/hardener-ui/fonts/LICENSE-martian-mono.txt"
+        }
+      },
+      "appimage": {
+        "files": {
+          "/usr/share/licenses/linux-hardener/LICENSE": "../LICENSE",
+          "/usr/share/licenses/linux-hardener/LICENSE-noto-sans.txt": "../crates/hardener-compliance/src/fonts/LICENSE-noto-sans.txt",
+          "/usr/share/licenses/linux-hardener/LICENSE-ibm-plex-sans.txt": "../crates/hardener-ui/fonts/LICENSE-ibm-plex-sans.txt",
+          "/usr/share/licenses/linux-hardener/LICENSE-martian-mono.txt": "../crates/hardener-ui/fonts/LICENSE-martian-mono.txt"
+        }
+      }
+    }
   }
 }
