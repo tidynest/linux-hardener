@@ -3,7 +3,9 @@ name = "hardener-compliance"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+# src/fonts/ holds Noto Sans, which the PDF formatter embeds, under the SIL
+# OFL 1.1. Its text is src/fonts/LICENSE-noto-sans.txt.
+license = "Apache-2.0 AND OFL-1.1"
 
 [dependencies]
 chrono = { workspace = true, features = ["serde"] }

@@ -841,7 +841,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `packaging/debian/changelog` | Debian changelog |
 | `packaging/debian/postinst` | Post-installation script (systemd reload, permissions) |
 | `packaging/debian/prerm` | Pre-removal script (stop/disable timer) |
-| `packaging/debian/copyright` | Apache-2.0 licence in Debian format |
+| `packaging/debian/copyright` | Machine-readable copyright file: Apache-2.0 for the project's own files, OFL-1.1 with its full text for the three embedded fonts |
 
 ---
 

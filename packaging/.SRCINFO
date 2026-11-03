@@ -5,6 +5,7 @@ pkgbase = linux-hardener
 	url = https://github.com/tidynest/linux-hardener
 	arch = x86_64
 	license = Apache-2.0
+	license = OFL-1.1
 	makedepends = git
 	makedepends = musl
 	makedepends = openssl

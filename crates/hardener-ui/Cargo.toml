@@ -3,7 +3,9 @@ name = "hardener-ui"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+# fonts/ holds Martian Mono and IBM Plex Sans under the SIL OFL 1.1, with
+# their licence texts beside them. Trunk copies all of it into dist/.
+license = "Apache-2.0 AND OFL-1.1"
 build = "../../scripts/build_identity.rs"
 
 [lib]

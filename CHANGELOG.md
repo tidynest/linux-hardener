@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PKGBUILD and the RPM spec install all three licence files beside the
   project's own, and the Debian copyright file gains a stanza per font and the
   OFL text.
+- **The licence fields name OFL-1.1 wherever the fonts ship.** They read
+  `Apache-2.0` alone, which left the fonts out. `hardener-compliance` and
+  `hardener-ui`, the two crates with font files in them, now declare
+  `Apache-2.0 AND OFL-1.1`, and `deny.toml` allows OFL-1.1 for those two crates
+  only. The PKGBUILD and `.SRCINFO` list both licences, and the RPM spec and the
+  Tauri bundle settings carry the same expression. The README and the man page
+  now say which fonts the binaries embed. The other crates keep `Apache-2.0`,
+  since they hold only the project's own code.
 
 ### Security
 

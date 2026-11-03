@@ -2,7 +2,8 @@ Name:           linux-hardener
 Version:        1.9.1
 Release:        1%{?dist}
 Summary:        Linux security automation: scanning, hardening, and rollback
-License:        Apache-2.0
+# OFL-1.1 covers the fonts the binaries embed; %files ships their texts.
+License:        Apache-2.0 AND OFL-1.1
 URL:            https://github.com/tidynest/linux-hardener
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 

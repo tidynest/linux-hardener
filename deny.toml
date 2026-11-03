@@ -137,6 +137,11 @@ exceptions = [
     # Each entry is the crate and version constraint, and its specific allow
     # list
     #{ allow = ["Zlib"], crate = "adler32" },
+    # The two workspace crates that hold font files: Noto Sans for the PDF
+    # report, Martian Mono and IBM Plex Sans for the desktop. Allowed per crate
+    # rather than globally, so a dependency that bundles a font still gets read.
+    { allow = ["OFL-1.1"], crate = "hardener-compliance" },
+    { allow = ["OFL-1.1"], crate = "hardener-ui" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,

@@ -548,6 +548,11 @@ Milestones, shipped and planned, are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Apache License, Version 2.0. See [LICENSE](LICENSE).
 
+Some fonts ride along under the SIL Open Font License, Version 1.1. Both
+binaries embed Noto Sans for the PDF reports, and the desktop app also embeds
+Martian Mono and IBM Plex Sans. Each font's licence text sits beside it in the
+tree, and every package installs those texts next to `LICENSE`.
+
 ## Acknowledgements
 
 Drawing on [Lynis](https://cisofy.com/lynis/),
@@ -560,4 +565,4 @@ Drawing on [Lynis](https://cisofy.com/lynis/),
 **Contact**: tidynest@proton.me
 **Repository**: https://github.com/tidynest/linux-hardener
 
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-11-03

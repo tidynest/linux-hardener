@@ -25,6 +25,7 @@
   },
   "bundle": {
     "active": true,
+    "license": "Apache-2.0 AND OFL-1.1",
     "targets": [
       "appimage",
       "deb",
