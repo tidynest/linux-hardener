@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-09-03
+**Last Updated**: 2026-11-03
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -781,26 +781,30 @@ This block said 156 across 4 sites until 2026-08-20, two days after the suite re
 - All `#[tauri::command]` functions in the `src-tauri/src/commands/` tree are documented in file-map.md
 - Command signatures (arguments, return types) match between source and documentation
 - All `invoke_command()` calls in `tauri_bindings.rs` reference valid command names
+- Every command is registered in all three places it has to be: `generate_handler!` in `main.rs`, `COMMANDS` in `build.rs` and an `allow-<command>` grant in `capabilities/default.json`
 
 **Exit Codes**:
 - `0`: All Tauri commands are documented correctly
 - `1`: Discrepancies found
 
-**Example Output**:
+**Example Output**, from a run on 2026-11-03 with the command list cut short:
 ```
 Validating Tauri command documentation...
 
-Found 6 Tauri commands in commands.rs:
-  - generate_compliance_report(frameworks: Vec<String>) -> Vec<ComplianceReport>
-  - get_checkpoints() -> Vec<CheckpointInfo>
-  - run_scan() -> Vec<ScanResult>
+Found 32 Tauri commands in the commands tree:
+  - add_policy_exception(plugin_id: String, exception_key: String, reason: String, approved_by: Option<String>, ticket: Option<String>, expires: Option<String>) -> hardener_types::WrittenException
+  - connect_remote(name: String, state: tauri::State<'_, RemoteState>) -> RemoteConnectionStatus
+  - create_checkpoint(name: String) -> String
   ...
 
 Checking file-map.md documentation...
-  ✓ All 6 commands documented correctly
+  ✓ All 32 commands documented correctly
 
 Checking tauri_bindings.rs invoke calls...
-  ✓ All 3 bindings call valid commands
+  ✓ All 8 bindings call valid commands
+
+Checking the three registration sites...
+  ✓ All 32 commands registered in all 3 sites
 
 All Tauri command documentation is accurate
 ```
@@ -815,7 +819,7 @@ Checking file-map.md documentation...
 
 Checking tauri_bindings.rs invoke calls...
   Invalid command invocations:
-    - scan_system() calls 'scan_system' which doesn't exist in commands.rs
+    - scan_system() calls 'scan_system' which doesn't exist in the commands tree
 
 Tauri command validation failed
 ```

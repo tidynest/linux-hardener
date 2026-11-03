@@ -461,7 +461,7 @@ User clicks "Apply"
 
 | Feature | Description | Priority | Status |
 |---------|-------------|----------|--------|
-| Multi-host management | Manage multiple systems from one UI | Medium | ✅ Complete (Fleet scan + compliance scores + apply/rollback GUI + ad-hoc SSH targets + live per-host progress + per-host history all shipped). One follow-up open: drilling into a host's compliance count needs an IPC command that does not exist yet, issue #50 |
+| Multi-host management | Manage multiple systems from one UI | Medium | ✅ Complete (Fleet scan + compliance scores + apply/rollback GUI + ad-hoc SSH targets + live per-host progress + per-host history all shipped). The compliance-count drill-down followed: the host panel renders the controls behind each score, issue #50, closed 2026-08-04 and shipped in v1.6.0 |
 | Historical trends | Track security posture over time | Low | ✅ Complete (CLI `history trends`; desktop renders a per-host scan-history timeline with a better/worse/same direction label, `commands::get_host_history` into `components::host_panel`) |
 | Alert notifications | Email/webhook on security regressions | Low | ✅ Complete (scheduler `notify_mode` regression alerts) |
 | DE testing | Test pkexec/polkit on GNOME, KDE, XFCE | Low | 🔄 Tooling shipped (`scripts/test/polkit/detect-polkit-agent.sh`, `test-polkit-matrix.sh`, the parametrised `test-polkit.sh <desktop>`, `docs/guide/desktop-environment-compatibility.md`); real GNOME/KDE/XFCE runs need live DE sessions, issue #18 |
@@ -593,7 +593,7 @@ report zero `ManualReview` for covered controls.
 |---------|-------------|----------|--------|
 | SSH crypto-algorithm hardening | Harden `KexAlgorithms`/`Ciphers`/`MACs`, incl. post-quantum kex (`mlkem768x25519-sha256`, default in OpenSSH 10). Must detect supported algorithms (`ssh -Q kex`) and run `sshd -t` before restart to avoid lockout | High | ✅ Done |
 | RHEL 10 compliance profiles | Report-time ID translation to DISA RHEL 10 STIG V1R1 and CIS RHEL 10 v1.0.1, auto-detected on RHEL-family 10 (`hardener-compliance/src/profiles.rs`) | Medium | ✅ Complete |
-| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Complete: CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback + ad-hoc SSH targets + live per-host progress + per-host history. Compliance-count drill-down remains open, issue #50 |
+| Multi-host SSH management | Manage/monitor multiple hosts from one UI: host profiles, parallel scanning, trend history, regression alerts | Medium | ✅ Complete: CLI `batch scan/report/apply/rollback` + `history trends/regressions` + scheduler regression alerts; GUI Fleet scan/compliance/apply/rollback + ad-hoc SSH targets + live per-host progress + per-host history. Compliance-count drill-down added, issue #50, closed 2026-08-04 and shipped in v1.6.0 |
 | nftables ruleset persistence | The nftables backend probes which file `nftables.service` actually loads on this host, rather than assuming one, and persists its ruleset through that path: `/etc/nftables.conf` on Arch and Debian, `/etc/sysconfig/nftables.conf` on Fedora and RHEL, `/etc/nftables/rules/main.nft` on openSUSE | High | ✅ Complete, issue #52 closed |
 | Security audit (external) | Third-party security review; scope in [security/external-audit-scope.md](security/external-audit-scope.md) | Medium | ⬜ Open, issue #19 |
 | Performance optimisation | Scan speed improvements; `scan --timings` shipped | Medium | ✅ Done, issue #20 closed 2026-07-17 |
@@ -772,4 +772,4 @@ When working on new features:
 
 ---
 
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-11-03

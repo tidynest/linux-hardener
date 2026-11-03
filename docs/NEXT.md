@@ -2,16 +2,19 @@
 
 ---
 
-## Current State (as of 2026-08-29)
+## Current State (as of 2026-11-03)
 
-**Read this first: the last release is v1.7.0 (2026-08-29), and the month of
-work that had piled up behind v1.5.1 is in it.** No count is given here on
-purpose: it changes with every commit, and the figure that used to stand in
-this sentence was stale within days. Read whatever has accumulated since the
-tag live, with `git rev-list --count --no-merges v1.7.0..main`. `CHANGELOG.md`
-is the authoritative record of what shipped;
-this section only orients. The bulk of it is defect repair proved on the five
-test containers: firewall boot persistence (a ufw enable that never asked
+**Read this first: the last release is v1.9.1, 2026-10-30, a patch for one
+install bug and one security advisory pair.** The month of work that had piled
+up behind v1.5.1 shipped in v1.6.0 and v1.7.0 on 2026-08-29, v1.8.0 to v1.8.2
+followed on 30 and 31 August, and v1.9.0 on 2026-09-04 carried the desktop's
+console redesign. No count of unreleased commits is given here on purpose: it
+changes with every commit, and the figure that used to stand in this sentence
+was stale within days. Read whatever has accumulated since the tag live, with
+`git rev-list --count --no-merges v1.9.1..main`. `CHANGELOG.md` is the
+authoritative record of what shipped; this section only orients. The bulk of
+the work behind v1.5.1 was defect repair proved on the five test containers of
+the time: firewall boot persistence (a ufw enable that never asked
 systemd to want the unit at boot, and a Debian activity probe that read a
 oneshot unit as a live firewall), configuration layered across `/etc` and
 `/usr/etc`, SSH crypto directives read and written where sshd actually reads
@@ -32,8 +35,8 @@ says is missing first.
 working area, not part of the repository.** Those paths are named so the
 maintainer can find them on their own disk; they resolve nowhere in a clone.
 
-One representative piece of that unreleased work, because several documents
-link to it: the permissions plugin's vendor layer (`f008a10`). When
+One representative piece of that work, shipped in v1.6.0, because several
+documents link to it: the permissions plugin's vendor layer (`f008a10`). When
 a critical path is absent from `/etc`, the scan now assesses the distribution's
 copy under `/usr/etc` and reports a finding naming that file when its mode
 violates the directive. Measured on openSUSE, `/etc/sudoers` does not exist and
@@ -403,8 +406,8 @@ test proven red→green).
 | `tauri` 2.11.2 → 2.11.3 | Latest patch (2026-06-17); no CVE, routine bump | ✅ Done (lockfile, 2026-06-20) |
 | Desktop crate compile fix | Tauri compliance commands ported to the phase-3 `ReportGenerator::new(config, coverage)` signature; `cargo check -p linux-hardener-desktop` clean | ✅ Done (2026-06-20) |
 | External security audit | Third-party review; scope in [security/external-audit-scope.md](security/external-audit-scope.md) | ⬜ Open, issue #19 |
-| Real desktop-environment polkit runs | GNOME/KDE/XFCE pkexec sessions; the tooling ships, the runs need live sessions | ⬜ Open, issue #18 |
-| Release checklist for the next tag | The unreleased work needs a tagged release; the man page also has no `/usr/etc` text. **No count here**, per this file's own opening rule: the figure read 189 from 2026-08-02 and was 778 by 2026-08-18. Read it live with `git rev-list --count --no-merges v1.5.1..main` | ⬜ Open, issue #53 |
+| Real desktop-environment polkit runs | GNOME/KDE/XFCE pkexec sessions; the tooling ships, the runs need live sessions. Closed on the field run of 2026-08-30, 12 passed, 0 failed and 1 skipped. The readiness batch still skips the three interactive polkit tests, which no automated run reaches | ✅ Closed 2026-09-01, issue #18 |
+| Release checklist for the next tag | The work that had piled up behind v1.5.1 shipped as v1.6.0 on 2026-08-29, and the man page has explained a `/usr/etc` finding under FILES since `07890019`, in the same release. Later releases follow the checklist in [contributing/releasing.md](contributing/releasing.md) | ✅ Done, issue #53 closed 2026-08-29 |
 | Performance optimisation | Scan speed improvements; `scan --timings` shipped | ✅ Done, issue #20 closed 2026-07-17 |
 
 ---
@@ -550,4 +553,4 @@ hardener-scheduler
 
 *This document is prepared for continuity between development sessions.*
 
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-11-03
