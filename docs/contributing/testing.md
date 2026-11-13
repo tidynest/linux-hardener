@@ -1151,12 +1151,12 @@ Booted, systemd as PID 1 (services oracle): 0
 ```
 
 **The totals move with the modes, and both kernel tables are pinned.** With the
-shadow field present and a kernel the MAC oracle covers, a run records **80
-checks with neither signal, 93 with the namespace alone, and 99 booted** where
-the services unit was running, 98 where it was not; less two on a host whose
-shadow has no minimum-password-age field (see below), so **78, 91 and 97 or 96
+shadow field present and a kernel the MAC oracle covers, a run records **82
+checks with neither signal, 95 with the namespace alone, and 101 booted** where
+the services unit was running, 100 where it was not; less two on a host whose
+shadow has no minimum-password-age field (see below), so **80, 93 and 99 or 98
 on Arch**. The fourth combination, a boot declared without a namespace, is
-**86**: no runner produces it, and it is pinned so that a missing `--setenv`
+**88**: no runner produces it, and it is pinned so that a missing `--setenv`
 costs coverage rather than producing a total nothing can meet.
 
 **Three independent facts move these totals, not two**, and only two of them are
@@ -1284,9 +1284,9 @@ number beside the table moving in the same diff.
 Adding a directive therefore means changing four literals in
 `scripts/test/differential-suite.sh`, not one: the `*_EXPECTED` constant beside
 its table, that same length re-pinned in the self-test (`the ssh table holds
-seven directives`), the total the run is sized at, which `expected_check_total`
-computes at **80** with neither signal and **93** with the namespace alone, and
-the number of directives the pre-apply control covers (`19`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
+eight directives`), the total the run is sized at, which `expected_check_total`
+computes at **82** with neither signal and **95** with the namespace alone, and
+the number of directives the pre-apply control covers (`20`). `VENDOR_SURVIVAL_CHECKS`, `IDEMPOTENCE_CHECKS` and
 `PWQUALITY_ENFORCEMENT_CHECKS` are sized the same way, and contribute one check
 each rather than two. Every one of them fails loudly, over two `--self-test` runs,
 because the total is counted off the constant and only moves once the constant

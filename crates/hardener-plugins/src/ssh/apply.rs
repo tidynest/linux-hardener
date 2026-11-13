@@ -9,9 +9,9 @@
 use super::{
     MainConfig, PERMIT_ROOT_LOGIN, REMOTE_ROOT_SAFE_VALUE, SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES,
     SSHD_ADMIN_CONFIG_PATH, SshHardeningPlugin, backup_prefix, crypto_value_is_secure, dropin,
-    include, is_remote_root_session, keep_value_the_fragment_holds, lock_config_path,
-    observed_value, resolved_target, select_algorithms, supported_algorithms, validate_sshd_config,
-    verify_dropin_precedence,
+    include, is_remote_root_session, is_second_factor_only, keep_value_the_fragment_holds,
+    lock_config_path, observed_value, resolved_target, select_algorithms, supported_algorithms,
+    validate_sshd_config, verify_dropin_precedence,
 };
 
 use chrono::Utc;
@@ -111,6 +111,14 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
     let resolved = include::resolve(ctx, config_path, &original_content).await?;
 
     for directive in SSH_DIRECTIVES {
+        // Not written at all, and not carried into the fragment either: A
+        // `no` this tool wrote before the operator set up the second factor
+        // is what stops sshd starting once they have, so the rewrite below
+        // dropping it is the repair.
+        if is_second_factor_only(directive, &resolved) {
+            continue;
+        }
+
         // The exception is honoured only when it documents the value the
         // host actually has, so a stale exception cannot stop hardening.
         // Read from the resolved configuration, so this agrees with scan
@@ -209,9 +217,17 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
         // instead would hand a second apply the main file as its target
         // while the vendor fragment underneath still outranks it, and prune
         // the fragment that was holding the host.
-        let overridden = resolved
-            .effective_without(directive.ssh_directive_name, dropin::DROPIN_PATH)
-            .filter(|effective| effective.source != config_path);
+        let beneath_fragment =
+            resolved.effective_without(directive.ssh_directive_name, dropin::DROPIN_PATH);
+        // The name the main file sets this option under, where the main file
+        // is what answers. sshd keeps the first line it reads under any of an
+        // option's names, so adding the current name below an older spelling
+        // changes nothing: The line that answers is the one to rewrite.
+        let main_keyword = beneath_fragment.as_ref().map_or_else(
+            || directive.ssh_directive_name.to_string(),
+            |effective| effective.keyword.clone(),
+        );
+        let overridden = beneath_fragment.filter(|effective| effective.source != config_path);
         if let Some(effective) = overridden {
             // At least as strict as the target, not equal to it: a file
             // underneath holding `MaxAuthTries 2` leaves the host
@@ -298,7 +314,7 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
 
         let original_value = parse_config_value(
             global_scope(&config_content),
-            directive.ssh_directive_name,
+            &main_keyword,
             ConfigFormat::SpaceSeparated,
             false,
         );
@@ -356,7 +372,7 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
         if needs_change {
             config_content = set_config_directive(
                 &config_content,
-                directive.ssh_directive_name,
+                &main_keyword,
                 target_value,
                 ConfigFormat::SpaceSeparated,
                 false,

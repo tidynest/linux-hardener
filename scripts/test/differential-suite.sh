@@ -430,7 +430,7 @@ require_container_root() {
 # and this suite exists to compare the system AFTER apply. A capture taken before
 # apply is not merely weaker evidence, it is wrong in the one direction that
 # matters: against a stock sshd, X11Forwarding and PermitEmptyPasswords already
-# hold the values the tool targets, so two of the seven ssh checks would report
+# hold the values the tool targets, so two of the eight ssh checks would report
 # green on a container nothing had been applied to.
 #
 # So staleness is detected rather than avoided by convention. `apply` bumps the
@@ -477,7 +477,7 @@ require_fresh_capture() {
 # apply, verified against SSH_DIRECTIVES in
 # crates/hardener-plugins/src/ssh/mod.rs. Fields: directive|expected.
 #
-# For five of the seven, expected is the tool's own target and the container
+# For five of the eight, expected is the tool's own target and the container
 # arrives with the directive unset, so the check reads "the tool set it".
 #
 # For the two named in SEEDED_SSH_CHECKS below, expected is the SEEDED value,
@@ -485,6 +485,14 @@ require_fresh_capture() {
 # a stricter host alone". Those two therefore no longer cover the unset path;
 # the other five do, and run_seeded_checks logs the trade rather than leaving a
 # reader to infer it.
+#
+# KbdInteractiveAuthentication is the eighth, and what its row proves depends
+# on the distribution (#186). opensuse sets the keyword nowhere, so sshd's
+# default of yes applies and the row reads "the tool set it": before the plugin
+# managed the directive, sshd -T answered yes there after apply while the scan
+# reported nothing, and a password still logged in. arch, debian, ubuntu, fedora
+# and rhel ship it as no themselves, so on those five the row reads only "the
+# tool left it at no".
 #
 # These stay equality assertions. On a container created clean no distribution
 # default is stricter than the tool's baseline, so an unseeded directive must
@@ -495,6 +503,7 @@ require_fresh_capture() {
 SSH_CHECKS=(
     "PermitRootLogin|no"
     "PasswordAuthentication|no"
+    "KbdInteractiveAuthentication|no"
     "PermitEmptyPasswords|no"
     "MaxAuthTries|2"
     "X11Forwarding|no"
@@ -3422,7 +3431,7 @@ run_services_checks() {
     done
 }
 
-SSH_CHECKS_EXPECTED=7
+SSH_CHECKS_EXPECTED=8
 SEEDED_SSH_CHECKS_EXPECTED=2
 LOGIN_DEFS_CHECKS_EXPECTED=3
 VENDOR_SURVIVAL_CHECKS_EXPECTED=3
@@ -3536,6 +3545,9 @@ require_check_tables() {
 # Both modes get the same two, taking the unbooted total from 68 to 70 and the
 # booted one from 81 to 83: sshd -T needs neither the kernel oracle nor a
 # booted network namespace, so the mode makes no difference to it either.
+#
+# The eighth ssh row, KbdInteractiveAuthentication (#186), adds two to every
+# mode through SSH_CHECKS_EXPECTED, as any ssh row does.
 #
 # Counted off the pinned lengths above, never off the tables themselves. Read
 # from ${#SSH_CHECKS[@]} the expectation would follow the table it exists to
@@ -5001,7 +5013,7 @@ Number of days of warning before password expires	: 7"
     # The freshness stamp, walked through the lifecycle a real run has. Against a
     # stock sshd, X11Forwarding and PermitEmptyPasswords already hold the values
     # the tool targets, so a capture taken before apply reads as a pass for two
-    # of the seven ssh directives on a container nothing has been applied to.
+    # of the eight ssh directives on a container nothing has been applied to.
     # Both routes to one must fail: an apply step that never bumps the
     # generation, and a capture taken above the apply that did.
     #
@@ -5704,7 +5716,7 @@ Number of days of warning before password expires	: 7"
     # The tables the whole run is sized by, pinned as literals. Every total the
     # suite prints is counted off them, so a shortened table agrees with itself
     # and reads as a complete run; only a literal notices.
-    check_eq "${#SSH_CHECKS[@]}" "7" "the ssh table holds seven directives"
+    check_eq "${#SSH_CHECKS[@]}" "8" "the ssh table holds eight directives"
     check_eq "${#LOGIN_DEFS_CHECKS[@]}" "3" "the login.defs table holds three directives"
     check_eq "${#VENDOR_SURVIVAL_CHECKS[@]}" "3" "the vendor survival table holds three settings"
     check_eq "${#IDEMPOTENCE_CHECKS[@]}" "4" "the idempotency table holds four readings"
@@ -6235,13 +6247,13 @@ Number of days of warning before password expires	: 7"
     # otherwise read four different numbers than one running it here.
     MAC_ASKABLE=1
     pinned_total="$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)"
-    check_eq "$pinned_total" "80" \
+    check_eq "$pinned_total" "82" \
         "the run is sized at two checks per directive, one per unmanaged setting, one per idempotency reading, one per pwquality enforcement reading, one control per plugin, one preview-agreement row per plugin and its own control, one introduced-finding row per plugin and its own control, plus one pre-apply control per seeded directive, plus the rollback-reload check's own two"
     # The kernel rows against the namespace ALONE, which is the configuration
     # #137 exists for: `--pipe --private-network` holds no systemd and asks
     # every kernel row regardless. Thirteen more than the bare total, and none
     # of them a services row.
-    check_eq "$(RUN_NETNS=1 RUN_BOOTED=0 expected_check_total)" "93" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=0 expected_check_total)" "95" \
         "a run holding its own network namespace and no systemd is sized for eleven kernel rows, the seeded kernel row and the kernel plugin's own control, and for no services row at all"
     # The services rows, and the one of them whose askability is a property of
     # the HOST rather than of the invocation. Six more in a booted run: three
@@ -6249,10 +6261,10 @@ Number of days of warning before password expires	: 7"
     # generic per-plugin blocks, which follow the plugin count.
     local svc_saved_active="$SERVICES_ACTIVE_BEFORE"
     SERVICES_ACTIVE_BEFORE="active"
-    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "99" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "101" \
         "a booted run is sized for eleven kernel rows, the seeded kernel row, the kernel plugin's own control, and the six a services plugin with a running unit brings with it"
     SERVICES_ACTIVE_BEFORE="inactive"
-    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "98" \
+    check_eq "$(RUN_NETNS=1 RUN_BOOTED=1 expected_check_total)" "100" \
         "and one fewer where it was never running, because that row is declared unaskable rather than passed"
     check_eq "$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)" "$pinned_total" \
         "an unbooted run is unmoved by services entirely, because the plugin is not in the compared set there"
@@ -6261,7 +6273,7 @@ Number of days of warning before password expires	: 7"
     # to be arithmetic as well as a predicate, and because a future runner that
     # forgets one --setenv lands here rather than on a red total.
     SERVICES_ACTIVE_BEFORE="active"
-    check_eq "$(RUN_NETNS=0 RUN_BOOTED=1 expected_check_total)" "86" \
+    check_eq "$(RUN_NETNS=0 RUN_BOOTED=1 expected_check_total)" "88" \
         "a boot declared without the namespace asks for the services rows and for no kernel row, so a missing flag costs coverage rather than producing a total nothing can meet"
     SERVICES_ACTIVE_BEFORE="$svc_saved_active"
 
@@ -6290,7 +6302,7 @@ Number of days of warning before password expires	: 7"
     SSH_CHECKS=("PermitRootLogin|no")
     # And the size the run is measured against does not follow the table down.
     # Counted off ${#SSH_CHECKS[@]} it would, and print_summary would then accept
-    # a run that skipped six directives as a complete one. Compared against the
+    # a run that skipped seven directives as a complete one. Compared against the
     # value taken while the tables were whole, which the literal above pins.
     check_eq "$(RUN_NETNS=0 RUN_BOOTED=0 expected_check_total)" "$pinned_total" \
         "the expected total does not move when a table is edited down"
@@ -6778,7 +6790,7 @@ Number of days of warning before password expires	: 7"
     # so a directive added to either is covered without touching this.
     local compared_ids=()
     mapfile -t compared_ids < <(compared_finding_ids)
-    check_eq "${#compared_ids[@]}" "19" "the control covers every compared directive"
+    check_eq "${#compared_ids[@]}" "20" "the control covers every compared directive"
     check_eq "${compared_ids[0]}" "ssh-hardening ssh-permitrootlogin" \
         "the control names each directive by the id its own plugin emits"
 

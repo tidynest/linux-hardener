@@ -1,6 +1,6 @@
 # Linux Hardener - Architecture Documentation
 
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-11-10
 **Version:** 1.9.1
 
 ---
@@ -435,7 +435,7 @@ pub trait FirewallBackend: Send + Sync {
 | `PamHardeningPlugin` | Authentication | Password complexity, lockout, reuse |
 | `PermissionsHardeningPlugin` | FileSystem | Critical paths, SUID/SGID |
 | `ServicesHardeningPlugin` | Services | Unnecessary services |
-| `SshHardeningPlugin` | Network | PermitRootLogin, PasswordAuthentication |
+| `SshHardeningPlugin` | Network | PermitRootLogin, PasswordAuthentication, KbdInteractiveAuthentication |
 
 ---
 

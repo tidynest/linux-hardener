@@ -39,6 +39,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A password no longer gets in through keyboard-interactive on a host the
+  scan calls hardened (#186).** sshd has two methods a typed password
+  satisfies, `password` and `keyboard-interactive`, and
+  `PasswordAuthentication no` closes only the first. openSUSE Leap 16.0 sets
+  `KbdInteractiveAuthentication` nowhere, so sshd's default of `yes` applied:
+  after `hardener apply` the account password still logged in while the scan
+  passed CIS 5.2.11. The other five distributions switch it off themselves,
+  which the plugin never checked. `KbdInteractiveAuthentication` is now a
+  managed directive, Critical, with a target of `no`, and it shares the
+  compliance mappings of `PasswordAuthentication`, so those controls fail
+  while either method takes a password. A host that leaves the keyword unset
+  gains that finding on its next scan. The older names
+  `ChallengeResponseAuthentication` and `SkeyAuthentication` are read as the
+  same option in sshd's own first-wins order, and where the main file uses one
+  `apply` rewrites that line. The directive is left alone where no
+  `AuthenticationMethods` list lets keyboard-interactive finish a login on
+  passwords alone, so `publickey,keyboard-interactive` is neither reported nor
+  written over. The `PasswordAuthentication` finding no longer describes
+  itself as requiring key-based authentication only.
 - **`event-listener` moves from 5.4.1 to 5.4.2 for RUSTSEC-2026-0221.** The
   older version marked its stack listener `Send` and `Sync` whatever tag it
   carried, so a `!Send` tag could cross threads in safe code. It reaches the

@@ -1,6 +1,6 @@
 # Linux Hardener - File Map
 
-**Last Updated**: 2026-11-03
+**Last Updated**: 2026-11-10
 
 This document lists all source files with their purpose and key exports.
 
@@ -194,9 +194,10 @@ pub trait HardeningPlugin: Send + Sync {
 
 | Plugin File | Category | Key Checks |
 |-------------|----------|------------|
-| `src/ssh/mod.rs` | Network | PermitRootLogin, PasswordAuthentication, PermitEmptyPasswords, MaxAuthTries, X11Forwarding, ClientAliveInterval, ClientAliveCountMax |
+| `src/ssh/mod.rs` | Network | PermitRootLogin, PasswordAuthentication, KbdInteractiveAuthentication, PermitEmptyPasswords, MaxAuthTries, X11Forwarding, ClientAliveInterval, ClientAliveCountMax |
 | `src/ssh/dropin.rs` | Network | Writes SSH hardening to `/etc/ssh/sshd_config.d/00-hardener.conf`, which sorts before the fragments distributions ship, so sshd takes this file's values first. Precedence is verified after writing by re-resolving, never assumed from the filename, and an empty directive set removes the file rather than leaving an empty one | `DROPIN_PATH`, `Directive`, `render()`, `write_dropin()` |
-| `src/ssh/include.rs` | Network | Resolves `Include` directives in sshd's own order, so scan reports the value sshd will actually use and names the file supplying it. sshd takes the **first** value it obtains and distributions put the Include above everything this tool writes, so a drop-in silently won while the tool reported its own write |
+| `src/ssh/include.rs` | Network | Resolves `Include` directives in sshd's own order, so scan reports the value sshd will actually use and names the file supplying it. sshd takes the **first** value it obtains and distributions put the Include above everything this tool writes, so a drop-in silently won while the tool reported its own write. Reads an option under every name sshd accepts for it (`KbdInteractiveAuthentication`, `ChallengeResponseAuthentication` and `SkeyAuthentication` are one option, and the first line under any of them wins), reports which spelling answered so apply can rewrite that line, and returns every argument of a list-valued keyword such as `AuthenticationMethods` | `ResolvedConfig`, `EffectiveValue`, `effective()`, `effective_without()`, `effective_arguments()` |
+| `src/ssh/auth_methods.rs` | Network | Decides whether an authentication method can finish a login on passwords alone under the `AuthenticationMethods` lists in force (#186). sshd takes the account password through `password` and, wherever PAM is on, through `keyboard-interactive`, and `PasswordAuthentication no` closes only the first. A method that every list asks for behind a key is a second factor, which sshd needs switched on and which scan, preview and apply therefore leave alone | `AUTHENTICATION_METHODS`, `finishes_alone()` |
 | `src/ssh/divergence.rs` | Network | What an sshd rollback left running against a configuration it could not reload onto (#142). `reload_after_rollback` restarts sshd unconditionally and reports a failed restart only as its own `Err`, never through this probe, so a restart that could not take otherwise leaves nothing here to read. Classifies `systemctl is-active`/`is-enabled` for the unit three ways rather than two, so an unrunnable systemctl call is never read as a clean state, and reports `Diverged` only where the unit is both running and masked, the one state proving the restart was refused outright. Measured 2026-08-10 in a booted arch container: masking sshd before a rollback left it reporting active before and after the restart attempt, previously unreported; this probe now reports that state and a second run confirmed it fires. Marks no row `divergence_expected` (#152), pinned by a test: every row here is a reload that did not take. Report-only; writes nothing | `sshd_divergences()` |
 | `src/ssh/assess.rs` | Network | The body of `SshHardeningPlugin::scan`, extracted so the trait impl in `mod.rs` stays whole (a trait impl cannot span files) and the plugin's file count matches its seams. Reads whichever sshd_config layer is in force, resolves includes in sshd's own order, and reports the directives whose effective values violate the baseline | `scan()` |
 | `src/ssh/apply.rs` | Network | The body of `SshHardeningPlugin::apply`. Locks and checkpoints the config path the layered reader resolved, backs it up, writes the managed directives (the drop-in where the main file cannot win), gates every commit on `sshd -t`, and restarts sshd only after the candidate passed | `apply()` |
@@ -244,6 +245,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/ssh/tests.rs` | Tests | Unit tests for `src/ssh/mod.rs` | Test-only; `super` resolves to `crate::ssh` |
 | `src/ssh/dropin/tests.rs` | Tests | Unit tests for `src/ssh/dropin.rs` | Test-only; `super` resolves to `crate::ssh::dropin` |
 | `src/ssh/include/tests.rs` | Tests | Unit tests for `src/ssh/include.rs` | Test-only; `super` resolves to `crate::ssh::include` |
+| `src/ssh/auth_methods/tests.rs` | Tests | Unit tests for `src/ssh/auth_methods.rs` | Test-only; `super` resolves to `crate::ssh::auth_methods` |
 | `src/ssh/divergence/tests.rs` | Tests | Unit tests for `src/ssh/divergence.rs` | Test-only; `super` resolves to `crate::ssh::divergence` |
 | `src/strictness/tests.rs` | Tests | Unit tests for `src/strictness.rs` | Test-only; `super` resolves to `crate::strictness` |
 
@@ -254,7 +256,7 @@ pub trait HardeningPlugin: Send + Sync {
 const SSH_DIRECTIVES: &[SshConfigDirective] = &[
     SshConfigDirective { ssh_directive_name: "PermitRootLogin", ssh_secure_value: "no", ... },
     SshConfigDirective { ssh_directive_name: "PasswordAuthentication", ssh_secure_value: "no", ... },
-    // ... 7 total
+    // ... 8 total
 ];
 ```
 
@@ -1000,9 +1002,9 @@ tree on **2026-08-28**, not a run total: a run also executes doctests and, for
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2193. The eleventh
+The table covers the ten crates under `crates/` and sums to 2209. The eleventh
 workspace member, `src-tauri`, carries 192 more, which is why the tree total the
-evidence ledger records is 2385 and not this table's sum.
+evidence ledger records is 2401 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -1012,7 +1014,7 @@ evidence ledger records is 2385 and not this table's sum.
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 107 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 330 |
-| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 859 |
+| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 875 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 243 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 66 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs`, `components/area_map.rs`, `components/security_score.rs` | - | 154 |
@@ -1086,4 +1088,4 @@ counts measured the same way and on the same date as the table above.
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-11-03
+**Last Updated**: 2026-11-10

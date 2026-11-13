@@ -17,7 +17,7 @@
 //! it would need checking by hand with `sshd -T`.
 
 use hardener_common::error::{HardeningError, Result};
-use hardener_common::file_utils::{ConfigFormat, global_scope, parse_config_value};
+use hardener_common::file_utils::{global_scope, split_directive};
 use hardener_core::context::Context;
 use std::path::{Path, PathBuf};
 
@@ -30,6 +30,31 @@ const MAX_INCLUDE_DEPTH: usize = 16;
 /// /etc/ssh".
 const SSH_CONFIG_DIR: &str = "/etc/ssh";
 
+/// The names sshd accepts for one option, the current name first.
+///
+/// `servconf.c` maps every name in a group to the same option, and sshd keeps
+/// the first value it reads under any of them. Rocky 10 ships only
+/// `ChallengeResponseAuthentication no`, so a lookup by the current name reads
+/// that host as unset, and one lookup per name cannot order two hits inside
+/// one file. Measured with `sshd -G` on OpenSSH 10.6p1, 2026-11-10: All three
+/// names set `kbdinteractiveauthentication`, and the earlier line wins
+/// whichever name it uses.
+const KEYWORD_SPELLINGS: &[&[&str]] = &[&[
+    "KbdInteractiveAuthentication",
+    "ChallengeResponseAuthentication",
+    "SkeyAuthentication",
+]];
+
+/// Every name sshd reads `keyword` under: Its group in
+/// [`KEYWORD_SPELLINGS`], or the keyword alone where it has no other name.
+fn spellings<'a>(keyword: &'a &'a str) -> &'a [&'a str] {
+    KEYWORD_SPELLINGS
+        .iter()
+        .copied()
+        .find(|group| group.iter().any(|name| name.eq_ignore_ascii_case(keyword)))
+        .unwrap_or(std::slice::from_ref(keyword))
+}
+
 /// Where one directive's effective value comes from.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectiveValue {
@@ -37,6 +62,11 @@ pub struct EffectiveValue {
     pub value: String,
     /// The file supplying it.
     pub source: String,
+    /// The keyword as that file spells it, which is not always the name the
+    /// caller asked for: See [`KEYWORD_SPELLINGS`]. A caller editing the line
+    /// in place has to address it by this name, because a second line under
+    /// the current name would sit below it and lose.
+    pub keyword: String,
 }
 
 /// sshd_config as sshd processes it: the main file with each `Include`
@@ -73,25 +103,65 @@ impl ResolvedConfig {
         self.first_value(directive_name, |path| path != ignored_path)
     }
 
+    /// Every argument of the directive's effective global line, for a keyword
+    /// whose value is a list.
+    ///
+    /// [`Self::effective`] keeps the first argument, which is the whole value
+    /// of a switch or a number and only the first of the lists in
+    /// `AuthenticationMethods publickey,password publickey,keyboard-interactive`.
+    /// sshd lets an argument be quoted and lets a comment end the line, so
+    /// the quotes are dropped and the arguments stop at a `#`.
+    pub fn effective_arguments(&self, directive_name: &str) -> Option<Vec<&str>> {
+        self.first_line(directive_name, |_| true)
+            .map(|(_, _, arguments)| {
+                arguments
+                    .split_whitespace()
+                    .take_while(|argument| !argument.starts_with('#'))
+                    .map(|argument| argument.trim_matches('"'))
+                    .collect()
+            })
+    }
+
     /// The first segment satisfying `considered` that supplies the directive.
     fn first_value(
         &self,
         directive_name: &str,
         considered: impl Fn(&str) -> bool,
     ) -> Option<EffectiveValue> {
+        self.first_line(directive_name, considered)
+            .and_then(|(source, keyword, arguments)| {
+                arguments
+                    .split_whitespace()
+                    .next()
+                    .map(|value| EffectiveValue {
+                        value: value.to_string(),
+                        source: source.to_string(),
+                        keyword: keyword.to_string(),
+                    })
+            })
+    }
+
+    /// The first global line, in sshd's reading order, that sets the directive
+    /// under any name sshd accepts for it: The file, the keyword as written
+    /// and the text after it.
+    ///
+    /// A commented line needs no skip of its own. Its key begins with `#`, so
+    /// it equals no keyword.
+    fn first_line(
+        &self,
+        directive_name: &str,
+        considered: impl Fn(&str) -> bool,
+    ) -> Option<(&str, &str, &str)> {
+        let names = spellings(&directive_name);
         self.segments
             .iter()
             .filter(|(path, _)| considered(path))
             .find_map(|(path, content)| {
-                parse_config_value(
-                    global_scope(content),
-                    directive_name,
-                    ConfigFormat::SpaceSeparated,
-                    false,
-                )
-                .map(|value| EffectiveValue {
-                    value,
-                    source: path.clone(),
+                global_scope(content).lines().find_map(|line| {
+                    let (keyword, arguments) = split_directive(line.trim());
+                    (!arguments.is_empty()
+                        && names.iter().any(|name| name.eq_ignore_ascii_case(keyword)))
+                    .then_some((path.as_str(), keyword, arguments))
                 })
             })
     }

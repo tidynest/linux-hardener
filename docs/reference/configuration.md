@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-08-21
+**Last Updated**: 2026-11-10
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -332,6 +332,22 @@ the alphabet carries their strictness:
 - `fs.suid_dumpable`: `0` refuses the dump, `2` writes one only root can read
   and `1` writes one from every setuid process, so the strongest value is the
   smallest and the weakest is in the middle.
+
+One SSH setting is judged together with another. `KbdInteractiveAuthentication`
+is held to `no`, because sshd takes the account password through
+keyboard-interactive wherever PAM is on and `PasswordAuthentication no` does not
+close that. Unset counts as `yes`, which is sshd's own default. The setting is
+left alone where no `AuthenticationMethods` list lets keyboard-interactive
+finish a login on passwords alone, so `AuthenticationMethods
+publickey,keyboard-interactive` with `KbdInteractiveAuthentication yes` is not a
+finding, and `apply` neither writes over it nor keeps an older `no` of its own
+in the way. sshd reads `ChallengeResponseAuthentication` and
+`SkeyAuthentication` as the same option and keeps the first line it meets under
+any of the three names. Scan follows that order, and where the main file uses
+an older name `apply` rewrites that line. A host that asks for
+keyboard-interactive with no key beside it, for a one-time code through PAM for
+example, is still reported, since sshd_config cannot show what PAM asks for.
+Record that with an exception under `[ssh.exceptions.KbdInteractiveAuthentication]`.
 
 Two kernel parameters have a value stronger than the baseline, and a host
 already there keeps it: `kernel.yama.ptrace_scope = 3` forbids `ptrace`

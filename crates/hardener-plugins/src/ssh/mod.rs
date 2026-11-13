@@ -12,6 +12,7 @@
 
 mod apply;
 mod assess;
+mod auth_methods;
 mod divergence;
 mod dropin;
 // pub(crate) so the crate's fuzz-seam module can re-export the include
@@ -61,6 +62,10 @@ struct SshConfigDirective {
     /// as violating and then writes the baseline over it: `MaxAuthTries 2`
     /// became `3`, and a five-minute idle timeout replaced a one-minute one.
     ssh_compare: Strictness,
+    /// The `AuthenticationMethods` name this directive switches on, where the
+    /// directive may stay on while that method is only ever a second factor.
+    /// `None` where the target holds whatever the lists say.
+    ssh_auth_method: Option<&'static str>,
 }
 
 /// `PermitRootLogin`, weakest first. `without-password` is sshd's legacy
@@ -88,13 +93,23 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
         ssh_description: "Disable direct root login via SSH",
         ssh_severity: Severity::Critical,
         ssh_compare: Strictness::Ranked(PERMIT_ROOT_LOGIN_ORDER),
+        ssh_auth_method: None,
     },
     SshConfigDirective {
         ssh_directive_name: "PasswordAuthentication",
         ssh_secure_value: "no",
-        ssh_description: "Require key-based authentication only",
+        ssh_description: "Disable SSH password authentication",
         ssh_severity: Severity::Critical,
         ssh_compare: Strictness::Ranked(OFF_IS_STRICTER),
+        ssh_auth_method: None,
+    },
+    SshConfigDirective {
+        ssh_directive_name: "KbdInteractiveAuthentication",
+        ssh_secure_value: "no",
+        ssh_description: "Disable keyboard-interactive logins, which take a password through PAM",
+        ssh_severity: Severity::Critical,
+        ssh_compare: Strictness::Ranked(OFF_IS_STRICTER),
+        ssh_auth_method: Some("keyboard-interactive"),
     },
     SshConfigDirective {
         ssh_directive_name: "PermitEmptyPasswords",
@@ -102,6 +117,7 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
         ssh_description: "Disallow empty passwords",
         ssh_severity: Severity::Critical,
         ssh_compare: Strictness::Ranked(OFF_IS_STRICTER),
+        ssh_auth_method: None,
     },
     SshConfigDirective {
         ssh_directive_name: "MaxAuthTries",
@@ -111,6 +127,7 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
         // Fewer attempts is stricter, and zero is not a disable: it is the
         // strictest setting there is, refusing every attempt.
         ssh_compare: Strictness::AtMost,
+        ssh_auth_method: None,
     },
     SshConfigDirective {
         ssh_directive_name: "X11Forwarding",
@@ -118,6 +135,7 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
         ssh_description: "Disable X11 forwarding to reduce attack surface",
         ssh_severity: Severity::Medium,
         ssh_compare: Strictness::Ranked(OFF_IS_STRICTER),
+        ssh_auth_method: None,
     },
     SshConfigDirective {
         ssh_directive_name: "ClientAliveInterval",
@@ -128,6 +146,7 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
         // stricter, but zero stops sshd probing at all and is therefore the
         // loosest value the setting has.
         ssh_compare: Strictness::NonZeroAtMost,
+        ssh_auth_method: None,
     },
     SshConfigDirective {
         ssh_directive_name: "ClientAliveCountMax",
@@ -137,6 +156,7 @@ const SSH_DIRECTIVES: &[SshConfigDirective] = &[
         // Fewer tolerated missed probes is stricter. Zero disconnects on the
         // first one, which is the strict end rather than a disable.
         ssh_compare: Strictness::AtMost,
+        ssh_auth_method: None,
     },
 ];
 
@@ -386,6 +406,28 @@ fn resolved_target(directive: &SshConfigDirective, config: &PluginConfig) -> Str
         directive.ssh_directive_name,
         directive.ssh_secure_value,
     )
+}
+
+/// Whether `directive` may stay on, because `AuthenticationMethods` never lets
+/// the method it enables finish a login on passwords alone.
+///
+/// Scan, apply and validate all ask here, as they all resolve their target
+/// through `resolved_target`. A scan that flagged the second factor of
+/// `publickey,keyboard-interactive` would send the operator to switch it off,
+/// and an apply that did so would hand `sshd -t` a list no enabled method can
+/// satisfy, which fails the whole candidate and every other directive in it.
+fn is_second_factor_only(
+    directive: &SshConfigDirective,
+    resolved: &include::ResolvedConfig,
+) -> bool {
+    directive.ssh_auth_method.is_some_and(|method| {
+        !auth_methods::finishes_alone(
+            resolved
+                .effective_arguments(auth_methods::AUTHENTICATION_METHODS)
+                .as_deref(),
+            method,
+        )
+    })
 }
 
 /// How a directive's current value is rendered when it is compared against a
@@ -667,7 +709,10 @@ fn get_ssh_compliance_mappings(directive_name: &str) -> Vec<ComplianceMapping> {
                 "Logical access security software, infrastructure, and architectures",
             ),
         ],
-        "PasswordAuthentication" => vec![
+        // One arm for both, because they are one control. sshd takes a typed
+        // password through either method, so "password login is disabled"
+        // holds only when neither can finish a login alone (#186).
+        "PasswordAuthentication" | "KbdInteractiveAuthentication" => vec![
             ComplianceMapping {
                 compliance_framework: ComplianceFramework::CIS,
                 compliance_control_id: "5.2.11".to_string(),

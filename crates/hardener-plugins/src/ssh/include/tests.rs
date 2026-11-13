@@ -111,3 +111,93 @@ fn a_relative_include_from_the_vendor_layer_is_refused_rather_than_guessed() {
         Some(PathBuf::from("/usr/etc/ssh/sshd_config.d/40-suse.conf"))
     );
 }
+
+/// A resolved configuration from `(path, content)` pairs in sshd's reading
+/// order, with no executor behind it.
+fn resolved(segments: &[(&str, &str)]) -> ResolvedConfig {
+    ResolvedConfig {
+        segments: segments
+            .iter()
+            .map(|(path, content)| (path.to_string(), content.to_string()))
+            .collect(),
+    }
+}
+
+#[test]
+fn a_legacy_spelling_answers_for_the_current_keyword() {
+    // Rocky 10's 50-redhat.conf, which ships the old name and no other.
+    let config = resolved(&[(
+        "/etc/ssh/sshd_config.d/50-redhat.conf",
+        "ChallengeResponseAuthentication no\n",
+    )]);
+    let effective = config
+        .effective("KbdInteractiveAuthentication")
+        .expect("the old name sets the same option");
+    assert_eq!(effective.value, "no");
+    assert_eq!(effective.keyword, "ChallengeResponseAuthentication");
+}
+
+#[test]
+fn the_first_line_wins_whichever_spelling_it_uses() {
+    // Both orders checked with `sshd -G` on OpenSSH 10.6p1: The earlier line
+    // is the one in force, and its name makes no difference.
+    for (content, expected) in [
+        (
+            "ChallengeResponseAuthentication no\nKbdInteractiveAuthentication yes\n",
+            "no",
+        ),
+        (
+            "KbdInteractiveAuthentication yes\nSkeyAuthentication no\n",
+            "yes",
+        ),
+    ] {
+        let config = resolved(&[("/etc/ssh/sshd_config", content)]);
+        assert_eq!(
+            config
+                .effective("KbdInteractiveAuthentication")
+                .map(|effective| effective.value)
+                .as_deref(),
+            Some(expected),
+            "{content}"
+        );
+    }
+}
+
+#[test]
+fn a_keyword_is_not_answered_by_a_different_option() {
+    let config = resolved(&[("/etc/ssh/sshd_config", "KbdInteractiveAuthentication no\n")]);
+    assert_eq!(config.effective("PasswordAuthentication"), None);
+}
+
+/// The resolver used to read each file through `parse_config_value`. These
+/// are the guarantees that reader gave, held here now that the lines are
+/// walked directly: A comment sets nothing, neither does a keyword with no
+/// value, and `Key=value`, indentation and case are all accepted.
+#[test]
+fn a_comment_or_a_bare_keyword_sets_nothing() {
+    let config = resolved(&[(
+        "/etc/ssh/sshd_config",
+        "#PermitRootLogin yes\nPermitRootLogin\n  permitrootlogin=no\n",
+    )]);
+    assert_eq!(
+        config
+            .effective("PermitRootLogin")
+            .map(|effective| effective.value)
+            .as_deref(),
+        Some("no")
+    );
+}
+
+#[test]
+fn a_list_valued_directive_yields_every_argument() {
+    // sshd accepts the quotes and the trailing comment, and `sshd -G` prints
+    // the two lists bare.
+    let config = resolved(&[(
+        "/etc/ssh/sshd_config",
+        "AuthenticationMethods \"publickey,keyboard-interactive\" publickey # either\n",
+    )]);
+    assert_eq!(
+        config.effective_arguments("AuthenticationMethods"),
+        Some(vec!["publickey,keyboard-interactive", "publickey"])
+    );
+}

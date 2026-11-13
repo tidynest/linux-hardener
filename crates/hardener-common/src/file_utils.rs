@@ -313,7 +313,7 @@ pub fn parse_config_value(
 /// second time somewhere else, and the reader calls the directive unset. An
 /// empty key means the line opens with a separator and defines nothing; empty
 /// value text means the key stands alone, which is not a definition either.
-fn split_directive(line: &str) -> (&str, &str) {
+pub fn split_directive(line: &str) -> (&str, &str) {
     let end = line
         .find(|c: char| c.is_whitespace() || c == '=')
         .unwrap_or(line.len());

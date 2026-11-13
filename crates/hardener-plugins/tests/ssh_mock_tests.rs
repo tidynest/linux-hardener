@@ -29,6 +29,7 @@ fn secure_ssh_executor() -> MockExecutor {
 # Secure SSH configuration
 PermitRootLogin no
 PasswordAuthentication no
+KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 MaxAuthTries 3
 X11Forwarding no
@@ -764,6 +765,7 @@ async fn scan_reports_directives_unchecked_when_sshd_config_is_root_only() {
     for id in [
         "ssh-permitrootlogin",
         "ssh-passwordauthentication",
+        "ssh-kbdinteractiveauthentication",
         "ssh-permitemptypasswords",
         "ssh-maxauthtries",
         "ssh-x11forwarding",
@@ -780,7 +782,7 @@ async fn scan_reports_directives_unchecked_when_sshd_config_is_root_only() {
     }
     assert_eq!(
         unchecked_ids.len(),
-        10,
+        11,
         "exactly one unchecked entry per directive/crypto table row, got: {unchecked_ids:?}"
     );
 
@@ -835,6 +837,7 @@ async fn scan_reports_directives_unchecked_when_no_sshd_config_exists() {
     for id in [
         "ssh-permitrootlogin",
         "ssh-passwordauthentication",
+        "ssh-kbdinteractiveauthentication",
         "ssh-permitemptypasswords",
         "ssh-maxauthtries",
         "ssh-x11forwarding",
@@ -1494,6 +1497,7 @@ async fn ssh_remote_root_apply_skips_all_safe_or_stricter_values() {
 const COMPLIANT_SSHD_CONFIG: &str = "\
 PermitRootLogin no
 PasswordAuthentication no
+KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 MaxAuthTries 3
 X11Forwarding no
@@ -1511,6 +1515,7 @@ MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 const GUARD_SAFE_COMPLIANT_SSHD_CONFIG: &str = "\
 PermitRootLogin prohibit-password
 PasswordAuthentication no
+KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 MaxAuthTries 3
 X11Forwarding no
@@ -1981,6 +1986,7 @@ async fn ssh_exception_and_weak_crypto_skips_are_not_counted_as_applied() {
     let hardened = "\
 PermitRootLogin no
 PasswordAuthentication yes
+KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 MaxAuthTries 3
 X11Forwarding no
@@ -3410,6 +3416,7 @@ async fn a_second_apply_over_a_root_session_keeps_a_value_a_drop_in_still_contes
 const STRICTER_THAN_BASELINE: &str = r#"
 PermitRootLogin no
 PasswordAuthentication no
+KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 MaxAuthTries 2
 X11Forwarding no
@@ -3921,6 +3928,218 @@ async fn ssh_apply_prunes_even_when_it_changes_nothing() {
         assert!(
             !removed.iter().any(|argument| **argument == backup),
             "the newest backups must survive, but {backup} was removed: {removed:?}"
+        );
+    }
+}
+
+// =============================================================================
+// Keyboard-interactive, the second way sshd takes a password (#186)
+// =============================================================================
+
+const KBD_FINDING: &str = "ssh-kbdinteractiveauthentication";
+
+/// Key first, then the account password through PAM. sshd needs
+/// keyboard-interactive on for this, and `sshd -t` rejects the file without it.
+const TWO_FACTOR_DROPIN: &str = "\
+AuthenticationMethods publickey,keyboard-interactive
+KbdInteractiveAuthentication yes
+UsePAM yes
+";
+
+const TWO_FACTOR_DROPIN_PATH: &str = "/etc/ssh/sshd_config.d/10-2fa.conf";
+
+/// A main file that includes the drop-in directory, with one drop-in in it.
+fn host_with_dropin(main: &str, dropin_name: &str, dropin: &str) -> MockExecutor {
+    MockExecutor::new()
+        .with_file("/etc/ssh/sshd_config", main)
+        .with_directory("/etc/ssh/sshd_config.d")
+        .with_file(&format!("/etc/ssh/sshd_config.d/{dropin_name}"), dropin)
+}
+
+/// The keyboard-interactive finding a default scan of this host raises.
+async fn kbd_finding(executor: MockExecutor) -> Option<hardener_core::plugin::Finding> {
+    let ctx = Context::with_executor(Arc::new(executor));
+    SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan must run")
+        .scan_findings
+        .into_iter()
+        .find(|finding| finding.finding_id == KBD_FINDING)
+}
+
+/// openSUSE sets the keyword nowhere, so sshd's own default of `yes` applies.
+/// With `PasswordAuthentication no` written and nothing else, a login as
+/// `testuser` with the account password still got in on Leap 16.0.
+#[tokio::test]
+async fn keyboard_interactive_left_unset_is_a_finding() {
+    let finding = kbd_finding(opensuse_ssh_executor())
+        .await
+        .expect("unset means yes, and yes takes a password");
+
+    assert_eq!(finding.finding_current_value, "not set");
+    assert_eq!(finding.finding_severity, Severity::Critical);
+    // The control that read Pass while the password got in.
+    assert!(
+        finding.finding_compliance.iter().any(|mapping| {
+            mapping.compliance_framework == ComplianceFramework::CIS
+                && mapping.compliance_control_id == "5.2.11"
+        }),
+        "the finding must fail the password-login control: {:?}",
+        finding.finding_compliance
+    );
+}
+
+/// Debian and Ubuntu put their `no` below the Include line, so any drop-in
+/// wins against it.
+#[tokio::test]
+async fn a_drop_in_switching_keyboard_interactive_back_on_is_a_finding() {
+    let finding = kbd_finding(host_with_dropin(
+        &format!("{SHIPPED_LAYOUT}KbdInteractiveAuthentication no\n"),
+        "60-cloud.conf",
+        "KbdInteractiveAuthentication yes\n",
+    ))
+    .await
+    .expect("the drop-in is read first, so sshd runs with yes");
+
+    assert_eq!(finding.finding_current_value, "yes");
+    assert!(
+        finding.finding_explanation.contains("60-cloud.conf"),
+        "the finding must name the file in force: {}",
+        finding.finding_explanation
+    );
+}
+
+/// Rocky 10 ships `ChallengeResponseAuthentication no` and never the current
+/// name. A lookup by the current name alone reads that host as unset.
+#[tokio::test]
+async fn the_old_spelling_switches_keyboard_interactive_off() {
+    let finding = kbd_finding(host_with_dropin(
+        SHIPPED_LAYOUT,
+        "50-redhat.conf",
+        "ChallengeResponseAuthentication no\n",
+    ))
+    .await;
+
+    assert!(
+        finding.is_none(),
+        "sshd reads the old name as the same option: {finding:?}"
+    );
+}
+
+#[tokio::test]
+async fn keyboard_interactive_behind_a_key_is_not_a_finding() {
+    let finding = kbd_finding(host_with_dropin(
+        SHIPPED_LAYOUT,
+        "10-2fa.conf",
+        TWO_FACTOR_DROPIN,
+    ))
+    .await;
+
+    assert!(
+        finding.is_none(),
+        "a second factor is not a password login: {finding:?}"
+    );
+}
+
+/// Two lists mean either will do, and the second needs no key.
+#[tokio::test]
+async fn keyboard_interactive_in_a_list_of_its_own_is_a_finding() {
+    let finding = kbd_finding(host_with_dropin(
+        SHIPPED_LAYOUT,
+        "10-either.conf",
+        "AuthenticationMethods publickey keyboard-interactive\n",
+    ))
+    .await;
+
+    assert!(
+        finding.is_some(),
+        "a password alone satisfies the second list"
+    );
+}
+
+#[tokio::test]
+async fn apply_switches_keyboard_interactive_off_on_a_vendor_only_host() {
+    let executor = dropin_apply_commands(opensuse_ssh_executor());
+
+    let result = run_ssh_apply(&executor).await;
+
+    let dropin =
+        dropin_written(&executor).expect("a vendor-only host is hardened through the fragment");
+    assert!(
+        dropin.contains("KbdInteractiveAuthentication no"),
+        "the fragment must close the second password method, got: {dropin}"
+    );
+    assert!(result.apply_success, "{:?}", result.apply_changes);
+}
+
+/// Both layouts, because each reaches a different write: The admin-layer host
+/// would route the directive to the fragment to beat the drop-in, and the
+/// vendor-layer host writes every managed directive there whatever it holds.
+/// Either write hands `sshd -t` a list no enabled method can satisfy.
+#[tokio::test]
+async fn apply_leaves_a_second_factor_switched_on() {
+    for executor in [
+        host_with_dropin(SHIPPED_LAYOUT, "10-2fa.conf", TWO_FACTOR_DROPIN),
+        opensuse_ssh_executor().with_file(TWO_FACTOR_DROPIN_PATH, TWO_FACTOR_DROPIN),
+    ] {
+        let executor = dropin_apply_commands(executor);
+
+        let result = run_ssh_apply(&executor).await;
+
+        assert!(result.apply_success, "{:?}", result.apply_changes);
+        let written = executor.log().files_written;
+        assert!(
+            !written
+                .iter()
+                .any(|(_, content)| content.contains("KbdInteractiveAuthentication")),
+            "the second factor must be left as the operator set it, wrote: {written:?}"
+        );
+    }
+}
+
+/// Ubuntu 20.04 and Debian 11 shipped the old name in the main file, and an
+/// upgraded host keeps it. Here it sits above a compliant line under the
+/// current name, which is what adding that line would produce. sshd reads the
+/// `yes` first, so the line to change is the one that answers.
+#[tokio::test]
+async fn apply_rewrites_the_old_spelling_where_the_main_file_uses_it() {
+    let executor = with_strong_crypto(apply_ready_executor(&format!(
+        "ChallengeResponseAuthentication yes\n{COMPLIANT_SSHD_CONFIG}"
+    )));
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "{:?}", result.apply_changes);
+    let written = written_sshd_config(&executor);
+    assert!(
+        written.starts_with("ChallengeResponseAuthentication no\n"),
+        "the line sshd reads first must be the one rewritten, got: {written}"
+    );
+}
+
+#[tokio::test]
+async fn the_preview_names_keyboard_interactive_only_where_the_apply_writes_it() {
+    for (executor, previewed) in [
+        (opensuse_ssh_executor(), true),
+        (
+            opensuse_ssh_executor().with_file(TWO_FACTOR_DROPIN_PATH, TWO_FACTOR_DROPIN),
+            false,
+        ),
+    ] {
+        let ctx = Context::with_executor(Arc::new(executor));
+        let changes = SshHardeningPlugin::new()
+            .validate(&ctx, &PluginConfig::default())
+            .await
+            .expect("validate must run")
+            .validation_report_estimated_changes;
+
+        assert_eq!(
+            changes
+                .iter()
+                .any(|change| change.starts_with("KbdInteractiveAuthentication:")),
+            previewed,
+            "{changes:?}"
         );
     }
 }

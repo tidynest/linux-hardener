@@ -1453,12 +1453,12 @@ every managed permission mode, `sshd -T` in full, the `sshd_config.d` fragments
 as names and contents, and what `login.defs` means to a fresh account. An apply
 that undoes the previous one is a fleet host drifting back to an unhardened state
 on a timer while every scan reports success, and a single-apply run cannot see
-that. A complete run comes to **93 checks per distribution unbooted and 99
-booted**, 98 of them where the container never had `bluetooth.service` running,
+that. A complete run comes to **95 checks per distribution unbooted and 101
+booted**, 100 of them where the container never had `bluetooth.service` running,
 and a run recording fewer than the tables ask for is refused rather than
 reported as a pass. Both runner paths declare their own network namespace, so
 an unbooted run here asks all 11 kernel rows; the size of a run holding neither
-signal is **80**, and no runner produces it. Do not read these as fixed: they
+signal is **82**, and no runner produces it. Do not read these as fixed: they
 are pinned as literals in `differential-suite.sh --self-test`, which is where to
 read them, and they moved by ten on 2026-08-09 when the audit and MAC oracles
 landed while this sentence and its copy in

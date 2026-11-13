@@ -8,7 +8,8 @@
 
 use super::{
     SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES, SSHD_ADMIN_CONFIG_PATH, crypto_value_is_secure, dropin,
-    include, observed_value, resolved_target, select_algorithms, supported_algorithms,
+    include, is_second_factor_only, observed_value, resolved_target, select_algorithms,
+    supported_algorithms,
 };
 
 use hardener_common::{
@@ -104,6 +105,11 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
 
             // Check each directive to see if it needs updating.
             for directive in SSH_DIRECTIVES {
+                // Left on by the apply, so absent from its preview.
+                if is_second_factor_only(directive, &resolved) {
+                    continue;
+                }
+
                 // Resolve the target the way apply and scan do, through the
                 // one function all three call.
                 let target = resolved_target(directive, config);

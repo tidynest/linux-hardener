@@ -8,8 +8,8 @@
 
 use super::{
     MainConfig, SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES, SSHD_ADMIN_CONFIG_PATH,
-    crypto_value_is_secure, get_ssh_compliance_mappings, include, observed_value, resolved_target,
-    unchecked_ssh_checks,
+    crypto_value_is_secure, get_ssh_compliance_mappings, include, is_second_factor_only,
+    observed_value, resolved_target, unchecked_ssh_checks,
 };
 
 use hardener_common::{
@@ -162,10 +162,13 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
         // already compliant. Comparing for equality flagged
         // `MaxAuthTries 2` against a baseline of 3, and apply then wrote
         // the 3 over it. An absent directive violates every direction,
-        // since nothing is enforcing it.
+        // since nothing is enforcing it. The one value that may stay weaker
+        // than the target is a method `AuthenticationMethods` only ever asks
+        // for behind another factor.
         let is_insecure = directive
             .ssh_compare
-            .violated_by(&target, current_value.as_deref());
+            .violated_by(&target, current_value.as_deref())
+            && !is_second_factor_only(directive, &resolved);
 
         if is_insecure {
             // An exception is honoured only when it documents the value the
