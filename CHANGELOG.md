@@ -80,6 +80,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hermit-abi` out. `cargo audit` reports an unmaintained crate as a warning
   and `cargo deny` as an error, so only the deny stage of the push gate
   stopped on it. The fuzz lockfile was already on `futures` 0.3.34.
+- **`deny.toml` no longer ignores eleven advisories that match nothing.** The
+  ten gtk3 binding advisories, RUSTSEC-2024-0411 to RUSTSEC-2024-0420, were
+  withdrawn on 2026-08-14. RUSTSEC-2026-0097 against `rand` 0.7.3 stays in
+  `.cargo/audit.toml`, since `cargo deny` does not check unsound advisories
+  for transitive crates.
 
 ## [1.9.1] - 2026-10-30
 
