@@ -64,6 +64,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binaries through `sqlx-core` and through `async-lock` under Leptos, and no
   workspace crate depends on it directly. 5.4.2 also drops `concurrent-queue`,
   which leaves the lockfile. The detached fuzz lockfile was already on 5.4.2.
+- **`quinn-udp` moves from 0.5.14 to 0.5.16 for RUSTSEC-2026-0538.** A
+  truncated datagram could leave its receive loop spinning. It sits in the
+  lockfile under `quinn`, which `reqwest` lists for HTTP/3, but no build turns
+  that on, so no binary contains it. The fuzz lockfile never carried it.
+- **`rustix` moves from 1.1.2 to 1.1.6 for RUSTSEC-2026-0486.** Its xattr
+  functions marked unwritten bytes as initialised when given an empty buffer.
+  It reaches the binaries through `tempfile`, and the fuzz lockfile moves from
+  1.1.4 to the same version.
 
 ## [1.9.1] - 2026-10-30
 
