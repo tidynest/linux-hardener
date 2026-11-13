@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   functions marked unwritten bytes as initialised when given an empty buffer.
   It reaches the binaries through `tempfile`, and the fuzz lockfile moves from
   1.1.4 to the same version.
+- **`pin-utils` leaves the lockfile, for RUSTSEC-2026-0441.** Its repository
+  was archived on 2026-10-01, so it will get no more releases. `futures-util`
+  0.3.31 and `hyper` 1.8.1 pulled it in, and both dropped it later:
+  `futures-util` in 0.3.32 and `hyper` in 1.9.0. `futures` moves from 0.3.31
+  to 0.3.34 and `hyper` from 1.8.1 to 1.12.0, which also takes `num_cpus` and
+  `hermit-abi` out. `cargo audit` reports an unmaintained crate as a warning
+  and `cargo deny` as an error, so only the deny stage of the push gate
+  stopped on it. The fuzz lockfile was already on `futures` 0.3.34.
 
 ## [1.9.1] - 2026-10-30
 
