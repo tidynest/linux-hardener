@@ -82,9 +82,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stopped on it. The fuzz lockfile was already on `futures` 0.3.34.
 - **`deny.toml` no longer ignores eleven advisories that match nothing.** The
   ten gtk3 binding advisories, RUSTSEC-2024-0411 to RUSTSEC-2024-0420, were
-  withdrawn on 2026-08-14. RUSTSEC-2026-0097 against `rand` 0.7.3 stays in
-  `.cargo/audit.toml`, since `cargo deny` does not check unsound advisories
-  for transitive crates.
+  withdrawn on 2026-08-14. The eleventh, RUSTSEC-2026-0097, named `rand`
+  0.8.5, which left the lockfile on 2026-08-30, and `cargo deny` does not
+  check unsound advisories for transitive crates anyway. The five `unic`
+  reasons now name `urlpattern` under `tauri-utils` as the crate that pulls
+  them in, not `idna`.
+- **`rand` 0.7.3 and `fxhash` leave the lockfile, and their two accepted
+  advisories go with them.** `tauri-plugin` 2.5.2 switched on the older HTML
+  code in `tauri-utils`, which pulled in `kuchikiki`, `selectors` 0.24 and the
+  `phf` 0.8 generator, and that generator required `rand` 0.7. `tauri-plugin`
+  moves to 2.6.3, which uses the `dom_query` code the rest of the tauri build
+  crates already used, and the `phf` copies older than 0.12 leave with it.
+  RUSTSEC-2026-0097, `rand` unsound with a custom logger, comes out of
+  `.cargo/audit.toml`, and RUSTSEC-2025-0057, `fxhash` unmaintained, comes out
+  of `deny.toml`. This code only ever ran at compile time, in build scripts
+  and proc macros, and none of it reached a shipped binary. The fuzz lockfile
+  never carried it.
 
 ## [1.9.1] - 2026-10-30
 

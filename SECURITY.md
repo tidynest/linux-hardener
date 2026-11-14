@@ -277,7 +277,7 @@ The advisory can be safely dismissed as it does not affect this project's securi
 
 `proc-macro-error2` (a fork of the also-unmaintained `proc-macro-error`, RUSTSEC-2024-0370) is unmaintained upstream with **no safe upgrade available**. It is pulled in purely transitively through the Leptos macro stack (`leptos_macro` / `leptos_router` / `rstml`) used by `hardener-ui`, and there is no first-party usage and no drop-in replacement short of removing Leptos. It is a compile-time proc-macro with no runtime attack surface. Accepted and ignored in `deny.toml`.
 
-The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained transitive crates that `cargo deny` reports: the `idna` Unicode tables, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the three that only `cargo audit` reports: the `rsa` entry above, and two unsound build-time or webview crates, `rand` 0.7.3 (RUSTSEC-2026-0097) and `glib` (RUSTSEC-2024-0429). `cargo deny` checks unsound advisories for workspace crates only, so it never sees those two.
+The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained transitive crates that `cargo deny` reports: the Unicode tables under `urlpattern`, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the two that only `cargo audit` reports: the `rsa` entry above, and `glib` (RUSTSEC-2024-0429), an unsound crate under the webview layer. `cargo deny` checks unsound advisories for workspace crates only, so it never sees `glib`.
 
 ## Contact
 
