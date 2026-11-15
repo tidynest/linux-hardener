@@ -35,8 +35,11 @@ Each table on the page opens with a marker comment, `<!-- baseline-table: KEY
   it to and the control's RHEL 10 identifier. The mapped control must sit in
   that check's own arm of the plugin's mapping function, helper calls in the
   arm included, so a plugin that stops mapping it fails the row even while
-  `profiles.rs` still holds the identifier as a translation key. Each RHEL 10
-  identifier must be one `profiles.rs` translates a mapped control to. In
+  `profiles.rs` still holds the identifier as a translation key. A row naming
+  several checks pairs them in order with as many controls, or else shares its
+  controls among them, and either way every check must still map its part.
+  Each RHEL 10 identifier must be one `profiles.rs` translates a mapped
+  control to. In
   `weaker-pass` and `exact-value-pass`, the baseline value the row quotes must
   still be the code's. In `switched-off-pass`, the check must still be
   compared "at most", the comparison that ranks the switched-off value as the
@@ -917,18 +920,35 @@ def check_control_rows(
         if not mapped:
             problems.append(f"{table}: `{label}` names no mapped control in backticks")
         bodies = []
+        own: dict[str, str] = {}
         for check in checks:
             matched = [body for pattern, body in arms if arm_matches(pattern, check)]
             if not matched:
                 problems.append(
                     f"{table}: `{check}` takes no arm of any plugin's mapping function"
                 )
+            own[check] = "\n".join(matched)
             bodies += matched
         mapped_text = "\n".join(bodies)
         for control in mapped:
             if bodies and f'"{control}"' not in mapped_text:
                 problems.append(
                     f"{table}: `{label}` is no longer mapped to `{control}` in the plugin"
+                )
+        # A row of several checks either pairs them with as many controls, in
+        # order (each account file with its own CIS number), or shares its
+        # controls among them (three ageing checks, one IA-5(1)(d)). Either way
+        # every check must still map its part, or a row naming two checks would
+        # stay green while one of them dropped the control.
+        paired = len(checks) > 1 and len(checks) == len(mapped)
+        for index, check in enumerate(checks):
+            if not own[check]:
+                continue
+            wanted = [mapped[index]] if paired else mapped
+            if wanted and not any(f'"{control}"' in own[check] for control in wanted):
+                problems.append(
+                    f"{table}: `{check}` no longer maps "
+                    f"{' or '.join(f'`{control}`' for control in wanted)} in its own arm"
                 )
         targets: set[str] = set()
         for control in mapped:
@@ -1170,6 +1190,7 @@ CONTROL_HEADER = "| Check | Mapped | RHEL 10 | Asks | Accepts |\n|---|---|---|--
 GOOD_CONTROL = "| `alpha` | STIG `STIG-A`, FedRAMP `FED-H` | STIG `R10-A` | 15 | `5` or more |"
 GUARD_CONTROL = "| `xbetax` | CIS `CIS-B` | CIS `R10-B` | more | prose only |"
 SWITCH_CONTROL = "| `alpha` | STIG `STIG-A` | STIG `R10-A` | a limit | `0`, ranked stricter than `5` |"
+PAIRED_CONTROL = "| `alpha`, `xbetax` | STIG `STIG-A`, CIS `CIS-B` | STIG `R10-A`, CIS `R10-B` | x | y |"
 
 
 def crypto(rows: list[str]):
@@ -1357,6 +1378,21 @@ SELF_TEST_CASES = [
             )
         ),
     ),
+    (
+        "controls: a row pairing two checks with their own controls passes",
+        None,
+        controls([PAIRED_CONTROL], last_column=None),
+    ),
+    (
+        "controls: a paired row whose check lost its own control is flagged",
+        "`alpha` no longer maps `CIS-B` in its own arm",
+        controls([PAIRED_CONTROL.replace("STIG `STIG-A`, CIS `CIS-B`", "CIS `CIS-B`, STIG `STIG-A`")], last_column=None),
+    ),
+    (
+        "controls: a check in a shared row that does not map the control is flagged",
+        "`xbetax` no longer maps `STIG-A` in its own arm",
+        controls(["| `alpha`, `xbetax` | STIG `STIG-A` | STIG `R10-A` | x | y |"], last_column=None),
+    ),
     ("controls: a switched-off value the code still ranks strictest passes", None, controls([SWITCH_CONTROL], last_column="switch-off")),
     (
         "controls: a switched-off row whose comparison was fixed is flagged",
@@ -1412,7 +1448,7 @@ SELF_TEST_CASES = [
 
 # Fewer cases than this means one was dropped, and with it a checker may have
 # lost the only case that rejects anything.
-MINIMUM_SELF_TEST_CASES = 47
+MINIMUM_SELF_TEST_CASES = 50
 
 
 def self_test(quiet: bool = False) -> int:
