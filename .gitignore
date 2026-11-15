@@ -16,6 +16,10 @@ Thumbs.db
 *.db
 *.db-shm
 *.db-wal
+# Except the engine fixtures, which hold made-up rows written by the SQLite
+# that 1.9.1 shipped, so a newer SQLite can be held to reading them (#188).
+!/crates/hardener-state/tests/fixtures/engine-1.9.1*.db
+!/crates/hardener-state/tests/fixtures/engine-1.9.1*.db-wal
 
 # Environment files (may contain credentials)
 .env

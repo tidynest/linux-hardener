@@ -410,3 +410,262 @@ async fn every_migration_restores_its_column() {
         pool.close().await;
     }
 }
+
+// ---------------------------------------------------------------------------
+// A database written by the SQLite that 1.9.1 shipped
+// ---------------------------------------------------------------------------
+//
+// The checkpoint database is the only copy of the files rollback restores, so
+// a SQLite upgrade that misread a file an older release wrote would take
+// rollback away with it, possibly on a host where a bad SSH or PAM change has
+// already locked the operator out. Every other test in this file builds its
+// database with whatever SQLite this build links, which can never notice that.
+//
+// The fixtures under `tests/fixtures/` were written once, on 2026-11-15, by
+// hardener-state at ccc62e6 (sqlx 0.8.6, libsqlite3-sys 0.30.1, bundled SQLite
+// 3.46.0): `init_db` on a fresh path, then [`insert_engine_fixture_rows`].
+// `engine-1.9.1.db` was copied after the pool closed, so SQLite had already
+// folded the write-ahead log into it. `engine-1.9.1-wal.db` and its `-wal` were
+// copied while the pool was still open, so the rows live only in the log, the
+// state a killed process leaves behind, and reading them goes through the WAL
+// frame reader that RUSTSEC-2026-0459 is about (#188).
+//
+// Never regenerate them with a newer SQLite: they are worth something only
+// because a different engine wrote them.
+
+/// The checkpoint the fixtures hold.
+const FIXTURE_CHECKPOINT_ID: &str = "5d2c1a8e-1880-4c1b-9a59-0459c0de0188";
+const FIXTURE_TIMESTAMP: i64 = 1_794_700_000;
+const FIXTURE_SSHD_CONFIG: &str = "# Written by the engine fixture\n\
+    Include /etc/ssh/sshd_config.d/*.conf\n\
+    PermitRootLogin prohibit-password\n\
+    PasswordAuthentication no\n\
+    KbdInteractiveAuthentication no\n\
+    UsePAM yes\n";
+/// Long enough to spill onto overflow pages at the default 4096-byte page.
+const FIXTURE_LARGE_LEN: usize = 12_000;
+
+/// The large file's bytes: every value of a byte, in an order no page
+/// boundary lines up with.
+fn fixture_large_content() -> Vec<u8> {
+    (0..FIXTURE_LARGE_LEN)
+        .map(|i| ((i * 31 + 7) % 251) as u8)
+        .collect()
+}
+
+/// `(file_path, content, permissions)` of each file state, in insertion order.
+/// The third records a path that was absent at capture time, as capture does:
+/// no content and permissions 0.
+fn fixture_file_states() -> Vec<(&'static str, Option<Vec<u8>>, i64)> {
+    vec![
+        (
+            "/etc/ssh/sshd_config",
+            Some(FIXTURE_SSHD_CONFIG.as_bytes().to_vec()),
+            0o600,
+        ),
+        (
+            "/var/lib/fixture/large.bin",
+            Some(fixture_large_content()),
+            0o644,
+        ),
+        ("/etc/ssh/sshd_config.d/10-absent.conf", None, 0),
+    ]
+}
+
+/// The rows the fixtures were written with. Kept here, and run against this
+/// build's own SQLite by `engine_fixture_rows_read_back_on_this_engine`, so the
+/// recipe and the checks below cannot drift apart.
+async fn insert_engine_fixture_rows(pool: &sqlx::SqlitePool) {
+    let signature: Vec<u8> = (0u8..64).collect();
+    sqlx::query(
+        "INSERT INTO checkpoints \
+         (id, name, timestamp, username, signature, created_at, host_key) \
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(FIXTURE_CHECKPOINT_ID)
+    .bind("before ssh hardening")
+    .bind(FIXTURE_TIMESTAMP)
+    .bind("root")
+    .bind(signature)
+    .bind(FIXTURE_TIMESTAMP)
+    .bind("local")
+    .execute(pool)
+    .await
+    .expect("insert the fixture checkpoint");
+
+    for (path, content, permissions) in fixture_file_states() {
+        sqlx::query(
+            "INSERT INTO file_states \
+             (checkpoint_id, file_path, content, permissions, owner_uid, owner_gid) \
+             VALUES (?, ?, ?, ?, 0, 0)",
+        )
+        .bind(FIXTURE_CHECKPOINT_ID)
+        .bind(path)
+        .bind(content)
+        .bind(permissions)
+        .execute(pool)
+        .await
+        .expect("insert a fixture file state");
+    }
+}
+
+/// Holds `pool` to every row [`insert_engine_fixture_rows`] wrote, byte for
+/// byte, and to a clean integrity check.
+async fn assert_engine_fixture_rows(pool: &sqlx::SqlitePool) {
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(pool)
+        .await
+        .expect("run the integrity check");
+    assert_eq!(integrity, "ok", "the database must pass SQLite's own check");
+
+    let checkpoint: (String, i64, String, Vec<u8>, String) = sqlx::query_as(
+        "SELECT name, timestamp, username, signature, host_key \
+         FROM checkpoints WHERE id = ?",
+    )
+    .bind(FIXTURE_CHECKPOINT_ID)
+    .fetch_one(pool)
+    .await
+    .expect("the fixture checkpoint must still be there");
+    assert_eq!(
+        checkpoint,
+        (
+            "before ssh hardening".to_string(),
+            FIXTURE_TIMESTAMP,
+            "root".to_string(),
+            (0u8..64).collect::<Vec<u8>>(),
+            "local".to_string(),
+        ),
+        "the checkpoint row must read back unchanged"
+    );
+
+    let states: Vec<(String, Option<Vec<u8>>, i64)> = sqlx::query_as(
+        "SELECT file_path, content, permissions FROM file_states \
+         WHERE checkpoint_id = ? ORDER BY id",
+    )
+    .bind(FIXTURE_CHECKPOINT_ID)
+    .fetch_all(pool)
+    .await
+    .expect("read the fixture file states");
+    let expected: Vec<(String, Option<Vec<u8>>, i64)> = fixture_file_states()
+        .into_iter()
+        .map(|(path, content, mode)| (path.to_string(), content, mode))
+        .collect();
+    assert_eq!(
+        states, expected,
+        "every file state, the content rollback restores included, must read \
+         back byte for byte"
+    );
+}
+
+/// Writes `files` (name, bytes) into a fresh directory and returns it with the
+/// path of the database among them.
+fn materialise_fixture(files: &[(&str, &[u8])]) -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for (name, bytes) in files {
+        std::fs::write(dir.path().join(name), bytes).expect("write a fixture file");
+    }
+    let db = dir.path().join("checkpoints.db");
+    (dir, db)
+}
+
+/// Opens a fixture the way the CLI does, checks it, then writes to it and
+/// checks again, since an upgraded binary goes on to add checkpoints to the
+/// file an older one left.
+async fn open_and_check_fixture(db: &std::path::Path) {
+    let pool = init_db(Some(db))
+        .await
+        .expect("a database 1.9.1 wrote must open under this engine");
+    assert_engine_fixture_rows(&pool).await;
+
+    sqlx::query(
+        "INSERT INTO checkpoints \
+         (id, name, timestamp, username, signature, created_at, host_key) \
+         VALUES ('after-the-upgrade', 'later', 1, 'root', x'00', 1, 'local')",
+    )
+    .execute(&pool)
+    .await
+    .expect("this engine must be able to write to the old file");
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM checkpoints")
+        .fetch_one(&pool)
+        .await
+        .expect("count checkpoints");
+    assert_eq!(count, 2, "the old row and the new one must both be there");
+    assert_engine_fixture_rows(&pool).await;
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn engine_fixture_rows_read_back_on_this_engine() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let pool = init_db(Some(&dir.path().join("checkpoints.db")))
+        .await
+        .expect("init a fresh database");
+    insert_engine_fixture_rows(&pool).await;
+    assert_engine_fixture_rows(&pool).await;
+    pool.close().await;
+}
+
+/// The first 16 bytes of every SQLite database file.
+const SQLITE_HEADER: &[u8] = b"SQLite format 3\0";
+
+/// The first four bytes of a write-ahead log: the magic number, big-endian,
+/// whose last bit only records the byte order of its checksums.
+fn is_wal_magic(bytes: &[u8]) -> bool {
+    matches!(bytes.get(..4), Some([0x37, 0x7f, 0x06, 0x82 | 0x83]))
+}
+
+#[tokio::test]
+async fn a_checkpoint_database_written_by_1_9_1_reads_back() {
+    let main: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/engine-1.9.1.db"
+    ));
+    assert!(
+        main.starts_with(SQLITE_HEADER),
+        "the fixture must be a SQLite database, not a placeholder"
+    );
+
+    let (_dir, db) = materialise_fixture(&[("checkpoints.db", main)]);
+    open_and_check_fixture(&db).await;
+}
+
+#[tokio::test]
+async fn a_write_ahead_log_left_by_1_9_1_reads_back() {
+    let main: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/engine-1.9.1-wal.db"
+    ));
+    let log: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/engine-1.9.1-wal.db-wal"
+    ));
+    assert!(
+        main.starts_with(SQLITE_HEADER) && is_wal_magic(log),
+        "the fixture must be a SQLite database and a write-ahead log"
+    );
+
+    // The fixture is only worth its name while the rows are in the log and not
+    // in the main file. Opened alone, read-only, the main file must not have
+    // them, or a regenerated fixture has quietly stopped testing the log.
+    let (_alone_dir, alone) = materialise_fixture(&[("checkpoints.db", main)]);
+    let alone_pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect_with(
+            sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(&alone)
+                .read_only(true),
+        )
+        .await
+        .expect("open the main file alone");
+    let rows_without_log: std::result::Result<i64, sqlx::Error> =
+        sqlx::query_scalar("SELECT COUNT(*) FROM file_states")
+            .fetch_one(&alone_pool)
+            .await;
+    assert!(
+        !matches!(rows_without_log, Ok(n) if n > 0),
+        "the main file alone must not hold the rows, got {rows_without_log:?}"
+    );
+    alone_pool.close().await;
+
+    let (_dir, db) = materialise_fixture(&[("checkpoints.db", main), ("checkpoints.db-wal", log)]);
+    open_and_check_fixture(&db).await;
+}
