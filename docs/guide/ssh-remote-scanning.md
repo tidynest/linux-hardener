@@ -186,9 +186,14 @@ checkpoints are filed under the name you give. Keep the socket path short,
 since ssh refuses one of 108 bytes or more, and in a directory only you can
 read.
 
-This suits a scan, and an apply as a user with passwordless sudo. It does not
-help root: under `PermitRootLogin prohibit-password`, sshd refuses root every
-keyboard-interactive step, so root cannot open such a connection at all.
+This suits a scan. It does not suit an apply. An apply needs a root session,
+because commands run as the connecting user and only file writes go through
+`sudo`: as any other user the SSH plugin's own `sshd -t` check stops at
+`sshd: no hostkeys available`, and the second factor's lockout check cannot
+read `/etc/shadow`. Root cannot open such a connection either: under
+`PermitRootLogin prohibit-password`, sshd refuses root every
+keyboard-interactive step. For a remote apply, use the `Match` block below, or
+run the apply in a session on the host itself.
 
 **A Match block for the automation account.** To keep a remote root apply, or
 any key-only automation, working from one controller, exempt that account from
@@ -198,13 +203,17 @@ that address:
 # /etc/ssh/sshd_config.d/50-automation.conf on the target
 Match User root Address 192.0.2.10
     AuthenticationMethods publickey
+    PermitRootLogin prohibit-password
 ```
 
 That one identity then logs in on its key alone, so restrict its key as well
 (`from="192.0.2.10",restrict` in `authorized_keys`). The plugin's apply checks
 for exactly this over `--ssh`: it refuses to add the second factor when the
 account it connected as would lose its key-only login, and the block above is
-what lets it through.
+what lets it through. The `PermitRootLogin` line keeps it working after an
+apply run on the host itself, which sets `PermitRootLogin no` everywhere the
+block does not reach. Use an address that does not move, a VPN or a jump host,
+rather than a laptop's.
 
 `batch`, the fleet screen and the desktop's remote screen open their own
 connections and cannot use a socket yet, so they need the `Match` block.
