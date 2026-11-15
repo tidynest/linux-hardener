@@ -236,7 +236,7 @@ well as different lists.
 | `rules` | CIS `4.1.2.1` | CIS `6.3.2.1` | `max_log_file` set in `auditd.conf`, under both profiles: 8 MB in ComplianceAsCode's RHEL 10 encoding, and the same rule in its CIS RHEL 8 v2.0.0 encoding of 4.1.2.1 | That some loaded rule contains each category's name. `auditd.conf` is never read, and the rule text is not compared; see [Audit rules](#audit-rules) |
 | `selinux-not-enforcing` | CIS `1.6.1.4` | CIS `1.3.1.5` | `SELINUX=enforcing` in `/etc/selinux/config`, so the host boots enforcing, as ComplianceAsCode's `selinux_state` rule checks it for the CIS RHEL 8 v2.0.0 and RHEL 10 v1.0.1 encodings | The running mode only, through `getenforce`. Apply runs `setenforce 1`, which a reboot undoes, so the control passes until the next boot |
 | `PASS_MAX_DAYS`, `PASS_MIN_DAYS`, `PASS_WARN_AGE` | CIS `5.4.1.1`, `5.4.1.2`, `5.4.1.3` | CIS `5.4.1.1`, `5.4.1.2`, `5.4.1.3` | Under the RHEL 10 profile, the same limits on every existing account in `/etc/shadow`, not only the defaults `login.defs` gives new accounts | `/etc/login.defs` only |
-| `PASS_MAX_DAYS`, `PASS_MIN_DAYS`, `PASS_WARN_AGE` | NIST `IA-5(1)(d)`, FedRAMP `IA-5(1)(d)` | unchanged, since the profile only translates STIG and CIS | In SP 800-53 Rev 5, IA-5(1)(d) is "Store passwords using an approved salted key derivation function". The password lifetime wording the label comes from was Rev 4's | Password ageing in `login.defs`. Nothing checks how passwords are stored |
+| `PASS_MAX_DAYS`, `PASS_MIN_DAYS`, `PASS_WARN_AGE` | NIST `IA-5(1)(d)`, FedRAMP `IA-5(1)(d)` | unchanged, since the profile only translates STIG and CIS | In SP 800-53 Rev 5, IA-5(1)(d) is "Store passwords using an approved salted key derivation function", and no item of IA-5(1) covers password lifetime. The label comes from ComplianceAsCode's references for its ageing rules, which still cite IA-5(1)(d) | Password ageing in `login.defs`. Nothing checks how passwords are stored |
 
 The same `rules` finding is the only evidence for every other control the
 audit plugin maps to its rules, among them NIST `AU-12(c)` and PCI DSS
@@ -249,7 +249,7 @@ does, and sets the boot setting only in its fix.
 
 Each row is a decision for whoever changes it: raise the baseline to the
 control's value, measure what the check leaves out, or stop mapping the check
-to that control. Either is a change to propose as described
+to that control. Each is a change to propose as described
 [below](#proposing-a-change). Until then, README lists this under its known
 limitations.
 
@@ -411,7 +411,7 @@ table in the code is `PAM_DIRECTIVES` in
 | `lcredit` | `-1` | at most | Medium | No source recorded (2025-11-22) | STIG RHEL-08-020120: -1, at least one lower-case letter. Otherwise as for `dcredit`. |
 | `ocredit` | `-1` | at most | Medium | No source recorded (2025-11-22) | STIG RHEL-08-020280: -1, at least one special character. Otherwise as for `dcredit`. |
 | `maxrepeat` | `3` | at most, not 0 | Low | No source recorded (2025-11-22) | STIG RHEL-08-020150: 3. CIS RHEL 10 5.3.2.2.4 has a control for it. |
-| `PASS_MAX_DAYS` | `90` | at most | Medium | No source recorded (2025-11-22) | STIG RHEL-08-020200: 180 in V2R9; the title in the code still reads 60 days. CIS RHEL 10 5.4.1.1: 365, as in every CIS edition read. The NIST and FedRAMP label in the code, IA-5(1)(d), is Rev 4 wording: in SP 800-53 Rev 5 that item is about storing passwords. PCI DSS 8.3.9: 90, only where the password is the single factor, and dynamic risk analysis is allowed instead. 800-63B-4: verifiers "SHALL NOT require subscribers to change passwords periodically", and must force a change on evidence of compromise. |
+| `PASS_MAX_DAYS` | `90` | at most | Medium | No source recorded (2025-11-22) | STIG RHEL-08-020200: 180 in V2R9; the title in the code still reads 60 days. CIS RHEL 10 5.4.1.1: 365, as in every CIS edition read. The NIST and FedRAMP label in the code, IA-5(1)(d), comes from ComplianceAsCode's references, but in SP 800-53 Rev 5 that item is about storing passwords, and no item of IA-5(1) covers password lifetime. PCI DSS 8.3.9: 90, only where the password is the single factor, and dynamic risk analysis is allowed instead. 800-63B-4: verifiers "SHALL NOT require subscribers to change passwords periodically", and must force a change on evidence of compromise. |
 | `PASS_MIN_DAYS` | `1` | at least | Low | No source recorded (2025-11-22) | STIG RHEL-08-020190: 1. CIS RHEL 10 5.4.1.2: 1. Not enforceable on Arch. |
 | `PASS_WARN_AGE` | `7` | at least | Low | No source recorded (2025-11-22) | CIS RHEL 10 5.4.1.3: 7. |
 | `deny` | `5` | at most | High | Commit `0fdfaa82` (2026-07-01), "for CIS 5.3.2/5.3.3" | CIS RHEL 10 5.3.2.1.1: 5. STIG RHEL-08-020011: 3. PCI DSS 8.3.4: lock out after no more than 10 attempts. 800-63B-4: no more than 100 consecutive failures. A lower `deny` locks accounts sooner, which is also a way to lock out a legitimate user. |
@@ -546,9 +546,9 @@ There are two comparisons:
   `/etc/group` are exact 0644 without saying why, and nothing says why the
   first five paths are exact. For files ordinary programs read, such as
   `/etc/passwd`, a narrower mode could break them, so exact may be deliberate
-  there, and it is harder to explain for `/root` or `/etc/sudoers`. A `directives` override with the
-  stricter mode keeps the host where it is, and rollback restores the earlier
-  mode.
+  there, and it is harder to explain for `/root` or `/etc/sudoers`. A
+  `directives` override with the stricter mode keeps the host where it is, and
+  rollback restores the earlier mode.
 
 <!-- baseline-table: permissions -->
 
