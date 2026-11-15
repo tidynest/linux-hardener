@@ -1,6 +1,6 @@
 # Linux Hardener - Architecture Documentation
 
-**Last Updated**: 2026-11-13
+**Last Updated**: 2026-11-15
 **Version:** 1.9.1
 
 ---
@@ -717,9 +717,10 @@ pub struct PolicyException {
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | Push/PR to `main` | Tests, clippy, fmt, security audit, build |
+| `ci.yml` | Push/PR to `main` | Tests, clippy, fmt, security audit of both lockfiles, build |
 | `release.yml` | Tag `v*` | Multi-target builds, GitHub releases |
 | `codeql.yml` | Push/PR to `main`, weekly schedule | CodeQL static analysis |
+| `advisories.yml` | Weekly schedule (Monday 06:23 UTC), manual, PRs that change the watch | `cargo audit` on both lockfiles between pushes; the temporary RUSTSEC-2026-0459 watch (#188) |
 
 > **Note:** GitHub Actions CI/CD is connected and functional. Workflows trigger on
 > push/PR to the `main` branch, running check, test, clippy, fmt, security audit,

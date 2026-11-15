@@ -1696,7 +1696,9 @@ cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 `cargo audit` runs once per lockfile, with no retry loop: the job installs a
 prebuilt binary, which is what the loop used to work around. The second call
 reads the detached fuzz workspace's lockfile, which the first never sees, and
-both honour `.cargo/audit.toml` because they run from the repository root.
+runs even when the first fails (`if: ${{ !cancelled() }}`), so one red lockfile
+never hides the other's verdict. Both honour `.cargo/audit.toml` because they
+run from the repository root.
 
 `ci.yml` holds one more job that none of the above reproduces, `msrv`. The
 commands above are the other seven between them (`check`, `test`, `clippy`,
@@ -1735,7 +1737,7 @@ in `build-mode: none`, on every push and pull request to `main` and on a schedul
 (Mondays, 06:00 UTC). It has no local reproduction: results go to the
 repository's security tab.
 
-### advisories.yml (weekly, and by hand)
+### advisories.yml (weekly, by hand, and on pull requests that change the watch)
 
 ```bash
 cargo audit
@@ -1750,5 +1752,11 @@ for the next push. The other job is temporary, for #188: the watch exits 1
 once a released `sqlx` accepts a `libsqlite3-sys` that fixes RUSTSEC-2026-0459,
 or once the review date in `.cargo/audit.toml` has passed, and 2 when it could
 not ask the registry at all. Its test runs offline against a stand-in `cargo`.
+A pull request that changes the watch, its test or the workflow file runs the
+watch job as well, so an edit to them is tested before it merges; the audit job
+skips pull requests, since `ci.yml` already audits both lockfiles there.
+GitHub sends a failed scheduled run's notification to whoever last modified the
+cron line, so after the workflow lands, the maintainer's own commit should be
+the last to touch it, and one run by hand shows where a failure is reported.
 
 **Last Updated**: 2026-11-15

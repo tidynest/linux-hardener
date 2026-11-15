@@ -231,10 +231,11 @@ The `--check` variant exits non-zero if any file would be reformatted. Run `carg
 ### Security audit
 
 ```bash
-cargo audit
+cargo audit                                  # the workspace lockfile
+cargo audit --file fuzz/Cargo.lock           # the detached fuzz workspace's lockfile
 ```
 
-Scans `Cargo.lock` for known security advisories in dependencies. Uses `.cargo/audit.toml` for configuration (e.g. ignored advisories).
+Scans each lockfile for known security advisories in dependencies. Uses `.cargo/audit.toml` for configuration (e.g. ignored advisories), which is why both commands run from the repository root: run from inside `fuzz/`, the second would not find it. `fuzz/` is a workspace of its own with its own `Cargo.lock`, which the first command never reads, and it pulls the same crates through `hardener-core`.
 
 ### Documentation generation
 
@@ -264,4 +265,4 @@ rustup target list --installed               # List currently installed targets
 cargo update --workspace                     # Update all dependencies in Cargo.lock
 ```
 
-**Last Updated**: 2026-11-03
+**Last Updated**: 2026-11-15

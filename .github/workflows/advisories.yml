@@ -4,13 +4,27 @@ name: Advisories
 # job in ci.yml runs on push and pull request only, so an advisory published in
 # a quiet week waits for the next push: RUSTSEC-2026-0459 is dated 2026-10-30,
 # the push on 2026-11-03 still passed, and nothing reported it until the push
-# on 2026-11-13. GitHub sends the notification for a failed scheduled run to
-# whoever last edited the cron line below, and disables the schedule after 60
-# days without repository activity.
+# on 2026-11-13.
+#
+# Who hears about a failure: GitHub sends the notification for a failed
+# scheduled run to whoever last modified the cron line below, and disables the
+# schedule after 60 days without repository activity. So the last commit that
+# touches the cron line should be the maintainer's own, and after it lands,
+# one run by hand from the Actions tab shows where a failure is reported.
+#
+# A pull request that changes the watch, its test or this file runs the watch
+# job too, so an edit to them is tested before it merges rather than on the
+# following Monday.
 on:
   workflow_dispatch:
   schedule:
     - cron: '23 6 * * 1'   # weekly Monday 06:23 UTC
+  pull_request:
+    branches: [main, master]
+    paths:
+      - '.github/workflows/advisories.yml'
+      - 'scripts/deps/**'
+      - 'scripts/test/test-rustsec-2026-0459-watch.sh'
 
 permissions:
   contents: read
@@ -18,6 +32,8 @@ permissions:
 jobs:
   audit:
     name: Audit both lockfiles
+    # ci.yml already audits both lockfiles on every pull request.
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -31,7 +47,10 @@ jobs:
       - name: Audit the workspace lockfile
         run: cargo audit
 
+      # Runs even when the call above fails, so one red lockfile never hides
+      # the other's verdict.
       - name: Audit the detached fuzz lockfile
+        if: ${{ !cancelled() }}
         run: cargo audit --file fuzz/Cargo.lock
 
   # Temporary, for #188. RUSTSEC-2026-0459 is accepted in .cargo/audit.toml

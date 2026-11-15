@@ -2146,7 +2146,8 @@ that `sqlx` declares, or because the review date has passed; `2` the check
 could not run, which it never reports as "still blocked".
 
 `.github/workflows/advisories.yml` runs the test and then the watch every
-Monday, so a `1` arrives as a failed scheduled run. Delete the script, its
+Monday, so a `1` arrives as a failed scheduled run, and on any pull request
+that changes the watch, its test or the workflow file. Delete the script, its
 test, that job and both ignore entries in the change that takes the fix.
 
 ---
