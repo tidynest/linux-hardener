@@ -444,11 +444,13 @@ When you add a check or change a value, change its row in the same commit. Name
 the guide, its version and the rule or section the value follows, or write "No
 source recorded" and say why the value was chosen. If the mapped control asks
 for a stricter number than the baseline, add the control to the page's table of
-weaker passes, because a report will pass a host that does not meet it.
-`scripts/validate/validate_baseline_sources.py` reads the plugin tables and
-fails until the page agrees, so a value cannot change unseen. If a new table
-does not have the shape that script parses, extend the script in the same
-change rather than leaving the table unread.
+weaker passes, because a report will pass a host that does not meet it. The
+same goes for a control that asks for more than the check measures, such as
+ownership where the check reads only the mode.
+`scripts/validate/validate_baseline_sources.py`, run by `validate_all.py`,
+reads the plugin tables and fails until the page agrees. If a new table does
+not have the shape that script parses, extend the script in the same change
+rather than leaving the table unread.
 
 ## Naming conventions
 

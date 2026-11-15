@@ -260,14 +260,22 @@ Start from the row for the setting in
 [docs/reference/baseline-sources.md](docs/reference/baseline-sources.md), then
 open an issue with the **Propose a baseline change** form. It asks for:
 
-- The setting, its current default and the value you propose
+- The setting, its current default and the value you propose, or that the
+  setting is not checked today
 - The guide, version and rule or section that backs it, with a link
 - What changes on each validated distribution (Arch, Debian, Ubuntu, Fedora,
   RHEL or Rocky, openSUSE)
 - Who could be locked out or what could break, and whether rollback undoes it
 - Which compliance controls would move between Pass and Fail
-- Whether it should be the default for everyone, or a stricter value people can
-  already set themselves with `directives`
+- Whether it should be the default for everyone, or a stricter value people
+  choose for themselves
+
+A stricter value for a setting already in the kernel, SSH, PAM, file-permission
+or firewall tables needs no proposal: `directives` sets it today. The SSH
+algorithm lists, the services list, the audit rules and any setting not in the
+tables can only change in the code. There is no written rule yet for choosing
+between guides that disagree, so a proposal should say why its value is better
+than the others the row lists.
 
 A pull request that changes a default updates its row on that page in the same
 commit; `validate_all.py` fails until it does.
