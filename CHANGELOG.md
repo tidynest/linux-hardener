@@ -151,6 +151,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settings and 3 of the 8 SSH directives and claimed a SUID/SGID check, and
   the permissions plugin's module comment, which claimed SUID/SGID,
   world-writable and SSH key checks, now say what the plugins check.
+- **Password expiry or lockout switched off no longer reads as compliant
+  (#190).** `PASS_MAX_DAYS -1` disables expiry and `0` expires every password
+  as soon as it is set, and faillock's `deny = 0` disables lockout. All three
+  scored as stricter than the baseline, because a smaller number counted as
+  stricter all the way down, so a host with expiry or lockout off passed every
+  control the check maps to. An override of `PASS_MAX_DAYS = "-1"` or
+  `deny = "0"` in `config.toml` was even written to the host as a tightening.
+  Only a positive number now counts as a working limit for these two
+  directives, the way `maxrepeat = 0` is already treated. Such a host gains a
+  finding on its next scan and `apply` writes the baseline, while a stricter
+  positive value is still kept. The upgrading guide has a section on checking
+  a host.
 
 ### Security
 

@@ -454,6 +454,40 @@ fn threshold_directives_accept_stricter_and_flag_looser() {
     );
 }
 
+/// `PASS_MAX_DAYS -1` switches expiry off and `0` expires every password at
+/// once; `deny = 0` switches lockout off and a negative `deny` wraps inside
+/// faillock. None of them is a stricter limit than the baseline, so none may
+/// be compliant, and none may win the clamp an override or the host's own
+/// value goes through.
+#[test]
+fn switching_expiry_or_lockout_off_is_never_compliant() {
+    for (name, off_values) in [("PASS_MAX_DAYS", ["-1", "0"]), ("deny", ["0", "-1"])] {
+        let directive = PAM_DIRECTIVES
+            .iter()
+            .find(|d| d.pam_directive_name == name)
+            .expect("a known directive");
+        for off in off_values {
+            assert!(
+                pam_violates(directive, directive.pam_secure_value, Some(off)),
+                "{name} = {off} switches the setting off and must be a violation"
+            );
+            assert_eq!(
+                directive
+                    .pam_compare
+                    .clamp_target(directive.pam_secure_value, Some(off)),
+                directive.pam_secure_value,
+                "{name} = {off} must never win a clamp, as an override or as the host's value"
+            );
+        }
+        // A genuinely stricter working limit is still compliant and kept.
+        assert!(!pam_violates(
+            directive,
+            directive.pam_secure_value,
+            Some("3")
+        ));
+    }
+}
+
 /// Pins the trait default: PAM's changes take effect immediately for new
 /// authentication attempts, so a rollback that restored `/etc/pam.d` has
 /// nothing to reload.

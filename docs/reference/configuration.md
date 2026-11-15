@@ -325,6 +325,17 @@ of them zero is the loosest value the setting has and is never treated as
 compliant. `MaxAuthTries 0` and `ClientAliveCountMax 0`, by contrast, are the
 strict end of their settings and are honoured as such.
 
+`PASS_MAX_DAYS` and faillock's `deny` go one step further, because for them
+only a positive number is a working limit. `PASS_MAX_DAYS -1` switches expiry
+off (login.defs(5) calls it the value that "disables the restriction"), `0`
+expires every password as soon as it is set, `deny = 0` switches lockout off,
+and a negative `deny` wraps to 65535 inside faillock. All of them rank as the
+loosest value the setting has. A host carrying one is reported and given the
+baseline by `apply`, and an override naming one loses the clamp rather than
+being written as a tightening. Until #190 each of them ranked as the strictest
+value instead, so a host with expiry or lockout switched off passed every
+control the check maps to.
+
 Some settings are ordered rather than counted, because neither the number nor
 the alphabet carries their strictness:
 

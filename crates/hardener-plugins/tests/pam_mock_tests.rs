@@ -3628,6 +3628,153 @@ async fn scan_reports_a_disabled_maxrepeat_rather_than_scoring_zero_as_strict() 
     );
 }
 
+/// The content apply wrote to `path`, if it wrote it.
+fn written_content(executor: &MockExecutor, path: &str) -> Option<String> {
+    executor
+        .log()
+        .files_written
+        .iter()
+        .find(|(written, _)| written.to_str() == Some(path))
+        .map(|(_, content)| content.clone())
+}
+
+/// `PASS_MAX_DAYS -1` disables expiry (login.defs(5)), and `0` expires every
+/// password as soon as it is set. A plain "at most" comparison scored both as
+/// stricter than 90, so a host with expiry switched off passed every control
+/// the check maps to, which is the `maxrepeat = 0` defect above in another
+/// directive.
+#[tokio::test]
+async fn scan_reports_a_disabled_or_broken_maximum_age() {
+    for value in ["-1", "0"] {
+        let login_defs = format!("PASS_MAX_DAYS {value}\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n");
+        let executor =
+            Arc::new(secure_pam_executor().with_file("/etc/login.defs", login_defs.as_str()));
+        let ctx = Context::with_executor(executor);
+
+        let result = PamHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .expect("scan runs");
+
+        let finding = result
+            .scan_findings
+            .iter()
+            .find(|f| f.finding_id == "pam-PASS_MAX_DAYS")
+            .unwrap_or_else(|| {
+                panic!("PASS_MAX_DAYS {value} must not read as a strict maximum age")
+            });
+        assert_eq!(finding.finding_current_value, value);
+        assert_eq!(finding.finding_recommended_value, "90");
+    }
+}
+
+/// The apply half: a host with expiry switched off is given the baseline,
+/// rather than having its `-1` kept as the stricter of the two.
+#[tokio::test]
+async fn apply_replaces_a_disabled_maximum_age_with_the_baseline() {
+    let executor = Arc::new(with_backup_cp(
+        secure_pam_executor().with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS -1\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        ),
+        "/etc/login.defs",
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply runs");
+
+    let content = written_content(&executor, "/etc/login.defs")
+        .expect("a host with expiry switched off must have login.defs rewritten");
+    assert!(
+        content.contains("PASS_MAX_DAYS 90") && !content.contains("PASS_MAX_DAYS -1"),
+        "expiry must be restored to the baseline, got: {content}"
+    );
+    assert!(result.apply_success, "changes: {:?}", result.apply_changes);
+}
+
+/// An override is clamped tighten-only, and `-1` used to place as the
+/// tightest maximum age of all, so `PASS_MAX_DAYS = "-1"` in config.toml was
+/// written to the host as a hardening step that switched expiry off.
+#[tokio::test]
+async fn an_override_that_disables_expiry_is_not_written_as_a_tightening() {
+    let executor = Arc::new(with_backup_cp(
+        secure_pam_executor().with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 99999\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        ),
+        "/etc/login.defs",
+    ));
+    let mut config = PluginConfig::default();
+    config
+        .directives
+        .insert("PASS_MAX_DAYS".to_string(), "-1".to_string());
+
+    let ctx = Context::with_executor(executor.clone());
+    let scan = PamHardeningPlugin::new()
+        .scan(&ctx, &config)
+        .await
+        .expect("scan runs");
+    let finding = scan
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-PASS_MAX_DAYS")
+        .expect("99999 is still looser than the baseline");
+    assert_eq!(
+        finding.finding_recommended_value, "90",
+        "the override switches expiry off, so it must lose the clamp"
+    );
+
+    let mut ctx = Context::with_executor(executor.clone());
+    PamHardeningPlugin::new()
+        .apply(&mut ctx, &config)
+        .await
+        .expect("apply runs");
+    let content = written_content(&executor, "/etc/login.defs").expect("login.defs is rewritten");
+    assert!(
+        content.contains("PASS_MAX_DAYS 90") && !content.contains("PASS_MAX_DAYS -1"),
+        "apply must write the baseline, never the override that disables expiry: {content}"
+    );
+}
+
+/// `deny = 0` disables faillock's lockout outright (`pam_faillock` locks only
+/// `if (opts->deny && failures >= opts->deny)`), so it is the loosest value
+/// the setting has. It used to score as the strictest.
+#[tokio::test]
+async fn lockout_switched_off_is_reported_and_restored() {
+    let executor = Arc::new(with_backup_cp(
+        secure_pam_executor_base().with_file("/etc/security/faillock.conf", "deny = 0\n"),
+        "/etc/security/faillock.conf",
+    ));
+
+    let ctx = Context::with_executor(executor.clone());
+    let scan = PamHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+    let finding = scan
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-deny")
+        .expect("deny = 0 switches lockout off and must not read as compliant");
+    assert_eq!(finding.finding_recommended_value, "5");
+
+    let mut ctx = Context::with_executor(executor.clone());
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &PluginConfig::default())
+        .await
+        .expect("apply runs");
+    let content = written_content(&executor, "/etc/security/faillock.conf")
+        .expect("faillock.conf is rewritten");
+    assert!(
+        content.contains("deny = 5"),
+        "lockout must be restored to the baseline, got: {content}"
+    );
+    assert!(result.apply_success, "changes: {:?}", result.apply_changes);
+}
+
 // =============================================================================
 // The directory the config files live in
 // =============================================================================

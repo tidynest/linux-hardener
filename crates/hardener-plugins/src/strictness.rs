@@ -40,6 +40,23 @@ pub enum Strictness {
     /// number it can hold. A plain [`Self::AtMost`] scores it compliant, which
     /// is a check switched off reading as a check satisfied.
     NonZeroAtMost,
+    /// Smaller is stricter, but only a positive number is a working limit:
+    /// zero and every negative number switch the setting off.
+    ///
+    /// `PASS_MAX_DAYS -1` is shadow's own spelling of "never expires"
+    /// (login.defs(5): "-1 will be assumed (which disables the restriction)"),
+    /// and faillock's `deny = 0` disables lockout outright, because
+    /// `pam_faillock` locks only `if (opts->deny && failures >= opts->deny)`.
+    /// A negative `deny` is no better: faillock reads it as an unsigned short,
+    /// so it wraps to 65535. Under [`Self::AtMost`] every one of these scored
+    /// as the strictest value its setting could hold, so a host with expiry or
+    /// lockout switched off read as compliant, and an override of `-1` was
+    /// written as a tightening.
+    ///
+    /// `PASS_MAX_DAYS 0` is not off but broken: it expires every password as
+    /// soon as it is set. It ranks with the off values all the same, because
+    /// no reading of it is a stricter policy an operator would want kept.
+    PositiveAtMost,
     /// The value space is a closed set whose strictness neither the number nor
     /// the alphabet carries, so it is listed here explicitly, **weakest first**.
     ///
@@ -149,6 +166,12 @@ impl Strictness {
             // it is, so it can never win a clamp and is never compliant.
             Self::NonZeroAtMost => value.parse::<i64>().ok().map(|n| match n {
                 0 => (i64::MIN, n.to_string()),
+                n => (n.saturating_neg(), n.to_string()),
+            }),
+            // The same floor as above, widened to every value that is not a
+            // working limit.
+            Self::PositiveAtMost => value.parse::<i64>().ok().map(|n| match n {
+                n if n <= 0 => (i64::MIN, n.to_string()),
                 n => (n.saturating_neg(), n.to_string()),
             }),
         }

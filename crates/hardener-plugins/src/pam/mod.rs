@@ -1002,7 +1002,9 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Maximum password age of 90 days",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::LoginDefs,
-        pam_compare: Strictness::AtMost,
+        // -1 disables expiry and 0 expires every password at once, so
+        // neither may read as a stricter maximum than 90.
+        pam_compare: Strictness::PositiveAtMost,
     },
     PamDirective {
         pam_directive_name: "PASS_MIN_DAYS",
@@ -1028,7 +1030,9 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Lock the account after at most 5 failed attempts",
         pam_severity: Severity::High,
         pam_config_file: PamConfigFile::SecurityConf(FAILLOCK_CONF),
-        pam_compare: Strictness::AtMost,
+        // deny = 0 disables lockout, so it is the loosest value, not the
+        // strictest.
+        pam_compare: Strictness::PositiveAtMost,
     },
     PamDirective {
         pam_directive_name: "remember",

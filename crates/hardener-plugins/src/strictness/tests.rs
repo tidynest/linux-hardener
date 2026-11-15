@@ -132,3 +132,58 @@ fn an_extreme_value_does_not_overflow_the_shared_scale() {
     assert!(!Strictness::AtMost.violated_by("3", Some(&min)));
     assert_eq!(Strictness::AtMost.clamp_target("3", Some(&min)), min);
 }
+
+#[test]
+fn only_a_positive_number_is_a_working_limit_for_a_positive_at_most_setting() {
+    // A smaller positive limit is still the stricter one, as under AtMost.
+    assert!(!Strictness::PositiveAtMost.violated_by("90", Some("30")));
+    assert!(!Strictness::PositiveAtMost.violated_by("90", Some("90")));
+    assert!(Strictness::PositiveAtMost.violated_by("90", Some("365")));
+
+    // `PASS_MAX_DAYS -1` disables expiry, `deny = 0` disables lockout and a
+    // negative `deny` wraps to 65535 inside faillock. Each of them is the
+    // setting switched off, which AtMost scored as the strictest value of
+    // all, so none of them may read as compliant.
+    for off in ["-1", "0", "-99999"] {
+        assert!(
+            Strictness::PositiveAtMost.violated_by("90", Some(off)),
+            "{off} switches the setting off and must not satisfy a limit of 90"
+        );
+        assert!(
+            !Strictness::AtMost.violated_by("90", Some(off)),
+            "the plain direction is unchanged: {off} still places as strict there"
+        );
+    }
+
+    // Unset fails closed, as it does in every direction.
+    assert!(Strictness::PositiveAtMost.violated_by("90", None));
+
+    // The extreme value cannot overflow the shared scale either.
+    assert!(Strictness::PositiveAtMost.violated_by("90", Some(&i64::MIN.to_string())));
+}
+
+#[test]
+fn a_switched_off_value_never_wins_a_positive_at_most_clamp() {
+    // As an override it loses, so `PASS_MAX_DAYS = "-1"` in config.toml
+    // leaves the baseline standing rather than being written as a tightening.
+    assert_eq!(
+        Strictness::PositiveAtMost.clamp_target("90", Some("-1")),
+        "90"
+    );
+    assert_eq!(Strictness::PositiveAtMost.clamp_target("5", Some("0")), "5");
+
+    // As the host's value it loses too, so apply replaces it rather than
+    // keeping it as the stricter of the two.
+    assert_eq!(
+        Strictness::PositiveAtMost.clamp_target("90", Some("0")),
+        "90"
+    );
+
+    // A genuinely stricter positive value still wins, so the no-loosen rule
+    // holds for every value that is a working limit.
+    assert_eq!(
+        Strictness::PositiveAtMost.clamp_target("90", Some("30")),
+        "30"
+    );
+    assert_eq!(Strictness::PositiveAtMost.clamp_target("5", Some("3")), "3");
+}
