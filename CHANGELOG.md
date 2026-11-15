@@ -24,8 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   four kinds: the control wants a stricter value; it asks for something the
   check does not read, such as file ownership, the audit log size or the
   SELinux boot setting; the host has switched the check off with a value the
-  code ranks as strictest (faillock `deny = 0`, `PASS_MAX_DAYS -1`,
-  `ClientAliveCountMax 0`); or the STIG asks for exactly 1 where the baseline
+  code ranks as strictest (`ClientAliveCountMax 0`; faillock `deny = 0` and
+  `PASS_MAX_DAYS -1` are fixed in this release, under #190); or the STIG asks
+  for exactly 1 where the baseline
   writes 2 (`kptr_restrict`, `ptrace_scope`). It also records that the PAM
   plugin's three PCI DSS identifiers are PCI DSS v3.2.1 numbers, which name
   unrelated requirements in v4.0.1. A **Propose a baseline change** issue form

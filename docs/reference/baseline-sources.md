@@ -133,12 +133,14 @@ than which value is chosen:
   the baseline is neither reported nor loosened
   (`crates/hardener-plugins/src/strictness.rs`). File permissions are one
   exception, described [below](#file-permissions). The other is at the bottom
-  of the scale: for three settings, faillock `deny`, `PASS_MAX_DAYS` and
-  `ClientAliveCountMax`, the value that switches the check off counts as the
-  strictest of all; see
+  of the scale: for one setting, `ClientAliveCountMax`, the value that switches
+  the check off counts as the strictest of all; see
   [A value that switches the check off](#a-value-that-switches-the-check-off).
+  Faillock `deny` and `PASS_MAX_DAYS` were ranked that way too until their
+  comparison was changed for
+  [#190](https://github.com/tidynest/linux-hardener/issues/190).
 - **A `directives` override can only tighten a value**, as the code ranks it.
-  One that would loosen it is ignored. For those three settings, an override
+  One that would loosen it is ignored. For `ClientAliveCountMax`, an override
   that switches the check off is taken as a tightening and written to the
   host.
 - **SSH algorithm lists are cut down to what the host's own OpenSSH supports**,
@@ -190,7 +192,7 @@ number, the Pass is still judged against the baseline. That cuts both ways:
   code ranks it. The [configuration reference](configuration.md) has the rule
   for each plugin, and
   [A value that switches the check off](#a-value-that-switches-the-check-off)
-  the three settings where the code's ranking is wrong.
+  the one setting where the code's ranking is wrong.
 - `[<plugin>.exceptions]` is how a host records a deliberately weaker value. It
   does not change the baseline. The finding stays, labelled with the reason, and
   the compliance report counts the control as satisfied while listing the
@@ -265,7 +267,7 @@ well as different lists.
 | `rules` | CIS `4.1.2.1` | CIS `6.3.2.1` | `max_log_file` set in `auditd.conf`, under both profiles. The tool's own title for 4.1.2.1 is "Ensure audit log storage size is configured", and ComplianceAsCode encodes CIS RHEL 10 6.3.2.1 and CIS RHEL 8 v2.0.0 4.1.2.1 with the same rule, at 8 MB and 6 MB | That some loaded rule contains each category's name. `auditd.conf` is never read, and the rule text is not compared; see [Audit rules](#audit-rules) |
 | `selinux-not-enforcing` | CIS `1.6.1.4` | CIS `1.3.1.5` | Under the RHEL 10 profile, `SELINUX=enforcing` in `/etc/selinux/config`, so the host boots enforcing, as ComplianceAsCode's `selinux_state` rule checks it for CIS RHEL 10 v1.0.1 | The running mode only, through `getenforce`. Apply runs `setenforce 1`, which a reboot undoes, so the control passes until the next boot |
 | `PASS_MAX_DAYS`, `PASS_MIN_DAYS`, `PASS_WARN_AGE` | CIS `5.4.1.1`, `5.4.1.2`, `5.4.1.3` | CIS `5.4.1.1`, `5.4.1.2`, `5.4.1.3` | Under the RHEL 10 profile, the same limits on every existing account in `/etc/shadow`, not only the defaults `login.defs` gives new accounts | `/etc/login.defs` only |
-| `PASS_MAX_DAYS`, `PASS_MIN_DAYS`, `PASS_WARN_AGE` | NIST `IA-5(1)(d)`, FedRAMP `IA-5(1)(d)` | unchanged, since the profile only translates STIG and CIS | In SP 800-53 Rev 5, IA-5(1)(d) is "Store passwords using an approved salted key derivation function", and no item of IA-5(1) covers password lifetime. The label comes from ComplianceAsCode's references for its ageing rules, which still cite IA-5(1)(d) | Password ageing in `login.defs`. Nothing checks how passwords are stored |
+| `PASS_MAX_DAYS`, `PASS_MIN_DAYS`, `PASS_WARN_AGE` | NIST `IA-5(1)(d)`, FedRAMP `IA-5(1)(d)` | unchanged, since the profile only translates STIG and CIS | In SP 800-53 Rev 5, IA-5(1)(d) is "Store passwords using an approved salted key derivation function", and no item of IA-5(1) covers password lifetime. The label comes from ComplianceAsCode's references for its ageing rules, which still cite IA-5(1)(d) | Password ageing in `login.defs`, which this item does not ask for. Since #191 the [password hashing](#password-hashing) check maps to the same control and does read how new passwords are stored, so the control now needs both to pass |
 | `minlen`, `dcredit`, `ucredit`, `lcredit` | PCI DSS `8.2.3` | unchanged, since the profile only translates STIG and CIS | In PCI DSS v4.0.1, 8.2.3 is "Additional requirement for service providers only: Service providers with remote access to customer premises use unique authentication factors for each customer premises". Password complexity is 8.3.6 | Password length and character classes |
 | `deny` | PCI DSS `8.1.6` | unchanged, since the profile only translates STIG and CIS | PCI DSS v4.0.1 has no 8.1.6. Locking out after repeated failures is 8.3.4, which allows at most 10 attempts | `deny` in `faillock.conf` |
 | `PASS_MAX_DAYS`, `PASS_WARN_AGE` | PCI DSS `8.2.4` | unchanged, since the profile only translates STIG and CIS | In PCI DSS v4.0.1, 8.2.4 is "Addition, deletion, and modification of user IDs, authentication factors, and other identifier objects are managed". A limited password lifetime is 8.3.9, and only where the password is the single factor | Password ageing in `login.defs`. Nothing checks how user IDs are managed |
@@ -291,25 +293,25 @@ does, and sets the boot setting only in its fix.
 
 ### A value that switches the check off
 
-Each of these settings is compared *at most*, so the code ranks 0, and every
-negative number, as the strictest values the setting can hold. For these three,
-that end of the scale switches the check off. A host set that way passes, and a
-`directives` override set that way is written to the host as a tightening.
+A setting compared *at most* has 0, and every negative number, ranked as the
+strictest values it can hold. For the setting below, that end of the scale
+switches the check off. A host set that way passes, and a `directives` override
+set that way is written to the host as a tightening.
 
 <!-- baseline-table: switched-off-pass -->
 
 | Check | Control the plugin maps | Under the RHEL 10 profile | What the control asks | What the check accepts |
 |---|---|---|---|---|
-| `deny` | STIG `RHEL-08-020011`, CIS `5.3.2` | STIG `RHEL-10-600410`, CIS `5.3.2.1.1` | A lockout after repeated failures. The STIG's check text says 3 or fewer "(but not "0")", and `pam_faillock` locks an account only when `deny` is not 0 | `0`, ranked stricter than `5`, so lockout is off and the host passes |
-| `PASS_MAX_DAYS` | STIG `RHEL-08-020200`, CIS `5.4.1.1` | STIG `RHEL-10-600100`, CIS `5.4.1.1` | A maximum password lifetime: 180 days in the STIG, 365 in the CIS encoding. `login.defs(5)` says -1 "disables the restriction". The STIG's check text flags only a value above 180 or a commented-out line, so it would miss -1 too | `-1`, ranked stricter than `90`, so passwords never expire and the host passes |
 | `ClientAliveCountMax` | CIS `5.2.13`, HIPAA `164.312(a)(2)(iii)`, NIST `AC-17(a)` | CIS `5.1.7` | An idle timeout that ends the session. `sshd_config(5)`: "Setting a zero ClientAliveCountMax disables connection termination" | `0`, ranked stricter than `2`, so an idle session is never cut and the host passes |
 
 The code's own comment on `ClientAliveCountMax` reads "Zero disconnects on the
 first one, which is the strict end rather than a disable", which the OpenSSH
 manual contradicts. `ClientAliveInterval` and `maxrepeat` already rank 0 as the
-weakest value, through *at most, not 0*. A fix for the two PAM rows is being
-prepared with [#190](https://github.com/tidynest/linux-hardener/issues/190);
-the SSH row has none yet.
+weakest value, through *at most, not 0*. Faillock `deny` and `PASS_MAX_DAYS`
+had rows in this table, for `deny = 0` and `PASS_MAX_DAYS -1`, until
+[#190](https://github.com/tidynest/linux-hardener/issues/190) changed their
+comparison to *at most, above 0*, which ranks those values as the weakest. The
+SSH row has no fix yet.
 
 ### The control asks for an exact value the baseline goes past
 
@@ -351,6 +353,21 @@ this under its known limitations.
     [A value that switches the check off](#a-value-that-switches-the-check-off).
   - *at most, not 0*: smaller is stricter, but 0 switches the check off, so it
     counts as the weakest value of all.
+  - *at most, above 0*: smaller is stricter, but only a positive number is a
+    working limit. 0 and every negative number count as the weakest values of
+    all, because they switch the setting off or, for `PASS_MAX_DAYS 0`, expire
+    every password as soon as it is set.
+  - *closest to 0*: 0 is the strictest value, and a number is weaker the
+    further it sits from 0 on either side. Used for the libpwquality credits
+    under the NIST password policy.
+  - *off at 0 and below*: 0 and every negative number switch the check off,
+    which is what the policy asks for, and every positive number fails
+    equally. Used for `minclass` and `maxclassrepeat` under the NIST password
+    policy.
+  - *at least, or -1 for no limit*: larger is stricter, and a negative number
+    means no limit, which counts as larger than any number. Used for
+    `PASS_MAX_DAYS` under the NIST password policy, where the quantity judged
+    is how long a password may live.
   - *ranked*: a fixed order, weakest first, for settings whose strictness the
     number or word does not carry. `rp_filter` is the clearest case: 2 (loose
     mode) is weaker than 1 (strict mode).
@@ -473,9 +490,12 @@ cipher and MAC rules with these lists as they stand.
 
 ## PAM and password ageing
 
-[#190](https://github.com/tidynest/linux-hardener/issues/190) is discussing
-password expiry and long passphrases. The rows below describe the code as it
-stands, not the outcome of that discussion. How passwords are hashed, which
+The first table is the default password policy, `password_policy =
+"benchmark"`. [#190](https://github.com/tidynest/linux-hardener/issues/190)
+asked about password expiry and long passphrases, and the answer is a second
+policy an operator can choose; the rows it changes are under
+[The NIST SP 800-63B-4 password policy](#the-nist-sp-800-63b-4-password-policy).
+The default did not change. How passwords are hashed, which
 [#191](https://github.com/tidynest/linux-hardener/issues/191) asked about, has
 its own table under [Password hashing](#password-hashing).
 
@@ -497,11 +517,62 @@ table in the code is `PAM_DIRECTIVES` in
 | `lcredit` | `-1` | at most | Medium | No source recorded (2025-11-22) | STIG RHEL-08-020120: -1, at least one lower-case letter. Otherwise as for `dcredit`. |
 | `ocredit` | `-1` | at most | Medium | No source recorded (2025-11-22) | STIG RHEL-08-020280: -1, at least one special character. Otherwise as for `dcredit`. |
 | `maxrepeat` | `3` | at most, not 0 | Low | No source recorded (2025-11-22) | STIG RHEL-08-020150: 3. CIS RHEL 10 5.3.2.2.4 has a control for it. |
-| `PASS_MAX_DAYS` | `90` | at most | Medium | No source recorded (2025-11-22) | `login.defs(5)`: -1 disables the restriction, which the *at most* comparison counts as stricter than 90; see [A value that switches the check off](#a-value-that-switches-the-check-off). STIG RHEL-08-020200: 180 in V2R9; the title in the code still reads 60 days. CIS RHEL 10 5.4.1.1: 365, as in every CIS edition read. The NIST and FedRAMP label in the code, IA-5(1)(d), comes from ComplianceAsCode's references, but in SP 800-53 Rev 5 that item is about storing passwords, and no item of IA-5(1) covers password lifetime. PCI DSS 8.3.9: 90, only where the password is the single factor, and dynamic risk analysis is allowed instead. 800-63B-4: verifiers "SHALL NOT require subscribers to change passwords periodically", and must force a change on evidence of compromise. |
+| `PASS_MAX_DAYS` | `90` | at most, above 0 | Medium | No source recorded (2025-11-22) | `login.defs(5)`: -1 disables the restriction, which is why 0 and negative values count as the weakest here. STIG RHEL-08-020200: 180 in V2R9; the title in the code still reads 60 days. CIS RHEL 10 5.4.1.1: 365, as in every CIS edition read. The NIST and FedRAMP label in the code, IA-5(1)(d), comes from ComplianceAsCode's references, but in SP 800-53 Rev 5 that item is about storing passwords, and no item of IA-5(1) covers password lifetime. PCI DSS 8.3.9: 90, only where the password is the single factor, and dynamic risk analysis is allowed instead. 800-63B-4: verifiers "SHALL NOT require subscribers to change passwords periodically", and must force a change on evidence of compromise. |
 | `PASS_MIN_DAYS` | `1` | at least | Low | No source recorded (2025-11-22) | STIG RHEL-08-020190: 1. CIS RHEL 10 5.4.1.2: 1. Not enforceable on Arch. |
 | `PASS_WARN_AGE` | `7` | at least | Low | No source recorded (2025-11-22) | CIS RHEL 10 5.4.1.3: 7. |
-| `deny` | `5` | at most | High | Commit `0fdfaa82` (2026-07-01), "for CIS 5.3.2/5.3.3" | CIS RHEL 10 5.3.2.1.1: 5. STIG RHEL-08-020011: 3, "but not 0", since 0 turns lockout off, which the *at most* comparison counts as stricter than 5; see [A value that switches the check off](#a-value-that-switches-the-check-off). PCI DSS 8.3.4: lock out after no more than 10 attempts. 800-63B-4: no more than 100 consecutive failures. A lower `deny` locks accounts sooner, which is also a way to lock out a legitimate user. |
+| `deny` | `5` | at most, above 0 | High | Commit `0fdfaa82` (2026-07-01), "for CIS 5.3.2/5.3.3" | CIS RHEL 10 5.3.2.1.1: 5. STIG RHEL-08-020011: 3, "but not 0", since 0 turns lockout off, which is why 0 and negative values count as the weakest here. PCI DSS 8.3.4: lock out after no more than 10 attempts. 800-63B-4: no more than 100 consecutive failures. A lower `deny` locks accounts sooner, which is also a way to lock out a legitimate user. |
 | `remember` | `5` | at least | Medium | Commit `0fdfaa82` (2026-07-01), "for CIS 5.3.2/5.3.3" | CIS RHEL 10 5.3.2.3.1: 24, as in CIS RHEL 8 v4.0.0. CIS RHEL 7 v3.1.1 5.4.4 and CIS RHEL 8 v1.0.1 and v2.0.0: 5. The RHEL 8 STIG V2R9 and RHEL 9 STIG V2R10 have no password reuse rule. |
+
+### The NIST SP 800-63B-4 password policy
+
+`password_policy = "nist-800-63b"` in `[pam]` replaces six rows of the table
+above and adds two, and leaves `maxrepeat`, `PASS_MIN_DAYS`, `PASS_WARN_AGE`,
+`deny` and `remember` as they are. The tables in the code are `NIST_RULES` and
+`NIST_ONLY_ROWS` in `crates/hardener-plugins/src/pam/policy.rs`. It was added
+for [#190](https://github.com/tidynest/linux-hardener/issues/190), and
+[`[pam]` password policy](configuration.md#pam-password-policy) describes how
+it is chosen and what a report says about it.
+
+Every value here has a recorded source: the comments in `policy.rs`, which
+quote section 3.1.1.2 of NIST SP 800-63B-4. That section says verifiers "SHALL
+require passwords that are used as a single-factor authentication mechanism to
+be a minimum of 15 characters", "SHALL NOT impose other composition rules" and
+"SHALL NOT require subscribers to change passwords periodically".
+
+The rows the policy changes:
+
+<!-- baseline-table: pam-nist -->
+
+| Setting | Under this policy | Comparison | Severity | Where the value comes from | What the guides say |
+|---|---|---|---|---|---|
+| `minlen` | `15` | at least | High | Code comment: 800-63B-4 3.1.1.2, a minimum of 15 characters for a password used as the only factor | As for `minlen` above. 15 is also the STIG's value. |
+| `dcredit` | `0` | closest to 0 | Low | Code comment: 800-63B-4 3.1.1.2, no composition rules. A negative credit requires the class, and a positive one lets a password with it be shorter than `minlen` | The CIS and STIG guides still require character classes, as the `dcredit` row above shows, so a host on this policy fails those controls; see below. |
+| `ucredit` | `0` | closest to 0 | Low | As for `dcredit` | As for `dcredit`. |
+| `lcredit` | `0` | closest to 0 | Low | As for `dcredit` | As for `dcredit`. |
+| `ocredit` | `0` | closest to 0 | Low | As for `dcredit` | As for `dcredit`. |
+| `PASS_MAX_DAYS` | `99999` | at least, or -1 for no limit | Low | Code comment: 800-63B-4 3.1.1.2, no forced periodic change. 99999 is the code's spelling of no expiry for new accounts; nothing records why that number rather than -1 | The CIS, STIG and PCI DSS values in the `PASS_MAX_DAYS` row above still ask for a maximum age, so a host on this policy fails those controls; see below. |
+
+The severity is not written in `NIST_RULES`. A row that drops a benchmark
+requirement is scored Low, because a host that breaks it has not adopted the
+policy yet, which is not a weakness, and `minlen`, which only tightens, keeps
+the High of the benchmark row.
+
+The rows the policy adds, both libpwquality options the default policy does
+not manage:
+
+<!-- baseline-table: pam-nist-added -->
+
+| Setting | Under this policy | Comparison | Severity | Where the value comes from | What the guides say |
+|---|---|---|---|---|---|
+| `minclass` | `0` | off at 0 and below | Low | Code comment: 800-63B-4 3.1.1.2, no composition rules. Measured on 2026-11-15 with libpwquality 1.4.5, `minclass = 4` refused all 1,000 random passphrases of five or seven EFF words that the rest of the policy accepts | The code comment gives CIS RHEL 9 v2.0.0 and the RHEL 9 STIG as asking for 4. Neither was read for this page. |
+| `maxclassrepeat` | `0` | off at 0 and below | Low | As for `minclass`, with the same measurement for `maxclassrepeat = 4` | The code comment gives the RHEL 9 STIG as asking for 4. It was not read for this page. |
+
+Choosing this policy does not turn the other guides' controls green. Where a
+host on it does not meet a benchmark rule the policy drops, the scan reports a
+departure finding that carries the CIS, DISA STIG and PCI DSS controls of the
+benchmark row, and those controls read Fail. The rows under
+[Where a Pass and the control disagree](#where-a-pass-and-the-control-disagree)
+describe the default policy.
 
 ### Password hashing
 
@@ -737,7 +808,7 @@ issue, and include:
    choose for themselves. For a setting already in the kernel, SSH, PAM,
    file-permission or firewall tables, a stricter value needs no change at all:
    `directives` sets it today. That does not cover switching a check off: the
-   three settings where the code counts that as stricter are a defect, listed
+   one setting where the code counts that as stricter is a defect, listed
    [above](#a-value-that-switches-the-check-off). The SSH algorithm lists, the services list, the
    audit rules, the SELinux target and any setting not in the tables cannot be
    changed through the configuration, so those need a change to the code. A
