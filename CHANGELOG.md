@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a host can pass on a weaker value than the control's own text asks for, and
   says how to propose a change. A **Propose a baseline change** issue form and
   a section in CONTRIBUTING.md ask for the evidence such a proposal needs.
+- **`validate_baseline_sources.py` holds that page to the code.** It reads the
+  baseline tables in the kernel, SSH, PAM, services, permissions, firewall and
+  audit plugins, and fails when a default, comparison or severity differs from
+  its row, when a setting has no row or a row names one the code dropped, and
+  when a row does not say where its value came from. A changed default and its
+  row therefore land together. `validate_all.py` now runs 30 checks.
 
 ### Changed
 
