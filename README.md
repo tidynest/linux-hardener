@@ -551,10 +551,10 @@ hardened host still carries is in [upgrading](docs/guide/upgrading.md).
 ### Tests
 
 ```
-Rust workspace (cargo nextest run --workspace):  2532 passed, 0 failed, 45 skipped
+Rust workspace (cargo nextest run --workspace):  2549 passed, 0 failed, 46 skipped
 ```
 
-The 45 skipped tests need root, a live SSH host, or a specific firewall backend,
+The 46 skipped tests need root, a live SSH host, or a specific firewall backend,
 so they run only inside the test containers. Beyond the workspace suite there is
 a cross-distribution suite that applies and rolls back on six booted
 containers, and a differential suite that compares the host before and after an
