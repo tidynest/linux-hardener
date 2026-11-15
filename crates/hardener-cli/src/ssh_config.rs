@@ -11,6 +11,9 @@ pub struct SshConnectionConfig {
     pub identity_file: Option<PathBuf>,
     pub timeout: Duration,
     pub strict_host_key_checking: bool,
+    /// A ControlMaster socket the operator opened, to run over instead of
+    /// opening a connection here. See `SshExecutor::attach`.
+    pub control_path: Option<PathBuf>,
 }
 
 impl SshConnectionConfig {
@@ -37,7 +40,15 @@ impl SshConnectionConfig {
             identity_file,
             timeout: Duration::from_secs(timeout_secs),
             strict_host_key_checking: !no_verify,
+            control_path: None,
         }
+    }
+
+    /// The same target, reached through the operator's own connection at
+    /// `control_path` where one is given.
+    pub fn with_control_path(mut self, control_path: Option<PathBuf>) -> SshConnectionConfig {
+        self.control_path = control_path;
+        self
     }
 
     /// Returns the connection string for display (user@host:port)

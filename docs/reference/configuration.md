@@ -1548,4 +1548,8 @@ host_key_checking = true
 | `key_file` | string | SSH agent | Path to an SSH private key. |
 | `host_key_checking` | bool | `true` | Verify the remote host key. Only disable for lab hosts. |
 
-SSH authentication is key or agent based only; there is no password path.
+SSH authentication is key or agent based only; there is no password path. A
+host that asks for a password or a second factor is reachable from the CLI over
+a connection you opened yourself (`--ssh-control-path`), and not from `batch`,
+which opens its own; see the
+[SSH remote guide](../guide/ssh-remote-scanning.md#hosts-that-ask-for-a-second-factor).

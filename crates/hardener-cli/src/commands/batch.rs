@@ -892,6 +892,9 @@ fn host_ssh_config(p: &RemoteHostProfile, timeout: u64) -> hardener_core::SshCon
         identity_file: p.key_file.as_ref().map(std::path::PathBuf::from),
         timeout: Duration::from_secs(timeout),
         strict_host_key_checking: p.host_key_checking,
+        // `batch` opens its own connection to every host; main refuses the
+        // flag for it.
+        control_path: None,
     }
     .to_core_config()
 }

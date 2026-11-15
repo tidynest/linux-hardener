@@ -134,6 +134,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the run fails naming the reason. Accounts can be accepted as losing SSH
   access with `[ssh.exceptions."second-factor-lockout"]`. Any other
   `AuthenticationMethods` value is refused when the config loads.
+- **`--ssh-control-path` runs over an SSH connection you opened yourself
+  (#185).** The remote mode connects with `BatchMode=yes` and cannot answer a
+  password prompt. Open a ControlMaster connection once, answering the prompt,
+  and pass its socket: every command then runs over it. It is for the CLI's
+  global `--ssh` only; `batch` refuses it, and the desktop does not offer it
+  yet.
 
 ### Changed
 
@@ -162,6 +168,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   made `sshd -t` refuse the very apply that would have removed it. The
   candidate now names the drop-in files one by one in sshd's own order, with
   the new body staged where `00-hardener.conf` sorts.
+- **A remote connect that stops at a password prompt says so (#185).** A host
+  that accepts the key and then asks for keyboard-interactive ends the login
+  with `Permission denied (keyboard-interactive)`, and the error told the
+  operator to load a key that had already worked. It now names the second
+  factor and the two ways round it.
 - **The packages carry the licences of the fonts the binaries embed.** The
   PDF report embeds Noto Sans and the desktop embeds Martian Mono and IBM Plex
   Sans, all three under the SIL Open Font License 1.1, which requires its text

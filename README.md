@@ -334,7 +334,10 @@ dry run does not probe, since it changes nothing.
 
 SSH authentication is key or agent based. There is no password path, and
 `BatchMode=yes` is passed at the ssh layer, so a password-only host fails at
-connect rather than prompting. Details in
+connect rather than prompting. A host that asks for a second factor after the
+key is reached over a connection you opened yourself
+(`--ssh-control-path <socket>`), or through a `Match` block that keeps the
+automation account on its key. Details in
 [SSH remote scanning](docs/guide/ssh-remote-scanning.md); the host inventory
 lives at `~/.config/linux-hardener/hosts.toml`.
 

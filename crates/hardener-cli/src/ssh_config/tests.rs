@@ -45,3 +45,16 @@ fn test_display_without_user() {
     let config = SshConnectionConfig::from_cli("host", 22, None, 30, false);
     assert_eq!(config.display(), "host:22");
 }
+
+/// No socket unless one is given, and the target is unchanged by one: the
+/// socket says how to reach the host, not which host it is.
+#[test]
+fn a_control_path_is_carried_only_when_given() {
+    let config = SshConnectionConfig::from_cli("eric@server", 22, None, 30, false);
+    assert_eq!(config.control_path, None);
+
+    let socket = PathBuf::from("/home/eric/.ssh/cm-server");
+    let config = config.with_control_path(Some(socket.clone()));
+    assert_eq!(config.control_path, Some(socket));
+    assert_eq!(config.display(), "eric@server:22");
+}

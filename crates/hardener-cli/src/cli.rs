@@ -49,6 +49,11 @@ pub struct Cli {
     /// Skip SSH host key verification (insecure).
     #[arg(global = true, long)]
     pub ssh_no_verify: bool,
+    /// Run over an SSH connection you already opened, through its
+    /// ControlMaster socket, for a host that asks for a password or a second
+    /// factor. Needs --ssh naming the same host.
+    #[arg(global = true, long, value_name = "SOCKET", requires = "ssh")]
+    pub ssh_control_path: Option<std::path::PathBuf>,
 }
 
 /// The formats the global `-f`/`--format` flag actually renders.

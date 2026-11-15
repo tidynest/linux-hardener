@@ -75,6 +75,7 @@ hardener --ssh root@server.example.com report --framework cis --report-format pd
 | --ssh-key FILE     | Path to SSH private key                            |    -    |
 | --ssh-timeout SECS | Connection timeout in seconds                      |   30    |
 | --ssh-no-verify    | Skip host key verification (insecure)              |  false  |
+| --ssh-control-path SOCKET | Run over a connection you opened yourself (ControlMaster socket), for a host that asks for a second factor. Needs --ssh; refused by `batch` |    -    |
 
 ### Host Format
 
@@ -158,6 +159,55 @@ which disables every interactive authentication method at the ssh layer itself.
 A host that accepts passwords alone therefore fails at connect, immediately and
 without a prompt, and stays unscannable until you authorise a key in its
 `~/.ssh/authorized_keys`.
+
+### Hosts that ask for a second factor
+
+A host that wants a key and then the account password (the SSH plugin's
+opt-in second factor, see the
+[configuration reference](../reference/configuration.md#ssh-a-key-then-the-account-password))
+accepts the key and then asks a question this tool cannot answer. The connect
+fails with `Permission denied (keyboard-interactive)`, and the error now says
+so instead of telling you to load a key. There are two ways in.
+
+**A connection you opened yourself.** Open it once, answering the prompt, and
+keep it open:
+
+```bash
+ssh -M -S ~/.ssh/cm-server -o ControlPersist=yes -f -N eric@server
+hardener --ssh eric@server --ssh-control-path ~/.ssh/cm-server scan
+```
+
+Every command then runs over that socket without logging in again, and the
+connection stays open after the run; close it with
+`ssh -S ~/.ssh/cm-server -O exit server`. The host key was checked when you
+opened it, so `--ssh-no-verify` changes nothing here. `--ssh` must name the
+host the socket reaches: the socket cannot say which host that is, and
+checkpoints are filed under the name you give. Keep the socket path short,
+since ssh refuses one of 108 bytes or more, and in a directory only you can
+read.
+
+This suits a scan, and an apply as a user with passwordless sudo. It does not
+help root: under `PermitRootLogin prohibit-password`, sshd refuses root every
+keyboard-interactive step, so root cannot open such a connection at all.
+
+**A Match block for the automation account.** To keep a remote root apply, or
+any key-only automation, working from one controller, exempt that account from
+that address:
+
+```
+# /etc/ssh/sshd_config.d/50-automation.conf on the target
+Match User root Address 192.0.2.10
+    AuthenticationMethods publickey
+```
+
+That one identity then logs in on its key alone, so restrict its key as well
+(`from="192.0.2.10",restrict` in `authorized_keys`). The plugin's apply checks
+for exactly this over `--ssh`: it refuses to add the second factor when the
+account it connected as would lose its key-only login, and the block above is
+what lets it through.
+
+`batch`, the fleet screen and the desktop's remote screen open their own
+connections and cannot use a socket yet, so they need the `Match` block.
 
 ## Common Use Cases
 
@@ -378,6 +428,9 @@ Causes:
 - Key not authorized on remote
 - Key not loaded in SSH agent
 - The host offers passwords only, which this tool cannot use
+- The host accepted the key and asks for a second factor: the message ends
+  `Permission denied (keyboard-interactive)` and the hint names
+  `--ssh-control-path` (see "Hosts that ask for a second factor")
 
 Solutions:
 - Verify username: --ssh correctuser@host
@@ -507,6 +560,7 @@ Current limitations of SSH remote scanning:
 |---------------------------------|--------------------------------------------------------------|
 | No jump host support            | Cannot use bastion/jump hosts (yet)                          |
 | No password authentication      | Key or agent only; a password-only host fails at connect     |
+| Second-factor hosts             | CLI only, over your own connection (`--ssh-control-path`) or a `Match` exemption; `batch` and the desktop need the exemption |
 | ssh config `Port` ignored       | `--port` is always sent and outranks the config file. The port only: a target naming no user has that user **resolved** from your config, through `ssh -G`, and that resolved account is what the checkpoint host key records |
 | Non-root sessions only half elevate | Only file writes go through `sudo`; other commands do not |
 | Local checkpoints               | Checkpoint data stored on local machine. `list` and `rollback` are scoped to the host `--ssh` selects, which for a target naming no user means the resolved key **and** the key an earlier release fabricated for it, so nothing already recorded drops out; `show` and `delete` address any row by id and refuse the flag |
@@ -536,4 +590,4 @@ Planned for future releases:
 - Jump host / bastion support
 - Remote checkpoint storage option
 
-**Last Updated**: 2026-08-07
+**Last Updated**: 2026-11-15

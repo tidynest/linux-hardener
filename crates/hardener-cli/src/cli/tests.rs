@@ -36,6 +36,31 @@ fn test_cli_parse_scan() {
     assert!(matches!(cli.command, Command::Scan { .. }));
 }
 
+/// The socket of a connection the operator opened, for a host that asks for a
+/// second factor (#185). It names a connection to the `--ssh` host, so it is
+/// refused at the parse without one.
+#[test]
+fn ssh_control_path_rides_with_ssh_and_is_refused_without_it() {
+    let cli = Cli::parse_from([
+        "hardener",
+        "--ssh",
+        "eric@server",
+        "--ssh-control-path",
+        "/home/eric/.ssh/cm-server",
+        "scan",
+    ]);
+    assert_eq!(
+        cli.ssh_control_path.as_deref(),
+        Some(std::path::Path::new("/home/eric/.ssh/cm-server"))
+    );
+
+    let without_ssh = Cli::try_parse_from(["hardener", "--ssh-control-path", "/tmp/cm", "scan"]);
+    assert!(
+        without_ssh.is_err(),
+        "a socket with no host to name it by is refused"
+    );
+}
+
 #[test]
 fn test_cli_parse_scan_with_plugin() {
     let cli = Cli::parse_from(["hardener", "scan", "--plugin", "kernel"]);
