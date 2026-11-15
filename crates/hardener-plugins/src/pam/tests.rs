@@ -686,8 +686,11 @@ async fn a_backup_prunes_the_copies_that_came_before_it() {
 // including the two vacuity guards, fire from there.
 #[test]
 fn every_covered_pam_control_can_be_reported_unchecked() {
+    // The hashing directives (#191) take the same unchecked route, from
+    // `hashing::scan`, when login.defs or a stack file cannot be read.
     let reportable: Vec<_> = PAM_DIRECTIVES
         .iter()
+        .chain(hashing::HASHING_DIRECTIVES)
         .map(|directive| {
             unchecked_pam_directive(directive, "the file could not be read".to_string(), false)
         })

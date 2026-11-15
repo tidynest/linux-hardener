@@ -217,6 +217,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/pam/assess.rs` | Auth | The body of `PamHardeningPlugin::scan`, extracted beside `mod.rs`'s whole trait impl. Classified reads of every managed file, directive findings, layer drift and module presence | `scan()` |
 | `src/pam/apply.rs` | Auth | The body of `PamHardeningPlugin::apply`. Checkpoints the five managed paths, rewrites pwquality.conf and login.defs through the backup-and-write path, and refuses to edit the PAM stack itself | `apply()` |
 | `src/pam/validate.rs` | Auth | The body of `PamHardeningPlugin::validate`, the dry-run preview through the same module-presence, drift and classified readers scan and apply use | `validate()` |
+| `src/pam/hashing.rs` | Auth | Password hashing for new passwords (#191): `ENCRYPT_METHOD`, `YESCRYPT_COST_FACTOR` and `SHA_CRYPT_MIN_ROUNDS`, judged across `login.defs` and the `pam_unix` lines that override it. One host probe (yescrypt support, Linux-PAM release, FIPS mode, stored-hash schemes by name only), one plan shared by scan, apply and validate, a memory guard on raised costs, and a read-only count of stored hashes on older schemes | `Hashing`, `HOST_PROBE_SCRIPT`, `plan_writes()`, `manual_steps()`, `stored_hashes_finding()` |
 | `src/services/mod.rs` | Services | Unnecessary services (xinetd, cups, avahi, etc.) |
 | `src/services/divergence.rs` | Services | What a service-minimisation rollback left running that its restored unit files do not name (#142). `reload_after_rollback` only runs `systemctl daemon-reload`; it never starts, stops or restarts anything, so a unit `apply` had stopped stays stopped once its files are put back. For each managed unit still installed, reads `systemctl is-enabled`/`is-active`'s printed word directly (never the exit status `is_service_enabled`/`is_service_active` use for the apply path), three-ways classified so a state the probe does not recognise, including the five non-`enabled` states `is-enabled` exits zero for, is Unverifiable rather than a guessed enabled/disabled claim. The reading is available on any booted host, but no container this project can build could force a real divergence: `bluetooth.service`, the one safe candidate, was measured 2026-08-10 to go `failed` rather than `active` when a forced start was attempted, so this probe has never fired against a real one. Marks enabled-but-stopped `divergence_expected` (#152: the reload never starts a unit); not-enabled-but-running stays unmarked. Report-only; writes nothing | `service_divergences()` |
 | `src/permissions/mod.rs` | FileSystem | Critical paths, SUID/SGID, world-writable. Where `/etc` holds nothing at all, `scan` reads the `/usr/etc` copy through `vendor_path_for()` and reports a violating vendor mode as a finding keyed on the `/etc` path, so the id stays `perm--etc-sudoers` while the title names the file in force. The vendor file is never written, so that finding's remediation is an install into `/etc`; `apply` is unchanged and still leaves a path absent from `/etc` alone | `PermissionCheck::VendorOnly`, `check_vendor_layer_permissions()`, `effective_directive()` |
@@ -239,6 +240,7 @@ pub trait HardeningPlugin: Send + Sync {
 | `src/pam/tests.rs` | Tests | Unit tests for `src/pam/mod.rs` | Test-only; `super` resolves to `crate::pam` |
 | `src/pam/layer_drift/tests.rs` | Tests | Unit tests for `src/pam/layer_drift.rs` | Test-only; `super` resolves to `crate::pam::layer_drift` |
 | `src/pam/login_defs/tests.rs` | Tests | Unit tests for `src/pam/login_defs.rs` | Test-only; `super` resolves to `crate::pam::login_defs` |
+| `src/pam/hashing/tests.rs` | Tests | Unit tests for `src/pam/hashing.rs`, including a run of the real host probe against a fixture shadow file that proves no hash or user name leaves it | Test-only; `super` resolves to `crate::pam::hashing` |
 | `src/permissions/tests.rs` | Tests | Unit tests for `src/permissions/mod.rs` | Test-only; `super` resolves to `crate::permissions` |
 | `src/services/tests.rs` | Tests | Unit tests for `src/services/mod.rs` | Test-only; `super` resolves to `crate::services` |
 | `src/services/divergence/tests.rs` | Tests | Unit tests for `src/services/divergence.rs` | Test-only; `super` resolves to `crate::services::divergence` |
@@ -999,14 +1001,14 @@ purpose-named directories.
 Unit tests sit beside the source file they exercise, in a `#[cfg(test)]` module of their own file rather than inside it: `foo.rs` is accompanied by `foo/tests.rs`, and a `foo/mod.rs` by `foo/tests.rs` in the directory it already owns. They are still child modules, so they still read private items; only their location changed. Integration tests, which see the public API only, remain in each crate's `tests/` directory. The **Unit Tests** column below names the source files under test, not the files the tests live in.
 
 The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
-tree on **2026-08-28**, not a run total: a run also executes doctests and, for
+tree on **2026-11-15**, not a run total: a run also executes doctests and, for
 `hardener-ui`, `wasm_bindgen_test` cases that no annotation count here covers.
 Treat them as the size of each crate's declared test surface, and read the
 workspace run itself for what passed.
 
-The table covers the ten crates under `crates/` and sums to 2212. The eleventh
+The table covers the ten crates under `crates/` and sums to 2271. The eleventh
 workspace member, `src-tauri`, carries 192 more, which is why the tree total the
-evidence ledger records is 2404 and not this table's sum.
+evidence ledger records is 2463 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -1016,7 +1018,7 @@ evidence ledger records is 2404 and not this table's sum.
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 107 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 330 |
-| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 875 |
+| hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (9 files: one per plugin, plus `pam_hashing_mock_tests.rs`), `ssh_integration_tests.rs`, `common/mod.rs` | 934 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 243 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs` | - | 66 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs`, `components/area_map.rs`, `components/security_score.rs` | - | 154 |
@@ -1028,10 +1030,10 @@ counts measured the same way and on the same date as the table above.
 
 | File | Purpose | Annotations |
 |------|---------|-------------|
-| `hardener-core/tests/inventory_shared_path.rs` | `load`/`save` against the shared inventory path | 2 |
+| `hardener-core/tests/inventory_shared_path.rs` | `load`/`save` against the shared inventory path | 3 |
 | `hardener-core/tests/mock_executor_tests.rs` | MockExecutor unit tests | 15 |
 | `hardener-core/tests/ssh_executor_tests.rs` | SshExecutor unit/integration tests | 17 |
-| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (8 files) | 439 |
+| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (9 files: one per plugin, plus `pam_hashing_mock_tests.rs`) | 461 |
 | `hardener-plugins/tests/ssh_integration_tests.rs` | Plugin SSH integration tests | 14 |
 
 ---

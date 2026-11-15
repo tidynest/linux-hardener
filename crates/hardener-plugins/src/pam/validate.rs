@@ -246,6 +246,13 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
         }
     }
 
+    // Password hashing (#191), from the same plan apply follows.
+    let hashing = super::hashing::validate(ctx, config, &login_defs).await;
+    issues.extend(hashing.issues);
+    estimated_changes.extend(hashing.estimated_changes);
+    exceptions.extend(hashing.exceptions);
+    compliant_count += hashing.compliant_count;
+
     let is_valid = issues.is_empty();
 
     Ok(ValidationReport {

@@ -188,6 +188,13 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
         }
     }
 
+    // Password hashing (#191): judged across login.defs and the pam_unix
+    // lines that override it, so it has its own reader rather than a row in
+    // the loop above. Handed the login.defs read this scan already took.
+    let hashing = super::hashing::scan(ctx, config, &login_defs_read).await;
+    findings.extend(hashing.findings);
+    unchecked.extend(hashing.unchecked);
+
     let duration_us = start.elapsed().as_micros() as u64;
 
     info!(

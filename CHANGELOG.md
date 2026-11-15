@@ -44,6 +44,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sentence on what a Pass means, are held too, against the Fail, Manual Review
   and Pass arms of the report generator. `validate_all.py` now runs 30 checks
   and fails until a changed default and its row agree; CI does not run it.
+- **The PAM plugin checks how new passwords are hashed (#191).** Nothing
+  looked at `ENCRYPT_METHOD` before, so a host hashing passwords with MD5, or
+  with DES, which keeps only the first eight characters, scanned clean. Three
+  new directives judge it: `ENCRYPT_METHOD`, held to `YESCRYPT` where the
+  host's `pam_unix`, `libcrypt` and shadow all support it and FIPS mode is off,
+  and to `SHA512` otherwise; `YESCRYPT_COST_FACTOR`, at least 5; and
+  `SHA_CRYPT_MIN_ROUNDS`, at least 100000 where new passwords are SHA-512. The
+  scan reads both places that decide it, `/etc/login.defs` and the `pam_unix`
+  line in the PAM stack, which overrides it, and reports the weaker. `apply`
+  writes `login.defs` only and reports a stack line that overrides it as a
+  manual step, as it already does for `deny` and `remember`. A host already
+  on yescrypt is never moved down, and a host that cannot confirm yescrypt is
+  never moved to it: RHEL 9's shadow is built without it and would fall back
+  to DES. A raised cost is written only where ten simultaneous password checks
+  fit in half the host's memory. The default stays at 5 (16 MiB, about 20 ms),
+  the cost libxcrypt, shadow and `pam_unix` all use when nothing names one,
+  because a cost of 11 (1 GiB per check) turns every concurrent login attempt
+  into a gigabyte and rejects correct passwords on a host that cannot spare
+  it.
+- **The scan counts stored passwords that still use an older scheme (#191).**
+  A stored hash keeps its algorithm until the password is set again, whatever
+  the configuration says. `pam-stored-password-hashes` counts those accounts
+  by scheme name only: `/etc/shadow` is read in the target's own shell and no
+  hash, salt or user name leaves it. The finding is read-only, needs root, and
+  says how to list the accounts on the host itself.
 
 ### Changed
 

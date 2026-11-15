@@ -391,6 +391,24 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
         }
     }
 
+    // Step 2b: password hashing (#191), edited into the same login.defs buffer
+    // so the file is backed up and written once. Judged against the pre-apply
+    // read, as the exceptions above are. A file this run could not read was
+    // refused at read time and is not touched here either.
+    if login_defs_write.allowed
+        && !super::hashing::apply(
+            ctx,
+            config,
+            &login_defs_observed,
+            &mut login_defs_content,
+            &mut login_defs_changed,
+            &mut changes,
+        )
+        .await
+    {
+        all_success = false;
+    }
+
     // Step 3: Back up and rewrite only the files that actually changed.
     // As before, a failed backup blocks the write for that file.
     //
