@@ -1035,7 +1035,7 @@ counts measured the same way and on the same date as the table above.
 | `hardener-core/tests/inventory_shared_path.rs` | `load`/`save` against the shared inventory path | 3 |
 | `hardener-core/tests/mock_executor_tests.rs` | MockExecutor unit tests | 15 |
 | `hardener-core/tests/ssh_executor_tests.rs` | SshExecutor unit/integration tests | 17 |
-| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (9 files: one per plugin, plus `pam_hashing_mock_tests.rs`) | 465 |
+| `hardener-plugins/tests/*_mock_tests.rs` | Mock-based plugin tests (9 files: one per plugin, plus `pam_hashing_mock_tests.rs`) | 483 |
 | `hardener-plugins/tests/ssh_integration_tests.rs` | Plugin SSH integration tests | 14 |
 
 ---
