@@ -19,16 +19,16 @@ body:
     id: setting
     attributes:
       label: Setting
-      description: As spelled in the tables, for example `minlen`, `kernel.yama.ptrace_scope` or `/etc/sudoers`.
+      description: As spelled in the tables, for example `minlen`, `kernel.yama.ptrace_scope` or `/etc/sudoers`, or the name of a setting the tables do not hold yet.
     validations:
       required: true
   - type: input
     id: current
     attributes:
       label: Current default
-      description: The value in the Default column today.
+      description: The value in the Default column today, or "not checked today" for a new check.
     validations:
-      required: true
+      required: false
   - type: input
     id: proposed
     attributes:
@@ -71,7 +71,11 @@ body:
     id: scope
     attributes:
       label: Should this be the default for everyone?
-      description: A stricter value needs no change at all, since `directives` can set it today.
+      description: >-
+        For a setting already in the kernel, SSH, PAM, file-permission or firewall
+        tables, a stricter value needs no change, since `directives` can set it
+        today. The SSH algorithm lists, services, audit rules and new settings
+        can only change in the code.
       options:
         - Yes, as the default for everyone
         - No, as an option people turn on themselves
