@@ -357,28 +357,56 @@ were a tightening.
 ### Checking
 
 ```bash
-grep -E '^[[:space:]]*PASS_MAX_DAYS' /etc/login.defs
+grep -E '^[[:space:]]*PASS_MAX_DAYS' /etc/login.defs /usr/etc/login.defs 2>/dev/null
 grep -E '^[[:space:]]*deny' /etc/security/faillock.conf
 grep -rn 'pam_faillock.so.*deny=' /etc/pam.d/
 ```
 
-After the upgrade, a scan reports any of these as a finding instead of a pass.
+`/usr/etc/login.defs` is the vendor copy openSUSE ships; the tool reads it when
+`/etc/login.defs` does not exist. After the upgrade, a scan reports any of these
+values as a finding instead of a pass.
+
+### Before re-applying: a value you set on purpose
+
+Re-applying writes the baseline over a switched-off value, so decide first
+whether yours was deliberate. If you set `PASS_MAX_DAYS -1` because you do not
+want forced password changes, you have two ways to keep it:
+
+- Choose the `nist-800-63b` password policy described in
+  [configuration.md](../reference/configuration.md#pam-password-policy), which
+  accepts `-1` rather than reporting it.
+- Or stay on the default policy and record the deviation as a policy exception
+  before re-applying, so `apply` skips the directive and the report lists it as
+  documented rather than failing it:
+
+  ```toml
+  [pam.exceptions.PASS_MAX_DAYS]
+  value = "-1"
+  allowed = true
+  reason = "No forced password changes; see NIST SP 800-63B-4 3.1.1.2"
+  ```
+
+`deny = 0` switches lockout off, which neither password policy accepts (NIST SP
+800-63B-4 requires limiting failed attempts too), so the only way to keep it is
+an exception of the same shape with `value = "0"` under
+`[pam.exceptions.deny]`.
 
 ### Repairing
 
 Re-apply, which writes the baseline over a switched-off value and keeps any
-stricter positive one:
+stricter positive value the file sets explicitly:
 
 ```bash
 sudo hardener apply -p pam-hardening
 ```
 
 A `deny=0` set inline on a `pam_faillock.so` line is reported as a manual step,
-because this tool does not edit the PAM stack. If you set `PASS_MAX_DAYS -1` on
-purpose because you do not want forced password changes, keep it and choose the
-`nist-800-63b` password policy described in
-[configuration.md](../reference/configuration.md#pam-password-policy), which
-accepts it rather than reporting it.
+because this tool does not edit the PAM stack. One case is not covered by
+"keeps any stricter value": where `deny` or `remember` is not set at all,
+pam_faillock and pam_pwhistory use their built-in defaults of 3 and 10, which
+are stricter than the baseline's 5, yet `apply` writes 5. That is older than
+this fix and is tracked separately; set the value you want explicitly if it
+matters to you.
 
 `/etc/login.defs` only supplies defaults for accounts created after it changes.
 Existing accounts keep the ageing recorded in `/etc/shadow`; read it with

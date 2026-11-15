@@ -90,17 +90,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The PAM plugin can enforce NIST SP 800-63B-4 instead of character classes
   and a 90-day expiry (#190).** `[pam] password_policy = "nist-800-63b"` raises
   `minlen` to 15, sets the four libpwquality credits to 0, so no digit, capital
-  or symbol is demanded and none shortens the minimum, and writes
+  or symbol is demanded and none shortens the minimum, switches `minclass` and
+  `maxclassrepeat` off, since either one at 4, as the CIS and STIG benchmarks
+  set them, refuses every passphrase made of words, and writes
   `PASS_MAX_DAYS 99999`, so new accounts are not made to change their password
-  on a schedule. Lockout, password history, the minimum age and the dictionary
-  check stay as they were. A passphrase made of plain words, which the old rules
-  refused for lacking a digit, is now accepted. The default stays
-  `"benchmark"`, the rules every earlier release enforced, so nothing changes on
-  a host whose configuration does not ask for it. The report stays honest about
-  the choice: a CIS, DISA STIG, NIST 800-53, NIST 800-171, FedRAMP or PCI DSS
-  control whose rule the policy drops reads Fail, through an Info finding that
-  names the policy, and an auditor's accepted deviation is recorded as an
-  ordinary exception. Every relaxing write names the policy, in `apply` and in
+  on a schedule. Lockout, password history and the minimum age stay as they
+  were, and libpwquality's dictionary check is left as the host has it. Once
+  `apply` has run, a passphrase made of plain words, which the old rules refused
+  for lacking a digit, is accepted wherever the PAM stack loads
+  `pam_pwquality.so` and sets no composition rule on that line itself. The
+  default stays `"benchmark"`, the rules every earlier release enforced, so
+  nothing changes on a host whose configuration does not ask for it. The report
+  stays honest about the choice: a CIS, DISA STIG or PCI DSS control whose rule
+  the policy drops reads Fail, through an Info finding that names the policy,
+  and an auditor's accepted deviation is recorded as an ordinary exception. The
+  NIST SP 800-53, NIST SP 800-171 and FedRAMP controls do not fail for it,
+  because their current texts require neither a password lifetime nor
+  composition rules. A value that meets neither policy, such as
+  `PASS_MAX_DAYS 0`, is one ordinary finding that fails every control. Every
+  write that relaxes a rule the host had names the policy, in `apply` and in
   the dry run. The key is refused in any section but `[pam]`, and a value the
   tool does not know stops the configuration loading.
 

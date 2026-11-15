@@ -85,13 +85,18 @@ enabled = true
 
 # Which password rules to enforce (default "benchmark"):
 #   "benchmark"     character classes (one digit, upper, lower, other),
-#                   minlen 14 and a 90-day maximum age for new accounts,
-#                   as the CIS and DISA STIG benchmarks expect.
-#   "nist-800-63b"  NIST SP 800-63B-4: minlen 15, no character classes and
-#                   no forced periodic change, so long passphrases work.
-#                   Compliance reports then show the CIS, STIG and PCI DSS
-#                   controls for the dropped rules as failing, not passing.
-# Lockout, history and the dictionary check stay on under both.
+#                   minlen 14 and a 90-day maximum age for new accounts:
+#                   the rules every earlier release enforced, in the style
+#                   of the CIS and DISA STIG benchmarks (not their exact
+#                   values).
+#   "nist-800-63b"  NIST SP 800-63B-4: minlen 15, no character classes
+#                   (minclass and maxclassrepeat off too) and no forced
+#                   periodic change, so long passphrases work. Compliance
+#                   reports then show the CIS, STIG and PCI DSS controls for
+#                   the dropped rules as failing, not passing.
+# Lockout and history stay under both. Neither manages libpwquality's
+# dictionary check: its default is on, and a host that sets dictcheck = 0
+# keeps it.
 # password_policy = "nist-800-63b"
 
 # [pam.directives]

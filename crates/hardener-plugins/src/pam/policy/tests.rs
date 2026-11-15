@@ -253,9 +253,19 @@ fn a_dropped_rule_splits_its_controls_three_ways() {
 /// never fails NIST SP 800-53, NIST SP 800-171 or FedRAMP through a departure.
 #[test]
 fn no_departure_fails_a_nist_derived_framework() {
+    // Positive control: the benchmark check does map the NIST-derived
+    // frameworks, so the filter below has something to remove.
+    assert!(
+        get_pam_compliance_mappings("PASS_MAX_DAYS")
+            .iter()
+            .any(|m| NIST_DERIVED.contains(&m.compliance_framework))
+    );
+
+    let mut checked = 0;
     for directive in policy_directives(PasswordPolicy::Nist80063b) {
         let name = directive.rule.pam_directive_name;
         for mapping in departure_mappings(name) {
+            checked += 1;
             assert!(
                 !NIST_DERIVED.contains(&mapping.compliance_framework),
                 "{name}'s departure would fail {:?} {}",
@@ -264,6 +274,7 @@ fn no_departure_fails_a_nist_derived_framework() {
             );
         }
     }
+    assert!(checked > 0, "the loop above checked no mapping at all");
 }
 
 /// The STIG and PCI DSS controls for expiry are the ones the issue is about,

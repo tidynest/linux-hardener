@@ -334,7 +334,8 @@ strict end of their settings and are honoured as such.
 only a positive number is a working limit. `PASS_MAX_DAYS -1` switches expiry
 off (login.defs(5) calls it the value that "disables the restriction"), `0`
 expires every password as soon as it is set, `deny = 0` switches lockout off,
-and a negative `deny` wraps to 65535 inside faillock. All of them rank as the
+and a negative `deny` wraps to a very large number inside faillock (`-1`
+becomes 65535). All of them rank as the
 loosest value the setting has. A host carrying one is reported and given the
 baseline by `apply`, and an override naming one loses the clamp rather than
 being written as a tightening. Until #190 each of them ranked as the strictest
@@ -681,11 +682,16 @@ password_policy = "nist-800-63b"
 | Value | What it enforces |
 |---|---|
 | `"benchmark"` (default) | The rules every earlier release enforced: `minlen` 14; one digit, one uppercase letter, one lowercase letter and one other character (`dcredit`, `ucredit`, `lcredit` and `ocredit` at `-1`); and a maximum password age of 90 days for new accounts. |
-| `"nist-800-63b"` | NIST SP 800-63B-4: `minlen` 15; all four credits at `0`, so no character class is required and none shortens the minimum; and `PASS_MAX_DAYS 99999`, so new accounts are not made to change their password on a schedule. |
+| `"nist-800-63b"` | NIST SP 800-63B-4: `minlen` 15; all four credits at `0`, so no character class is required and none shortens the minimum; `minclass` and `maxclassrepeat` at `0`, because either one at 4, as the CIS and STIG benchmarks set them, refuses every passphrase made of words; and `PASS_MAX_DAYS 99999`, so new accounts are not made to change their password on a schedule. |
 
 Both policies keep the same `maxrepeat`, minimum password age, expiry warning,
-lockout (`deny`) and history (`remember`) rules, and both leave libpwquality's
-dictionary check, `dictcheck`, at its default, which is on.
+lockout (`deny`) and history (`remember`) rules. Neither policy manages
+libpwquality's dictionary check, `dictcheck`: its default is on, and a host
+that sets `dictcheck = 0` keeps it. `maxsequence` is not managed either. Like
+`maxrepeat` it bans a pattern rather than requiring a mixture. Measured on
+2026-11-15, `maxsequence = 3` refused 2 of the 1,979 random passphrases of five
+or seven EFF words that the rest of the NIST policy accepted, both for the
+`rstu` in "overstuff".
 
 **Why there are two.** The standards no longer agree. Section 3.1.1.2 of NIST
 SP 800-63B-4 says verifiers "SHALL require passwords that are used as a
@@ -694,22 +700,48 @@ single-factor authentication mechanism to be a minimum of 15 characters",
 different character types)" and "SHALL NOT require subscribers to change
 passwords periodically", forcing a change only on evidence that the password
 has been compromised. The CIS and DISA STIG benchmarks still require character
-classes and a maximum age, and PCI DSS v4.0.1 requirement 8.3.9 asks for a
-change at least every 90 days where the password is the only factor. No host
-meets both sides. The default stays `benchmark`, so an upgrade changes nothing
-on a host whose configuration did not ask for a change; choose `nist-800-63b`
-where those frameworks do not apply, or where an auditor accepts the deviation.
+classes and a maximum age, and PCI DSS v4.0.1 asks for a digit and a letter
+(8.3.6) and, where the password is the only factor, for a change at least every
+90 days or for the account's security posture to be analysed dynamically
+instead (8.3.9). No host meets both sides. The default stays `benchmark`, so an
+upgrade changes nothing on a host whose configuration did not ask for a
+change; choose `nist-800-63b` where those frameworks do not apply, or where an
+auditor accepts the deviation.
+
+The NIST policy covers the length, composition and rotation rules of SP
+800-63B-4. It does not cover the blocklist the same section requires ("SHALL
+compare the prospective secret against a blocklist that contains known commonly
+used, expected, or compromised passwords"), because no PAM module this tool
+manages has one; see "What no setting here can enforce" below. A host on this
+policy therefore meets SP 800-63B-4 only once a blocklist is in place by other
+means.
 
 **What the report says about the choice.** A control the chosen policy
 deliberately does not meet is reported as failing, never as passing. Under
 `nist-800-63b`, a host that requires no character class, or forces no expiry,
 gets one Info finding per dropped rule, `pam-<directive>-policy-departure`. It
-carries the CIS, DISA STIG, NIST 800-53, NIST SP 800-171, FedRAMP and PCI DSS
-controls the benchmark check maps to, so those controls read Fail and the
-finding under them names the policy. The HIPAA, GDPR, ISO/IEC 27001 and SOC 2
-controls ask that a password policy is followed rather than which one, so the
-departure does not fail them. `apply` never acts on a departure finding. Where
-an auditor accepts the deviation, record it as an ordinary policy exception
+carries the CIS, DISA STIG and PCI DSS controls the benchmark check maps to,
+because those texts still require the rule, so those controls read Fail and the
+finding under them names the policy. It does not carry the NIST SP 800-53, NIST
+SP 800-171 or FedRAMP controls. SP 800-53 Rev 5 IA-5(1) has no password
+lifetime item, leaves composition rules to the organisation in item (h), and
+says "Enforced composition rules provide marginal security benefits while
+decreasing usability"; SP 800-171 r3 requirement 03.05.07 says the same; and
+FedRAMP's Rev 5 baselines add that password policies "shall not enforce special
+character or minimum password rotation requirements". Following SP 800-63B-4
+therefore fails none of them. The HIPAA, GDPR, ISO/IEC 27001 and SOC 2 controls
+ask that a password policy is followed rather than which one, so the departure
+does not fail them either. `apply` never acts on a departure finding.
+
+A value that meets neither rule, such as `PASS_MAX_DAYS 0` (every password
+expires at once), `PASS_MAX_DAYS 120`, a positive credit (which lets a password
+be shorter than the minimum) or a value that is not set, is one ordinary
+finding instead, carrying every control the check maps to. It keeps the
+benchmark's severity when a value is set and the policy's Low when it is not,
+and `apply` rewrites it to the policy's value, after which only the departure
+remains.
+
+Where an auditor accepts a departure, record it as an ordinary policy exception
 under the directive's own name, documenting the host's value, and the control
 then lists the documented deviation instead of failing:
 
@@ -720,22 +752,49 @@ allowed = true
 reason = "MFA on every login, so PCI DSS 8.3.9 does not apply"
 ```
 
+**Exit codes and notifications.** A host that follows the NIST policy always
+carries its departure findings, as Info, even when every one of them is
+excepted, because an excepted finding is still listed. `hardener scan
+--exit-code` exits 1 whenever any finding is left after the `--severity` filter,
+whose default is `info`, so a CI gate on such a host should run `hardener scan
+--exit-code --severity low`. A scheduled scan that notifies at the Info
+threshold notifies on every run for the same reason.
+
 **What `apply` does under `nist-800-63b`.** It writes `minlen = 15`, writes each
-credit as `0` (over a `-1` an earlier apply wrote, too), and writes
-`PASS_MAX_DAYS 99999`. A host already at `PASS_MAX_DAYS -1`, which is shadow's
-own "never expires", is left alone. Every write that relaxes a benchmark rule
-names the policy in its change line, and `apply --dry-run` shows the same note
-beside each pending change, so a relaxation never appears as an anonymous edit.
-The checkpoint is taken first as always, so `rollback` restores the files the
-apply changed.
+credit as `0` (over a `-1` an earlier apply wrote, too), writes `minclass = 0`
+and `maxclassrepeat = 0`, and writes `PASS_MAX_DAYS 99999`. A host already at
+`PASS_MAX_DAYS -1`, which is shadow's own "never expires", is left alone. Every
+write that relaxes a rule the host had names the policy in its change line, and
+`apply --dry-run` shows the same note beside each pending change, so a
+relaxation never appears as an anonymous edit. A write that repairs a value
+rather than relaxing it, such as `PASS_MAX_DAYS 0` becoming 99999, carries no
+such note. The checkpoint is taken first as always, so `rollback` restores the
+files the apply changed. It cannot reach accounts created between the apply and
+the rollback: they keep the maximum age they were created with (99999). Check
+them with `sudo chage -l <user>` and set the age you want with `sudo chage -M
+<days> <user>`.
 
 **Overrides follow the selected policy's direction.** An override is still
 clamped tighten-only, but on the selected policy's own scale. Under
-`nist-800-63b` nothing is stricter than `0` for a credit, so an override such as
-`dcredit = "-1"` has no effect; the dry run reports that as a Low issue and the
-scan log says so too. To require a character class, choose `benchmark`.
-`PASS_MAX_DAYS = "-1"` is honoured under `nist-800-63b`, because it means no
-expiry at all.
+`nist-800-63b` nothing is stricter than `0` for a credit, `minclass` or
+`maxclassrepeat`, so an override such as `dcredit = "-1"` has no effect; the dry
+run reports that as a Low issue and the scan log says so too. To require a
+character class, choose `benchmark`. `PASS_MAX_DAYS = "-1"` is honoured under
+`nist-800-63b`, because it means no expiry at all. A longer minimum is honoured
+under either policy, because it tightens: `minlen = "24"` under
+`[pam.directives]` asks for passphrase-length passwords.
+
+**Where the policy takes effect.** The pwquality rows take effect only where the
+PAM stack loads `pam_pwquality.so`, which the scan reports per directive when
+it does not. Some distributions do not load it by default; Arch's `pambase`
+`system-auth` did not, as far as the archived copy shows. The scan looks for it
+in `system-auth`, `password-auth` and `common-password`. Arguments written on
+the `pam_pwquality.so` line itself, such as `minclass=4` or `dcredit=-1`,
+override `pwquality.conf` (pam_pwquality(8)), and this tool does not read them
+yet, so a host that sets composition rules there still refuses passphrases
+while the scan reports the policy as met. Neither does it read the drop-ins in
+`/etc/security/pwquality.conf.d/`; libpwquality reads those before
+`pwquality.conf`, so the explicit lines `apply` writes there win over them.
 
 **Existing accounts keep their ageing.** `/etc/login.defs` supplies ageing to
 accounts created after it changes. Accounts that already exist keep the maximum
@@ -744,14 +803,21 @@ not change it. Read it with `sudo chage -l <user>`; `sudo chage -M -1 <user>`
 removes the forced change from one account (chage(1): "-1 as MAX_DAYS will
 remove checking a password's validity").
 
-**What no setting here can enforce.** pam_pwquality judges one string at a time.
-It cannot tell a passphrase of truly random words from a phrase someone made up,
-and it has no notion of a word count, so the 15-character minimum makes room for
-long passphrases without being able to require them. Choosing the words at
-random, with dice or a generator over a published list, is what makes a
-passphrase strong, and that is up to the person or their password manager.
-libpwquality's dictionary check is not a breach list either: it never compares a
-password with passwords leaked elsewhere, and it accepted `password password
+**What no setting here can enforce.** pam_pwquality, the module this tool
+manages, judges one string at a time. It cannot tell a passphrase of truly
+random words from a phrase someone made up, and it has no notion of a word
+count, so the 15-character minimum makes room for long passphrases without
+being able to require them. Choosing the words at random, with dice or a
+generator over a published list, is what makes a passphrase strong. A different
+module, pam_passwdqc, can go further, and this tool does not manage it:
+passwdqc.conf(5) offers `passphrase=N`, "The number of words required for a
+passphrase", and `random=N,only`, whose `only` modifier "can be used to
+disallow user-chosen passwords", so that only a passphrase passwdqc generated
+and offered (24 to 136 bits) is accepted. passwdqc 2.0.3's `pwqgen random=85`
+offers five words joined by random digits and symbols.
+
+libpwquality's dictionary check is not a breach list either: it never compares
+a password with passwords leaked elsewhere, and it accepted `password password
 password` under these settings. It errs the other way too: on Ubuntu 24.04
 (libpwquality 1.4.5, cracklib 2.9.6), measured on 2026-11-15, it refused
 between 1 and 2 in every 100 random passphrases of four to seven words from
