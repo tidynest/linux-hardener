@@ -788,8 +788,16 @@ under either policy, because it tightens: `minlen = "24"` under
 PAM stack loads `pam_pwquality.so`, which the scan reports per directive when
 it does not. Some distributions do not load it by default; Arch's `pambase`
 `system-auth` did not, as far as the archived copy shows. The scan looks for it
-in `system-auth`, `password-auth` and `common-password`. Arguments written on
-the `pam_pwquality.so` line itself, such as `minclass=4` or `dcredit=-1`,
+in `system-auth`, `password-auth` and `common-password`, and does not follow
+which of those files a given program actually uses. That matters on Arch: in
+the archived `shadow` 4.13 package, `/etc/pam.d/passwd` holds its own
+`pam_unix.so` line and does not include `system-auth`, so a `pam_pwquality.so`
+line added to `system-auth` would satisfy the scan while `passwd` never runs
+it, and one added to `/etc/pam.d/passwd` would work while the scan reports it
+as not loaded. Check with `grep -n include /etc/pam.d/passwd`.
+
+Arguments written on the `pam_pwquality.so` line itself, such as `minclass=4`
+or `dcredit=-1`,
 override `pwquality.conf` (pam_pwquality(8)), and this tool does not read them
 yet, so a host that sets composition rules there still refuses passphrases
 while the scan reports the policy as met. Neither does it read the drop-ins in
