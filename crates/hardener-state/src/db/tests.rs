@@ -431,7 +431,9 @@ async fn every_migration_restores_its_column() {
 // frame reader that RUSTSEC-2026-0459 is about (#188).
 //
 // Never regenerate them with a newer SQLite: they are worth something only
-// because a different engine wrote them.
+// because a different engine wrote them. The tests hold every fixture to that:
+// each image of page 1, in the main files and in the log, records the release
+// that last wrote it, and it must read FIXTURE_WRITER_VERSION.
 
 /// The checkpoint the fixtures hold.
 const FIXTURE_CHECKPOINT_ID: &str = "5d2c1a8e-1880-4c1b-9a59-0459c0de0188";
@@ -614,6 +616,47 @@ fn is_wal_magic(bytes: &[u8]) -> bool {
     matches!(bytes.get(..4), Some([0x37, 0x7f, 0x06, 0x82 | 0x83]))
 }
 
+/// The SQLite that wrote the fixtures, as its SQLITE_VERSION_NUMBER: 3.46.0,
+/// bundled by libsqlite3-sys 0.30.1, which 1.9.1 ships.
+const FIXTURE_WRITER_VERSION: u32 = 3_046_000;
+
+/// The big-endian `u32` at `at`. Panics past the end, which fails the test.
+fn be_u32(bytes: &[u8], at: usize) -> u32 {
+    u32::from_be_bytes(bytes[at..at + 4].try_into().expect("four bytes"))
+}
+
+/// The release that last wrote a database whose page 1 is `page_one`: the
+/// SQLITE_VERSION_NUMBER the file format keeps at offset 96 of the header.
+fn header_writer_version(page_one: &[u8]) -> u32 {
+    be_u32(page_one, 96)
+}
+
+/// The writer version in every image of page 1 that a write-ahead log holds.
+/// The log opens with a 32-byte header whose bytes 8..12 give the page size,
+/// and each frame after it is a 24-byte frame header, whose first four bytes
+/// name the page, followed by that page.
+fn wal_page_one_writer_versions(log: &[u8]) -> Vec<u32> {
+    let page_size = be_u32(log, 8) as usize;
+    let frame_size = 24 + page_size;
+    log[32..]
+        .chunks_exact(frame_size)
+        .filter(|frame| be_u32(frame, 0) == 1)
+        .map(|frame| header_writer_version(&frame[24..]))
+        .collect()
+}
+
+/// Whether the WAL fixture's main file, opened without its log, answered
+/// `SELECT COUNT(*) FROM file_states` the way a file with no rows does: an
+/// empty table, or no table at all, since the schema itself sits in the log.
+/// Any other error, a failure to open the file included, is not that answer:
+/// it would mean the guard measured nothing.
+fn holds_no_rows_without_log(answer: &std::result::Result<i64, sqlx::Error>) -> bool {
+    match answer {
+        Ok(rows) => *rows == 0,
+        Err(e) => e.to_string().contains("no such table: file_states"),
+    }
+}
+
 #[tokio::test]
 async fn a_checkpoint_database_written_by_1_9_1_reads_back() {
     let main: &[u8] = include_bytes!(concat!(
@@ -623,6 +666,11 @@ async fn a_checkpoint_database_written_by_1_9_1_reads_back() {
     assert!(
         main.starts_with(SQLITE_HEADER),
         "the fixture must be a SQLite database, not a placeholder"
+    );
+    assert_eq!(
+        header_writer_version(main),
+        FIXTURE_WRITER_VERSION,
+        "the fixture must have been written by the SQLite 1.9.1 ships"
     );
 
     let (_dir, db) = materialise_fixture(&[("checkpoints.db", main)]);
@@ -643,10 +691,23 @@ async fn a_write_ahead_log_left_by_1_9_1_reads_back() {
         main.starts_with(SQLITE_HEADER) && is_wal_magic(log),
         "the fixture must be a SQLite database and a write-ahead log"
     );
+    assert_eq!(
+        header_writer_version(main),
+        FIXTURE_WRITER_VERSION,
+        "the main file must have been written by the SQLite 1.9.1 ships"
+    );
+    let logged = wal_page_one_writer_versions(log);
+    assert!(
+        !logged.is_empty() && logged.iter().all(|v| *v == FIXTURE_WRITER_VERSION),
+        "every image of page 1 in the log must have been written by the SQLite \
+         1.9.1 ships, got {logged:?}"
+    );
 
     // The fixture is only worth its name while the rows are in the log and not
     // in the main file. Opened alone, read-only, the main file must not have
-    // them, or a regenerated fixture has quietly stopped testing the log.
+    // them, or a regenerated fixture has quietly stopped testing the log. Only
+    // an empty table or a missing one counts as not having them: an error of
+    // any other kind would let the guard pass without looking.
     let (_alone_dir, alone) = materialise_fixture(&[("checkpoints.db", main)]);
     let alone_pool = sqlx::sqlite::SqlitePoolOptions::new()
         .connect_with(
@@ -661,7 +722,7 @@ async fn a_write_ahead_log_left_by_1_9_1_reads_back() {
             .fetch_one(&alone_pool)
             .await;
     assert!(
-        !matches!(rows_without_log, Ok(n) if n > 0),
+        holds_no_rows_without_log(&rows_without_log),
         "the main file alone must not hold the rows, got {rows_without_log:?}"
     );
     alone_pool.close().await;
