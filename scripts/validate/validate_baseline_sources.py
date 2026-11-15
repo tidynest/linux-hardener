@@ -312,7 +312,10 @@ def comparison_of(text: str, raw: str) -> tuple[str, list[str]]:
             raise ParseError("Strictness::Ranked without an order constant")
         return "ranked", ranked_order(text, order)
     if variant not in COMPARISON_WORDS:
-        raise ParseError(f"Strictness::{variant} has no spelling on the page")
+        raise ParseError(
+            f"Strictness::{variant} has no spelling on the page; add one to COMPARISON_WORDS "
+            "in this script and define it under the page's `## How to read the tables`"
+        )
     return COMPARISON_WORDS[variant], []
 
 
