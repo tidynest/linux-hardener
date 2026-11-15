@@ -730,7 +730,8 @@ control the plugin maps it to and the control's RHEL 10 identifier. The mapped
 control must sit in that check's own arm of the plugin's mapping function, the
 RHEL 10 identifier must be what `profiles.rs` translates it to, and a quoted
 baseline value must still be the code's. A plugin that stops mapping a control
-therefore fails the row, even while `profiles.rs` still holds the identifier. A
+therefore fails the row, even while `profiles.rs` still holds the identifier,
+and in a row that names several checks each one must still map its own part. A
 row for a check that ranks its switched-off value as the strictest fails once
 the check's comparison stops being plain *at most*, so the row goes when the
 defect does.
