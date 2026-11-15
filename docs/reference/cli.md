@@ -23,7 +23,7 @@ These flags can be placed before or after any subcommand.
 | `--ssh-key <FILE>` | SSH private key file. Also the fallback for any `batch` host that names no key of its own | SSH agent |
 | `--ssh-timeout <SECONDS>` | SSH connection timeout. Also applies to every `batch` connection | `30` |
 | `--ssh-no-verify` | Skip SSH host key verification (insecure). With `batch` it reaches ad-hoc `--ssh` targets only; inventory hosts keep their own `host_key_checking` | off |
-| `--ssh-control-path <SOCKET>` | Run over an SSH connection you opened yourself (`ssh -M -S <SOCKET> -o ControlPersist=yes ...`), for a host that asks for a password or a second factor this tool cannot answer. Requires `--ssh` naming the same host, which checkpoints are filed under. Refused by `batch`, exit 2, since it opens its own connections. See [SSH remote scanning](../guide/ssh-remote-scanning.md#hosts-that-ask-for-a-second-factor) | none |
+| `--ssh-control-path <SOCKET>` | Run over an SSH connection you opened yourself (`ssh -M -S <SOCKET> -o ControlPersist=yes ...`), for a host that asks for a password or a second factor this tool cannot answer. Commands run as the account that opened it, so it suits a scan of what that account can read: where `sshd_config` is root-only (Gentoo, Fedora, RHEL, Rocky) the SSH checks come back unchecked. Requires `--ssh` naming the same host, which checkpoints are filed under. Refused by `batch`, exit 2, since it opens its own connections. See [SSH remote scanning](../guide/ssh-remote-scanning.md#hosts-that-ask-for-a-second-factor) | none |
 | `-h`, `--help` | Print help | |
 | `-V`, `--version` | Print version | |
 

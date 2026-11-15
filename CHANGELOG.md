@@ -126,31 +126,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PasswordAuthentication` at `no`. Nothing changes for anyone who does not set
   it. `scan` reports an opted-in host that does not enforce it as
   `ssh-authenticationmethods`, `apply --dry-run` previews the three settings,
-  and rollback or removing the directive takes them out again. Before writing,
+  and rollback or removing the directive takes them out again. On Gentoo,
+  whose `sshd_config` includes the drop-ins at its foot, the apply also
+  switches on a `KbdInteractiveAuthentication no` it finds above that
+  `Include`, since sshd reads that line before every drop-in. Before writing,
   `apply` reads the staged candidate with `sshd -T`, because `sshd -t` checks
-  only the global lists. It checks that the key, `KbdInteractiveAuthentication
+  only the global lists, and compares it with the same apply staged without
+  the second factor. It checks that the key, `KbdInteractiveAuthentication
   yes` and `UsePAM yes` are what sshd will run with (a `UsePAM no` above the
   main file's `Include` passes `sshd -t` and stops every login after the key),
   that the PAM service sshd uses, `PAMServiceName` included, reaches
   `pam_unix`, that an apply over `--ssh` keeps its own account's key-only
-  login, and that every account with a key file, `nologin` shells included, is
-  left a way in once lists naming a switched-off method are dropped. Logins
-  through `AuthorizedKeysCommand` or `TrustedUserCAKeys` cannot be checked and
-  are refused until an exception names them. If a check fails, the second
-  factor is left out, the rest is still hardened, and the run fails naming the
-  reason; when it goes ahead, the run names every account that will now be
-  asked for its password, since a script logging in as one with a key alone
-  stops working. Accounts can be accepted as losing SSH access with
-  `[ssh.exceptions."second-factor-lockout"]`. Any other
-  `AuthenticationMethods` value is refused when the config loads. A
-  root-gated test holds the `sshd -t` candidate and the reading of `sshd -T`
-  against a real sshd, and CI's root job runs it.
+  login, and that every account that logs in over SSH keeps a way in from two
+  addresses, loopback or the session's and one no `Match` block names: every
+  account with a key file, `nologin` shells included, and every password-only
+  account an exception keeps password login open for. It refuses where
+  switching keyboard-interactive on would turn a `Match` list into a
+  password-only login. Logins through `AuthorizedKeysCommand`,
+  `TrustedUserCAKeys`, `HostbasedAuthentication`, or Kerberos where a keytab
+  exists, cannot be checked and are refused until an exception names them. If
+  a check fails, the second factor is left out, the rest is still hardened,
+  and the run fails naming the reason; when it goes ahead, the run names every
+  account that will now be asked for its password, since a script logging in
+  as one with a key alone stops working. Accounts can be accepted as losing
+  SSH access with `[ssh.exceptions."second-factor-lockout"]`. Any other
+  `AuthenticationMethods` value is refused when the config loads. Three
+  root-gated tests hold the `sshd -t` candidate, the reading of `sshd -T` and
+  the Gentoo layout against a real sshd, and CI's root job runs them.
 - **`--ssh-control-path` runs over an SSH connection you opened yourself
   (#185).** The remote mode connects with `BatchMode=yes` and cannot answer a
   password prompt. Open a ControlMaster connection once, answering the prompt,
-  and pass its socket: every command then runs over it. It is for the CLI's
-  global `--ssh` only; `batch` refuses it, and the desktop does not offer it
-  yet.
+  and pass its socket: every command then runs over it, as the account that
+  opened it. That suits a scan of what the account can read; where
+  `sshd_config` is root-only, as on Gentoo, Fedora, RHEL and Rocky, the SSH
+  checks come back unchecked. It is for the CLI's global `--ssh` only; `batch`
+  refuses it, and the desktop does not offer it yet.
 
 ### Changed
 
@@ -171,6 +181,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The SSH plugin reads Gentoo's `sshd_config` (#185).** Gentoo's file
+  includes its drop-ins near its end with
+  `Include "/etc/ssh/sshd_config.d/*.conf"`, quoted, and sshd drops the
+  quotes. The plugin kept them, read the pattern as a relative path, and could
+  not list `/etc/ssh/"/etc/ssh/sshd_config.d`, so on a stock Gentoo host the
+  scan reported every SSH check as unchecked and the apply refused to run.
+  `Include` lines are now split the way sshd splits them, quotes, escapes and
+  a trailing comment included.
 - **The `sshd -t` check reads the new SSH drop-in, not the copy it replaces
   (#185).** The candidate was the new body of `00-hardener.conf` pasted ahead
   of the main file, whose `Include` then read the old copy on disk as well. A

@@ -40,7 +40,10 @@ scan a remote.
 - Standard utilities the executor itself runs: `cat`, `test`, `stat`, `find`,
   and `sudo tee` for writes. Plugins add their own, `systemctl` and `sysctl`
   among them.
-- For apply/rollback: a root session, or a user whose `sudo -n true` succeeds
+- For apply/rollback: a root session, or a user whose `sudo -n true` succeeds.
+  Only file writes go through `sudo` (see "Non-root sessions only half
+  elevate" in the limitations table below), so the SSH plugin's apply, which
+  runs `sshd` and reads root-only files, needs a root session
 
 ### Authentication
 - SSH key authentication (recommended)
@@ -186,7 +189,15 @@ checkpoints are filed under the name you give. Keep the socket path short,
 since ssh refuses one of 108 bytes or more, and in a directory only you can
 read.
 
-This suits a scan. It does not suit an apply. An apply needs a root session,
+This suits a scan of what your own account can read. Gentoo, Fedora, RHEL and
+Rocky install `/etc/ssh/sshd_config` readable by root only, and keep
+`sshd_config.d` that way too, so on those hosts a scan over such a connection
+reports every SSH check as unchecked ("reading /etc/ssh/sshd_config requires
+root"), which leaves out the very settings a second factor is about. For a full
+scan of one of those hosts, use the `Match` block below, as for an apply, or
+run the scan on the host itself.
+
+It does not suit an apply either. An apply needs a root session,
 because commands run as the connecting user and only file writes go through
 `sudo`: as any other user the SSH plugin's own `sshd -t` check stops at
 `sshd: no hostkeys available`, and the second factor's lockout check cannot
