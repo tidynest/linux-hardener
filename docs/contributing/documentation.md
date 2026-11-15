@@ -711,11 +711,24 @@ that no source was recorded. A row for a setting the code no longer has fails
 too. Each table on the page opens with a `<!-- baseline-table: KEY -->` marker,
 which is how the check finds it.
 
-So a change to a default and its row land in the same commit, and a new check
-cannot arrive without a stated source, which is the gap issue #189 reported.
-The page also lists controls a host can pass on a weaker value than the
-control's own text asks for; the identifiers those rows name must still be ones
-the code emits, and the baseline values they quote must still be the code's.
+So `validate_all.py` fails until a changed default and its row agree, and until
+a new check has a row with a stated source, which is the gap issue #189
+reported. CI does not run it, so this holds for whoever runs it before a pull
+request, as the checklist in CONTRIBUTING.md asks.
+
+The page also lists the controls a host can pass while doing less than the
+control's own text asks. Each of those rows names the check, the control the
+plugin maps it to and the control's RHEL 10 identifier. The mapped control must
+sit in that check's own arm of the plugin's mapping function, the RHEL 10
+identifier must be what `profiles.rs` translates it to, and a quoted baseline
+value must still be the code's. A plugin that stops mapping a control therefore
+fails the row, even while `profiles.rs` still holds the identifier.
+
+README.md is held too, on three points: the baseline values its "Where the
+default values come from" section and its Pass limitation quote must be the
+code's, and the sentence in "Compliance frameworks" saying a Pass is not always
+everything a control asks must still be there while the report generator
+decides Pass on findings alone.
 
 What the guides say is not checked. Their values are quoted with a version and
 the date they were read, and only a person reading a new release can tell

@@ -29,13 +29,27 @@ Each table on the page opens with a marker comment, `<!-- baseline-table: KEY
 - `firewall`: action, protocol, port and source of each baseline rule.
 - `audit`: every rule line, its category and severity, and the backlog
   prelude's two numbers.
-- `weaker-pass`: every control the page says a host can pass on a weaker
-  value must still be an identifier the code emits, and the baseline value
-  the row quotes must still be the code's.
+- `weaker-pass` and `unmeasured-pass`: the controls a host can pass while
+  doing less than the control's text asks. Each row names the check, the
+  control the plugin maps it to and the control's RHEL 10 identifier. The
+  mapped control must sit in that check's own arm of the plugin's mapping
+  function, helper calls in the arm included, so a plugin that stops mapping
+  it fails the row even while `profiles.rs` still holds the identifier as a
+  translation key. Each RHEL 10 identifier must be one `profiles.rs`
+  translates a mapped control to. In `weaker-pass`, the baseline value the
+  row quotes must still be the code's.
 
 Both directions fail: a setting in code with no row, and a row naming a setting
-the code no longer has. Every row must also say where its value came from. A row
-may say that no source is recorded, and most do, but it may not be empty.
+the code no longer has. Every setting row, audit and firewall included, must
+also say where its value came from. A row may say that no source is recorded,
+and most do, but it may not be empty.
+
+README.md is held on three points. The baseline values its "Where the default
+values come from" section and its Pass limitation quote must be the code's,
+and each registered quote must still be found, so rewording one means moving
+its pattern here. The "Compliance frameworks" paragraph must still say that a
+Pass is not always everything a control asks, and the report generator must
+still decide Pass on findings alone, which is what makes that sentence true.
 
 Not checked: what the guides say. Their values are quoted with a version and a
 date, and only a person reading the new release can tell whether they moved.
@@ -60,6 +74,14 @@ import re
 import sys
 from pathlib import Path
 
+# The README limitation and the compliance paragraph rest on the same fact
+# about the report generator, and its sibling already reads it. One parse of
+# that status chain is one thing to keep true, so it is imported rather than
+# copied. Importing runs nothing: that module calls `main()` only under
+# `__name__ == "__main__"`.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from validate_readme_claims import check_pass_against_baseline  # noqa: E402
+
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
 BLUE = "\033[0;34m"
@@ -68,6 +90,34 @@ NC = "\033[0m"
 PAGE = Path("docs/reference/baseline-sources.md")
 PLUGINS = Path("crates/hardener-plugins/src")
 PROFILES = Path("crates/hardener-compliance/src/profiles.rs")
+README = Path("README.md")
+GENERATOR = Path("crates/hardener-compliance/src/generator.rs")
+
+# The page's two tables of controls a host can pass while doing less than the
+# control asks: (marker key, whether the last column quotes a baseline value).
+CONTROL_TABLES = [("weaker-pass", True), ("unmeasured-pass", False)]
+
+# Baseline values README quotes: (section heading, pattern with one group,
+# table, setting). A space in a pattern matches any run of whitespace, so
+# rewrapping a paragraph does not break it. Rewording does, on purpose: the
+# quote has moved, and this registry has to move with it.
+README_QUOTES = [
+    ("### Where the default values come from", r"a (\d+)-character minimum and", "pam", "minlen"),
+    ("### Where the default values come from", r"minimum and (\d+) remembered passwords", "pam", "remember"),
+    ("### Where the default values come from", r"Its (\d+)-day password expiry", "pam", "PASS_MAX_DAYS"),
+    ("### Where the default values come from", r"while its (\d+)-character minimum", "pam", "minlen"),
+    ("### Known limitations", r"where the baseline asks for (\d+)", "pam", "minlen"),
+]
+
+# The sentence that replaced README's old claim that a report "cannot claim
+# compliance the tool did not measure", which this page's two control tables
+# disprove. It is true only while the generator passes a covered control on the
+# absence of a finding, so it is held to that status chain as well.
+README_PASS_SENTENCE = (
+    "### Compliance frameworks",
+    "A covered control passes when its plugin finds nothing weaker than the "
+    "baseline, which is not always everything the control asks for",
+)
 
 # How the page spells each direction. `Ranked` is spelled "ranked" followed by
 # its order, which is compared separately.
@@ -341,11 +391,121 @@ def read_code(root: Path) -> dict:
     return code
 
 
-def emitted_identifiers(root: Path) -> str:
-    """Every source a control identifier the page names may come from."""
-    texts = [p.read_text(encoding="utf-8") for p in sorted((root / PLUGINS).rglob("*.rs"))]
-    texts.append((root / PROFILES).read_text(encoding="utf-8"))
-    return "\n".join(texts)
+CLOSERS = {"(": ")", "[": "]", "{": "}"}
+
+
+def skip_string(text: str, start: int) -> int:
+    """The index just past the string literal that opens at `start`."""
+    index = start + 1
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+            continue
+        if text[index] == '"':
+            return index + 1
+        index += 1
+    raise ParseError("a string literal is never closed")
+
+
+def balanced(text: str, start: int) -> tuple[str, int]:
+    """The text inside the bracket at `start`, and the index of its partner.
+
+    String literals and line comments are skipped, so a bracket inside a
+    control's title or a comment does not count.
+    """
+    stack = [CLOSERS[text[start]]]
+    index = start + 1
+    while index < len(text):
+        char = text[index]
+        if char == '"':
+            index = skip_string(text, index)
+            continue
+        if text.startswith("//", index):
+            newline = text.find("\n", index)
+            index = len(text) if newline == -1 else newline
+            continue
+        if char in CLOSERS:
+            stack.append(CLOSERS[char])
+        elif char in ")]}":
+            if char != stack.pop():
+                raise ParseError(f"an unbalanced {char!r}")
+            if not stack:
+                return text[start + 1 : index], index
+        index += 1
+    raise ParseError("a bracket is never closed")
+
+
+def function_body(text: str, name: str) -> str | None:
+    """The body of `fn name(...) ... { ... }` in this file, or None."""
+    found = re.search(rf"\bfn {re.escape(name)}\s*\(", text)
+    if found is None:
+        return None
+    _, params_end = balanced(text, found.end() - 1)
+    brace = text.find("{", params_end)
+    if brace == -1:
+        raise ParseError(f"fn {name} has no body")
+    return balanced(text, brace)[0]
+
+
+def mapping_arms(text: str) -> list[tuple[str, str]]:
+    """(pattern, body) for every `PATTERN => vec![...]` arm of the file's
+    `*compliance_mappings` functions.
+
+    A helper the arm calls, defined in the same file, is appended to its body,
+    because some identifiers are built there: the PAM ageing arms reach the
+    FedRAMP control through `pam_fedramp_password_ageing()`.
+    """
+    arms = []
+    for found in re.finditer(r"\bfn (\w*compliance_mappings)\s*\(", text):
+        body = function_body(text, found.group(1))
+        if body is None:
+            continue
+        for arm in re.finditer(r"^[ \t]*([^\n]*?)\s*=>\s*vec!\[", body, re.M):
+            inner, _ = balanced(body, arm.end() - 1)
+            helpers = []
+            for call in sorted(set(re.findall(r"\b(\w+)\(", inner))):
+                if call == found.group(1):
+                    continue
+                helper = function_body(text, call)
+                if helper is not None:
+                    helpers.append(helper)
+            arms.append((arm.group(1), "\n".join([inner, *helpers])))
+    return arms
+
+
+def arm_matches(pattern: str, key: str) -> bool:
+    """Whether a check named `key` takes this arm: a string literal in the
+    pattern equal to it, or a `contains("...")` guard it satisfies."""
+    for literal in re.findall(r'"([^"]*)"', pattern):
+        if literal == key:
+            return True
+        if literal and f'contains("{literal}")' in pattern and literal in key:
+            return True
+    return False
+
+
+def plugin_arms(root: Path) -> list[tuple[str, str]]:
+    """The mapping arms of every plugin, in one list."""
+    arms = []
+    for module in sorted((root / PLUGINS).glob("*/mod.rs")):
+        arms += mapping_arms(module.read_text(encoding="utf-8"))
+    if not arms:
+        raise ParseError("no plugin has a `*compliance_mappings` function with arms")
+    return arms
+
+
+def profile_translations(text: str) -> dict[str, set[str]]:
+    """{canonical identifier: the identifiers a profile translates it to}."""
+    names = re.findall(r"\bconst (\w+): &\[Row\]", text)
+    if not names:
+        raise ParseError("profiles.rs declares no `&[Row]` tables")
+    found: dict[str, set[str]] = {}
+    for name in names:
+        for canonical, target in re.findall(r'\(\s*"([^"]+)",\s*"([^"]+)",', const_body(text, name)):
+            found.setdefault(canonical, set()).add(target)
+    if not found:
+        raise ParseError("the `&[Row]` tables in profiles.rs hold no rows")
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -518,13 +678,13 @@ def check_permissions(expected: dict, rows: list[list[str]]) -> list[str]:
 
 
 def check_firewall(expected: dict, rows: list[list[str]]) -> list[str]:
-    """Rule | Action | Protocol | Port | Source address | Notes."""
+    """Rule | Action | Protocol | Port | Source address | Source | Notes."""
     table = "firewall"
     problems: list[str] = []
     by_name = keyed(rows, 0, problems, table)
     for name in both_directions(table, expected, by_name, problems):
         row, want = by_name[name], expected[name]
-        if not need_cells(table, name, row, 6, problems):
+        if not need_cells(table, name, row, 7, problems):
             continue
         for column, field in enumerate(("action", "protocol", "port", "source"), start=1):
             if first_tick(row[column]) != want[field]:
@@ -532,17 +692,18 @@ def check_firewall(expected: dict, rows: list[list[str]]) -> list[str]:
                     f"{table}: `{name}` {field} reads {row[column]!r}, the code says "
                     f"`{want[field]}`"
                 )
+        check_source_cell(table, name, row[5], problems)
     return problems
 
 
 def check_audit(expected: dict, prelude: list[str], page: str, rows: list[list[str]]) -> list[str]:
-    """Category | Rule | Severity, plus the prelude's two settings in the page."""
+    """Category | Rule | Severity | Source, plus the prelude's two settings."""
     table = "audit"
     problems: list[str] = []
     by_rule = keyed(rows, 1, problems, table)
     for rule in both_directions(table, expected, by_rule, problems):
         row, want = by_rule[rule], expected[rule]
-        if not need_cells(table, rule, row, 3, problems):
+        if not need_cells(table, rule, row, 4, problems):
             continue
         if first_tick(row[0]) != want["category"]:
             problems.append(
@@ -552,52 +713,148 @@ def check_audit(expected: dict, prelude: list[str], page: str, rows: list[list[s
             problems.append(
                 f"{table}: `{rule}` severity reads {row[2]!r}, the code says {want['severity']}"
             )
+        check_source_cell(table, rule, row[3], problems)
     for setting in prelude:
         if f"`{setting}`" not in page:
             problems.append(f"{table}: the backlog prelude sets `{setting}` and the page never says so")
     return problems
 
 
-def check_weaker_pass(code: dict, identifiers: str, rows: list[list[str]]) -> list[str]:
-    """Control | What the control asks | Setting | Baseline."""
-    table = "weaker-pass"
+def check_quoted_value(table: str, code: dict, check: str, cell: str, problems: list[str]) -> None:
+    """A stricter-value row's last cell quotes the baseline; it must be the code's."""
+    quoted = first_tick(cell)
+    scalar = {**code["kernel"], **code["ssh"], **code["pam"]}
+    if quoted is None:
+        problems.append(f"{table}: `{check}` quotes no baseline value in backticks")
+    elif check in scalar:
+        if quoted != scalar[check]["default"]:
+            problems.append(
+                f"{table}: `{check}` is quoted as {cell!r}, the code's default is "
+                f"`{scalar[check]['default']}`"
+            )
+    elif check in code["ssh-crypto"]:
+        if quoted not in code["ssh-crypto"][check]["list"]:
+            problems.append(
+                f"{table}: `{check}` is said to allow {cell!r}, which the code's allow-list "
+                f"does not hold"
+            )
+    elif check in code["permissions"]:
+        if quoted != code["permissions"][check]["mode"]:
+            problems.append(
+                f"{table}: `{check}` is quoted as {cell!r}, the code's mode is "
+                f"`{code['permissions'][check]['mode']}`"
+            )
+    else:
+        problems.append(
+            f"{table}: `{check}` is in no baseline table, so the value it quotes cannot be held"
+        )
+
+
+def check_control_rows(
+    table: str,
+    code: dict,
+    arms: list[tuple[str, str]],
+    translations: dict[str, set[str]],
+    rows: list[list[str]],
+    quotes_value: bool,
+) -> list[str]:
+    """Check | Control the plugin maps | Under the RHEL 10 profile | Asks | Measures."""
     problems: list[str] = []
     if not rows:
         problems.append(f"{table}: the table is empty")
     for row in rows:
-        if len(row) < 4:
-            problems.append(f"{table}: a row has {len(row)} cells, expected 4")
+        if len(row) < 5:
+            problems.append(f"{table}: a row has {len(row)} cells, expected 5")
             continue
-        controls = ticks(row[0])
-        if not controls:
-            problems.append(f"{table}: a row names no control in backticks: {row[0]!r}")
-        for control in controls:
-            if f'"{control}"' not in identifiers:
+        checks, mapped = ticks(row[0]), ticks(row[1])
+        if not checks:
+            problems.append(f"{table}: a row names no check in backticks: {row[0]!r}")
+            continue
+        label = ", ".join(checks)
+        if not mapped:
+            problems.append(f"{table}: `{label}` names no mapped control in backticks")
+        bodies = []
+        for check in checks:
+            matched = [body for pattern, body in arms if arm_matches(pattern, check)]
+            if not matched:
                 problems.append(
-                    f"{table}: `{control}` is not an identifier the plugins or the "
-                    f"profiles emit any more"
+                    f"{table}: `{check}` takes no arm of any plugin's mapping function"
                 )
-        setting = first_tick(row[2])
-        quoted = first_tick(row[3])
-        scalar = {**code["kernel"], **code["ssh"], **code["pam"]}
-        if setting in scalar:
-            if quoted != scalar[setting]["default"]:
+            bodies += matched
+        mapped_text = "\n".join(bodies)
+        for control in mapped:
+            if bodies and f'"{control}"' not in mapped_text:
                 problems.append(
-                    f"{table}: `{setting}` is quoted as {row[3]!r}, the code's default "
-                    f"is `{scalar[setting]['default']}`"
+                    f"{table}: `{label}` is no longer mapped to `{control}` in the plugin"
                 )
-        elif setting in code["ssh-crypto"]:
-            if quoted not in code["ssh-crypto"][setting]["list"]:
+        targets: set[str] = set()
+        for control in mapped:
+            targets |= translations.get(control, set())
+        for control in ticks(row[2]):
+            if control not in targets:
                 problems.append(
-                    f"{table}: `{setting}` is said to allow {row[3]!r}, which the "
-                    f"code's allow-list does not hold"
+                    f"{table}: `{control}` is not what profiles.rs translates "
+                    f"{', '.join(mapped) or 'the mapped control'} to"
                 )
-        else:
-            problems.append(f"{table}: {row[2]!r} names no setting any baseline table holds")
+        if quotes_value:
+            check_quoted_value(table, code, checks[0], row[4], problems)
     return problems
 
 
-def check_page(page: str, code: dict, identifiers: str) -> list[str]:
+def readme_section(readme: str, heading: str) -> str | None:
+    """README text from `heading` to the next heading of level two or three."""
+    start = readme.find(heading + "\n")
+    if start == -1:
+        return None
+    tail = readme[start + len(heading) :]
+    ends = [end for end in (tail.find("\n### "), tail.find("\n## ")) if end != -1]
+    return tail[: min(ends)] if ends else tail
+
+
+def flexible(pattern: str) -> re.Pattern:
+    """`pattern` with each space matching any run of whitespace."""
+    return re.compile(pattern.replace(" ", r"\s+"))
+
+
+def check_readme(readme: str, code: dict, generator: str) -> list[str]:
+    """The baseline values README quotes, and its sentence on what a Pass means."""
+    problems: list[str] = []
+    for heading, pattern, table, setting in README_QUOTES:
+        section = readme_section(readme, heading)
+        if section is None:
+            problems.append(f"README.md: no `{heading}` section any more")
+            continue
+        found = flexible(pattern).findall(section)
+        want = code[table][setting]["default"]
+        if not found:
+            problems.append(
+                f"README.md: `{heading}` no longer reads {pattern!r}; re-read the "
+                f"quote of `{setting}` and move the pattern with it"
+            )
+        for value in found:
+            if value != want:
+                problems.append(
+                    f"README.md: `{heading}` quotes `{setting}` as {value}, the code says {want}"
+                )
+    heading, sentence = README_PASS_SENTENCE
+    section = readme_section(readme, heading)
+    if section is None or not flexible(re.escape(sentence).replace(r"\ ", " ")).search(section):
+        problems.append(
+            f"README.md: `{heading}` no longer says a Pass is not always everything a "
+            f"control asks for; the cases on {PAGE} still say so"
+        )
+    holds, detail = check_pass_against_baseline(generator)
+    if not holds:
+        problems.append(f"README.md: `{heading}` describes a Pass the generator no longer gives: {detail}")
+    return problems
+
+
+def check_page(
+    page: str,
+    code: dict,
+    arms: list[tuple[str, str]],
+    translations: dict[str, set[str]],
+) -> list[str]:
     """Every problem with the page, against code already read."""
     problems: list[str] = []
     tables = {}
@@ -607,8 +864,7 @@ def check_page(page: str, code: dict, identifiers: str) -> list[str]:
         "permissions",
         "firewall",
         "audit",
-        "weaker-pass",
-    ]
+    ] + [key for key, _ in CONTROL_TABLES]
     for key in keys:
         rows = page_table(page, key)
         if rows is None:
@@ -628,8 +884,9 @@ def check_page(page: str, code: dict, identifiers: str) -> list[str]:
         problems += check_firewall(code["firewall"], tables["firewall"])
     if "audit" in tables:
         problems += check_audit(code["audit"], code["audit-prelude"], page, tables["audit"])
-    if "weaker-pass" in tables:
-        problems += check_weaker_pass(code, identifiers, tables["weaker-pass"])
+    for key, quotes_value in CONTROL_TABLES:
+        if key in tables:
+            problems += check_control_rows(key, code, arms, translations, tables[key], quotes_value)
     return problems
 
 
@@ -659,102 +916,306 @@ const KERNEL_PARAMS: &[KernelParameter] = &[
 
 SAMPLE_SPEC = SCALAR_TABLES[0]
 
+# A plugin's mapping function in the shapes the real ones use: a literal arm
+# whose identifier also arrives through a helper, a `contains` guard, a title
+# with brackets in it, and a default arm.
+SAMPLE_PLUGIN_RS = """
+fn get_sample_compliance_mappings(name: &str) -> Vec<ComplianceMapping> {
+    match name {
+        "alpha" => vec![
+            mapping("STIG-A", "A title [with] brackets"),
+            helper_ids(),
+        ],
+        n if n.contains("beta") => vec![mapping("CIS-B", "x")],
+        _ => vec![],
+    }
+}
 
-def sample_page(rows: list[str]) -> str:
-    header = (
-        "<!-- baseline-table: kernel -->\n\n"
-        "| Setting | Default | Comparison | Severity | Source | Guides |\n"
-        "|---|---|---|---|---|---|\n"
-    )
-    return header + "\n".join(rows) + "\n\nAfter the table.\n"
+fn helper_ids() -> ComplianceMapping {
+    mapping("FED-H", "y")
+}
+"""
+
+SAMPLE_PROFILES_RS = """
+const SAMPLE_ROWS: &[Row] = &[
+    ("STIG-A", "R10-A", "t", None),
+    (
+        "CIS-B",
+        "R10-B",
+        "t",
+        None,
+    ),
+];
+"""
+
+SAMPLE_CODE = {
+    "kernel": {"alpha": {"default": "5"}},
+    "ssh": {},
+    "pam": {"minlen": {"default": "14"}, "remember": {"default": "5"}, "PASS_MAX_DAYS": {"default": "90"}},
+    "ssh-crypto": {"Ciphers": {"list": ["a", "b"], "severity": "High"}},
+    "permissions": {"/etc/x": {"mode": "0640", "comparison": "no bits beyond", "severity": "Critical"}},
+    "services": {"cups": {"severity": "Medium"}},
+    "firewall": {"ssh": {"action": "accept", "protocol": "tcp", "port": "22", "source": "any"}},
+    "audit": {"-w /x -p wa -k k": {"category": "k", "severity": "High"}},
+    "audit-prelude": ["-b 1"],
+}
+
+SAMPLE_GENERATOR_RS = (
+    "let status = if has_live_finding(&related) {\n"
+    "    ControlStatus::Fail\n"
+    "} else if unchecked_ids.contains(control.compliance_control_id.as_str()) {\n"
+    "    ControlStatus::ManualReview\n"
+    "} else if assessed.contains(control.compliance_control_id.as_str()) {\n"
+    "    ControlStatus::Pass\n"
+)
+
+SAMPLE_README = """### Compliance frameworks
+
+A covered control passes when its plugin finds nothing weaker than the
+baseline, which is not always everything the control asks for; see below.
+
+### Where the default values come from
+
+The password rules, a 14-character minimum and 5 remembered
+passwords, are an older edition's. Its 90-day password expiry is stricter,
+while its 14-character minimum is one short.
+
+### Known limitations
+
+- A Pass, such as a 15-character minimum where the
+  baseline asks for 14, still passes.
+"""
 
 
+def rows_of(header: str, rows: list[str]) -> list[list[str]]:
+    """Rows as the page reader returns them, from a table under a marker."""
+    page = "<!-- baseline-table: t -->\n\n" + header + "\n".join(rows) + "\n\nAfter the table.\n"
+    return page_table(page, "t") or []
+
+
+SCALAR_HEADER = "| Setting | Default | Comparison | Severity | Source | Guides |\n|---|---|---|---|---|---|\n"
 GOOD_A = "| `a.b` | `2` | at least | High | Project choice | none |"
 GOOD_C = "| `c.d` | `1` | ranked, weakest first: `0`, `2`, `2b`, `1` | Low | Project choice | none |"
 
-# (rows on the page, whether the check must flag them, why)
+
+def scalar(rows: list[str]):
+    def run() -> list[str]:
+        expected = code_scalar(SAMPLE_KERNEL_RS, SAMPLE_SPEC)
+        return check_scalar("kernel", expected, rows_of(SCALAR_HEADER, rows))
+
+    return run
+
+
+CRYPTO_HEADER = "| Directive | List | Severity | Source | Guides |\n|---|---|---|---|---|\n"
+GOOD_CRYPTO = "| `Ciphers` | `a`, `b` | High | Commit | none |"
+SERVICES_HEADER = "| Service | Severity | Source | Guides |\n|---|---|---|---|\n"
+GOOD_SERVICE = "| `cups` | Medium | No source recorded | none |"
+PERMISSIONS_HEADER = "| Path | Mode | Comparison | Severity | Source | Notes |\n|---|---|---|---|---|---|\n"
+GOOD_PERMISSION = "| `/etc/x` | `0640` | no bits beyond | Critical | Commit | |"
+FIREWALL_HEADER = (
+    "| Rule | Action | Protocol | Port | Address | Source | Notes |\n|---|---|---|---|---|---|---|\n"
+)
+GOOD_FIREWALL = "| `ssh` | `accept` | `tcp` | `22` | `any` | No source recorded | n |"
+AUDIT_HEADER = "| Category | Rule | Severity | Source |\n|---|---|---|---|\n"
+GOOD_AUDIT = "| `k` | `-w /x -p wa -k k` | High | Code comment |"
+AUDIT_PAGE = "The file opens with `-b 1`."
+CONTROL_HEADER = "| Check | Mapped | RHEL 10 | Asks | Accepts |\n|---|---|---|---|---|\n"
+GOOD_CONTROL = "| `alpha` | STIG `STIG-A`, FedRAMP `FED-H` | STIG `R10-A` | 15 | `5` or more |"
+GUARD_CONTROL = "| `xbetax` | CIS `CIS-B` | CIS `R10-B` | more | prose only |"
+
+
+def crypto(rows: list[str]):
+    return lambda: check_crypto(SAMPLE_CODE["ssh-crypto"], rows_of(CRYPTO_HEADER, rows))
+
+
+def services(rows: list[str]):
+    return lambda: check_services(SAMPLE_CODE["services"], rows_of(SERVICES_HEADER, rows))
+
+
+def permissions(rows: list[str]):
+    return lambda: check_permissions(SAMPLE_CODE["permissions"], rows_of(PERMISSIONS_HEADER, rows))
+
+
+def firewall(rows: list[str]):
+    return lambda: check_firewall(SAMPLE_CODE["firewall"], rows_of(FIREWALL_HEADER, rows))
+
+
+def audit(rows: list[str], page: str = AUDIT_PAGE):
+    def run() -> list[str]:
+        table = rows_of(AUDIT_HEADER, rows)
+        return check_audit(SAMPLE_CODE["audit"], SAMPLE_CODE["audit-prelude"], page, table)
+
+    return run
+
+
+def controls(rows: list[str], plugin: str = SAMPLE_PLUGIN_RS, quotes_value: bool = True):
+    def run() -> list[str]:
+        arms = mapping_arms(plugin)
+        translations = profile_translations(SAMPLE_PROFILES_RS)
+        table = rows_of(CONTROL_HEADER, rows)
+        return check_control_rows("t", SAMPLE_CODE, arms, translations, table, quotes_value)
+
+    return run
+
+
+def readme(text: str = SAMPLE_README, code: dict = SAMPLE_CODE, generator: str = SAMPLE_GENERATOR_RS):
+    return lambda: check_readme(text, code, generator)
+
+
+def ranked_order_read() -> list[str]:
+    order = code_scalar(SAMPLE_KERNEL_RS, SAMPLE_SPEC)["c.d"]["order"]
+    return [] if order == ["0", "2", "2b", "1"] else [f"read as {order}"]
+
+
+def missing_marker() -> list[str]:
+    return [] if page_table("no marker here", "kernel") is None else ["read as a table"]
+
+
+# (why, the detail a rejection must carry or None for a page the check must
+# accept, the check to run). Every checker has a case it must accept and at
+# least one it must reject, so a checker broken into accepting everything, or
+# rejecting everything, fails here before its verdict on the real page is
+# printed. A rejection must also name its own reason: a checker that rejects
+# every input for one broken reason would otherwise pass every negative case.
 SELF_TEST_CASES = [
-    ([GOOD_A, GOOD_C], False, "a page that matches the code passes"),
+    ("a page that matches the code passes", None, scalar([GOOD_A, GOOD_C])),
+    ("a default that moved in the code is flagged", 'default reads', scalar([GOOD_A.replace("`2`", "`3`"), GOOD_C])),
+    ("a comparison in the wrong direction is flagged", 'comparison reads', scalar([GOOD_A.replace("at least", "at most"), GOOD_C])),
+    ("a severity that changed is flagged", 'severity reads', scalar([GOOD_A.replace("High", "Medium"), GOOD_C])),
+    ("a setting with no row is flagged", 'has no row on the page', scalar([GOOD_A])),
     (
-        [GOOD_A.replace("`2`", "`3`"), GOOD_C],
-        True,
-        "a default that moved in the code is flagged",
-    ),
-    (
-        [GOOD_A.replace("at least", "at most"), GOOD_C],
-        True,
-        "a comparison in the wrong direction is flagged",
-    ),
-    (
-        [GOOD_A.replace("High", "Medium"), GOOD_C],
-        True,
-        "a severity that changed is flagged",
-    ),
-    ([GOOD_A], True, "a setting with no row is flagged"),
-    (
-        [GOOD_A, GOOD_C, "| `e.f` | `0` | at most | Low | Project choice | none |"],
-        True,
         "a row for a setting the code dropped is flagged",
+        'is not in the code',
+        scalar([GOOD_A, GOOD_C, "| `e.f` | `0` | at most | Low | Project choice | none |"]),
     ),
+    ("a setting with two rows is flagged", 'more than one row', scalar([GOOD_A, GOOD_C, GOOD_A])),
     (
-        [GOOD_A, GOOD_C, GOOD_A],
-        True,
-        "a setting with two rows is flagged",
-    ),
-    (
-        [GOOD_A.replace("Project choice", ""), GOOD_C],
-        True,
         "a row that does not say where its value comes from is flagged",
+        'does not say where its value comes from',
+        scalar([GOOD_A.replace("Project choice", ""), GOOD_C]),
     ),
     (
-        [GOOD_A, GOOD_C.replace("`2`, `2b`", "`2b`, `2`")],
-        True,
         "a ranked order written in the wrong order is flagged",
+        'ranks it weakest first',
+        scalar([GOOD_A, GOOD_C.replace("`2`, `2b`", "`2b`, `2`")]),
+    ),
+    ("a ranked order with a constant in it is read weakest first", None, ranked_order_read),
+    ("a page without a table's marker is reported, not read as empty", None, missing_marker),
+    ("crypto: a list that matches the code passes", None, crypto([GOOD_CRYPTO])),
+    ("crypto: a list in another order is flagged", 'in that order', crypto([GOOD_CRYPTO.replace("`a`, `b`", "`b`, `a`")])),
+    ("crypto: a list with no source is flagged", 'does not say where its value comes from', crypto([GOOD_CRYPTO.replace("Commit", "")])),
+    ("services: a row that matches the code passes", None, services([GOOD_SERVICE])),
+    ("services: a severity that changed is flagged", 'severity reads', services([GOOD_SERVICE.replace("Medium", "Low")])),
+    ("permissions: a row that matches the code passes", None, permissions([GOOD_PERMISSION])),
+    ("permissions: a wrong mode is flagged", 'mode reads', permissions([GOOD_PERMISSION.replace("`0640`", "`0600`")])),
+    (
+        "permissions: exact where the code masks is flagged",
+        'comparison reads',
+        permissions([GOOD_PERMISSION.replace("no bits beyond", "exact")]),
+    ),
+    ("firewall: a rule that matches the code passes", None, firewall([GOOD_FIREWALL])),
+    ("firewall: a port that moved is flagged", 'port reads', firewall([GOOD_FIREWALL.replace("`22`", "`2222`")])),
+    (
+        "firewall: a rule with no source is flagged",
+        'does not say where its value comes from',
+        firewall([GOOD_FIREWALL.replace("No source recorded", "")]),
+    ),
+    ("audit: a rule that matches the code passes", None, audit([GOOD_AUDIT])),
+    ("audit: a rule the code has and the page lacks is flagged", 'has no row on the page', audit([])),
+    ("audit: a rule with no source is flagged", 'does not say where its value comes from', audit([GOOD_AUDIT.replace("Code comment", "")])),
+    ("audit: a page silent on the backlog prelude is flagged", 'backlog prelude', audit([GOOD_AUDIT], page="")),
+    (
+        "controls: rows held to the mapping arms, a helper and a contains guard pass",
+        None,
+        controls([GOOD_CONTROL, GUARD_CONTROL], quotes_value=False),
+    ),
+    ("controls: a quoted value that is the code's passes", None, controls([GOOD_CONTROL])),
+    (
+        "controls: a control the plugin stopped mapping is flagged although profiles.rs keeps it",
+        'no longer mapped to `STIG-A`',
+        controls([GOOD_CONTROL], plugin=SAMPLE_PLUGIN_RS.replace('"STIG-A"', '"STIG-Z"')),
+    ),
+    (
+        "controls: a RHEL 10 identifier the mapped control does not translate to is flagged",
+        'is not what profiles.rs translates',
+        controls([GOOD_CONTROL.replace("`R10-A`", "`R10-B`")]),
+    ),
+    ("controls: a check that takes no mapping arm is flagged", 'takes no arm', controls([GOOD_CONTROL.replace("`alpha`", "`gamma`")])),
+    ("controls: a quoted value that moved is flagged", "the code's default is", controls([GOOD_CONTROL.replace("`5`", "`6`")])),
+    ("readme: quotes and the Pass sentence that match the code pass", None, readme()),
+    (
+        "readme: a quoted value the code changed is flagged",
+        'quotes `minlen` as 14, the code says 15',
+        readme(code={**SAMPLE_CODE, "pam": {**SAMPLE_CODE["pam"], "minlen": {"default": "15"}}}),
+    ),
+    (
+        "readme: a reworded quote is flagged rather than skipped",
+        'no longer reads',
+        readme(text=SAMPLE_README.replace("Its 90-day password expiry", "Expiry after 90 days")),
+    ),
+    (
+        "readme: the old claim restored in place of the Pass sentence is flagged",
+        'no longer says a Pass',
+        readme(
+            text=SAMPLE_README.replace(
+                "A covered control passes when its plugin finds nothing weaker than the\n"
+                "baseline, which is not always everything the control asks for; see below.",
+                "A report cannot claim compliance the tool did not measure.",
+            )
+        ),
+    ),
+    (
+        "readme: a Pass arm that gains a condition is flagged",
+        'Pass arm',
+        readme(generator=SAMPLE_GENERATOR_RS.replace(
+            "} else if assessed.contains(control.compliance_control_id.as_str()) {",
+            "} else if assessed.contains(control.compliance_control_id.as_str())\n"
+            "    && !partial.contains(control.compliance_control_id.as_str()) {",
+        )),
     ),
 ]
 
+# Fewer cases than this means one was dropped, and with it a checker may have
+# lost the only case that rejects anything.
+MINIMUM_SELF_TEST_CASES = 37
+
 
 def self_test(quiet: bool = False) -> int:
-    """Runs the checker against page shapes the real page does not contain."""
+    """Runs every checker against page shapes the real page does not contain."""
     if not quiet:
-        print(f"{BLUE}Self-test: page shapes this check must reject, and one it must not...{NC}\n")
-    if len(SELF_TEST_CASES) < 9:
-        print(f"{RED}The self-test table holds {len(SELF_TEST_CASES)} cases, fewer than the 9 written.{NC}")
+        print(f"{BLUE}Self-test: page shapes each check must reject, and ones it must not...{NC}\n")
+    if len(SELF_TEST_CASES) < MINIMUM_SELF_TEST_CASES:
+        print(
+            f"{RED}The self-test table holds {len(SELF_TEST_CASES)} cases, fewer than the "
+            f"{MINIMUM_SELF_TEST_CASES} written.{NC}"
+        )
         return 1
 
     failures = 0
-    try:
-        expected = code_scalar(SAMPLE_KERNEL_RS, SAMPLE_SPEC)
-    except ParseError as error:
-        print(f"  {RED}x{NC} the parser cannot read its own sample: {error}")
-        return 1
-    if expected["c.d"]["order"] != ["0", "2", "2b", "1"]:
-        print(f"  {RED}x{NC} a ranked order with a constant in it was read as {expected['c.d']['order']}")
-        failures += 1
-
-    for index, (rows, should_flag, why) in enumerate(SELF_TEST_CASES):
-        table = page_table(sample_page(rows), "kernel") or []
-        flagged = bool(check_scalar("kernel", expected, table))
-        if flagged != should_flag:
-            verdict = "flagged" if flagged else "accepted"
-            wanted = "flagged" if should_flag else "accepted"
-            print(f"  {RED}x{NC} case {index}: {verdict}, expected {wanted}: {why}")
+    for why, expected_detail, run in SELF_TEST_CASES:
+        try:
+            problems = run()
+        except ParseError as error:
+            print(f"  {RED}x{NC} {why}: the parser cannot read its own sample: {error}")
+            failures += 1
+            continue
+        if expected_detail is None and problems:
+            print(f"  {RED}x{NC} {why}: flagged, expected accepted ({problems[0]})")
+            failures += 1
+            continue
+        if expected_detail is not None and not any(expected_detail in p for p in problems):
+            got = problems[0] if problems else "accepted"
+            print(f"  {RED}x{NC} {why}: expected a problem naming {expected_detail!r}, got {got!r}")
             failures += 1
             continue
         if not quiet:
             print(f"  {GREEN}v{NC} {why}")
 
-    if page_table("no marker here", "kernel") is not None:
-        print(f"  {RED}x{NC} a page without the marker was read as having the table")
-        failures += 1
-    elif not quiet:
-        print(f"  {GREEN}v{NC} a page without the table's marker is reported, not read as empty")
-
     if failures:
         print(f"\n{RED}{failures} self-test case(s) failed{NC}")
         return 1
     if not quiet:
-        print(f"\n{GREEN}All {len(SELF_TEST_CASES) + 2} self-test cases behave as written{NC}")
+        print(f"\n{GREEN}All {len(SELF_TEST_CASES)} self-test cases behave as written{NC}")
     return 0
 
 
@@ -770,7 +1231,7 @@ def main() -> int:
     if "--self-test" in sys.argv:
         return self_test()
 
-    print(f"{BLUE}Validating {PAGE} against the plugin baselines...{NC}\n")
+    print(f"{BLUE}Validating {PAGE} and README.md against the plugin baselines...{NC}\n")
     if self_test(quiet=True) != 0:
         print(f"{RED}The checker's own self-test failed, so its verdict on the page is worthless.{NC}")
         print(f"{RED}Run: python3 scripts/validate/validate_baseline_sources.py --self-test{NC}")
@@ -784,26 +1245,35 @@ def main() -> int:
 
     try:
         code = read_code(root)
+        arms = plugin_arms(root)
+        translations = profile_translations((root / PROFILES).read_text(encoding="utf-8"))
+        readme_text = (root / README).read_text(encoding="utf-8")
+        generator = (root / GENERATOR).read_text(encoding="utf-8")
     except (ParseError, OSError) as error:
         print(f"{RED}The code no longer has the shape this parser reads: {error}{NC}")
         print("  Update the parser in this script rather than leaving the page unchecked.")
         return 1
 
-    problems = check_page(page_path.read_text(encoding="utf-8"), code, emitted_identifiers(root))
+    problems = check_page(page_path.read_text(encoding="utf-8"), code, arms, translations)
+    problems += check_readme(readme_text, code, generator)
     if problems:
-        print(f"{RED}{PAGE} disagrees with the code ({len(problems)}):{NC}")
+        print(f"{RED}{PAGE} or README.md disagrees with the code ({len(problems)}):{NC}")
         for problem in problems:
             print(f"  {RED}x{NC} {problem}")
         print()
-        print("  A changed default needs its row changed in the same commit, and a new")
-        print("  check needs a row that says where its value came from.")
+        print("  A changed default needs its row, and any README quote of it, changed in")
+        print("  the same commit, and a new check needs a row that says where its value")
+        print("  came from.")
         return 1
 
     counts = ", ".join(
         f"{len(code[key])} {key}"
         for key in ("kernel", "ssh", "ssh-crypto", "pam", "services", "permissions", "firewall", "audit")
     )
+    control_rows = sum(len(page_table(page_path.read_text(encoding="utf-8"), key) or []) for key, _ in CONTROL_TABLES)
     print(f"  {GREEN}v{NC} Every baseline row agrees with the code: {counts}")
+    print(f"  {GREEN}v{NC} {control_rows} weaker-Pass rows hold to the plugins' mapping arms and profiles.rs")
+    print(f"  {GREEN}v{NC} README quotes {len(README_QUOTES)} baseline values correctly, and its Pass sentence holds")
     print(f"\n{GREEN}Baseline sources validation passed{NC}")
     return 0
 
