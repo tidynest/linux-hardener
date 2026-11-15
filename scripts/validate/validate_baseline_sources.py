@@ -20,9 +20,10 @@ What is checked
 Each table on the page opens with a marker comment, `<!-- baseline-table: KEY
 -->`, and is compared with the code it names:
 
-- `kernel`, `ssh` and `pam`: the setting, its default, its comparison and its
-  severity, against `KERNEL_PARAMS`, `SSH_DIRECTIVES` and `PAM_DIRECTIVES`. A
-  `Ranked` comparison must list its order, weakest first, as the code does.
+- `kernel`, `ssh`, `pam` and `pam-hashing`: the setting, its default, its
+  comparison and its severity, against `KERNEL_PARAMS`, `SSH_DIRECTIVES`,
+  `PAM_DIRECTIVES` and `HASHING_DIRECTIVES`. A `Ranked` comparison must list
+  its order, weakest first, as the code does.
 - `ssh-crypto`: each allow-list, in preference order, and its severity.
 - `services`: the service names and severities in `UNNECESSARY_SERVICES`.
 - `permissions`: path, mode, exact or mask comparison, and severity.
@@ -217,6 +218,20 @@ SCALAR_TABLES = [
         "pam_severity",
         "pam_compare",
     ),
+    # The three password hashing settings (#191). They sit in a table of their
+    # own because the PAM plugin judges them in a separate pass, across
+    # login.defs and the pam_unix lines, so the page gives them a section of
+    # their own too.
+    (
+        "pam-hashing",
+        "pam/hashing.rs",
+        "HASHING_DIRECTIVES",
+        "PamDirective",
+        "pam_directive_name",
+        "pam_secure_value",
+        "pam_severity",
+        "pam_compare",
+    ),
 ]
 
 
@@ -278,6 +293,17 @@ def str_const(text: str, name: str) -> str:
     return match.group(1)
 
 
+def string_or_const(text: str, body: str, name: str) -> str:
+    """A field written as a string literal or as a `&str` constant of the same
+    file, which is how `HASHING_DIRECTIVES` names its settings."""
+    if re.search(rf'\b{name}:\s*"', body):
+        return string_field(body, name)
+    raw = raw_field(body, name)
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]*", raw):
+        raise ParseError(f"field {name} is `{raw}`, neither a string literal nor a constant")
+    return str_const(text, raw)
+
+
 def ranked_order(text: str, name: str) -> list[str]:
     """A `Ranked` order flattened weakest first, constants resolved.
 
@@ -333,7 +359,7 @@ def code_scalar(text: str, spec: tuple) -> dict[str, dict]:
         raise ParseError(f"{const} holds no {struct} literals")
     for body in bodies:
         word, order = comparison_of(text, raw_field(body, compare_f))
-        entries[string_field(body, name_f)] = {
+        entries[string_or_const(text, body, name_f)] = {
             "default": string_field(body, value_f),
             "comparison": word,
             "order": order,
@@ -1267,11 +1293,8 @@ SAMPLE_LEGEND_PAGE = (
 
 
 def legend(comparisons: list[str]):
-    code = {
-        "kernel": {f"k{i}": {"comparison": word} for i, word in enumerate(comparisons)},
-        "ssh": {},
-        "pam": {},
-    }
+    code: dict = {spec[0]: {} for spec in SCALAR_TABLES}
+    code["kernel"] = {f"k{i}": {"comparison": word} for i, word in enumerate(comparisons)}
     return lambda: check_legend(SAMPLE_LEGEND_PAGE, code)
 
 
@@ -1282,6 +1305,12 @@ def readme(text: str = SAMPLE_README, code: dict = SAMPLE_CODE, generator: str =
 def ranked_order_read() -> list[str]:
     order = code_scalar(SAMPLE_KERNEL_RS, SAMPLE_SPEC)["c.d"]["order"]
     return [] if order == ["0", "2", "2b", "1"] else [f"read as {order}"]
+
+
+def constant_name_read() -> list[str]:
+    source = SAMPLE_KERNEL_RS.replace('kernel_parameter_name: "a.b"', "kernel_parameter_name: SPELLING")
+    names = sorted(code_scalar(source, SAMPLE_SPEC))
+    return [] if names == ["2", "c.d"] else [f"read as {names}"]
 
 
 def missing_marker() -> list[str]:
@@ -1317,6 +1346,7 @@ SELF_TEST_CASES = [
         scalar([GOOD_A, GOOD_C.replace("`2`, `2b`", "`2b`, `2`")]),
     ),
     ("a ranked order with a constant in it is read weakest first", None, ranked_order_read),
+    ("a setting named by a constant is read by the constant's value", None, constant_name_read),
     ("a page without a table's marker is reported, not read as empty", None, missing_marker),
     ("crypto: a list that matches the code passes", None, crypto([GOOD_CRYPTO])),
     ("crypto: a list in another order is flagged", 'in that order', crypto([GOOD_CRYPTO.replace("`a`, `b`", "`b`, `a`")])),
@@ -1414,18 +1444,18 @@ SELF_TEST_CASES = [
     ("tables: a tree whose tables are all read passes", None, tables()),
     (
         "tables: a new table of a plugin struct in a new file is flagged",
-        "`HASHING_DIRECTIVES` is a table of `Row",
-        tables(extra={"pam/hashing.rs": "pub(super) const HASHING_DIRECTIVES: &[Row0] = &[\n];\n"}),
+        "`STORAGE_DIRECTIVES` is a table of `Row",
+        tables(extra={"pam/storage.rs": "pub(super) const STORAGE_DIRECTIVES: &[Row0] = &[\n];\n"}),
     ),
     (
         "tables: an array of a plugin struct is flagged as well as a slice",
-        "`NIST_RULES` is a table of `NistRule`",
-        tables(extra={"pam/policy.rs": "struct NistRule { a: u8 }\nconst NIST_RULES: [NistRule; 2] = [\n];\n"}),
+        "`TIER_RULES` is a table of `TierRule`",
+        tables(extra={"pam/tiers.rs": "struct TierRule { a: u8 }\nconst TIER_RULES: [TierRule; 2] = [\n];\n"}),
     ),
     (
         "tables: a list of names and an array of an outside enum are not tables",
         None,
-        tables(extra={"pam/policy.rs": "const NAMES: &[&str] = &[];\nconst F: [ComplianceFramework; 4] = [];\n"}),
+        tables(extra={"pam/tiers.rs": "const NAMES: &[&str] = &[];\nconst F: [ComplianceFramework; 4] = [];\n"}),
     ),
     (
         "tables: a registered table that no longer exists is flagged",
@@ -1544,7 +1574,7 @@ def main() -> int:
 
     counts = ", ".join(
         f"{len(code[key])} {key}"
-        for key in ("kernel", "ssh", "ssh-crypto", "pam", "services", "permissions", "firewall", "audit")
+        for key in ("kernel", "ssh", "ssh-crypto", "pam", "pam-hashing", "services", "permissions", "firewall", "audit")
     )
     control_rows = sum(len(page_table(page_path.read_text(encoding="utf-8"), key) or []) for key, _ in CONTROL_TABLES)
     read = len({(spec[1], spec[2]) for spec in SCALAR_TABLES} | READ_TABLES) + 1

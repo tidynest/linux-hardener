@@ -473,12 +473,11 @@ cipher and MAC rules with these lists as they stand.
 
 ## PAM and password ageing
 
-Two open issues are discussing values in this section:
-[#190](https://github.com/tidynest/linux-hardener/issues/190) asks about
-password expiry and long passphrases, and
-[#191](https://github.com/tidynest/linux-hardener/issues/191) about how
-passwords are hashed, which the baseline does not cover today. The rows below
-describe the code as it stands, not the outcome of either discussion.
+[#190](https://github.com/tidynest/linux-hardener/issues/190) is discussing
+password expiry and long passphrases. The rows below describe the code as it
+stands, not the outcome of that discussion. How passwords are hashed, which
+[#191](https://github.com/tidynest/linux-hardener/issues/191) asked about, has
+its own table under [Password hashing](#password-hashing).
 
 The `pwquality.conf` values take effect only when `pam_pwquality` is in the PAM
 stack, and the `faillock.conf` and `pwhistory.conf` values only when their
@@ -503,6 +502,42 @@ table in the code is `PAM_DIRECTIVES` in
 | `PASS_WARN_AGE` | `7` | at least | Low | No source recorded (2025-11-22) | CIS RHEL 10 5.4.1.3: 7. |
 | `deny` | `5` | at most | High | Commit `0fdfaa82` (2026-07-01), "for CIS 5.3.2/5.3.3" | CIS RHEL 10 5.3.2.1.1: 5. STIG RHEL-08-020011: 3, "but not 0", since 0 turns lockout off, which the *at most* comparison counts as stricter than 5; see [A value that switches the check off](#a-value-that-switches-the-check-off). PCI DSS 8.3.4: lock out after no more than 10 attempts. 800-63B-4: no more than 100 consecutive failures. A lower `deny` locks accounts sooner, which is also a way to lock out a legitimate user. |
 | `remember` | `5` | at least | Medium | Commit `0fdfaa82` (2026-07-01), "for CIS 5.3.2/5.3.3" | CIS RHEL 10 5.3.2.3.1: 24, as in CIS RHEL 8 v4.0.0. CIS RHEL 7 v3.1.1 5.4.4 and CIS RHEL 8 v1.0.1 and v2.0.0: 5. The RHEL 8 STIG V2R9 and RHEL 9 STIG V2R10 have no password reuse rule. |
+
+### Password hashing
+
+The PAM plugin also judges how a new password is stored, in a pass of its own
+added for [#191](https://github.com/tidynest/linux-hardener/issues/191). The
+table in the code is `HASHING_DIRECTIVES` in
+`crates/hardener-plugins/src/pam/hashing.rs`. These three rows read differently
+from the ones above:
+
+- The value judged is the weakest of every path a new password can take:
+  `/etc/login.defs` and the `pam_unix` password lines, which override it.
+- `ENCRYPT_METHOD` is held to `YESCRYPT` only where the host confirms that
+  `pam_unix`, the libcrypt it links against and shadow all support it and FIPS
+  mode is off. Otherwise the target is `SHA512`. A host already on yescrypt is
+  never moved down.
+- A host is held to one of the two costs, the one belonging to the algorithm
+  its new passwords use: `YESCRYPT_COST_FACTOR` under yescrypt and
+  `SHA_CRYPT_MIN_ROUNDS` under SHA-512.
+
+[Password hashing in `[pam]`](configuration.md#password-hashing-in-pam)
+describes the behaviour in full. The guides column below repeats what that
+section and the comments in `hashing.rs` record. The STIG rules themselves were
+not read again for this page, so no rule identifier is quoted.
+
+<!-- baseline-table: pam-hashing -->
+
+| Setting | Default | Comparison | Severity | Where the value comes from | What the guides say |
+|---|---|---|---|---|---|
+| `ENCRYPT_METHOD` | `YESCRYPT` | ranked, weakest first: `DES`, `MD5`, `SHA256`, `BCRYPT`, `BLOWFISH`, `SHA512`, `YESCRYPT`, `GOST_YESCRYPT` | High | Project choice, made for #191 (2026-11-15). The code comment on the order says why bcrypt ranks below SHA-512: it reads only the first 72 bytes of a password | The DISA STIGs for RHEL 8, 9 and 10 and Ubuntu 24.04 require SHA-512, as configuration.md records, which is why a SHA-512 finding on a host held to yescrypt carries no compliance mapping and no STIG rule is mapped. NIST SP 800-53 Rev 5 IA-5(1)(d) asks for "an approved salted key derivation function"; counting yescrypt or SHA-512 towards it is this project's judgement, not NIST's. |
+| `YESCRYPT_COST_FACTOR` | `5` | at least | Medium | Code comment in `hashing.rs`: 5 is "the cost every consumer uses when nothing names one", those consumers being libxcrypt, shadow and `pam_unix` | No guide read for this page names a yescrypt cost. |
+| `SHA_CRYPT_MIN_ROUNDS` | `100000` | at least | Medium | No source recorded in the code (2026-11-15). The value equals the 100000 rounds configuration.md says the DISA STIGs require | The DISA STIGs for RHEL 8, 9 and 10 and Ubuntu 24.04: SHA-512 with 100000 rounds, as configuration.md records. sha512crypt's own default is 5000. |
+
+Overrides can raise `YESCRYPT_COST_FACTOR` to at most 11 and
+`SHA_CRYPT_MIN_ROUNDS` to at most 9999999, the largest values the code comments
+say every consumer accepts. Neither limit is a baseline value, so neither has a
+row.
 
 ---
 
