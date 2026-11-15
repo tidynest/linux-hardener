@@ -148,6 +148,14 @@ jobs:
       - name: Run security audit
         run: cargo audit
 
+      # fuzz/ is a detached workspace with a lockfile of its own, which the
+      # call above never reads. It pulls hardener-core, and through it sqlx
+      # and the bundled SQLite, so an advisory can sit there unseen: the
+      # RUSTSEC-2026-0459 copy of libsqlite3-sys did (#188). Run from the
+      # root, so .cargo/audit.toml still applies.
+      - name: Audit the detached fuzz lockfile
+        run: cargo audit --file fuzz/Cargo.lock
+
   wasm-check:
     name: WASM Check
     runs-on: ubuntu-latest

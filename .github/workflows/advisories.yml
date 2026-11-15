@@ -1,0 +1,58 @@
+name: Advisories
+
+# The weekly look at dependency advisories, between pushes. The Security Audit
+# job in ci.yml runs on push and pull request only, so an advisory published in
+# a quiet week waits for the next push: RUSTSEC-2026-0459 is dated 2026-10-30,
+# the push on 2026-11-03 still passed, and nothing reported it until the push
+# on 2026-11-13. GitHub sends the notification for a failed scheduled run to
+# whoever last edited the cron line below, and disables the schedule after 60
+# days without repository activity.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 6 * * 1'   # weekly Monday 06:23 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit both lockfiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Audit the workspace lockfile
+        run: cargo audit
+
+      - name: Audit the detached fuzz lockfile
+        run: cargo audit --file fuzz/Cargo.lock
+
+  # Temporary, for #188. RUSTSEC-2026-0459 is accepted in .cargo/audit.toml
+  # and deny.toml only because no released sqlx takes the fixed SQLite yet.
+  # This fails on the first week one does, and once the review date the entry
+  # gives has passed, so the acceptance cannot outlive its reason unnoticed.
+  # Remove the job with the two entries when the upgrade lands.
+  rustsec-2026-0459:
+    name: RUSTSEC-2026-0459 still blocked upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # Offline, about a second: a watch that read a registry outage as
+      # "still blocked" would stay green for good, and this is what says not.
+      - name: Test the watch against a stand-in cargo
+        run: ./scripts/test/test-rustsec-2026-0459-watch.sh
+
+      - name: Ask cargo whether a released sqlx takes the fix
+        run: ./scripts/deps/watch-rustsec-2026-0459.sh

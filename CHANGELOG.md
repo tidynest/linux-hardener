@@ -98,6 +98,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of `deny.toml`. This code only ever ran at compile time, in build scripts
   and proc macros, and none of it reached a shipped binary. The fuzz lockfile
   never carried it.
+- **RUSTSEC-2026-0459 in the bundled SQLite is accepted until a `sqlx` release
+  can take the fix (#188).** The binaries compile in SQLite 3.46.0 from
+  `libsqlite3-sys` 0.30.1, and SQLite before 3.54.0 can return uninitialised
+  memory when a database and its `-wal` file disagree on page size
+  (CVE-2026-119375). The first fixed release, 0.39.0, is out of reach: `sqlx`
+  0.8.6 takes only 0.30, and 0.9.0, the newest, stops below 0.38. The
+  advisory is now listed in `.cargo/audit.toml` and `deny.toml` with a written
+  assessment and a review date of 2027-01-31, so the Security Audit job passes
+  again, and `SECURITY.md` explains who is exposed and what to do meanwhile.
+  The one path a less trusted account can reach is a root scan opening a
+  history database named in a user's own config, which the deep scan passes
+  to the root CLI; the configuration reference now says to keep
+  `database_path` where only root can write. The Security Audit job also
+  audits `fuzz/Cargo.lock`, which nothing read before and which held the same
+  copy, and a new weekly Advisories workflow audits both lockfiles between
+  pushes and fails as soon as a released `sqlx` accepts a fixed
+  `libsqlite3-sys`.
 
 ## [1.9.1] - 2026-10-30
 
@@ -8271,4 +8288,4 @@ Configuration file support with layered loading, compliance framework reporting 
 [0.2.0]: https://github.com/tidynest/linux-hardener/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tidynest/linux-hardener/releases/tag/v0.1.0
 
-**Last Updated**: 2026-11-14
+**Last Updated**: 2026-11-15

@@ -19,7 +19,34 @@
 # Risk assessment: glib is purely transitive here, pulled by the webview
 # layer. This tree contains no direct glib usage and no VariantStrIter call
 # site, so the unsound iterator is never exercised.
+#
+# RUSTSEC-2026-0459: libsqlite3-sys bundles a SQLite whose write-ahead-log
+# reader can return uninitialised memory (CVE-2026-119375, SQLite < 3.54.0)
+# Status: Fixed upstream, and no released sqlx can take the fix. The binaries
+# bundle SQLite 3.46.0 from libsqlite3-sys 0.30.1; 0.39.0 (SQLite 3.54.0) is
+# the first fixed release. sqlx 0.8.6 requires libsqlite3-sys ^0.30.1, and
+# sqlx 0.9.0, the newest on crates.io, requires >=0.30.1, <0.38.0.
+# transact-rs/sqlx#4502 raised that bound to <0.40.0 on 2026-11-08 for the
+# coming 0.9.1, which declares Rust 1.94. Tracked in #188.
+# Revisit: as soon as a released sqlx accepts libsqlite3-sys 0.39 or later
+# (the weekly Advisories workflow fails on the first one), and by 2027-01-31
+# whatever happens, the date scripts/deps/watch-rustsec-2026-0459.sh holds.
+# Risk assessment: the flaw is compiled in, not just listed. sqlx's sqlite
+# feature turns on libsqlite3-sys/bundled, and both databases run in WAL
+# mode. It needs the process to open a database and -wal pair that a less
+# trusted party wrote. The checkpoint database, which holds the files that
+# rollback restores, is always /var/lib/linux-hardener/checkpoints.db under
+# root, in a root-owned directory with the file at 0600, or the caller's own
+# data directory otherwise; no database is ever read over SSH. The scan
+# history database is the gap: [scheduler] storage.database_path comes from
+# whichever config file the run names, and the desktop's deep scan can hand
+# the root CLI a config from the user's own ~/.config/linux-hardener. Code
+# running as that user could therefore choose, and plant, the pair a root
+# scan opens. Whether stale memory could then be read back has not been
+# tested. A non-root CLI run with no home directory also falls back to
+# ./.linux-hardener in the working directory. Low exposure, not none.
 ignore = [
     "RUSTSEC-2023-0071",
     "RUSTSEC-2024-0429",
+    "RUSTSEC-2026-0459",
 ]

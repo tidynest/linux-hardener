@@ -428,7 +428,8 @@ this list when you want to know what holds a version string.)
       the release rather than the size of the last one. Measure it:
       `git rev-list --count --no-merges <last tag>..main`
 - [ ] Documentation is current
-- [ ] Security audit passes (`cargo audit`)
+- [ ] Security audit passes on both lockfiles (`cargo audit` and
+      `cargo audit --file fuzz/Cargo.lock`, from the repository root)
 - [ ] Dependency policy passes (`cargo deny check`: licenses, advisories, bans)
 - [ ] Working directory is clean
 - [ ] On `main` branch
@@ -540,4 +541,4 @@ For release issues:
 3. Consult this document
 4. Open an issue if needed
 
-**Last Updated**: 2026-11-03
+**Last Updated**: 2026-11-15

@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-11-13
+**Last Updated**: 2026-11-15
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 
@@ -9,10 +9,11 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | Subdirectory | Contents |
 |--------------|----------|
 | `containers/` | systemd-nspawn container lifecycle: `create-container.sh` (all six distros), `boot-ssh-test-container.sh` (booted SSH fixture; unlocks root key login left disabled by an earlier hardening run, then confirms a real login before reporting ready), `nftables-fixture.sh` (makes nftables the selected backend in a container; stops every other running machine first and confirms the container's own `/etc/os-release` before touching it, since the fixed veth address it uses only ever admits one machine safely) |
-| `test/` | Host-side test suites and orchestrators: cross-distro, package-install, root/full suites, desktop tests, rollback verification, parallel runner, plus `release-readiness-root.sh` which batches every root-only suite into one invocation, and `test-readiness-summary.sh`, the one unprivileged unit test of that batcher's summary carry-forward |
+| `test/` | Host-side test suites and orchestrators: cross-distro, package-install, root/full suites, desktop tests, rollback verification, parallel runner, plus `release-readiness-root.sh` which batches every root-only suite into one invocation, and `test-readiness-summary.sh`, the one unprivileged unit test of that batcher's summary carry-forward, plus `test-rustsec-2026-0459-watch.sh`, the offline unit test of the advisory watch in `deps/` |
 | `test/gui/` | GUI test runners and inner scripts (Web UI and Tauri desktop), plus the host desktop UX/functional suites |
 | `test/polkit/` | Polkit authentication matrix tests and agent detection helper |
 | `validate/` | Documentation and naming validators (`validate_*.py`) plus the auto-updater `update_all_docs.py` |
+| `deps/` | `watch-rustsec-2026-0459.sh`, a temporary watch for #188: asks cargo whether a released `sqlx` accepts a `libsqlite3-sys` that fixes the advisory, and fails once one does or once the review date passes. Run weekly by `.github/workflows/advisories.yml` |
 | `release/` | `release.sh` (version bumping, changelog, release gate) |
 | `dev/` | `tauri-dev.sh` (Tauri development launcher) |
 | `badges/` | `generate.js` (regenerates the README status badges as local SVGs under `docs/assets/badges/`, using shields.io's renderer offline) plus the vendored logo glyphs |
@@ -65,6 +66,8 @@ This directory contains utility scripts for the Linux Hardening Tool project.
 | **Release readiness (all root suites)** | `sudo ./scripts/test/release-readiness-root.sh` |
 | **Release readiness (one suite)** | `sudo ./scripts/test/release-readiness-root.sh --only differential` |
 | **Readiness summary unit test** | `./scripts/test/test-readiness-summary.sh` (unprivileged, ~1s) |
+| **Can RUSTSEC-2026-0459 be fixed yet?** | `./scripts/deps/watch-rustsec-2026-0459.sh` (asks crates.io) |
+| **Advisory watch unit test** | `./scripts/test/test-rustsec-2026-0459-watch.sh` (offline, ~1s) |
 
 ---
 
@@ -2115,6 +2118,36 @@ packages, and the GUI suite installs Playwright inside each container), and
 `crates/hardener-ui/dist/index.html` from `trunk build --release` for the GUI
 suite. Without the GUI artefacts every other suite still runs and the GUI suite
 is recorded `NOTRUN`.
+
+---
+
+## Dependency Advisory Watch
+
+**Script**: `deps/watch-rustsec-2026-0459.sh`, with its test in
+`test/test-rustsec-2026-0459-watch.sh`
+
+**Purpose**: RUSTSEC-2026-0459 is accepted in `.cargo/audit.toml` and
+`deny.toml` only because no released `sqlx` accepts `libsqlite3-sys` 0.39.0,
+the first release that bundles a fixed SQLite (#188). The watch builds a
+throwaway manifest that asks for any `sqlx` from 0.8.6 up together with
+`libsqlite3-sys` 0.39.0 or later, and lets `cargo generate-lockfile` answer, so
+it carries no version arithmetic of its own.
+
+```bash
+./scripts/deps/watch-rustsec-2026-0459.sh            # the real question
+FIXED_FLOOR=0.37.0 ./scripts/deps/watch-rustsec-2026-0459.sh   # a floor sqlx 0.9.0 meets
+./scripts/test/test-rustsec-2026-0459-watch.sh       # offline, stand-in cargo
+```
+
+**Exit codes**: `0` still blocked and the review date (2027-01-31, the one
+`.cargo/audit.toml` gives) not yet passed; `1` act now, either because a
+release takes the fix, in which case it names the versions and the Rust floor
+that `sqlx` declares, or because the review date has passed; `2` the check
+could not run, which it never reports as "still blocked".
+
+`.github/workflows/advisories.yml` runs the test and then the watch every
+Monday, so a `1` arrives as a failed scheduled run. Delete the script, its
+test, that job and both ignore entries in the change that takes the fix.
 
 ---
 

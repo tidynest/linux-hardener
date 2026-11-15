@@ -176,7 +176,7 @@ The Tauri desktop application uses `pkexec` (polkit) for operations that require
 
 The project follows these security practices:
 
-- All dependencies are regularly audited: `cargo audit` runs in GitHub CI (`.github/workflows/ci.yml`), `cargo deny check` runs from the release checklist, and `deny.toml` pins the licence/advisory policy. GitLab is a push mirror carrying no pipeline of its own, so GitHub is the only place CI catches anything. Nothing in this repository blocks a push, so CI is where an advisory is caught rather than before it
+- All dependencies are regularly audited: `cargo audit` runs in GitHub CI (`.github/workflows/ci.yml`) against both the workspace lockfile and the detached `fuzz/Cargo.lock`, on every push and pull request and again every Monday (`.github/workflows/advisories.yml`), `cargo deny check` runs from the release checklist, and `deny.toml` pins the licence/advisory policy. GitLab is a push mirror carrying no pipeline of its own, so GitHub is the only place CI catches anything. Nothing in this repository blocks a push, so CI is where an advisory is caught rather than before it
 - Code is reviewed before merging
 - No use of `unsafe` Rust without justification
 - Error handling avoids information disclosure
@@ -262,6 +262,40 @@ correct; the refusal above is what protects a rollback that reads one.**
 The entries below concern **dependencies**, not this project's own code. For
 advisories against this project, see the section above.
 
+### RUSTSEC-2026-0459 (bundled SQLite) - Accepted until sqlx can take the fix
+
+**What it is.** SQLite before 3.54.0 can hand back uninitialised memory when it
+opens a database together with a `-wal` (write-ahead log) file whose page size
+differs from the database's (CVE-2026-119375). A crafted pair of files makes
+ordinary queries return stale bytes from the process's memory. Both binaries
+compile in SQLite 3.46.0 from `libsqlite3-sys` 0.30.1, through `sqlx` and its
+`sqlite` feature, so updating the host's own SQLite package does not change
+them.
+
+**Why it is not fixed yet.** `libsqlite3-sys` 0.39.0 (SQLite 3.54.0) is the
+first fixed release, and no released `sqlx` accepts it: 0.8.6 takes only 0.30,
+and 0.9.0, the newest, stops below 0.38. Upstream raised the bound in
+`transact-rs/sqlx#4502` on 2026-11-08 for the coming 0.9.1. The advisory is
+listed in `.cargo/audit.toml` and `deny.toml` with a written assessment until
+then, and a weekly workflow fails as soon as a released `sqlx` takes the fix.
+[Issue #188](https://github.com/tidynest/linux-hardener/issues/188) tracks the
+upgrade.
+
+**Who is exposed.** Only a process that opens a database and `-wal` written by
+a less trusted account. The checkpoint database, which holds the files rollback
+restores, is always `/var/lib/linux-hardener/checkpoints.db` for root and your
+own data directory otherwise, and no database is read over SSH. The scan
+history database is the one exception: `[scheduler] storage.database_path`
+comes from the config file a run is given, and the desktop's deep scan can
+hand the root CLI a config from your own `~/.config/linux-hardener/`. Software
+running as your user could therefore choose the pair a root scan opens. Whether
+memory leaked that way could be read back has not been tested.
+
+**What you can do meanwhile.** When root runs the tool, leave `database_path`
+unset or point it at a directory only root can write. Run the CLI as an
+ordinary user only with a home directory set: without one it keeps its
+checkpoint database in `./.linux-hardener` under the working directory.
+
 ### RUSTSEC-2023-0071 (rsa crate) - False Positive
 
 Dependabot/cargo-audit may report a vulnerability in the `rsa` crate (Marvin Attack timing sidechannel). This is a **false positive** for this project because:
@@ -277,7 +311,7 @@ The advisory can be safely dismissed as it does not affect this project's securi
 
 `proc-macro-error2` (a fork of the also-unmaintained `proc-macro-error`, RUSTSEC-2024-0370) is unmaintained upstream with **no safe upgrade available**. It is pulled in purely transitively through the Leptos macro stack (`leptos_macro` / `leptos_router` / `rstml`) used by `hardener-ui`, and there is no first-party usage and no drop-in replacement short of removing Leptos. It is a compile-time proc-macro with no runtime attack surface. Accepted and ignored in `deny.toml`.
 
-The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained transitive crates that `cargo deny` reports: the Unicode tables under `urlpattern`, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the two that only `cargo audit` reports: the `rsa` entry above, and `glib` (RUSTSEC-2024-0429), an unsound crate under the webview layer. `cargo deny` checks unsound advisories for workspace crates only, so it never sees `glib`.
+The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained transitive crates that `cargo deny` reports: the Unicode tables under `urlpattern`, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the two that only `cargo audit` reports: the `rsa` entry above, and `glib` (RUSTSEC-2024-0429), an unsound crate under the webview layer. `cargo deny` checks unsound advisories for workspace crates only, so it never sees `glib`. Both tools report RUSTSEC-2026-0459, so it is the one entry in both files.
 
 ## Contact
 
@@ -286,4 +320,4 @@ For security concerns: [private vulnerability report](https://github.com/tidynes
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-hardener/issues)
 
-**Last Updated**: 2026-11-14
+**Last Updated**: 2026-11-15

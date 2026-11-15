@@ -1687,12 +1687,16 @@ cargo test --workspace --exclude linux-hardener-desktop --exclude hardener-ui
 cargo clippy --workspace --exclude linux-hardener-desktop --exclude hardener-ui -- -D warnings
 cargo fmt --all -- --check
 cargo audit
+cargo audit --file fuzz/Cargo.lock
 cargo check -p hardener-ui --target wasm32-unknown-unknown
 cargo build --release --target x86_64-unknown-linux-gnu -p hardener-cli
 cargo build --release --target x86_64-unknown-linux-musl -p hardener-cli
 ```
 
-`cargo audit` runs in CI as a 5-attempt retry loop rather than a single call.
+`cargo audit` runs once per lockfile, with no retry loop: the job installs a
+prebuilt binary, which is what the loop used to work around. The second call
+reads the detached fuzz workspace's lockfile, which the first never sees, and
+both honour `.cargo/audit.toml` because they run from the repository root.
 
 `ci.yml` holds one more job that none of the above reproduces, `msrv`. The
 commands above are the other seven between them (`check`, `test`, `clippy`,
@@ -1731,4 +1735,20 @@ in `build-mode: none`, on every push and pull request to `main` and on a schedul
 (Mondays, 06:00 UTC). It has no local reproduction: results go to the
 repository's security tab.
 
-**Last Updated**: 2026-11-13
+### advisories.yml (weekly, and by hand)
+
+```bash
+cargo audit
+cargo audit --file fuzz/Cargo.lock
+./scripts/test/test-rustsec-2026-0459-watch.sh
+./scripts/deps/watch-rustsec-2026-0459.sh
+```
+
+The same two audits as `ci.yml`, on Mondays at 06:23 UTC, so an advisory
+published in a week without pushes fails a run that week instead of waiting
+for the next push. The other job is temporary, for #188: the watch exits 1
+once a released `sqlx` accepts a `libsqlite3-sys` that fixes RUSTSEC-2026-0459,
+or once the review date in `.cargo/audit.toml` has passed, and 2 when it could
+not ask the registry at all. Its test runs offline against a stand-in `cargo`.
+
+**Last Updated**: 2026-11-15
