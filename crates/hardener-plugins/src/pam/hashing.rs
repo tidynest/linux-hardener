@@ -6,8 +6,8 @@
 //!
 //! - `ENCRYPT_METHOD` in `/etc/login.defs` is what shadow's own tools use
 //!   (`chpasswd -c`, `chgpasswd`, `gpasswd`, and `chpasswd` and `newusers`
-//!   outright on a shadow built without PAM, which RHEL's is). shadow compares
-//!   it case-sensitively.
+//!   outright on a shadow built without PAM, which RHEL 9's is; RHEL 10's is
+//!   built with it). shadow compares it case-sensitively.
 //! - `pam_unix` reads the same key as a **preset** and lets an algorithm named
 //!   on its own `password` line override it (Linux-PAM `support.c`, "preset
 //!   encryption method with value from /etc/login.defs"). It compares the key
@@ -397,7 +397,7 @@ pub(super) enum StoredHashes {
 pub(super) struct HostProbe {
     /// `pam_unix.so` knows the `yescrypt` argument.
     pub(super) pam_unix_yescrypt: Tri,
-    /// `libcrypt.so.1` implements `$y$`.
+    /// The libcrypt `pam_unix.so` links against implements `$y$`.
     pub(super) libcrypt_yescrypt: Tri,
     /// shadow was built with yescrypt (`chpasswd --help` lists it).
     pub(super) shadow_yescrypt: Tri,
@@ -445,10 +445,16 @@ impl HostProbe {
 ///
 /// - The library questions are asked of the binaries, the way #69 asks
 ///   `chage --help`: whether `pam_unix.so` carries the `yescrypt` argument and
-///   reads `YESCRYPT_COST_FACTOR`, and whether `libcrypt.so.1` carries the
-///   `$y$` prefix. Each string is in the binary exactly when the feature was
-///   compiled in. Measured on 2026-11-15: PAM 1.5.3 (Ubuntu 24.04) has no
-///   `YESCRYPT_COST_FACTOR`, PAM 1.7.0 (Ubuntu 26.04) has it.
+///   reads `YESCRYPT_COST_FACTOR`, and whether the libcrypt it links against
+///   carries the `$y$` prefix. Each string is in the binary exactly when the
+///   feature was compiled in. Measured on 2026-11-15: PAM 1.5.3 (Ubuntu
+///   24.04) has no `YESCRYPT_COST_FACTOR`, PAM 1.7.0 (Ubuntu 26.04) has it.
+/// - Which libcrypt that is, is read off `pam_unix.so` itself: the soname it
+///   names. libxcrypt is `libcrypt.so.2` when built without the glibc
+///   compatibility API, which is how Fedora, RHEL 9 and 10 and Arch ship it,
+///   with `libcrypt.so.1` only in an optional compat package; Debian, Ubuntu
+///   and openSUSE ship `libcrypt.so.1`. Where no `pam_unix.so` names one,
+///   both sonames are searched.
 /// - shadow is asked through `chpasswd --help`, whose `--crypt-method` line
 ///   lists the methods the build supports. Only that line counts: the
 ///   `--sha-rounds` line names YESCRYPT whatever the build.
@@ -457,9 +463,13 @@ impl HostProbe {
 ///   read inside the target's own shell and only a scheme name per account
 ///   leaves it. **No hash, salt or user name is ever
 ///   printed**, so none can reach this process, a log or a report.
+/// - The second argument, empty on a real host, is a directory the library
+///   and `/proc` paths are read under, so a test can lay out another
+///   distribution's files. `chpasswd` is always the one on `PATH`.
 pub(super) const HOST_PROBE_SCRIPT: &str = r#"PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH
 LC_ALL=C
 export PATH LC_ALL
+root=${2:-}
 found() {
     needle=$1
     shift
@@ -474,8 +484,18 @@ found() {
     done
     if [ "$seen" = yes ]; then echo no; else echo unknown; fi
 }
-pams="/usr/lib64/security/pam_unix.so /lib64/security/pam_unix.so /usr/lib/security/pam_unix.so /lib/security/pam_unix.so $(echo /usr/lib/*/security/pam_unix.so /lib/*/security/pam_unix.so)"
-libs="/usr/lib64/libcrypt.so.1 /lib64/libcrypt.so.1 /usr/lib/libcrypt.so.1 /lib/libcrypt.so.1 $(echo /usr/lib/*/libcrypt.so.1 /lib/*/libcrypt.so.1)"
+pams="$root/usr/lib64/security/pam_unix.so $root/lib64/security/pam_unix.so $root/usr/lib/security/pam_unix.so $root/lib/security/pam_unix.so $(echo $root/usr/lib/*/security/pam_unix.so $root/lib/*/security/pam_unix.so)"
+soname=
+for p in $pams; do
+    [ -f "$p" ] || continue
+    soname=$(grep -a -o -e 'libcrypt\.so\.[0-9][0-9]*' "$p" 2>/dev/null | head -n 1)
+    [ -n "$soname" ] && break
+done
+if [ -n "$soname" ]; then
+    libs="$root/usr/lib64/$soname $root/lib64/$soname $root/usr/lib/$soname $root/lib/$soname $(echo $root/usr/lib/*/$soname $root/lib/*/$soname)"
+else
+    libs=$(echo $root/usr/lib64/libcrypt.so.[12] $root/lib64/libcrypt.so.[12] $root/usr/lib/libcrypt.so.[12] $root/lib/libcrypt.so.[12] $root/usr/lib/*/libcrypt.so.[12] $root/lib/*/libcrypt.so.[12])
+fi
 echo "pam_unix_yescrypt=$(found yescrypt $pams)"
 echo "pam_unix_cost_factor=$(found YESCRYPT_COST_FACTOR $pams)"
 echo "libcrypt_yescrypt=$(found '$y$' $libs)"
@@ -485,8 +505,8 @@ case $line in
     *YESCRYPT*) echo shadow_yescrypt=yes ;;
     *) echo shadow_yescrypt=no ;;
 esac
-fips=$(cat /proc/sys/crypto/fips_enabled 2>/dev/null)
-if [ ! -e /proc/sys/crypto/fips_enabled ]; then
+fips=$(cat "$root/proc/sys/crypto/fips_enabled" 2>/dev/null)
+if [ ! -e "$root/proc/sys/crypto/fips_enabled" ]; then
     echo fips=no
 elif [ "$fips" = 1 ]; then
     echo fips=yes
@@ -719,6 +739,24 @@ pub(super) fn read_method(
         }
         paths.push(method);
     }
+    // Where login.defs is the only weak path, say so: on stock Ubuntu 24.04 a
+    // user's password is already yescrypt and only shadow's own tools are not,
+    // which "new passwords are SHA512" alone would misstate.
+    let stack_paths = &paths[1..];
+    if let Some(shadow) = shadow_view
+        && !stack_paths.is_empty()
+        && stack_paths.iter().all(|m| m.is_some_and(|m| m > shadow))
+        && let Some(stack_weakest) = stack_paths.iter().flatten().min()
+    {
+        notes.push(format!(
+            "/etc/login.defs ENCRYPT_METHOD {} is what shadow's own tools use (chpasswd -c, \
+             gpasswd and chgpasswd, and chpasswd and newusers on a shadow built without PAM); \
+             passwords set through pam_unix, as passwd sets them, already get {} from the PAM \
+             stack",
+            shadow.login_defs_name(),
+            stack_weakest.pam_token()
+        ));
+    }
     let weakest = if paths.iter().any(Option::is_none) {
         None
     } else {
@@ -741,6 +779,10 @@ pub(super) fn read_method(
 pub(super) struct CostReading {
     /// `None` when a value could not be read as a number.
     pub(super) lowest: Option<u64>,
+    /// The highest cost any path may use, over the paths that could be read.
+    /// What a password check can be made to spend, where `lowest` is what an
+    /// attacker with the hash can count on.
+    pub(super) highest: Option<u64>,
     pub(super) display: String,
     /// Stack lines whose cost is below the target, each with the reason.
     pub(super) stack_shortfalls: Vec<String>,
@@ -758,14 +800,21 @@ fn display_cost(lowest: Option<u64>) -> String {
     lowest.map_or_else(|| "not a number".to_string(), |n| n.to_string())
 }
 
+/// The release-specific answer as `(lowest, highest)`: both the same where
+/// the Linux-PAM release is known, and the two answers where it could not be
+/// told apart.
+fn release_range(reads_cost_factor: Tri, new: u64, old: u64) -> (u64, u64) {
+    match reads_cost_factor {
+        Tri::Yes => (new, new),
+        Tri::No => (old, old),
+        Tri::Unknown => (new.min(old), new.max(old)),
+    }
+}
+
 /// Picks the release-specific answer, or the lower of the two where the
 /// Linux-PAM release could not be told apart.
 fn by_release(reads_cost_factor: Tri, new: u64, old: u64) -> u64 {
-    match reads_cost_factor {
-        Tri::Yes => new,
-        Tri::No => old,
-        Tri::Unknown => new.min(old),
-    }
+    release_range(reads_cost_factor, new, old).0
 }
 
 /// The yescrypt cost each path gets.
@@ -802,19 +851,24 @@ pub(super) fn read_yescrypt_cost(
     };
     let reads = probe.pam_reads_cost_factor;
     let mut paths = vec![shadow_cost];
+    let mut highest = shadow_cost;
     let mut stack_shortfalls = Vec::new();
     for line in stack {
         if line.method.is_some_and(|m| m != HashMethod::Yescrypt) {
             continue;
         }
-        let cost = match &line.rounds {
+        let range = match &line.rounds {
             Some(raw) => raw
                 .trim()
                 .parse::<i64>()
                 .ok()
-                .map(|n| by_release(reads, clamp_new(n), reset_old(n))),
-            None => Some(by_release(reads, from_factor, YESCRYPT_COST_DEFAULT)),
+                .map(|n| release_range(reads, clamp_new(n), reset_old(n))),
+            None => Some(release_range(reads, from_factor, YESCRYPT_COST_DEFAULT)),
         };
+        let cost = range.map(|(low, _)| low);
+        if let Some((_, high)) = range {
+            highest = Some(highest.map_or(high, |h| h.max(high)));
+        }
         if cost.is_none_or(|c| c < target) {
             let why = match (&line.rounds, reads) {
                 (Some(raw), _) => format!("sets rounds={raw} on its pam_unix line"),
@@ -834,6 +888,7 @@ pub(super) fn read_yescrypt_cost(
     let lowest = lowest_of(&paths);
     CostReading {
         lowest,
+        highest,
         display: display_cost(lowest),
         stack_shortfalls,
     }
@@ -914,6 +969,7 @@ pub(super) fn read_sha_rounds(
     let lowest = lowest_of(&paths);
     CostReading {
         lowest,
+        highest: paths.iter().flatten().max().copied(),
         display: display_cost(lowest),
         stack_shortfalls,
     }
@@ -935,6 +991,9 @@ pub(super) struct Hashing {
     /// The `ENCRYPT_METHOD` apply writes, if it writes one.
     pub(super) method_write: Option<HashMethod>,
     pub(super) cost_method: HashMethod,
+    /// `MemTotal` in KiB, or why it could not be read. Read once, so the
+    /// memory guard is part of the plan all three entry points share.
+    pub(super) mem_total_kib: Result<u64, String>,
 }
 
 /// Which cost applies: the one of the algorithm new passwords will use once
@@ -1000,6 +1059,7 @@ impl Hashing {
         login_defs: String,
         stack: Vec<PamUnixLine>,
         probe: HostProbe,
+        mem_total_kib: Result<u64, String>,
     ) -> Hashing {
         let (target, why_not_yescrypt) = method_target(config, &probe);
         let method = read_method(&login_defs, &stack, &probe);
@@ -1026,6 +1086,7 @@ impl Hashing {
             method_excepted,
             method_write,
             cost_method,
+            mem_total_kib,
         }
     }
 
@@ -1064,10 +1125,35 @@ impl Hashing {
             })
     }
 
+    /// The yescrypt cost this host would be raised to but will not be, and
+    /// the whole message why, with what to do instead. Pure.
+    ///
+    /// Judged on the **target**, not on the write: a host whose `login.defs`
+    /// already holds the cost but whose stack line does not is refused just the
+    /// same, because the only thing left to do there is put that cost on the
+    /// stack line, and on a Linux-PAM older than 1.6.0 that line is what every
+    /// user's password gets. While a refusal stands, neither the write nor a
+    /// `rounds=` manual step for that cost is planned anywhere.
+    pub(super) fn cost_refusal(&self, config: &PluginConfig) -> Option<(u64, String)> {
+        let (name, target, reading) = self.cost_on(config, &self.login_defs)?;
+        if name != YESCRYPT_COST_FACTOR
+            || self.cost_excepted(config)
+            || reading.lowest.is_some_and(|lowest| lowest >= target)
+        {
+            return None;
+        }
+        let reason = unaffordable(target, &self.mem_total_kib)?;
+        Some((
+            target,
+            format!("{reason}. {}", lower_override_advice(&self.mem_total_kib)),
+        ))
+    }
+
     /// The `login.defs` keys apply writes, in order. Pure, and the one
     /// definition scan, apply and validate all use. Tighten-only throughout:
     /// see [`plan_method`] for the algorithm, and a cost is raised to the
-    /// target only where the file holds less.
+    /// target only where the file holds less and the host can afford it
+    /// (see [`Hashing::cost_refusal`]).
     pub(super) fn plan_writes(&self, config: &PluginConfig) -> Vec<(&'static str, String)> {
         let mut writes = Vec::new();
         if let Some(method) = self.method_write {
@@ -1076,6 +1162,7 @@ impl Hashing {
         if let Some((name, target, reading)) = self.cost_on(config, &self.login_defs)
             && !self.cost_excepted(config)
             && reading.lowest.is_none_or(|lowest| lowest < target)
+            && self.cost_refusal(config).is_none()
         {
             let number = |key: &str| {
                 login_defs_value(&self.login_defs, key).and_then(|v| v.trim().parse::<u64>().ok())
@@ -1112,7 +1199,9 @@ impl Hashing {
 
     /// The manual steps left once `projected` is in place: stack lines that
     /// name a weaker algorithm, and stack lines whose cost `login.defs`
-    /// cannot reach. Each is `(directive, sentence)`.
+    /// cannot reach. Each is `(directive, sentence)`. A cost the host cannot
+    /// afford yields no step: the refusal says what to do instead, and a
+    /// `rounds=` naming that cost is the lockout the refusal exists to avoid.
     pub(super) fn manual_steps(
         &self,
         config: &PluginConfig,
@@ -1138,6 +1227,7 @@ impl Hashing {
             }
         }
         if !self.cost_excepted(config)
+            && self.cost_refusal(config).is_none()
             && let Some((name, target, after)) = self.cost_on(config, projected)
         {
             for shortfall in after.stack_shortfalls {
@@ -1180,7 +1270,14 @@ async fn gather(
         }
     }
     let probe = probe_host(ctx).await;
-    Ok(Hashing::new(config, login_defs, stack, probe))
+    let mem_total_kib = read_mem_total(ctx).await;
+    Ok(Hashing::new(
+        config,
+        login_defs,
+        stack,
+        probe,
+        mem_total_kib,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1234,7 +1331,11 @@ fn hashing_finding(
 const STACK_ADVICE: &str = "Edit the pam_unix line yourself, or through the tool that \
                             manages the stack on this distribution (authselect on Fedora and \
                             RHEL, pam-auth-update on Debian and Ubuntu, pam-config on \
-                            openSUSE). This tool never edits /etc/pam.d";
+                            openSUSE, the sha512 and yescrypt USE flags of sys-auth/pambase \
+                            on Gentoo). This tool never edits /etc/pam.d";
+
+/// The finding id for a yescrypt cost the host's memory cannot carry.
+pub(super) const COST_MEMORY_ID: &str = "pam-yescrypt-cost-memory";
 
 /// The scan's view of password hashing.
 pub(super) struct HashingScan {
@@ -1295,7 +1396,8 @@ pub(super) fn scan_findings(config: &PluginConfig, h: &Hashing) -> HashingScan {
              {STORED_HASHES_ID} finding"
         ));
         let mut description = format!(
-            "New passwords are hashed with {} but should be hashed with {target}",
+            "The weakest way a new password can be hashed here is {}, below the target of \
+             {target}",
             h.method.display
         );
         if h.target != HashMethod::Yescrypt && !h.why_not_yescrypt.is_empty() {
@@ -1329,6 +1431,11 @@ pub(super) fn scan_findings(config: &PluginConfig, h: &Hashing) -> HashingScan {
             .filter(|(key, _)| *key != ENCRYPT_METHOD)
             .map(|(key, value)| format!("Set {key} {value} in /etc/login.defs (apply does this)"))
             .collect();
+        if let Some((cost, message)) = h.cost_refusal(config) {
+            remediation.push(format!(
+                "apply will not raise the cost to {cost} here: {message}"
+            ));
+        }
         remediation.extend(steps_for(name));
         let baseline: u64 = directive(name).pam_secure_value.parse().unwrap_or(0);
         let severity = if reading.lowest.is_none_or(|lowest| lowest < baseline) {
@@ -1359,6 +1466,10 @@ pub(super) fn scan_findings(config: &PluginConfig, h: &Hashing) -> HashingScan {
         ));
     }
 
+    if let Some(finding) = cost_memory_finding(config, h) {
+        findings.push(finding);
+    }
+
     match stored_hashes_finding(&h.probe.stored, h.cost_method) {
         StoredOutcome::Finding(finding) => findings.push(*finding),
         StoredOutcome::Unchecked(check) => unchecked.push(check),
@@ -1369,6 +1480,72 @@ pub(super) fn scan_findings(config: &PluginConfig, h: &Hashing) -> HashingScan {
         findings,
         unchecked,
     }
+}
+
+/// A yescrypt cost already in force that this host's memory cannot carry, by
+/// the same measure the guard applies to a cost apply would write. Pure.
+///
+/// Advisory: the cost check is tighten-only and apply never lowers a cost, so
+/// a host where someone set a high cost by hand (the 1 GiB the issue proposed,
+/// say) would otherwise scan clean. The highest cost on any path counts, since
+/// that is what a password check can be made to spend. Silent where the
+/// memory could not be read, and at or below the default, which every
+/// consumer uses already. No compliance mapping: this is about availability,
+/// not about how strongly a password is stored.
+pub(super) fn cost_memory_finding(config: &PluginConfig, h: &Hashing) -> Option<Finding> {
+    if h.cost_method != HashMethod::Yescrypt {
+        return None;
+    }
+    let (_, _, reading) = h.cost_on(config, &h.login_defs)?;
+    let highest = reading.highest?;
+    let kib = *h.mem_total_kib.as_ref().ok()?;
+    let ceiling = max_affordable_cost(kib);
+    if highest <= YESCRYPT_COST_DEFAULT || highest <= ceiling {
+        return None;
+    }
+    let lower_to = ceiling.max(YESCRYPT_COST_DEFAULT);
+    let observed = highest.to_string();
+    Some(Finding {
+        finding_id: COST_MEMORY_ID.to_string(),
+        finding_category: FindingCategory::Authentication,
+        finding_current_value: observed.clone(),
+        finding_description: format!(
+            "A yescrypt cost of {highest} is in force on at least one path a password can take \
+             here, and each check of such a password needs {} MiB. {} MiB of memory fits ten \
+             simultaneous checks in half of it only up to a cost of {ceiling}",
+            1u64 << (highest - 1),
+            kib / 1024
+        ),
+        finding_explanation: "The cost is stored in each hash, so every check of a password set \
+                              at this cost needs that memory, whatever the configuration says \
+                              later, and a check that cannot get it rejects the correct password"
+            .to_string(),
+        finding_impact: "Logins, su, sudo and screen unlocks can fail for the right password when \
+                         memory is short, and simultaneous password checks can exhaust the \
+                         host's memory"
+            .to_string(),
+        finding_recommended_value: format!("{lower_to} or less"),
+        finding_remediation_steps: vec![
+            format!(
+                "Lower YESCRYPT_COST_FACTOR in /etc/login.defs, and any rounds= on a pam_unix \
+                 line, to {lower_to} or less. apply never lowers a cost, so this is a manual \
+                 step"
+            ),
+            "Passwords already set at this cost keep it until each one is set again, so set \
+             them again with passwd once the cost is lowered"
+                .to_string(),
+            format!(
+                "If the cost was chosen on purpose for a host with few simultaneous logins, \
+                 accept it with [pam.exceptions.YESCRYPT_COST_FACTOR] and value = \"{observed}\""
+            ),
+        ],
+        finding_severity: Severity::Medium,
+        finding_title: "Password hashing cost is more than this host's memory can carry"
+            .to_string(),
+        finding_compliance: vec![],
+        finding_exception: config.exception_outcome(YESCRYPT_COST_FACTOR, &observed),
+        finding_exception_key: Some(YESCRYPT_COST_FACTOR.to_string()),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1482,12 +1659,19 @@ pub(super) fn stored_hashes_finding(stored: &StoredHashes, reference: HashMethod
 // ---------------------------------------------------------------------------
 
 /// The largest yescrypt cost this host can carry: ten simultaneous password
-/// checks must fit in half its memory. Cost `c` needs `2^(c-1)` MiB per check.
+/// checks must fit in half its memory. Cost `c` needs `2^(c-1)` MiB per check,
+/// so it is allowed from a `MemTotal` of `10 * 2^c` MiB: 640 MiB for 6,
+/// 2.5 GiB for 8, 10 GiB for 10 and 20 GiB for 11. `MemTotal` reads a little
+/// below the installed memory, so a machine sold as 20 GB does not reach 11.
 ///
-/// Ten because sshd starts refusing unauthenticated connections at ten by
-/// default (`MaxStartups 10:30:100`), and every one of them can be made to
-/// check a password. MemTotal ignores a container's cgroup limit, which this
-/// does not read.
+/// Ten is a safety margin, not a measured load. Local checks run side by side
+/// (login, su, sudo, screen lockers, display managers), and where sshd still
+/// takes a password or keyboard-interactive answer through PAM, each
+/// unauthenticated connection can start one, up to the ten at which sshd's
+/// default `MaxStartups 10:30:100` begins refusing. This tool's own SSH
+/// baseline turns both off, so on a host it has hardened only a key holder
+/// reaches a password prompt. `MemTotal` ignores a container's cgroup limit,
+/// which this does not read.
 pub(super) fn max_affordable_cost(mem_total_kib: u64) -> u64 {
     let budget_mib = mem_total_kib / 1024 / 2 / 10;
     let mut cost = 0;
@@ -1505,30 +1689,56 @@ pub(super) fn parse_mem_total_kib(meminfo: &str) -> Option<u64> {
     })
 }
 
-/// Whether a yescrypt cost above the default may be written here, and if not,
-/// why. The default never needs the check: every consumer uses it already.
-async fn cost_affordable(ctx: &Context, cost: u64) -> Result<(), String> {
-    if cost <= YESCRYPT_COST_DEFAULT {
-        return Ok(());
-    }
+/// `MemTotal` of the target, through the executor so it is the remote host's
+/// over `--ssh`, or why it could not be read.
+async fn read_mem_total(ctx: &Context) -> Result<u64, String> {
     let meminfo = ctx
         .executor()
         .read_file(Path::new("/proc/meminfo"))
         .await
-        .map_err(|e| format!("this host's memory could not be read: {e}"))?;
-    let total = parse_mem_total_kib(&meminfo)
-        .ok_or_else(|| "this host's memory could not be read from /proc/meminfo".to_string())?;
-    let ceiling = max_affordable_cost(total);
-    if cost <= ceiling {
-        Ok(())
-    } else {
-        Err(format!(
-            "a cost of {cost} needs {} MiB for every password check, and {} MiB of memory fits \
-             ten simultaneous checks in half of it only up to a cost of {ceiling}. A password \
-             the host cannot afford to check no longer logs in",
-            1u64 << (cost - 1),
-            total / 1024
-        ))
+        .map_err(|e| format!("/proc/meminfo could not be read: {e}"))?;
+    parse_mem_total_kib(&meminfo).ok_or_else(|| "/proc/meminfo gives no MemTotal".to_string())
+}
+
+/// Why a yescrypt cost is more than this host can carry, or `None` where it
+/// is not. The default never is: every consumer uses it already. Pure.
+pub(super) fn unaffordable(cost: u64, mem_total_kib: &Result<u64, String>) -> Option<String> {
+    if cost <= YESCRYPT_COST_DEFAULT {
+        return None;
+    }
+    match mem_total_kib {
+        Err(reason) => Some(format!(
+            "this host's memory could not be read ({reason}), so a cost above \
+             {YESCRYPT_COST_DEFAULT} cannot be shown to be safe"
+        )),
+        Ok(total) => {
+            let ceiling = max_affordable_cost(*total);
+            (cost > ceiling).then(|| {
+                format!(
+                    "a cost of {cost} needs {} MiB for every password check, and {} MiB of \
+                     memory fits ten simultaneous checks in half of it only up to a cost of \
+                     {ceiling}. A password the host cannot afford to check is refused even \
+                     when it is typed correctly",
+                    1u64 << (cost - 1),
+                    total / 1024
+                )
+            })
+        }
+    }
+}
+
+/// What an operator whose cost override was refused can do instead. The
+/// override can only tighten, so below the default the answer is to drop it.
+fn lower_override_advice(mem_total_kib: &Result<u64, String>) -> String {
+    match mem_total_kib {
+        Ok(total) if max_affordable_cost(*total) > YESCRYPT_COST_DEFAULT => format!(
+            "Lower the [pam.directives] YESCRYPT_COST_FACTOR override to {} or less",
+            max_affordable_cost(*total)
+        ),
+        _ => format!(
+            "Remove the [pam.directives] YESCRYPT_COST_FACTOR override, which leaves the \
+             default of {YESCRYPT_COST_DEFAULT}"
+        ),
     }
 }
 
@@ -1585,24 +1795,19 @@ pub(super) async fn apply(
         });
     }
 
+    if let Some((cost, message)) = h.cost_refusal(config) {
+        warn!("Refusing YESCRYPT_COST_FACTOR {}: {}", cost, message);
+        success = false;
+        changes.push(Change {
+            change_type: ChangeType::ConfigFile,
+            change_description: format!("Refused to set YESCRYPT_COST_FACTOR {cost}: {message}"),
+            change_success: false,
+            change_error: Some(message),
+        });
+    }
+
     let writes = h.plan_writes(config);
     for (key, value) in &writes {
-        if *key == YESCRYPT_COST_FACTOR
-            && let Ok(cost) = value.parse::<u64>()
-            && let Err(reason) = cost_affordable(ctx, cost).await
-        {
-            warn!("Refusing YESCRYPT_COST_FACTOR {}: {}", value, reason);
-            success = false;
-            changes.push(Change {
-                change_type: ChangeType::ConfigFile,
-                change_description: format!(
-                    "Refused to set YESCRYPT_COST_FACTOR {value}: {reason}"
-                ),
-                change_success: false,
-                change_error: Some(reason),
-            });
-            continue;
-        }
         apply_exact_directive(
             content,
             changed,
@@ -1614,8 +1819,8 @@ pub(super) async fn apply(
         );
     }
 
-    // What login.defs cannot reach, judged on the file as the full plan would
-    // leave it, so a refused cost does not reappear here as a stack problem.
+    // What login.defs cannot reach, judged on the file as the plan leaves it.
+    // A refused cost is not among them: see Hashing::cost_refusal.
     for (name, step) in h.manual_steps(config, &h.projected(&writes)) {
         success = false;
         warn!("{}: {}", name, step);
@@ -1690,21 +1895,17 @@ pub(super) async fn validate(
         }
     }
 
+    if let Some((cost, message)) = h.cost_refusal(config) {
+        preview.issues.push(ValidationIssue {
+            validation_issue_config_key: Some(YESCRYPT_COST_FACTOR.to_string()),
+            validation_issue_message: format!(
+                "YESCRYPT_COST_FACTOR will not be set to {cost}: {message}"
+            ),
+            validation_issue_severity: Severity::High,
+        });
+    }
     let writes = h.plan_writes(config);
     for (key, value) in &writes {
-        if *key == YESCRYPT_COST_FACTOR
-            && let Ok(cost) = value.parse::<u64>()
-            && let Err(reason) = cost_affordable(ctx, cost).await
-        {
-            preview.issues.push(ValidationIssue {
-                validation_issue_config_key: Some(key.to_string()),
-                validation_issue_message: format!(
-                    "YESCRYPT_COST_FACTOR will not be set to {value}: {reason}"
-                ),
-                validation_issue_severity: Severity::High,
-            });
-            continue;
-        }
         let current = login_defs_value(&h.login_defs, key).unwrap_or_else(|| "not set".to_string());
         preview
             .estimated_changes

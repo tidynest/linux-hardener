@@ -30,7 +30,9 @@ const UBUNTU_2404_PROBE: &str = "pam_unix_yescrypt=yes\npam_unix_cost_factor=no\
 const MODERN_PROBE: &str = "pam_unix_yescrypt=yes\npam_unix_cost_factor=yes\n\
      libcrypt_yescrypt=yes\nshadow_yescrypt=yes\nfips=no\nshadow=read\nend=1\n";
 
-/// RHEL 9: shadow 4.9 built without yescrypt.
+/// RHEL 9: shadow 4.9 built without yescrypt. pam_unix links libcrypt.so.2,
+/// libxcrypt 4.4.18 built with every hash (c9s libxcrypt.spec), so the probe
+/// finds `$y$` there; RHEL 9 is held to SHA-512 by shadow alone.
 const RHEL9_PROBE: &str = "pam_unix_yescrypt=yes\npam_unix_cost_factor=no\n\
      libcrypt_yescrypt=yes\nshadow_yescrypt=no\nfips=no\nshadow=read\nend=1\n";
 
@@ -95,6 +97,7 @@ fn hashing_ids(findings: &[hardener_core::plugin::Finding]) -> Vec<&str> {
                     | "pam-YESCRYPT_COST_FACTOR"
                     | "pam-SHA_CRYPT_MIN_ROUNDS"
                     | "pam-stored-password-hashes"
+                    | "pam-yescrypt-cost-memory"
             )
         })
         .collect()
@@ -134,6 +137,13 @@ async fn ubuntu_2404_is_moved_to_yescrypt_in_login_defs_and_nothing_else() {
     assert_eq!(method.finding_current_value, "SHA512");
     assert_eq!(method.finding_recommended_value, "YESCRYPT");
     assert_eq!(method.finding_severity, Severity::Low);
+    assert!(
+        method
+            .finding_description
+            .contains("passwords set through pam_unix, as passwd sets them, already get yescrypt"),
+        "the operator must not read this as passwd making SHA-512 hashes: {}",
+        method.finding_description
+    );
     let stored = scan
         .scan_findings
         .iter()
@@ -449,6 +459,132 @@ async fn on_pam_1_5_a_raised_cost_also_needs_rounds_on_the_stack_line() {
             ),
         "pam_unix 1.5 never reads the factor, so the line needs rounds=7: {:?}",
         result.apply_changes
+    );
+}
+
+/// The memory guard is part of the plan scan, apply and validate share. On a
+/// Linux-PAM older than 1.6.0, `rounds=` on the stack line is the only setting
+/// that raises the cost of a user's password, so naming the refused cost
+/// there would hand the operator the lockout the refusal prevents.
+#[tokio::test]
+async fn on_pam_1_5_an_unaffordable_cost_is_refused_once_and_never_advised_as_rounds() {
+    let login_defs = format!("{SECURE_AGEING}ENCRYPT_METHOD YESCRYPT\n");
+    let executor = Arc::new(with_memory(
+        host(
+            &login_defs,
+            "/etc/pam.d/common-password",
+            UBUNTU_2404_COMMON_PASSWORD,
+            Some(UBUNTU_2404_PROBE),
+        ),
+        1024 * 1024,
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+    let config = config_with("YESCRYPT_COST_FACTOR", "9");
+
+    let scan = plugin.scan(&ctx, &config).await.expect("scan runs");
+    let finding = scan
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-YESCRYPT_COST_FACTOR")
+        .expect("the cost is below what the operator asked for");
+    assert!(
+        !finding
+            .finding_remediation_steps
+            .iter()
+            .any(|s| s.contains("rounds=9") || s.contains("(apply does this)")),
+        "the scan must not promise a write apply refuses: {:?}",
+        finding.finding_remediation_steps
+    );
+    assert!(
+        finding
+            .finding_remediation_steps
+            .iter()
+            .any(|s| s.contains("apply will not raise") && s.contains("6 or less")),
+        "{:?}",
+        finding.finding_remediation_steps
+    );
+
+    let preview = plugin.validate(&ctx, &config).await.expect("validate runs");
+    let messages: Vec<&str> = preview
+        .validation_report_issues
+        .iter()
+        .map(|i| i.validation_issue_message.as_str())
+        .collect();
+    assert!(
+        !messages.iter().any(|m| m.contains("rounds=")),
+        "{messages:?}"
+    );
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|m| m.contains("will not be set to 9"))
+            .count(),
+        1,
+        "{messages:?}"
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.expect("apply runs");
+    assert!(!result.apply_success);
+    assert!(
+        !result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("rounds=")),
+        "no change may advise a rounds= the host cannot afford: {:?}",
+        result.apply_changes
+    );
+    assert_eq!(
+        result
+            .apply_changes
+            .iter()
+            .filter(|c| !c.change_success && c.change_description.contains("Refused to set"))
+            .count(),
+        1,
+        "{:?}",
+        result.apply_changes
+    );
+    assert!(written(&executor, "/etc/login.defs").is_none());
+}
+
+/// The issue's 1 GiB, set by hand on a small VM: the cost check is
+/// tighten-only and passes it, so the memory advisory is what reports it.
+#[tokio::test]
+async fn a_hand_set_cost_of_11_on_a_2_gib_host_is_reported_and_left_alone() {
+    let login_defs = format!("{SECURE_AGEING}ENCRYPT_METHOD YESCRYPT\nYESCRYPT_COST_FACTOR 11\n");
+    let executor = Arc::new(with_memory(
+        host(
+            &login_defs,
+            "/etc/pam.d/system-auth",
+            "password sufficient pam_unix.so yescrypt shadow\n",
+            Some(MODERN_PROBE),
+        ),
+        2 * 1024 * 1024,
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let scan = plugin.scan(&ctx, &config).await.expect("scan runs");
+    assert_eq!(
+        hashing_ids(&scan.scan_findings),
+        vec!["pam-yescrypt-cost-memory"],
+        "{:?}",
+        scan.scan_findings
+    );
+    let finding = scan
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-yescrypt-cost-memory")
+        .expect("reported");
+    assert_eq!(finding.finding_current_value, "11");
+    assert_eq!(finding.finding_recommended_value, "7 or less");
+
+    let result = plugin.apply(&mut ctx, &config).await.expect("apply runs");
+    assert!(result.apply_success, "{:?}", result.apply_changes);
+    assert!(
+        written(&executor, "/etc/login.defs").is_none(),
+        "apply never lowers a cost"
     );
 }
 

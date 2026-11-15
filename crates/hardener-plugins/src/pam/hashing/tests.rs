@@ -283,6 +283,142 @@ fn the_real_probe_script_says_absent_for_a_missing_shadow() {
     assert_eq!(probe.stored, StoredHashes::Absent);
 }
 
+/// A throwaway directory laid out as another distribution's `/`, removed when
+/// dropped. Only what a test writes into it exists there.
+struct FakeRoot(std::path::PathBuf);
+
+impl FakeRoot {
+    fn new(name: &str) -> FakeRoot {
+        let dir = std::env::temp_dir().join(format!("hardener-191-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        FakeRoot(dir)
+    }
+
+    fn file(&self, path: &str, content: &[u8]) -> &FakeRoot {
+        let full = self.0.join(path.trim_start_matches('/'));
+        std::fs::create_dir_all(full.parent().expect("a parent")).expect("dirs");
+        std::fs::write(full, content).expect("fixture");
+        self
+    }
+
+    /// The real probe script, with this tree as its root and no shadow file.
+    fn probe(&self) -> HostProbe {
+        let output = std::process::Command::new("sh")
+            .args([
+                "-c",
+                HOST_PROBE_SCRIPT,
+                "sh",
+                "/nonexistent/hardener-191/shadow",
+            ])
+            .arg(&self.0)
+            .output()
+            .expect("sh runs");
+        parse_host_probe(&String::from_utf8_lossy(&output.stdout))
+    }
+}
+
+impl Drop for FakeRoot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// A `pam_unix.so` stand-in: the strings the probe looks for, between NULs as
+/// in a real `.dynstr`, linking the libcrypt soname given.
+fn pam_unix_linking(soname: &str) -> Vec<u8> {
+    format!("\x7fELF\0libpam.so.0\0{soname}\0yescrypt\0YESCRYPT_COST_FACTOR\0").into_bytes()
+}
+
+const LIBCRYPT_WITH_YESCRYPT: &[u8] = b"\0$y$\0$6$\0$5$\0";
+const LIBCRYPT_WITHOUT_YESCRYPT: &[u8] = b"\0$6$\0$5$\0";
+
+#[test]
+fn fedora_and_rhel_libcrypt_so_2_is_found_through_pam_unix() {
+    // libxcrypt.spec (CentOS Stream c9s and c10s): the main package ships only
+    // libcrypt.so.2 under %{_libdir}; libcrypt.so.1 is in libxcrypt-compat.
+    let root = FakeRoot::new("fedora");
+    root.file(
+        "/usr/lib64/security/pam_unix.so",
+        &pam_unix_linking("libcrypt.so.2"),
+    )
+    .file("/usr/lib64/libcrypt.so.2", LIBCRYPT_WITH_YESCRYPT);
+    let probe = root.probe();
+    assert_eq!(probe.pam_unix_yescrypt, Tri::Yes);
+    assert_eq!(probe.pam_reads_cost_factor, Tri::Yes);
+    assert_eq!(
+        probe.libcrypt_yescrypt,
+        Tri::Yes,
+        "a probe that only knew libcrypt.so.1 said unknown here"
+    );
+    assert_eq!(probe.fips, Tri::No, "no fips_enabled file means no FIPS");
+}
+
+#[test]
+fn arch_reads_the_library_pam_unix_links_not_the_compat_one() {
+    // Arch's libxcrypt is built with --enable-obsolete-api=no (libcrypt.so.2)
+    // and libxcrypt-compat adds libcrypt.so.1. The compat file here lacks $y$,
+    // so a yes can only have come from the library pam_unix names.
+    let root = FakeRoot::new("arch");
+    root.file(
+        "/usr/lib/security/pam_unix.so",
+        &pam_unix_linking("libcrypt.so.2"),
+    )
+    .file("/usr/lib/libcrypt.so.2", LIBCRYPT_WITH_YESCRYPT)
+    .file("/usr/lib/libcrypt.so.1", LIBCRYPT_WITHOUT_YESCRYPT);
+    assert_eq!(root.probe().libcrypt_yescrypt, Tri::Yes);
+}
+
+#[test]
+fn a_linked_library_without_yescrypt_says_no_whatever_a_compat_copy_holds() {
+    let root = FakeRoot::new("linked-no");
+    root.file(
+        "/usr/lib64/security/pam_unix.so",
+        &pam_unix_linking("libcrypt.so.2"),
+    )
+    .file("/usr/lib64/libcrypt.so.2", LIBCRYPT_WITHOUT_YESCRYPT)
+    .file("/usr/lib64/libcrypt.so.1", LIBCRYPT_WITH_YESCRYPT);
+    assert_eq!(root.probe().libcrypt_yescrypt, Tri::No);
+}
+
+#[test]
+fn debian_multiarch_libcrypt_so_1_is_still_found() {
+    let root = FakeRoot::new("debian");
+    root.file(
+        "/usr/lib/x86_64-linux-gnu/security/pam_unix.so",
+        &pam_unix_linking("libcrypt.so.1"),
+    )
+    .file(
+        "/usr/lib/x86_64-linux-gnu/libcrypt.so.1",
+        LIBCRYPT_WITH_YESCRYPT,
+    );
+    assert_eq!(root.probe().libcrypt_yescrypt, Tri::Yes);
+}
+
+#[test]
+fn without_a_pam_unix_both_sonames_are_searched() {
+    let root = FakeRoot::new("no-pam");
+    root.file("/usr/lib64/libcrypt.so.2", LIBCRYPT_WITH_YESCRYPT);
+    let probe = root.probe();
+    assert_eq!(probe.pam_unix_yescrypt, Tri::Unknown);
+    assert_eq!(probe.libcrypt_yescrypt, Tri::Yes);
+    assert_eq!(
+        probe.yescrypt(),
+        Tri::Unknown,
+        "an unconfirmed pam_unix is not a yes"
+    );
+}
+
+#[test]
+fn fips_mode_is_read_from_the_kernel_flag() {
+    let root = FakeRoot::new("fips");
+    root.file("/proc/sys/crypto/fips_enabled", b"1\n");
+    assert_eq!(root.probe().fips, Tri::Yes);
+    let off = FakeRoot::new("fips-off");
+    off.file("/proc/sys/crypto/fips_enabled", b"0\n");
+    assert_eq!(off.probe().fips, Tri::No);
+}
+
 // --- the target ---------------------------------------------------------------
 
 #[test]
@@ -330,6 +466,30 @@ fn ubuntu_2404_hashes_user_passwords_with_yescrypt_and_group_passwords_with_sha5
     let reading = read_method(UBUNTU_2404_LOGIN_DEFS, &stack, &ubuntu_2404());
     assert_eq!(reading.weakest, Some(HashMethod::Sha512));
     assert_eq!(reading.display, "SHA512");
+    assert_eq!(reading.notes.len(), 1, "{:?}", reading.notes);
+    assert!(
+        reading.notes[0].contains("shadow's own tools")
+            && reading.notes[0].contains("already get yescrypt"),
+        "the finding must not read as if passwd made SHA-512 hashes: {}",
+        reading.notes[0]
+    );
+}
+
+#[test]
+fn no_shadow_only_note_where_a_stack_line_is_as_weak_as_login_defs() {
+    let stack = lines(
+        "/etc/pam.d/system-auth",
+        "password sufficient pam_unix.so sha512 shadow\n",
+    );
+    let reading = read_method("ENCRYPT_METHOD SHA512\n", &stack, &capable());
+    assert!(
+        !reading
+            .notes
+            .iter()
+            .any(|n| n.contains("shadow's own tools")),
+        "{:?}",
+        reading.notes
+    );
 }
 
 #[test]
@@ -427,12 +587,17 @@ fn shadow_takes_the_minimum_when_both_bounds_are_set() {
 
 // --- the plan -----------------------------------------------------------------
 
+/// 16 GiB, enough for every cost up to 10, so a test about something else
+/// never meets the memory guard by accident.
+const ROOMY: Result<u64, String> = Ok(16 * 1024 * 1024);
+
 fn hashing(login_defs: &str, stack: Vec<PamUnixLine>, probe: HostProbe) -> Hashing {
     Hashing::new(
         &PluginConfig::default(),
         login_defs.to_string(),
         stack,
         probe,
+        ROOMY,
     )
 }
 
@@ -495,6 +660,37 @@ fn opensuse_that_cannot_confirm_yescrypt_gets_sha512_rounds_instead() {
             ("SHA_CRYPT_MIN_ROUNDS", "100000".to_string()),
             ("SHA_CRYPT_MAX_ROUNDS", "100000".to_string()),
         ]
+    );
+}
+
+#[test]
+fn a_fedora_shaped_host_on_sha512_is_moved_to_yescrypt_not_given_sha_rounds() {
+    // The case a libcrypt.so.1-only probe got wrong: there it answered
+    // unknown, the host was held to SHA-512 and apply wrote SHA rounds.
+    let root = FakeRoot::new("fedora-plan");
+    root.file(
+        "/usr/lib64/security/pam_unix.so",
+        &pam_unix_linking("libcrypt.so.2"),
+    )
+    .file("/usr/lib64/libcrypt.so.2", LIBCRYPT_WITH_YESCRYPT);
+    // chpasswd is always this machine's, so the shadow answer is fixed here
+    // to the one Fedora's shadow 4.15 (--with-yescrypt) gives.
+    let probe = HostProbe {
+        shadow_yescrypt: Tri::Yes,
+        ..root.probe()
+    };
+    let h = hashing(
+        "ENCRYPT_METHOD SHA512\n",
+        lines(
+            "/etc/pam.d/system-auth",
+            "password sufficient pam_unix.so yescrypt shadow nullok use_authtok\n",
+        ),
+        probe,
+    );
+    assert_eq!(h.target, HashMethod::Yescrypt);
+    assert_eq!(
+        h.plan_writes(&PluginConfig::default()),
+        vec![("ENCRYPT_METHOD", "YESCRYPT".to_string())]
     );
 }
 
@@ -582,6 +778,7 @@ fn a_raised_cost_on_pam_1_5_needs_rounds_on_the_line() {
         RHEL10_LOGIN_DEFS.to_string(),
         lines("/etc/pam.d/common-password", UBUNTU_2404_COMMON_PASSWORD),
         ubuntu_2404(),
+        ROOMY,
     );
     let writes = h.plan_writes(&config);
     assert!(writes.contains(&("YESCRYPT_COST_FACTOR", "7".to_string())));
@@ -598,6 +795,7 @@ fn the_same_raised_cost_needs_nothing_on_the_stack_where_pam_reads_the_factor() 
         RHEL10_LOGIN_DEFS.to_string(),
         lines("/etc/pam.d/system-auth", RHEL10_SYSTEM_AUTH),
         capable(),
+        ROOMY,
     );
     let writes = h.plan_writes(&config);
     assert_eq!(writes, vec![("YESCRYPT_COST_FACTOR", "7".to_string())]);
@@ -630,6 +828,7 @@ fn an_exception_for_the_algorithm_stops_the_write_and_moves_the_cost_check() {
         OPENSUSE_LOGIN_DEFS.to_string(),
         lines("/etc/pam.d/common-password", OPENSUSE_COMMON_PASSWORD),
         capable(),
+        ROOMY,
     );
     assert!(h.method_excepted);
     assert_eq!(h.cost_method, HashMethod::Sha512);
@@ -678,7 +877,7 @@ fn the_scan_names_the_algorithm_and_the_stored_hashes_but_no_hash() {
         method
             .finding_compliance
             .iter()
-            .any(|m| m.compliance_control_id == "IA-5(1)(c)"),
+            .any(|m| m.compliance_control_id == "IA-5(1)(d)"),
         "{:?}",
         method.finding_compliance
     );
@@ -751,6 +950,173 @@ fn ten_checks_must_fit_in_half_the_memory() {
         11,
         "never above what the tools accept"
     );
+}
+
+#[test]
+fn each_cost_starts_at_ten_times_two_to_the_cost_mib() {
+    // The thresholds the documentation states, at both sides of each edge.
+    let mib = 1024;
+    for (cost, threshold_mib) in [(6, 640), (7, 1280), (8, 2560), (10, 10240), (11, 20480)] {
+        assert_eq!(
+            max_affordable_cost(threshold_mib * mib),
+            cost,
+            "{threshold_mib} MiB"
+        );
+        assert_eq!(
+            max_affordable_cost(threshold_mib * mib - mib),
+            cost - 1,
+            "{} MiB",
+            threshold_mib - 1
+        );
+    }
+    assert_eq!(
+        max_affordable_cost(20_371_000),
+        10,
+        "a VM sold as 20 GiB reports less MemTotal and does not reach 11"
+    );
+}
+
+/// 1 GiB of MemTotal, which affords a cost of 6 and no more.
+const ONE_GIB: Result<u64, String> = Ok(1024 * 1024);
+
+#[test]
+fn an_unaffordable_cost_on_pam_1_5_is_refused_and_never_becomes_a_rounds_step() {
+    let config = config_with(&[("YESCRYPT_COST_FACTOR", "9")]);
+    let h = Hashing::new(
+        &config,
+        RHEL10_LOGIN_DEFS.to_string(),
+        lines("/etc/pam.d/common-password", UBUNTU_2404_COMMON_PASSWORD),
+        ubuntu_2404(),
+        ONE_GIB,
+    );
+    let (cost, message) = h.cost_refusal(&config).expect("9 does not fit in 1 GiB");
+    assert_eq!(cost, 9);
+    assert!(message.contains("up to a cost of 6"), "{message}");
+    assert!(message.contains("to 6 or less"), "{message}");
+    let writes = h.plan_writes(&config);
+    assert!(writes.is_empty(), "{writes:?}");
+    assert!(
+        h.manual_steps(&config, &h.projected(&writes)).is_empty(),
+        "rounds=9 on a PAM 1.5 line is the lockout itself"
+    );
+}
+
+#[test]
+fn the_refusal_is_judged_on_the_target_even_where_login_defs_already_holds_it() {
+    // Someone wrote the cost into login.defs by hand; PAM 1.5 ignores it, so
+    // the only step left would be rounds=9 on the line, which is refused too.
+    let config = config_with(&[("YESCRYPT_COST_FACTOR", "9")]);
+    let h = Hashing::new(
+        &config,
+        "ENCRYPT_METHOD YESCRYPT\nYESCRYPT_COST_FACTOR 9\n".to_string(),
+        lines("/etc/pam.d/common-password", UBUNTU_2404_COMMON_PASSWORD),
+        ubuntu_2404(),
+        ONE_GIB,
+    );
+    assert!(h.cost_refusal(&config).is_some());
+    assert!(h.manual_steps(&config, &h.login_defs).is_empty());
+}
+
+#[test]
+fn an_unreadable_memory_refuses_a_raised_cost_and_says_to_drop_the_override() {
+    let config = config_with(&[("YESCRYPT_COST_FACTOR", "7")]);
+    let h = Hashing::new(
+        &config,
+        RHEL10_LOGIN_DEFS.to_string(),
+        lines("/etc/pam.d/system-auth", RHEL10_SYSTEM_AUTH),
+        capable(),
+        Err("no /proc here".to_string()),
+    );
+    let (_, message) = h.cost_refusal(&config).expect("refused");
+    assert!(message.contains("could not be read"), "{message}");
+    assert!(message.contains("Remove the"), "{message}");
+}
+
+#[test]
+fn the_default_cost_is_never_refused_however_small_the_host() {
+    let h = Hashing::new(
+        &PluginConfig::default(),
+        "ENCRYPT_METHOD SHA512\n".to_string(),
+        lines("/etc/pam.d/system-auth", RHEL10_SYSTEM_AUTH),
+        capable(),
+        Ok(128 * 1024),
+    );
+    assert!(h.cost_refusal(&PluginConfig::default()).is_none());
+    assert_eq!(
+        h.plan_writes(&PluginConfig::default()),
+        vec![("ENCRYPT_METHOD", "YESCRYPT".to_string())]
+    );
+}
+
+#[test]
+fn a_hand_set_cost_the_host_cannot_carry_is_reported() {
+    let h = Hashing::new(
+        &PluginConfig::default(),
+        "ENCRYPT_METHOD YESCRYPT\nYESCRYPT_COST_FACTOR 11\n".to_string(),
+        lines("/etc/pam.d/system-auth", RHEL10_SYSTEM_AUTH),
+        capable(),
+        Ok(2 * 1024 * 1024),
+    );
+    let finding = cost_memory_finding(&PluginConfig::default(), &h).expect("11 needs 20 GiB");
+    assert_eq!(finding.finding_id, COST_MEMORY_ID);
+    assert_eq!(finding.finding_current_value, "11");
+    assert_eq!(finding.finding_recommended_value, "7 or less");
+    assert_eq!(finding.finding_severity, Severity::Medium);
+    assert!(finding.finding_compliance.is_empty());
+    assert_eq!(
+        finding.finding_exception_key.as_deref(),
+        Some("YESCRYPT_COST_FACTOR")
+    );
+    assert!(
+        h.plan_writes(&PluginConfig::default()).is_empty(),
+        "apply never lowers a cost"
+    );
+
+    let mut accepted = PluginConfig::default();
+    accepted
+        .exceptions
+        .insert("YESCRYPT_COST_FACTOR".to_string(), exception("11"));
+    let finding = cost_memory_finding(&accepted, &h).expect("still listed");
+    assert!(matches!(
+        finding.finding_exception,
+        ExceptionOutcome::Applied(_)
+    ));
+}
+
+#[test]
+fn a_rounds_on_the_stack_line_counts_towards_the_highest_cost() {
+    let h = Hashing::new(
+        &PluginConfig::default(),
+        RHEL10_LOGIN_DEFS.to_string(),
+        lines(
+            "/etc/pam.d/system-auth",
+            "password sufficient pam_unix.so yescrypt rounds=10 shadow\n",
+        ),
+        capable(),
+        Ok(4 * 1024 * 1024),
+    );
+    let finding = cost_memory_finding(&PluginConfig::default(), &h).expect("10 needs 10 GiB");
+    assert_eq!(finding.finding_current_value, "10");
+}
+
+#[test]
+fn no_memory_finding_at_the_default_or_where_memory_is_unknown() {
+    let small = Hashing::new(
+        &PluginConfig::default(),
+        RHEL10_LOGIN_DEFS.to_string(),
+        lines("/etc/pam.d/system-auth", RHEL10_SYSTEM_AUTH),
+        capable(),
+        Ok(128 * 1024),
+    );
+    assert!(cost_memory_finding(&PluginConfig::default(), &small).is_none());
+    let unknown = Hashing::new(
+        &PluginConfig::default(),
+        "ENCRYPT_METHOD YESCRYPT\nYESCRYPT_COST_FACTOR 11\n".to_string(),
+        lines("/etc/pam.d/system-auth", RHEL10_SYSTEM_AUTH),
+        capable(),
+        Err("no /proc here".to_string()),
+    );
+    assert!(cost_memory_finding(&PluginConfig::default(), &unknown).is_none());
 }
 
 #[test]
