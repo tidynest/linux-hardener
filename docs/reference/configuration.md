@@ -917,7 +917,8 @@ is read before every drop-in, this one included. A normal apply there writes
 `Include`, so with the second factor on, the apply switches that line to `yes`
 as well and says so, and switches it back to `no` when you turn the second
 factor off. A `UsePAM no` or an `AuthenticationMethods` line of your own above
-the `Include` is left alone, and the apply refuses the second factor naming it.
+the `Include` is left alone, and the apply refuses the second factor, saying
+which setting kept it out (check 1 below).
 
 `scan` reports a host that does not enforce this as
 `ssh-authenticationmethods` (High), naming what is in force instead, and maps
