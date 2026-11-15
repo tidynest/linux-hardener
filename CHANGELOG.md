@@ -16,18 +16,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2025 with no recorded source, and that most agree with the CIS Benchmarks or
   the DISA STIGs without matching either on every setting.
   `docs/reference/baseline-sources.md` lists every setting the plugins check
-  with its default, comparison, severity, any recorded source, and what the
-  main guides ask for, each guide dated. It explains how the baseline relates
-  to compliance profiles, directives, exceptions and scope, lists the controls
-  a host can pass on a weaker value than the control's own text asks for, and
-  says how to propose a change. A **Propose a baseline change** issue form and
-  a section in CONTRIBUTING.md ask for the evidence such a proposal needs.
+  with its default, comparison, severity, any recorded source, the closest
+  match among the guides, and what the main guides ask for, each guide dated.
+  It explains how the baseline relates to compliance profiles, directives,
+  exceptions and scope, and says how to propose a change. It also lists the
+  controls a host can pass while doing less than the control's own text asks,
+  either because the control wants a stricter value or because it asks for
+  something the check does not read, such as file ownership, the audit log
+  size or the SELinux boot setting. A **Propose a baseline change** issue form
+  and a section in CONTRIBUTING.md ask for the evidence such a proposal needs.
 - **`validate_baseline_sources.py` holds that page to the code.** It reads the
   baseline tables in the kernel, SSH, PAM, services, permissions, firewall and
   audit plugins, and fails when a default, comparison or severity differs from
   its row, when a setting has no row or a row names one the code dropped, and
-  when a row does not say where its value came from. A changed default and its
-  row therefore land together. `validate_all.py` now runs 30 checks.
+  when a row does not say where its value came from. Each listed weaker Pass
+  must name a control the check's own mapping arm still holds, so a plugin that
+  drops the mapping fails the row even while `profiles.rs` keeps the
+  identifier. The baseline values README quotes, and its sentence on what a
+  Pass means, are held too. `validate_all.py` now runs 30 checks and fails until
+  a changed default and its row agree; CI does not run it.
 
 ### Changed
 
@@ -77,12 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Apache-2.0 AND OFL-1.1`.
 - **The README no longer says the permissions plugin checks ownership (#189).**
   It checks file modes only, and the owner and group in its table are never
-  read. The README's known limitations also gain a bullet saying a compliance
-  Pass is judged against the baseline's value rather than the number in the
-  control's text, held by `validate_readme_claims.py` to the report generator's
-  status chain. The comment on the SSH key-exchange list, which named "OpenSSH
-  10 defaults and Mozilla Modern" as its source, now says what the list
-  actually follows; neither matched it.
+  read. README also stops saying a report "cannot claim compliance the tool did
+  not measure": a covered control passes when its plugin finds nothing weaker
+  than the baseline, which is not always everything the control asks for. Its
+  known limitations gain a bullet saying so, held by `validate_readme_claims.py`
+  to the report generator's status chain. The comment on the SSH key-exchange
+  list, which named "OpenSSH 10 defaults and Mozilla Modern" as its source, now
+  names ssh-audit's Hardened OpenSSH Server v9.9 policy as the nearest
+  published list, marked as a probable origin rather than a recorded one;
+  neither of the old names matched it.
 
 ### Security
 
