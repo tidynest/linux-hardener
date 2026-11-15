@@ -201,3 +201,89 @@ fn a_list_valued_directive_yields_every_argument() {
         Some(vec!["publickey,keyboard-interactive", "publickey"])
     );
 }
+
+/// The `sshd -t` candidate, held against a real sshd rather than against the
+/// text a mock test expects (#185). On disk the fragment still says
+/// `KbdInteractiveAuthentication no`, from an apply before the operator's own
+/// `10-2fa.conf`, and the new fragment body drops it. The old candidate
+/// pasted the new body ahead of the main file, whose Include then read the
+/// stale copy as well, and sshd refused it; the staged one reads the new body
+/// where the fragment sorts. CI's root-gated job runs this after installing
+/// openssh-server.
+#[tokio::test]
+#[ignore = "Requires root and an sshd binary"]
+async fn real_sshd_accepts_the_staged_candidate_where_the_old_shape_failed() {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let root = dir.path();
+    let keygen = std::process::Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", ""])
+        .arg("-f")
+        .arg(root.join("hostkey"))
+        .status()
+        .expect("ssh-keygen runs");
+    assert!(keygen.success(), "ssh-keygen made a host key");
+    let dropins = root.join("d");
+    std::fs::create_dir(&dropins).expect("the drop-in directory");
+    let fragment = dropins.join("00-hardener.conf");
+    std::fs::write(&fragment, "KbdInteractiveAuthentication no\n").expect("the stale fragment");
+    std::fs::write(
+        dropins.join("10-2fa.conf"),
+        "AuthenticationMethods publickey,keyboard-interactive\n\
+         KbdInteractiveAuthentication yes\nUsePAM yes\n",
+    )
+    .expect("the operator's drop-in");
+    let main_path = root.join("main.conf");
+    let main = format!(
+        "Include {}/*.conf\nHostKey {}/hostkey\nPasswordAuthentication no\n",
+        dropins.display(),
+        root.display()
+    );
+    std::fs::write(&main_path, &main).expect("the main file");
+    let new_body = "MaxAuthTries 3\n";
+    let staged = root.join("staged-fragment.conf");
+    std::fs::write(&staged, new_body).expect("the staged fragment");
+
+    let sshd = ["/usr/sbin/sshd", "/usr/bin/sshd"]
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.exists())
+        .expect("this test needs an sshd binary: install openssh-server");
+    let sshd_t = |candidate: &str, name: &str| {
+        let path = root.join(name);
+        std::fs::write(&path, candidate).expect("the candidate");
+        std::process::Command::new(&sshd)
+            .arg("-t")
+            .arg("-f")
+            .arg(&path)
+            .output()
+            .expect("sshd -t runs")
+    };
+
+    let old = sshd_t(&format!("{new_body}\n{main}"), "old-candidate.conf");
+    assert!(
+        !old.status.success(),
+        "the old shape reads the stale fragment and sshd refuses it"
+    );
+    assert!(
+        String::from_utf8_lossy(&old.stderr).contains("keyboard-interactive"),
+        "{}",
+        String::from_utf8_lossy(&old.stderr)
+    );
+
+    let ctx = Context::new();
+    let candidate = stage_fragment_includes(
+        &ctx,
+        &main_path.display().to_string(),
+        &main,
+        &fragment,
+        Some(&staged),
+    )
+    .await
+    .expect("the candidate stages");
+    let new = sshd_t(&candidate, "new-candidate.conf");
+    assert!(
+        new.status.success(),
+        "sshd -t refused the staged candidate:\n{candidate}\n{}",
+        String::from_utf8_lossy(&new.stderr)
+    );
+}

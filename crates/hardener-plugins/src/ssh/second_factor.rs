@@ -23,10 +23,13 @@
 //! password wherever that stack reaches pam_unix.
 //!
 //! This is the one change in the plugin that can lock people out without
-//! breaking sshd, because `sshd -t` checks none of the ways it does so. [`check`]
-//! runs a guard for each against the staged candidate before anything is
-//! written, and an apply that fails one leaves the second factor out, hardens
-//! everything else, and says why.
+//! breaking sshd, because `sshd -t` checks only the global lists, and only
+//! whether their methods are switched on. [`check`] reads the staged candidate
+//! the way sshd will run it, globally and for each account that logs in with
+//! a key, before anything is written, and an apply that fails a check leaves
+//! the second factor out, hardens everything else, and says why. The ways it
+//! looks for are listed on [`check`]; the ones it cannot see are listed in the
+//! configuration reference.
 
 use super::{auth_methods, dropin, include::ResolvedConfig};
 use hardener_common::types::{ComplianceFramework, ComplianceMapping};
@@ -47,6 +50,38 @@ use tracing::warn;
 /// appearing in that list is not one anybody accepted, so the exception stops
 /// matching and the apply refuses again.
 pub(super) const LOCKOUT_EXCEPTION_KEY: &str = "second-factor-lockout";
+
+/// The exception key that accepts logins through key sources the account
+/// check cannot list: user certificates under `TrustedUserCAKeys`, and keys an
+/// `AuthorizedKeysCommand` hands over. Its `value` names those settings,
+/// sorted and comma-separated, exactly as the refusal prints them.
+pub(super) const UNLISTED_KEYS_EXCEPTION_KEY: &str = "second-factor-unlisted-keys";
+
+/// The PAM service sshd uses unless `PAMServiceName` (OpenSSH 10.0 and later)
+/// names another.
+pub(super) const DEFAULT_PAM_SERVICE: &str = "sshd";
+
+/// The setting that names another PAM service, in sshd_config's spelling.
+pub(super) const PAM_SERVICE_NAME: &str = "PAMServiceName";
+
+/// Each setting that switches an authentication method on, as `sshd -T`
+/// prints it, with the name `AuthenticationMethods` gives the method. sshd
+/// before 8.7 printed keyboard-interactive's switch under its older name.
+const METHOD_SWITCHES: &[(&str, &str)] = &[
+    ("pubkeyauthentication", "publickey"),
+    ("kbdinteractiveauthentication", "keyboard-interactive"),
+    ("challengeresponseauthentication", "keyboard-interactive"),
+    ("passwordauthentication", "password"),
+    ("hostbasedauthentication", "hostbased"),
+    ("gssapiauthentication", "gssapi-with-mic"),
+];
+
+/// The settings that let an account log in with a key no file lists, as
+/// `sshd -T` prints them (`none` where unset), with their sshd_config names.
+const UNLISTED_KEY_SOURCES: &[(&str, &str)] = &[
+    ("authorizedkeyscommand", "AuthorizedKeysCommand"),
+    ("trustedusercakeys", "TrustedUserCAKeys"),
+];
 
 /// The method that carries the prompt.
 pub(super) const KBD_INTERACTIVE: &str = "KbdInteractiveAuthentication";
@@ -283,39 +318,82 @@ pub(super) enum Verdict {
 /// Runs every guard against the candidate staged at `staged`, with the
 /// configuration in force today at `live` for comparison.
 ///
-/// In order, cheapest first:
+/// In order:
 ///
-/// 1. sshd's PAM stack has to reach a module that checks the account password,
-///    or the prompt after the key asks for something else or for nothing.
-/// 2. Over a remote executor, the account this apply connected as has to keep a
-///    way in on its key alone, where it has one today. This tool's remote mode
-///    runs `ssh` with `BatchMode=yes` and cannot answer a prompt, so without
-///    that the next scan, apply or rollback of this host from here fails.
-///    Root under `PermitRootLogin prohibit-password` is refused every
+/// 1. The candidate as sshd will run it globally (`sshd -T`) has to ask for a
+///    key and then the password, with keyboard-interactive switched on and
+///    PAM handing it the prompt. A line sshd reads before the fragment, such
+///    as a `UsePAM no` above the main file's `Include`, keeps the fragment's
+///    value out, and `UsePAM no` passes `sshd -t` while turning every login
+///    away after the key.
+/// 2. The PAM service sshd uses (`PAMServiceName`, `sshd` unless set) has to
+///    reach a module that checks the account password, or the prompt after
+///    the key asks for something else or for nothing.
+/// 3. No setting may let accounts in with keys no file lists
+///    (`AuthorizedKeysCommand`, or user certificates under
+///    `TrustedUserCAKeys`), unless
+///    `[ssh.exceptions."second-factor-unlisted-keys"]` names them: the
+///    account check below cannot see who logs in that way.
+/// 4. Over a remote executor, the account this apply connected as has to keep
+///    a way in on its key alone, where it has one today. This tool's remote
+///    mode runs `ssh` with `BatchMode=yes` and cannot answer a prompt, so
+///    without that the next scan, apply or rollback of this host from here
+///    fails. Root under `PermitRootLogin prohibit-password` is refused every
 ///    keyboard-interactive login by sshd itself, password or not, which makes
 ///    this the guard a remote root apply meets first.
-/// 3. Every account that logs in with a key today has to keep a way in: a
-///    usable password for the prompt, or a `Match` block that keeps it on its
-///    key alone. Root needs `PermitRootLogin yes` for the first, which this
-///    tool never writes. What is left is refused unless
-///    `[ssh.exceptions."second-factor-lockout"]` names exactly those accounts.
+/// 5. Every account with a key file sshd reads, whatever its login shell
+///    (sshd lets a `nologin` account authenticate, which is how SFTP-only and
+///    tunnel-only accounts work), is read as sshd will run it for that
+///    account (`sshd -T -C`), with each list naming a method that is switched
+///    off for it dropped, as sshd drops it. Each has to keep a way in: a list
+///    its key alone satisfies (a `Match` block keeping it on its key), or one
+///    its key and a usable password satisfy. Root's password counts only under
+///    `PermitRootLogin yes`, which this tool never writes. What is left is
+///    refused unless `[ssh.exceptions."second-factor-lockout"]` names exactly
+///    those accounts.
 ///
 /// Any probe that cannot answer refuses: a guard that could not look has not
-/// found the host safe.
+/// found the host safe. A verdict to go ahead carries notes for the apply to
+/// report, among them every account that will now be asked for its password
+/// after the key, because a script logging in as one of them with a key alone
+/// stops working.
 pub(super) async fn check(
     executor: &dyn SystemExecutor,
     config: &PluginConfig,
     staged: &str,
     live: &str,
 ) -> Verdict {
-    if let Some(reason) = pam_answers_with_password(executor).await.refusal() {
-        return Verdict::Refuse(reason);
-    }
-
     let global = match sshd_dump(executor, staged, None).await {
         Ok(global) => global,
         Err(reason) => return Verdict::Refuse(reason),
     };
+    if let Some(reason) = candidate_refusal(&global) {
+        return Verdict::Refuse(reason);
+    }
+
+    let mut pam_checked = BTreeSet::new();
+    if let Some(reason) = pam_refusal(executor, &global, &mut pam_checked).await {
+        return Verdict::Refuse(reason);
+    }
+
+    let mut notes = Vec::new();
+    if !global.unlisted_key_sources.is_empty() {
+        let named = global.unlisted_key_sources.join(",");
+        match config.matching_exception(UNLISTED_KEYS_EXCEPTION_KEY, &named) {
+            Some(exception) => notes.push(format!(
+                "Second factor: accounts logging in through {named} were not checked \
+                 (exception: {})",
+                exception.reason
+            )),
+            None => {
+                return Verdict::Refuse(format!(
+                    "{named} lets accounts log in with keys no file lists, so this check \
+                     cannot tell who the password step would lock out. Accept that with \
+                     [ssh.exceptions.\"{UNLISTED_KEYS_EXCEPTION_KEY}\"] value = \"{named}\""
+                ));
+            }
+        }
+    }
 
     let accounts = match read_accounts(executor).await {
         Ok(accounts) => accounts,
@@ -359,15 +437,9 @@ pub(super) async fn check(
     };
 
     let mut stranded = BTreeSet::new();
-    for account in accounts
-        .iter()
-        .filter(|account| shell_logs_in(&account.shell))
-    {
+    let mut asked = BTreeSet::new();
+    for account in &accounts {
         if !has_key_file(executor, &global.authorized_keys_files, account).await {
-            continue;
-        }
-        let password = account.usable_password;
-        if account.uid != 0 && password {
             continue;
         }
         let effective =
@@ -379,22 +451,42 @@ pub(super) async fn check(
         if account.uid == 0 && effective.permit_root_login.eq_ignore_ascii_case("no") {
             continue;
         }
-        let password_gets_in =
-            password && (account.uid != 0 || effective.permit_root_login == "yes");
-        if !key_gets_in(&effective, account.uid) && !password_gets_in {
+        // A `Match` block may hand this account a PAM service of its own.
+        if let Some(reason) = pam_refusal(executor, &effective, &mut pam_checked).await {
+            return Verdict::Refuse(format!(
+                "{reason}; that is the PAM service sshd uses for {}",
+                account.name
+            ));
+        }
+        if key_gets_in(&effective, account.uid) {
+            continue;
+        }
+        if password_gets_in(&effective, account) {
+            asked.insert(account.name.clone());
+        } else {
             stranded.insert(account.name.clone());
         }
     }
 
+    if !asked.is_empty() {
+        notes.push(format!(
+            "Second factor: {} will be asked for the account password after the key from \
+             now on, so a script or tool that logs in as one of them with a key alone \
+             (a backup job, git, rsync, Ansible) stops working unless a Match block keeps \
+             it on its key",
+            asked.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
     if stranded.is_empty() {
-        return Verdict::Proceed(Vec::new());
+        return Verdict::Proceed(notes);
     }
     let named = stranded.into_iter().collect::<Vec<_>>().join(",");
     if let Some(exception) = config.matching_exception(LOCKOUT_EXCEPTION_KEY, &named) {
-        return Verdict::Proceed(vec![format!(
+        notes.push(format!(
             "Second factor: SSH access for {named} accepted as lost (exception: {})",
             exception.reason
-        )]);
+        ));
+        return Verdict::Proceed(notes);
     }
     Verdict::Refuse(format!(
         "these accounts log in with a key and could not get past the password prompt, \
@@ -405,14 +497,127 @@ pub(super) async fn check(
     ))
 }
 
+/// Why the candidate, as sshd will run it globally, does not deliver the
+/// second factor the fragment asks for, or `None` where it does.
+///
+/// The fragment is read before every file a distribution ships, but not
+/// before a line above the main file's `Include`, which sshd reads first and
+/// which therefore wins.
+pub(super) fn candidate_refusal(global: &Effective) -> Option<String> {
+    let lists: Vec<&str> = global.methods.iter().map(String::as_str).collect();
+    let before = format!(
+        "because a line sshd reads before {}, such as one above the main file's \
+         Include, sets it",
+        dropin::DROPIN_PATH
+    );
+    if !auth_methods::requires_key_then_password(Some(&lists)) {
+        return Some(format!(
+            "with this candidate sshd would still run with AuthenticationMethods {}, {before}",
+            lists.join(" ")
+        ));
+    }
+    match global.use_pam {
+        None => {
+            return Some(
+                "this sshd prints no UsePAM setting, so it was built without PAM and the \
+                 prompt after the key has nothing to ask the account password with"
+                    .to_string(),
+            );
+        }
+        Some(false) => {
+            return Some(format!(
+                "with this candidate sshd would run with UsePAM no, {before}. Without PAM the \
+                 prompt after the key cannot ask for the password, so every login would stop \
+                 there. Set UsePAM yes in that file"
+            ));
+        }
+        Some(true) => {}
+    }
+    if !global.enabled.contains("keyboard-interactive") {
+        return Some(format!(
+            "with this candidate sshd would run with KbdInteractiveAuthentication no, \
+             {before}, so the step after the key could never be taken"
+        ));
+    }
+    None
+}
+
+/// Checks the PAM service `effective` names, once per service.
+async fn pam_refusal(
+    executor: &dyn SystemExecutor,
+    effective: &Effective,
+    checked: &mut BTreeSet<String>,
+) -> Option<String> {
+    let service = effective
+        .pam_service
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PAM_SERVICE.to_string());
+    if !checked.insert(service.clone()) {
+        return None;
+    }
+    pam_answers_with_password(executor, &service)
+        .await
+        .refusal()
+}
+
+/// Whether `method` can be used at all under `effective`. Keyboard-interactive
+/// needs PAM as well, because on Linux PAM is its only device.
+fn method_works(effective: &Effective, method: &str) -> bool {
+    effective.enabled.contains(method)
+        && (method != "keyboard-interactive" || effective.use_pam == Some(true))
+}
+
+/// The `AuthenticationMethods` lists sshd keeps for a connection: each list
+/// naming a method that is switched off is dropped, as sshd's
+/// `auth2_setup_methods_lists` drops it. Where none is left sshd disconnects
+/// with "no authentication methods enabled", and `sshd -t` never sees it,
+/// because it checks the global lists only.
+pub(super) fn usable_lists(effective: &Effective) -> Vec<&str> {
+    effective
+        .methods
+        .iter()
+        .map(String::as_str)
+        .filter(|list| {
+            *list == "any"
+                || auth_methods::method_names(list)
+                    .iter()
+                    .all(|method| method_works(effective, method))
+        })
+        .collect()
+}
+
 /// Whether one key is enough for `uid` under `effective`, which is what this
 /// tool's remote mode and every other key-only client can offer.
-fn key_gets_in(effective: &Effective, uid: u32) -> bool {
-    let lists: Vec<&str> = effective.methods.iter().map(String::as_str).collect();
-    auth_methods::key_alone_suffices(&lists)
+pub(super) fn key_gets_in(effective: &Effective, uid: u32) -> bool {
+    method_works(effective, "publickey")
+        && auth_methods::key_alone_suffices(&usable_lists(effective))
         && (uid != 0
             || ["yes", "prohibit-password", "without-password"]
                 .contains(&effective.permit_root_login.as_str()))
+}
+
+/// Whether `account` can finish a login with its key and its password under
+/// `effective`: it has a password pam_unix will take, sshd lets it use one
+/// (root only under `PermitRootLogin yes`), and some list it keeps asks for
+/// nothing beyond a key and a password.
+pub(super) fn password_gets_in(effective: &Effective, account: &Account) -> bool {
+    if !account.usable_password || (account.uid == 0 && effective.permit_root_login != "yes") {
+        return false;
+    }
+    usable_lists(effective).iter().any(|list| {
+        if *list == "any" {
+            return auth_methods::PASSWORD_METHODS
+                .iter()
+                .any(|method| method_works(effective, method));
+        }
+        let names = auth_methods::method_names(list);
+        names
+            .iter()
+            .any(|name| auth_methods::PASSWORD_METHODS.contains(name))
+            && names
+                .iter()
+                .all(|name| *name == "publickey" || auth_methods::PASSWORD_METHODS.contains(name))
+    })
 }
 
 // -----------------------------------------------------------------------------
@@ -496,10 +701,16 @@ pub(super) fn auth_steps(content: &str) -> Vec<AuthStep> {
         .collect()
 }
 
-/// Follows sshd's PAM `auth` stack until it reaches a module that checks the
-/// account password.
-pub(super) async fn pam_answers_with_password(executor: &dyn SystemExecutor) -> PamAnswer {
-    let mut pending = vec![("sshd".to_string(), 0usize)];
+/// Follows the `auth` stack of the PAM service `service` until it reaches a
+/// module that checks the account password.
+///
+/// sshd's service is `sshd` unless `PAMServiceName` (OpenSSH 10.0 and later)
+/// names another, which is the one sshd hands to `pam_start`.
+pub(super) async fn pam_answers_with_password(
+    executor: &dyn SystemExecutor,
+    service: &str,
+) -> PamAnswer {
+    let mut pending = vec![(service.to_string(), 0usize)];
     let mut read = Vec::new();
     let mut seen = BTreeSet::new();
     while let Some((service, depth)) = pending.pop() {
@@ -569,6 +780,16 @@ pub(super) struct Effective {
     pub permit_root_login: String,
     /// Each `AuthorizedKeysFile` template, `%h` and `%u` unexpanded.
     pub authorized_keys_files: Vec<String>,
+    /// The methods switched on, by the names `AuthenticationMethods` uses.
+    pub enabled: BTreeSet<&'static str>,
+    /// `UsePAM`, or `None` where sshd prints no such line, which a build
+    /// without PAM does not.
+    pub use_pam: Option<bool>,
+    /// `PAMServiceName`, which OpenSSH prints from 10.0 on.
+    pub pam_service: Option<String>,
+    /// The settings that let accounts in with keys no file lists, by their
+    /// sshd_config names, sorted.
+    pub unlisted_key_sources: Vec<&'static str>,
 }
 
 /// Reads what `sshd -T` prints. `None` where it printed no
@@ -581,17 +802,35 @@ pub(super) fn parse_sshd_dump(stdout: &str) -> Option<Effective> {
         let Some((keyword, value)) = line.trim().split_once(char::is_whitespace) else {
             continue;
         };
+        let value = value.trim();
         let words = value.split_whitespace().map(str::to_string);
-        match keyword.to_ascii_lowercase().as_str() {
+        let keyword = keyword.to_ascii_lowercase();
+        match keyword.as_str() {
             "authenticationmethods" => {
                 saw_methods = true;
                 effective.methods = words.collect();
             }
-            "permitrootlogin" => effective.permit_root_login = value.trim().to_ascii_lowercase(),
+            "permitrootlogin" => effective.permit_root_login = value.to_ascii_lowercase(),
             "authorizedkeysfile" => effective.authorized_keys_files = words.collect(),
-            _ => {}
+            "usepam" => effective.use_pam = Some(value.eq_ignore_ascii_case("yes")),
+            "pamservicename" => effective.pam_service = Some(value.to_string()),
+            keyword => {
+                if let Some((_, method)) = METHOD_SWITCHES.iter().find(|(name, _)| *name == keyword)
+                    && value.eq_ignore_ascii_case("yes")
+                {
+                    effective.enabled.insert(method);
+                }
+                if let Some((_, setting)) = UNLISTED_KEY_SOURCES
+                    .iter()
+                    .find(|(name, _)| *name == keyword)
+                    && !value.eq_ignore_ascii_case("none")
+                {
+                    effective.unlisted_key_sources.push(setting);
+                }
+            }
         }
     }
+    effective.unlisted_key_sources.sort_unstable();
     saw_methods.then_some(effective)
 }
 
@@ -667,12 +906,18 @@ async fn session_identity(executor: &dyn SystemExecutor) -> Result<(String, Stri
 // -----------------------------------------------------------------------------
 
 /// An account from `/etc/passwd`, with what `/etc/shadow` says of its password.
+///
+/// The login shell is deliberately not read. sshd refuses an account only
+/// where its shell does not exist or is not executable (`allowed_user` in
+/// auth.c), and `nologin` and `false` are both executable: an SFTP-only
+/// account behind `ForceCommand internal-sftp`, or one that only holds a
+/// tunnel open with `ssh -N`, authenticates with its key like any other, and
+/// the password step locks it out like any other.
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct Account {
     pub name: String,
     pub uid: u32,
     pub home: String,
-    pub shell: String,
     /// False for an empty, locked (`!`, `!!`) or disabled (`*`) hash, none of
     /// which pam_unix will accept a password for. An empty one fails too,
     /// because sshd passes `PAM_DISALLOW_NULL_AUTHTOK` under
@@ -694,27 +939,19 @@ pub(super) fn parse_accounts(passwd: &str, shadow: &str) -> Vec<Account> {
         .lines()
         .filter_map(|line| {
             let fields: Vec<&str> = line.split(':').collect();
-            let [name, _, uid, _, _, home, shell] = fields.as_slice() else {
+            let [name, _, uid, _, _, home, _shell] = fields.as_slice() else {
                 return None;
             };
             Some(Account {
                 name: name.to_string(),
                 uid: uid.parse().ok()?,
                 home: home.to_string(),
-                shell: shell.to_string(),
                 usable_password: hashes.get(name).is_some_and(|hash| {
                     !hash.is_empty() && !hash.starts_with('!') && !hash.starts_with('*')
                 }),
             })
         })
         .collect()
-}
-
-/// Whether a login shell lets the account in at all. sshd refuses an account
-/// whose shell is not executable, and `nologin` and `false` exist to refuse.
-/// An empty shell field means `/bin/sh`.
-pub(super) fn shell_logs_in(shell: &str) -> bool {
-    !(shell.ends_with("/nologin") || shell.ends_with("/false"))
 }
 
 /// The accounts on this host, read as the apply's own session.

@@ -4233,12 +4233,19 @@ async fn run_ssh_apply_with(executor: &MockExecutor, config: &PluginConfig) -> A
         .expect("ssh apply should not error")
 }
 
-/// What `sshd -T` prints for the settings the guards read.
+/// What `sshd -T` prints for the settings the guards read, where the
+/// candidate does what the fragment asks.
+fn sshd_dump_text(methods: &str, root: &str) -> String {
+    format!(
+        "usepam yes\npermitrootlogin {root}\npubkeyauthentication yes\n\
+         passwordauthentication no\nkbdinteractiveauthentication yes\n\
+         trustedusercakeys none\nauthorizedkeyscommand none\n\
+         authorizedkeysfile .ssh/authorized_keys\nauthenticationmethods {methods}\n"
+    )
+}
+
 fn sshd_dump(methods: &str, root: &str) -> CommandOutput {
-    ok_output(&format!(
-        "permitrootlogin {root}\nauthenticationmethods {methods}\n\
-         authorizedkeysfile .ssh/authorized_keys\n"
-    ))
+    ok_output(&sshd_dump_text(methods, root))
 }
 
 /// Registers `sshd -T -f <staged> -C user=...,host=...,addr=...`.
@@ -4297,6 +4304,17 @@ fn arch_second_factor_host(main_tail: &str) -> MockExecutor {
                 "ssh-ed25519 AAAA eric@laptop\n",
             )
             .with_command("sshd", &["-T", "-f", &temp], sshd_dump(SECOND_FACTOR, "no"))
+            .with_command(
+                "sshd",
+                &[
+                    "-T",
+                    "-f",
+                    &temp,
+                    "-C",
+                    "user=eric,host=127.0.0.1,addr=127.0.0.1",
+                ],
+                sshd_dump(SECOND_FACTOR, "no"),
+            )
             .with_command("sshd", &["-t", "-f", &temp], ok_output(""))
             .with_command_program("cp", ok_output(""))
             .with_command_program("rm", ok_output(""))
@@ -4386,6 +4404,16 @@ async fn an_opted_in_apply_writes_the_three_settings_together_and_the_rescan_is_
         result.apply_changes.iter().any(|change| change
             .change_description
             .starts_with("AuthenticationMethods: not set -> publickey,keyboard-interactive")),
+        "{:#?}",
+        result.apply_changes
+    );
+    // eric logs in with a key and has a password, so he is asked for it from
+    // now on, and the run says so: a script logging in as him with a key
+    // alone stops working.
+    assert!(
+        result.apply_changes.iter().any(|change| change
+            .change_description
+            .contains("eric will be asked for the account password after the key")),
         "{:#?}",
         result.apply_changes
     );
@@ -4595,5 +4623,46 @@ async fn the_preview_names_the_second_factor_and_warns_over_ssh() {
             "{:?}",
             report.validation_report_issues
         );
+        // Over SSH the apply refuses only where no Match block keeps the
+        // session's account on its key, which a preview cannot tell, so the
+        // note does not fail the dry run.
+        assert!(
+            !report.has_blocking_issue(),
+            "{:?}",
+            report.validation_report_issues
+        );
     }
+}
+
+/// A `UsePAM no` above the main file's Include is read before the fragment,
+/// so the fragment's `UsePAM yes` never takes effect, `sshd -t` passes, and
+/// every login would stop after the key. The guard reads the candidate as
+/// sshd will run it and keeps the second factor out (#185 round 1; the
+/// layout measured with OpenSSH 9.6p1).
+#[tokio::test]
+async fn usepam_no_ahead_of_the_fragment_keeps_the_second_factor_out() {
+    let temp = sshd_validate_temp_path();
+    let without_pam = sshd_dump_text(SECOND_FACTOR, "no").replace("usepam yes", "usepam no");
+    let executor = arch_second_factor_host(COMPLIANT_SSHD_CONFIG)
+        .with_file(
+            "/etc/ssh/sshd_config",
+            &format!("UsePAM no\nInclude /etc/ssh/sshd_config.d/*.conf\n{COMPLIANT_SSHD_CONFIG}")
+                .replace("KbdInteractiveAuthentication no\n", ""),
+        )
+        .with_command("sshd", &["-T", "-f", &temp], ok_output(&without_pam));
+
+    let result = run_ssh_apply_with(&executor, &second_factor_config()).await;
+
+    assert!(!result.apply_success, "{:#?}", result.apply_changes);
+    let error = result.apply_error.clone().unwrap_or_default();
+    assert!(error.contains("UsePAM no"), "{error}");
+    assert!(
+        dropin_written(&executor)
+            .is_none_or(|fragment| !fragment.contains("AuthenticationMethods")),
+        "nothing of the second factor may be written"
+    );
+    assert!(
+        !restarted_sshd(&executor),
+        "with the second factor out there was nothing else to write"
+    );
 }

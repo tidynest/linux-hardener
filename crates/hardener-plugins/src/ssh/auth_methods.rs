@@ -18,7 +18,7 @@
 pub(super) const AUTHENTICATION_METHODS: &str = "AuthenticationMethods";
 
 /// The methods a typed password can satisfy.
-const PASSWORD_METHODS: &[&str] = &["password", "keyboard-interactive"];
+pub(super) const PASSWORD_METHODS: &[&str] = &["password", "keyboard-interactive"];
 
 /// Whether `method` can complete a login in which every step is a password.
 ///
@@ -48,7 +48,7 @@ pub(super) fn finishes_alone(lists: Option<&[&str]>, method: &str) -> bool {
 
 /// The method names in one comma-separated list, each submethod reduced to
 /// the method before its colon.
-fn method_names(list: &str) -> Vec<&str> {
+pub(super) fn method_names(list: &str) -> Vec<&str> {
     list.split(',')
         .map(|name| name.split_once(':').map_or(name, |(base, _)| base))
         .collect()

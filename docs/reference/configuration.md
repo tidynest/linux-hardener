@@ -916,31 +916,55 @@ as covered, because a host that never opted in would otherwise pass them on
 the strength of a check that did not run. `apply --dry-run` lists the three
 settings it will write.
 
-**What `apply` checks before it writes.** `sshd -t` cannot see the ways this
-change locks people out, so `apply` stages the candidate and checks three
-things first. If one fails, the second factor is left out, the rest of the SSH
-hardening still goes ahead, and the run ends unsuccessful with the reason:
+**What `apply` checks before it writes.** `sshd -t` checks only the global
+lists, and only whether the methods they name are switched on, so it cannot
+see most of the ways this change locks people out. `apply` stages the
+candidate and reads it the way sshd will run it (`sshd -T`), globally and then
+for each account, before anything is written. If a check fails, the second
+factor is left out, the rest of the SSH hardening still goes ahead, and the run
+ends unsuccessful with the reason:
 
-1. sshd's PAM stack has to reach `pam_unix` (or `pam_sss`), following
+1. Globally, the candidate has to ask for the key and then the password, with
+   `KbdInteractiveAuthentication yes` and `UsePAM yes` in force. The fragment is
+   read before every file the distributions ship, but not before a line above
+   the main file's `Include`, which sshd reads first. A `UsePAM no` there passes
+   `sshd -t` and then turns every login away after the key.
+2. The PAM service sshd uses has to reach `pam_unix` (or `pam_sss`), following
    `include`, `substack` and `@include` through `/etc/pam.d`, then
-   `/usr/lib/pam.d` and `/usr/etc/pam.d`. It shows the stack can ask for the
-   account password, not that nothing else answers first.
-2. Over `--ssh`, the account the apply connected as has to keep a way in on its
+   `/usr/lib/pam.d` and `/usr/etc/pam.d`. That service is `sshd` unless
+   `PAMServiceName` (OpenSSH 10.0 and later) names another, globally or in a
+   `Match` block, and each one in use is checked. It shows the stack can ask
+   for the account password, not that nothing else answers first.
+3. Nothing may let accounts in with keys no file lists: `AuthorizedKeysCommand`
+   (LDAP, opkssh and the like) or user certificates under `TrustedUserCAKeys`.
+   The account check below cannot see who logs in that way, so the apply
+   refuses until an exception names those settings (see below).
+4. Over `--ssh`, the account the apply connected as has to keep a way in on its
    key alone, if it has one today, because this tool's remote mode cannot answer
    a prompt. Root under `PermitRootLogin prohibit-password` never passes a
    keyboard-interactive step (sshd refuses root every method but `publickey`,
    `hostbased` and `gssapi-with-mic` there), so a remote root apply needs the
    `Match` block below. Otherwise run the first apply from a session on the host
    itself.
-3. Every account that logs in with a key today (one with a file
-   `AuthorizedKeysFile` names, and a login shell) has to keep a way in: a
-   password `pam_unix` will accept, or a `Match` block that keeps it on its key.
-   A locked (`!`), disabled (`*`) or empty hash does not count, and neither does
-   any password for root, which `PermitRootLogin prohibit-password` keeps out.
-   Each account is checked with `sshd -T -C user=...,addr=...`, from the
-   session's client address over `--ssh` and from `127.0.0.1` locally.
+5. Every account with a key file sshd reads (one `AuthorizedKeysFile` names)
+   has to keep a way in, whatever its login shell: sshd lets a `nologin` or
+   `false` account authenticate, which is how SFTP-only and tunnel-only accounts
+   work, and the password step locks them out like any other. Each account is
+   read with `sshd -T -C user=...,host=...,addr=...`, from the session's client
+   address over `--ssh` and from `127.0.0.1` locally, and every list naming a
+   method that is switched off for it (a `Match` block setting
+   `KbdInteractiveAuthentication no`, for example) is dropped, as sshd drops it.
+   What is left has to let the account in on its key alone, or on its key and a
+   password `pam_unix` will accept. A locked (`!`), disabled (`*`) or empty hash
+   does not count, and root's password counts only under `PermitRootLogin yes`,
+   which this tool never writes.
 
-To accept losing SSH access for the accounts the third check names, write an
+When it goes ahead, the run names every account that will now be asked for its
+password after the key. Anything that logs in as one of them with a key alone,
+a backup job, git, rsync or Ansible, stops working unless a `Match` block keeps
+it on its key.
+
+To accept losing SSH access for the accounts the fifth check names, write an
 exception whose `value` lists exactly those accounts, sorted and
 comma-separated, as the refusal prints them. A new account in that list makes
 it stop matching:
@@ -950,6 +974,18 @@ it stop matching:
 value = "deploy,git"
 allowed = true
 reason = "Key-only service accounts; CI now deploys from the console host"
+approved_by = "Security Team"
+```
+
+To accept that the third check cannot see who logs in through
+`AuthorizedKeysCommand` or `TrustedUserCAKeys`, name the settings in force, in
+the same form:
+
+```toml
+[ssh.exceptions."second-factor-unlisted-keys"]
+value = "TrustedUserCAKeys"
+allowed = true
+reason = "Certificates are issued to administrators, who all have passwords"
 approved_by = "Security Team"
 ```
 
@@ -964,13 +1000,31 @@ add a block of your own:
 # /etc/ssh/sshd_config.d/50-automation.conf
 Match User root Address 192.0.2.10
     AuthenticationMethods publickey
+    PermitRootLogin prohibit-password
 ```
 
+The `PermitRootLogin` line matters wherever the hardener also runs on the host
+itself. A local apply sets `PermitRootLogin no`, and a `Match` block that
+changes only `AuthenticationMethods` does not let root back in. Set inside the
+block, `prohibit-password` lets root in on its key from that one address while
+every other address stays at `no`.
+
 Narrow it as far as you can: one account, one address, and ideally a key
-restricted with `from=` and `restrict` in `authorized_keys`. That identity no
-longer has a second factor, which is the trade being made. Check the result
-with `sshd -T -C user=root,host=192.0.2.10,addr=192.0.2.10 | grep
-authenticationmethods` before restarting sshd.
+restricted with `from=` and `restrict` in `authorized_keys`. Use an address
+that does not move, a VPN or a jump host rather than a laptop's changing one.
+That identity no longer has a second factor, which is the trade being made.
+Check the result with `sshd -T -C user=root,host=192.0.2.10,addr=192.0.2.10 |
+grep -E 'authenticationmethods|permitrootlogin'` before restarting sshd.
+
+**A second factor of your own inside a `Match` block.** This plugin holds the
+global `KbdInteractiveAuthentication` at `no` whenever the opt-in is off, and
+it reads the global scope only. A `Match` block of your own that asks some
+users for `AuthenticationMethods publickey,keyboard-interactive` therefore has
+to set `KbdInteractiveAuthentication yes` inside the same block. Without it
+sshd drops the list as naming a switched-off method and turns those users away
+at login with "no authentication methods enabled", and `sshd -t` passes,
+because it checks the global lists only. Check each such user with
+`sshd -T -C user=...,host=...,addr=...` before restarting sshd.
 
 **Turning it off again.** Remove the directive and run `apply`: the three
 settings leave the fragment, and `KbdInteractiveAuthentication` falls back to
@@ -983,9 +1037,16 @@ and password ageing can expire the password the second step needs. sshd's
 `MaxAuthTries` (3 here) counts each wrong password; before OpenSSH 10.6 every
 key the client offers and the server rejects counts too, so a client offering
 several keys can run out of tries before it reaches the password. Pin the key
-with `IdentityFile` and `IdentitiesOnly yes` in `~/.ssh/config`. Accounts whose
-keys come from `AuthorizedKeysCommand` rather than a file are not seen by the
-third check.
+with `IdentityFile` and `IdentitiesOnly yes` in `~/.ssh/config`. pam_unix checks
+the password hash on every such login, so the cost the hash was made with is
+paid each time someone logs in over SSH.
+
+**What the checks do not see.** An `AuthorizedKeysFile` set inside a `Match`
+block (the global one is read), an `Include` of the drop-in directory from
+inside another included file, and which PAM module answers first where the
+stack reaches more than one. The checks run `sshd -T` and read `/etc/shadow`,
+which only root can do, and the remote executor elevates file writes alone, so
+a remote apply needs a root session.
 
 ---
 
@@ -1247,10 +1308,13 @@ restart, and declaring one does not declare the other. The keys deliberately do
 not carry the detected backend: an exception written on a host running ufw goes
 on being honoured when the same policy reaches a host running firewalld.
 
-One key accepts an outcome rather than a finding: `second-factor-lockout`, whose
-value lists the accounts an opted-in SSH second factor would leave with no way
-in. No finding carries it, so `hardener exception add` cannot pin it; write it
-by hand as shown under "`[ssh]`: a key, then the account password".
+Two keys accept an outcome rather than a finding: `second-factor-lockout`,
+whose value lists the accounts an opted-in SSH second factor would leave with
+no way in, and `second-factor-unlisted-keys`, whose value names the
+`AuthorizedKeysCommand` or `TrustedUserCAKeys` setting whose logins the
+lockout check cannot see. No finding carries either, so `hardener exception
+add` cannot pin them; write them by hand as shown under "`[ssh]`: a key, then
+the account password".
 
 ---
 

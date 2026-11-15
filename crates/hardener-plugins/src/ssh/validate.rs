@@ -193,11 +193,13 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
 
             // The second factor's settings, which the apply always writes to
             // the fragment. Its guards need a staged candidate and `sshd -T`,
-            // which a preview does not stage, so only the two that can be
-            // answered from here are raised as issues: a PAM stack that
-            // cannot ask for the password refuses on every host, and an
-            // apply over SSH refuses unless a Match block keeps this
-            // session's account on its key.
+            // which a preview does not stage, so only what can be answered
+            // from here is raised. A PAM stack that cannot ask for the
+            // password refuses on every host, which makes the apply fail, so
+            // that is a blocking issue. Over SSH the apply refuses only where
+            // no Match block keeps this session's account on its key, which
+            // the preview cannot tell, so that is a note and does not fail
+            // the dry run.
             if let Some(plan) = &second_factor_plan
                 && plan.shortfall.is_some()
             {
@@ -210,15 +212,25 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                         directive.value
                     ));
                 }
+                // The global `PAMServiceName` the files set, which this plugin
+                // never writes; the apply reads it from `sshd -T` instead,
+                // per account as well.
+                let service = resolved
+                    .effective(second_factor::PAM_SERVICE_NAME)
+                    .map_or_else(
+                        || second_factor::DEFAULT_PAM_SERVICE.to_string(),
+                        |effective| effective.value,
+                    );
                 if let Some(reason) =
-                    second_factor::pam_answers_with_password(ctx.executor().as_ref())
+                    second_factor::pam_answers_with_password(ctx.executor().as_ref(), &service)
                         .await
                         .refusal()
                 {
                     issues.push(ValidationIssue {
                         validation_issue_severity: Severity::Critical,
                         validation_issue_message: format!(
-                            "The second factor will not be applied: {reason}"
+                            "The second factor will not be applied: {reason} (PAM service \
+                             {service})"
                         ),
                         validation_issue_config_key: Some(
                             auth_methods::AUTHENTICATION_METHODS.to_string(),
@@ -227,11 +239,12 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                 }
                 if ctx.executor().is_remote() {
                     issues.push(ValidationIssue {
-                        validation_issue_severity: Severity::High,
-                        validation_issue_message: "This apply runs over SSH, so it applies the \
-                             second factor only where a Match block keeps this session's \
-                             account on its key alone: this tool's remote mode cannot answer \
-                             a password prompt"
+                        validation_issue_severity: Severity::Medium,
+                        validation_issue_message: "This apply runs over SSH, and this tool's \
+                             remote mode cannot answer a password prompt. Before writing, the \
+                             apply checks that this session's account keeps a way in on its \
+                             key alone (a Match block for it, see the configuration \
+                             reference), and leaves the second factor out if not"
                             .to_string(),
                         validation_issue_config_key: Some(
                             auth_methods::AUTHENTICATION_METHODS.to_string(),

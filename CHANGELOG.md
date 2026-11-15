@@ -127,13 +127,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it. `scan` reports an opted-in host that does not enforce it as
   `ssh-authenticationmethods`, `apply --dry-run` previews the three settings,
   and rollback or removing the directive takes them out again. Before writing,
-  `apply` checks that sshd's PAM stack reaches `pam_unix`, that an apply over
-  `--ssh` keeps its own account's key-only login, and that no account which
-  logs in with a key is left without a password or a `Match` exemption. If a
-  check fails, the second factor is left out, the rest is still hardened, and
-  the run fails naming the reason. Accounts can be accepted as losing SSH
-  access with `[ssh.exceptions."second-factor-lockout"]`. Any other
-  `AuthenticationMethods` value is refused when the config loads.
+  `apply` reads the staged candidate with `sshd -T`, because `sshd -t` checks
+  only the global lists. It checks that the key, `KbdInteractiveAuthentication
+  yes` and `UsePAM yes` are what sshd will run with (a `UsePAM no` above the
+  main file's `Include` passes `sshd -t` and stops every login after the key),
+  that the PAM service sshd uses, `PAMServiceName` included, reaches
+  `pam_unix`, that an apply over `--ssh` keeps its own account's key-only
+  login, and that every account with a key file, `nologin` shells included, is
+  left a way in once lists naming a switched-off method are dropped. Logins
+  through `AuthorizedKeysCommand` or `TrustedUserCAKeys` cannot be checked and
+  are refused until an exception names them. If a check fails, the second
+  factor is left out, the rest is still hardened, and the run fails naming the
+  reason; when it goes ahead, the run names every account that will now be
+  asked for its password, since a script logging in as one with a key alone
+  stops working. Accounts can be accepted as losing SSH access with
+  `[ssh.exceptions."second-factor-lockout"]`. Any other
+  `AuthenticationMethods` value is refused when the config loads. A
+  root-gated test holds the `sshd -t` candidate and the reading of `sshd -T`
+  against a real sshd, and CI's root job runs it.
 - **`--ssh-control-path` runs over an SSH connection you opened yourself
   (#185).** The remote mode connects with `BatchMode=yes` and cannot answer a
   password prompt. Open a ControlMaster connection once, answering the prompt,
