@@ -733,13 +733,24 @@ therefore fails none of them. The HIPAA, GDPR, ISO/IEC 27001 and SOC 2 controls
 ask that a password policy is followed rather than which one, so the departure
 does not fail them either. `apply` never acts on a departure finding.
 
-A value that meets neither rule, such as `PASS_MAX_DAYS 0` (every password
-expires at once), `PASS_MAX_DAYS 120`, a positive credit (which lets a password
-be shorter than the minimum) or a value that is not set, is one ordinary
-finding instead, carrying every control the check maps to. It keeps the
-benchmark's severity when a value is set and the policy's Low when it is not,
-and `apply` rewrites it to the policy's value, after which only the departure
-remains.
+The SP 800-171 judgement follows Revision 3, the revision this tool labels its
+800-171 framework with, although the control ID it reports keeps the Revision 2
+number, 3.5.7. An assessment under Revision 2, which CMMC Level 2 uses, reads
+3.5.7 as "Enforce a minimum password complexity and change of characters when
+new passwords are created", with the complexity left to the organisation to
+define. Under such an assessment, record how the 15-character minimum meets it,
+or choose `benchmark`.
+
+A value that is set and meets neither rule, such as `PASS_MAX_DAYS 0` (every
+password expires at once), `PASS_MAX_DAYS 120` or a positive credit (which lets
+a password be shorter than the minimum), is one ordinary finding instead,
+carrying every control the check maps to at the benchmark's severity. A value
+that is not set is one Low finding asking for it to be written down. Unset, a
+credit is libpwquality's `0` and the maximum age is login.defs(5)'s `-1`, which
+already behave as the policy asks, so that finding carries the CIS, DISA STIG
+and PCI DSS controls a departure would, and the four policy-agnostic ones, but
+no NIST SP 800-53, NIST SP 800-171 or FedRAMP control. `apply` rewrites either
+kind to the policy's value, after which only the departure remains.
 
 Where an auditor accepts a departure, record it as an ordinary policy exception
 under the directive's own name, documenting the host's value, and the control
@@ -751,6 +762,12 @@ value = "99999"
 allowed = true
 reason = "MFA on every login, so PCI DSS 8.3.9 does not apply"
 ```
+
+An exception is keyed by directive, not by framework, so it lists the deviation
+under every control the departure carries: the CIS and DISA STIG controls as
+well as PCI DSS, whatever its `reason` names. There is no way to accept a
+departure for one framework alone; where another framework's control must keep
+failing, leave the departure unexcepted.
 
 **Exit codes and notifications.** A host that follows the NIST policy always
 carries its departure findings, as Info, even when every one of them is
@@ -768,7 +785,10 @@ write that relaxes a rule the host had names the policy in its change line, and
 `apply --dry-run` shows the same note beside each pending change, so a
 relaxation never appears as an anonymous edit. A write that repairs a value
 rather than relaxing it, such as `PASS_MAX_DAYS 0` becoming 99999, carries no
-such note. The checkpoint is taken first as always, so `rollback` restores the
+such note. A negative `minclass` or `maxclassrepeat` is off to libpwquality
+just as `0` is, because it tests only for a `maxclassrepeat` above 0 and for
+fewer classes than `minclass`, so the scan does not report one; `apply` spells
+it `0`, which changes nothing, and labels nothing. The checkpoint is taken first as always, so `rollback` restores the
 files the apply changed. It cannot reach accounts created between the apply and
 the rollback: they keep the maximum age they were created with (99999). Check
 them with `sudo chage -l <user>` and set the age you want with `sudo chage -M
@@ -785,16 +805,27 @@ under either policy, because it tightens: `minlen = "24"` under
 `[pam.directives]` asks for passphrase-length passwords.
 
 **Where the policy takes effect.** The pwquality rows take effect only where the
-PAM stack loads `pam_pwquality.so`, which the scan reports per directive when
-it does not. Some distributions do not load it by default; Arch's `pambase`
-`system-auth` did not, as far as the archived copy shows. The scan looks for it
-in `system-auth`, `password-auth` and `common-password`, and does not follow
-which of those files a given program actually uses. That matters on Arch: in
-the archived `shadow` 4.13 package, `/etc/pam.d/passwd` holds its own
-`pam_unix.so` line and does not include `system-auth`, so a `pam_pwquality.so`
-line added to `system-auth` would satisfy the scan while `passwd` never runs
-it, and one added to `/etc/pam.d/passwd` would work while the scan reports it
-as not loaded. Check with `grep -n include /etc/pam.d/passwd`.
+PAM stack loads `pam_pwquality.so`. Where the scan does not find it, it reports
+the module as not loaded against each directive, and `apply` still writes
+`pwquality.conf` but reports the PAM run as not fully successful, because the
+step that remains, adding the module to the stack, is the operator's. Some
+distributions do not load it by default; Arch's `pambase` `system-auth` did
+not, as far as the archived copy shows. The scan looks for it in `system-auth`,
+`password-auth` and `common-password`, and does not follow which of those files
+a given program actually uses. That can matter on Arch: in the archived
+`shadow` 4.13 package (2023, before Arch moved to shadow 4.14; the current file
+may differ), `/etc/pam.d/passwd` holds its own `pam_unix.so` line and does not
+include `system-auth`, so a `pam_pwquality.so` line added to `system-auth`
+would satisfy the scan while `passwd` never runs it, and one added to
+`/etc/pam.d/passwd` would work while the scan reports it as not loaded. Check
+with `grep -n include /etc/pam.d/passwd`.
+
+Gentoo's `pambase` loads pam_passwdqc rather than pam_pwquality by default: its
+`passwdqc` USE flag is on by default and cannot be combined with `pwquality`.
+On such a host the pwquality rows report the module as not loaded, and neither
+policy changes which passwords are accepted; passwdqc takes its settings from
+`/etc/security/passwdqc.conf` (passwdqc.conf(5)). Gentoo is not among the
+distributions this tool is tested on.
 
 Arguments written on the `pam_pwquality.so` line itself, such as `minclass=4`
 or `dcredit=-1`,
@@ -820,9 +851,12 @@ generator over a published list, is what makes a passphrase strong. A different
 module, pam_passwdqc, can go further, and this tool does not manage it:
 passwdqc.conf(5) offers `passphrase=N`, "The number of words required for a
 passphrase", and `random=N,only`, whose `only` modifier "can be used to
-disallow user-chosen passwords", so that only a passphrase passwdqc generated
-and offered (24 to 136 bits) is accepted. passwdqc 2.0.3's `pwqgen random=85`
-offers five words joined by random digits and symbols.
+disallow user-chosen passwords". A password is then accepted only if it
+contains the passphrase passwdqc generated and offered ("Any passphrase that
+contains the offered randomly-generated string will be allowed"), sized at 24
+to 136 bits. passwdqc builds it from its own list of 4,096 words, each with a
+random capital, joined by random digits and symbols, so passwdqc 2.0.3's
+`pwqgen random=85` offers five words and `random=91` six.
 
 libpwquality's dictionary check is not a breach list either: it never compares
 a password with passwords leaked elsewhere, and it accepted `password password

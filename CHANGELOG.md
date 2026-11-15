@@ -97,13 +97,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a schedule. Lockout, password history and the minimum age stay as they
   were, and libpwquality's dictionary check is left as the host has it. Once
   `apply` has run, a passphrase made of plain words, which the old rules refused
-  for lacking a digit, is accepted wherever the PAM stack loads
+  for lacking a digit, is accepted, apart from the occasional phrase
+  libpwquality's dictionary check refuses, wherever the PAM stack loads
   `pam_pwquality.so` and sets no composition rule on that line itself. The
   default stays `"benchmark"`, the rules every earlier release enforced, so
   nothing changes on a host whose configuration does not ask for it. The report
   stays honest about the choice: a CIS, DISA STIG or PCI DSS control whose rule
   the policy drops reads Fail, through an Info finding that names the policy,
-  and an auditor's accepted deviation is recorded as an ordinary exception. The
+  and an auditor's accepted deviation is recorded as an ordinary exception,
+  which, being keyed by directive, lists it under the CIS and DISA STIG
+  controls as well as PCI DSS. The
   NIST SP 800-53, NIST SP 800-171 and FedRAMP controls do not fail for it,
   because their current texts require neither a password lifetime nor
   composition rules. A value that meets neither policy, such as

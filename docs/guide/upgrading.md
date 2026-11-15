@@ -374,7 +374,8 @@ want forced password changes, you have two ways to keep it:
 
 - Choose the `nist-800-63b` password policy described in
   [configuration.md](../reference/configuration.md#pam-password-policy), which
-  accepts `-1` rather than reporting it.
+  accepts `-1`. It still reports it as an Info departure that fails the CIS,
+  DISA STIG and PCI DSS controls, which require a maximum age.
 - Or stay on the default policy and record the deviation as a policy exception
   before re-applying, so `apply` skips the directive and the report lists it as
   documented rather than failing it:
