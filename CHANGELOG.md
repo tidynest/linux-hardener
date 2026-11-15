@@ -107,14 +107,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advisory is now listed in `.cargo/audit.toml` and `deny.toml` with a written
   assessment and a review date of 2027-01-31, so the Security Audit job passes
   again, and `SECURITY.md` explains who is exposed and what to do meanwhile.
-  The one path a less trusted account can reach is a root scan opening a
-  history database named in a user's own config, which the deep scan passes
-  to the root CLI; the configuration reference now says to keep
-  `database_path` where only root can write. The Security Audit job also
-  audits `fuzz/Cargo.lock`, which nothing read before and which held the same
-  copy, and a new weekly Advisories workflow audits both lockfiles between
-  pushes and fails as soon as a released `sqlx` accepts a fixed
-  `libsqlite3-sys`.
+  Exposure is low. The one way in is the scan-history database, whose location
+  a root run takes from a config file the desktop user can write: the one the
+  deep scan passes to the root CLI, or the user's own config when root keeps
+  the user's `HOME` or `XDG_CONFIG_HOME`, as `sudo -E` does. `SECURITY.md`
+  and the configuration reference say how to keep root's runs off such files.
+  The Security Audit job also audits `fuzz/Cargo.lock`, which nothing read
+  before and which held the same copy, even when the first audit fails, and a
+  new weekly Advisories workflow audits both lockfiles between pushes and
+  fails as soon as a released `sqlx` accepts a fixed `libsqlite3-sys`.
 
 ## [1.9.1] - 2026-10-30
 

@@ -281,20 +281,45 @@ then, and a weekly workflow fails as soon as a released `sqlx` takes the fix.
 [Issue #188](https://github.com/tidynest/linux-hardener/issues/188) tracks the
 upgrade.
 
-**Who is exposed.** Only a process that opens a database and `-wal` written by
-a less trusted account. The checkpoint database, which holds the files rollback
-restores, is always `/var/lib/linux-hardener/checkpoints.db` for root and your
-own data directory otherwise, and no database is read over SSH. The scan
-history database is the one exception: `[scheduler] storage.database_path`
-comes from the config file a run is given, and the desktop's deep scan can
-hand the root CLI a config from your own `~/.config/linux-hardener/`. Software
-running as your user could therefore choose the pair a root scan opens. Whether
-memory leaked that way could be read back has not been tested.
+**Who is exposed.** Only a process that opens a database and `-wal` that
+someone less trusted could have written. The checkpoint database, which holds
+the files rollback restores, is always `/var/lib/linux-hardener/checkpoints.db`
+for root and your own data directory otherwise, and no database is read over
+SSH. The scan history database is the one exception. A root run takes its
+location, `[scheduler] storage.database_path`, from a config file, and that
+file can be one you, the desktop user, are able to write, in two ways:
 
-**What you can do meanwhile.** When root runs the tool, leave `database_path`
-unset or point it at a directory only root can write. Run the CLI as an
-ordinary user only with a home directory set: without one it keeps its
-checkpoint database in `./.linux-hardener` under the working directory.
+- The desktop's deep scan hands the root CLI whatever config file is chosen in
+  the app, which may be your own `~/.config/linux-hardener/config.toml`.
+- A root run that keeps your `HOME` or `XDG_CONFIG_HOME`, such as
+  `sudo -E hardener scan`, or `su` without `--login` in a session that sets
+  `XDG_CONFIG_HOME`, reads the `[scheduler]` section from your
+  `~/.config/linux-hardener/config.toml` before `/etc/linux-hardener/config.toml`.
+  The rest of the configuration is never read from there under root; this one
+  section is.
+
+So software running as your user could choose, and plant, the pair a root scan
+opens. Whether memory leaked that way could be read back has not been tested.
+
+**What you can do meanwhile.** On a machine where software you do not fully
+trust runs under your desktop account:
+
+- Run the desktop's deep scan with the config field empty, or with a file under
+  `/etc/linux-hardener/`. pkexec gives the root CLI root's own home and does not
+  pass on your `XDG_CONFIG_HOME`, so it then reads only root's own and the
+  system config.
+- Run the CLI as root with a clean environment: plain `sudo` or `su --login`,
+  not `sudo -E`, and without `HOME` or `XDG_CONFIG_HOME` in sudoers' `env_keep`.
+- Keep any config file that root reads owned by root, with `database_path`
+  unset or in a directory only root can write. On its own this only protects
+  against a mistaken path, not against software that can edit the file, which
+  is why the two points above come first.
+
+A smaller, separate case: an ordinary-user CLI run keeps its checkpoint
+database in `./.linux-hardener` under the working directory (the desktop app
+in `./linux-hardener`) only when the account has no home directory at all: no
+`XDG_DATA_HOME`, no `HOME`, and none in its passwd entry, as with some
+container user IDs. Run it from a directory only you can write in that case.
 
 ### RUSTSEC-2023-0071 (rsa crate) - False Positive
 

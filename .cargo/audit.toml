@@ -38,13 +38,20 @@
 # rollback restores, is always /var/lib/linux-hardener/checkpoints.db under
 # root, in a root-owned directory with the file at 0600, or the caller's own
 # data directory otherwise; no database is ever read over SSH. The scan
-# history database is the gap: [scheduler] storage.database_path comes from
-# whichever config file the run names, and the desktop's deep scan can hand
-# the root CLI a config from the user's own ~/.config/linux-hardener. Code
+# history database is the gap, because a root run takes its [scheduler]
+# storage.database_path from a config file the desktop user can write, in
+# two ways. The desktop's deep scan hands the root CLI the --config chosen in
+# the app, which may sit in the user's own ~/.config/linux-hardener. And a
+# root run that keeps the user's HOME or XDG_CONFIG_HOME (sudo -E, or su
+# without --login in a session that sets XDG_CONFIG_HOME) reads [scheduler]
+# from that user's config.toml before /etc: load_scheduler_config does not
+# skip the user config under root, as the main config loader does. Code
 # running as that user could therefore choose, and plant, the pair a root
 # scan opens. Whether stale memory could then be read back has not been
-# tested. A non-root CLI run with no home directory also falls back to
-# ./.linux-hardener in the working directory. Low exposure, not none.
+# tested. Smaller: a non-root CLI run whose account has no home at all (no
+# XDG_DATA_HOME, no HOME, none in the passwd entry) keeps its checkpoint
+# database in ./.linux-hardener under the working directory. Low exposure,
+# not none.
 ignore = [
     "RUSTSEC-2023-0071",
     "RUSTSEC-2024-0429",
