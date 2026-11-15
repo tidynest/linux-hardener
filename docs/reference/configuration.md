@@ -480,15 +480,18 @@ one belonging to the algorithm its new passwords will use:
 
 **Two places decide the algorithm, and the PAM stack wins.** shadow's own
 tools (`chpasswd -c`, `chgpasswd`, `gpasswd`, and `chpasswd` and `newusers`
-outright on a shadow built without PAM, as RHEL's is) read `ENCRYPT_METHOD`
+outright on a shadow built without PAM, as RHEL 9's is) read `ENCRYPT_METHOD`
 from `/etc/login.defs`. They compare it case-sensitively, so a lowercase
 `yescrypt` is not a value they accept. `pam_unix`, which `passwd` uses, reads
 the same key only as a default and lets an algorithm named on its own
 `password` line override it. The cost works the same way: `rounds=` on the
 `pam_unix` line wins, then `YESCRYPT_COST_FACTOR` or `SHA_CRYPT_MAX_ROUNDS`
-from `login.defs`. Linux-PAM before 1.6.0, which Ubuntu 24.04, Debian 12 and
-RHEL 9 ship, never reads `YESCRYPT_COST_FACTOR`. The scan reports the weakest
-of all these paths, and its finding says which path falls short.
+from `login.defs`. Linux-PAM before 1.6.0, which Ubuntu 24.04 and Debian 12
+ship, never reads `YESCRYPT_COST_FACTOR`. The scan reports the weakest of all
+these paths, and its finding says which path falls short. Where only
+`login.defs` is weak, as on a stock Ubuntu 24.04 whose `common-password`
+already names `yescrypt`, the finding says that `passwd` already gives
+yescrypt and only shadow's own tools do not.
 
 **`apply` writes `/etc/login.defs` and nothing else.** Where a `pam_unix` line
 names a weaker algorithm, carries a `rounds=` below the target, or sits on a
@@ -497,15 +500,20 @@ the file, and the run does not report success. `/etc/pam.d` is never edited,
 for the reason given for `deny` and `remember`: a malformed stack edit can lock
 everyone out. Make the change through the tool that manages the stack where
 there is one (an authselect profile on Fedora and RHEL, pam-auth-update on
-Debian and Ubuntu, pam-config on openSUSE), or its next run may undo a hand
-edit. On openSUSE the `/usr/etc/login.defs` vendor copy is carried into `/etc`
-first, as for every other `login.defs` directive.
+Debian and Ubuntu, pam-config on openSUSE, and on Gentoo, which this project
+does not test, the `sha512` and `yescrypt` USE flags of `sys-auth/pambase`),
+or its next run may undo a hand edit. On openSUSE the `/usr/etc/login.defs`
+vendor copy is carried into `/etc` first, as for every other `login.defs`
+directive.
 
 **yescrypt only where the host can use it.** Before judging anything, the scan
 asks the target, in one shell round trip that works over `--ssh` too, whether
-`pam_unix.so`, `libcrypt.so.1` and shadow (through `chpasswd --help`) were
-built with yescrypt, whether `pam_unix` reads `YESCRYPT_COST_FACTOR`, and
-whether `/proc/sys/crypto/fips_enabled` is set. The host is held to yescrypt
+`pam_unix.so`, the libcrypt it links against and shadow (through
+`chpasswd --help`) were built with yescrypt, whether `pam_unix` reads
+`YESCRYPT_COST_FACTOR`, and whether `/proc/sys/crypto/fips_enabled` is set.
+The libcrypt is the one `pam_unix.so` names: `libcrypt.so.2` on Fedora, RHEL 9
+and 10 and Arch, whose libxcrypt keeps `libcrypt.so.1` in an optional compat
+package, and `libcrypt.so.1` on Debian, Ubuntu and openSUSE. The host is held to yescrypt
 only when all three components say yes and FIPS mode is off; otherwise the
 target is SHA-512 with 100000 rounds. This is not caution for its own sake:
 RHEL 9 ships a shadow built without yescrypt, and shadow 4.9 answers an
@@ -523,15 +531,39 @@ as for every other directive.
 
 **A raised yescrypt cost is checked against the host's memory.** Each check of
 a yescrypt password needs 2^(cost - 1) MiB: 16 MiB at the default of 5, 128 MiB
-at 8 and 1 GiB at 11, the maximum. Every concurrent check needs its own,
-including an unauthenticated SSH password attempt, and a password the host
-cannot afford to check is rejected even when it is typed correctly. `apply`
-therefore refuses to write a cost above 5 unless ten simultaneous checks fit in
-half of `MemTotal` (ten because sshd's default `MaxStartups` starts refusing
-connections at ten): cost 6 needs 1 GiB of memory, 8 needs 4 GiB, 10 needs
-16 GiB and 11 needs 20 GiB. `apply --dry-run` reports the refusal as a High
+at 8 and 1 GiB at 11, the maximum. Every simultaneous check needs its own, and
+a password the host cannot afford to check is rejected even when it is typed
+correctly. A cost above 5 is therefore accepted only where ten simultaneous
+checks fit in half of `MemTotal`, so cost `c` needs a `MemTotal` of at least
+10 x 2^c MiB: 640 MiB for 6, 2.5 GiB for 8, 10 GiB for 10 and 20 GiB for 11.
+`MemTotal` reads a little below the installed memory, so a machine sold as
+20 GB does not reach 11. Ten is a safety margin rather than a measured load:
+local checks run side by side (login, `su`, `sudo`, screen lockers), and where
+sshd still takes a password or a keyboard-interactive answer through PAM, each
+unauthenticated connection can start one, up to the ten at which sshd's default
+`MaxStartups` begins refusing. This tool's SSH baseline turns both of those off,
+so on a host it has hardened only a key holder reaches a password prompt.
+
+The check is part of the plan the scan, `apply` and `apply --dry-run` share. A
+cost the host cannot afford is refused once, with the largest cost it can, and
+is never written to `login.defs` or offered as a `rounds=` manual step: on a
+Linux-PAM older than 1.6.0 that line is what every user's password gets, so
+naming the refused cost there would be the lockout the refusal prevents. The
+run then does not report success, and the dry run shows the refusal as a High
 issue. A container's cgroup memory limit is not read, so choose the cost by
 hand on a host whose real limit is lower than `MemTotal`.
+
+**A cost already in force that the host cannot carry is reported.** The cost
+check only asks whether the cost is high enough, and `apply` never lowers one,
+so a host where a cost was raised by hand (to the 1 GiB of cost 11, say) would
+otherwise scan clean. `pam-yescrypt-cost-memory` reports the highest yescrypt
+cost on any path, from `login.defs` or from `rounds=` on a `pam_unix` line, when
+it is above 5 and above what the same measure allows. It is a Medium advisory
+with no compliance mapping, `apply` leaves it to the operator, and
+`[pam.exceptions.YESCRYPT_COST_FACTOR]` with that cost as its `value` accepts a
+cost chosen on purpose for a host with few simultaneous logins. It says nothing
+where `/proc/meminfo` cannot be read, and it does not look at the cost of
+hashes already stored.
 
 | Cost | Memory per check | Time per check |
 |---|---|---|
@@ -560,17 +592,27 @@ set. The finding prints a command that lists the accounts on the host itself.
 on SHA-512 on purpose, for example one whose hashes are copied to systems that
 cannot verify yescrypt. The cost judged on that host is then SHA-512's.
 
-**Compliance.** The three directives map to NIST 800-53 IA-5(1)(c), NIST SP
-800-171 3.5.7, FedRAMP IA-5(1)(c) and PCI DSS 4.0 8.3.2, beside the HIPAA,
-GDPR, ISO/IEC 27001 8.5 and SOC 2 CC6.1 entries every PAM check carries. No
-STIG rule is mapped: every STIG rule for password storage requires SHA-512, so
+**Compliance.** The three directives map to NIST 800-53 IA-5(1)(d), NIST SP
+800-171 3.5.7, FedRAMP IA-5(1)(d) and PCI DSS 4.0 8.3.2, beside the HIPAA,
+GDPR, ISO/IEC 27001 8.5 and SOC 2 CC6.1 entries every PAM check carries.
+IA-5(1)(d) is password storage in 800-53 Rev 5, the revision this project
+cites; the ComplianceAsCode rules for the same settings cite IA-5(1)(c), which
+is storage only in Rev 4. Rev 5 asks for "an approved salted key derivation
+function". SP 800-63B names PBKDF2 (specified in SP 800-132) and Balloon as
+examples, and neither yescrypt nor sha512crypt. A pass here therefore means
+the strongest scheme the host's own password stack offers, and counting it
+towards (d) is this project's judgement, not NIST's. No STIG rule is mapped: every STIG rule for password storage requires SHA-512, so
 a host this tool passes on yescrypt would fail it. No CIS control is mapped
 either, because the hashing control of the benchmark the curated catalogue
 follows could not be checked against the benchmark itself.
 
 **Rollback** restores `/etc/login.defs`. A password set while the new settings
-were in force keeps its new hash, which is never weaker than before, but may be
-one an older system cannot verify if the hash is copied there.
+were in force keeps its new hash, algorithm and cost alike, which is never
+weaker than before, but may be one an older system cannot verify if the hash is
+copied there. A raised cost therefore outlives a rollback: an account whose
+password was set at a cost the host cannot carry stays that way until the
+password is set again with `passwd`. Rollback reports no divergence for this,
+because the plugin's state is the file it restores.
 
 ---
 

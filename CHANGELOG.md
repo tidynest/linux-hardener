@@ -48,8 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   looked at `ENCRYPT_METHOD` before, so a host hashing passwords with MD5, or
   with DES, which keeps only the first eight characters, scanned clean. Three
   new directives judge it: `ENCRYPT_METHOD`, held to `YESCRYPT` where the
-  host's `pam_unix`, `libcrypt` and shadow all support it and FIPS mode is off,
-  and to `SHA512` otherwise; `YESCRYPT_COST_FACTOR`, at least 5; and
+  host's `pam_unix`, the `libcrypt` it links against (`libcrypt.so.2` on
+  Fedora, RHEL and Arch, `libcrypt.so.1` elsewhere) and shadow all support it
+  and FIPS mode is off, and to `SHA512` otherwise; `YESCRYPT_COST_FACTOR`, at least 5; and
   `SHA_CRYPT_MIN_ROUNDS`, at least 100000 where new passwords are SHA-512. The
   scan reads both places that decide it, `/etc/login.defs` and the `pam_unix`
   line in the PAM stack, which overrides it, and reports the weaker. `apply`
@@ -57,12 +58,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manual step, as it already does for `deny` and `remember`. A host already
   on yescrypt is never moved down, and a host that cannot confirm yescrypt is
   never moved to it: RHEL 9's shadow is built without it and would fall back
-  to DES. A raised cost is written only where ten simultaneous password checks
-  fit in half the host's memory. The default stays at 5 (16 MiB, about 20 ms),
-  the cost libxcrypt, shadow and `pam_unix` all use when nothing names one,
-  because a cost of 11 (1 GiB per check) turns every concurrent login attempt
-  into a gigabyte and rejects correct passwords on a host that cannot spare
-  it.
+  to DES. A raised cost is accepted only where ten simultaneous password
+  checks fit in half the host's memory; one that does not is refused once and
+  is never offered as a `rounds=` step for the stack, which on Linux-PAM before
+  1.6.0 is what every user's password gets. The default stays at 5 (16 MiB,
+  about 20 ms), the cost libxcrypt, shadow and `pam_unix` all use when nothing
+  names one, because a cost of 11 (1 GiB per check) makes every simultaneous
+  password check claim a gigabyte and rejects correct passwords on a host that
+  cannot spare it.
+- **The scan reports a yescrypt cost the host's memory cannot carry (#191).**
+  The cost check only asks whether a cost is high enough and `apply` never
+  lowers one, so a small VM given the 1 GiB of cost 11 by hand scanned clean.
+  `pam-yescrypt-cost-memory` reports the highest cost on any path when it is
+  above 5 and above what the memory guard allows, as a Medium advisory with no
+  compliance mapping. A cost chosen on purpose is accepted with
+  `[pam.exceptions.YESCRYPT_COST_FACTOR]`.
 - **The scan counts stored passwords that still use an older scheme (#191).**
   A stored hash keeps its algorithm until the password is set again, whatever
   the configuration says. `pam-stored-password-hashes` counts those accounts
