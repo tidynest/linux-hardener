@@ -250,8 +250,11 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
             finding_recommended_value: policy.to_string(),
             finding_remediation_steps: vec![
                 format!(
-                    "Run `hardener apply --plugin ssh-hardening`, which writes these to {} \
-                     after checking nobody is locked out, or set them there by hand: \
+                    "Run `sudo hardener apply --plugin ssh-hardening` with the \
+                     AuthenticationMethods line in /etc/linux-hardener/config.toml or in a \
+                     file passed with --config (a run as root skips \
+                     ~/.config/linux-hardener/config.toml). It writes these to {} after \
+                     checking nobody is locked out; or set them there by hand: \
                      AuthenticationMethods {policy}, KbdInteractiveAuthentication yes, \
                      UsePAM yes",
                     dropin::DROPIN_PATH

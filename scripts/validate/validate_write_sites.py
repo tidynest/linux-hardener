@@ -553,12 +553,14 @@ REGISTRY = {
     ("ssh/mod.rs", "write_file(path"): (
         (
             "exempt",
-            "`write_scratch`, the one writer of the two scratch files "
+            "`write_scratch`, the one writer of the scratch files "
             "/tmp/linux-hardener-sshd-validate-<pid>.conf (the candidate "
-            "`sshd -t` and the second factor's `sshd -T` probes read) and "
+            "`sshd -t` and the second factor's `sshd -T` probes read), "
             "/tmp/linux-hardener-sshd-validate-<pid>-fragment.conf (the new "
-            "body of 00-hardener.conf the candidate includes); /tmp is "
-            "mounted by the system on every host this runs on",
+            "body of 00-hardener.conf the candidate includes), and the same "
+            "two with -baseline in the name (the apply without the second "
+            "factor, which the second factor's guard compares against); /tmp "
+            "is mounted by the system on every host this runs on",
         ),
         (
             "exempt",

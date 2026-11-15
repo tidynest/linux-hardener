@@ -11,8 +11,10 @@ use super::{
     SSHD_ADMIN_CONFIG_PATH, SshHardeningPlugin, StagedCandidate, auth_methods, backup_prefix,
     crypto_value_is_secure, dropin, include, is_remote_root_session, is_second_factor_only,
     keep_value_the_fragment_holds, lock_config_path, observed_value, remove_scratch,
-    resolved_target, second_factor, select_algorithms, sshd_validate_scratch_path,
-    supported_algorithms, validate_sshd_config, verify_dropin_precedence, write_scratch,
+    resolved_target, second_factor, second_factor_switched_off_ahead, select_algorithms,
+    sshd_baseline_fragment_scratch_path, sshd_baseline_scratch_path,
+    sshd_validate_fragment_scratch_path, sshd_validate_scratch_path, supported_algorithms,
+    validate_sshd_config, verify_dropin_precedence, write_scratch,
 };
 
 use chrono::Utc;
@@ -148,16 +150,20 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
     // and checking again on every run would refuse a host whose operator
     // has since accepted what the first run found.
     //
-    // A refusal leaves the second factor out and drafts again without it,
-    // rather than refusing the apply: every other directive is as safe to
-    // write as it was, and the refusal is reported as a failed change, so the
-    // run still ends unsuccessful and says why.
+    // The same apply without the second factor is drafted beside it, because
+    // the guards compare the two: an account the rest of the apply locks out
+    // anyway, by switching password login off, is not one the second factor
+    // took away. A refusal then writes that draft, rather than refusing the
+    // apply: every other directive is as safe to write as it was, and the
+    // refusal is reported as a failed change, so the run still ends
+    // unsuccessful and says why.
     let mut second_factor_refusal = None;
     if second_factor_plan
         .as_ref()
         .is_some_and(|plan| plan.shortfall.is_some())
     {
-        match second_factor_verdict(ctx, config, &main, &drafted).await {
+        let baseline = draft(ctx, config, &main, &resolved, remote_root_session, None).await;
+        match second_factor_verdict(ctx, config, &main, &resolved, &drafted, &baseline).await {
             second_factor::Verdict::Proceed(notes) => {
                 second_factor_notes.extend(notes.into_iter().map(|note| Change {
                     change_description: note,
@@ -168,7 +174,7 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
             }
             second_factor::Verdict::Refuse(reason) => {
                 warn!("Second factor not applied: {reason}");
-                drafted = draft(ctx, config, &main, &resolved, remote_root_session, None).await;
+                drafted = baseline;
                 second_factor_refusal = Some(reason);
             }
         }
@@ -529,11 +535,42 @@ async fn draft(
     let auth_lists = second_factor::planned_lists(planned, resolved);
 
     for directive in SSH_DIRECTIVES {
-        // Not written at all, and not carried into the fragment either: A
-        // `no` this tool wrote before the operator set up the second factor
-        // is what stops sshd starting once they have, so the rewrite below
-        // dropping it is the repair.
+        // Not written to the strict value, and not carried into the
+        // fragment either: A `no` this tool wrote before the operator set up
+        // the second factor is what stops sshd starting once they have, so
+        // the fragment rewrite dropping it is the repair. Where that `no`
+        // sits in the main file above the drop-in Include (Gentoo's layout),
+        // sshd reads it before every drop-in, so the line itself is switched
+        // on instead.
         if is_second_factor_only(directive, auth_lists.as_deref()) {
+            if writing_main
+                && let Some(line) =
+                    second_factor_switched_off_ahead(directive, &config_content, config_path)
+            {
+                config_content = set_config_directive(
+                    &config_content,
+                    &line.keyword,
+                    "yes",
+                    ConfigFormat::SpaceSeparated,
+                    false,
+                    Duplicates::Keep,
+                );
+                info!(
+                    "Switched {} on in {config_path}: it sits above the drop-in Include and \
+                     kept the second factor switched off",
+                    line.keyword
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: {} -> yes in {config_path} (read before the drop-ins, so it kept \
+                         the second factor behind the key switched off)",
+                        line.keyword, line.value
+                    ),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+            }
             continue;
         }
 
@@ -981,21 +1018,21 @@ async fn draft(
 }
 
 /// Runs the second factor's guards against the candidate `drafted` describes,
-/// staged where `sshd -t` reads it, beside the configuration in force now.
+/// staged where `sshd -t` reads it, beside the same apply drafted without the
+/// second factor (`baseline`), staged the same way.
 async fn second_factor_verdict(
     ctx: &Context,
     config: &PluginConfig,
     main: &MainConfig,
+    resolved: &include::ResolvedConfig,
     drafted: &Draft,
+    baseline: &Draft,
 ) -> second_factor::Verdict {
-    let fragment_body = (!drafted.to_dropin.is_empty()).then(|| dropin::render(&drafted.to_dropin));
-    let staged = match StagedCandidate::stage(
-        ctx,
-        &main.path,
-        &drafted.config_content,
-        fragment_body.as_deref(),
-    )
-    .await
+    if let Some(reason) = second_factor::match_refusal(resolved) {
+        return second_factor::Verdict::Refuse(reason);
+    }
+    let executor = ctx.executor();
+    let staged = match stage_draft(ctx, main, drafted, sshd_validate_fragment_scratch_path()).await
     {
         Ok(staged) => staged,
         Err(e) => {
@@ -1004,24 +1041,80 @@ async fn second_factor_verdict(
             ));
         }
     };
-    let executor = ctx.executor();
-    let path = sshd_validate_scratch_path();
-    let verdict = match write_scratch(executor.as_ref(), &path, &staged.main_text).await {
+    // The second factor lives in the fragment, so a main file that never
+    // includes the drop-in directory never reads it. Said plainly here,
+    // because the global read below would only show the lists the main file
+    // sets, and blame a line ahead of a fragment that is not there.
+    if !staged.reads_fragment() {
+        staged.unstage(executor.as_ref()).await;
+        return second_factor::Verdict::Refuse(format!(
+            "{} does not include the directory {} sits in, so sshd would never read the \
+             second factor written there. Add `Include /etc/ssh/sshd_config.d/*.conf` near \
+             the top of {}",
+            main.path,
+            dropin::DROPIN_PATH,
+            main.path
+        ));
+    }
+    let unaltered =
+        match stage_draft(ctx, main, baseline, sshd_baseline_fragment_scratch_path()).await {
+            Ok(unaltered) => unaltered,
+            Err(e) => {
+                staged.unstage(executor.as_ref()).await;
+                return second_factor::Verdict::Refuse(format!(
+                    "could not stage the candidate without the second factor to compare: {e}"
+                ));
+            }
+        };
+    let staged_path = sshd_validate_scratch_path();
+    let baseline_path = sshd_baseline_scratch_path();
+    let written = match write_scratch(executor.as_ref(), &staged_path, &staged.main_text).await {
+        Ok(()) => write_scratch(executor.as_ref(), &baseline_path, &unaltered.main_text).await,
+        Err(e) => Err(e),
+    };
+    let verdict = match written {
         Ok(()) => {
-            let verdict = second_factor::check(
+            second_factor::check(
                 executor.as_ref(),
                 config,
-                &path.to_string_lossy(),
-                &main.path,
+                &staged_path.to_string_lossy(),
+                &baseline_path.to_string_lossy(),
             )
-            .await;
-            remove_scratch(executor.as_ref(), &path).await;
-            verdict
+            .await
         }
         Err(e) => second_factor::Verdict::Refuse(format!(
             "could not stage the candidate to check it: {e}"
         )),
     };
+    // Both, whichever was written: `rm -f` on a file that is not there
+    // succeeds.
+    remove_scratch(executor.as_ref(), &staged_path).await;
+    remove_scratch(executor.as_ref(), &baseline_path).await;
     staged.unstage(executor.as_ref()).await;
-    verdict
+    unaltered.unstage(executor.as_ref()).await;
+    match verdict {
+        second_factor::Verdict::Refuse(reason) => {
+            second_factor::Verdict::Refuse(second_factor::explain_unsatisfiable(reason, resolved))
+        }
+        proceed => proceed,
+    }
+}
+
+/// Stages `drafted` the way the `sshd -t` gate stages a candidate, with its
+/// fragment at `fragment_scratch`.
+async fn stage_draft(
+    ctx: &Context,
+    main: &MainConfig,
+    drafted: &Draft,
+    fragment_scratch: std::path::PathBuf,
+) -> Result<StagedCandidate> {
+    let fragment_body = (!drafted.to_dropin.is_empty()).then(|| dropin::render(&drafted.to_dropin));
+    StagedCandidate::stage_at(
+        ctx,
+        &main.path,
+        &drafted.config_content,
+        fragment_body.as_deref(),
+        fragment_scratch,
+    )
+    .await
 }

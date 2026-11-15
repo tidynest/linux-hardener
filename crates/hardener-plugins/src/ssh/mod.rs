@@ -328,6 +328,25 @@ pub fn sshd_validate_fragment_scratch_path() -> std::path::PathBuf {
     ))
 }
 
+/// Path the second factor's guard stages the same apply at, drafted without
+/// the second factor, so `sshd -T` can say what the second factor itself
+/// takes away rather than what the rest of the apply does anyway.
+pub fn sshd_baseline_scratch_path() -> std::path::PathBuf {
+    std::path::PathBuf::from("/tmp").join(format!(
+        "linux-hardener-sshd-validate-{}-baseline.conf",
+        std::process::id()
+    ))
+}
+
+/// Path the fragment of [`sshd_baseline_scratch_path`]'s candidate is staged
+/// at, beside the one [`sshd_validate_fragment_scratch_path`] names.
+pub fn sshd_baseline_fragment_scratch_path() -> std::path::PathBuf {
+    std::path::PathBuf::from("/tmp").join(format!(
+        "linux-hardener-sshd-validate-{}-baseline-fragment.conf",
+        std::process::id()
+    ))
+}
+
 /// Writes a scratch file on the executor's host and narrows it to its owner.
 ///
 /// The narrowing comes after the write and is not treated as fatal: the same
@@ -401,11 +420,29 @@ impl StagedCandidate {
         main_content: &str,
         fragment_body: Option<&str>,
     ) -> Result<Self> {
+        Self::stage_at(
+            ctx,
+            main_path,
+            main_content,
+            fragment_body,
+            sshd_validate_fragment_scratch_path(),
+        )
+        .await
+    }
+
+    /// [`Self::stage`], with the fragment staged at `fragment_scratch`, so two
+    /// candidates can be staged side by side.
+    async fn stage_at(
+        ctx: &Context,
+        main_path: &str,
+        main_content: &str,
+        fragment_body: Option<&str>,
+        fragment_scratch: std::path::PathBuf,
+    ) -> Result<Self> {
         let fragment = match fragment_body {
             Some(body) => {
-                let path = sshd_validate_fragment_scratch_path();
-                write_scratch(ctx.executor().as_ref(), &path, body).await?;
-                Some(path)
+                write_scratch(ctx.executor().as_ref(), &fragment_scratch, body).await?;
+                Some(fragment_scratch)
             }
             None => None,
         };
@@ -430,6 +467,15 @@ impl StagedCandidate {
             main_text,
             fragment,
         })
+    }
+
+    /// Whether sshd reads the staged fragment from this candidate at all,
+    /// which it does not where the main file never includes the directory
+    /// the fragment sits in. `false` where there is no fragment to read.
+    fn reads_fragment(&self) -> bool {
+        self.fragment
+            .as_ref()
+            .is_some_and(|path| self.main_text.contains(path.to_string_lossy().as_ref()))
     }
 
     /// Removes the staged fragment.
@@ -515,6 +561,40 @@ fn is_second_factor_only(directive: &SshConfigDirective, lists: Option<&[&str]>)
     directive
         .ssh_auth_method
         .is_some_and(|method| !auth_methods::finishes_alone(lists, method))
+}
+
+/// The main-file line that switches a second factor's method off ahead of
+/// every drop-in, where `is_second_factor_only` has just said it may stay on.
+///
+/// Skipping the directive is the whole repair wherever the `no` sits in a
+/// file this tool rewrites or below the main file's `Include`, which is every
+/// validated layout: the fragment, read first, then supplies the value the
+/// lists need, or the operator's own drop-in does. It is not enough on
+/// Gentoo, which includes `sshd_config.d` at the foot of the main file. A
+/// normal apply there activates `#KbdInteractiveAuthentication yes` in place
+/// as `no`, above that `Include`, and sshd reads it before 00-hardener.conf
+/// and before an operator's own 10-2fa.conf: `sshd -t` then refuses every
+/// candidate with "AuthenticationMethods cannot be satisfied" (measured with
+/// OpenSSH 9.6p1 on upstream 10.6p2's sshd_config with Gentoo's edits). That
+/// line is the one apply flips, and the preview names.
+///
+/// Only a line above the `Include` counts. A `no` below it, Debian's for one,
+/// already loses to the drop-in carrying the second factor, and switching it
+/// on would leave keyboard-interactive on with no list in front of it if that
+/// drop-in were ever deleted. On the Gentoo layout the flipped line has the
+/// same window, and scan reports it as Critical if it opens.
+fn second_factor_switched_off_ahead(
+    directive: &SshConfigDirective,
+    main_content: &str,
+    main_path: &str,
+) -> Option<include::EffectiveValue> {
+    include::main_line_ahead_of_dropins(
+        main_content,
+        main_path,
+        directive.ssh_directive_name,
+        Path::new(dropin::DROPIN_PATH),
+    )
+    .filter(|line| !line.value.eq_ignore_ascii_case("yes"))
 }
 
 /// How a directive's current value is rendered when it is compared against a
@@ -1305,6 +1385,31 @@ async fn verify_dropin_precedence(
                 change_success: true,
                 change_error: None,
             },
+            // The main file answers first, which is what a main file that
+            // includes the drop-ins at its foot (Gentoo) does with every line
+            // above that Include. Where it says what the fragment says, the
+            // host obeys the value this apply asked for: on that layout the
+            // second factor switches its line on in the main file as well
+            // (see `second_factor_switched_off_ahead`). Any other file, or
+            // any other value, is still an override.
+            Some(effective)
+                if effective.source == main_path
+                    && effective.value.eq_ignore_ascii_case(&directive.value) =>
+            {
+                Change {
+                    change_description: format!(
+                        "{}: set to '{}' in {}, and {} sets the same value ahead of it{}",
+                        directive.keyword,
+                        directive.value,
+                        dropin::DROPIN_PATH,
+                        main_path,
+                        directive.note,
+                    ),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                }
+            }
             Some(effective) => Change {
                 change_description: format!(
                     "{}: written to {} but {} still supplies '{}', and sshd reads it first",

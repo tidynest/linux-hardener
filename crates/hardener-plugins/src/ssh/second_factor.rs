@@ -25,10 +25,11 @@
 //! This is the one change in the plugin that can lock people out without
 //! breaking sshd, because `sshd -t` checks only the global lists, and only
 //! whether their methods are switched on. [`check`] reads the staged candidate
-//! the way sshd will run it, globally and for each account that logs in with
-//! a key, before anything is written, and an apply that fails a check leaves
-//! the second factor out, hardens everything else, and says why. The ways it
-//! looks for are listed on [`check`]; the ones it cannot see are listed in the
+//! the way sshd will run it, globally and for each account that can log in
+//! over SSH, beside the same apply staged without the second factor, before
+//! anything is written, and an apply that fails a check leaves the second
+//! factor out, hardens everything else, and says why. The ways it looks for
+//! are listed on [`check`]; the ones it cannot see are listed in the
 //! configuration reference.
 
 use super::{auth_methods, dropin, include::ResolvedConfig};
@@ -51,10 +52,12 @@ use tracing::warn;
 /// matching and the apply refuses again.
 pub(super) const LOCKOUT_EXCEPTION_KEY: &str = "second-factor-lockout";
 
-/// The exception key that accepts logins through key sources the account
-/// check cannot list: user certificates under `TrustedUserCAKeys`, and keys an
-/// `AuthorizedKeysCommand` hands over. Its `value` names those settings,
-/// sorted and comma-separated, exactly as the refusal prints them.
+/// The exception key that accepts logins the account check cannot list: user
+/// certificates under `TrustedUserCAKeys`, keys an `AuthorizedKeysCommand`
+/// hands over, Kerberos tickets (`GSSAPIAuthentication`, where a keytab
+/// exists) and trusted hosts (`HostbasedAuthentication`). Its `value` names
+/// those settings, sorted and comma-separated, exactly as the refusal prints
+/// them.
 pub(super) const UNLISTED_KEYS_EXCEPTION_KEY: &str = "second-factor-unlisted-keys";
 
 /// The PAM service sshd uses unless `PAMServiceName` (OpenSSH 10.0 and later)
@@ -109,6 +112,19 @@ const MAX_PAM_DEPTH: usize = 10;
 /// The address another account's login is checked as on a local apply, which
 /// has no client address of its own to offer.
 const LOCAL_PROBE_ADDRESS: &str = "127.0.0.1";
+
+/// The address every account's login is also checked from: TEST-NET-3
+/// (RFC 5737), which no real `Match Address` block names. An exemption scoped
+/// to loopback, or to the controller a remote apply runs from, would
+/// otherwise hide a lockout for logins from anywhere else: measured with
+/// OpenSSH 9.6p1, `Match Address 127.0.0.1,192.0.2.10` kept an account on its
+/// key from those two addresses and asked every other one for the password.
+pub(super) const ELSEWHERE_PROBE_ADDRESS: &str = "203.0.113.254";
+
+/// Where sshd's Kerberos acceptor looks for its keys unless krb5.conf's
+/// `default_keytab_name` or `KRB5_KTNAME` says otherwise. Without it nobody
+/// logs in through `gssapi-with-mic`, whatever `GSSAPIAuthentication` says.
+const KERBEROS_KEYTAB: &str = "/etc/krb5.keytab";
 
 /// The policy the config asks for, when it asks for one this plugin applies.
 ///
@@ -315,8 +331,10 @@ pub(super) enum Verdict {
     Refuse(String),
 }
 
-/// Runs every guard against the candidate staged at `staged`, with the
-/// configuration in force today at `live` for comparison.
+/// Runs every guard against the candidate staged at `staged`, with the same
+/// apply drafted without the second factor staged at `baseline`, so what the
+/// second factor takes away is told apart from what the rest of the apply
+/// does anyway.
 ///
 /// In order:
 ///
@@ -329,28 +347,45 @@ pub(super) enum Verdict {
 /// 2. The PAM service sshd uses (`PAMServiceName`, `sshd` unless set) has to
 ///    reach a module that checks the account password, or the prompt after
 ///    the key asks for something else or for nothing.
-/// 3. No setting may let accounts in with keys no file lists
-///    (`AuthorizedKeysCommand`, or user certificates under
-///    `TrustedUserCAKeys`), unless
-///    `[ssh.exceptions."second-factor-unlisted-keys"]` names them: the
-///    account check below cannot see who logs in that way.
+/// 3. No setting may let accounts in without a key file this check can read,
+///    unless `[ssh.exceptions."second-factor-unlisted-keys"]` names them: keys
+///    an `AuthorizedKeysCommand` hands over, user certificates under
+///    `TrustedUserCAKeys`, trusted hosts under `HostbasedAuthentication`, and
+///    Kerberos tickets under `GSSAPIAuthentication` where a keytab exists. The
+///    account check below cannot see who logs in that way, and the policy
+///    turns every one of them away unless they also hold a key and a password.
+///    Rocky and Fedora switch `GSSAPIAuthentication` on in 50-redhat.conf, so
+///    without a keytab that is a note rather than a refusal.
 /// 4. Over a remote executor, the account this apply connected as has to keep
-///    a way in on its key alone, where it has one today. This tool's remote
-///    mode runs `ssh` with `BatchMode=yes` and cannot answer a prompt, so
-///    without that the next scan, apply or rollback of this host from here
-///    fails. Root under `PermitRootLogin prohibit-password` is refused every
-///    keyboard-interactive login by sshd itself, password or not, which makes
-///    this the guard a remote root apply meets first.
-/// 5. Every account with a key file sshd reads, whatever its login shell
-///    (sshd lets a `nologin` account authenticate, which is how SFTP-only and
-///    tunnel-only accounts work), is read as sshd will run it for that
-///    account (`sshd -T -C`), with each list naming a method that is switched
-///    off for it dropped, as sshd drops it. Each has to keep a way in: a list
-///    its key alone satisfies (a `Match` block keeping it on its key), or one
-///    its key and a usable password satisfy. Root's password counts only under
+///    a way in on its key alone, where it has one without the second factor.
+///    This tool's remote mode runs `ssh` with `BatchMode=yes` and cannot
+///    answer a prompt, so without that the next scan, apply or rollback of
+///    this host from here fails. Root under `PermitRootLogin prohibit-password`
+///    is refused every keyboard-interactive login by sshd itself, password or
+///    not, which makes this the guard a remote root apply meets first.
+/// 5. Every account that can log in over SSH is read as sshd will run it for
+///    that account (`sshd -T -C`), from the session's address (or loopback)
+///    and from [`ELSEWHERE_PROBE_ADDRESS`], with each list naming a method that
+///    is switched off for it dropped, as sshd drops it. That is every account
+///    with a key file sshd reads, whatever its login shell (sshd lets a
+///    `nologin` account authenticate, which is how SFTP-only and tunnel-only
+///    accounts work), and every account with a usable password that the apply
+///    without the second factor would let in on that password alone (an
+///    exception keeping `PasswordAuthentication yes`, for one). Each has to
+///    keep a way in from both addresses: its key alone (a `Match` block
+///    keeping it on its key), its key and a usable password, or its password
+///    alone where that was already so. Root's password counts only under
 ///    `PermitRootLogin yes`, which this tool never writes. What is left is
 ///    refused unless `[ssh.exceptions."second-factor-lockout"]` names exactly
-///    those accounts.
+///    those accounts. The account this apply runs as over `--ssh` needs only
+///    the session's address: losing the rest is a note, because the
+///    documented `Match` block keeps it to one address on purpose.
+/// 6. No probed login may finish on a password alone where the apply without
+///    the second factor would not have let it: switching keyboard-interactive
+///    on for every connection wakes a `Match` list that names it on its own,
+///    which sshd had been dropping. The apply also refuses any `Match` block
+///    in the files that does so, which reaches addresses no probe names (see
+///    [`match_refusal`]).
 ///
 /// Any probe that cannot answer refuses: a guard that could not look has not
 /// found the host safe. A verdict to go ahead carries notes for the apply to
@@ -361,7 +396,7 @@ pub(super) async fn check(
     executor: &dyn SystemExecutor,
     config: &PluginConfig,
     staged: &str,
-    live: &str,
+    baseline: &str,
 ) -> Verdict {
     let global = match sshd_dump(executor, staged, None).await {
         Ok(global) => global,
@@ -377,8 +412,23 @@ pub(super) async fn check(
     }
 
     let mut notes = Vec::new();
-    if !global.unlisted_key_sources.is_empty() {
-        let named = global.unlisted_key_sources.join(",");
+    let mut unlisted = global.unlisted_key_sources.clone();
+    if global.enabled.contains("hostbased") {
+        unlisted.push("HostbasedAuthentication");
+    }
+    if global.enabled.contains("gssapi-with-mic") {
+        match executor.path_exists(Path::new(KERBEROS_KEYTAB)).await {
+            Ok(false) => notes.push(format!(
+                "Second factor: GSSAPIAuthentication is on, but {KERBEROS_KEYTAB} does not \
+                 exist, so nobody logs in with a Kerberos ticket today; once a keytab is \
+                 added, such a login needs the key and the password as well"
+            )),
+            Ok(true) | Err(_) => unlisted.push("GSSAPIAuthentication"),
+        }
+    }
+    unlisted.sort_unstable();
+    if !unlisted.is_empty() {
+        let named = unlisted.join(",");
         match config.matching_exception(UNLISTED_KEYS_EXCEPTION_KEY, &named) {
             Some(exception) => notes.push(format!(
                 "Second factor: accounts logging in through {named} were not checked \
@@ -387,8 +437,9 @@ pub(super) async fn check(
             )),
             None => {
                 return Verdict::Refuse(format!(
-                    "{named} lets accounts log in with keys no file lists, so this check \
-                     cannot tell who the password step would lock out. Accept that with \
+                    "{named} lets accounts log in without a key file this check can read, so \
+                     it cannot tell who the password step would lock out: every such login \
+                     needs a key and the password from now on. Accept that with \
                      [ssh.exceptions.\"{UNLISTED_KEYS_EXCEPTION_KEY}\"] value = \"{named}\""
                 ));
             }
@@ -400,6 +451,7 @@ pub(super) async fn check(
         Err(reason) => return Verdict::Refuse(reason),
     };
 
+    let mut session_user = None;
     let probe_address = if executor.is_remote() {
         let (user, address) = match session_identity(executor).await {
             Ok(identity) => identity,
@@ -418,7 +470,7 @@ pub(super) async fn check(
             Ok(after) => after,
             Err(reason) => return Verdict::Refuse(reason),
         };
-        let before = match sshd_dump(executor, live, Some((&user, &address))).await {
+        let before = match sshd_dump(executor, baseline, Some((&user, &address))).await {
             Ok(before) => before,
             Err(reason) => return Verdict::Refuse(reason),
         };
@@ -431,40 +483,49 @@ pub(super) async fn check(
                  reference), or apply from a session on the host itself"
             ));
         }
+        session_user = Some(user);
         address
     } else {
         LOCAL_PROBE_ADDRESS.to_string()
     };
+    let addresses = [probe_address.as_str(), ELSEWHERE_PROBE_ADDRESS];
 
     let mut stranded = BTreeSet::new();
     let mut asked = BTreeSet::new();
     for account in &accounts {
-        if !has_key_file(executor, &global.authorized_keys_files, account).await {
+        let keyed = has_key_file(executor, &global.authorized_keys_files, account).await;
+        // No key file and no password pam_unix will take: nothing this check
+        // can list lets the account in today, so it has nothing to lose.
+        if !keyed && !account.usable_password {
             continue;
         }
-        let effective =
-            match sshd_dump(executor, staged, Some((&account.name, &probe_address))).await {
-                Ok(effective) => effective,
-                Err(reason) => return Verdict::Refuse(reason),
+        let is_session = session_user.as_deref() == Some(account.name.as_str());
+        for address in addresses {
+            let probe = Probe {
+                executor,
+                staged,
+                baseline,
+                account,
+                keyed,
+                address,
             };
-        // Root under `PermitRootLogin no` has no SSH login to lose.
-        if account.uid == 0 && effective.permit_root_login.eq_ignore_ascii_case("no") {
-            continue;
-        }
-        // A `Match` block may hand this account a PAM service of its own.
-        if let Some(reason) = pam_refusal(executor, &effective, &mut pam_checked).await {
-            return Verdict::Refuse(format!(
-                "{reason}; that is the PAM service sshd uses for {}",
-                account.name
-            ));
-        }
-        if key_gets_in(&effective, account.uid) {
-            continue;
-        }
-        if password_gets_in(&effective, account) {
-            asked.insert(account.name.clone());
-        } else {
-            stranded.insert(account.name.clone());
+            match probe.judge(&mut pam_checked).await {
+                Ok(Outcome::KeepsAWayIn) => {}
+                Ok(Outcome::Asked) => {
+                    asked.insert(account.name.clone());
+                }
+                Ok(Outcome::Stranded) if is_session && address == ELSEWHERE_PROBE_ADDRESS => {
+                    notes.push(format!(
+                        "Second factor: {}, which this apply runs as, keeps its key-only login \
+                         from {probe_address}; from any other address it can no longer log in",
+                        account.name
+                    ));
+                }
+                Ok(Outcome::Stranded) => {
+                    stranded.insert(account.name.clone());
+                }
+                Err(reason) => return Verdict::Refuse(reason),
+            }
         }
     }
 
@@ -489,12 +550,136 @@ pub(super) async fn check(
         return Verdict::Proceed(notes);
     }
     Verdict::Refuse(format!(
-        "these accounts log in with a key and could not get past the password prompt, \
-         so the second factor would lock them out of SSH: {named} (checked as a login \
-         from {probe_address}). Give each a password, keep it on its key with a Match \
-         block, or accept the loss with [ssh.exceptions.\"{LOCKOUT_EXCEPTION_KEY}\"] \
-         value = \"{named}\""
+        "these accounts log in over SSH today and could not get past the password prompt, \
+         so the second factor would lock them out: {named} (checked as a login from \
+         {probe_address} and from {ELSEWHERE_PROBE_ADDRESS}, an address no Match block \
+         names). Give each a key and a password, keep it on its key with a Match block \
+         that is not tied to one address, or accept the loss with \
+         [ssh.exceptions.\"{LOCKOUT_EXCEPTION_KEY}\"] value = \"{named}\""
     ))
+}
+
+/// What one account's login from one address comes to under the candidate.
+enum Outcome {
+    /// It gets in as it does without the second factor, or on its key alone.
+    KeepsAWayIn,
+    /// It gets in on its key and its password.
+    Asked,
+    /// It had a way in without the second factor, and has none with it.
+    Stranded,
+}
+
+/// One account's login from one address, read from both staged candidates.
+struct Probe<'a> {
+    executor: &'a dyn SystemExecutor,
+    staged: &'a str,
+    baseline: &'a str,
+    account: &'a Account,
+    keyed: bool,
+    address: &'a str,
+}
+
+impl Probe<'_> {
+    /// Reads the login under the candidate, and under the apply without the
+    /// second factor where the answer depends on it.
+    async fn judge(&self, pam_checked: &mut BTreeSet<String>) -> Result<Outcome, String> {
+        let name = self.account.name.as_str();
+        let uid = self.account.uid;
+        let after = sshd_dump(self.executor, self.staged, Some((name, self.address))).await?;
+        // Root under `PermitRootLogin no` has no SSH login to lose.
+        if uid == 0 && after.permit_root_login.eq_ignore_ascii_case("no") {
+            return Ok(Outcome::KeepsAWayIn);
+        }
+        // A `Match` block may hand this account a PAM service of its own.
+        if let Some(reason) = pam_refusal(self.executor, &after, pam_checked).await {
+            return Err(format!(
+                "{reason}; that is the PAM service sshd uses for {name}"
+            ));
+        }
+        let alone_after = password_alone(&after, uid);
+        let alone_before = if alone_after || !self.keyed {
+            let before =
+                sshd_dump(self.executor, self.baseline, Some((name, self.address))).await?;
+            password_alone(&before, uid)
+        } else {
+            false
+        };
+        if alone_after && !alone_before {
+            return Err(format!(
+                "with the second factor on, {name} could log in from {} with the password \
+                 alone: a Match block that applies to it has a list of password methods only, \
+                 or `any`, which sshd dropped while keyboard-interactive was off. Put \
+                 publickey first in that list, or set KbdInteractiveAuthentication no inside \
+                 the block",
+                self.address
+            ));
+        }
+        let password_still_does = alone_after && self.account.usable_password;
+        if !self.keyed {
+            // Without a key file the account got in, if at all, on its
+            // password alone.
+            return Ok(
+                if !(alone_before && self.account.usable_password) || password_still_does {
+                    Outcome::KeepsAWayIn
+                } else {
+                    Outcome::Stranded
+                },
+            );
+        }
+        Ok(if key_gets_in(&after, uid) || password_still_does {
+            Outcome::KeepsAWayIn
+        } else if password_gets_in(&after, self.account) {
+            Outcome::Asked
+        } else {
+            Outcome::Stranded
+        })
+    }
+}
+
+/// The `Match` blocks in the files that would let a password alone finish a
+/// login once the second factor is on, as a refusal, or `None` where there is
+/// none.
+///
+/// The opt-in switches keyboard-interactive on for every connection. A block
+/// whose own `AuthenticationMethods` has a list of password methods only, or
+/// `any`, named a switched-off method until then, and sshd dropped the list;
+/// with the opt-in it is a login on the password alone. Measured with OpenSSH
+/// 9.6p1: `Match Address 10.0.0.0/8` with `AuthenticationMethods publickey
+/// keyboard-interactive` gave a client from 10.1.2.3
+/// `kbdinteractiveauthentication yes` and that list once the fragment was in
+/// place, and `sshd -t` passed. A block that switches keyboard-interactive
+/// off itself keeps the list inert, and is left alone. The per-account probes
+/// catch the same thing where a probe falls inside the block; this reaches the
+/// addresses and users no probe names.
+pub(super) fn match_refusal(resolved: &ResolvedConfig) -> Option<String> {
+    let openings: Vec<String> = resolved
+        .match_blocks()
+        .iter()
+        .filter_map(|block| {
+            let lists = block.arguments(auth_methods::AUTHENTICATION_METHODS)?;
+            let switched_off = block
+                .arguments(KBD_INTERACTIVE)
+                .and_then(|arguments| arguments.first().copied())
+                .is_some_and(|value| !value.eq_ignore_ascii_case("yes"));
+            (!switched_off && auth_methods::finishes_alone(Some(&lists), "keyboard-interactive"))
+                .then(|| {
+                    format!(
+                        "`Match {}` in {} (AuthenticationMethods {})",
+                        block.criteria,
+                        block.source,
+                        lists.join(" ")
+                    )
+                })
+        })
+        .collect();
+    (!openings.is_empty()).then(|| {
+        format!(
+            "with keyboard-interactive switched on for the second factor, these Match blocks \
+             would let a password alone finish a login: {}. Put publickey first in each \
+             list there, or set KbdInteractiveAuthentication no inside the block",
+            openings.join("; ")
+        )
+    })
 }
 
 /// Why the candidate, as sshd will run it globally, does not deliver the
@@ -502,12 +687,19 @@ pub(super) async fn check(
 ///
 /// The fragment is read before every file a distribution ships, but not
 /// before a line above the main file's `Include`, which sshd reads first and
-/// which therefore wins.
+/// which therefore wins, nor before a drop-in whose name sorts ahead of
+/// `00-hardener.conf`.
+///
+/// A global `KbdInteractiveAuthentication no` is not among these: under a
+/// list that asks for keyboard-interactive after the key, sshd itself refuses
+/// such a candidate ("AuthenticationMethods cannot be satisfied"), so
+/// `sshd -T` fails before this is reached, and [`explain_unsatisfiable`]
+/// names the line instead.
 pub(super) fn candidate_refusal(global: &Effective) -> Option<String> {
     let lists: Vec<&str> = global.methods.iter().map(String::as_str).collect();
     let before = format!(
-        "because a line sshd reads before {}, such as one above the main file's \
-         Include, sets it",
+        "because a line sshd reads before {} sets it: one above the main file's Include, \
+         or one in a drop-in whose name sorts ahead of it",
         dropin::DROPIN_PATH
     );
     if !auth_methods::requires_key_then_password(Some(&lists)) {
@@ -517,29 +709,105 @@ pub(super) fn candidate_refusal(global: &Effective) -> Option<String> {
         ));
     }
     match global.use_pam {
-        None => {
-            return Some(
-                "this sshd prints no UsePAM setting, so it was built without PAM and the \
-                 prompt after the key has nothing to ask the account password with"
-                    .to_string(),
-            );
-        }
-        Some(false) => {
-            return Some(format!(
-                "with this candidate sshd would run with UsePAM no, {before}. Without PAM the \
-                 prompt after the key cannot ask for the password, so every login would stop \
-                 there. Set UsePAM yes in that file"
-            ));
-        }
-        Some(true) => {}
+        None => Some(
+            "this sshd prints no UsePAM setting, so it was built without PAM and the \
+             prompt after the key has nothing to ask the account password with"
+                .to_string(),
+        ),
+        Some(false) => Some(format!(
+            "with this candidate sshd would run with UsePAM no, {before}. Without PAM the \
+             prompt after the key cannot ask for the password, so every login would stop \
+             there. Set UsePAM yes in that file"
+        )),
+        Some(true) => None,
     }
-    if !global.enabled.contains("keyboard-interactive") {
-        return Some(format!(
-            "with this candidate sshd would run with KbdInteractiveAuthentication no, \
-             {before}, so the step after the key could never be taken"
-        ));
+}
+
+/// `reason`, with the line that switches keyboard-interactive off named,
+/// where `reason` is sshd refusing the candidate's lists for it.
+///
+/// sshd says only that the method is disabled. The line responsible is the
+/// first one outside this tool's fragment that sets the option, under any of
+/// its names: a candidate whose fragment says `yes` fails only where that line
+/// is read first and says otherwise.
+pub(super) fn explain_unsatisfiable(reason: String, resolved: &ResolvedConfig) -> String {
+    if !reason.contains("Disabled method \"keyboard-interactive\"") {
+        return reason;
     }
-    None
+    match resolved
+        .effective_without(KBD_INTERACTIVE, dropin::DROPIN_PATH)
+        .filter(|line| !line.value.eq_ignore_ascii_case("yes"))
+    {
+        Some(line) => format!(
+            "{reason}. `{} {}` in {} is read before {} and switches keyboard-interactive off; \
+             change it to yes there, or remove it",
+            line.keyword,
+            line.value,
+            line.source,
+            dropin::DROPIN_PATH
+        ),
+        None => format!(
+            "{reason}. A line sshd reads before {} switches keyboard-interactive off",
+            dropin::DROPIN_PATH
+        ),
+    }
+}
+
+/// The settings the files set that let accounts in without a key file the
+/// guard can read, sorted, as a preview reads them: the apply reads the same
+/// switches from `sshd -T`, which a preview does not stage a candidate for.
+/// Kerberos counts only where the keytab exists, or cannot be looked for.
+pub(super) async fn unlisted_logins_in_files(
+    executor: &dyn SystemExecutor,
+    resolved: &ResolvedConfig,
+) -> Vec<&'static str> {
+    let set = |keyword: &str| {
+        resolved
+            .effective(keyword)
+            .is_some_and(|effective| !effective.value.eq_ignore_ascii_case("none"))
+    };
+    let on = |keyword: &str| {
+        resolved
+            .effective(keyword)
+            .is_some_and(|effective| effective.value.eq_ignore_ascii_case("yes"))
+    };
+    let mut unlisted: Vec<&'static str> = UNLISTED_KEY_SOURCES
+        .iter()
+        .map(|(_, setting)| *setting)
+        .filter(|setting| set(setting))
+        .collect();
+    if on("HostbasedAuthentication") {
+        unlisted.push("HostbasedAuthentication");
+    }
+    if on("GSSAPIAuthentication")
+        && !matches!(
+            executor.path_exists(Path::new(KERBEROS_KEYTAB)).await,
+            Ok(false)
+        )
+    {
+        unlisted.push("GSSAPIAuthentication");
+    }
+    unlisted.sort_unstable();
+    unlisted
+}
+
+/// Whether a password, with no key, finishes a login under `effective`: some
+/// list sshd keeps is made of password methods only, or is `any` with one of
+/// them switched on. Root's password counts only under `PermitRootLogin yes`.
+pub(super) fn password_alone(effective: &Effective, uid: u32) -> bool {
+    if uid == 0 && effective.permit_root_login != "yes" {
+        return false;
+    }
+    usable_lists(effective).iter().any(|list| {
+        if *list == "any" {
+            return auth_methods::PASSWORD_METHODS
+                .iter()
+                .any(|method| method_works(effective, method));
+        }
+        auth_methods::method_names(list)
+            .iter()
+            .all(|name| auth_methods::PASSWORD_METHODS.contains(name))
+    })
 }
 
 /// Checks the PAM service `effective` names, once per service.

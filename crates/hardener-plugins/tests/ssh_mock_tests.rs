@@ -9,8 +9,9 @@ use hardener_core::{
     SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::ssh::{
-    SshHardeningPlugin, select_algorithms, sshd_validate_fragment_scratch_path,
-    sshd_validate_scratch_path, supported_algorithms, validate_sshd_config,
+    SshHardeningPlugin, select_algorithms, sshd_baseline_scratch_path,
+    sshd_validate_fragment_scratch_path, sshd_validate_scratch_path, supported_algorithms,
+    validate_sshd_config,
 };
 use hardener_types::{DeclineReason, UncheckedBlocker};
 use std::path::Path;
@@ -4248,6 +4249,10 @@ fn sshd_dump(methods: &str, root: &str) -> CommandOutput {
     ok_output(&sshd_dump_text(methods, root))
 }
 
+/// The address every account is also checked from, TEST-NET-3 (RFC 5737),
+/// which no real `Match Address` block names.
+const ELSEWHERE: &str = "203.0.113.254";
+
 /// Registers `sshd -T -f <staged> -C user=...,host=...,addr=...`.
 fn with_sshd_probe(
     executor: MockExecutor,
@@ -4312,6 +4317,17 @@ fn arch_second_factor_host(main_tail: &str) -> MockExecutor {
                     &temp,
                     "-C",
                     "user=eric,host=127.0.0.1,addr=127.0.0.1",
+                ],
+                sshd_dump(SECOND_FACTOR, "no"),
+            )
+            .with_command(
+                "sshd",
+                &[
+                    "-T",
+                    "-f",
+                    &temp,
+                    "-C",
+                    &format!("user=eric,host={ELSEWHERE},addr={ELSEWHERE}"),
                 ],
                 sshd_dump(SECOND_FACTOR, "no"),
             )
@@ -4469,6 +4485,13 @@ async fn an_account_left_without_a_way_in_keeps_the_second_factor_out() {
         "127.0.0.1",
         sshd_dump(SECOND_FACTOR, "no"),
     );
+    let executor = with_sshd_probe(
+        executor,
+        &temp,
+        "deploy",
+        ELSEWHERE,
+        sshd_dump(SECOND_FACTOR, "no"),
+    );
 
     let result = run_ssh_apply_with(&executor, &second_factor_config()).await;
 
@@ -4515,7 +4538,7 @@ async fn a_remote_apply_does_not_cut_off_its_own_way_back_in() {
     );
     let executor = with_sshd_probe(
         executor,
-        "/etc/ssh/sshd_config",
+        &sshd_baseline_scratch_path().to_string_lossy(),
         "root",
         address,
         sshd_dump("any", "prohibit-password"),
@@ -4665,4 +4688,264 @@ async fn usepam_no_ahead_of_the_fragment_keeps_the_second_factor_out() {
         !restarted_sshd(&executor),
         "with the second factor out there was nothing else to write"
     );
+}
+
+// =============================================================================
+// Gentoo: the drop-ins are included at the foot of sshd_config (#185 round 2)
+// =============================================================================
+
+/// Gentoo's sshd_config after one apply, cut to what matters here. Its
+/// `openssh-9.7_p1-config-tweaks.patch` replaces the `Subsystem` line at the
+/// foot of upstream's file with a quoted Include of `sshd_config.d`, below
+/// every commented default, and the apply activated
+/// `#KbdInteractiveAuthentication yes` in place as `no`, above that Include.
+fn gentoo_sshd_config() -> String {
+    format!(
+        "{COMPLIANT_SSHD_CONFIG}# Make sure that all Match options are below this Include!\n\
+         Include \"/etc/ssh/sshd_config.d/*.conf\"\n"
+    )
+}
+
+/// A Gentoo host with USE=pam, which is on by default: `9999999gentoo-pam.conf`
+/// sets `UsePAM yes` and `PasswordAuthentication no` and leaves
+/// keyboard-interactive alone (openssh-10.6_p2.ebuild). The guards' probes are
+/// registered as on the Arch host.
+fn gentoo_second_factor_host() -> MockExecutor {
+    let temp = sshd_validate_temp_path();
+    let probe = |user: &str, address: &str| format!("user={user},host={address},addr={address}");
+    with_strong_crypto(
+        MockExecutor::new()
+            .with_file("/etc/ssh/sshd_config", &gentoo_sshd_config())
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/9999999gentoo-pam.conf",
+                "UsePAM yes\n# This interferes with PAM.\nPasswordAuthentication no\n\
+                 PrintMotd no\nPrintLastLog no\n",
+            )
+            .with_file(
+                "/etc/ssh/sshd_config.d/9999999gentoo-subsystem.conf",
+                "Subsystem\tsftp\t/usr/lib64/misc/sftp-server\n",
+            )
+            .with_file("/etc/pam.d/sshd", "auth include system-remote-login\n")
+            .with_file(
+                "/etc/pam.d/system-remote-login",
+                "auth include system-login\n",
+            )
+            .with_file("/etc/pam.d/system-login", "auth include system-auth\n")
+            .with_file(
+                "/etc/pam.d/system-auth",
+                "auth required pam_unix.so try_first_pass likeauth nullok\n",
+            )
+            .with_file(
+                "/etc/passwd",
+                "root:x:0:0::/root:/bin/bash\neric:x:1000:1000::/home/eric:/bin/bash\n",
+            )
+            .with_file(
+                "/etc/shadow",
+                "root:*:20000::::::\neric:$y$j9T$salt$hash:20000:0:99999:7:::\n",
+            )
+            .with_file(
+                "/home/eric/.ssh/authorized_keys",
+                "ssh-ed25519 AAAA eric@laptop\n",
+            )
+            .with_command("sshd", &["-T", "-f", &temp], sshd_dump(SECOND_FACTOR, "no"))
+            .with_command(
+                "sshd",
+                &["-T", "-f", &temp, "-C", &probe("eric", "127.0.0.1")],
+                sshd_dump(SECOND_FACTOR, "no"),
+            )
+            .with_command(
+                "sshd",
+                &["-T", "-f", &temp, "-C", &probe("eric", ELSEWHERE)],
+                sshd_dump(SECOND_FACTOR, "no"),
+            )
+            .with_command("sshd", &["-t", "-f", &temp], ok_output(""))
+            .with_command_program("cp", ok_output(""))
+            .with_command_program("rm", ok_output(""))
+            .with_command("systemctl", &["restart", "sshd"], ok_output("")),
+    )
+}
+
+/// Gentoo quotes the Include, and sshd drops the quotes (`argv_split` in
+/// misc.c). The resolver kept them, read the pattern as relative, and could
+/// not list `/etc/ssh/"/etc/ssh/sshd_config.d`, so the scan of a stock Gentoo
+/// host reported every SSH check as unchecked and the apply refused to run.
+#[tokio::test]
+async fn a_quoted_include_at_the_foot_of_the_main_file_is_resolved() {
+    let ctx = Context::with_executor(Arc::new(gentoo_second_factor_host()));
+    let scan = SshHardeningPlugin::new()
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan must run");
+
+    assert!(scan.scan_success, "{:?}", scan.scan_error);
+    assert!(scan.scan_unchecked.is_empty(), "{:?}", scan.scan_unchecked);
+    assert!(
+        !scan
+            .scan_findings
+            .iter()
+            .any(|finding| finding.finding_id == KBD_FINDING),
+        "the main file's `no` is read first and holds keyboard-interactive off"
+    );
+}
+
+/// With the second factor on, that `no` above the Include would beat the
+/// fragment, and real sshd refuses the lists ("AuthenticationMethods cannot be
+/// satisfied"). The apply switches that line on as well, and the precedence
+/// check accepts the main file supplying the same value ahead of the fragment.
+#[tokio::test]
+async fn the_second_factor_switches_on_a_main_file_line_above_a_foot_include() {
+    let executor = gentoo_second_factor_host();
+    let config = second_factor_config();
+
+    let result = run_ssh_apply_with(&executor, &config).await;
+
+    assert!(result.apply_success, "{:#?}", result.apply_changes);
+    let written = written_sshd_config(&executor);
+    assert!(
+        written.contains("KbdInteractiveAuthentication yes\n")
+            && !written.contains("KbdInteractiveAuthentication no"),
+        "{written}"
+    );
+    assert!(
+        result.apply_changes.iter().any(|change| change
+            .change_description
+            .starts_with("KbdInteractiveAuthentication: no -> yes in /etc/ssh/sshd_config")),
+        "{:#?}",
+        result.apply_changes
+    );
+    let fragment = dropin_written(&executor).expect("the settings go to the fragment");
+    assert!(
+        fragment.contains("AuthenticationMethods publickey,keyboard-interactive"),
+        "{fragment}"
+    );
+    // The gate read the switched-on line, then the new fragment through the
+    // quoted Include, spelled out file by file.
+    let candidate = last_staged_candidate(&executor);
+    let staged = sshd_validate_fragment_scratch_path().display().to_string();
+    assert!(
+        candidate.contains("KbdInteractiveAuthentication yes\n")
+            && candidate.contains(&format!("Include {staged} ")),
+        "{candidate}"
+    );
+
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let rescan = SshHardeningPlugin::new()
+        .scan(&ctx, &config)
+        .await
+        .expect("scan must run");
+    let ids: Vec<&str> = rescan
+        .scan_findings
+        .iter()
+        .map(|finding| finding.finding_id.as_str())
+        .collect();
+    assert!(
+        !ids.contains(&SECOND_FACTOR_FINDING) && !ids.contains(&KBD_FINDING),
+        "{ids:?}"
+    );
+
+    // Taking the opt-in out puts the line back at `no`.
+    let opted_out = run_ssh_apply(&executor).await;
+    assert!(opted_out.apply_success, "{:#?}", opted_out.apply_changes);
+    assert!(
+        written_sshd_config(&executor).contains("KbdInteractiveAuthentication no\n"),
+        "{}",
+        written_sshd_config(&executor)
+    );
+}
+
+/// The manual recipe from the issue, `10-2fa.conf` without the opt-in, meets
+/// the same `no` above the Include. The apply's skip of a second factor used
+/// to leave that line alone, so sshd went on refusing the recipe.
+#[tokio::test]
+async fn the_manual_second_factor_on_gentoo_is_repaired_by_the_next_apply() {
+    let executor = gentoo_second_factor_host().with_file(TWO_FACTOR_DROPIN_PATH, TWO_FACTOR_DROPIN);
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "{:#?}", result.apply_changes);
+    assert!(
+        written_sshd_config(&executor).contains("KbdInteractiveAuthentication yes\n"),
+        "{}",
+        written_sshd_config(&executor)
+    );
+}
+
+#[tokio::test]
+async fn the_preview_names_the_main_file_line_the_second_factor_switches_on() {
+    let ctx = Context::with_executor(Arc::new(gentoo_second_factor_host()));
+    let report = SshHardeningPlugin::new()
+        .validate(&ctx, &second_factor_config())
+        .await
+        .expect("validate must run");
+
+    assert!(
+        report
+            .validation_report_estimated_changes
+            .iter()
+            .any(|change| change
+                == "KbdInteractiveAuthentication: no → yes in /etc/ssh/sshd_config \
+                    (read before the drop-ins)"),
+        "{:?}",
+        report.validation_report_estimated_changes
+    );
+}
+
+/// A main file that never includes sshd_config.d never reads the fragment the
+/// second factor lives in, and the refusal says so rather than blaming a line
+/// ahead of it.
+#[tokio::test]
+async fn a_main_file_without_the_drop_in_include_refuses_the_second_factor_plainly() {
+    let executor = arch_second_factor_host(COMPLIANT_SSHD_CONFIG)
+        .with_file("/etc/ssh/sshd_config", COMPLIANT_SSHD_CONFIG);
+
+    let result = run_ssh_apply_with(&executor, &second_factor_config()).await;
+
+    assert!(!result.apply_success, "{:#?}", result.apply_changes);
+    let error = result.apply_error.clone().unwrap_or_default();
+    assert!(
+        error.contains("does not include the directory")
+            && error.contains("Include /etc/ssh/sshd_config.d/*.conf"),
+        "{error}"
+    );
+}
+
+/// The preview raises what the files alone show the apply will refuse: a Match
+/// block the switched-on keyboard-interactive would open, and a certificate
+/// authority whose logins no key file lists.
+#[tokio::test]
+async fn the_preview_flags_refusals_the_files_alone_show() {
+    let executor = arch_second_factor_host(COMPLIANT_SSHD_CONFIG)
+        .with_file(
+            "/etc/ssh/sshd_config.d/50-lan.conf",
+            "Match Address 10.0.0.0/8\n    AuthenticationMethods publickey keyboard-interactive\n",
+        )
+        .with_file(
+            "/etc/ssh/sshd_config.d/30-ca.conf",
+            "TrustedUserCAKeys /etc/ssh/user_ca.pub\n",
+        );
+    let ctx = Context::with_executor(Arc::new(executor));
+    let report = SshHardeningPlugin::new()
+        .validate(&ctx, &second_factor_config())
+        .await
+        .expect("validate must run");
+
+    let messages: Vec<&str> = report
+        .validation_report_issues
+        .iter()
+        .map(|issue| issue.validation_issue_message.as_str())
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("Match Address 10.0.0.0/8")),
+        "{messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("TrustedUserCAKeys")),
+        "{messages:?}"
+    );
+    assert!(report.has_blocking_issue(), "{messages:?}");
 }

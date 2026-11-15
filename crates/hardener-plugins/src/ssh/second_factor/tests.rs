@@ -443,12 +443,12 @@ fn candidate_refusal_names_what_keeps_the_fragment_out() {
     built_without.use_pam = None;
     assert!(candidate_refusal(&built_without).is_some_and(|reason| reason.contains("without PAM")));
 
+    // A global `KbdInteractiveAuthentication no` never reaches here: under a
+    // list asking for keyboard-interactive after the key, sshd -T itself
+    // refuses the candidate, and `explain_unsatisfiable` names the line.
     let mut kbd_off = effective(POLICY, "no");
     kbd_off.enabled.remove("keyboard-interactive");
-    assert!(
-        candidate_refusal(&kbd_off)
-            .is_some_and(|reason| reason.contains("KbdInteractiveAuthentication no"))
-    );
+    assert_eq!(candidate_refusal(&kbd_off), None);
 
     // A list above the main file's Include wins over the fragment's.
     assert!(
@@ -559,12 +559,7 @@ fn guarded_host_without_probes() -> MockExecutor {
 /// Every account with a key is probed, eric included, and under the policy he
 /// is asked for his password after the key.
 fn guarded_host() -> MockExecutor {
-    with_probe(
-        guarded_host_without_probes(),
-        "eric",
-        "127.0.0.1",
-        dump(POLICY, "no"),
-    )
+    with_probes(guarded_host_without_probes(), "eric", dump(POLICY, "no"))
 }
 
 fn probe_args(user: &str, address: &str) -> [String; 5] {
@@ -588,6 +583,29 @@ fn with_probe(
     executor.with_command("sshd", &args, output)
 }
 
+/// [`with_probe`] from loopback and from [`ELSEWHERE_PROBE_ADDRESS`], the two
+/// addresses a local apply checks every account from.
+fn with_probes(executor: MockExecutor, user: &str, output: CommandOutput) -> MockExecutor {
+    with_probe(
+        with_probe(executor, user, "127.0.0.1", output.clone()),
+        user,
+        ELSEWHERE_PROBE_ADDRESS,
+        output,
+    )
+}
+
+/// Registers `sshd -T` of the candidate without the second factor, for one
+/// connection.
+fn with_baseline_probe(
+    executor: MockExecutor,
+    user: &str,
+    address: &str,
+    output: CommandOutput,
+) -> MockExecutor {
+    let spec = format!("user={user},host={address},addr={address}");
+    executor.with_command("sshd", &["-T", "-f", LIVE, "-C", &spec], output)
+}
+
 fn notes(verdict: Verdict) -> Vec<String> {
     match verdict {
         Verdict::Proceed(notes) => notes,
@@ -604,7 +622,7 @@ fn refusal(verdict: Verdict) -> String {
 
 #[tokio::test]
 async fn an_account_with_a_key_and_no_password_is_refused_by_name() {
-    let executor = with_probe(guarded_host(), "deploy", "127.0.0.1", dump(POLICY, "no"));
+    let executor = with_probes(guarded_host(), "deploy", dump(POLICY, "no"));
 
     let reason = refusal(check(&executor, &PluginConfig::default(), STAGED, LIVE).await);
 
@@ -624,12 +642,7 @@ async fn an_account_with_a_key_and_no_password_is_refused_by_name() {
 /// alone stops working.
 #[tokio::test]
 async fn a_match_block_keeping_the_account_on_its_key_lets_it_through() {
-    let executor = with_probe(
-        guarded_host(),
-        "deploy",
-        "127.0.0.1",
-        dump("publickey", "no"),
-    );
+    let executor = with_probes(guarded_host(), "deploy", dump("publickey", "no"));
 
     let notes = notes(check(&executor, &PluginConfig::default(), STAGED, LIVE).await);
 
@@ -644,7 +657,7 @@ async fn a_match_block_keeping_the_account_on_its_key_lets_it_through() {
 
 #[tokio::test]
 async fn an_exception_naming_exactly_the_stranded_accounts_accepts_them() {
-    let executor = with_probe(guarded_host(), "deploy", "127.0.0.1", dump(POLICY, "no"));
+    let executor = with_probes(guarded_host(), "deploy", dump(POLICY, "no"));
     let mut config = PluginConfig::default();
     config.exceptions.insert(
         LOCKOUT_EXCEPTION_KEY.to_string(),
@@ -722,27 +735,42 @@ async fn a_remote_root_session_that_would_lose_its_key_login_is_refused() {
     assert!(reason.contains("Match block"), "{reason}");
 
     // With a Match block exempting root from that address, it goes ahead as
-    // far as this guard is concerned.
-    let exempted = remote(guarded_host_without_probes()).with_command(
-        "sshd",
-        &live_args,
-        dump("any", "prohibit-password"),
-    );
+    // far as this guard is concerned. Root holds a key, so it is probed from
+    // elsewhere too, where the block does not reach: that loss is the block's
+    // purpose, and a note rather than a refusal.
+    let exempted = remote(guarded_host_without_probes())
+        .with_file("/root/.ssh/authorized_keys", "ssh-ed25519 AAAA admin\n")
+        .with_command("sshd", &live_args, dump("any", "prohibit-password"));
     let exempted = with_probe(
         exempted,
         "root",
         address,
         dump("publickey", "prohibit-password"),
     );
-    let exempted = with_probe(
+    let mut exempted = with_probe(
         exempted,
-        "deploy",
-        address,
-        dump("publickey", "prohibit-password"),
+        "root",
+        ELSEWHERE_PROBE_ADDRESS,
+        dump(POLICY, "prohibit-password"),
     );
-    let exempted = with_probe(exempted, "eric", address, dump(POLICY, "prohibit-password"));
+    for at in [address, ELSEWHERE_PROBE_ADDRESS] {
+        exempted = with_probe(
+            exempted,
+            "deploy",
+            at,
+            dump("publickey", "prohibit-password"),
+        );
+        exempted = with_probe(exempted, "eric", at, dump(POLICY, "prohibit-password"));
+    }
     let notes = notes(check(&exempted, &PluginConfig::default(), STAGED, LIVE).await);
     assert!(notes.iter().any(|note| note.contains("eric")), "{notes:?}");
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.contains("root, which this apply runs as")
+                && note.contains("from 192.0.2.10")),
+        "{notes:?}"
+    );
 }
 
 #[tokio::test]
@@ -770,7 +798,7 @@ async fn a_pam_stack_without_the_password_refuses_before_any_account_is_read() {
 /// denied (keyboard-interactive)" once the fragment was in place.
 #[tokio::test]
 async fn a_nologin_account_with_a_key_is_checked_like_any_other() {
-    let executor = with_probe(
+    let executor = with_probes(
         guarded_host()
             .with_file(
                 "/etc/passwd",
@@ -783,7 +811,6 @@ async fn a_nologin_account_with_a_key_is_checked_like_any_other() {
             )
             .with_file("/home/tunnel/.ssh/authorized_keys", "ssh-ed25519 AAAA t\n"),
         "tunnel",
-        "127.0.0.1",
         dump(POLICY, "no"),
     );
 
@@ -821,15 +848,9 @@ async fn a_match_block_switching_keyboard_interactive_off_strands_its_accounts()
         "kbdinteractiveauthentication yes",
         "kbdinteractiveauthentication no",
     );
-    let executor = with_probe(
-        with_probe(
-            guarded_host_without_probes(),
-            "eric",
-            "127.0.0.1",
-            ok(&kbd_off),
-        ),
+    let executor = with_probes(
+        with_probes(guarded_host_without_probes(), "eric", ok(&kbd_off)),
         "deploy",
-        "127.0.0.1",
         dump("publickey", "no"),
     );
 
@@ -856,7 +877,7 @@ async fn the_pam_service_sshd_names_is_the_one_followed() {
             ("/home/eric/.ssh/authorized_keys", "ssh-ed25519 AAAA eric\n"),
         ])
         .with_command("sshd", &["-T", "-f", STAGED], named());
-        with_probe(executor, "eric", "127.0.0.1", named())
+        with_probes(executor, "eric", named())
     };
     let deny = "auth required pam_deny.so\n";
     let unix = "auth required pam_unix.so\n";
@@ -897,10 +918,9 @@ async fn keys_no_file_lists_refuse_until_an_exception_names_them() {
         "trustedusercakeys none",
         "trustedusercakeys /etc/ssh/user_ca.pub",
     );
-    let executor = with_probe(
+    let executor = with_probes(
         guarded_host().with_command("sshd", &["-T", "-f", STAGED], ok(&with_ca)),
         "deploy",
-        "127.0.0.1",
         dump("publickey", "no"),
     );
 
@@ -930,6 +950,234 @@ async fn keys_no_file_lists_refuse_until_an_exception_names_them() {
             .any(|note| note.contains("TrustedUserCAKeys") && note.contains("console logins")),
         "{notes:?}"
     );
+}
+
+/// A `Match Address` exemption that covers loopback, the one address a local
+/// apply used to check from, hid the lockout every other address meets.
+/// Measured with OpenSSH 9.6p1: `Match Address 127.0.0.1,192.0.2.10` gave
+/// `authenticationmethods publickey` from those two and the policy from
+/// 198.51.100.7 and 203.0.113.254 (#185 round 2).
+#[tokio::test]
+async fn an_exemption_covering_the_probe_address_does_not_hide_a_lockout() {
+    let executor = with_probe(
+        with_probe(
+            guarded_host(),
+            "deploy",
+            "127.0.0.1",
+            dump("publickey", "no"),
+        ),
+        "deploy",
+        ELSEWHERE_PROBE_ADDRESS,
+        dump(POLICY, "no"),
+    );
+
+    let reason = refusal(check(&executor, &PluginConfig::default(), STAGED, LIVE).await);
+    assert!(reason.contains(": deploy "), "{reason}");
+    assert!(reason.contains(ELSEWHERE_PROBE_ADDRESS), "{reason}");
+}
+
+/// What `sshd -T` prints where a password alone finishes a login: the
+/// apply without the second factor, under an exception keeping
+/// `PasswordAuthentication yes`.
+fn password_login_dump() -> CommandOutput {
+    ok(&dump_text("any", "no").replace("passwordauthentication no", "passwordauthentication yes"))
+}
+
+/// What `sshd -T` prints for the apply without the second factor, where
+/// keyboard-interactive stays at the plugin's usual `no`.
+fn dump_kbd_off(methods: &str) -> CommandOutput {
+    ok(&dump_text(methods, "no").replace(
+        "kbdinteractiveauthentication yes",
+        "kbdinteractiveauthentication no",
+    ))
+}
+
+/// An account with no key file that logs in on its password, wherever the
+/// rest of the apply keeps that possible, is locked out by the second factor
+/// as surely as a key-only one. Measured with OpenSSH 9.6p1: under
+/// `PasswordAuthentication yes`, `carol` went from `authenticationmethods
+/// any` to the policy once the fragment was in place, and `sshd -t` passed.
+#[tokio::test]
+async fn a_password_only_account_the_rest_of_the_apply_keeps_is_checked() {
+    let host = || {
+        guarded_host()
+            .with_file(
+                "/etc/passwd",
+                "eric:x:1000:1000::/home/eric:/bin/bash\n\
+                 carol:x:1003:1003::/home/carol:/bin/bash\n",
+            )
+            .with_file(
+                "/etc/shadow",
+                "eric:$y$hash:20000::::::\ncarol:$y$hash:20000::::::\n",
+            )
+    };
+    let staged_carol =
+        ok(&dump_text(POLICY, "no")
+            .replace("passwordauthentication no", "passwordauthentication yes"));
+    let kept = with_baseline_probe(
+        with_baseline_probe(
+            with_probes(host(), "carol", staged_carol.clone()),
+            "carol",
+            "127.0.0.1",
+            password_login_dump(),
+        ),
+        "carol",
+        ELSEWHERE_PROBE_ADDRESS,
+        password_login_dump(),
+    );
+
+    let reason = refusal(check(&kept, &PluginConfig::default(), STAGED, LIVE).await);
+    assert!(reason.contains(": carol "), "{reason}");
+
+    // Where the rest of the apply switches password login off anyway, carol
+    // loses nothing to the second factor, and nothing is refused for her.
+    let switched_off = with_baseline_probe(
+        with_baseline_probe(
+            with_probes(host(), "carol", dump(POLICY, "no")),
+            "carol",
+            "127.0.0.1",
+            dump_kbd_off("any"),
+        ),
+        "carol",
+        ELSEWHERE_PROBE_ADDRESS,
+        dump_kbd_off("any"),
+    );
+    notes(check(&switched_off, &PluginConfig::default(), STAGED, LIVE).await);
+}
+
+/// The opt-in switches keyboard-interactive on for every connection, which
+/// wakes a `Match` list naming it on its own. Measured with OpenSSH 9.6p1:
+/// `Match Address 10.0.0.0/8` with `AuthenticationMethods publickey
+/// keyboard-interactive` gave `kbdinteractiveauthentication yes` from
+/// 10.1.2.3 once the fragment was in place, and `no` before it.
+#[tokio::test]
+async fn a_probe_that_finds_a_password_alone_login_the_second_factor_opened_refuses() {
+    let opened = dump("publickey keyboard-interactive", "no");
+    let executor = with_baseline_probe(
+        with_probes(guarded_host_without_probes(), "eric", opened),
+        "eric",
+        "127.0.0.1",
+        dump_kbd_off("publickey keyboard-interactive"),
+    );
+
+    let reason = refusal(check(&executor, &PluginConfig::default(), STAGED, LIVE).await);
+    assert!(
+        reason.contains("eric") && reason.contains("password alone"),
+        "{reason}"
+    );
+}
+
+#[test]
+fn a_match_list_naming_keyboard_interactive_alone_is_refused_from_the_files() {
+    let refused = resolved(&[
+        (
+            "/etc/ssh/sshd_config",
+            "Include /etc/ssh/sshd_config.d/*.conf\n",
+        ),
+        (
+            "/etc/ssh/sshd_config.d/50-lan.conf",
+            "Match Address 10.0.0.0/8\n    AuthenticationMethods publickey keyboard-interactive\n",
+        ),
+    ]);
+    let reason = match_refusal(&refused).expect("a password-only list is refused");
+    assert!(
+        reason.contains("Match Address 10.0.0.0/8") && reason.contains("50-lan.conf"),
+        "{reason}"
+    );
+
+    // Kept on the key, or with keyboard-interactive switched off inside the
+    // block, it stays a list sshd drops or a key it needs.
+    for block in [
+        "Match Address 10.0.0.0/8\n    AuthenticationMethods publickey\n",
+        "Match User ci\n    AuthenticationMethods publickey,keyboard-interactive\n",
+        "Match Address 10.0.0.0/8\n    AuthenticationMethods keyboard-interactive\n    \
+         KbdInteractiveAuthentication no\n",
+        "Match User sftp\n    ForceCommand internal-sftp\n",
+    ] {
+        let host = resolved(&[("/etc/ssh/sshd_config.d/50-x.conf", block)]);
+        assert_eq!(match_refusal(&host), None, "for:\n{block}");
+    }
+}
+
+#[test]
+fn a_password_alone_is_told_apart_from_a_password_after_the_key() {
+    assert!(!password_alone(&effective(POLICY, "no"), 1000));
+    assert!(password_alone(
+        &effective("publickey keyboard-interactive", "no"),
+        1000
+    ));
+    assert!(password_alone(&effective("any", "no"), 1000));
+    let mut kbd_off = effective("any", "no");
+    kbd_off.enabled.remove("keyboard-interactive");
+    assert!(!password_alone(&kbd_off, 1000), "only the key is on");
+    assert!(
+        !password_alone(&effective("keyboard-interactive", "prohibit-password"), 0),
+        "root's password counts only under PermitRootLogin yes"
+    );
+    assert!(password_alone(&effective("keyboard-interactive", "yes"), 0));
+}
+
+/// sshd says only that keyboard-interactive is disabled; the line that does
+/// it is the first one outside the fragment.
+#[test]
+fn an_unsatisfiable_candidate_names_the_line_switching_keyboard_interactive_off() {
+    let raw = "`sshd -T` could not read the candidate for the global scope: Disabled method \
+               \"keyboard-interactive\" in AuthenticationMethods list \
+               \"publickey,keyboard-interactive\"\nAuthenticationMethods cannot be satisfied \
+               by enabled authentication methods"
+        .to_string();
+    let host = resolved(&[
+        (
+            "/etc/ssh/sshd_config.d/00-early.conf",
+            "ChallengeResponseAuthentication no\n",
+        ),
+        (dropin::DROPIN_PATH, "KbdInteractiveAuthentication yes\n"),
+    ]);
+    let explained = explain_unsatisfiable(raw.clone(), &host);
+    assert!(
+        explained.contains(
+            "`ChallengeResponseAuthentication no` in /etc/ssh/sshd_config.d/00-early.conf"
+        ),
+        "{explained}"
+    );
+    // Any other refusal is left as it was.
+    assert_eq!(explain_unsatisfiable("no PAM".to_string(), &host), "no PAM");
+}
+
+/// Kerberos and trusted-host logins reach no key file either. Rocky and
+/// Fedora switch GSSAPIAuthentication on in 50-redhat.conf; without a keytab
+/// nobody logs in that way, so that is a note.
+#[tokio::test]
+async fn kerberos_and_trusted_host_logins_refuse_where_they_can_happen() {
+    let switched_on = |extra: &str| ok(&format!("{}{extra}", dump_text(POLICY, "no")));
+    let host = |stdout: CommandOutput| {
+        with_probes(
+            guarded_host().with_command("sshd", &["-T", "-f", STAGED], stdout),
+            "deploy",
+            dump("publickey", "no"),
+        )
+    };
+
+    let without_keytab = host(switched_on("gssapiauthentication yes\n"));
+    let notes = notes(check(&without_keytab, &PluginConfig::default(), STAGED, LIVE).await);
+    assert!(
+        notes
+            .iter()
+            .any(|note| note.contains("GSSAPIAuthentication") && note.contains("keytab")),
+        "{notes:?}"
+    );
+
+    let with_keytab =
+        host(switched_on("gssapiauthentication yes\n")).with_file("/etc/krb5.keytab", "binary");
+    let reason = refusal(check(&with_keytab, &PluginConfig::default(), STAGED, LIVE).await);
+    assert!(
+        reason.contains("GSSAPIAuthentication") && reason.contains(UNLISTED_KEYS_EXCEPTION_KEY),
+        "{reason}"
+    );
+
+    let hostbased = host(switched_on("hostbasedauthentication yes\n"));
+    let reason = refusal(check(&hostbased, &PluginConfig::default(), STAGED, LIVE).await);
+    assert!(reason.contains("HostbasedAuthentication"), "{reason}");
 }
 
 // -----------------------------------------------------------------------------
@@ -1093,4 +1341,99 @@ fn real_sshd_output_is_read_the_way_the_guards_expect() {
         real_dump(&ca, None).unlisted_key_sources,
         vec!["TrustedUserCAKeys"]
     );
+
+    // An exemption covering loopback keeps an account on its key there and
+    // nowhere else, which is why every account is checked from elsewhere too.
+    let loopback = real_sshd_host(
+        "",
+        REAL_TAIL,
+        &[
+            ("00-hardener.conf", REAL_FRAGMENT),
+            (
+                "50-auto.conf",
+                "Match Address 127.0.0.1,192.0.2.10\n    AuthenticationMethods publickey\n",
+            ),
+        ],
+    );
+    assert!(key_gets_in(
+        &real_dump(&loopback, Some("user=sftp,host=127.0.0.1,addr=127.0.0.1")),
+        1002
+    ));
+    let elsewhere =
+        format!("user=sftp,host={ELSEWHERE_PROBE_ADDRESS},addr={ELSEWHERE_PROBE_ADDRESS}");
+    assert!(!key_gets_in(&real_dump(&loopback, Some(&elsewhere)), 1002));
+
+    // A Match list naming keyboard-interactive on its own: dropped while the
+    // plugin holds keyboard-interactive off, a password-only login once the
+    // fragment switches it on.
+    let lan = (
+        "50-lan.conf",
+        "Match Address 10.0.0.0/8\n    AuthenticationMethods publickey keyboard-interactive\n",
+    );
+    let lan_client = Some("user=alice,host=10.1.2.3,addr=10.1.2.3");
+    let before = real_sshd_host("", REAL_TAIL, &[lan]);
+    assert!(!password_alone(&real_dump(&before, lan_client), 1004));
+    let after = real_sshd_host("", REAL_TAIL, &[("00-hardener.conf", REAL_FRAGMENT), lan]);
+    assert!(password_alone(&real_dump(&after, lan_client), 1004));
+}
+
+/// Gentoo includes the drop-ins at the foot of sshd_config, so the `no` an
+/// earlier apply activated in place of `#KbdInteractiveAuthentication yes`
+/// sits above that Include and beats the fragment, and sshd refuses the
+/// lists. Switching that line on, as apply does, gives a candidate sshd runs
+/// with the second factor (#185 round 2).
+#[test]
+#[ignore = "Requires root and an sshd binary"]
+fn real_sshd_runs_the_second_factor_once_a_line_above_a_foot_include_is_on() {
+    let gentoo = real_sshd_host(
+        "KbdInteractiveAuthentication no\nPasswordAuthentication no\n",
+        "",
+        &[
+            ("00-hardener.conf", REAL_FRAGMENT),
+            (
+                "9999999gentoo-pam.conf",
+                "UsePAM yes\nPasswordAuthentication no\nPrintMotd no\nPrintLastLog no\n",
+            ),
+        ],
+    );
+    let main_path = gentoo.path().join("main.conf");
+    let main = std::fs::read_to_string(&main_path).expect("the main file");
+    let refused = std::process::Command::new(real_sshd())
+        .arg("-t")
+        .arg("-f")
+        .arg(&main_path)
+        .output()
+        .expect("sshd -t runs");
+    assert!(!refused.status.success(), "the line above the Include wins");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("keyboard-interactive"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+
+    let line = crate::ssh::include::main_line_ahead_of_dropins(
+        &main,
+        &main_path.display().to_string(),
+        KBD_INTERACTIVE,
+        &gentoo.path().join("d").join("00-hardener.conf"),
+    )
+    .expect("the line above the Include is found");
+    assert_eq!(line.value, "no");
+    let fixed = hardener_common::file_utils::set_config_directive(
+        &main,
+        &line.keyword,
+        "yes",
+        hardener_common::file_utils::ConfigFormat::SpaceSeparated,
+        false,
+        hardener_common::file_utils::Duplicates::Keep,
+    );
+    std::fs::write(&main_path, &fixed).expect("the switched-on main file");
+
+    let global = real_dump(&gentoo, None);
+    assert_eq!(candidate_refusal(&global), None, "{global:?}");
+    assert!(
+        global.enabled.contains("keyboard-interactive"),
+        "{global:?}"
+    );
+    assert_eq!(global.methods, vec![POLICY.to_string()]);
 }
