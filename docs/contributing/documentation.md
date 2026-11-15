@@ -696,6 +696,31 @@ constant and its test together leaves the reference promising a key that is
 gone. It checks documentation against source only, so a key that exists and is
 documented nowhere is not covered.
 
+### Baseline sources
+
+```bash
+python3 scripts/validate/validate_baseline_sources.py
+python3 scripts/validate/validate_baseline_sources.py --self-test
+```
+
+Holds `docs/reference/baseline-sources.md` to the baseline tables in the
+plugins. Every kernel, SSH, PAM, service, permission, firewall and audit setting
+must have exactly one row, its default, comparison and severity must be the
+code's, and the row must say where the value came from, even if what it says is
+that no source was recorded. A row for a setting the code no longer has fails
+too. Each table on the page opens with a `<!-- baseline-table: KEY -->` marker,
+which is how the check finds it.
+
+So a change to a default and its row land in the same commit, and a new check
+cannot arrive without a stated source, which is the gap issue #189 reported.
+The page also lists controls a host can pass on a weaker value than the
+control's own text asks for; the identifiers those rows name must still be ones
+the code emits, and the baseline values they quote must still be the code's.
+
+What the guides say is not checked. Their values are quoted with a version and
+the date they were read, and only a person reading a new release can tell
+whether one moved.
+
 ### Version locations
 
 ```bash
