@@ -274,7 +274,12 @@ A config that fails validation is rejected with every invalid entry listed:
 
 The baseline is the plugins' built-in set of values. Every one of them, with
 its comparison and where it came from, is listed in
-[baseline-sources.md](baseline-sources.md).
+[baseline-sources.md](baseline-sources.md). "Tighten" means stricter as the
+code ranks it, and for three settings, faillock `deny`, `PASS_MAX_DAYS` and
+`ClientAliveCountMax`, the code ranks the value that switches the check off
+(`0`, or `-1` for `PASS_MAX_DAYS`) as the strictest, so an override set to it
+is accepted and written. That page lists them under
+[A value that switches the check off](baseline-sources.md#a-value-that-switches-the-check-off).
 
 Every `[pam]`, `[ssh]` and `[kernel]` directive is clamped so an override can
 only tighten, in `scan`, `apply` and `apply --dry-run` alike. A `deny` limit

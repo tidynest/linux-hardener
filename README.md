@@ -186,8 +186,10 @@ changes without its row on that page.
 The values are the same on every distribution. A compliance profile changes the
 control identifiers a report prints, never a value, and a **Pass** means the
 host meets the baseline's value, which is not always everything the control's
-own text asks for. `directives` can only tighten a value, and an exception is
-how a host records a deliberately looser one.
+own text asks for. `directives` can only tighten a value as the code ranks
+it, although for three settings, faillock `deny`, `PASS_MAX_DAYS` and
+`ClientAliveCountMax`, it ranks the value that switches the check off as the
+strictest. An exception is how a host records a deliberately looser value.
 
 There is no written rule yet for choosing between guides where they disagree.
 To propose a different default, open an issue with the **Propose a baseline
@@ -507,8 +509,10 @@ evasion.
   check, never against a number in the control's text. Where a control asks for
   more than the baseline, such as a 15-character password minimum where the
   baseline asks for 14, or for something the check does not read, such as the
-  owner of `/etc/shadow`, a host meeting the baseline still passes it.
-  [Baseline sources](docs/reference/baseline-sources.md#where-a-pass-is-weaker-than-the-control)
+  owner of `/etc/shadow`, a host meeting the baseline still passes it. So does
+  a host that switches a check off with a value the code ranks as strictest,
+  such as faillock `deny = 0`.
+  [Baseline sources](docs/reference/baseline-sources.md#where-a-pass-and-the-control-disagree)
   lists the cases found so far.
 
 Open defects are tracked as

@@ -74,8 +74,10 @@ body:
       description: >-
         For a setting already in the kernel, SSH, PAM, file-permission or firewall
         tables, a stricter value needs no change, since `directives` can set it
-        today. The SSH algorithm lists, services, audit rules and new settings
-        can only change in the code.
+        today. Switching a check off is not stricter, even where the code ranks
+        it so for `deny`, `PASS_MAX_DAYS` and `ClientAliveCountMax`. The SSH
+        algorithm lists, services, audit rules and new settings can only change
+        in the code.
       options:
         - Yes, as the default for everyone
         - No, as an option people turn on themselves
