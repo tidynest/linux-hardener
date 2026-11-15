@@ -358,6 +358,12 @@ async fn report_scan_path_honours_config_exceptions() {
 /// so that each value is judged rather than reported unenforced. `minclass`
 /// and `maxclassrepeat` are off on both hosts: the benchmark policy does not
 /// read them, and the NIST policy asks for exactly that.
+///
+/// Both hosts must meet every PAM check other than the password policy's, or
+/// the NIST-derived assertions below fail for that check rather than for the
+/// policy. A check added to the plugin that maps to the same controls, such
+/// as the password hashing check #191 maps to IA-5(1)(d), needs its keys
+/// added here.
 fn pam_host(minlen: &str, credit: &str, max_days: &str) -> Arc<dyn SystemExecutor> {
     Arc::new(
         MockExecutor::new()

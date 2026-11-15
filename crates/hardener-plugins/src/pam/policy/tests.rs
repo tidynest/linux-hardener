@@ -109,7 +109,7 @@ fn the_nist_policy_changes_six_rows_adds_two_and_keeps_the_rest() {
     for added in ["minclass", "maxclassrepeat"] {
         let directive = find(&directives, added);
         assert_eq!(directive.rule.pam_secure_value, "0");
-        assert_eq!(directive.rule.pam_compare, Strictness::ClosestToZero);
+        assert_eq!(directive.rule.pam_compare, Strictness::OffAtOrBelowZero);
         assert_eq!(directive.rule.pam_config_file, PamConfigFile::PwQuality);
         assert_eq!(directive.rule.pam_severity, Severity::Low);
         assert!(
@@ -372,9 +372,11 @@ fn a_departure_finding_is_informational_and_names_only_the_frameworks_it_fails()
     );
 }
 
-/// A value that meets neither rule gets one finding, carrying every control,
-/// at the benchmark's severity when a value is set and the policy's when it is
-/// not.
+/// A value that meets neither rule gets one finding. Set, it carries every
+/// control at the benchmark's severity. Unset, which already behaves as the
+/// policy asks, it carries the policy's severity and the controls of the rule
+/// finding and the departure it stands in for, and no NIST-derived control
+/// (#190, control round 2).
 #[test]
 fn a_value_that_meets_neither_rule_fails_every_control_once() {
     let directives = policy_directives(PasswordPolicy::Nist80063b);
@@ -415,6 +417,41 @@ fn a_value_that_meets_neither_rule_fails_every_control_once() {
     );
     assert_eq!(unset.finding_severity, Severity::Low);
     assert_eq!(unset.finding_current_value, "not set");
+
+    // The same split as a departure beside a rule finding, for every row that
+    // can reach this with no value set.
+    for name in ["dcredit", "ucredit", "lcredit", "ocredit", "PASS_MAX_DAYS"] {
+        let directive = find(&directives, name);
+        let unset = unmet_by_either_finding(
+            PasswordPolicy::Nist80063b,
+            directive,
+            benchmark_row(name),
+            directive.rule.pam_secure_value,
+            benchmark_row(name).pam_secure_value,
+            None,
+            &config,
+        );
+        let key = |m: &ComplianceMapping| (m.compliance_framework, m.compliance_control_id.clone());
+        let carried: HashSet<_> = unset.finding_compliance.iter().map(key).collect();
+        let expected: HashSet<_> = rule_mappings(directive)
+            .iter()
+            .chain(&departure_mappings(name))
+            .map(key)
+            .collect();
+        assert_eq!(carried, expected, "{name}");
+        assert!(
+            unset
+                .finding_compliance
+                .iter()
+                .all(|m| !NIST_DERIVED.contains(&m.compliance_framework)),
+            "{name} unset already does what NIST asks"
+        );
+        assert!(
+            unset.finding_description.contains("are not failed by it"),
+            "{}",
+            unset.finding_description
+        );
+    }
 }
 
 /// Only a write that leaves the host looser than it was by the dropped rule's

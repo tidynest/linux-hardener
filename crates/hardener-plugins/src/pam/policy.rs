@@ -37,8 +37,11 @@
 //! policy's own finding for the same directive carries only the four controls
 //! every PAM check maps to (HIPAA, GDPR, ISO/IEC 27001 and SOC 2), which ask
 //! that a password policy be followed rather than which one. A value that
-//! meets neither rule gets one finding carrying every control, rather than two
-//! findings that contradict each other about what `apply` will do.
+//! meets neither rule gets one finding rather than two that contradict each
+//! other about what `apply` will do. Set, it carries every control. Unset, it
+//! already behaves as the NIST policy asks, so it carries what the two
+//! findings it replaces would have carried, and the NIST-derived frameworks
+//! stay out of it as they stay out of a departure.
 
 use super::{PAM_DIRECTIVES, PamConfigFile, PamDirective, get_pam_compliance_mappings};
 use crate::strictness::Strictness;
@@ -155,8 +158,11 @@ const NIST_RULES: &[NistRule] = &[
 /// off.
 ///
 /// Both are off at zero (pwquality.conf(5): "The check is disabled if the
-/// value is 0" for `maxclassrepeat`; `minclass` defaults to 0) and both are set
-/// by the benchmarks: CIS RHEL 9 v2.0.0 asks for `minclass = 4` and the RHEL 9
+/// value is 0" for `maxclassrepeat`; `minclass` defaults to 0), and at every
+/// negative value too, because libpwquality stores a negative value as given
+/// and tests only `max_class_repeat > 0` and `numclass(new) < min_class`
+/// (check.c); hence [`Strictness::OffAtOrBelowZero`]. Both are set by the
+/// benchmarks: CIS RHEL 9 v2.0.0 asks for `minclass = 4` and the RHEL 9
 /// STIG for `minclass = 4` and `maxclassrepeat = 4`. Measured on 2026-11-15
 /// with libpwquality 1.4.5, either one at 4 refused all 1,000 random
 /// passphrases of five or seven EFF words that the rest of this policy
@@ -173,7 +179,7 @@ const NIST_ONLY_ROWS: &[PamDirective] = &[
                           rules (NIST SP 800-63B-4 3.1.1.2)",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: Strictness::ClosestToZero,
+        pam_compare: Strictness::OffAtOrBelowZero,
     },
     PamDirective {
         pam_directive_name: "maxclassrepeat",
@@ -182,7 +188,7 @@ const NIST_ONLY_ROWS: &[PamDirective] = &[
                           every passphrase made of words (NIST SP 800-63B-4 3.1.1.2)",
         pam_severity: Severity::Low,
         pam_config_file: PamConfigFile::PwQuality,
-        pam_compare: Strictness::ClosestToZero,
+        pam_compare: Strictness::OffAtOrBelowZero,
     },
 ];
 
@@ -308,12 +314,16 @@ pub(super) fn rule_mappings(directive: &PolicyDirective) -> Vec<ComplianceMappin
 fn departure_mappings(name: &str) -> Vec<ComplianceMapping> {
     get_pam_compliance_mappings(name)
         .into_iter()
-        .filter(|mapping| {
-            DEPARTURE_FRAMEWORKS
-                .iter()
-                .any(|(framework, _)| *framework == mapping.compliance_framework)
-        })
+        .filter(|mapping| is_departure_framework(mapping.compliance_framework))
         .collect()
+}
+
+/// True for a framework whose current text still requires a rule the NIST
+/// policy drops.
+fn is_departure_framework(framework: ComplianceFramework) -> bool {
+    DEPARTURE_FRAMEWORKS
+        .iter()
+        .any(|(departure, _)| *departure == framework)
 }
 
 /// "CIS, DISA STIG and PCI DSS", naming only the departure frameworks that
@@ -402,14 +412,23 @@ pub(super) fn departure_finding(
 ///
 /// One finding rather than a policy finding beside a departure, because a
 /// departure says the value is the intended one and `apply` leaves it alone,
-/// and here `apply` rewrites it. It carries every control the check maps to,
-/// since the value meets neither side. A value that is set is as weak as the
-/// benchmark judges it, so it keeps the benchmark's severity. An unset one is
-/// what the selected policy wants in effect (libpwquality's credits default to
-/// 0, and login.defs(5) assumes `-1`, no expiry, for an unset
-/// `PASS_MAX_DAYS`), so it keeps the policy's lower severity: it is reported
-/// only so the value is written down, where a drop-in or a vendor layer cannot
-/// quietly supply another.
+/// and here `apply` rewrites it.
+///
+/// A value that is set is as weak as the benchmark judges it, so the finding
+/// keeps the benchmark's severity and carries every control the check maps to.
+///
+/// An unset value is different: it is what the selected policy wants in effect
+/// (libpwquality's credits default to 0, and login.defs(5) assumes `-1`, no
+/// expiry, for an unset `PASS_MAX_DAYS`). It is reported only so the value is
+/// written down, where a drop-in or a vendor layer cannot quietly supply
+/// another, so it keeps the policy's lower severity, and it carries the
+/// controls of the two findings it stands in for and no others: the four
+/// policy-agnostic frameworks of the rule finding and the departure frameworks
+/// of the benchmark rule it does not meet. The NIST-derived frameworks are left
+/// out exactly as a departure leaves them out, since the behaviour the host
+/// already has is the behaviour they accept. Every row this is reached for
+/// today has such a default; a relaxed row added later whose unset value means
+/// something stricter would need its own case here.
 pub(super) fn unmet_by_either_finding(
     policy: PasswordPolicy,
     directive: &PolicyDirective,
@@ -421,6 +440,29 @@ pub(super) fn unmet_by_either_finding(
 ) -> Finding {
     let name = directive.rule.pam_directive_name;
     let current_display = current.unwrap_or("not set");
+    let (compliance, reported) = match current {
+        Some(_) => (
+            get_pam_compliance_mappings(name),
+            "every control the check maps to is reported as not met".to_string(),
+        ),
+        None => {
+            let compliance: Vec<ComplianceMapping> = get_pam_compliance_mappings(name)
+                .into_iter()
+                .filter(|mapping| {
+                    POLICY_AGNOSTIC_FRAMEWORKS.contains(&mapping.compliance_framework)
+                        || is_departure_framework(mapping.compliance_framework)
+                })
+                .collect();
+            let reported = format!(
+                "the {} controls mapped to it are reported as not met. Unset, it already \
+                 behaves as the {} policy asks, so NIST SP 800-53, NIST SP 800-171 and FedRAMP \
+                 are not failed by it",
+                departure_framework_names(&compliance),
+                policy.id(),
+            );
+            (compliance, reported)
+        }
+    };
     Finding {
         finding_id: format!("pam-{name}"),
         finding_category: FindingCategory::Authentication,
@@ -428,8 +470,7 @@ pub(super) fn unmet_by_either_finding(
         finding_description: format!(
             "PAM directive '{name}' is currently '{current_display}' but should be '{target}' \
              under the {} password policy. It does not meet the benchmark rule that policy \
-             replaces either ({name} = {benchmark_target}), so every control the check maps to \
-             is reported as not met",
+             replaces either ({name} = {benchmark_target}), so {reported}",
             policy.id(),
         ),
         finding_explanation: directive.rule.pam_description.to_string(),
@@ -451,7 +492,7 @@ pub(super) fn unmet_by_either_finding(
             "PAM setting meets neither the {} policy nor the benchmark: {name}",
             policy.id()
         ),
-        finding_compliance: get_pam_compliance_mappings(name),
+        finding_compliance: compliance,
         finding_exception: config.exception_outcome(name, current_display),
         finding_exception_key: Some(name.to_string()),
     }

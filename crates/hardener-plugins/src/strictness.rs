@@ -62,9 +62,7 @@ pub enum Strictness {
     /// from zero on either side.
     ///
     /// For libpwquality's character-class credits under a password policy that
-    /// forbids composition rules, and for its `minclass` and `maxclassrepeat`,
-    /// which that policy switches off (both are off at zero). A positive credit
-    /// lets a password that
+    /// forbids composition rules. A positive credit lets a password that
     /// contains the class be shorter than `minlen` (libpwquality subtracts it
     /// from the minimum), and a negative one demands the class, which is the
     /// composition rule itself. Zero does neither, so it is the one value such
@@ -72,6 +70,21 @@ pub enum Strictness {
     /// nothing is stricter than zero, so a clamp can never overwrite a stricter
     /// value with it, which is the property the missing `Exact` protects.
     ClosestToZero,
+    /// Zero and every negative number switch the check off, which is the
+    /// strictest value under a policy that wants it off, and every positive
+    /// number imposes it, equally.
+    ///
+    /// For libpwquality's `minclass` and `maxclassrepeat` under a password
+    /// policy that forbids composition rules. libpwquality stores a negative
+    /// value as given and tests only `max_class_repeat > 0` and
+    /// `numclass(new) < min_class` (check.c), so `-1` refuses nothing, exactly
+    /// as `0` does. [`Self::ClosestToZero`] would report it as a value to
+    /// rewrite, failing every control the finding carries for a setting that
+    /// already does what the policy asks. Positive values are not ranked
+    /// against each other because the two options run in opposite directions
+    /// (a larger `minclass` demands more, a larger `maxclassrepeat` allows
+    /// more) and none of them is met anyway.
+    OffAtOrBelowZero,
     /// Larger is stricter, and a negative number means unlimited, which is
     /// larger than any number.
     ///
@@ -218,6 +231,13 @@ impl Strictness {
                 .parse::<i64>()
                 .ok()
                 .map(|n| (n.saturating_abs().saturating_neg(), n.to_string())),
+            // Off ties with off whatever its spelling, so a host's `-1` is
+            // never a violation, and a clamp, which settles a tie on the
+            // baseline, writes it in this tool's spelling, `0`.
+            Self::OffAtOrBelowZero => value.parse::<i64>().ok().map(|n| match n {
+                n if n <= 0 => (0, n.to_string()),
+                n => (-1, n.to_string()),
+            }),
             Self::AtLeastOrUnlimited => value.parse::<i64>().ok().map(|n| match n {
                 n if n < 0 => (i64::MAX, n.to_string()),
                 n => (n, n.to_string()),

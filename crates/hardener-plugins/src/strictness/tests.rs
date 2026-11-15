@@ -223,6 +223,45 @@ fn a_credit_is_weaker_the_further_it_sits_from_zero_on_either_side() {
     assert_eq!(Strictness::ClosestToZero.clamp_target("0", Some(&min)), "0");
 }
 
+/// libpwquality's `minclass` and `maxclassrepeat` are off at zero and at every
+/// negative value (check.c tests only `> 0` and `numclass < min_class`), so
+/// under a policy that wants them off, every one of those values meets the
+/// target and none is rewritten, while any positive value imposes the check.
+#[test]
+fn every_value_at_or_below_zero_is_off_and_every_positive_value_is_not() {
+    for off in ["0", "-1", "-5"] {
+        assert!(
+            !Strictness::OffAtOrBelowZero.violated_by("0", Some(off)),
+            "{off} switches the check off, which is what the target asks"
+        );
+        // It ties with the target, so a host's own spelling of off is not a
+        // weaker value for apply to rewrite as 0.
+        assert!(!Strictness::OffAtOrBelowZero.is_stricter("0", off));
+    }
+    for on in ["1", "4"] {
+        assert!(
+            Strictness::OffAtOrBelowZero.violated_by("0", Some(on)),
+            "{on} imposes the check"
+        );
+        // No override can put the check back: off wins every clamp.
+        assert_eq!(
+            Strictness::OffAtOrBelowZero.clamp_target("0", Some(on)),
+            "0"
+        );
+    }
+    // An off override ties with the baseline, so the baseline's spelling is
+    // the one written.
+    assert_eq!(
+        Strictness::OffAtOrBelowZero.clamp_target("0", Some("-5")),
+        "0"
+    );
+
+    // Unset fails closed, as everywhere, and the extremes do not overflow.
+    assert!(Strictness::OffAtOrBelowZero.violated_by("0", None));
+    assert!(!Strictness::OffAtOrBelowZero.violated_by("0", Some(&i64::MIN.to_string())));
+    assert!(Strictness::OffAtOrBelowZero.violated_by("0", Some(&i64::MAX.to_string())));
+}
+
 #[test]
 fn a_negative_maximum_age_is_unlimited_and_satisfies_any_target() {
     // A longer life is stricter on this scale, because the policy it serves
