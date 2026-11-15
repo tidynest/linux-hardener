@@ -40,7 +40,7 @@ pub use plugin::{
 };
 
 // Re-export config types (always available)
-pub use config::{GlobalConfig, HardenerConfig, PluginConfig, PolicyException};
+pub use config::{GlobalConfig, HardenerConfig, PasswordPolicy, PluginConfig, PolicyException};
 pub use config_loader::ConfigLoader;
 
 // Re-export testing (requires system feature)

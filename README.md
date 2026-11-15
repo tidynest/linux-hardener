@@ -142,7 +142,7 @@ The rollback takes its own snapshot first, so it too can be undone.
 | **Kernel Hardening** | sysctl parameters: ASLR, ptrace scope, network stack |
 | **SSH Hardening** | OpenSSH configuration, including key exchange, cipher and MAC selection intersected with what the host actually supports |
 | **Firewall Hardening** | rules and default policy across nftables, firewalld and ufw |
-| **PAM Authentication Hardening** | password quality, lockout, history and ageing, and how new passwords are hashed (yescrypt where the host supports it, SHA-512 with 100000 rounds in FIPS mode or where it does not) |
+| **PAM Authentication Hardening** | password quality, lockout, history and ageing, under a selectable policy: the CIS and STIG-style rules, or NIST SP 800-63B-4 (long passphrases, no character classes, no forced change); and how new passwords are hashed (yescrypt where the host supports it, SHA-512 with 100000 rounds in FIPS mode or where it does not) |
 | **Service Minimisation** | disables services that need not be running |
 | **Audit Rules Hardening** | auditd rule files (`auditd.conf` is checkpointed but not modified) |
 | **File Permissions Hardening** | file modes on account, boot and authentication paths (ownership is not checked) |
@@ -545,7 +545,7 @@ hardened host still carries is in [upgrading](docs/guide/upgrading.md).
 ### Tests
 
 ```
-Rust workspace (cargo nextest run --workspace):  2452 passed, 0 failed, 42 skipped
+Rust workspace (cargo nextest run --workspace):  2475 passed, 0 failed, 42 skipped
 ```
 
 The 42 skipped tests need root, a live SSH host, or a specific firewall backend,

@@ -14,6 +14,7 @@ mod login_defs;
 // pub(crate) so the crate's fuzz-seam can re-export the pure parsing
 // halves; every other consumer meets them through the readers below.
 pub(crate) mod parsing;
+mod policy;
 mod validate;
 
 use crate::strictness::Strictness;

@@ -127,6 +127,10 @@ Every section accepts the same three keys:
 | `directives` | table of string to string | `{}` | Overrides the target value for a built-in check, typically to something stricter than the baseline. Directives are clamped tighten-only: completely in `[kernel]`, `[ssh]`, `[pam]` and `[permissions]`, and in `[firewall]` on all four fields, `action` on its own terms and `port`, `source` and `protocol` against the direction the rule's action gives them. See below. |
 | `exceptions` | table of exception entries | `{}` | Policy exceptions; see below. |
 
+`[pam]` accepts a fourth key, `password_policy`, which chooses between the
+benchmark rules and NIST SP 800-63B-4; see
+[`[pam]` password policy](#pam-password-policy).
+
 > **Removed: `custom_directives`.** Earlier releases accepted and validated a
 > `custom_directives` table that no plugin ever read, so anything set there had
 > no effect. It has been removed rather than implemented. A file that still
@@ -285,8 +289,9 @@ Every `[pam]`, `[ssh]` and `[kernel]` directive is clamped so an override can
 only tighten, in `scan`, `apply` and `apply --dry-run` alike. A `deny` limit
 above the baseline is lowered back to it, a `remember` count below it is raised
 back to it, a `minlen` below 14 is raised back to 14, a `PASS_MAX_DAYS` above 90
-is lowered back to 90, `MaxAuthTries = "10"` yields 3, `X11Forwarding = "yes"`
-yields `no`, and `kernel.kptr_restrict = "0"` yields 2.
+is lowered back to 90 (those two under the default password policy),
+`MaxAuthTries = "10"` yields 3, `X11Forwarding = "yes"` yields `no`, and
+`kernel.kptr_restrict = "0"` yields 2.
 
 `[permissions]` states the same rule differently, because a permission mode is
 a bitmask rather than a value on a scale. `0640` and `0604` are neither
@@ -660,6 +665,101 @@ copied there. A raised cost therefore outlives a rollback: an account whose
 password was set at a cost the host cannot carry stays that way until the
 password is set again with `passwd`. Rollback reports no divergence for this,
 because the plugin's state is the file it restores.
+
+### `[pam]` password policy
+
+`[pam]` accepts one key the other sections do not, `password_policy`, which
+chooses the set of password rules the PAM plugin enforces. Config validation
+refuses the key in any other section, and a value it does not recognise stops
+the configuration loading rather than falling back to a default.
+
+```toml
+[pam]
+password_policy = "nist-800-63b"
+```
+
+| Value | What it enforces |
+|---|---|
+| `"benchmark"` (default) | The rules every earlier release enforced: `minlen` 14; one digit, one uppercase letter, one lowercase letter and one other character (`dcredit`, `ucredit`, `lcredit` and `ocredit` at `-1`); and a maximum password age of 90 days for new accounts. |
+| `"nist-800-63b"` | NIST SP 800-63B-4: `minlen` 15; all four credits at `0`, so no character class is required and none shortens the minimum; and `PASS_MAX_DAYS 99999`, so new accounts are not made to change their password on a schedule. |
+
+Both policies keep the same `maxrepeat`, minimum password age, expiry warning,
+lockout (`deny`) and history (`remember`) rules, and both leave libpwquality's
+dictionary check, `dictcheck`, at its default, which is on.
+
+**Why there are two.** The standards no longer agree. Section 3.1.1.2 of NIST
+SP 800-63B-4 says verifiers "SHALL require passwords that are used as a
+single-factor authentication mechanism to be a minimum of 15 characters",
+"SHALL NOT impose other composition rules (e.g., requiring mixtures of
+different character types)" and "SHALL NOT require subscribers to change
+passwords periodically", forcing a change only on evidence that the password
+has been compromised. The CIS and DISA STIG benchmarks still require character
+classes and a maximum age, and PCI DSS v4.0.1 requirement 8.3.9 asks for a
+change at least every 90 days where the password is the only factor. No host
+meets both sides. The default stays `benchmark`, so an upgrade changes nothing
+on a host whose configuration did not ask for a change; choose `nist-800-63b`
+where those frameworks do not apply, or where an auditor accepts the deviation.
+
+**What the report says about the choice.** A control the chosen policy
+deliberately does not meet is reported as failing, never as passing. Under
+`nist-800-63b`, a host that requires no character class, or forces no expiry,
+gets one Info finding per dropped rule, `pam-<directive>-policy-departure`. It
+carries the CIS, DISA STIG, NIST 800-53, NIST SP 800-171, FedRAMP and PCI DSS
+controls the benchmark check maps to, so those controls read Fail and the
+finding under them names the policy. The HIPAA, GDPR, ISO/IEC 27001 and SOC 2
+controls ask that a password policy is followed rather than which one, so the
+departure does not fail them. `apply` never acts on a departure finding. Where
+an auditor accepts the deviation, record it as an ordinary policy exception
+under the directive's own name, documenting the host's value, and the control
+then lists the documented deviation instead of failing:
+
+```toml
+[pam.exceptions.PASS_MAX_DAYS]
+value = "99999"
+allowed = true
+reason = "MFA on every login, so PCI DSS 8.3.9 does not apply"
+```
+
+**What `apply` does under `nist-800-63b`.** It writes `minlen = 15`, writes each
+credit as `0` (over a `-1` an earlier apply wrote, too), and writes
+`PASS_MAX_DAYS 99999`. A host already at `PASS_MAX_DAYS -1`, which is shadow's
+own "never expires", is left alone. Every write that relaxes a benchmark rule
+names the policy in its change line, and `apply --dry-run` shows the same note
+beside each pending change, so a relaxation never appears as an anonymous edit.
+The checkpoint is taken first as always, so `rollback` restores the files the
+apply changed.
+
+**Overrides follow the selected policy's direction.** An override is still
+clamped tighten-only, but on the selected policy's own scale. Under
+`nist-800-63b` nothing is stricter than `0` for a credit, so an override such as
+`dcredit = "-1"` has no effect; the dry run reports that as a Low issue and the
+scan log says so too. To require a character class, choose `benchmark`.
+`PASS_MAX_DAYS = "-1"` is honoured under `nist-800-63b`, because it means no
+expiry at all.
+
+**Existing accounts keep their ageing.** `/etc/login.defs` supplies ageing to
+accounts created after it changes. Accounts that already exist keep the maximum
+age recorded for them in `/etc/shadow`, under either policy, and this tool does
+not change it. Read it with `sudo chage -l <user>`; `sudo chage -M -1 <user>`
+removes the forced change from one account (chage(1): "-1 as MAX_DAYS will
+remove checking a password's validity").
+
+**What no setting here can enforce.** pam_pwquality judges one string at a time.
+It cannot tell a passphrase of truly random words from a phrase someone made up,
+and it has no notion of a word count, so the 15-character minimum makes room for
+long passphrases without being able to require them. Choosing the words at
+random, with dice or a generator over a published list, is what makes a
+passphrase strong, and that is up to the person or their password manager.
+libpwquality's dictionary check is not a breach list either: it never compares a
+password with passwords leaked elsewhere, and it accepted `password password
+password` under these settings. It errs the other way too: on Ubuntu 24.04
+(libpwquality 1.4.5, cracklib 2.9.6), measured on 2026-11-15, it refused
+between 1 and 2 in every 100 random passphrases of four to seven words from
+the EFF long list as "too simplistic/systematic". Picking another phrase is the
+remedy. Under `benchmark` the same test accepted none of them, for want of a
+digit. Spaces are accepted and count towards the length. libpwquality counts
+bytes rather than characters, so a character outside ASCII counts as more than
+one, and pam_unix refuses a new password longer than 512 bytes.
 
 ---
 

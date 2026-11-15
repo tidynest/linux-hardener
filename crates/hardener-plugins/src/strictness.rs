@@ -57,6 +57,27 @@ pub enum Strictness {
     /// soon as it is set. It ranks with the off values all the same, because
     /// no reading of it is a stricter policy an operator would want kept.
     PositiveAtMost,
+    /// Zero is the strictest value, and a number is weaker the further it sits
+    /// from zero on either side.
+    ///
+    /// For libpwquality's character-class credits under a password policy that
+    /// forbids composition rules. A positive credit lets a password that
+    /// contains the class be shorter than `minlen` (libpwquality subtracts it
+    /// from the minimum), and a negative one demands the class, which is the
+    /// composition rule itself. Zero does neither, so it is the one value such
+    /// a policy accepts. This is still a direction rather than an equality:
+    /// nothing is stricter than zero, so a clamp can never overwrite a stricter
+    /// value with it, which is the property the missing `Exact` protects.
+    ClosestToZero,
+    /// Larger is stricter, and a negative number means unlimited, which is
+    /// larger than any number.
+    ///
+    /// For `PASS_MAX_DAYS` under a password policy that forbids forced periodic
+    /// change, where the quantity judged is how long a password may live.
+    /// login.defs(5) defines `-1` as the value that "disables the restriction",
+    /// so it satisfies any target, while `0`, which expires a password as soon
+    /// as it is set, is the weakest value there is.
+    AtLeastOrUnlimited,
     /// The value space is a closed set whose strictness neither the number nor
     /// the alphabet carries, so it is listed here explicitly, **weakest first**.
     ///
@@ -173,6 +194,16 @@ impl Strictness {
             Self::PositiveAtMost => value.parse::<i64>().ok().map(|n| match n {
                 n if n <= 0 => (i64::MIN, n.to_string()),
                 n => (n.saturating_neg(), n.to_string()),
+            }),
+            // The distance from zero, negated so that nearer sorts stricter.
+            // Saturating for the same reason as above.
+            Self::ClosestToZero => value
+                .parse::<i64>()
+                .ok()
+                .map(|n| (n.saturating_abs().saturating_neg(), n.to_string())),
+            Self::AtLeastOrUnlimited => value.parse::<i64>().ok().map(|n| match n {
+                n if n < 0 => (i64::MAX, n.to_string()),
+                n => (n, n.to_string()),
             }),
         }
     }

@@ -354,6 +354,101 @@ async fn report_scan_path_honours_config_exceptions() {
     );
 }
 
+/// A PAM host for the password-policy test below, with every module loaded
+/// so that each value is judged rather than reported unenforced.
+fn pam_host(minlen: &str, credit: &str, max_days: &str) -> Arc<dyn SystemExecutor> {
+    Arc::new(
+        MockExecutor::new()
+            .with_directory("/etc")
+            .with_directory("/etc/security")
+            .with_file(
+                "/etc/pam.d/password-auth",
+                "auth required pam_faillock.so preauth silent\n\
+                 password required pam_pwquality.so retry=3\n\
+                 password required pam_pwhistory.so\n",
+            )
+            .with_file(
+                "/etc/security/pwquality.conf",
+                format!(
+                    "minlen = {minlen}\ndcredit = {credit}\nucredit = {credit}\n\
+                     lcredit = {credit}\nocredit = {credit}\nmaxrepeat = 3\n"
+                )
+                .as_str(),
+            )
+            .with_file(
+                "/etc/login.defs",
+                format!("PASS_MAX_DAYS {max_days}\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n").as_str(),
+            )
+            .with_file("/etc/security/faillock.conf", "deny = 3\n")
+            .with_file("/etc/security/pwhistory.conf", "remember = 10\n"),
+    )
+}
+
+/// #190, end to end through the report: a control the selected password
+/// policy deliberately does not meet is reported failing, never passing.
+///
+/// Each host is scanned under the policy it follows, so the PAM plugin itself
+/// raises nothing to fix. The benchmark host passes the expiry and
+/// composition controls; the NIST host, which forces no change and requires no
+/// character class, fails exactly those, while the 15-character minimum it
+/// does enforce passes the STIG length control.
+#[tokio::test]
+async fn a_control_the_password_policy_drops_fails_rather_than_passes() {
+    use hardener_core::PasswordPolicy;
+
+    let report_config = ReportConfig {
+        scenario: Scenario::Custom(vec![ComplianceFramework::STIG, ComplianceFramework::PCIDSS]),
+        formats: vec![OutputFormat::Json],
+        output_dir: None,
+        profile: ComplianceProfile::default(),
+    };
+    let statuses = |policy: PasswordPolicy, host: Arc<dyn SystemExecutor>| {
+        let report_config = report_config.clone();
+        async move {
+            let mut config = HardenerConfig::default();
+            config.pam.password_policy = Some(policy);
+            let (findings, unchecked) =
+                run_scan_for_report(true, host, &CliOutputFormat::Json, &config)
+                    .await
+                    .expect("the scan runs");
+            ReportGenerator::new(
+                report_config,
+                hardener_plugins::plugin_inventory(),
+                ComplianceConfig::default(),
+            )
+            .generate(&findings, &unchecked)
+            .into_iter()
+            .flat_map(|report| report.report_controls)
+            .map(|control| (control.control_id, control.control_status))
+            .collect::<std::collections::HashMap<_, _>>()
+        }
+    };
+
+    let benchmark = statuses(PasswordPolicy::Benchmark, pam_host("14", "-1", "90")).await;
+    let nist = statuses(PasswordPolicy::Nist80063b, pam_host("15", "0", "99999")).await;
+
+    // RHEL-08-020200: maximum lifetime. RHEL-08-020130: a digit required.
+    // 8.2.4: change every 90 days.
+    for control in ["RHEL-08-020200", "RHEL-08-020130", "8.2.4"] {
+        assert_eq!(
+            benchmark.get(control),
+            Some(&ControlStatus::Pass),
+            "the benchmark host meets {control}"
+        );
+        assert_eq!(
+            nist.get(control),
+            Some(&ControlStatus::Fail),
+            "the NIST policy drops the rule behind {control}, so it must not pass"
+        );
+    }
+    // RHEL-08-020230: a 15-character minimum, which the NIST policy enforces.
+    assert_eq!(
+        nist.get("RHEL-08-020230"),
+        Some(&ControlStatus::Pass),
+        "the control: a rule the NIST policy keeps or tightens still passes"
+    );
+}
+
 /// `--output report.json` under the default `--report-format text` wrote a
 /// human text report into a file named `.json`, exited 0 and said "Report saved
 /// to". The extension was added when absent and never checked when present.

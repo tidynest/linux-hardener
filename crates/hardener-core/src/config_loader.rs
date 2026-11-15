@@ -429,6 +429,9 @@ impl ConfigLoader {
             enabled: overlay.enabled.or(base.enabled),
             directives,
             exceptions,
+            // The same rule as `enabled`, for the same reason: a later source
+            // that named the section without choosing a policy decided nothing.
+            password_policy: overlay.password_policy.or(base.password_policy),
         })
     }
 

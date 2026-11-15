@@ -187,3 +187,66 @@ fn a_switched_off_value_never_wins_a_positive_at_most_clamp() {
     );
     assert_eq!(Strictness::PositiveAtMost.clamp_target("5", Some("3")), "3");
 }
+
+#[test]
+fn a_credit_is_weaker_the_further_it_sits_from_zero_on_either_side() {
+    // Zero neither demands a character class nor shortens the minimum.
+    assert!(!Strictness::ClosestToZero.violated_by("0", Some("0")));
+
+    // A negative credit demands the class, which is the composition rule; a
+    // positive one lets a password containing it be shorter than minlen.
+    for weaker in ["-1", "1", "-4", "4"] {
+        assert!(
+            Strictness::ClosestToZero.violated_by("0", Some(weaker)),
+            "{weaker} is a composition rule or a length credit, and a policy \
+             without either must flag it"
+        );
+    }
+
+    // Unset fails closed here as everywhere: libpwquality's default is zero,
+    // but a drop-in read before the main file may say otherwise, and only an
+    // explicit line in pwquality.conf, read last, settles it.
+    assert!(Strictness::ClosestToZero.violated_by("0", None));
+
+    // Nothing beats zero in a clamp, from the host or from an override, so the
+    // write always converges on it and never keeps a credit.
+    for candidate in ["-1", "1", "-2"] {
+        assert_eq!(
+            Strictness::ClosestToZero.clamp_target("0", Some(candidate)),
+            "0"
+        );
+    }
+
+    // The scale cannot overflow at either extreme.
+    let min = i64::MIN.to_string();
+    assert!(Strictness::ClosestToZero.violated_by("0", Some(&min)));
+    assert_eq!(Strictness::ClosestToZero.clamp_target("0", Some(&min)), "0");
+}
+
+#[test]
+fn a_negative_maximum_age_is_unlimited_and_satisfies_any_target() {
+    // A longer life is stricter on this scale, because the policy it serves
+    // forbids forcing a change.
+    assert!(!Strictness::AtLeastOrUnlimited.violated_by("99999", Some("99999")));
+    assert!(!Strictness::AtLeastOrUnlimited.violated_by("99999", Some("100000")));
+    assert!(Strictness::AtLeastOrUnlimited.violated_by("99999", Some("90")));
+    assert!(Strictness::AtLeastOrUnlimited.violated_by("99999", Some("365")));
+
+    // -1 is login.defs's own "never expires", so it meets any target and is
+    // kept rather than rewritten as 99999.
+    assert!(!Strictness::AtLeastOrUnlimited.violated_by("99999", Some("-1")));
+    assert_eq!(
+        Strictness::AtLeastOrUnlimited.clamp_target("99999", Some("-1")),
+        "-1"
+    );
+
+    // 0 expires every password at once, which is the opposite of the intent.
+    assert!(Strictness::AtLeastOrUnlimited.violated_by("99999", Some("0")));
+    assert_eq!(
+        Strictness::AtLeastOrUnlimited.clamp_target("99999", Some("0")),
+        "99999"
+    );
+
+    // Unset fails closed: an explicit line is what this tool can vouch for.
+    assert!(Strictness::AtLeastOrUnlimited.violated_by("99999", None));
+}

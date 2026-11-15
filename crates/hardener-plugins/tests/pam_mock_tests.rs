@@ -2,10 +2,10 @@
 //!
 //! These tests verify plugin behavior without touching real PAM configuration.
 
-use hardener_common::types::{PluginId, Severity};
+use hardener_common::types::{ComplianceFramework, PluginId, Severity};
 use hardener_core::{
-    Change, CommandOutput, Context, ExceptionOutcome, MockExecutor, PluginConfig, PolicyException,
-    SystemExecutor, plugin::HardeningPlugin,
+    Change, CommandOutput, Context, ExceptionOutcome, MockExecutor, PasswordPolicy, PluginConfig,
+    PolicyException, SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::PamHardeningPlugin;
 use hardener_types::DeclineReason;
@@ -4301,4 +4301,382 @@ async fn validate_does_not_reread_what_it_already_read() {
              warns twice about the same failure"
         );
     }
+}
+
+// =============================================================================
+// The password policy (#190)
+// =============================================================================
+
+/// The four frameworks every PAM check maps to whatever it checks.
+const POLICY_AGNOSTIC: [ComplianceFramework; 4] = [
+    ComplianceFramework::HIPAA,
+    ComplianceFramework::GDPR,
+    ComplianceFramework::ISO27001,
+    ComplianceFramework::SOC2,
+];
+
+/// `[pam] password_policy = "nist-800-63b"`.
+fn nist_config() -> PluginConfig {
+    PluginConfig {
+        password_policy: Some(PasswordPolicy::Nist80063b),
+        ..Default::default()
+    }
+}
+
+/// A host that already follows the NIST policy: 15 characters, no credits, no
+/// forced expiry, and the lockout and history of the secure fixture.
+fn nist_pam_executor() -> MockExecutor {
+    secure_pam_executor()
+        .with_file(
+            "/etc/security/pwquality.conf",
+            "minlen = 15\ndcredit = 0\nucredit = 0\nlcredit = 0\nocredit = 0\nmaxrepeat = 3\n",
+        )
+        .with_file(
+            "/etc/login.defs",
+            "PASS_MAX_DAYS 99999\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+        )
+}
+
+fn finding_ids(findings: &[hardener_core::plugin::Finding]) -> Vec<&str> {
+    let mut ids: Vec<&str> = findings.iter().map(|f| f.finding_id.as_str()).collect();
+    ids.sort_unstable();
+    ids
+}
+
+/// Naming the default policy outright changes nothing: the findings are the
+/// ones every earlier release produced, word for word.
+#[tokio::test]
+async fn naming_the_benchmark_policy_changes_no_finding() {
+    let ctx = Context::with_executor(Arc::new(insecure_pam_executor()));
+    let plugin = PamHardeningPlugin::new();
+    let implicit = plugin
+        .scan(&ctx, &PluginConfig::default())
+        .await
+        .expect("scan runs");
+    let explicit = plugin
+        .scan(
+            &ctx,
+            &PluginConfig {
+                password_policy: Some(PasswordPolicy::Benchmark),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("scan runs");
+
+    let render = |findings: &[hardener_core::plugin::Finding]| {
+        findings
+            .iter()
+            .map(|f| (f.finding_id.clone(), f.finding_description.clone()))
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        !implicit.scan_findings.is_empty(),
+        "the fixture is insecure"
+    );
+    assert_eq!(
+        render(&implicit.scan_findings),
+        render(&explicit.scan_findings)
+    );
+    assert!(
+        implicit
+            .scan_findings
+            .iter()
+            .all(|f| !f.finding_description.contains("password policy")),
+        "the benchmark policy's wording is the wording that shipped"
+    );
+}
+
+/// A host hardened to the benchmark, scanned under the NIST policy: minlen
+/// is too short for it, and the credits and the 90-day expiry are rules it
+/// drops. None of those findings may fail a framework control the host meets,
+/// so the dropped rules carry only the four policy-agnostic frameworks.
+#[tokio::test]
+async fn the_nist_policy_asks_a_benchmark_host_for_length_and_fewer_rules() {
+    let ctx = Context::with_executor(Arc::new(secure_pam_executor()));
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &nist_config())
+        .await
+        .expect("scan runs");
+
+    assert_eq!(
+        finding_ids(&result.scan_findings),
+        vec![
+            "pam-PASS_MAX_DAYS",
+            "pam-dcredit",
+            "pam-lcredit",
+            "pam-minlen",
+            "pam-ocredit",
+            "pam-ucredit",
+        ],
+        "the host meets every benchmark rule, so nothing departs from one"
+    );
+
+    let minlen = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-minlen")
+        .expect("14 is short of 15");
+    assert_eq!(minlen.finding_recommended_value, "15");
+    assert_eq!(minlen.finding_severity, Severity::High);
+    assert!(minlen.finding_description.contains("nist-800-63b"));
+
+    for f in result
+        .scan_findings
+        .iter()
+        .filter(|f| f.finding_id != "pam-minlen")
+    {
+        assert_eq!(f.finding_severity, Severity::Low, "{}", f.finding_id);
+        assert!(
+            f.finding_title.contains("nist-800-63b"),
+            "{}: {}",
+            f.finding_id,
+            f.finding_title
+        );
+        assert!(
+            f.finding_compliance
+                .iter()
+                .all(|m| POLICY_AGNOSTIC.contains(&m.compliance_framework)),
+            "{} keeps what CIS, STIG and PCI DSS ask for, so it must not fail them",
+            f.finding_id
+        );
+    }
+}
+
+/// A host that already follows the NIST policy reports only the benchmark
+/// rules it does not meet, as Info, each carrying the framework controls that
+/// still require the rule so that those controls fail instead of passing.
+#[tokio::test]
+async fn the_nist_policy_reports_the_benchmark_rules_it_drops_on_a_compliant_host() {
+    let ctx = Context::with_executor(Arc::new(nist_pam_executor()));
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &nist_config())
+        .await
+        .expect("scan runs");
+
+    assert_eq!(
+        finding_ids(&result.scan_findings),
+        vec![
+            "pam-PASS_MAX_DAYS-policy-departure",
+            "pam-dcredit-policy-departure",
+            "pam-lcredit-policy-departure",
+            "pam-ocredit-policy-departure",
+            "pam-ucredit-policy-departure",
+        ],
+        "the host follows the policy, so only its departures are reported"
+    );
+    for f in &result.scan_findings {
+        assert_eq!(f.finding_severity, Severity::Info, "{}", f.finding_id);
+        assert!(
+            f.finding_compliance
+                .iter()
+                .any(|m| m.compliance_framework == ComplianceFramework::STIG),
+            "{} must fail the STIG control that requires the rule",
+            f.finding_id
+        );
+        assert!(
+            f.finding_compliance
+                .iter()
+                .all(|m| !POLICY_AGNOSTIC.contains(&m.compliance_framework)),
+            "{} must not fail a framework the policy satisfies",
+            f.finding_id
+        );
+    }
+
+    let expiry = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-PASS_MAX_DAYS-policy-departure")
+        .expect("reported above");
+    assert_eq!(expiry.finding_current_value, "99999");
+    assert_eq!(expiry.finding_recommended_value, "90");
+}
+
+/// `PASS_MAX_DAYS -1` is shadow's own "never expires", which is what the NIST
+/// policy wants, so it is kept rather than rewritten as 99999, and the
+/// benchmark rule it breaks is reported as a departure.
+#[tokio::test]
+async fn the_nist_policy_accepts_expiry_switched_off() {
+    let executor = nist_pam_executor().with_file(
+        "/etc/login.defs",
+        "PASS_MAX_DAYS -1\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n",
+    );
+    let ctx = Context::with_executor(Arc::new(executor));
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &nist_config())
+        .await
+        .expect("scan runs");
+
+    let ids = finding_ids(&result.scan_findings);
+    assert!(!ids.contains(&"pam-PASS_MAX_DAYS"), "{ids:?}");
+    assert!(
+        ids.contains(&"pam-PASS_MAX_DAYS-policy-departure"),
+        "{ids:?}"
+    );
+}
+
+/// The apply half: length goes up, the credits and the maximum age are
+/// relaxed with the policy named on each change, and lockout, history and the
+/// minimum age are left exactly as they were.
+#[tokio::test]
+async fn the_nist_policy_apply_writes_length_and_names_each_relaxation() {
+    let executor = Arc::new(with_backup_cp(
+        with_backup_cp(secure_pam_executor(), "/etc/login.defs"),
+        "/etc/security/pwquality.conf",
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+
+    let result = PamHardeningPlugin::new()
+        .apply(&mut ctx, &nist_config())
+        .await
+        .expect("apply runs");
+    assert!(result.apply_success, "changes: {:?}", result.apply_changes);
+
+    let pwquality = written_content(&executor, "/etc/security/pwquality.conf")
+        .expect("pwquality.conf is rewritten");
+    for line in [
+        "minlen = 15",
+        "dcredit = 0",
+        "ucredit = 0",
+        "lcredit = 0",
+        "ocredit = 0",
+        "maxrepeat = 3",
+    ] {
+        assert!(pwquality.contains(line), "missing '{line}' in: {pwquality}");
+    }
+    let login_defs =
+        written_content(&executor, "/etc/login.defs").expect("login.defs is rewritten");
+    assert!(
+        login_defs.contains("PASS_MAX_DAYS 99999") && login_defs.contains("PASS_MIN_DAYS 1"),
+        "{login_defs}"
+    );
+    assert!(
+        written_content(&executor, "/etc/security/faillock.conf").is_none(),
+        "lockout is the same under both policies, so a compliant faillock.conf is left alone"
+    );
+
+    let described = |name: &str| {
+        result
+            .apply_changes
+            .iter()
+            .find(|c| c.change_description.starts_with(&format!("Set {name} = ")))
+            .map(|c| c.change_description.clone())
+            .unwrap_or_else(|| panic!("no change recorded for {name}: {:?}", result.apply_changes))
+    };
+    assert!(
+        described("dcredit").ends_with("(nist-800-63b password policy: no composition rules)"),
+        "{}",
+        described("dcredit")
+    );
+    assert!(
+        described("PASS_MAX_DAYS")
+            .ends_with("(nist-800-63b password policy: no forced periodic change)"),
+        "{}",
+        described("PASS_MAX_DAYS")
+    );
+    assert!(
+        !described("minlen").contains("password policy"),
+        "a tightening needs no explanation: {}",
+        described("minlen")
+    );
+}
+
+/// The dry run previews the same writes with the same notes, and none of them
+/// blocks it.
+#[tokio::test]
+async fn the_nist_policy_dry_run_previews_each_relaxation_with_its_reason() {
+    let ctx = Context::with_executor(Arc::new(secure_pam_executor()));
+    let report = PamHardeningPlugin::new()
+        .validate(&ctx, &nist_config())
+        .await
+        .expect("validate runs");
+
+    let changes = &report.validation_report_estimated_changes;
+    for expected in [
+        "minlen will change: 14 -> 15",
+        "dcredit will change: -1 -> 0 (nist-800-63b password policy: no composition rules)",
+        "PASS_MAX_DAYS will change: 90 -> 99999 (nist-800-63b password policy: no forced periodic change)",
+    ] {
+        assert!(
+            changes.iter().any(|c| c == expected),
+            "missing '{expected}' in {changes:?}"
+        );
+    }
+    assert_eq!(changes.len(), 6, "{changes:?}");
+    assert!(
+        !report.has_blocking_issue(),
+        "{:?}",
+        report.validation_report_issues
+    );
+}
+
+/// An override cannot put a character class back under the NIST policy, and
+/// the preview says so rather than leaving the operator to believe it did.
+#[tokio::test]
+async fn the_nist_policy_calls_out_an_override_that_cannot_restore_a_character_class() {
+    let mut config = nist_config();
+    config
+        .directives
+        .insert("dcredit".to_string(), "-1".to_string());
+    let ctx = Context::with_executor(Arc::new(nist_pam_executor()));
+    let plugin = PamHardeningPlugin::new();
+
+    let report = plugin.validate(&ctx, &config).await.expect("validate runs");
+    let issue = report
+        .validation_report_issues
+        .iter()
+        .find(|i| i.validation_issue_config_key.as_deref() == Some("dcredit"))
+        .expect("the refused override is called out");
+    assert_eq!(issue.validation_issue_severity, Severity::Low);
+    assert!(!report.has_blocking_issue());
+
+    let scan = plugin.scan(&ctx, &config).await.expect("scan runs");
+    assert!(
+        !finding_ids(&scan.scan_findings).contains(&"pam-dcredit"),
+        "the policy's own target is still 0, which the host has"
+    );
+}
+
+/// An auditor who accepts a departure records it the usual way, keyed by the
+/// directive and documenting the host's value, and the finding carries it.
+#[tokio::test]
+async fn an_exception_records_a_departure_an_auditor_accepted() {
+    let mut config = nist_config();
+    config.exceptions.insert(
+        "PASS_MAX_DAYS".to_string(),
+        PolicyException {
+            value: "99999".to_string(),
+            allowed: true,
+            reason: "MFA on every login; PCI DSS 8.3.9 does not apply".to_string(),
+            approved_by: None,
+            approved_date: None,
+            ticket: None,
+            expires: None,
+        },
+    );
+    let ctx = Context::with_executor(Arc::new(nist_pam_executor()));
+    let result = PamHardeningPlugin::new()
+        .scan(&ctx, &config)
+        .await
+        .expect("scan runs");
+
+    let departure = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-PASS_MAX_DAYS-policy-departure")
+        .expect("the departure is still reported");
+    assert!(
+        matches!(departure.finding_exception, ExceptionOutcome::Applied(_)),
+        "{:?}",
+        departure.finding_exception
+    );
+    let credit = result
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-dcredit-policy-departure")
+        .expect("reported");
+    assert!(
+        matches!(credit.finding_exception, ExceptionOutcome::NotConfigured),
+        "the control: a departure nobody excepted stays live"
+    );
 }

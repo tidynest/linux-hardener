@@ -87,6 +87,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by scheme name only: `/etc/shadow` is read in the target's own shell and no
   hash, salt or user name leaves it. The finding is read-only, needs root, and
   says how to list the accounts on the host itself.
+- **The PAM plugin can enforce NIST SP 800-63B-4 instead of character classes
+  and a 90-day expiry (#190).** `[pam] password_policy = "nist-800-63b"` raises
+  `minlen` to 15, sets the four libpwquality credits to 0, so no digit, capital
+  or symbol is demanded and none shortens the minimum, and writes
+  `PASS_MAX_DAYS 99999`, so new accounts are not made to change their password
+  on a schedule. Lockout, password history, the minimum age and the dictionary
+  check stay as they were. A passphrase made of plain words, which the old rules
+  refused for lacking a digit, is now accepted. The default stays
+  `"benchmark"`, the rules every earlier release enforced, so nothing changes on
+  a host whose configuration does not ask for it. The report stays honest about
+  the choice: a CIS, DISA STIG, NIST 800-53, NIST 800-171, FedRAMP or PCI DSS
+  control whose rule the policy drops reads Fail, through an Info finding that
+  names the policy, and an auditor's accepted deviation is recorded as an
+  ordinary exception. Every relaxing write names the policy, in `apply` and in
+  the dry run. The key is refused in any section but `[pam]`, and a value the
+  tool does not know stops the configuration loading.
 
 ### Changed
 

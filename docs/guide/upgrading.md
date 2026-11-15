@@ -374,7 +374,11 @@ sudo hardener apply -p pam-hardening
 ```
 
 A `deny=0` set inline on a `pam_faillock.so` line is reported as a manual step,
-because this tool does not edit the PAM stack.
+because this tool does not edit the PAM stack. If you set `PASS_MAX_DAYS -1` on
+purpose because you do not want forced password changes, keep it and choose the
+`nist-800-63b` password policy described in
+[configuration.md](../reference/configuration.md#pam-password-policy), which
+accepts it rather than reporting it.
 
 `/etc/login.defs` only supplies defaults for accounts created after it changes.
 Existing accounts keep the ageing recorded in `/etc/shadow`; read it with

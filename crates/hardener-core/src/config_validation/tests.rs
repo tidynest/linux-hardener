@@ -321,3 +321,25 @@ fn only_a_framework_key_that_resolves_to_nothing_is_reported() {
          `from_id` accepts must not be"
     );
 }
+
+/// Every section shares one struct, so `password_policy` parses under `[ssh]`
+/// as readily as under `[pam]`, and only the PAM plugin reads it. Loading it
+/// silently anywhere else would leave the operator on the default policy while
+/// believing they had chosen another.
+#[test]
+fn a_password_policy_outside_pam_is_refused_and_inside_it_is_not() {
+    let misplaced: HardenerConfig = toml::from_str("[ssh]\npassword_policy = \"nist-800-63b\"\n")
+        .expect("the key parses in any section");
+    let error = validate_config(&misplaced).expect_err("only [pam] reads a password policy");
+    assert!(
+        error.to_string().contains("[ssh] password_policy"),
+        "the error must name the section the key is in: {error}"
+    );
+
+    let placed: HardenerConfig = toml::from_str("[pam]\npassword_policy = \"nist-800-63b\"\n")
+        .expect("the key parses under [pam]");
+    assert!(
+        validate_config(&placed).is_ok(),
+        "the control: the same key under [pam] is the supported place for it"
+    );
+}
