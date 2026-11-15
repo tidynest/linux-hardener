@@ -19,10 +19,11 @@ can see where the value sits among them.
 This page is held to the code. `scripts/validate/validate_baseline_sources.py`
 reads the baseline tables in the plugins, and `validate_all.py`, which the pull
 request checklist in CONTRIBUTING.md asks for, fails when a default, a
-comparison or a severity changes without its row here, and when a check is
-added or removed without one. CI does not run it. What the guides say cannot
-be checked that way, so every guide is quoted with its version and the date it
-was read, listed under [Sources](#sources).
+comparison or a severity changes without its row here, when a check is added
+or removed without one, and when a plugin gains a table of values the script
+does not read yet. CI does not run it. What the guides say cannot be checked
+that way, so every guide is quoted with its version and the date it was read,
+listed under [Sources](#sources).
 
 ---
 
@@ -30,7 +31,7 @@ was read, listed under [Sources](#sources).
 
 - [How the values were chosen](#how-the-values-were-chosen)
 - [How the baseline fits with the rest of the tool](#how-the-baseline-fits-with-the-rest-of-the-tool)
-- [Where a Pass is weaker than the control](#where-a-pass-is-weaker-than-the-control)
+- [Where a Pass and the control disagree](#where-a-pass-and-the-control-disagree)
 - [How to read the tables](#how-to-read-the-tables)
 - [Kernel parameters](#kernel-parameters)
 - [SSH server](#ssh-server)
@@ -93,7 +94,7 @@ ComplianceAsCode, the project that writes the SCAP Security Guide content
 OpenSCAP scans with. A mapping says which control a check relates to. It does
 not say where the check's number came from, and in several places the control
 asks for a different number, or for more than the check measures, as
-[a later section](#where-a-pass-is-weaker-than-the-control) shows.
+[a later section](#where-a-pass-and-the-control-disagree) shows.
 
 Severities have no recorded rationale anywhere. They are the project's
 judgement.
@@ -130,10 +131,16 @@ than which value is chosen:
 
 - **Every comparison has a direction**, so a host that is already stricter than
   the baseline is neither reported nor loosened
-  (`crates/hardener-plugins/src/strictness.rs`). File permissions are the one
-  exception, described [below](#file-permissions).
-- **A `directives` override can only tighten a value.** One that would loosen it
-  is ignored.
+  (`crates/hardener-plugins/src/strictness.rs`). File permissions are one
+  exception, described [below](#file-permissions). The other is at the bottom
+  of the scale: for three settings, faillock `deny`, `PASS_MAX_DAYS` and
+  `ClientAliveCountMax`, the value that switches the check off counts as the
+  strictest of all; see
+  [A value that switches the check off](#a-value-that-switches-the-check-off).
+- **A `directives` override can only tighten a value**, as the code ranks it.
+  One that would loosen it is ignored. For those three settings, an override
+  that switches the check off is taken as a tightening and written to the
+  host.
 - **SSH algorithm lists are cut down to what the host's own OpenSSH supports**,
   so `sshd` is never handed a name it cannot parse, and `sshd -t` checks the
   result before it is installed.
@@ -173,12 +180,17 @@ number, the Pass is still judged against the baseline. That cuts both ways:
   90, so a host at 120 days fails that STIG control in the report.
 - Where the baseline is **weaker** than the control, or the control asks for
   more than the check measures, a host passes a control it does not meet. The
-  cases found so far are listed in the next section.
+  cases found so far are listed in the next section, with two more kinds: a
+  host that has switched a check off, and a control that asks for one exact
+  value the baseline goes past.
 
 **Directives tighten, exceptions loosen, scope excludes.**
 
-- `[<plugin>.directives]` changes a target, but only towards stricter. The
-  [configuration reference](configuration.md) has the rule for each plugin.
+- `[<plugin>.directives]` changes a target, but only towards stricter, as the
+  code ranks it. The [configuration reference](configuration.md) has the rule
+  for each plugin, and
+  [A value that switches the check off](#a-value-that-switches-the-check-off)
+  the three settings where the code's ranking is wrong.
 - `[<plugin>.exceptions]` is how a host records a deliberately weaker value. It
   does not change the baseline. The finding stays, labelled with the reason, and
   the compliance report counts the control as satisfied while listing the
@@ -192,19 +204,37 @@ number, the Pass is still judged against the baseline. That cuts both ways:
 
 ---
 
-## Where a Pass is weaker than the control
+## Where a Pass and the control disagree
 
-A report can show **Pass** for a host that does not do everything a control's
-own text asks, in two ways: the control asks for a stricter value than the
-baseline, or it asks for something the check does not measure. These are the
-cases found so far. In every one the host meets the baseline. Expect more:
-nobody has yet compared every mapped control with its full text.
+A report can show **Pass** for a host that does not do what a control's own
+text asks. There are four ways this happens, and each has a table below:
+
+- The control asks for a stricter value than the baseline.
+- The control asks for something the check does not measure.
+- The host has switched the check off, with a value the code counts as the
+  strictest of all.
+- The control asks for one exact value and the baseline goes past it, so a
+  DISA or OpenSCAP check of the same control reports a finding where this tool
+  reports a Pass.
+
+These are the cases found so far. Expect more: nobody has yet compared every
+mapped control with its full text.
 
 Each row names the check, the control identifier the plugin maps it to, and
 the identifier the same control gets under the RHEL 10 profile. The "What the
 control asks" column says under which profile the gap shows. The STIG values
-were read in the RHEL 8 STIG V2R9 and the RHEL 10 STIG V1R3, and the CIS values
-in ComplianceAsCode's encodings of the CIS Benchmarks; see [Sources](#sources).
+were read in the RHEL 8 STIG V2R9 and the RHEL 10 STIG V1R3, the CIS values in
+ComplianceAsCode's encodings of the CIS Benchmarks, and the PCI DSS ones in its
+transcription of PCI DSS v4.0.1; see [Sources](#sources).
+
+**Which CIS text a row rests on.** The tool's own CIS identifiers follow the
+CIS Distribution Independent Linux numbering, whose text was not read here.
+Where a row says "under the RHEL 10 profile", the gap was read in
+ComplianceAsCode's encoding of CIS RHEL 10 v1.0.1. Its encoding of the older
+CIS RHEL 8 v2.0.0 asks the same under numbers of its own: 6.1.3 to 6.1.6 for
+the four account files, 1.6.1.5 for the SELinux mode and 4.1.2.1 for the audit
+log size. Only the last shares its number and its title with the tool's own
+identifier, so only the audit row says "under both profiles" for a CIS control.
 
 ### The control asks for a stricter value
 
@@ -217,7 +247,7 @@ in ComplianceAsCode's encodings of the CIS Benchmarks; see [Sources](#sources).
 | `Ciphers` | STIG `RHEL-08-010291` | STIG `RHEL-10-300040` | Ciphers limited to aes256-gcm, aes256-ctr, aes128-gcm and aes128-ctr, set through the system's FIPS crypto policy, under both profiles | allows `chacha20-poly1305@openssh.com` |
 | `MACs` | STIG `RHEL-08-010290` | STIG `RHEL-10-300060` | MACs limited to hmac-sha2-512-etm, hmac-sha2-256-etm, hmac-sha2-512 and hmac-sha2-256, set through the FIPS crypto policy, under both profiles | allows `umac-128-etm@openssh.com` |
 | `remember` | CIS `5.3.3` | CIS `5.3.2.3.1` | Under the RHEL 10 profile, remember at least 24 previous passwords. The title under the default profile names no number | `5` or more |
-| `/etc/shadow` | CIS `6.1.3` | CIS `7.1.5` | Mode 0000 on Red Hat family systems, under both profiles, in the ComplianceAsCode rule that its CIS RHEL 8 v2.0.0 and RHEL 10 v1.0.1 encodings use for this control. Debian, Ubuntu and SUSE get 0640 | no bits beyond `0640` |
+| `/etc/shadow` | CIS `6.1.3` | CIS `7.1.5` | Under the RHEL 10 profile, mode 0000, from the ComplianceAsCode rule its CIS RHEL 10 v1.0.1 encoding uses. The same rule gives Debian, Ubuntu and SUSE 0640 | no bits beyond `0640` |
 | `/etc/gshadow` | CIS `6.1.5` | CIS `7.1.7` | As for `/etc/shadow` | no bits beyond `0640` |
 
 The STIG checks for ciphers and MACs read the system crypto policy, while the
@@ -232,26 +262,76 @@ well as different lists.
 |---|---|---|---|---|
 | `deny` | CIS `5.3.2` | CIS `5.3.2.1.2` | Under the RHEL 10 profile, a faillock unlock time of 900 seconds. The profile maps the `deny` check to this control as well as to 5.3.2.1.1 | `deny` only. `unlock_time` is never read |
 | `X11Forwarding` | CIS `5.2.6` | CIS `5.1.8` | Under the RHEL 10 profile, `DisableForwarding yes`, which also turns off agent, TCP and StreamLocal forwarding. The title under the default profile asks for X11 only | `X11Forwarding` only |
-| `/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow` | CIS `6.1.2`, `6.1.4`, `6.1.3`, `6.1.5` | CIS `7.1.1`, `7.1.3`, `7.1.5`, `7.1.7` | The owner and group as well as the mode, under both profiles, in ComplianceAsCode's CIS RHEL 8 v2.0.0 and RHEL 10 v1.0.1 encodings: owner root, and group root, or for `/etc/shadow` the shadow group on Debian, Ubuntu and SUSE | The mode only. The owner and group in the code's table are never read |
-| `rules` | CIS `4.1.2.1` | CIS `6.3.2.1` | `max_log_file` set in `auditd.conf`, under both profiles: 8 MB in ComplianceAsCode's RHEL 10 encoding, and the same rule in its CIS RHEL 8 v2.0.0 encoding of 4.1.2.1 | That some loaded rule contains each category's name. `auditd.conf` is never read, and the rule text is not compared; see [Audit rules](#audit-rules) |
-| `selinux-not-enforcing` | CIS `1.6.1.4` | CIS `1.3.1.5` | `SELINUX=enforcing` in `/etc/selinux/config`, so the host boots enforcing, as ComplianceAsCode's `selinux_state` rule checks it for the CIS RHEL 8 v2.0.0 and RHEL 10 v1.0.1 encodings | The running mode only, through `getenforce`. Apply runs `setenforce 1`, which a reboot undoes, so the control passes until the next boot |
+| `/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow` | CIS `6.1.2`, `6.1.4`, `6.1.3`, `6.1.5` | CIS `7.1.1`, `7.1.3`, `7.1.5`, `7.1.7` | Under the RHEL 10 profile, the owner and group as well as the mode, in ComplianceAsCode's CIS RHEL 10 v1.0.1 encoding: owner root and group root. The same rules give `/etc/shadow` the shadow group on Debian, Ubuntu and SUSE | The mode only. The owner and group in the code's table are never read |
+| `rules` | CIS `4.1.2.1` | CIS `6.3.2.1` | `max_log_file` set in `auditd.conf`, under both profiles. The tool's own title for 4.1.2.1 is "Ensure audit log storage size is configured", and ComplianceAsCode encodes CIS RHEL 10 6.3.2.1 and CIS RHEL 8 v2.0.0 4.1.2.1 with the same rule, at 8 MB and 6 MB | That some loaded rule contains each category's name. `auditd.conf` is never read, and the rule text is not compared; see [Audit rules](#audit-rules) |
+| `selinux-not-enforcing` | CIS `1.6.1.4` | CIS `1.3.1.5` | Under the RHEL 10 profile, `SELINUX=enforcing` in `/etc/selinux/config`, so the host boots enforcing, as ComplianceAsCode's `selinux_state` rule checks it for CIS RHEL 10 v1.0.1 | The running mode only, through `getenforce`. Apply runs `setenforce 1`, which a reboot undoes, so the control passes until the next boot |
 | `PASS_MAX_DAYS`, `PASS_MIN_DAYS`, `PASS_WARN_AGE` | CIS `5.4.1.1`, `5.4.1.2`, `5.4.1.3` | CIS `5.4.1.1`, `5.4.1.2`, `5.4.1.3` | Under the RHEL 10 profile, the same limits on every existing account in `/etc/shadow`, not only the defaults `login.defs` gives new accounts | `/etc/login.defs` only |
 | `PASS_MAX_DAYS`, `PASS_MIN_DAYS`, `PASS_WARN_AGE` | NIST `IA-5(1)(d)`, FedRAMP `IA-5(1)(d)` | unchanged, since the profile only translates STIG and CIS | In SP 800-53 Rev 5, IA-5(1)(d) is "Store passwords using an approved salted key derivation function", and no item of IA-5(1) covers password lifetime. The label comes from ComplianceAsCode's references for its ageing rules, which still cite IA-5(1)(d) | Password ageing in `login.defs`. Nothing checks how passwords are stored |
+| `minlen`, `dcredit`, `ucredit`, `lcredit`, `ocredit` | PCI DSS `8.2.3` | unchanged, since the profile only translates STIG and CIS | In PCI DSS v4.0.1, 8.2.3 is "Additional requirement for service providers only: Service providers with remote access to customer premises use unique authentication factors for each customer premises". Password complexity is 8.3.6 | Password length and character classes |
+| `deny` | PCI DSS `8.1.6` | unchanged, since the profile only translates STIG and CIS | PCI DSS v4.0.1 has no 8.1.6. Locking out after repeated failures is 8.3.4, which allows at most 10 attempts | `deny` in `faillock.conf` |
+| `PASS_MAX_DAYS`, `PASS_WARN_AGE` | PCI DSS `8.2.4` | unchanged, since the profile only translates STIG and CIS | In PCI DSS v4.0.1, 8.2.4 is "Addition, deletion, and modification of user IDs, authentication factors, and other identifier objects are managed". A limited password lifetime is 8.3.9, and only where the password is the single factor | Password ageing in `login.defs`. Nothing checks how user IDs are managed |
 
 The same `rules` finding is the only evidence for every other control the
 audit plugin maps to its rules, among them NIST `AU-12(c)` and PCI DSS
 `10.2.7`, so they pass on the same category-name test.
+
+The three PCI DSS numbers are those of an older edition. They come from
+ComplianceAsCode's `pcidss` rule references (`Req-8.2.3`, `Req-8.1.6` and
+`Req-8.2.4`). ComplianceAsCode's PCI-DSS v3.2.1 profile for RHEL 8 was built on
+those references, with 7 characters, 6 attempts and 90 days, and the titles in
+the code, such as "Change user passwords/passphrases at least once every 90
+days", fit those requirements rather than the v4.0.1 ones. The code says it
+uses v4.0 numbers, and `SECURITY.md` says the reports map to PCI-DSS v4.0, so a
+PCI DSS report prints these three as Passes against requirements that, in the
+current edition, are about something else.
 
 The SELinux check also maps the Oracle Linux 8 STIG rule `OL08-00-010170`,
 which is not listed because its text was not read. Its RHEL 8 counterpart,
 `RHEL-08-010170`, checks the running mode with `getenforce`, as the plugin
 does, and sets the boot setting only in its fix.
 
-Each row is a decision for whoever changes it: raise the baseline to the
-control's value, measure what the check leaves out, or stop mapping the check
-to that control. Each is a change to propose as described
-[below](#proposing-a-change). Until then, README lists this under its known
-limitations.
+### A value that switches the check off
+
+Each of these settings is compared *at most*, so the code ranks 0, and every
+negative number, as the strictest values the setting can hold. For these three,
+that end of the scale switches the check off. A host set that way passes, and a
+`directives` override set that way is written to the host as a tightening.
+
+<!-- baseline-table: switched-off-pass -->
+
+| Check | Control the plugin maps | Under the RHEL 10 profile | What the control asks | What the check accepts |
+|---|---|---|---|---|
+| `deny` | STIG `RHEL-08-020011`, CIS `5.3.2` | STIG `RHEL-10-600410`, CIS `5.3.2.1.1` | A lockout after repeated failures. The STIG's check text says 3 or fewer "(but not "0")", and `pam_faillock` locks an account only when `deny` is not 0 | `0`, ranked stricter than `5`, so lockout is off and the host passes |
+| `PASS_MAX_DAYS` | STIG `RHEL-08-020200`, CIS `5.4.1.1` | STIG `RHEL-10-600100`, CIS `5.4.1.1` | A maximum password lifetime: 180 days in the STIG, 365 in the CIS encoding. `login.defs(5)` says -1 "disables the restriction". The STIG's check text flags only a value above 180 or a missing line, so it would miss -1 too | `-1`, ranked stricter than `90`, so passwords never expire and the host passes |
+| `ClientAliveCountMax` | CIS `5.2.13`, HIPAA `164.312(a)(2)(iii)`, NIST `AC-17(a)` | CIS `5.1.7` | An idle timeout that ends the session. `sshd_config(5)`: "Setting a zero ClientAliveCountMax disables connection termination" | `0`, ranked stricter than `2`, so an idle session is never cut and the host passes |
+
+The code's own comment on `ClientAliveCountMax` reads "Zero disconnects on the
+first one, which is the strict end rather than a disable", which the OpenSSH
+manual contradicts. `ClientAliveInterval` and `maxrepeat` already rank 0 as the
+weakest value, through *at most, not 0*. A fix for the two PAM rows is being
+prepared with [#190](https://github.com/tidynest/linux-hardener/issues/190);
+the SSH row has none yet.
+
+### The control asks for an exact value the baseline goes past
+
+<!-- baseline-table: exact-value-pass -->
+
+| Check | Control the plugin maps | Under the RHEL 10 profile | What the control asks | What the baseline accepts |
+|---|---|---|---|---|
+| `kernel.kptr_restrict` | STIG `RHEL-08-040283` | STIG `RHEL-10-701060` | Exactly 1, under both profiles: "If "kernel.kptr_restrict" is not set to "1" or is missing, this is a finding" | `2` or more |
+| `kernel.yama.ptrace_scope` | STIG `RHEL-08-040282` | STIG `RHEL-10-701140` | Exactly 1, under both profiles: the RHEL 8 check text says "is not set to "1"", and the RHEL 10 one "is not equal to "1"" | `2` or more |
+
+Here the baseline is stricter than the control, and the tool's STIG report
+says Pass for a host at 2, while the STIG's own check, and an OpenSCAP scan
+that follows it, report a finding for the same host. The ComplianceAsCode rule
+behind CIS RHEL 10 1.5.7 sets `ptrace_scope` to 1 as well, and lists 1, 2 or 3
+only for Ubuntu 24.04; how its check compares the value was not read.
+
+Each row in these four tables is a decision for whoever changes it: raise the
+baseline to the control's value, measure what the check leaves out, fix the
+comparison, or stop mapping the check to that control. Each is a change to
+propose as described [below](#proposing-a-change). Until then, README lists
+this under its known limitations.
 
 ---
 
@@ -263,7 +343,10 @@ limitations.
   [Audit rules](#audit-rules) explains.
 - **Comparison** is the direction in which a value counts as stricter.
   - *at least*: larger is stricter.
-  - *at most*: smaller is stricter.
+  - *at most*: smaller is stricter, all the way down, so 0 and negative
+    numbers count as the strictest values. Where one of those switches the
+    setting off, that is wrong; see
+    [A value that switches the check off](#a-value-that-switches-the-check-off).
   - *at most, not 0*: smaller is stricter, but 0 switches the check off, so it
     counts as the weakest value of all.
   - *ranked*: a fixed order, weakest first, for settings whose strictness the
@@ -306,9 +389,9 @@ already stricter. The table in the code is `KERNEL_PARAMS` in
 | Setting | Default | Comparison | Severity | Where the value comes from | What the guides say |
 |---|---|---|---|---|---|
 | `kernel.randomize_va_space` | `2` | at least | High | No source recorded (2025-11) | STIG RHEL-08-010430: 2. KSPP: 2. |
-| `kernel.kptr_restrict` | `2` | at least | Medium | No source recorded (2025-11) | STIG RHEL-08-040283: 1. KSPP: 2, or 1 "if root absolutely needs values from /proc". The baseline matches KSPP and is stricter than the STIG. |
+| `kernel.kptr_restrict` | `2` | at least | Medium | No source recorded (2025-11) | STIG RHEL-08-040283: exactly 1, so a STIG check reports 2 as a finding. KSPP: 2, or 1 "if root absolutely needs values from /proc". The baseline matches KSPP and is stricter than the STIG. |
 | `kernel.dmesg_restrict` | `1` | at least | Medium | No source recorded (2025-11) | STIG RHEL-08-010375: 1. KSPP: 1. |
-| `kernel.yama.ptrace_scope` | `2` | at least | High | No source recorded (2025-11) | STIG RHEL-08-040282: 1. KSPP: 3, or 1 where ptrace is needed. The ComplianceAsCode rule behind CIS RHEL 10 1.5.7 sets 1, and accepts 1, 2 or 3 on Ubuntu 24.04. The baseline sits between the STIG and KSPP, and a host at 3 is left at 3. |
+| `kernel.yama.ptrace_scope` | `2` | at least | High | No source recorded (2025-11) | STIG RHEL-08-040282: exactly 1, so a STIG check reports 2 as a finding. KSPP: 3, or 1 where ptrace is needed. The ComplianceAsCode rule behind CIS RHEL 10 1.5.7 sets 1, and accepts 1, 2 or 3 on Ubuntu 24.04. The baseline sits between the STIG and KSPP, and a host at 3 is left at 3. |
 | `fs.suid_dumpable` | `0` | ranked, weakest first: `1`, `2`, `0` | Medium | No source recorded (2025-11) | KSPP: 0. CIS RHEL 10 1.5.4 has a control for it. |
 | `fs.protected_hardlinks` | `1` | at least | Medium | No source recorded (2025-11) | STIG RHEL-08-010374: 1. KSPP: 1. |
 | `fs.protected_symlinks` | `1` | at least | Medium | No source recorded (2025-11) | STIG RHEL-08-010373: 1. KSPP: 1. |
@@ -351,12 +434,12 @@ new logins.
 |---|---|---|---|---|---|
 | `PermitRootLogin` | `no` | ranked, weakest first: `yes`, `prohibit-password`, `without-password`, `forced-commands-only`, `no` | Critical | No source recorded (2025-11) | STIG RHEL-08-010550: no. CIS RHEL 10 5.1.20 has a control for it. Mozilla Modern: No. `prohibit-password` and `without-password` are two spellings of one rank. Over a root SSH session the apply writes `prohibit-password`, and the next scan still reports the gap. |
 | `PasswordAuthentication` | `no` | ranked, weakest first: `yes`, `no` | Critical | No source recorded (2025-11) | Mozilla Modern: public-key logins only, through `AuthenticationMethods publickey`. |
-| `KbdInteractiveAuthentication` | `no` | ranked, weakest first: `yes`, `no` | Critical | Added 2026-11-13 for issue #186, so a password cannot log in through keyboard-interactive once `PasswordAuthentication` is off | Left alone where `AuthenticationMethods` only lets keyboard-interactive act as a second factor. |
+| `KbdInteractiveAuthentication` | `no` | ranked, weakest first: `yes`, `no` | Critical | Added 2026-11-13 for issue #186, so a password cannot log in through keyboard-interactive once `PasswordAuthentication` is off. Left alone where `AuthenticationMethods` only lets keyboard-interactive act as a second factor | No rule names it in the RHEL 8, 9 or 10 STIGs or the CIS RHEL 10 encoding read here. Mozilla Modern allows public-key logins only, through `AuthenticationMethods publickey`; Mozilla's multi-factor configuration turns it on as a second factor after a key, through `AuthenticationMethods publickey,keyboard-interactive:pam`. |
 | `PermitEmptyPasswords` | `no` | ranked, weakest first: `yes`, `no` | Critical | No source recorded (2025-11) | STIG RHEL-08-020330: no. CIS RHEL 10 5.1.19 has a control for it. |
 | `MaxAuthTries` | `3` | at most | Medium | No source recorded (2025-11) | CIS RHEL 10 5.1.16: 4, and the CIS title in the code reads "4 or less". The baseline is stricter. |
 | `X11Forwarding` | `no` | ranked, weakest first: `yes`, `no` | Medium | No source recorded (2025-11) | STIG RHEL-08-040340: no. CIS RHEL 10 5.1.8 asks for `DisableForwarding`, which covers all forwarding, and the RHEL 10 profile maps this check to it, so that Pass rests on X11 alone. |
 | `ClientAliveInterval` | `300` | at most, not 0 | Low | No source recorded (2025-11) | STIG RHEL-08-010201: 600. CIS RHEL 10 5.1.7 leaves the value to site policy, according to ComplianceAsCode's notes, and its encoding uses 5 minutes. The baseline is stricter than the STIG. |
-| `ClientAliveCountMax` | `2` | at most | Low | No source recorded (2025-11) | STIG RHEL-08-010200: 1, which is stricter than the baseline. The plugin maps no STIG control to this setting, so no STIG Pass rests on it. ComplianceAsCode's encoding of CIS RHEL 10 5.1.7 also uses 1, while its notes say the benchmark is flexible about the values. |
+| `ClientAliveCountMax` | `2` | at most | Low | No source recorded (2025-11) | STIG RHEL-08-010200: 1, which is stricter than the baseline. The plugin maps no STIG control to this setting, so no STIG Pass rests on it. ComplianceAsCode's encoding of CIS RHEL 10 5.1.7 also uses 1, while its notes say the benchmark is flexible about the values. `sshd_config(5)`: 0 "disables connection termination", which the *at most* comparison counts as stricter than 2; see [A value that switches the check off](#a-value-that-switches-the-check-off). |
 
 ### SSH algorithm allow-lists
 
@@ -378,9 +461,11 @@ Mozilla "Modern" SSH guidance' as their source until 2026-11-15. Neither
 matches. The lists are closest to ssh-audit's Hardened OpenSSH Server v9.9
 policy, whose key exchange keeps curve25519 and two finite-field groups as
 fallbacks, as this one does; ssh-audit's policies for OpenSSH 10 drop them.
-Nothing records that the lists were taken from it, so this is a match, not a
-source. A host held to the RHEL STIGs cannot meet their cipher and MAC rules
-with these lists as they stand.
+Nothing records that the lists were taken from it, and the order points the
+other way: the baseline puts mlkem ahead of sntrup and orders its MACs as
+ssh-audit's OpenSSH 10 policies do, where v9.9 has both the other way round. So
+this is a match, not a source. A host held to the RHEL STIGs cannot meet their
+cipher and MAC rules with these lists as they stand.
 
 ---
 
@@ -411,10 +496,10 @@ table in the code is `PAM_DIRECTIVES` in
 | `lcredit` | `-1` | at most | Medium | No source recorded (2025-11-22) | STIG RHEL-08-020120: -1, at least one lower-case letter. Otherwise as for `dcredit`. |
 | `ocredit` | `-1` | at most | Medium | No source recorded (2025-11-22) | STIG RHEL-08-020280: -1, at least one special character. Otherwise as for `dcredit`. |
 | `maxrepeat` | `3` | at most, not 0 | Low | No source recorded (2025-11-22) | STIG RHEL-08-020150: 3. CIS RHEL 10 5.3.2.2.4 has a control for it. |
-| `PASS_MAX_DAYS` | `90` | at most | Medium | No source recorded (2025-11-22) | STIG RHEL-08-020200: 180 in V2R9; the title in the code still reads 60 days. CIS RHEL 10 5.4.1.1: 365, as in every CIS edition read. The NIST and FedRAMP label in the code, IA-5(1)(d), comes from ComplianceAsCode's references, but in SP 800-53 Rev 5 that item is about storing passwords, and no item of IA-5(1) covers password lifetime. PCI DSS 8.3.9: 90, only where the password is the single factor, and dynamic risk analysis is allowed instead. 800-63B-4: verifiers "SHALL NOT require subscribers to change passwords periodically", and must force a change on evidence of compromise. |
+| `PASS_MAX_DAYS` | `90` | at most | Medium | No source recorded (2025-11-22) | `login.defs(5)`: -1 disables the restriction, which the *at most* comparison counts as stricter than 90; see [A value that switches the check off](#a-value-that-switches-the-check-off). STIG RHEL-08-020200: 180 in V2R9; the title in the code still reads 60 days. CIS RHEL 10 5.4.1.1: 365, as in every CIS edition read. The NIST and FedRAMP label in the code, IA-5(1)(d), comes from ComplianceAsCode's references, but in SP 800-53 Rev 5 that item is about storing passwords, and no item of IA-5(1) covers password lifetime. PCI DSS 8.3.9: 90, only where the password is the single factor, and dynamic risk analysis is allowed instead. 800-63B-4: verifiers "SHALL NOT require subscribers to change passwords periodically", and must force a change on evidence of compromise. |
 | `PASS_MIN_DAYS` | `1` | at least | Low | No source recorded (2025-11-22) | STIG RHEL-08-020190: 1. CIS RHEL 10 5.4.1.2: 1. Not enforceable on Arch. |
 | `PASS_WARN_AGE` | `7` | at least | Low | No source recorded (2025-11-22) | CIS RHEL 10 5.4.1.3: 7. |
-| `deny` | `5` | at most | High | Commit `0fdfaa82` (2026-07-01), "for CIS 5.3.2/5.3.3" | CIS RHEL 10 5.3.2.1.1: 5. STIG RHEL-08-020011: 3. PCI DSS 8.3.4: lock out after no more than 10 attempts. 800-63B-4: no more than 100 consecutive failures. A lower `deny` locks accounts sooner, which is also a way to lock out a legitimate user. |
+| `deny` | `5` | at most | High | Commit `0fdfaa82` (2026-07-01), "for CIS 5.3.2/5.3.3" | CIS RHEL 10 5.3.2.1.1: 5. STIG RHEL-08-020011: 3, "but not 0", since 0 turns lockout off, which the *at most* comparison counts as stricter than 5; see [A value that switches the check off](#a-value-that-switches-the-check-off). PCI DSS 8.3.4: lock out after no more than 10 attempts. 800-63B-4: no more than 100 consecutive failures. A lower `deny` locks accounts sooner, which is also a way to lock out a legitimate user. |
 | `remember` | `5` | at least | Medium | Commit `0fdfaa82` (2026-07-01), "for CIS 5.3.2/5.3.3" | CIS RHEL 10 5.3.2.3.1: 24, as in CIS RHEL 8 v4.0.0. CIS RHEL 7 v3.1.1 5.4.4 and CIS RHEL 8 v1.0.1 and v2.0.0: 5. The RHEL 8 STIG V2R9 and RHEL 9 STIG V2R10 have no password reuse rule. |
 
 ---
@@ -478,7 +563,7 @@ rules below, and any line that contains `delete`, such as one watching the
 rule exactly as shown. So the Rule column is what apply writes, not what a scan
 compares, and a host can pass every audit rule with far less auditing than the
 table lists. The compliance controls that rest on this finding are listed
-under [Where a Pass is weaker than the control](#where-a-pass-is-weaker-than-the-control).
+under [Where a Pass and the control disagree](#where-a-pass-and-the-control-disagree).
 
 The file opens with `-b 65536` and `--backlog_wait_time 0`. That is a project
 decision with a measurement behind it: on a 16-core build host on 2026-09-02,
@@ -527,7 +612,7 @@ and `a` is attribute change.
 The permissions plugin checks the mode of each path and nothing else.
 **Ownership is not checked**, although the table in the code carries an owner
 and a group for every path, and the CIS controls the account files map to ask
-for both; see [Where a Pass is weaker than the control](#where-a-pass-is-weaker-than-the-control).
+for both; see [Where a Pass and the control disagree](#where-a-pass-and-the-control-disagree).
 The code says the modes are "Based on CIS Benchmark and security best
 practices", with no section named. The first five paths date from 2025-11-23,
 and the four account files from 2026-07-01. The table in the code is
@@ -580,7 +665,7 @@ permanent. Apply never writes that file; it only checkpoints it, and rollback
 reads it back to decide which mode to restore. CIS RHEL 10 1.3.1.5,
 as ComplianceAsCode checks it, asks for that boot setting rather than the
 running mode, so a host that is enforcing only until its next reboot passes it;
-see [Where a Pass is weaker than the control](#where-a-pass-is-weaker-than-the-control).
+see [Where a Pass and the control disagree](#where-a-pass-and-the-control-disagree).
 On a host whose files are not correctly labelled, enforcing mode can stop
 services from starting, so check the audit log for denials after applying.
 
@@ -614,7 +699,9 @@ issue, and include:
 6. **Whether it should be the default for everyone**, or a stricter value people
    choose for themselves. For a setting already in the kernel, SSH, PAM,
    file-permission or firewall tables, a stricter value needs no change at all:
-   `directives` sets it today. The SSH algorithm lists, the services list, the
+   `directives` sets it today. That does not cover switching a check off: the
+   three settings where the code counts that as stricter are a defect, listed
+   [above](#a-value-that-switches-the-check-off). The SSH algorithm lists, the services list, the
    audit rules, the SELinux target and any setting not in the tables cannot be
    changed through the configuration, so those need a change to the code. A
    deliberately looser value is recorded as an exception, which keeps it
@@ -633,64 +720,81 @@ host that was already hardened.
 ## Sources
 
 Every guide quoted on this page, with the version read. All were read on
-2026-11-15.
+2026-11-15. Each link names the commit or tag that was read, so it shows the
+same text later. ComplianceAsCode replaces its copies of the DISA files with
+every release, and its `master` was at commit `033b1b8` that day.
 
 - **DISA Red Hat Enterprise Linux 8 STIG, Version 2, Release 9**, benchmark date
   30 September 2026. DISA's XCCDF file as redistributed by ComplianceAsCode:
-  <https://github.com/ComplianceAsCode/content/blob/master/shared/references/disa-stig-rhel8-v2r9-xccdf-manual.xml>
+  <https://github.com/ComplianceAsCode/content/blob/033b1b8672802ffa6bd555c373e2c73c32d25f5d/shared/references/disa-stig-rhel8-v2r9-xccdf-manual.xml>
 - **DISA Red Hat Enterprise Linux 8 STIG, Version 2, Release 8**, benchmark date
   1 July 2026, the release before, for the 60-day password lifetime, at
   ComplianceAsCode tag `v0.1.82`:
   <https://github.com/ComplianceAsCode/content/blob/v0.1.82/shared/references/disa-stig-rhel8-v2r8-xccdf-manual.xml>
 - **DISA Red Hat Enterprise Linux 9 STIG, Version 2, Release 10**, benchmark
   date 30 September 2026, from the same place:
-  <https://github.com/ComplianceAsCode/content/blob/master/shared/references/disa-stig-rhel9-v2r10-xccdf-manual.xml>
+  <https://github.com/ComplianceAsCode/content/blob/033b1b8672802ffa6bd555c373e2c73c32d25f5d/shared/references/disa-stig-rhel9-v2r10-xccdf-manual.xml>
 - **DISA Red Hat Enterprise Linux 10 STIG, Version 1, Release 3**, benchmark
   date 30 September 2026, for the RHEL 10 profile's identifiers:
-  <https://github.com/ComplianceAsCode/content/blob/master/shared/references/disa-stig-rhel10-v1r3-xccdf-manual.xml>
+  <https://github.com/ComplianceAsCode/content/blob/033b1b8672802ffa6bd555c373e2c73c32d25f5d/shared/references/disa-stig-rhel10-v1r3-xccdf-manual.xml>
 - **CIS Red Hat Enterprise Linux 10 Benchmark v1.0.1**, as ComplianceAsCode
   encodes it. The benchmark itself needs a CIS account and was not read.
-  <https://github.com/ComplianceAsCode/content/blob/master/products/rhel10/controls/cis_rhel10.yml>
+  <https://github.com/ComplianceAsCode/content/blob/033b1b8672802ffa6bd555c373e2c73c32d25f5d/products/rhel10/controls/cis_rhel10.yml>
 - **Older CIS editions**, as ComplianceAsCode encoded them: Red Hat Enterprise
   Linux 7 v3.1.1 at tag `v0.1.66`, Red Hat Enterprise Linux 8 v1.0.1 at tag
   `v0.1.62` and v2.0.0 at tag `v0.1.66`, and Red Hat Enterprise Linux 8 v4.0.0
-  on `master`:
+  at commit `033b1b8`:
   <https://github.com/ComplianceAsCode/content/blob/v0.1.66/controls/cis_rhel7.yml>,
   <https://github.com/ComplianceAsCode/content/blob/v0.1.62/controls/cis_rhel8.yml>,
   <https://github.com/ComplianceAsCode/content/blob/v0.1.66/controls/cis_rhel8.yml>,
-  <https://github.com/ComplianceAsCode/content/blob/master/products/rhel8/controls/cis_rhel8.yml>
+  <https://github.com/ComplianceAsCode/content/blob/033b1b8672802ffa6bd555c373e2c73c32d25f5d/products/rhel8/controls/cis_rhel8.yml>
 - **ComplianceAsCode rules behind the controls a Pass can fall short of**:
   `file_permissions_etc_shadow`, `file_permissions_etc_gshadow`,
   `file_owner_etc_shadow`, `file_groupowner_etc_shadow`,
   `sshd_disable_forwarding`, `selinux_state`,
   `auditd_data_retention_max_log_file` and
-  `accounts_password_set_max_life_existing`, read on `master` under
-  <https://github.com/ComplianceAsCode/content/tree/master/linux_os/guide>
+  `accounts_password_set_max_life_existing`, under
+  <https://github.com/ComplianceAsCode/content/tree/033b1b8672802ffa6bd555c373e2c73c32d25f5d/linux_os/guide>
 - **ComplianceAsCode rule `sysctl_kernel_yama_ptrace_scope`**, for the value
   behind the ptrace controls:
-  <https://github.com/ComplianceAsCode/content/blob/master/linux_os/guide/system/permissions/restrictions/sysctl_kernel_yama_ptrace_scope/rule.yml>
+  <https://github.com/ComplianceAsCode/content/blob/033b1b8672802ffa6bd555c373e2c73c32d25f5d/linux_os/guide/system/permissions/restrictions/sysctl_kernel_yama_ptrace_scope/rule.yml>
+- **ComplianceAsCode's PCI DSS references**: the `pcidss` entries of the rules
+  `accounts_password_pam_minlen`, `accounts_passwords_pam_faillock_deny`,
+  `accounts_maximum_age_login_defs` and `accounts_password_warn_age_login_defs`
+  under
+  <https://github.com/ComplianceAsCode/content/tree/033b1b8672802ffa6bd555c373e2c73c32d25f5d/linux_os/guide/system/accounts>,
+  and the PCI-DSS v3.2.1 profile for RHEL 8 built on them, at tag `v0.1.66`:
+  <https://github.com/ComplianceAsCode/content/blob/v0.1.66/products/rhel8/profiles/pci-dss.profile>
 - **NIST SP 800-53 Rev 5, release 5.2.0**, the OSCAL catalogue, last modified
   22 October 2026, for the wording of IA-5(1)(d):
-  <https://github.com/usnistgov/oscal-content/blob/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json>
+  <https://github.com/usnistgov/oscal-content/blob/f0de6d8d8c059d374f15e0ae07508d82e370fc1d/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json>
 - **NIST SP 800-63B-4, Digital Identity Guidelines: Authentication and
   Authenticator Management**, which supersedes SP 800-63B. NIST's HTML edition,
   rendered 26 August 2025:
-  <https://github.com/usnistgov/800-63-4/blob/nist-pages/sp800-63b.html>
-- **PCI DSS v4.0.1**, requirements 8.3.4, 8.3.6 and 8.3.9, as ComplianceAsCode
-  transcribes them:
-  <https://github.com/ComplianceAsCode/content/blob/master/controls/pcidss_4.yml>
+  <https://github.com/usnistgov/800-63-4/blob/4f2487bb81adecdc84ccaac6920bf0b500b379ae/sp800-63b.html>
+- **PCI DSS v4.0.1**, requirements 8.2.3, 8.2.4, 8.3.4, 8.3.6 and 8.3.9, as
+  ComplianceAsCode transcribes them:
+  <https://github.com/ComplianceAsCode/content/blob/033b1b8672802ffa6bd555c373e2c73c32d25f5d/controls/pcidss_4.yml>
 - **Kernel Self Protection Project, Recommended Settings**:
-  <https://github.com/KSPP/kspp.github.io/blob/main/Recommended_Settings.md>
+  <https://github.com/KSPP/kspp.github.io/blob/04b2a2c36113730382a58eb46ee1f23adecaff41/Recommended_Settings.md>
 - **OpenSSH 10.0p1 default algorithms**, `myproposal.h` at tag `V_10_0_P1`:
   <https://github.com/openssh/openssh-portable/blob/V_10_0_P1/myproposal.h>
+- **sshd_config(5)** at tag `V_10_0_P1`, for what a zero `ClientAliveCountMax`
+  does:
+  <https://github.com/openssh/openssh-portable/blob/V_10_0_P1/sshd_config.5>
+- **login.defs(5)**, the `PASS_MAX_DAYS` entry, from the shadow project:
+  <https://github.com/shadow-maint/shadow/blob/9d7c2241f59489994ea8a72b47c5e006edd0e61b/man/login.defs.d/PASS_MAX_DAYS.xml>
+- **pam_faillock**, whose source locks an account only when `deny` is not 0
+  (`if (opts->deny && failures >= opts->deny)`):
+  <https://github.com/linux-pam/linux-pam/blob/ad0801a88028397ff31b6e88f9e1fbc8614150ea/modules/pam_faillock/pam_faillock.c>
 - **ssh-audit built-in policies**, "Hardened OpenSSH Server v9.9 (version 1)"
   and "Hardened OpenSSH Server v10.4 (version 1)":
-  <https://github.com/jtesta/ssh-audit/blob/master/src/ssh_audit/builtin_policies.py>
-- **Mozilla Security Guidelines, OpenSSH**, the "Modern (OpenSSH 6.7+)"
-  configuration:
-  <https://github.com/mozilla/infosec.mozilla.org/blob/master/docs/guidelines/openssh.md>
+  <https://github.com/jtesta/ssh-audit/blob/5c67dd2e431914e24c17ea7bff597c4965b9710c/src/ssh_audit/builtin_policies.py>
+- **Mozilla Security Guidelines, OpenSSH**, the "Modern (OpenSSH 6.7+)" and
+  "Multi-Factor Authentication" configurations:
+  <https://github.com/mozilla/infosec.mozilla.org/blob/92fca1d1b7414113c064ed4c5d8ff7d0441d8dd7/docs/guidelines/openssh.md>
 - **auditctl(8)**, from the audit userspace project:
-  <https://github.com/linux-audit/audit-userspace/blob/master/docs/auditctl.8>
+  <https://github.com/linux-audit/audit-userspace/blob/2bfaae30ed11035d03a43b1f3abe3dc822b06b26/docs/auditctl.8>
 
 Guides move. The DISA STIGs are revised every quarter, and the RHEL 8 password
 lifetime rule changed from 60 to 180 days in the release quoted here. When a

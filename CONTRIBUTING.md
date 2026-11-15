@@ -271,14 +271,18 @@ open an issue with the **Propose a baseline change** form. It asks for:
   choose for themselves
 
 A stricter value for a setting already in the kernel, SSH, PAM, file-permission
-or firewall tables needs no proposal: `directives` sets it today. The SSH
-algorithm lists, the services list, the audit rules and any setting not in the
-tables can only change in the code. There is no written rule yet for choosing
+or firewall tables needs no proposal: `directives` sets it today. Switching a
+check off is not stricter, although for faillock `deny`, `PASS_MAX_DAYS` and
+`ClientAliveCountMax` the code ranks it so; the page lists those as a defect.
+The SSH algorithm lists, the services list, the audit rules and any setting not
+in the tables can only change in the code. There is no written rule yet for choosing
 between guides that disagree, so a proposal should say why its value is better
 than the others the row lists.
 
 A pull request that changes a default updates its row on that page in the same
-commit; `validate_all.py` fails until it does.
+commit; `validate_all.py` fails until it does. A new table of values also needs
+a parser in `scripts/validate/validate_baseline_sources.py`, which fails until
+it has one.
 
 ### Security Plugins
 

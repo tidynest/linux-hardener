@@ -446,11 +446,14 @@ source recorded" and say why the value was chosen. If the mapped control asks
 for a stricter number than the baseline, add the control to the page's table of
 weaker passes, because a report will pass a host that does not meet it. The
 same goes for a control that asks for more than the check measures, such as
-ownership where the check reads only the mode.
+ownership where the check reads only the mode. For a setting where 0 switches
+the check off, compare it with `NonZeroAtMost` rather than `AtMost`, which
+ranks 0 as the strictest value there is.
 `scripts/validate/validate_baseline_sources.py`, run by `validate_all.py`,
-reads the plugin tables and fails until the page agrees. If a new table does
-not have the shape that script parses, extend the script in the same change
-rather than leaving the table unread.
+reads the plugin tables and fails until the page agrees. A new `const` table of
+a plugin struct fails it until the script has a parser for it, so extend the
+script in the same change, or name the table in its `NOT_BASELINE` with the
+reason it holds no value.
 
 ## Naming conventions
 

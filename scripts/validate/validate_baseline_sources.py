@@ -29,20 +29,32 @@ Each table on the page opens with a marker comment, `<!-- baseline-table: KEY
 - `firewall`: action, protocol, port and source of each baseline rule.
 - `audit`: every rule line, its category and severity, and the backlog
   prelude's two numbers.
-- `weaker-pass` and `unmeasured-pass`: the controls a host can pass while
-  doing less than the control's text asks. Each row names the check, the
-  control the plugin maps it to and the control's RHEL 10 identifier. The
-  mapped control must sit in that check's own arm of the plugin's mapping
-  function, helper calls in the arm included, so a plugin that stops mapping
-  it fails the row even while `profiles.rs` still holds the identifier as a
-  translation key. Each RHEL 10 identifier must be one `profiles.rs`
-  translates a mapped control to. In `weaker-pass`, the baseline value the
-  row quotes must still be the code's.
+- `weaker-pass`, `unmeasured-pass`, `switched-off-pass` and
+  `exact-value-pass`: the controls a host can pass while not doing what the
+  control's text asks. Each row names the check, the control the plugin maps
+  it to and the control's RHEL 10 identifier. The mapped control must sit in
+  that check's own arm of the plugin's mapping function, helper calls in the
+  arm included, so a plugin that stops mapping it fails the row even while
+  `profiles.rs` still holds the identifier as a translation key. Each RHEL 10
+  identifier must be one `profiles.rs` translates a mapped control to. In
+  `weaker-pass` and `exact-value-pass`, the baseline value the row quotes must
+  still be the code's. In `switched-off-pass`, the check must still be
+  compared "at most", the comparison that ranks the switched-off value as the
+  strictest, so a fix to the comparison fails the row until it is removed.
 
 Both directions fail: a setting in code with no row, and a row naming a setting
 the code no longer has. Every setting row, audit and firewall included, must
 also say where its value came from. A row may say that no source is recorded,
-and most do, but it may not be empty.
+and most do, but it may not be empty. Every comparison the code uses must be
+defined under the page's "How to read the tables".
+
+A new table fails too. Any `const` or `static` in the plugin sources that holds
+a slice or array of a struct the plugins define is a table of values until this
+script reads it or `NOT_BASELINE` says, with a reason, that it holds none. A
+check added in a new file, as a new table, therefore fails here until it has a
+parser and rows, rather than passing unseen. Values built inside a function, as
+the firewall's are, or held in tuples, are not found this way; the firewall's
+function is read by name.
 
 README.md is held on three points. The baseline values its "Where the default
 values come from" section and its Pass limitation quote must be the code's,
@@ -93,9 +105,17 @@ PROFILES = Path("crates/hardener-compliance/src/profiles.rs")
 README = Path("README.md")
 GENERATOR = Path("crates/hardener-compliance/src/generator.rs")
 
-# The page's two tables of controls a host can pass while doing less than the
-# control asks: (marker key, whether the last column quotes a baseline value).
-CONTROL_TABLES = [("weaker-pass", True), ("unmeasured-pass", False)]
+# The page's tables of controls a host can pass while not doing what the
+# control asks: (marker key, what the last column holds). "value" is a quoted
+# baseline value that must be the code's, "switch-off" a value that switches
+# the check off and that the code's comparison must still rank as strictest,
+# and None is prose.
+CONTROL_TABLES = [
+    ("weaker-pass", "value"),
+    ("unmeasured-pass", None),
+    ("switched-off-pass", "switch-off"),
+    ("exact-value-pass", "value"),
+]
 
 # Baseline values README quotes: (section heading, pattern with one group,
 # table, setting). A space in a pattern matches any run of whitespace, so
@@ -120,12 +140,46 @@ README_PASS_SENTENCE = (
 )
 
 # How the page spells each direction. `Ranked` is spelled "ranked" followed by
-# its order, which is compared separately.
+# its order, which is compared separately. The last three are not in this tree:
+# the branch for #190 adds them. They are spelled here so that a merge with it
+# names the rows whose comparison changed, instead of stopping at the parser. A
+# spelling the code uses must also be defined in the page's legend, which
+# `check_legend` holds, so an unused one here costs nothing.
 COMPARISON_WORDS = {
     "AtLeast": "at least",
     "AtMost": "at most",
     "NonZeroAtMost": "at most, not 0",
+    "PositiveAtMost": "at most, above 0",
+    "ClosestToZero": "closest to 0",
+    "AtLeastOrUnlimited": "at least, or -1 for no limit",
 }
+
+# Tables of values this script reads, beyond the SCALAR_TABLES below, as
+# (file under PLUGINS, const). The firewall's rules are built in a function,
+# `get_baseline_rules`, which `code_firewall` reads by name.
+READ_TABLES = {
+    ("ssh/mod.rs", "SSH_CRYPTO_DIRECTIVES"),
+    ("services/mod.rs", "UNNECESSARY_SERVICES"),
+    ("permissions/mod.rs", "CRITICAL_PERMISSIONS"),
+    ("audit/mod.rs", "AUDIT_RULES"),
+}
+
+# Tables of a plugin struct that hold no baseline value, each with the reason.
+# Adding one here is a claim a reviewer can check; leaving a new table out of
+# both this and the readers is what `unread_tables` refuses.
+NOT_BASELINE = {
+    ("pam/layer_drift.rs", "LAYERED_CONFS"): (
+        "the /etc and /usr/etc file pairs the drift probe compares, not values"
+    ),
+}
+
+# `const NAME: &[Struct]`, `static NAME: &'static [Struct]` or `const NAME:
+# [Struct; N]`, at any visibility. Element types that are references or tuples
+# do not match, and `unread_tables` keeps only structs the plugins define, so a
+# list of names or an array of a framework enum is not taken for a table.
+TABLE_CONST = re.compile(
+    r"\b(?:const|static)\s+([A-Z][A-Z0-9_]*)\s*:\s*&?(?:'static\s+)?\[\s*([A-Z]\w*)\s*(?:;[^\]]*)?\]"
+)
 
 # Directive tables that share one shape: (page key, file, const, struct, name
 # field, value field, severity field, comparison field).
@@ -389,6 +443,49 @@ def read_code(root: Path) -> dict:
         (src / "audit/mod.rs").read_text(encoding="utf-8")
     )
     return code
+
+
+def plugin_sources(root: Path) -> dict[str, str]:
+    """Every non-test `.rs` file under PLUGINS, keyed by its path below it."""
+    sources = {}
+    for path in sorted((root / PLUGINS).rglob("*.rs")):
+        rel = path.relative_to(root / PLUGINS)
+        if path.name == "tests.rs" or "tests" in rel.parts[:-1]:
+            continue
+        sources[rel.as_posix()] = path.read_text(encoding="utf-8")
+    return sources
+
+
+def unread_tables(sources: dict[str, str]) -> list[str]:
+    """Deny by default: a table of a plugin struct is a table of values until
+    this script reads it or NOT_BASELINE says why it holds none.
+
+    The registry used to be the only list of tables, so a check added in a new
+    file passed with no row at all, which is the gap issue #189 reported. The
+    first two branches written after this page each added such a table.
+    """
+    structs = set()
+    for text in sources.values():
+        structs |= set(re.findall(r"\bstruct ([A-Z]\w*)", text))
+    read = {(spec[1], spec[2]) for spec in SCALAR_TABLES} | READ_TABLES
+    problems = []
+    for rel, text in sources.items():
+        for name, struct in TABLE_CONST.findall(text):
+            if struct not in structs or (rel, name) in read or (rel, name) in NOT_BASELINE:
+                continue
+            problems.append(
+                f"{PLUGINS / rel}: `{name}` is a table of `{struct}` this check does not read. "
+                f"Give it a table on {PAGE} and a parser here, or name it in NOT_BASELINE "
+                "with the reason it holds no baseline value"
+            )
+    for rel, name in sorted(read | set(NOT_BASELINE)):
+        text = sources.get(rel)
+        if text is None or not re.search(rf"\b(?:const|static)\s+{name}\b", text):
+            problems.append(
+                f"{PLUGINS / rel}: `{name}` is registered here but no longer defined there; "
+                "move the registration with it"
+            )
+    return problems
 
 
 CLOSERS = {"(": ")", "[": "]", "{": "}"}
@@ -720,6 +817,52 @@ def check_audit(expected: dict, prelude: list[str], page: str, rows: list[list[s
     return problems
 
 
+LEGEND_HEADING = "## How to read the tables"
+
+
+def check_legend(page: str, code: dict) -> list[str]:
+    """Every comparison the code uses is defined in the page's legend.
+
+    A row is held to the code's comparison word, but a word nobody defines
+    tells a reader nothing; this is what makes a new direction, such as the
+    ones #190 adds, arrive with its meaning written down.
+    """
+    heading = re.search(rf"^{re.escape(LEGEND_HEADING)}$", page, re.M)
+    if heading is None:
+        return [f"no `{LEGEND_HEADING}` section on the page"]
+    end = page.find("\n## ", heading.end())
+    legend = page[heading.end() : end if end != -1 else len(page)]
+    used = sorted({entry["comparison"] for spec in SCALAR_TABLES for entry in code[spec[0]].values()})
+    return [
+        f"legend: the code compares some setting *{word}*, and `{LEGEND_HEADING}` does not "
+        f"define it as `*{word}*`"
+        for word in used
+        if f"*{word}*" not in legend
+    ]
+
+
+def check_switch_off(table: str, code: dict, check: str, cell: str, problems: list[str]) -> None:
+    """A switched-off row: the check is still compared plainly "at most", which
+    ranks 0 and every negative number as the strictest values there are, and
+    the value the row quotes is one of those."""
+    scalar = {**code["kernel"], **code["ssh"], **code["pam"]}
+    if check not in scalar:
+        problems.append(f"{table}: `{check}` is in no kernel, SSH or PAM table")
+        return
+    word = scalar[check]["comparison"]
+    if word != COMPARISON_WORDS["AtMost"]:
+        problems.append(
+            f"{table}: `{check}` is now compared {word!r}, not 'at most', so a value that switches "
+            "it off may no longer pass; re-read the row and remove it if the gap is closed"
+        )
+    quoted = first_tick(cell)
+    if quoted is None or not re.fullmatch(r"-?\d+", quoted) or int(quoted) > 0:
+        problems.append(
+            f"{table}: `{check}` should quote the switched-off value, 0 or below, first in "
+            f"backticks, and reads {cell!r}"
+        )
+
+
 def check_quoted_value(table: str, code: dict, check: str, cell: str, problems: list[str]) -> None:
     """A stricter-value row's last cell quotes the baseline; it must be the code's."""
     quoted = first_tick(cell)
@@ -756,9 +899,9 @@ def check_control_rows(
     arms: list[tuple[str, str]],
     translations: dict[str, set[str]],
     rows: list[list[str]],
-    quotes_value: bool,
+    last_column: str | None,
 ) -> list[str]:
-    """Check | Control the plugin maps | Under the RHEL 10 profile | Asks | Measures."""
+    """Check | Control the plugin maps | Under the RHEL 10 profile | Asks | Accepts."""
     problems: list[str] = []
     if not rows:
         problems.append(f"{table}: the table is empty")
@@ -796,8 +939,11 @@ def check_control_rows(
                     f"{table}: `{control}` is not what profiles.rs translates "
                     f"{', '.join(mapped) or 'the mapped control'} to"
                 )
-        if quotes_value:
+        if last_column == "value":
             check_quoted_value(table, code, checks[0], row[4], problems)
+        elif last_column == "switch-off":
+            for check in checks:
+                check_switch_off(table, code, check, row[4], problems)
     return problems
 
 
@@ -884,9 +1030,10 @@ def check_page(
         problems += check_firewall(code["firewall"], tables["firewall"])
     if "audit" in tables:
         problems += check_audit(code["audit"], code["audit-prelude"], page, tables["audit"])
-    for key, quotes_value in CONTROL_TABLES:
+    for key, last_column in CONTROL_TABLES:
         if key in tables:
-            problems += check_control_rows(key, code, arms, translations, tables[key], quotes_value)
+            problems += check_control_rows(key, code, arms, translations, tables[key], last_column)
+    problems += check_legend(page, code)
     return problems
 
 
@@ -949,7 +1096,7 @@ const SAMPLE_ROWS: &[Row] = &[
 """
 
 SAMPLE_CODE = {
-    "kernel": {"alpha": {"default": "5"}},
+    "kernel": {"alpha": {"default": "5", "comparison": "at most"}},
     "ssh": {},
     "pam": {"minlen": {"default": "14"}, "remember": {"default": "5"}, "PASS_MAX_DAYS": {"default": "90"}},
     "ssh-crypto": {"Ciphers": {"list": ["a", "b"], "severity": "High"}},
@@ -1022,6 +1169,7 @@ AUDIT_PAGE = "The file opens with `-b 1`."
 CONTROL_HEADER = "| Check | Mapped | RHEL 10 | Asks | Accepts |\n|---|---|---|---|---|\n"
 GOOD_CONTROL = "| `alpha` | STIG `STIG-A`, FedRAMP `FED-H` | STIG `R10-A` | 15 | `5` or more |"
 GUARD_CONTROL = "| `xbetax` | CIS `CIS-B` | CIS `R10-B` | more | prose only |"
+SWITCH_CONTROL = "| `alpha` | STIG `STIG-A` | STIG `R10-A` | a limit | `0`, ranked stricter than `5` |"
 
 
 def crypto(rows: list[str]):
@@ -1048,14 +1196,59 @@ def audit(rows: list[str], page: str = AUDIT_PAGE):
     return run
 
 
-def controls(rows: list[str], plugin: str = SAMPLE_PLUGIN_RS, quotes_value: bool = True):
+def controls(
+    rows: list[str],
+    plugin: str = SAMPLE_PLUGIN_RS,
+    last_column: str | None = "value",
+    code: dict = SAMPLE_CODE,
+):
     def run() -> list[str]:
         arms = mapping_arms(plugin)
         translations = profile_translations(SAMPLE_PROFILES_RS)
         table = rows_of(CONTROL_HEADER, rows)
-        return check_control_rows("t", SAMPLE_CODE, arms, translations, table, quotes_value)
+        return check_control_rows("t", code, arms, translations, table, last_column)
 
     return run
+
+
+def registered_sources() -> dict[str, str]:
+    """A plugin tree in which every registered table is defined, each of a
+    struct of its own, as the real tree has them."""
+    sources: dict[str, str] = {}
+    registered = sorted({(spec[1], spec[2]) for spec in SCALAR_TABLES} | READ_TABLES | set(NOT_BASELINE))
+    for number, (rel, name) in enumerate(registered):
+        sources[rel] = sources.get(rel, "") + (
+            f"pub(super) struct Row{number} {{ x: u8 }}\nconst {name}: &[Row{number}] = &[\n];\n"
+        )
+    return sources
+
+
+def tables(extra: dict[str, str] | None = None, drop: str | None = None):
+    def run() -> list[str]:
+        sources = registered_sources()
+        if drop is not None:
+            for rel, text in sources.items():
+                sources[rel] = text.replace(f"const {drop}:", f"const RENAMED_{drop}:")
+        for rel, text in (extra or {}).items():
+            sources[rel] = sources.get(rel, "") + text
+        return unread_tables(sources)
+
+    return run
+
+
+SAMPLE_LEGEND_PAGE = (
+    "## How to read the tables\n\n- *at least*: larger is stricter.\n"
+    "- *at most*: smaller is stricter.\n\n## Kernel parameters\n\n*closest to 0* is not here.\n"
+)
+
+
+def legend(comparisons: list[str]):
+    code = {
+        "kernel": {f"k{i}": {"comparison": word} for i, word in enumerate(comparisons)},
+        "ssh": {},
+        "pam": {},
+    }
+    return lambda: check_legend(SAMPLE_LEGEND_PAGE, code)
 
 
 def readme(text: str = SAMPLE_README, code: dict = SAMPLE_CODE, generator: str = SAMPLE_GENERATOR_RS):
@@ -1127,7 +1320,7 @@ SELF_TEST_CASES = [
     (
         "controls: rows held to the mapping arms, a helper and a contains guard pass",
         None,
-        controls([GOOD_CONTROL, GUARD_CONTROL], quotes_value=False),
+        controls([GOOD_CONTROL, GUARD_CONTROL], last_column=None),
     ),
     ("controls: a quoted value that is the code's passes", None, controls([GOOD_CONTROL])),
     (
@@ -1164,6 +1357,48 @@ SELF_TEST_CASES = [
             )
         ),
     ),
+    ("controls: a switched-off value the code still ranks strictest passes", None, controls([SWITCH_CONTROL], last_column="switch-off")),
+    (
+        "controls: a switched-off row whose comparison was fixed is flagged",
+        "is now compared 'at most, above 0'",
+        controls(
+            [SWITCH_CONTROL],
+            last_column="switch-off",
+            code={**SAMPLE_CODE, "kernel": {"alpha": {"default": "5", "comparison": "at most, above 0"}}},
+        ),
+    ),
+    (
+        "controls: a switched-off row quoting a working limit is flagged",
+        "should quote the switched-off value",
+        controls([SWITCH_CONTROL.replace("`0`", "`3`")], last_column="switch-off"),
+    ),
+    ("tables: a tree whose tables are all read passes", None, tables()),
+    (
+        "tables: a new table of a plugin struct in a new file is flagged",
+        "`HASHING_DIRECTIVES` is a table of `Row",
+        tables(extra={"pam/hashing.rs": "pub(super) const HASHING_DIRECTIVES: &[Row0] = &[\n];\n"}),
+    ),
+    (
+        "tables: an array of a plugin struct is flagged as well as a slice",
+        "`NIST_RULES` is a table of `NistRule`",
+        tables(extra={"pam/policy.rs": "struct NistRule { a: u8 }\nconst NIST_RULES: [NistRule; 2] = [\n];\n"}),
+    ),
+    (
+        "tables: a list of names and an array of an outside enum are not tables",
+        None,
+        tables(extra={"pam/policy.rs": "const NAMES: &[&str] = &[];\nconst F: [ComplianceFramework; 4] = [];\n"}),
+    ),
+    (
+        "tables: a registered table that no longer exists is flagged",
+        "registered here but no longer defined",
+        tables(drop="AUDIT_RULES"),
+    ),
+    ("legend: comparisons the legend defines pass", None, legend(["at least", "at most"])),
+    (
+        "legend: a comparison the code uses and the legend does not define is flagged",
+        "does not define it as `*closest to 0*`",
+        legend(["at least", "closest to 0"]),
+    ),
     (
         "readme: a Pass arm that gains a condition is flagged",
         'Pass arm',
@@ -1177,7 +1412,7 @@ SELF_TEST_CASES = [
 
 # Fewer cases than this means one was dropped, and with it a checker may have
 # lost the only case that rejects anything.
-MINIMUM_SELF_TEST_CASES = 37
+MINIMUM_SELF_TEST_CASES = 47
 
 
 def self_test(quiet: bool = False) -> int:
@@ -1244,6 +1479,7 @@ def main() -> int:
         return 1
 
     try:
+        sources = plugin_sources(root)
         code = read_code(root)
         arms = plugin_arms(root)
         translations = profile_translations((root / PROFILES).read_text(encoding="utf-8"))
@@ -1254,7 +1490,8 @@ def main() -> int:
         print("  Update the parser in this script rather than leaving the page unchecked.")
         return 1
 
-    problems = check_page(page_path.read_text(encoding="utf-8"), code, arms, translations)
+    problems = unread_tables(sources)
+    problems += check_page(page_path.read_text(encoding="utf-8"), code, arms, translations)
     problems += check_readme(readme_text, code, generator)
     if problems:
         print(f"{RED}{PAGE} or README.md disagrees with the code ({len(problems)}):{NC}")
@@ -1263,7 +1500,7 @@ def main() -> int:
         print()
         print("  A changed default needs its row, and any README quote of it, changed in")
         print("  the same commit, and a new check needs a row that says where its value")
-        print("  came from.")
+        print("  came from. A new table of values needs a parser here as well as rows.")
         return 1
 
     counts = ", ".join(
@@ -1271,8 +1508,13 @@ def main() -> int:
         for key in ("kernel", "ssh", "ssh-crypto", "pam", "services", "permissions", "firewall", "audit")
     )
     control_rows = sum(len(page_table(page_path.read_text(encoding="utf-8"), key) or []) for key, _ in CONTROL_TABLES)
+    read = len({(spec[1], spec[2]) for spec in SCALAR_TABLES} | READ_TABLES) + 1
     print(f"  {GREEN}v{NC} Every baseline row agrees with the code: {counts}")
-    print(f"  {GREEN}v{NC} {control_rows} weaker-Pass rows hold to the plugins' mapping arms and profiles.rs")
+    print(
+        f"  {GREEN}v{NC} No plugin table goes unread: {read} read, counting the firewall's "
+        f"function, and {len(NOT_BASELINE)} named as holding no values"
+    )
+    print(f"  {GREEN}v{NC} {control_rows} rows of Passes that fall short hold to the plugins' mapping arms and profiles.rs")
     print(f"  {GREEN}v{NC} README quotes {len(README_QUOTES)} baseline values correctly, and its Pass sentence holds")
     print(f"\n{GREEN}Baseline sources validation passed{NC}")
     return 0

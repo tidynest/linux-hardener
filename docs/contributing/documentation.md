@@ -708,27 +708,41 @@ plugins. Every kernel, SSH, PAM, service, permission, firewall and audit setting
 must have exactly one row, its default, comparison and severity must be the
 code's, and the row must say where the value came from, even if what it says is
 that no source was recorded. A row for a setting the code no longer has fails
-too. Each table on the page opens with a `<!-- baseline-table: KEY -->` marker,
-which is how the check finds it.
+too, and so does a comparison the page's legend does not define. Each table on
+the page opens with a `<!-- baseline-table: KEY -->` marker, which is how the
+check finds it.
+
+A new table of values fails as well. Any `const` or `static` in the plugin
+sources that holds a slice or array of a struct the plugins define counts as a
+table until the script reads it or names it in `NOT_BASELINE` with the reason
+it holds no value. Values built inside a function, as the firewall's rules are,
+or kept in tuples are not found this way, so a check written like that needs
+its parser added by hand.
 
 So `validate_all.py` fails until a changed default and its row agree, and until
 a new check has a row with a stated source, which is the gap issue #189
 reported. CI does not run it, so this holds for whoever runs it before a pull
 request, as the checklist in CONTRIBUTING.md asks.
 
-The page also lists the controls a host can pass while doing less than the
-control's own text asks. Each of those rows names the check, the control the
-plugin maps it to and the control's RHEL 10 identifier. The mapped control must
-sit in that check's own arm of the plugin's mapping function, the RHEL 10
-identifier must be what `profiles.rs` translates it to, and a quoted baseline
-value must still be the code's. A plugin that stops mapping a control therefore
-fails the row, even while `profiles.rs` still holds the identifier.
+The page also lists, in four tables, the controls a host can pass without
+doing what the control's own text asks. Each of those rows names the check, the
+control the plugin maps it to and the control's RHEL 10 identifier. The mapped
+control must sit in that check's own arm of the plugin's mapping function, the
+RHEL 10 identifier must be what `profiles.rs` translates it to, and a quoted
+baseline value must still be the code's. A plugin that stops mapping a control
+therefore fails the row, even while `profiles.rs` still holds the identifier. A
+row for a check that ranks its switched-off value as the strictest fails once
+the check's comparison stops being plain *at most*, so the row goes when the
+defect does.
 
 README.md is held too, on three points: the baseline values its "Where the
 default values come from" section and its Pass limitation quote must be the
 code's, and the sentence in "Compliance frameworks" saying a Pass is not always
 everything a control asks must still be there while the report generator
-decides Pass on findings alone.
+decides Pass on findings alone. That last condition reads the first three arms
+of the generator's status chain, Fail, Manual Review and Pass, so a change that
+sends partly measured controls to Manual Review fails it and asks for the
+sentence to be read again.
 
 What the guides say is not checked. Their values are quoted with a version and
 the date they were read, and only a person reading a new release can tell
