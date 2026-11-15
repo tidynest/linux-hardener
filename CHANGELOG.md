@@ -50,22 +50,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new directives judge it: `ENCRYPT_METHOD`, held to `YESCRYPT` where the
   host's `pam_unix`, the `libcrypt` it links against (`libcrypt.so.2` on
   Fedora, RHEL and Arch, `libcrypt.so.1` elsewhere) and shadow all support it
-  and FIPS mode is off, and to `SHA512` otherwise; `YESCRYPT_COST_FACTOR`, at least 5; and
-  `SHA_CRYPT_MIN_ROUNDS`, at least 100000 where new passwords are SHA-512. The
-  scan reads both places that decide it, `/etc/login.defs` and the `pam_unix`
-  line in the PAM stack, which overrides it, and reports the weaker. `apply`
-  writes `login.defs` only and reports a stack line that overrides it as a
-  manual step, as it already does for `deny` and `remember`. A host already
-  on yescrypt is never moved down, and a host that cannot confirm yescrypt is
-  never moved to it: RHEL 9's shadow is built without it and would fall back
-  to DES. A raised cost is accepted only where ten simultaneous password
-  checks fit in half the host's memory; one that does not is refused once and
-  is never offered as a `rounds=` step for the stack, which on Linux-PAM before
-  1.6.0 is what every user's password gets. The default stays at 5 (16 MiB,
-  about 20 ms), the cost libxcrypt, shadow and `pam_unix` all use when nothing
-  names one, because a cost of 11 (1 GiB per check) makes every simultaneous
-  password check claim a gigabyte and rejects correct passwords on a host that
-  cannot spare it.
+  and FIPS mode is off, and to `SHA512` otherwise; `YESCRYPT_COST_FACTOR`, at
+  least 5; and `SHA_CRYPT_MIN_ROUNDS`, at least 100000 where new passwords are
+  SHA-512. The scan reads both places that decide it, `/etc/login.defs` and
+  the `pam_unix` password lines of the PAM stack, which override it, and
+  reports the weaker. The stack lines are read from the shared files and from
+  the `passwd`, `chpasswd` and `newusers` services, each where Linux-PAM looks
+  for it (`/etc/pam.d`, then `/usr/lib/pam.d`, where openSUSE installs
+  `common-password`, then `/usr/etc/pam.d`). `apply` writes `login.defs` only
+  and reports a stack line that overrides it as a manual step, as it already
+  does for `deny` and `remember`. A host already on yescrypt is never moved
+  down, and a host that cannot confirm yescrypt is never moved to it: every
+  shadow before 4.20.0 falls back to DES for a method it was built without,
+  and RHEL 9's is built without yescrypt. A host on salted SHA-512 that would
+  be moved to yescrypt gets a Low finding with no compliance mapping, because
+  SHA-512 is what the DISA STIGs require. A raised cost is accepted only where
+  ten simultaneous password checks fit in half the host's memory; one that
+  does not is refused once and is never written or offered as a `rounds=` step
+  for the stack, which on Linux-PAM before 1.6.0 is what every user's password
+  gets, and the plan raises the host to the largest cost it can carry
+  instead, never less than 5. The default stays at 5 (16 MiB, about 20 ms),
+  the cost libxcrypt, shadow and `pam_unix` all use when nothing names one,
+  because a cost of 11 (1 GiB per check) makes every simultaneous password
+  check claim a gigabyte and rejects correct passwords on a host that cannot
+  spare it.
 - **The scan reports a yescrypt cost the host's memory cannot carry (#191).**
   The cost check only asks whether a cost is high enough and `apply` never
   lowers one, so a small VM given the 1 GiB of cost 11 by hand scanned clean.

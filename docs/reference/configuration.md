@@ -482,16 +482,23 @@ one belonging to the algorithm its new passwords will use:
 tools (`chpasswd -c`, `chgpasswd`, `gpasswd`, and `chpasswd` and `newusers`
 outright on a shadow built without PAM, as RHEL 9's is) read `ENCRYPT_METHOD`
 from `/etc/login.defs`. They compare it case-sensitively, so a lowercase
-`yescrypt` is not a value they accept. `pam_unix`, which `passwd` uses, reads
-the same key only as a default and lets an algorithm named on its own
-`password` line override it. The cost works the same way: `rounds=` on the
-`pam_unix` line wins, then `YESCRYPT_COST_FACTOR` or `SHA_CRYPT_MAX_ROUNDS`
-from `login.defs`. Linux-PAM before 1.6.0, which Ubuntu 24.04 and Debian 12
-ship, never reads `YESCRYPT_COST_FACTOR`. The scan reports the weakest of all
-these paths, and its finding says which path falls short. Where only
-`login.defs` is weak, as on a stock Ubuntu 24.04 whose `common-password`
-already names `yescrypt`, the finding says that `passwd` already gives
-yescrypt and only shadow's own tools do not.
+`yescrypt` is not a value they accept. `pam_unix`, which `passwd` uses, and
+`chpasswd` and `newusers` too on a shadow built with PAM, reads the same key
+only as a default and lets an algorithm named on its own `password` line
+override it. The cost works the same way: `rounds=` on the `pam_unix` line
+wins, then `YESCRYPT_COST_FACTOR` or `SHA_CRYPT_MAX_ROUNDS` from `login.defs`.
+Linux-PAM before 1.6.0, which Ubuntu 24.04 and Debian 12 ship, never reads
+`YESCRYPT_COST_FACTOR`.
+
+The scan reads the `pam_unix` password lines of `common-password`,
+`system-auth`, `password-auth`, `passwd`, `chpasswd` and `newusers`, each
+where Linux-PAM looks for it: `/etc/pam.d` first, then `/usr/lib/pam.d`, where
+openSUSE installs `common-password`, then `/usr/etc/pam.d`. It reports the
+weakest of all these paths, and its finding says which path falls short and
+names the file the host actually has. Where only `login.defs` is weak, as on a
+stock Ubuntu 24.04 whose `common-password` already names `yescrypt`, the
+finding says that `passwd` already gives yescrypt and only shadow's own tools
+do not.
 
 **`apply` writes `/etc/login.defs` and nothing else.** Where a `pam_unix` line
 names a weaker algorithm, carries a `rounds=` below the target, or sits on a
@@ -513,13 +520,18 @@ asks the target, in one shell round trip that works over `--ssh` too, whether
 `YESCRYPT_COST_FACTOR`, and whether `/proc/sys/crypto/fips_enabled` is set.
 The libcrypt is the one `pam_unix.so` names: `libcrypt.so.2` on Fedora, RHEL 9
 and 10 and Arch, whose libxcrypt keeps `libcrypt.so.1` in an optional compat
-package, and `libcrypt.so.1` on Debian, Ubuntu and openSUSE. The host is held to yescrypt
-only when all three components say yes and FIPS mode is off; otherwise the
-target is SHA-512 with 100000 rounds. This is not caution for its own sake:
-RHEL 9 ships a shadow built without yescrypt, and shadow 4.9 answers an
-`ENCRYPT_METHOD` it does not know with DES, which keeps only the first eight
-characters of a password. A host already on yescrypt is never moved down to
-SHA-512, in FIPS mode or out of it.
+package, and `libcrypt.so.1` on Debian, Ubuntu and openSUSE. The host is held
+to yescrypt only when all three components say yes and FIPS mode is off;
+otherwise the target is SHA-512 with 100000 rounds. This is not caution for
+its own sake: every shadow release before 4.20.0 answers an `ENCRYPT_METHOD`
+it was built without, or does not recognise, with DES, which keeps only the
+first eight characters of a password, and RHEL 9 ships one (4.9) built without
+yescrypt. That covers every supported family but openSUSE Tumbleweed, whose
+shadow 4.20.3 falls back to SHA-512 instead. shadow 4.20.0 also stopped
+accepting `DES` and `MD5` as values, so its own tools use SHA-512 for both, but
+`pam_unix` still reads `MD5` as its `md5` default, so the scan still rates it
+High. A host already on yescrypt is never moved down to SHA-512, in FIPS mode
+or out of it.
 
 **Overrides only tighten.** `[pam.directives] ENCRYPT_METHOD = "YESCRYPT"` is
 how an operator chooses yescrypt on a host in FIPS mode, where FIPS 140 does
@@ -545,13 +557,18 @@ unauthenticated connection can start one, up to the ten at which sshd's default
 so on a host it has hardened only a key holder reaches a password prompt.
 
 The check is part of the plan the scan, `apply` and `apply --dry-run` share. A
-cost the host cannot afford is refused once, with the largest cost it can, and
-is never written to `login.defs` or offered as a `rounds=` manual step: on a
-Linux-PAM older than 1.6.0 that line is what every user's password gets, so
-naming the refused cost there would be the lockout the refusal prevents. The
-run then does not report success, and the dry run shows the refusal as a High
-issue. A container's cgroup memory limit is not read, so choose the cost by
-hand on a host whose real limit is lower than `MemTotal`.
+cost the host cannot afford is refused once, and is never written to
+`login.defs` or offered as a `rounds=` manual step: on a Linux-PAM older than
+1.6.0 that line is what every user's password gets, so naming the refused cost
+there would be the lockout the refusal prevents. The plan aims instead for the
+largest cost the host can carry, and never for less than the default of 5, so
+a refused override cannot leave a host weaker than no override would: that
+cost is what `apply` writes and what any `rounds=` step names. Where
+`/proc/meminfo` cannot be read, nothing above 5 can be shown to be safe, so the
+plan holds the host to 5. The run then does not report success, and the dry
+run shows the refusal as a High issue. A container's cgroup memory limit is not
+read, so choose the cost by hand on a host whose real limit is lower than
+`MemTotal`.
 
 **A cost already in force that the host cannot carry is reported.** The cost
 check only asks whether the cost is high enough, and `apply` never lowers one,
@@ -592,6 +609,16 @@ set. The finding prints a command that lists the accounts on the host itself.
 on SHA-512 on purpose, for example one whose hashes are copied to systems that
 cannot verify yescrypt. The cost judged on that host is then SHA-512's.
 
+A host held to a DISA STIG is the other case for that exception. The STIGs for
+RHEL 8, 9 and 10 and Ubuntu 24.04 require SHA-512 with 100000 rounds, and the
+RHEL 10 STIG requires it in `login.defs` and on the `pam_unix` lines and for
+every stored hash. A fully compliant host also runs in FIPS mode, and FIPS mode
+already holds it to SHA-512 here. A host configured to the STIG without FIPS
+mode, a virtual machine or a container on a non-FIPS kernel for example, would
+otherwise be moved to yescrypt, and the STIG scan run against it afterwards
+would fail. The `--profile` that selects STIG identifiers in reports does not
+reach the plugin, so record the exception on such hosts.
+
 **Compliance.** The three directives map to NIST 800-53 IA-5(1)(d), NIST SP
 800-171 3.5.7, FedRAMP IA-5(1)(d) and PCI DSS 4.0 8.3.2, beside the HIPAA,
 GDPR, ISO/IEC 27001 8.5 and SOC 2 CC6.1 entries every PAM check carries.
@@ -601,8 +628,17 @@ is storage only in Rev 4. Rev 5 asks for "an approved salted key derivation
 function". SP 800-63B names PBKDF2 (specified in SP 800-132) and Balloon as
 examples, and neither yescrypt nor sha512crypt. A pass here therefore means
 the strongest scheme the host's own password stack offers, and counting it
-towards (d) is this project's judgement, not NIST's. No STIG rule is mapped: every STIG rule for password storage requires SHA-512, so
-a host this tool passes on yescrypt would fail it. No CIS control is mapped
+towards (d) is this project's judgement, not NIST's.
+
+An `ENCRYPT_METHOD` finding for salted SHA-512 on a host held to yescrypt
+carries no compliance mapping. A control fails on any live finding mapped to
+it, whatever the finding's severity, and SHA-512 is the value the DISA STIGs
+require for the same control, so the preference for yescrypt is this tool's
+baseline, not a framework's. Such a host passes the controls; anything weaker
+than SHA-512, or an algorithm that cannot be determined, fails them.
+
+No STIG rule is mapped: every STIG rule for password storage requires SHA-512,
+so a host this tool passes on yescrypt would fail it. No CIS control is mapped
 either, because the hashing control of the benchmark the curated catalogue
 follows could not be checked against the benchmark itself.
 
