@@ -138,6 +138,12 @@ async fn ubuntu_2404_is_moved_to_yescrypt_in_login_defs_and_nothing_else() {
     assert_eq!(method.finding_recommended_value, "YESCRYPT");
     assert_eq!(method.finding_severity, Severity::Low);
     assert!(
+        method.finding_compliance.is_empty(),
+        "a compliance control fails on any live mapped finding, and salted \
+         SHA-512 is what DISA requires, so this preference must fail none: {:?}",
+        method.finding_compliance
+    );
+    assert!(
         method
             .finding_description
             .contains("passwords set through pam_unix, as passwd sets them, already get yescrypt"),
@@ -278,6 +284,93 @@ async fn a_stack_line_naming_sha512_is_reported_and_left_to_the_operator() {
     );
 }
 
+/// shadow built with PAM sets newusers' passwords through a PAM service of
+/// that name, and Arch's shadow 4.13 packaging shipped one that named sha512
+/// on its own pam_unix line.
+#[tokio::test]
+async fn a_newusers_service_naming_sha512_is_a_manual_step() {
+    let login_defs = format!("{SECURE_AGEING}ENCRYPT_METHOD YESCRYPT\n");
+    let executor = Arc::new(host(
+        &login_defs,
+        "/etc/pam.d/newusers",
+        "auth\t\trequired\tpam_unix.so\npassword \trequired \tpam_unix.so sha512 shadow\n",
+        Some(MODERN_PROBE),
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let scan = plugin.scan(&ctx, &config).await.expect("scan runs");
+    let finding = scan
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-ENCRYPT_METHOD")
+        .expect("newusers hashes with sha512 here");
+    assert_eq!(finding.finding_current_value, "SHA512");
+    assert!(
+        finding
+            .finding_remediation_steps
+            .iter()
+            .any(|s| s.contains("/etc/pam.d/newusers") && s.contains("change it to yescrypt")),
+        "{:?}",
+        finding.finding_remediation_steps
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.expect("apply runs");
+    assert!(!result.apply_success);
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(|c| c.change_description.contains("/etc/pam.d/newusers")),
+        "{:?}",
+        result.apply_changes
+    );
+}
+
+/// openSUSE installs `common-password` in `/usr/lib/pam.d`, which Linux-PAM
+/// searches when `/etc/pam.d` has no such file. A line there is read, and the
+/// manual step names the file the host actually has.
+#[tokio::test]
+async fn a_stack_line_in_usr_lib_pam_d_is_read_and_named_as_it_is() {
+    let login_defs = format!("{SECURE_AGEING}ENCRYPT_METHOD YESCRYPT\n");
+    let executor = Arc::new(host(
+        &login_defs,
+        "/usr/lib/pam.d/common-password",
+        "password\trequired\tpam_unix.so\tsha512 nullok\n",
+        Some(MODERN_PROBE),
+    ));
+    let mut ctx = Context::with_executor(executor.clone());
+    let plugin = PamHardeningPlugin::new();
+    let config = PluginConfig::default();
+
+    let scan = plugin.scan(&ctx, &config).await.expect("scan runs");
+    let finding = scan
+        .scan_findings
+        .iter()
+        .find(|f| f.finding_id == "pam-ENCRYPT_METHOD")
+        .expect("the vendor stack's sha512 is what passwd uses");
+    assert!(
+        finding
+            .finding_remediation_steps
+            .iter()
+            .any(|s| s.contains("/usr/lib/pam.d/common-password")),
+        "{:?}",
+        finding.finding_remediation_steps
+    );
+
+    let result = plugin.apply(&mut ctx, &config).await.expect("apply runs");
+    assert!(!result.apply_success);
+    assert!(
+        !executor
+            .log()
+            .files_written
+            .iter()
+            .any(|(p, _)| p.starts_with("/usr/lib/pam.d") || p.starts_with("/etc/pam.d")),
+        "no stack file is ever written"
+    );
+}
+
 #[tokio::test]
 async fn a_fips_host_on_yescrypt_is_not_moved_down() {
     let probe = MODERN_PROBE.replace("fips=no", "fips=yes");
@@ -332,6 +425,14 @@ async fn a_fips_host_on_md5_is_moved_to_sha512_not_yescrypt() {
         .expect("MD5 is reported");
     assert_eq!(finding.finding_severity, Severity::High);
     assert_eq!(finding.finding_recommended_value, "SHA512");
+    assert!(
+        finding
+            .finding_compliance
+            .iter()
+            .any(|m| m.compliance_control_id == "8.3.2"),
+        "MD5 is a storage weakness and fails the mapped controls: {:?}",
+        finding.finding_compliance
+    );
 
     let result = plugin
         .apply(&mut ctx, &PluginConfig::default())
@@ -394,9 +495,11 @@ async fn a_raised_cost_is_refused_on_a_host_too_small_to_check_it() {
         "{:?}",
         result.apply_changes
     );
+    let file = written(&executor, "/etc/login.defs").expect("the affordable cost is written");
     assert!(
-        written(&executor, "/etc/login.defs").is_none(),
-        "a cost of 9 needs 256 MiB per check; ten of them do not fit in half of 1 GiB"
+        file.contains("YESCRYPT_COST_FACTOR 6") && !file.contains("YESCRYPT_COST_FACTOR 9"),
+        "a cost of 9 needs 256 MiB per check and ten of them do not fit in half \
+         of 1 GiB, so the plan falls back to 6, the most that host carries: {file}"
     );
 }
 
@@ -465,15 +568,18 @@ async fn on_pam_1_5_a_raised_cost_also_needs_rounds_on_the_stack_line() {
 /// The memory guard is part of the plan scan, apply and validate share. On a
 /// Linux-PAM older than 1.6.0, `rounds=` on the stack line is the only setting
 /// that raises the cost of a user's password, so naming the refused cost
-/// there would hand the operator the lockout the refusal prevents.
+/// there would hand the operator the lockout the refusal prevents. The plan
+/// falls back to the largest cost the host can carry instead, and names that
+/// one everywhere, so a refused override never leaves the host weaker than no
+/// override would. This host starts below the default, at rounds=3.
 #[tokio::test]
 async fn on_pam_1_5_an_unaffordable_cost_is_refused_once_and_never_advised_as_rounds() {
-    let login_defs = format!("{SECURE_AGEING}ENCRYPT_METHOD YESCRYPT\n");
+    let login_defs = format!("{SECURE_AGEING}ENCRYPT_METHOD YESCRYPT\nYESCRYPT_COST_FACTOR 3\n");
     let executor = Arc::new(with_memory(
         host(
             &login_defs,
             "/etc/pam.d/common-password",
-            UBUNTU_2404_COMMON_PASSWORD,
+            "password\t[success=1 default=ignore]\tpam_unix.so obscure yescrypt rounds=3\n",
             Some(UBUNTU_2404_PROBE),
         ),
         1024 * 1024,
@@ -488,21 +594,28 @@ async fn on_pam_1_5_an_unaffordable_cost_is_refused_once_and_never_advised_as_ro
         .iter()
         .find(|f| f.finding_id == "pam-YESCRYPT_COST_FACTOR")
         .expect("the cost is below what the operator asked for");
+    let steps = &finding.finding_remediation_steps;
     assert!(
-        !finding
-            .finding_remediation_steps
+        !steps
             .iter()
-            .any(|s| s.contains("rounds=9") || s.contains("(apply does this)")),
-        "the scan must not promise a write apply refuses: {:?}",
-        finding.finding_remediation_steps
+            .any(|s| s.contains("rounds=9") || s.contains("COST_FACTOR 9 in")),
+        "the scan must not promise a write apply refuses: {steps:?}"
     );
     assert!(
-        finding
-            .finding_remediation_steps
+        steps
             .iter()
             .any(|s| s.contains("apply will not raise") && s.contains("6 or less")),
-        "{:?}",
-        finding.finding_remediation_steps
+        "{steps:?}"
+    );
+    assert!(
+        steps
+            .iter()
+            .any(|s| s.contains("Set YESCRYPT_COST_FACTOR 6 in /etc/login.defs (apply does this)")),
+        "{steps:?}"
+    );
+    assert!(
+        steps.iter().any(|s| s.contains("set rounds=6 there")),
+        "{steps:?}"
     );
 
     let preview = plugin.validate(&ctx, &config).await.expect("validate runs");
@@ -512,7 +625,11 @@ async fn on_pam_1_5_an_unaffordable_cost_is_refused_once_and_never_advised_as_ro
         .map(|i| i.validation_issue_message.as_str())
         .collect();
     assert!(
-        !messages.iter().any(|m| m.contains("rounds=")),
+        !messages.iter().any(|m| m.contains("rounds=9")),
+        "{messages:?}"
+    );
+    assert!(
+        messages.iter().any(|m| m.contains("set rounds=6 there")),
         "{messages:?}"
     );
     assert_eq!(
@@ -523,6 +640,13 @@ async fn on_pam_1_5_an_unaffordable_cost_is_refused_once_and_never_advised_as_ro
         1,
         "{messages:?}"
     );
+    assert!(
+        preview
+            .validation_report_estimated_changes
+            .contains(&"YESCRYPT_COST_FACTOR will change: 3 -> 6".to_string()),
+        "{:?}",
+        preview.validation_report_estimated_changes
+    );
 
     let result = plugin.apply(&mut ctx, &config).await.expect("apply runs");
     assert!(!result.apply_success);
@@ -530,8 +654,19 @@ async fn on_pam_1_5_an_unaffordable_cost_is_refused_once_and_never_advised_as_ro
         !result
             .apply_changes
             .iter()
-            .any(|c| c.change_description.contains("rounds=")),
+            .any(|c| c.change_description.contains("rounds=9")),
         "no change may advise a rounds= the host cannot afford: {:?}",
+        result.apply_changes
+    );
+    assert!(
+        result
+            .apply_changes
+            .iter()
+            .any(
+                |c| c.change_error.as_deref() == Some(hardener_types::PAM_INLINE_OVERRIDE_MARKER)
+                    && c.change_description.contains("set rounds=6 there")
+            ),
+        "{:?}",
         result.apply_changes
     );
     assert_eq!(
@@ -544,7 +679,9 @@ async fn on_pam_1_5_an_unaffordable_cost_is_refused_once_and_never_advised_as_ro
         "{:?}",
         result.apply_changes
     );
-    assert!(written(&executor, "/etc/login.defs").is_none());
+    let file = written(&executor, "/etc/login.defs").expect("the affordable cost is written");
+    assert!(file.contains("YESCRYPT_COST_FACTOR 6"), "{file}");
+    assert!(!file.contains("YESCRYPT_COST_FACTOR 9"), "{file}");
 }
 
 /// The issue's 1 GiB, set by hand on a small VM: the cost check is

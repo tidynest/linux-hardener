@@ -24,11 +24,12 @@
 //! this plugin gives: a malformed stack edit can lock everyone out.
 //!
 //! Choosing `YESCRYPT` is gated on positive evidence that every consumer on
-//! the host understands it. shadow 4.9, which RHEL 9 ships built without yescrypt,
-//! answers an unknown `ENCRYPT_METHOD` with "Defaulting to DES", and pam_unix
-//! refuses a password change outright when the crypto library lacks the
-//! algorithm. A host that cannot confirm yescrypt, or that runs in FIPS mode,
-//! is held to SHA-512 with enough rounds instead.
+//! the host understands it. Every shadow release before 4.20.0 answers an
+//! `ENCRYPT_METHOD` it was built without with "Defaulting to DES" (4.20.0
+//! defaults to SHA-512 instead), RHEL 9 ships one (4.9) built without
+//! yescrypt, and pam_unix refuses a password change outright when the crypto
+//! library lacks the algorithm. A host that cannot confirm yescrypt, or that
+//! runs in FIPS mode, is held to SHA-512 with enough rounds instead.
 //!
 //! Scan, apply and validate share one plan: the `login.defs` keys apply would
 //! write, computed by [`Hashing::plan_writes`]. Whatever still falls short once
@@ -49,6 +50,7 @@ use hardener_common::file_utils::{
     ConfigFormat, Duplicates, parse_config_value, set_config_directive,
 };
 use hardener_common::types::{FindingCategory, Severity};
+use hardener_common::vendor_config::{ConfigLayer, vendor_path_for};
 use hardener_core::{
     Change, ChangeType, Context, PluginConfig,
     plugin::{Finding, UncheckedBlocker, UncheckedCheck, ValidationIssue},
@@ -190,8 +192,13 @@ impl HashMethod {
 
     /// `ENCRYPT_METHOD` as shadow reads it: exact and case-sensitive, because
     /// shadow compares with `streq`. A lowercase `yescrypt` is not a value
-    /// shadow knows, and shadow then falls back to SHA-512, or to DES on
-    /// releases as recent as 4.9.
+    /// shadow knows, and shadow then falls back to DES before 4.20.0 (every
+    /// supported family but openSUSE Tumbleweed) and to SHA-512 from 4.20.0.
+    ///
+    /// shadow 4.20.0 also stopped accepting `DES` and `MD5` here and treats
+    /// them as unknown, so its own tools use SHA-512 for both. They still rank
+    /// as written: `pam_unix` reads `MD5` as its `md5` preset whatever shadow
+    /// does, and older shadow honours both.
     pub(super) fn from_login_defs(value: &str) -> Option<HashMethod> {
         match value {
             "DES" => Some(HashMethod::Des),
@@ -260,21 +267,34 @@ pub(super) fn pam_login_defs_method(value: &str) -> Option<HashMethod> {
 // ---------------------------------------------------------------------------
 
 /// The stack files that can carry the `pam_unix` line new passwords go
-/// through. The shared files the distributions use, plus the two services that
-/// set passwords, which may carry a line of their own rather than include one.
+/// through. The shared files the distributions use, plus the three services
+/// that set passwords, which may carry a line of their own rather than include
+/// one: `passwd`, and `chpasswd` and `newusers`, which a shadow built with PAM
+/// runs through services of their own names (shadow `src/newusers.c`,
+/// `do_pam_passwd_non_interactive ("newusers", ...)`).
+///
+/// Each is read where Linux-PAM looks for it, not only in `/etc/pam.d`: see
+/// [`read_stack_file`].
 pub(super) const HASHING_STACK_FILES: &[&str] = &[
     "/etc/pam.d/common-password",
     "/etc/pam.d/system-auth",
     "/etc/pam.d/password-auth",
     "/etc/pam.d/passwd",
     "/etc/pam.d/chpasswd",
+    "/etc/pam.d/newusers",
 ];
+
+/// Linux-PAM's distribution directory, searched when `/etc/pam.d` has no file
+/// of a service's name (libpam `PAM_CONFIG_DIST_D`). openSUSE installs
+/// `common-password` there.
+const PAM_DIST_DIR: &str = "/usr/lib/pam.d";
 
 /// One `password` line loading `pam_unix.so`, reduced to what decides hashing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PamUnixLine {
-    /// The stack file it was read from.
-    pub(super) file: &'static str,
+    /// The stack file it was read from, as the host names it: the
+    /// `/usr/lib/pam.d` or `/usr/etc/pam.d` copy where `/etc/pam.d` has none.
+    pub(super) file: String,
     /// The algorithm the line names itself. The last one wins, as in
     /// `pam_unix`, whose argument table masks the previous choice off.
     pub(super) method: Option<HashMethod>,
@@ -311,7 +331,7 @@ fn logical_pam_lines(content: &str) -> Vec<String> {
 /// Linux-PAM to skip a missing module. A bracketed control field may hold
 /// spaces (`[success=1 default=ignore]`), so it is consumed up to its closing
 /// bracket before the module path is read.
-pub(super) fn pam_unix_password_lines(file: &'static str, content: &str) -> Vec<PamUnixLine> {
+pub(super) fn pam_unix_password_lines(file: &str, content: &str) -> Vec<PamUnixLine> {
     let mut found = Vec::new();
     for line in logical_pam_lines(content) {
         let mut tokens = line.split_whitespace();
@@ -341,7 +361,7 @@ pub(super) fn pam_unix_password_lines(file: &'static str, content: &str) -> Vec<
             continue;
         }
         let mut parsed = PamUnixLine {
-            file,
+            file: file.to_string(),
             method: None,
             rounds: None,
         };
@@ -696,16 +716,19 @@ pub(super) fn read_method(
     match (&raw, shadow_view) {
         (None, _) => notes.push(
             "/etc/login.defs sets no ENCRYPT_METHOD, so shadow's tools use their built-in \
-             default, which is DES on older releases"
+             default, which is DES (MD5 where MD5_CRYPT_ENAB is yes) before shadow 4.20.0 \
+             and SHA512 from 4.20.0"
                 .to_string(),
         ),
         (Some(value), None) if HashMethod::from_login_defs(value).is_some() => notes.push(format!(
             "/etc/login.defs sets ENCRYPT_METHOD to '{value}', which this host's shadow \
-                 was built without, so its tools fall back to SHA512 or, on older releases, DES"
+                 was built without, so its tools fall back to DES before shadow 4.20.0 and \
+                 to SHA512 from 4.20.0"
         )),
         (Some(value), None) => notes.push(format!(
             "/etc/login.defs sets ENCRYPT_METHOD to '{value}', which shadow does not accept \
-             (it compares case-sensitively), so its tools fall back to a default"
+             (it compares case-sensitively), so its tools fall back to DES before shadow \
+             4.20.0 and to SHA512 from 4.20.0"
         )),
         _ => {}
     }
@@ -1102,19 +1125,13 @@ impl Hashing {
         config: &PluginConfig,
         login_defs: &str,
     ) -> Option<(&'static str, u64, CostReading)> {
-        match self.cost_method {
-            HashMethod::Yescrypt => {
-                let target = cost_target(config, YESCRYPT_COST_FACTOR, YESCRYPT_COST_MAX);
-                let reading = read_yescrypt_cost(login_defs, &self.stack, &self.probe, target);
-                Some((YESCRYPT_COST_FACTOR, target, reading))
-            }
-            HashMethod::Sha512 | HashMethod::Sha256 => {
-                let target = cost_target(config, SHA_CRYPT_MIN_ROUNDS, SHA_ROUNDS_MAX);
-                let reading = read_sha_rounds(login_defs, &self.stack, &self.probe, target);
-                Some((SHA_CRYPT_MIN_ROUNDS, target, reading))
-            }
-            _ => None,
-        }
+        let (name, cap) = match self.cost_method {
+            HashMethod::Yescrypt => (YESCRYPT_COST_FACTOR, YESCRYPT_COST_MAX),
+            HashMethod::Sha512 | HashMethod::Sha256 => (SHA_CRYPT_MIN_ROUNDS, SHA_ROUNDS_MAX),
+            _ => return None,
+        };
+        let target = cost_target(config, name, cap);
+        Some((name, target, self.read_cost(name, login_defs, target)))
     }
 
     /// Whether an exception documents the cost this host has now.
@@ -1132,8 +1149,9 @@ impl Hashing {
     /// already holds the cost but whose stack line does not is refused just the
     /// same, because the only thing left to do there is put that cost on the
     /// stack line, and on a Linux-PAM older than 1.6.0 that line is what every
-    /// user's password gets. While a refusal stands, neither the write nor a
-    /// `rounds=` manual step for that cost is planned anywhere.
+    /// user's password gets. While a refusal stands, the refused cost is
+    /// neither written nor named in a `rounds=` manual step anywhere; the plan
+    /// aims for [`Hashing::planned_cost`] instead.
     pub(super) fn cost_refusal(&self, config: &PluginConfig) -> Option<(u64, String)> {
         let (name, target, reading) = self.cost_on(config, &self.login_defs)?;
         if name != YESCRYPT_COST_FACTOR
@@ -1143,26 +1161,62 @@ impl Hashing {
             return None;
         }
         let reason = unaffordable(target, &self.mem_total_kib)?;
+        let fallback = affordable_fallback(&self.mem_total_kib);
+        let instead = if fallback > YESCRYPT_COST_DEFAULT {
+            format!("This run aims for {fallback} instead, the largest cost this host can carry")
+        } else {
+            format!("This run holds it to the default of {YESCRYPT_COST_DEFAULT} instead")
+        };
         Some((
             target,
-            format!("{reason}. {}", lower_override_advice(&self.mem_total_kib)),
+            format!(
+                "{reason}. {instead}. {}",
+                lower_override_advice(&self.mem_total_kib)
+            ),
         ))
+    }
+
+    /// The cost the plan raises a host to: the target, or where the target
+    /// is refused, the largest cost the host can carry, which is never below
+    /// the default. Pure.
+    ///
+    /// The fallback is what keeps "overrides only tighten" true: a refused
+    /// override must not leave a host below the cost it would have been
+    /// raised to had the operator asked for nothing.
+    pub(super) fn planned_cost(&self, config: &PluginConfig) -> Option<(&'static str, u64)> {
+        let (name, target, _) = self.cost_on(config, &self.login_defs)?;
+        let planned = if self.cost_refusal(config).is_some() {
+            affordable_fallback(&self.mem_total_kib)
+        } else {
+            target
+        };
+        Some((name, planned))
+    }
+
+    /// `name`'s reading of `login_defs` against `target`.
+    fn read_cost(&self, name: &str, login_defs: &str, target: u64) -> CostReading {
+        if name == YESCRYPT_COST_FACTOR {
+            read_yescrypt_cost(login_defs, &self.stack, &self.probe, target)
+        } else {
+            read_sha_rounds(login_defs, &self.stack, &self.probe, target)
+        }
     }
 
     /// The `login.defs` keys apply writes, in order. Pure, and the one
     /// definition scan, apply and validate all use. Tighten-only throughout:
-    /// see [`plan_method`] for the algorithm, and a cost is raised to the
-    /// target only where the file holds less and the host can afford it
-    /// (see [`Hashing::cost_refusal`]).
+    /// see [`plan_method`] for the algorithm, and a cost is raised to
+    /// [`Hashing::planned_cost`] only where the file holds less.
     pub(super) fn plan_writes(&self, config: &PluginConfig) -> Vec<(&'static str, String)> {
         let mut writes = Vec::new();
         if let Some(method) = self.method_write {
             writes.push((ENCRYPT_METHOD, method.login_defs_name().to_string()));
         }
-        if let Some((name, target, reading)) = self.cost_on(config, &self.login_defs)
+        if let Some((name, target)) = self.planned_cost(config)
             && !self.cost_excepted(config)
-            && reading.lowest.is_none_or(|lowest| lowest < target)
-            && self.cost_refusal(config).is_none()
+            && self
+                .read_cost(name, &self.login_defs, target)
+                .lowest
+                .is_none_or(|lowest| lowest < target)
         {
             let number = |key: &str| {
                 login_defs_value(&self.login_defs, key).and_then(|v| v.trim().parse::<u64>().ok())
@@ -1199,9 +1253,9 @@ impl Hashing {
 
     /// The manual steps left once `projected` is in place: stack lines that
     /// name a weaker algorithm, and stack lines whose cost `login.defs`
-    /// cannot reach. Each is `(directive, sentence)`. A cost the host cannot
-    /// afford yields no step: the refusal says what to do instead, and a
-    /// `rounds=` naming that cost is the lockout the refusal exists to avoid.
+    /// cannot reach. Each is `(directive, sentence)`. A cost step names
+    /// [`Hashing::planned_cost`], never a refused cost: a `rounds=` naming a
+    /// cost the host cannot afford is the lockout the refusal exists to avoid.
     pub(super) fn manual_steps(
         &self,
         config: &PluginConfig,
@@ -1227,14 +1281,64 @@ impl Hashing {
             }
         }
         if !self.cost_excepted(config)
-            && self.cost_refusal(config).is_none()
-            && let Some((name, target, after)) = self.cost_on(config, projected)
+            && let Some((name, target)) = self.planned_cost(config)
         {
-            for shortfall in after.stack_shortfalls {
+            for shortfall in self.read_cost(name, projected, target).stack_shortfalls {
                 steps.push((name, format!("{shortfall}; set rounds={target} there")));
             }
         }
         steps
+    }
+}
+
+/// The copy of the stack file `file` (an `/etc/pam.d` path) that Linux-PAM
+/// obeys, as `(path read, content)`, or `None` where there is none.
+///
+/// Linux-PAM opens `/etc/pam.d/<service>`, then `/usr/lib/pam.d/<service>`,
+/// then the build's vendor directory (`/usr/etc/pam.d` on openSUSE's), each
+/// only where the one before could not be opened (libpam `pam_handlers.c`,
+/// `_pam_open_config_file`, v1.7.3). `read_conf_classified` covers `/etc`
+/// and `/usr/etc`; the `/usr/lib/pam.d` copy is read between them. Fails
+/// closed like every other read here: a copy that exists and cannot be read
+/// stops the check, because a `pam_unix` line there would override
+/// `login.defs`.
+async fn read_stack_file(
+    ctx: &Context,
+    file: &str,
+) -> Result<Option<(String, String)>, (String, bool)> {
+    let layered = read_conf_classified(ctx, file).await;
+    match &layered {
+        ConfRead::Content(content, ConfigLayer::Admin) => {
+            return Ok(Some((file.to_string(), content.clone())));
+        }
+        ConfRead::Unreadable {
+            path,
+            permission_denied,
+            ..
+        } if path == file => return Err((path.clone(), *permission_denied)),
+        _ => {}
+    }
+    let name = file.strip_prefix("/etc/pam.d/").unwrap_or(file);
+    let dist = format!("{PAM_DIST_DIR}/{name}");
+    match read_conf_classified(ctx, &dist).await {
+        ConfRead::Content(content, _) => Ok(Some((dist, content))),
+        ConfRead::Unreadable {
+            path,
+            permission_denied,
+            ..
+        } => Err((path, permission_denied)),
+        ConfRead::Absent => match layered {
+            ConfRead::Content(content, _) => Ok(Some((
+                vendor_path_for(file).unwrap_or_else(|| file.to_string()),
+                content,
+            ))),
+            ConfRead::Unreadable {
+                path,
+                permission_denied,
+                ..
+            } => Err((path, permission_denied)),
+            ConfRead::Absent => Ok(None),
+        },
     }
 }
 
@@ -1259,14 +1363,8 @@ async fn gather(
     };
     let mut stack = Vec::new();
     for file in HASHING_STACK_FILES {
-        match read_conf_classified(ctx, file).await {
-            ConfRead::Content(content, _) => {
-                stack.extend(pam_unix_password_lines(file, &content));
-            }
-            ConfRead::Absent => {}
-            ConfRead::Unreadable {
-                permission_denied, ..
-            } => return Err((file.to_string(), permission_denied)),
+        if let Some((path, content)) = read_stack_file(ctx, file).await? {
+            stack.extend(pam_unix_password_lines(&path, &content));
         }
     }
     let probe = probe_host(ctx).await;
@@ -1293,6 +1391,22 @@ fn method_severity(weakest: Option<HashMethod>) -> Severity {
         Some(HashMethod::Sha256) | Some(HashMethod::Bcrypt) => Severity::Medium,
         Some(_) => Severity::Low,
     }
+}
+
+/// Whether an algorithm finding is a weakness a compliance framework names,
+/// and so carries the directive's compliance mapping.
+///
+/// Below SHA-512, or unknown, it is. Salted SHA-512 is not: it is what the
+/// DISA STIGs require for the same control, so a host on it that this tool
+/// would move to yescrypt is falling short of this tool's baseline, not of
+/// any framework. A control fails on any live mapped finding whatever its
+/// severity (`hardener-compliance` `generator.rs`, `has_live_finding`), so
+/// keeping the mapping there would fail eight controls on every stock
+/// Ubuntu 24.04 host, and on any other whose `login.defs` still says SHA512,
+/// for using the value DISA asks for.
+/// `coverage()` still lists the controls, so such a host passes them.
+fn storage_weakness(weakest: Option<HashMethod>) -> bool {
+    weakest.is_none_or(|w| w < HashMethod::Sha512)
 }
 
 /// The words of a hashing finding, apart from what the directive supplies.
@@ -1407,7 +1521,7 @@ pub(super) fn scan_findings(config: &PluginConfig, h: &Hashing) -> HashingScan {
             description.push_str(". ");
             description.push_str(&h.method.notes.join("; "));
         }
-        findings.push(hashing_finding(
+        let mut finding = hashing_finding(
             config,
             ENCRYPT_METHOD,
             &h.method.display,
@@ -1420,22 +1534,30 @@ pub(super) fn scan_findings(config: &PluginConfig, h: &Hashing) -> HashingScan {
                 remediation,
                 severity: method_severity(h.method.weakest),
             },
-        ));
+        );
+        if !storage_weakness(h.method.weakest) {
+            finding.finding_compliance = Vec::new();
+        }
+        findings.push(finding);
     }
 
     if let Some((name, target, reading)) = h.cost_on(config, &h.login_defs)
         && reading.lowest.is_none_or(|lowest| lowest < target)
     {
-        let mut remediation: Vec<String> = writes
-            .iter()
-            .filter(|(key, _)| *key != ENCRYPT_METHOD)
-            .map(|(key, value)| format!("Set {key} {value} in /etc/login.defs (apply does this)"))
-            .collect();
+        let mut remediation = Vec::new();
         if let Some((cost, message)) = h.cost_refusal(config) {
             remediation.push(format!(
                 "apply will not raise the cost to {cost} here: {message}"
             ));
         }
+        remediation.extend(
+            writes
+                .iter()
+                .filter(|(key, _)| *key != ENCRYPT_METHOD)
+                .map(|(key, value)| {
+                    format!("Set {key} {value} in /etc/login.defs (apply does this)")
+                }),
+        );
         remediation.extend(steps_for(name));
         let baseline: u64 = directive(name).pam_secure_value.parse().unwrap_or(0);
         let severity = if reading.lowest.is_none_or(|lowest| lowest < baseline) {
@@ -1724,6 +1846,17 @@ pub(super) fn unaffordable(cost: u64, mem_total_kib: &Result<u64, String>) -> Op
                 )
             })
         }
+    }
+}
+
+/// The cost a refused override falls back to: the largest this host can
+/// carry, and never below the default, which every consumer uses already.
+/// Where the memory could not be read, nothing above the default can be shown
+/// to be safe, so the default. Pure.
+pub(super) fn affordable_fallback(mem_total_kib: &Result<u64, String>) -> u64 {
+    match mem_total_kib {
+        Ok(total) => max_affordable_cost(*total).max(YESCRYPT_COST_DEFAULT),
+        Err(_) => YESCRYPT_COST_DEFAULT,
     }
 }
 

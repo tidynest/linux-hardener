@@ -102,7 +102,7 @@ fn a_bracketed_control_field_with_spaces_does_not_hide_the_module() {
     assert_eq!(
         found,
         vec![PamUnixLine {
-            file: "/etc/pam.d/common-password",
+            file: "/etc/pam.d/common-password".to_string(),
             method: Some(HashMethod::Yescrypt),
             rounds: None,
         }]
@@ -138,10 +138,80 @@ fn a_continued_line_is_one_line_and_the_last_algorithm_wins() {
     assert_eq!(
         found,
         vec![PamUnixLine {
-            file: "/etc/pam.d/passwd",
+            file: "/etc/pam.d/passwd".to_string(),
             method: Some(HashMethod::Yescrypt),
             rounds: Some("7".to_string()),
         }]
+    );
+}
+
+#[test]
+fn the_password_setting_services_include_newusers() {
+    // shadow built with PAM sets newusers' passwords through a service of
+    // that name (src/newusers.c), and Arch's shadow 4.13 packaging shipped
+    // one naming sha512.
+    for service in ["passwd", "chpasswd", "newusers"] {
+        let file = format!("/etc/pam.d/{service}");
+        assert!(
+            HASHING_STACK_FILES.contains(&file.as_str()),
+            "{file} is not read"
+        );
+    }
+}
+
+/// Linux-PAM's own order: `/etc/pam.d`, then `/usr/lib/pam.d`, then the
+/// vendor directory (`/usr/etc/pam.d` on openSUSE), each only where the one
+/// before has no such file.
+#[tokio::test]
+async fn a_stack_file_is_read_where_linux_pam_looks_for_it() {
+    use hardener_common::executor::MockExecutor;
+    use std::sync::Arc;
+
+    let read = |executor: MockExecutor| async move {
+        let ctx = Context::with_executor(Arc::new(executor));
+        read_stack_file(&ctx, "/etc/pam.d/common-password").await
+    };
+    let found = |path: &str| Ok(Some((path.to_string(), "x\n".to_string())));
+
+    assert_eq!(
+        read(
+            MockExecutor::new()
+                .with_file("/etc/pam.d/common-password", "x\n")
+                .with_file("/usr/lib/pam.d/common-password", "y\n")
+        )
+        .await,
+        found("/etc/pam.d/common-password"),
+        "the administrator's copy wins"
+    );
+    assert_eq!(
+        read(MockExecutor::new().with_file("/usr/lib/pam.d/common-password", "x\n")).await,
+        found("/usr/lib/pam.d/common-password"),
+        "openSUSE Factory installs common-password here"
+    );
+    assert_eq!(
+        read(
+            MockExecutor::new()
+                .with_file("/usr/lib/pam.d/common-password", "x\n")
+                .with_file("/usr/etc/pam.d/common-password", "y\n")
+        )
+        .await,
+        found("/usr/lib/pam.d/common-password"),
+        "/usr/lib/pam.d comes before the vendor directory"
+    );
+    assert_eq!(
+        read(MockExecutor::new().with_file("/usr/etc/pam.d/common-password", "x\n")).await,
+        found("/usr/etc/pam.d/common-password")
+    );
+    assert_eq!(read(MockExecutor::new()).await, Ok(None));
+    assert_eq!(
+        read(
+            MockExecutor::new()
+                .with_read_permission_denied("/etc/pam.d/common-password")
+                .with_file("/usr/lib/pam.d/common-password", "x\n")
+        )
+        .await,
+        Err(("/etc/pam.d/common-password".to_string(), true)),
+        "an /etc copy that cannot be read is still the one PAM obeys"
     );
 }
 
@@ -874,11 +944,9 @@ fn the_scan_names_the_algorithm_and_the_stored_hashes_but_no_hash() {
         Some("ENCRYPT_METHOD")
     );
     assert!(
-        method
-            .finding_compliance
-            .iter()
-            .any(|m| m.compliance_control_id == "IA-5(1)(d)"),
-        "{:?}",
+        method.finding_compliance.is_empty(),
+        "salted SHA-512 is what DISA asks for, so preferring yescrypt fails no \
+         framework's control: {:?}",
         method.finding_compliance
     );
 
@@ -891,6 +959,36 @@ fn the_scan_names_the_algorithm_and_the_stored_hashes_but_no_hash() {
     );
     assert!(stored.finding_compliance.is_empty());
     assert_eq!(stored.finding_exception_key, None);
+}
+
+#[test]
+fn an_algorithm_below_sha512_keeps_its_compliance_mapping() {
+    for (login_defs, weakest) in [
+        ("ENCRYPT_METHOD MD5\n", "MD5"),
+        ("ENCRYPT_METHOD SHA256\n", "SHA256"),
+        ("", "not set"),
+    ] {
+        let h = hashing(
+            login_defs,
+            lines("/etc/pam.d/system-auth", RHEL10_SYSTEM_AUTH),
+            capable(),
+        );
+        let scan = scan_findings(&PluginConfig::default(), &h);
+        let method = scan
+            .findings
+            .iter()
+            .find(|f| f.finding_id == "pam-ENCRYPT_METHOD")
+            .unwrap_or_else(|| panic!("{weakest} is reported"));
+        assert_eq!(method.finding_current_value, weakest);
+        assert!(
+            method
+                .finding_compliance
+                .iter()
+                .any(|m| m.compliance_control_id == "IA-5(1)(d)"),
+            "{weakest} is a storage weakness: {:?}",
+            method.finding_compliance
+        );
+    }
 }
 
 #[test]
@@ -979,6 +1077,14 @@ fn each_cost_starts_at_ten_times_two_to_the_cost_mib() {
 /// 1 GiB of MemTotal, which affords a cost of 6 and no more.
 const ONE_GIB: Result<u64, String> = Ok(1024 * 1024);
 
+/// The manual steps' sentences, for assertions about what they name.
+fn step_text(h: &Hashing, config: &PluginConfig) -> Vec<String> {
+    h.manual_steps(config, &h.projected(&h.plan_writes(config)))
+        .into_iter()
+        .map(|(_, step)| step)
+        .collect()
+}
+
 #[test]
 fn an_unaffordable_cost_on_pam_1_5_is_refused_and_never_becomes_a_rounds_step() {
     let config = config_with(&[("YESCRYPT_COST_FACTOR", "9")]);
@@ -992,19 +1098,29 @@ fn an_unaffordable_cost_on_pam_1_5_is_refused_and_never_becomes_a_rounds_step() 
     let (cost, message) = h.cost_refusal(&config).expect("9 does not fit in 1 GiB");
     assert_eq!(cost, 9);
     assert!(message.contains("up to a cost of 6"), "{message}");
+    assert!(message.contains("aims for 6 instead"), "{message}");
     assert!(message.contains("to 6 or less"), "{message}");
-    let writes = h.plan_writes(&config);
-    assert!(writes.is_empty(), "{writes:?}");
+    assert_eq!(h.planned_cost(&config), Some((YESCRYPT_COST_FACTOR, 6)));
+    assert_eq!(
+        h.plan_writes(&config),
+        vec![("YESCRYPT_COST_FACTOR", "6".to_string())],
+        "the most this host can carry is still written"
+    );
+    let steps = step_text(&h, &config);
     assert!(
-        h.manual_steps(&config, &h.projected(&writes)).is_empty(),
-        "rounds=9 on a PAM 1.5 line is the lockout itself"
+        !steps.iter().any(|s| s.contains("rounds=9")),
+        "rounds=9 on a PAM 1.5 line is the lockout itself: {steps:?}"
+    );
+    assert!(
+        steps.iter().any(|s| s.contains("set rounds=6 there")),
+        "PAM 1.5 ignores the factor, so the affordable cost needs the line too: {steps:?}"
     );
 }
 
 #[test]
 fn the_refusal_is_judged_on_the_target_even_where_login_defs_already_holds_it() {
     // Someone wrote the cost into login.defs by hand; PAM 1.5 ignores it, so
-    // the only step left would be rounds=9 on the line, which is refused too.
+    // the step left on the line names the affordable cost, never the refused 9.
     let config = config_with(&[("YESCRYPT_COST_FACTOR", "9")]);
     let h = Hashing::new(
         &config,
@@ -1014,7 +1130,90 @@ fn the_refusal_is_judged_on_the_target_even_where_login_defs_already_holds_it() 
         ONE_GIB,
     );
     assert!(h.cost_refusal(&config).is_some());
-    assert!(h.manual_steps(&config, &h.login_defs).is_empty());
+    assert!(
+        h.plan_writes(&config).is_empty(),
+        "login.defs already holds more than 6, and apply never lowers a cost"
+    );
+    let steps = step_text(&h, &config);
+    assert!(!steps.iter().any(|s| s.contains("rounds=9")), "{steps:?}");
+    assert!(
+        steps.iter().any(|s| s.contains("set rounds=6 there")),
+        "{steps:?}"
+    );
+}
+
+/// The case that made the fallback necessary: without it, an override the
+/// host cannot afford planned nothing at all, so a host below the default
+/// stayed there, while the same host with no override was raised to 5.
+#[test]
+fn a_refused_override_never_leaves_the_host_below_what_no_override_gives() {
+    let login_defs = "ENCRYPT_METHOD YESCRYPT\nYESCRYPT_COST_FACTOR 3\n";
+    let stack = lines(
+        "/etc/pam.d/common-password",
+        "password [success=1 default=ignore] pam_unix.so obscure yescrypt rounds=3\n",
+    );
+
+    let baseline = Hashing::new(
+        &PluginConfig::default(),
+        login_defs.to_string(),
+        stack.clone(),
+        ubuntu_2404(),
+        ONE_GIB,
+    );
+    assert_eq!(
+        baseline.plan_writes(&PluginConfig::default()),
+        vec![("YESCRYPT_COST_FACTOR", "5".to_string())]
+    );
+
+    let config = config_with(&[("YESCRYPT_COST_FACTOR", "9")]);
+    let h = Hashing::new(
+        &config,
+        login_defs.to_string(),
+        stack.clone(),
+        ubuntu_2404(),
+        ONE_GIB,
+    );
+    let (cost, _) = h.cost_refusal(&config).expect("9 does not fit in 1 GiB");
+    assert_eq!(cost, 9);
+    assert_eq!(
+        h.plan_writes(&config),
+        vec![("YESCRYPT_COST_FACTOR", "6".to_string())]
+    );
+    let steps = step_text(&h, &config);
+    assert!(
+        steps
+            .iter()
+            .any(|s| s.contains("rounds=3") && s.contains("set rounds=6 there")),
+        "{steps:?}"
+    );
+    assert!(!steps.iter().any(|s| s.contains("rounds=9")), "{steps:?}");
+
+    // Where the memory cannot be read, nothing above the default is shown to
+    // be safe, so the plan holds the host to the default, not below it.
+    let unknown = Hashing::new(
+        &config_with(&[("YESCRYPT_COST_FACTOR", "6")]),
+        login_defs.to_string(),
+        stack,
+        ubuntu_2404(),
+        Err("no /proc here".to_string()),
+    );
+    let config = config_with(&[("YESCRYPT_COST_FACTOR", "6")]);
+    let (_, message) = unknown.cost_refusal(&config).expect("refused");
+    assert!(
+        message.contains("holds it to the default of 5"),
+        "{message}"
+    );
+    assert_eq!(
+        unknown.plan_writes(&config),
+        vec![("YESCRYPT_COST_FACTOR", "5".to_string())]
+    );
+    assert!(
+        step_text(&unknown, &config)
+            .iter()
+            .any(|s| s.contains("set rounds=5 there")),
+        "{:?}",
+        step_text(&unknown, &config)
+    );
 }
 
 #[test]
