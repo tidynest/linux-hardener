@@ -46,5 +46,58 @@ pub(super) fn finishes_alone(lists: Option<&[&str]>, method: &str) -> bool {
     }
 }
 
+/// The method names in one comma-separated list, each submethod reduced to
+/// the method before its colon.
+fn method_names(list: &str) -> Vec<&str> {
+    list.split(',')
+        .map(|name| name.split_once(':').map_or(name, |(base, _)| base))
+        .collect()
+}
+
+/// Whether every list asks for a key before the account password, which is
+/// the second factor an operator opts into under `[ssh.directives]` (#185).
+///
+/// Each list has to name `publickey` ahead of `keyboard-interactive`, and no
+/// password method may come before the key. Order matters because sshd offers
+/// only the methods that come next in some list: with the key first, nobody
+/// without it ever reaches the password prompt, so they can neither guess at
+/// the password nor run up the account's PAM failure count. A list that names
+/// `password` does not count either, because the baseline holds
+/// `PasswordAuthentication no` and sshd skips a list naming a method it has
+/// switched off.
+///
+/// A list asking for more than this, a second key or a host key as well, still
+/// counts, so a host stricter than the policy is never rewritten to it.
+pub(super) fn requires_key_then_password(lists: Option<&[&str]>) -> bool {
+    match lists {
+        None | Some([] | ["any"]) => false,
+        Some(lists) => lists.iter().all(|list| {
+            let names = method_names(list);
+            let first_key = names.iter().position(|name| *name == "publickey");
+            let first_password = names
+                .iter()
+                .position(|name| PASSWORD_METHODS.contains(name));
+            !names.contains(&"password")
+                && matches!(
+                    (first_key, first_password),
+                    (Some(key), Some(prompt)) if key < prompt
+                )
+        }),
+    }
+}
+
+/// Whether a single key is enough to finish a login, which is all this tool's
+/// own remote mode can offer: it connects with `BatchMode=yes` and cannot
+/// answer a prompt.
+///
+/// `lists` is what `sshd -T` prints for one connection, which is `any` where
+/// nothing sets the keyword. A list of `publickey,publickey` needs two keys and
+/// does not count.
+pub(super) fn key_alone_suffices(lists: &[&str]) -> bool {
+    lists
+        .iter()
+        .any(|list| *list == "any" || method_names(list) == ["publickey"])
+}
+
 #[cfg(test)]
 mod tests;

@@ -113,13 +113,23 @@ impl ResolvedConfig {
     /// the quotes are dropped and the arguments stop at a `#`.
     pub fn effective_arguments(&self, directive_name: &str) -> Option<Vec<&str>> {
         self.first_line(directive_name, |_| true)
-            .map(|(_, _, arguments)| {
-                arguments
-                    .split_whitespace()
-                    .take_while(|argument| !argument.starts_with('#'))
-                    .map(|argument| argument.trim_matches('"'))
-                    .collect()
-            })
+            .map(|(_, _, arguments)| list_arguments(arguments))
+    }
+
+    /// [`Self::effective_arguments`] as they would read if one file were not
+    /// there.
+    ///
+    /// The second factor needs this for the same reason [`Self::effective_without`]
+    /// exists: this tool's own fragment may be what answers today, and an apply
+    /// that is about to rewrite the fragment has to know what would win without
+    /// it.
+    pub fn effective_arguments_without(
+        &self,
+        directive_name: &str,
+        ignored_path: &str,
+    ) -> Option<Vec<&str>> {
+        self.first_line(directive_name, |path| path != ignored_path)
+            .map(|(_, _, arguments)| list_arguments(arguments))
     }
 
     /// The first segment satisfying `considered` that supplies the directive.
@@ -166,13 +176,116 @@ impl ResolvedConfig {
             })
     }
 
-    /// Fuzz-only construction from raw segments, so the resolution order can
-    /// be held to first-wins without an executor: the targets under `fuzz/`
-    /// build configurations directly and ask `effective` what sshd would
-    /// read.
-    #[cfg(fuzzing)]
+    /// Construction from raw segments, so the resolution order can be held to
+    /// first-wins without an executor: the targets under `fuzz/` build
+    /// configurations directly and ask `effective` what sshd would read, and
+    /// the second factor's unit tests do the same.
+    #[cfg(any(test, fuzzing))]
     pub fn from_segments(segments: Vec<(String, String)>) -> Self {
         Self { segments }
+    }
+}
+
+/// The arguments after a keyword, for a keyword whose value is a list. sshd
+/// lets an argument be quoted and lets a comment end the line, so the quotes
+/// are dropped and the arguments stop at a `#`.
+fn list_arguments(arguments: &str) -> Vec<&str> {
+    arguments
+        .split_whitespace()
+        .take_while(|argument| !argument.starts_with('#'))
+        .map(|argument| argument.trim_matches('"'))
+        .collect()
+}
+
+/// The main file as a staged candidate has to read it: every `Include` that
+/// would pull in `fragment` spelled out file by file, with `staged` standing
+/// where `fragment` sorts, or with `fragment` left out where `staged` is
+/// `None`.
+///
+/// The candidate is checked from a scratch path, but its `Include` lines still
+/// name the live drop-in directory, and the copy of this tool's fragment on
+/// disk is the one about to be replaced. Validating against it checked the
+/// old fragment rather than the new one: a rewrite that drops a directive was
+/// judged with the dropped value still in force, and on openSUSE a stale
+/// `KbdInteractiveAuthentication no` made `sshd -t` refuse the very apply
+/// that would have removed it. Spelling the files out keeps the order sshd
+/// reads them in and keeps each one a separate file, so a `Match` block in a
+/// drop-in still ends where that file ends, which inlining the text would not.
+///
+/// Only the main file's own lines are rewritten. Every shipped layout includes
+/// the drop-in directory from there; an `Include` of it from inside another
+/// included file would still read the copy on disk.
+pub(super) async fn stage_fragment_includes(
+    ctx: &Context,
+    main_path: &str,
+    main_content: &str,
+    fragment: &Path,
+    staged: Option<&Path>,
+) -> Result<String> {
+    let (Some(fragment_dir), Some(fragment_name)) = (fragment.parent(), fragment.file_name())
+    else {
+        return Ok(main_content.to_string());
+    };
+    let fragment_name = fragment_name.to_string_lossy();
+
+    let mut candidate = String::with_capacity(main_content.len());
+    for line in main_content.lines() {
+        let Some(patterns) = include_patterns(line) else {
+            candidate.push_str(line);
+            candidate.push('\n');
+            continue;
+        };
+
+        let mut arguments = Vec::new();
+        let mut rewritten = false;
+        for pattern in patterns {
+            let reads_fragment = absolute_pattern(&pattern, main_path).is_some_and(|absolute| {
+                absolute.parent() == Some(fragment_dir)
+                    && absolute
+                        .file_name()
+                        .is_some_and(|name| glob_matches(&name.to_string_lossy(), &fragment_name))
+            });
+            if !reads_fragment {
+                arguments.push(pattern);
+                continue;
+            }
+            rewritten = true;
+            let mut files: Vec<PathBuf> = expand_pattern(ctx, &pattern, main_path)
+                .await?
+                .into_iter()
+                .filter(|file| file.as_path() != fragment)
+                .collect();
+            if let Some(staged) = staged {
+                let at = files.partition_point(|file| file.as_path() < fragment);
+                files.insert(at, staged.to_path_buf());
+            }
+            arguments.extend(files.iter().map(|file| quoted(&file.display().to_string())));
+        }
+
+        if !rewritten {
+            candidate.push_str(line);
+        } else if arguments.is_empty() {
+            // Nothing left for it to read once the fragment is gone, and a
+            // bare `Include` with no argument is a parse error, so the line
+            // stays as a comment that says what it was.
+            candidate.push_str("# ");
+            candidate.push_str(line.trim());
+        } else {
+            candidate.push_str("Include ");
+            candidate.push_str(&arguments.join(" "));
+        }
+        candidate.push('\n');
+    }
+    Ok(candidate)
+}
+
+/// A path as an `Include` argument: quoted where it holds whitespace, which
+/// sshd's argument splitter honours, and bare otherwise.
+fn quoted(path: &str) -> String {
+    if path.chars().any(char::is_whitespace) {
+        format!("\"{path}\"")
+    } else {
+        path.to_string()
     }
 }
 

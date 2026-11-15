@@ -115,6 +115,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write that relaxes a rule the host had names the policy, in `apply` and in
   the dry run. The key is refused in any section but `[pam]`, and a value the
   tool does not know stops the configuration loading.
+- **SSH can ask for the account password after the key, if you switch it on
+  (#185).** A key on its own is a file on the client, and whoever copies it
+  logs in. `[ssh.directives] AuthenticationMethods =
+  "publickey,keyboard-interactive"` in your own config now makes the SSH
+  plugin require the key first and the account password through PAM after it.
+  It writes `AuthenticationMethods`, `KbdInteractiveAuthentication yes` and
+  `UsePAM yes` together to `00-hardener.conf`, which sshd reads before Arch's
+  `99-archlinux.conf` and every other shipped drop-in, and leaves
+  `PasswordAuthentication` at `no`. Nothing changes for anyone who does not set
+  it. `scan` reports an opted-in host that does not enforce it as
+  `ssh-authenticationmethods`, `apply --dry-run` previews the three settings,
+  and rollback or removing the directive takes them out again. Before writing,
+  `apply` checks that sshd's PAM stack reaches `pam_unix`, that an apply over
+  `--ssh` keeps its own account's key-only login, and that no account which
+  logs in with a key is left without a password or a `Match` exemption. If a
+  check fails, the second factor is left out, the rest is still hardened, and
+  the run fails naming the reason. Accounts can be accepted as losing SSH
+  access with `[ssh.exceptions."second-factor-lockout"]`. Any other
+  `AuthenticationMethods` value is refused when the config loads.
 
 ### Changed
 
@@ -135,6 +154,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The `sshd -t` check reads the new SSH drop-in, not the copy it replaces
+  (#185).** The candidate was the new body of `00-hardener.conf` pasted ahead
+  of the main file, whose `Include` then read the old copy on disk as well. A
+  rewrite that drops a directive was checked with the dropped value still in
+  force behind it, and on openSUSE a stale `KbdInteractiveAuthentication no`
+  made `sshd -t` refuse the very apply that would have removed it. The
+  candidate now names the drop-in files one by one in sshd's own order, with
+  the new body staged where `00-hardener.conf` sorts.
 - **The packages carry the licences of the fonts the binaries embed.** The
   PDF report embeds Noto Sans and the desktop embeds Martian Mono and IBM Plex
   Sans, all three under the SIL Open Font License 1.1, which requires its text

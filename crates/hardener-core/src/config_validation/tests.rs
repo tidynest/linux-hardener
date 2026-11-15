@@ -239,6 +239,40 @@ fn an_ssh_value_is_accepted_at_its_ceiling_and_refused_past_it() {
     );
 }
 
+/// `AuthenticationMethods` turns on the second factor (#185), and only the
+/// lists the ssh plugin can apply without stranding anyone load at all.
+///
+/// `publickey,password` is the shape the issue first asked about, and it needs
+/// `PasswordAuthentication yes`, which the baseline holds at `no`: written, it
+/// would hand `sshd -t` a list no enabled method can satisfy. `any` is the
+/// absence of a policy rather than one, so it is refused too, and the key's
+/// absence is how a config says it.
+#[test]
+fn only_a_key_then_the_account_password_is_accepted_as_a_second_factor() {
+    for accepted in SSH_SECOND_FACTOR_POLICIES {
+        assert!(
+            validate_ssh_value("AuthenticationMethods", accepted).is_ok(),
+            "{accepted} is the policy the plugin applies"
+        );
+    }
+    for refused in [
+        "publickey,password",
+        "keyboard-interactive",
+        "publickey keyboard-interactive",
+        "any",
+        "PublicKey,Keyboard-Interactive",
+    ] {
+        let error = validate_ssh_value("AuthenticationMethods", refused)
+            .expect_err("a list the plugin cannot judge must not load");
+        assert!(
+            error.contains("publickey,keyboard-interactive"),
+            "the refusal must name what is accepted: {error}"
+        );
+    }
+    // The control: the rule is about this key alone.
+    assert!(validate_ssh_value("Banner", "publickey,password").is_ok());
+}
+
 /// Each character class a pam token may use is allowed on its own.
 ///
 /// The three are joined by `||`, so as `&&` a pair becomes a conjunction and no

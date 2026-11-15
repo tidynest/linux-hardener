@@ -7,9 +7,9 @@
 //! included. The trait method in `mod.rs` delegates here.
 
 use super::{
-    SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES, SSHD_ADMIN_CONFIG_PATH, crypto_value_is_secure, dropin,
-    include, is_second_factor_only, observed_value, resolved_target, select_algorithms,
-    supported_algorithms,
+    SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES, SSHD_ADMIN_CONFIG_PATH, auth_methods,
+    crypto_value_is_secure, dropin, include, is_second_factor_only, observed_value,
+    resolved_target, second_factor, select_algorithms, supported_algorithms,
 };
 
 use hardener_common::{
@@ -103,10 +103,33 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                 }
             };
 
+            // The second factor as the apply will plan it, so the preview
+            // judges keyboard-interactive against the same lists the apply
+            // does. An exception documenting what the host does instead
+            // leaves it out here as it does there.
+            let second_factor_plan = second_factor::requested(config)
+                .map(|policy| second_factor::plan(policy, &resolved))
+                .filter(|plan| {
+                    let excepted = plan.shortfall.as_ref().and_then(|observed| {
+                        config
+                            .matching_exception(auth_methods::AUTHENTICATION_METHODS, observed)
+                            .map(|exception| (observed, exception))
+                    });
+                    if let Some((observed, exception)) = excepted {
+                        exceptions.push(hardener_common::types::exception_preview_line(
+                            auth_methods::AUTHENTICATION_METHODS,
+                            observed,
+                            &exception.reason,
+                        ));
+                    }
+                    excepted.is_none()
+                });
+            let auth_lists = second_factor::planned_lists(second_factor_plan.as_ref(), &resolved);
+
             // Check each directive to see if it needs updating.
             for directive in SSH_DIRECTIVES {
                 // Left on by the apply, so absent from its preview.
-                if is_second_factor_only(directive, &resolved) {
+                if is_second_factor_only(directive, auth_lists.as_deref()) {
                     continue;
                 }
 
@@ -165,6 +188,55 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                             directive.ssh_directive_name, target
                         ));
                     }
+                }
+            }
+
+            // The second factor's settings, which the apply always writes to
+            // the fragment. Its guards need a staged candidate and `sshd -T`,
+            // which a preview does not stage, so only the two that can be
+            // answered from here are raised as issues: a PAM stack that
+            // cannot ask for the password refuses on every host, and an
+            // apply over SSH refuses unless a Match block keeps this
+            // session's account on its key.
+            if let Some(plan) = &second_factor_plan
+                && plan.shortfall.is_some()
+            {
+                for (directive, now) in second_factor::pending(plan, &resolved) {
+                    writes_fragment = true;
+                    estimated_changes.push(format!(
+                        "{}: {} → {}",
+                        directive.keyword,
+                        now.unwrap_or_else(|| "(not set)".to_string()),
+                        directive.value
+                    ));
+                }
+                if let Some(reason) =
+                    second_factor::pam_answers_with_password(ctx.executor().as_ref())
+                        .await
+                        .refusal()
+                {
+                    issues.push(ValidationIssue {
+                        validation_issue_severity: Severity::Critical,
+                        validation_issue_message: format!(
+                            "The second factor will not be applied: {reason}"
+                        ),
+                        validation_issue_config_key: Some(
+                            auth_methods::AUTHENTICATION_METHODS.to_string(),
+                        ),
+                    });
+                }
+                if ctx.executor().is_remote() {
+                    issues.push(ValidationIssue {
+                        validation_issue_severity: Severity::High,
+                        validation_issue_message: "This apply runs over SSH, so it applies the \
+                             second factor only where a Match block keeps this session's \
+                             account on its key alone: this tool's remote mode cannot answer \
+                             a password prompt"
+                            .to_string(),
+                        validation_issue_config_key: Some(
+                            auth_methods::AUTHENTICATION_METHODS.to_string(),
+                        ),
+                    });
                 }
             }
 

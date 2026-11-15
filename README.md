@@ -140,7 +140,7 @@ The rollback takes its own snapshot first, so it too can be undone.
 | Plugin | What it does |
 |---|---|
 | **Kernel Hardening** | sysctl parameters: ASLR, ptrace scope, network stack |
-| **SSH Hardening** | OpenSSH configuration, including key exchange, cipher and MAC selection intersected with what the host actually supports |
+| **SSH Hardening** | OpenSSH configuration, including key exchange, cipher and MAC selection intersected with what the host actually supports, and an opt-in second factor (the key, then the account password) |
 | **Firewall Hardening** | rules and default policy across nftables, firewalld and ufw |
 | **PAM Authentication Hardening** | password quality, lockout, history and ageing, under a selectable policy: the CIS and STIG-style rules, or NIST SP 800-63B-4 (long passphrases, no character classes, no forced change); and how new passwords are hashed (yescrypt where the host supports it, SHA-512 with 100000 rounds in FIPS mode or where it does not) |
 | **Service Minimisation** | disables services that need not be running |

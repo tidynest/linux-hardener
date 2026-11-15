@@ -213,13 +213,35 @@ fn validate_kernel_value(_key: &str, value: &str) -> std::result::Result<(), Str
     }
 }
 
+/// The `AuthenticationMethods` values `[ssh.directives]` accepts, which are
+/// the second factors the ssh plugin knows how to apply safely (#185).
+///
+/// Both ask for a key first and the account password through PAM after it.
+/// The second spelling pins the prompt to PAM's keyboard-interactive device,
+/// which is the only one sshd has on Linux, so the two behave alike. Anything
+/// else is refused at load time rather than written: `publickey,password`
+/// needs `PasswordAuthentication yes`, which the baseline holds at `no`, and a
+/// list the plugin cannot judge is one it cannot keep anyone logged in under.
+///
+/// One definition, read by this validator and by the plugin that applies it.
+pub const SSH_SECOND_FACTOR_POLICIES: &[&str] = &[
+    "publickey,keyboard-interactive",
+    "publickey,keyboard-interactive:pam",
+];
+
 /// SSH: single-line, no whitespace-only, reasonable length.
-fn validate_ssh_value(_key: &str, value: &str) -> std::result::Result<(), String> {
+fn validate_ssh_value(key: &str, value: &str) -> std::result::Result<(), String> {
     if value.is_empty() {
         return Err("empty value".to_string());
     }
     if value.len() > 256 {
         return Err(format!("value too long ({} chars, max 256)", value.len()));
+    }
+    if key == "AuthenticationMethods" && !SSH_SECOND_FACTOR_POLICIES.contains(&value) {
+        return Err(format!(
+            "'{value}' is not a second factor this tool can apply; accepted: {}",
+            SSH_SECOND_FACTOR_POLICIES.join(", ")
+        ));
     }
     Ok(())
 }

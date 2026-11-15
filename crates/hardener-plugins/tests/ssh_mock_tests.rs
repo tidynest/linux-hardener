@@ -9,8 +9,8 @@ use hardener_core::{
     SystemExecutor, plugin::HardeningPlugin,
 };
 use hardener_plugins::ssh::{
-    SshHardeningPlugin, select_algorithms, sshd_validate_scratch_path, supported_algorithms,
-    validate_sshd_config,
+    SshHardeningPlugin, select_algorithms, sshd_validate_fragment_scratch_path,
+    sshd_validate_scratch_path, supported_algorithms, validate_sshd_config,
 };
 use hardener_types::{DeclineReason, UncheckedBlocker};
 use std::path::Path;
@@ -4140,6 +4140,460 @@ async fn the_preview_names_keyboard_interactive_only_where_the_apply_writes_it()
                 .any(|change| change.starts_with("KbdInteractiveAuthentication:")),
             previewed,
             "{changes:?}"
+        );
+    }
+}
+
+// =============================================================================
+// The staged candidate reads the new fragment, not the one on disk
+// =============================================================================
+
+/// What the `sshd -t` gate was last handed: the final write to its scratch
+/// path, which the guards also stage at before the gate runs.
+fn last_staged_candidate(executor: &MockExecutor) -> String {
+    let temp = std::path::PathBuf::from(sshd_validate_temp_path());
+    executor
+        .log()
+        .files_written
+        .into_iter()
+        .rev()
+        .find(|(path, _)| *path == temp)
+        .map(|(_, content)| content)
+        .expect("a candidate must have been staged")
+}
+
+/// openSUSE after one apply: the fragment holds `KbdInteractiveAuthentication
+/// no`, and the operator has since added the second factor in 10-2fa.conf.
+/// The apply drops the `no`, which is the repair, and the candidate used to
+/// be judged with the old fragment still included ahead of 10-2fa.conf, which
+/// real sshd refuses ("Disabled method keyboard-interactive"). The mock's
+/// `sshd -t` accepts anything, so what is asserted is the candidate itself.
+#[tokio::test]
+async fn the_staged_candidate_reads_the_new_fragment_in_place_of_the_stale_one() {
+    let executor = dropin_apply_commands(
+        opensuse_ssh_executor()
+            .with_file(
+                "/etc/ssh/sshd_config.d/00-hardener.conf",
+                "# Managed by linux-hardener.\nKbdInteractiveAuthentication no\n",
+            )
+            .with_file(TWO_FACTOR_DROPIN_PATH, TWO_FACTOR_DROPIN),
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "{:?}", result.apply_changes);
+    let candidate = last_staged_candidate(&executor);
+    let fragment = sshd_validate_fragment_scratch_path().display().to_string();
+    assert!(
+        !candidate.contains("00-hardener.conf"),
+        "the copy on disk is the one being replaced, so it must not be read: {candidate}"
+    );
+    assert!(
+        candidate.contains(&format!("Include {fragment} {TWO_FACTOR_DROPIN_PATH}")),
+        "the new fragment stands where 00-hardener.conf sorts, ahead of 10-2fa.conf: \
+         {candidate}"
+    );
+    assert!(
+        candidate.contains("Include /usr/etc/ssh/sshd_config.d/*.conf"),
+        "an Include that cannot read the fragment is left as it is: {candidate}"
+    );
+    let staged_fragment = executor
+        .files()
+        .get(&sshd_validate_fragment_scratch_path())
+        .cloned()
+        .expect("the new fragment is staged");
+    assert!(
+        !staged_fragment.contains("KbdInteractiveAuthentication"),
+        "the staged fragment is the new one, without the stale no: {staged_fragment}"
+    );
+}
+
+// =============================================================================
+// The opt-in second factor: a key, then the account password (#185)
+// =============================================================================
+
+const SECOND_FACTOR: &str = "publickey,keyboard-interactive";
+
+const SECOND_FACTOR_FINDING: &str = "ssh-authenticationmethods";
+
+fn second_factor_config() -> PluginConfig {
+    let mut config = PluginConfig::default();
+    config.directives.insert(
+        "AuthenticationMethods".to_string(),
+        SECOND_FACTOR.to_string(),
+    );
+    config
+}
+
+async fn run_ssh_apply_with(executor: &MockExecutor, config: &PluginConfig) -> ApplyResult {
+    let mut ctx = Context::with_executor(Arc::new(executor.clone()));
+    SshHardeningPlugin::new()
+        .apply(&mut ctx, config)
+        .await
+        .expect("ssh apply should not error")
+}
+
+/// What `sshd -T` prints for the settings the guards read.
+fn sshd_dump(methods: &str, root: &str) -> CommandOutput {
+    ok_output(&format!(
+        "permitrootlogin {root}\nauthenticationmethods {methods}\n\
+         authorizedkeysfile .ssh/authorized_keys\n"
+    ))
+}
+
+/// Registers `sshd -T -f <staged> -C user=...,host=...,addr=...`.
+fn with_sshd_probe(
+    executor: MockExecutor,
+    config: &str,
+    user: &str,
+    address: &str,
+    output: CommandOutput,
+) -> MockExecutor {
+    let spec = format!("user={user},host={address},addr={address}");
+    executor.with_command("sshd", &["-T", "-f", config, "-C", &spec], output)
+}
+
+/// An Arch host, already compliant everywhere else, so the second factor is
+/// the only drift: the main file includes the drop-ins on its first line,
+/// 99-archlinux.conf switches keyboard-interactive off, sshd's PAM stack
+/// reaches pam_unix three files down, and `eric` logs in with a key and has a
+/// password.
+fn arch_second_factor_host(main_tail: &str) -> MockExecutor {
+    let temp = sshd_validate_temp_path();
+    with_strong_crypto(
+        MockExecutor::new()
+            .with_file(
+                "/etc/ssh/sshd_config",
+                &format!(
+                    "Include /etc/ssh/sshd_config.d/*.conf\n{}",
+                    main_tail.replace("KbdInteractiveAuthentication no\n", "")
+                ),
+            )
+            .with_directory("/etc/ssh/sshd_config.d")
+            .with_file(
+                "/etc/ssh/sshd_config.d/99-archlinux.conf",
+                "KbdInteractiveAuthentication no\nUsePAM yes\nPrintMotd no\n",
+            )
+            .with_file("/etc/pam.d/sshd", "auth include system-remote-login\n")
+            .with_file(
+                "/etc/pam.d/system-remote-login",
+                "auth include system-login\n",
+            )
+            .with_file("/etc/pam.d/system-login", "auth include system-auth\n")
+            .with_file(
+                "/etc/pam.d/system-auth",
+                "auth [success=1 default=bad] pam_unix.so try_first_pass nullok\n",
+            )
+            .with_file(
+                "/etc/passwd",
+                "root:x:0:0::/root:/usr/bin/bash\neric:x:1000:1000::/home/eric:/usr/bin/bash\n",
+            )
+            .with_file(
+                "/etc/shadow",
+                "root:*:20000::::::\neric:$y$j9T$salt$hash:20000:0:99999:7:::\n",
+            )
+            .with_file(
+                "/home/eric/.ssh/authorized_keys",
+                "ssh-ed25519 AAAA eric@laptop\n",
+            )
+            .with_command("sshd", &["-T", "-f", &temp], sshd_dump(SECOND_FACTOR, "no"))
+            .with_command("sshd", &["-t", "-f", &temp], ok_output(""))
+            .with_command_program("cp", ok_output(""))
+            .with_command_program("rm", ok_output(""))
+            .with_command("systemctl", &["restart", "sshd"], ok_output("")),
+    )
+}
+
+async fn second_factor_finding(
+    executor: MockExecutor,
+    config: &PluginConfig,
+) -> Option<hardener_core::plugin::Finding> {
+    let ctx = Context::with_executor(Arc::new(executor));
+    SshHardeningPlugin::new()
+        .scan(&ctx, config)
+        .await
+        .expect("scan must run")
+        .scan_findings
+        .into_iter()
+        .find(|finding| finding.finding_id == SECOND_FACTOR_FINDING)
+}
+
+/// Off unless asked for: the default scan says nothing about a second factor,
+/// and the opted-in scan reports the host that lacks it.
+#[tokio::test]
+async fn the_second_factor_is_reported_only_where_the_config_asks_for_it() {
+    assert!(
+        second_factor_finding(
+            arch_second_factor_host(COMPLIANT_SSHD_CONFIG),
+            &PluginConfig::default()
+        )
+        .await
+        .is_none(),
+        "a key alone is the default, and the default is not changed"
+    );
+
+    let finding = second_factor_finding(
+        arch_second_factor_host(COMPLIANT_SSHD_CONFIG),
+        &second_factor_config(),
+    )
+    .await
+    .expect("the config asks for a second factor the host does not enforce");
+    assert_eq!(finding.finding_current_value, "not set");
+    assert_eq!(finding.finding_recommended_value, SECOND_FACTOR);
+    assert_eq!(finding.finding_severity, Severity::High);
+    assert_eq!(
+        finding.finding_exception_key.as_deref(),
+        Some("AuthenticationMethods")
+    );
+    assert!(
+        finding
+            .finding_compliance
+            .iter()
+            .any(|mapping| mapping.compliance_control_id == "IA-2(1)"),
+        "{:?}",
+        finding.finding_compliance
+    );
+}
+
+/// The whole round trip on Arch: the apply writes all three settings to the
+/// fragment, sshd reads them before 99-archlinux.conf, and the rescan finds
+/// nothing, keyboard-interactive included.
+#[tokio::test]
+async fn an_opted_in_apply_writes_the_three_settings_together_and_the_rescan_is_clean() {
+    let executor = arch_second_factor_host(COMPLIANT_SSHD_CONFIG);
+    let config = second_factor_config();
+
+    let result = run_ssh_apply_with(&executor, &config).await;
+
+    assert!(result.apply_success, "{:#?}", result.apply_changes);
+    let fragment = dropin_written(&executor).expect("the settings go to the fragment");
+    for line in [
+        "AuthenticationMethods publickey,keyboard-interactive",
+        "KbdInteractiveAuthentication yes",
+        "UsePAM yes",
+    ] {
+        assert!(fragment.contains(line), "missing {line}: {fragment}");
+    }
+    assert!(
+        !fragment.contains("PasswordAuthentication"),
+        "password login stays off and is not touched: {fragment}"
+    );
+    assert!(
+        !rewrote_config(&executor),
+        "the main file has nothing to change"
+    );
+    assert!(
+        result.apply_changes.iter().any(|change| change
+            .change_description
+            .starts_with("AuthenticationMethods: not set -> publickey,keyboard-interactive")),
+        "{:#?}",
+        result.apply_changes
+    );
+
+    // The gate read the new fragment where 00-hardener.conf sorts, ahead of
+    // the file that switches keyboard-interactive off.
+    let candidate = last_staged_candidate(&executor);
+    let staged = sshd_validate_fragment_scratch_path().display().to_string();
+    assert!(
+        candidate.contains(&format!(
+            "Include {staged} /etc/ssh/sshd_config.d/99-archlinux.conf"
+        )),
+        "{candidate}"
+    );
+
+    let ctx = Context::with_executor(Arc::new(executor.clone()));
+    let rescan = SshHardeningPlugin::new()
+        .scan(&ctx, &config)
+        .await
+        .expect("scan must run");
+    let ids: Vec<&str> = rescan
+        .scan_findings
+        .iter()
+        .map(|finding| finding.finding_id.as_str())
+        .collect();
+    assert!(
+        !ids.contains(&SECOND_FACTOR_FINDING) && !ids.contains(&KBD_FINDING),
+        "the host now enforces the second factor: {ids:?}"
+    );
+}
+
+/// An account that logs in with a key and has no password would meet a prompt
+/// it cannot answer. The second factor stays out, everything else is still
+/// hardened, and the run ends unsuccessful naming the account.
+#[tokio::test]
+async fn an_account_left_without_a_way_in_keeps_the_second_factor_out() {
+    let temp = sshd_validate_temp_path();
+    let main = COMPLIANT_SSHD_CONFIG.replace("X11Forwarding no", "X11Forwarding yes");
+    let executor = with_sshd_probe(
+        arch_second_factor_host(&main)
+            .with_file(
+                "/etc/passwd",
+                "eric:x:1000:1000::/home/eric:/usr/bin/bash\n\
+                 deploy:x:1001:1001::/home/deploy:/bin/sh\n",
+            )
+            .with_file(
+                "/etc/shadow",
+                "eric:$y$j9T$salt$hash:20000::::::\ndeploy:!:20000::::::\n",
+            )
+            .with_file("/home/deploy/.ssh/authorized_keys", "ssh-ed25519 AAAA ci\n"),
+        &temp,
+        "deploy",
+        "127.0.0.1",
+        sshd_dump(SECOND_FACTOR, "no"),
+    );
+
+    let result = run_ssh_apply_with(&executor, &second_factor_config()).await;
+
+    assert!(!result.apply_success, "{:#?}", result.apply_changes);
+    let error = result.apply_error.clone().unwrap_or_default();
+    assert!(
+        error.contains("Second factor not applied") && error.contains("deploy"),
+        "{error}"
+    );
+    assert!(
+        dropin_written(&executor)
+            .is_none_or(|fragment| !fragment.contains("AuthenticationMethods")
+                && !fragment.contains("KbdInteractiveAuthentication yes")),
+        "nothing of the second factor may be written"
+    );
+    assert!(
+        written_sshd_config(&executor).contains("X11Forwarding no"),
+        "the rest of the hardening still lands"
+    );
+}
+
+/// Over SSH as root, which is how this tool's remote mode applies: sshd
+/// refuses root every keyboard-interactive login under prohibit-password, so
+/// the next connection from here would fail. Refused, and the rest applied.
+#[tokio::test]
+async fn a_remote_apply_does_not_cut_off_its_own_way_back_in() {
+    let temp = sshd_validate_temp_path();
+    let address = "192.0.2.10";
+    let executor = arch_second_factor_host(GUARD_SAFE_COMPLIANT_SSHD_CONFIG)
+        .remote()
+        .with_command("id", &["-u"], ok_output("0\n"))
+        .with_command("id", &["-un"], ok_output("root\n"))
+        .with_command(
+            "printenv",
+            &["SSH_CONNECTION"],
+            ok_output("192.0.2.10 50022 192.0.2.1 22\n"),
+        );
+    let executor = with_sshd_probe(
+        executor,
+        &temp,
+        "root",
+        address,
+        sshd_dump(SECOND_FACTOR, "prohibit-password"),
+    );
+    let executor = with_sshd_probe(
+        executor,
+        "/etc/ssh/sshd_config",
+        "root",
+        address,
+        sshd_dump("any", "prohibit-password"),
+    );
+
+    let result = run_ssh_apply_with(&executor, &second_factor_config()).await;
+
+    assert!(!result.apply_success, "{:#?}", result.apply_changes);
+    let refusal = result
+        .apply_changes
+        .iter()
+        .find(|change| {
+            change
+                .change_description
+                .starts_with("Second factor not applied")
+        })
+        .expect("the refusal is reported as a change");
+    assert!(!refusal.change_success);
+    assert!(
+        refusal.change_description.contains("root from 192.0.2.10")
+            && refusal.change_description.contains("Match block"),
+        "{}",
+        refusal.change_description
+    );
+    assert!(
+        !restarted_sshd(&executor),
+        "with the second factor out there was nothing else to write"
+    );
+}
+
+/// Taking the opt-in out of the config takes the settings out of the
+/// fragment, and keyboard-interactive then falls back to the `no` Arch ships.
+#[tokio::test]
+async fn opting_out_removes_what_the_opt_in_wrote() {
+    let executor = arch_second_factor_host(COMPLIANT_SSHD_CONFIG).with_file(
+        "/etc/ssh/sshd_config.d/00-hardener.conf",
+        "# Managed by linux-hardener.\n\
+         AuthenticationMethods publickey,keyboard-interactive\n\
+         KbdInteractiveAuthentication yes\n\
+         UsePAM yes\n",
+    );
+
+    let result = run_ssh_apply(&executor).await;
+
+    assert!(result.apply_success, "{:#?}", result.apply_changes);
+    assert!(
+        executor
+            .log()
+            .commands_executed
+            .iter()
+            .any(|(program, args)| program == "rm"
+                && args
+                    .iter()
+                    .any(|arg| arg == "/etc/ssh/sshd_config.d/00-hardener.conf")),
+        "the fragment has nothing left to hold and is removed: {:?}",
+        executor.log().commands_executed
+    );
+    let candidate = last_staged_candidate(&executor);
+    assert!(
+        candidate.contains("Include /etc/ssh/sshd_config.d/99-archlinux.conf")
+            && !candidate.contains("00-hardener.conf"),
+        "the gate checked the host without the fragment: {candidate}"
+    );
+}
+
+#[tokio::test]
+async fn the_preview_names_the_second_factor_and_warns_over_ssh() {
+    for (executor, remote) in [
+        (arch_second_factor_host(COMPLIANT_SSHD_CONFIG), false),
+        (
+            arch_second_factor_host(COMPLIANT_SSHD_CONFIG).remote(),
+            true,
+        ),
+    ] {
+        let ctx = Context::with_executor(Arc::new(executor));
+        let report = SshHardeningPlugin::new()
+            .validate(&ctx, &second_factor_config())
+            .await
+            .expect("validate must run");
+        let changes = &report.validation_report_estimated_changes;
+
+        assert!(
+            changes.iter().any(|change| change
+                == "AuthenticationMethods: (not set) → publickey,keyboard-interactive"),
+            "{changes:?}"
+        );
+        assert!(
+            changes
+                .iter()
+                .any(|change| change == "KbdInteractiveAuthentication: no → yes"),
+            "keyboard-interactive is switched on, not off: {changes:?}"
+        );
+        assert!(
+            changes
+                .iter()
+                .any(|change| change.contains("00-hardener.conf")),
+            "{changes:?}"
+        );
+        assert_eq!(
+            report
+                .validation_report_issues
+                .iter()
+                .any(|issue| issue.validation_issue_message.contains("runs over SSH")),
+            remote,
+            "{:?}",
+            report.validation_report_issues
         );
     }
 }
