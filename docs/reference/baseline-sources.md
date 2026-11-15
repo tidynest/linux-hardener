@@ -213,9 +213,8 @@ text asks. There are four ways this happens, and each has a table below:
 - The control asks for something the check does not measure.
 - The host has switched the check off, with a value the code counts as the
   strictest of all.
-- The control asks for one exact value and the baseline goes past it, so a
-  DISA or OpenSCAP check of the same control reports a finding where this tool
-  reports a Pass.
+- The control asks for one exact value and the baseline goes past it, so the
+  STIG's own check reports a finding where this tool reports a Pass.
 
 These are the cases found so far. Expect more: nobody has yet compared every
 mapped control with its full text.
@@ -302,7 +301,7 @@ that end of the scale switches the check off. A host set that way passes, and a
 | Check | Control the plugin maps | Under the RHEL 10 profile | What the control asks | What the check accepts |
 |---|---|---|---|---|
 | `deny` | STIG `RHEL-08-020011`, CIS `5.3.2` | STIG `RHEL-10-600410`, CIS `5.3.2.1.1` | A lockout after repeated failures. The STIG's check text says 3 or fewer "(but not "0")", and `pam_faillock` locks an account only when `deny` is not 0 | `0`, ranked stricter than `5`, so lockout is off and the host passes |
-| `PASS_MAX_DAYS` | STIG `RHEL-08-020200`, CIS `5.4.1.1` | STIG `RHEL-10-600100`, CIS `5.4.1.1` | A maximum password lifetime: 180 days in the STIG, 365 in the CIS encoding. `login.defs(5)` says -1 "disables the restriction". The STIG's check text flags only a value above 180 or a missing line, so it would miss -1 too | `-1`, ranked stricter than `90`, so passwords never expire and the host passes |
+| `PASS_MAX_DAYS` | STIG `RHEL-08-020200`, CIS `5.4.1.1` | STIG `RHEL-10-600100`, CIS `5.4.1.1` | A maximum password lifetime: 180 days in the STIG, 365 in the CIS encoding. `login.defs(5)` says -1 "disables the restriction". The STIG's check text flags only a value above 180 or a commented-out line, so it would miss -1 too | `-1`, ranked stricter than `90`, so passwords never expire and the host passes |
 | `ClientAliveCountMax` | CIS `5.2.13`, HIPAA `164.312(a)(2)(iii)`, NIST `AC-17(a)` | CIS `5.1.7` | An idle timeout that ends the session. `sshd_config(5)`: "Setting a zero ClientAliveCountMax disables connection termination" | `0`, ranked stricter than `2`, so an idle session is never cut and the host passes |
 
 The code's own comment on `ClientAliveCountMax` reads "Zero disconnects on the
@@ -322,10 +321,13 @@ the SSH row has none yet.
 | `kernel.yama.ptrace_scope` | STIG `RHEL-08-040282` | STIG `RHEL-10-701140` | Exactly 1, under both profiles: the RHEL 8 check text says "is not set to "1"", and the RHEL 10 one "is not equal to "1"" | `2` or more |
 
 Here the baseline is stricter than the control, and the tool's STIG report
-says Pass for a host at 2, while the STIG's own check, and an OpenSCAP scan
-that follows it, report a finding for the same host. The ComplianceAsCode rule
-behind CIS RHEL 10 1.5.7 sets `ptrace_scope` to 1 as well, and lists 1, 2 or 3
-only for Ubuntu 24.04; how its check compares the value was not read.
+says Pass for a host at 2, while the check text DISA publishes reports a
+finding for the same host. ComplianceAsCode, whose rules OpenSCAP scans with,
+reads it differently by release: its `kptr_restrict` rule accepts only 1 on
+RHEL 8 but 1 or 2 on other Red Hat family releases, and its `ptrace_scope`
+rule, which also sits behind CIS RHEL 10 1.5.7, sets 1 everywhere except
+Ubuntu 24.04, where it accepts 1, 2 or 3. How its sysctl check compares the
+value was not read, so whether an OpenSCAP scan flags 2 is not claimed here.
 
 Each row in these four tables is a decision for whoever changes it: raise the
 baseline to the control's value, measure what the check leaves out, fix the
@@ -755,8 +757,10 @@ every release, and its `master` was at commit `033b1b8` that day.
   `auditd_data_retention_max_log_file` and
   `accounts_password_set_max_life_existing`, under
   <https://github.com/ComplianceAsCode/content/tree/033b1b8672802ffa6bd555c373e2c73c32d25f5d/linux_os/guide>
-- **ComplianceAsCode rule `sysctl_kernel_yama_ptrace_scope`**, for the value
-  behind the ptrace controls:
+- **ComplianceAsCode rules `sysctl_kernel_kptr_restrict` and
+  `sysctl_kernel_yama_ptrace_scope`**, for the values behind the kernel pointer
+  and ptrace controls:
+  <https://github.com/ComplianceAsCode/content/blob/033b1b8672802ffa6bd555c373e2c73c32d25f5d/linux_os/guide/system/permissions/restrictions/enable_execshield_settings/sysctl_kernel_kptr_restrict/rule.yml>,
   <https://github.com/ComplianceAsCode/content/blob/033b1b8672802ffa6bd555c373e2c73c32d25f5d/linux_os/guide/system/permissions/restrictions/sysctl_kernel_yama_ptrace_scope/rule.yml>
 - **ComplianceAsCode's PCI DSS references**: the `pcidss` entries of the rules
   `accounts_password_pam_minlen`, `accounts_passwords_pam_faillock_deny`,
