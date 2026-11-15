@@ -10,6 +10,7 @@
 
 use super::policy::{
     PolicyDirective, departure_finding, ignored_override, policy_directives, rule_mappings,
+    unmet_by_either_finding,
 };
 use super::{
     ConfRead, FAILLOCK_CONF, MIN_DAYS_DIRECTIVE, ModulePresence, PWHISTORY_CONF, PamConfigFile,
@@ -91,6 +92,11 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
         // unenforced, which is one host described two ways.
         match presence_for(&presence, directive) {
             ModulePresence::NotInStack { module } => {
+                // A row that only switches a check off is met when nothing
+                // runs the check; the length row reports the missing module.
+                if policy_directive.only_switches_off() {
+                    continue;
+                }
                 let conf_path = directive
                     .pam_config_file
                     .conf_path()
@@ -157,39 +163,53 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
 
         // Check if current value satisfies the directive's comparison
         // against the resolved (overridden + clamped) target.
-        let is_secure = !pam_violates(directive, &target, current_value.as_deref());
+        let meets_policy = !pam_violates(directive, &target, current_value.as_deref());
         let current_display = current_value
             .clone()
             .unwrap_or_else(|| "not set".to_string());
 
-        if !is_secure {
-            findings.push(rule_finding(
+        // A rule the selected policy drops is still judged against the
+        // benchmark rule it replaces, so the frameworks that require that
+        // rule fail rather than pass on a host that does not meet it.
+        let benchmark_breach = policy_directive.relaxation.as_ref().and_then(|relaxation| {
+            let benchmark = relaxation.benchmark?;
+            let benchmark_target = clamped_baseline(benchmark, config);
+            pam_violates(benchmark, &benchmark_target, current_value.as_deref()).then_some((
+                relaxation.drops,
+                benchmark,
+                benchmark_target,
+            ))
+        });
+
+        // One finding per directive, whichever rules the value breaks. See
+        // `policy` for why each kind carries the controls it does.
+        match (meets_policy, benchmark_breach) {
+            (true, None) => {}
+            (false, None) => findings.push(rule_finding(
                 policy,
                 &policy_directive,
                 &target,
                 &current_display,
                 config,
-            ));
-        }
-
-        // A rule the selected policy drops is still judged against the
-        // benchmark, so the frameworks that require it fail rather than pass
-        // on a host that does not meet it. See `policy` for why the two
-        // findings carry different controls.
-        if let Some(departure) = &policy_directive.departure {
-            let benchmark_target = clamped_baseline(departure.benchmark, config);
-            if pam_violates(
-                departure.benchmark,
+            )),
+            (true, Some((drops, benchmark, benchmark_target))) => findings.push(departure_finding(
+                policy,
+                drops,
+                benchmark,
                 &benchmark_target,
-                current_value.as_deref(),
-            ) {
-                findings.push(departure_finding(
+                &current_display,
+                config,
+            )),
+            (false, Some((_, benchmark, benchmark_target))) => {
+                findings.push(unmet_by_either_finding(
                     policy,
-                    departure,
+                    &policy_directive,
+                    benchmark,
+                    &target,
                     &benchmark_target,
-                    &current_display,
+                    current_value.as_deref(),
                     config,
-                ));
+                ))
             }
         }
     }
@@ -242,7 +262,7 @@ fn rule_finding(
         PasswordPolicy::Benchmark => String::new(),
         PasswordPolicy::Nist80063b => format!(" under the {} password policy", policy.id()),
     };
-    let (title, impact) = match &policy_directive.departure {
+    let (title, impact) = match &policy_directive.relaxation {
         Some(_) => (
             format!(
                 "PAM setting differs from the {} password policy: {name}",

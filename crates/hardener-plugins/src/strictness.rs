@@ -48,7 +48,8 @@ pub enum Strictness {
     /// and faillock's `deny = 0` disables lockout outright, because
     /// `pam_faillock` locks only `if (opts->deny && failures >= opts->deny)`.
     /// A negative `deny` is no better: faillock reads it as an unsigned short,
-    /// so it wraps to 65535. Under [`Self::AtMost`] every one of these scored
+    /// so it wraps to a very large number (`-1` becomes 65535, `-3` 65533).
+    /// Under [`Self::AtMost`] every one of these scored
     /// as the strictest value its setting could hold, so a host with expiry or
     /// lockout switched off read as compliant, and an override of `-1` was
     /// written as a tightening.
@@ -61,7 +62,9 @@ pub enum Strictness {
     /// from zero on either side.
     ///
     /// For libpwquality's character-class credits under a password policy that
-    /// forbids composition rules. A positive credit lets a password that
+    /// forbids composition rules, and for its `minclass` and `maxclassrepeat`,
+    /// which that policy switches off (both are off at zero). A positive credit
+    /// lets a password that
     /// contains the class be shorter than `minlen` (libpwquality subtracts it
     /// from the minimum), and a negative one demands the class, which is the
     /// composition rule itself. Zero does neither, so it is the one value such
@@ -152,6 +155,20 @@ impl Strictness {
         current
             .and_then(|value| self.place(value))
             .is_none_or(|(score, _)| score < target_score)
+    }
+
+    /// True when `value` is strictly stricter than `other` on this scale.
+    ///
+    /// For describing a write rather than deciding one: "would writing
+    /// `other` over `value` loosen it?" A value either side that this
+    /// comparison cannot place answers false, because it is no evidence that
+    /// the write loosens anything, and unlike [`Self::violated_by`] this never
+    /// treats its first argument as a target that must place.
+    pub fn is_stricter(self, value: &str, other: &str) -> bool {
+        match (self.place(value), self.place(other)) {
+            (Some((value_score, _)), Some((other_score, _))) => value_score > other_score,
+            _ => false,
+        }
     }
 
     /// Where `value` sits on this comparison's strictness scale, **higher being

@@ -7,7 +7,7 @@
 //! The trait method in `mod.rs` delegates here.
 
 use super::parsing::apply_exact_directive;
-use super::policy::{ignored_override, policy_directives};
+use super::policy::{ignored_override, policy_directives, relaxation_note};
 use super::{
     ConfRead, InlineRead, ModulePresence, PAM_BACKED_UP_FILES, PamConfigFile, PamHardeningPlugin,
     backup_and_write, clamped_baseline, conf_is_writable, module_not_loaded_message,
@@ -237,10 +237,12 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
             continue;
         }
 
-        // Where this write is the selected policy dropping a benchmark rule,
-        // the change line says so, so a relaxation is never recorded as an
-        // anonymous "Set dcredit = 0". Only a real write is annotated; a
-        // skipped no-op has nothing to explain.
+        // Where this write is the selected policy relaxing a rule the host
+        // had, the change line says so, so a relaxation is never recorded as
+        // an anonymous "Set dcredit = 0". Only a real write is annotated; a
+        // skipped no-op has nothing to explain, and a write that repairs an
+        // unset or broken value is not a relaxation.
+        let note = relaxation_note(policy, policy_directive, observed.value(), &target_value);
         let first_new_change = changes.len();
         match directive.pam_config_file {
             PamConfigFile::PwQuality => apply_exact_directive(
@@ -405,16 +407,12 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
             }
         }
 
-        if let Some(departure) = &policy_directive.departure {
+        if let Some(note) = &note {
             for change in changes[first_new_change..]
                 .iter_mut()
                 .filter(|change| matches!(change.change_type, ChangeType::ConfigFile))
             {
-                change.change_description.push_str(&format!(
-                    " ({} password policy: {})",
-                    policy.id(),
-                    departure.drops
-                ));
+                change.change_description.push_str(note);
             }
         }
     }

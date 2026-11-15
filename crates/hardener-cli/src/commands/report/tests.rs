@@ -355,7 +355,9 @@ async fn report_scan_path_honours_config_exceptions() {
 }
 
 /// A PAM host for the password-policy test below, with every module loaded
-/// so that each value is judged rather than reported unenforced.
+/// so that each value is judged rather than reported unenforced. `minclass`
+/// and `maxclassrepeat` are off on both hosts: the benchmark policy does not
+/// read them, and the NIST policy asks for exactly that.
 fn pam_host(minlen: &str, credit: &str, max_days: &str) -> Arc<dyn SystemExecutor> {
     Arc::new(
         MockExecutor::new()
@@ -371,7 +373,8 @@ fn pam_host(minlen: &str, credit: &str, max_days: &str) -> Arc<dyn SystemExecuto
                 "/etc/security/pwquality.conf",
                 format!(
                     "minlen = {minlen}\ndcredit = {credit}\nucredit = {credit}\n\
-                     lcredit = {credit}\nocredit = {credit}\nmaxrepeat = 3\n"
+                     lcredit = {credit}\nocredit = {credit}\nmaxrepeat = 3\n\
+                     minclass = 0\nmaxclassrepeat = 0\n"
                 )
                 .as_str(),
             )
@@ -391,13 +394,22 @@ fn pam_host(minlen: &str, credit: &str, max_days: &str) -> Arc<dyn SystemExecuto
 /// raises nothing to fix. The benchmark host passes the expiry and
 /// composition controls; the NIST host, which forces no change and requires no
 /// character class, fails exactly those, while the 15-character minimum it
-/// does enforce passes the STIG length control.
+/// does enforce passes the STIG length control. The NIST SP 800-53, SP 800-171
+/// and FedRAMP controls pass for both: their current texts require neither a
+/// password lifetime nor composition rules, so following SP 800-63B-4 must not
+/// fail them.
 #[tokio::test]
 async fn a_control_the_password_policy_drops_fails_rather_than_passes() {
     use hardener_core::PasswordPolicy;
 
     let report_config = ReportConfig {
-        scenario: Scenario::Custom(vec![ComplianceFramework::STIG, ComplianceFramework::PCIDSS]),
+        scenario: Scenario::Custom(vec![
+            ComplianceFramework::STIG,
+            ComplianceFramework::PCIDSS,
+            ComplianceFramework::NIST,
+            ComplianceFramework::NIST800171,
+            ComplianceFramework::FedRAMP,
+        ]),
         formats: vec![OutputFormat::Json],
         output_dir: None,
         profile: ComplianceProfile::default(),
@@ -418,35 +430,65 @@ async fn a_control_the_password_policy_drops_fails_rather_than_passes() {
             )
             .generate(&findings, &unchecked)
             .into_iter()
-            .flat_map(|report| report.report_controls)
-            .map(|control| (control.control_id, control.control_status))
+            .flat_map(|report| {
+                let framework = report.report_framework;
+                report
+                    .report_controls
+                    .into_iter()
+                    .map(move |control| ((framework, control.control_id), control.control_status))
+            })
             .collect::<std::collections::HashMap<_, _>>()
         }
     };
 
     let benchmark = statuses(PasswordPolicy::Benchmark, pam_host("14", "-1", "90")).await;
     let nist = statuses(PasswordPolicy::Nist80063b, pam_host("15", "0", "99999")).await;
+    let status =
+        |statuses: &std::collections::HashMap<(ComplianceFramework, String), ControlStatus>,
+         framework: ComplianceFramework,
+         control: &str| { statuses.get(&(framework, control.to_string())).cloned() };
 
     // RHEL-08-020200: maximum lifetime. RHEL-08-020130: a digit required.
     // 8.2.4: change every 90 days.
-    for control in ["RHEL-08-020200", "RHEL-08-020130", "8.2.4"] {
+    for (framework, control) in [
+        (ComplianceFramework::STIG, "RHEL-08-020200"),
+        (ComplianceFramework::STIG, "RHEL-08-020130"),
+        (ComplianceFramework::PCIDSS, "8.2.4"),
+    ] {
         assert_eq!(
-            benchmark.get(control),
-            Some(&ControlStatus::Pass),
+            status(&benchmark, framework, control),
+            Some(ControlStatus::Pass),
             "the benchmark host meets {control}"
         );
         assert_eq!(
-            nist.get(control),
-            Some(&ControlStatus::Fail),
+            status(&nist, framework, control),
+            Some(ControlStatus::Fail),
             "the NIST policy drops the rule behind {control}, so it must not pass"
         );
     }
     // RHEL-08-020230: a 15-character minimum, which the NIST policy enforces.
     assert_eq!(
-        nist.get("RHEL-08-020230"),
-        Some(&ControlStatus::Pass),
+        status(&nist, ComplianceFramework::STIG, "RHEL-08-020230"),
+        Some(ControlStatus::Pass),
         "the control: a rule the NIST policy keeps or tightens still passes"
     );
+    // The NIST-derived controls the dropped rules map to pass under both
+    // policies, because a departure does not fail them.
+    for (framework, control) in [
+        (ComplianceFramework::NIST, "IA-5(1)(a)"),
+        (ComplianceFramework::NIST, "IA-5(1)(d)"),
+        (ComplianceFramework::NIST800171, "3.5.7"),
+        (ComplianceFramework::FedRAMP, "IA-5(1)(a)"),
+        (ComplianceFramework::FedRAMP, "IA-5(1)(d)"),
+    ] {
+        for (policy, statuses) in [("benchmark", &benchmark), ("nist-800-63b", &nist)] {
+            assert_eq!(
+                status(statuses, framework, control),
+                Some(ControlStatus::Pass),
+                "{framework:?} {control} under the {policy} policy"
+            );
+        }
+    }
 }
 
 /// `--output report.json` under the default `--report-format text` wrote a

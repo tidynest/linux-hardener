@@ -6,7 +6,7 @@
 //! apply it previews would report as incomplete. The trait method in
 //! `mod.rs` delegates here.
 
-use super::policy::{ignored_override, policy_directives};
+use super::policy::{ignored_override, policy_directives, relaxation_note};
 use super::{
     ConfRead, FAILLOCK_CONF, ModulePresence, PWHISTORY_CONF, PamConfigFile, PamHardeningPlugin,
     PamObserved, clamped_baseline, dictcheck_lockout_message, dictcheck_locks_out_password_changes,
@@ -149,14 +149,12 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
             });
         }
 
-        // A change that is the selected policy dropping a benchmark rule says
-        // so, the same note apply records, so the preview an operator reads
-        // before applying cannot show a relaxation as an anonymous edit.
-        let policy_note = policy_directive
-            .departure
-            .as_ref()
-            .map(|departure| format!(" ({} password policy: {})", policy.id(), departure.drops))
-            .unwrap_or_default();
+        // A change that is the selected policy relaxing a rule the host has
+        // says so, the same note apply records, so the preview an operator
+        // reads before applying cannot show a relaxation as an anonymous edit.
+        let note = |current: Option<&str>, written: &str| {
+            relaxation_note(policy, &policy_directive, current, written).unwrap_or_default()
+        };
 
         // Honour an exception only when it documents the value the host
         // actually has, matching apply's rendering of an absent or
@@ -219,12 +217,17 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                         compliant_count += 1
                     }
                     Some(current) => estimated_changes.push(format!(
-                        "{} will change: {} -> {}{policy_note}",
-                        d.pam_directive_name, current, target_value
+                        "{} will change: {} -> {}{}",
+                        d.pam_directive_name,
+                        current,
+                        target_value,
+                        note(Some(&current), target_value)
                     )),
                     None => estimated_changes.push(format!(
-                        "Set {} = {} (currently not set){policy_note}",
-                        d.pam_directive_name, target_value
+                        "Set {} = {} (currently not set){}",
+                        d.pam_directive_name,
+                        target_value,
+                        note(None, target_value)
                     )),
                 }
             }
@@ -242,12 +245,17 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                         compliant_count += 1
                     }
                     PamObserved::Value(v) => estimated_changes.push(format!(
-                        "{} will change: {} -> {}",
-                        d.pam_directive_name, v, target
+                        "{} will change: {} -> {}{}",
+                        d.pam_directive_name,
+                        v,
+                        target,
+                        note(Some(v), &target)
                     )),
                     PamObserved::NotSet => estimated_changes.push(format!(
-                        "Set {} = {} (currently not set)",
-                        d.pam_directive_name, target
+                        "Set {} = {} (currently not set){}",
+                        d.pam_directive_name,
+                        target,
+                        note(None, &target)
                     )),
                     // Apply refuses outright here, whether what could not be
                     // read is this directive's own conf or a PAM stack file

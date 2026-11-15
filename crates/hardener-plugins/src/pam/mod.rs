@@ -1755,6 +1755,14 @@ impl PamObserved {
             PamObserved::NotSet | PamObserved::Unreadable { .. } => "not set",
         }
     }
+
+    /// The value itself, or `None` when there is none to read.
+    fn value(&self) -> Option<&str> {
+        match self {
+            PamObserved::Value(v) => Some(v),
+            PamObserved::NotSet | PamObserved::Unreadable { .. } => None,
+        }
+    }
 }
 
 /// Computes [`PamObserved`] for `directive`. `pwquality` and `login_defs` are

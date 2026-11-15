@@ -250,3 +250,26 @@ fn a_negative_maximum_age_is_unlimited_and_satisfies_any_target() {
     // Unset fails closed: an explicit line is what this tool can vouch for.
     assert!(Strictness::AtLeastOrUnlimited.violated_by("99999", None));
 }
+
+/// `is_stricter` describes a write without deciding one: it answers on the
+/// scale it is asked about, and a value it cannot place is never evidence that
+/// a write loosens anything, rather than a panic.
+#[test]
+fn is_stricter_compares_on_its_own_scale_and_never_panics() {
+    // A -1 credit is stricter than 0 on the benchmark's scale, so writing 0
+    // over it relaxes it; a positive credit is looser, so writing 0 tightens.
+    assert!(Strictness::AtMost.is_stricter("-1", "0"));
+    assert!(!Strictness::AtMost.is_stricter("2", "0"));
+
+    // 90 days is stricter than 99999 by the benchmark's measure, and 0, which
+    // is switched off rather than strict, is not stricter than anything.
+    assert!(Strictness::PositiveAtMost.is_stricter("90", "99999"));
+    assert!(!Strictness::PositiveAtMost.is_stricter("0", "99999"));
+
+    // Strictly: equal values are not stricter than each other.
+    assert!(!Strictness::AtLeast.is_stricter("15", "15"));
+
+    // Unplaceable on either side answers false.
+    assert!(!Strictness::AtMost.is_stricter("abc", "0"));
+    assert!(!Strictness::AtMost.is_stricter("-1", "abc"));
+}
