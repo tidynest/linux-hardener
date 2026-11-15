@@ -1,0 +1,85 @@
+name: Propose a baseline change
+description: Suggest a different default for a setting the plugins check, with the source that backs it.
+title: "Baseline: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time. Every value the plugins check is listed in
+        [docs/reference/baseline-sources.md](https://github.com/tidynest/linux-hardener/blob/main/docs/reference/baseline-sources.md),
+        with its comparison, what is known about where it came from, and what the
+        main guides ask for. Please find the row for your setting first: it may
+        already answer part of this form.
+
+        A security vulnerability does not belong here.
+        [SECURITY.md](https://github.com/tidynest/linux-hardener/blob/main/SECURITY.md)
+        has the private route.
+  - type: input
+    id: setting
+    attributes:
+      label: Setting
+      description: As spelled in the tables, for example `minlen`, `kernel.yama.ptrace_scope` or `/etc/sudoers`.
+    validations:
+      required: true
+  - type: input
+    id: current
+    attributes:
+      label: Current default
+      description: The value in the Default column today.
+    validations:
+      required: true
+  - type: input
+    id: proposed
+    attributes:
+      label: Proposed value
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source
+      description: >-
+        The guide, its version, and the rule or section that asks for this value,
+        with a link. A primary source (the benchmark, the standard, the upstream
+        project) carries more weight than an article about it.
+    validations:
+      required: true
+  - type: textarea
+    id: distributions
+    attributes:
+      label: Effect on each distribution
+      description: >-
+        Arch, Debian, Ubuntu, Fedora, RHEL or Rocky, and openSUSE. Does each one
+        ship the setting, where does it live, and does a vendor layer such as
+        openSUSE's /usr/etc get in the way? Say which ones you could not check.
+  - type: textarea
+    id: risk
+    attributes:
+      label: What could break
+      description: >-
+        Who could be locked out, what could stop working, and whether
+        `hardener rollback` puts it right.
+    validations:
+      required: true
+  - type: textarea
+    id: compliance
+    attributes:
+      label: Effect on compliance reports
+      description: Which mapped controls would move between Pass and Fail. Leave it empty if you are not sure.
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Should this be the default for everyone?
+      description: A stricter value needs no change at all, since `directives` can set it today.
+      options:
+        - Yes, as the default for everyone
+        - No, as an option people turn on themselves
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Background, links to discussion elsewhere, or how you run the tool.

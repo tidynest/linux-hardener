@@ -272,6 +272,10 @@ A config that fails validation is rejected with every invalid entry listed:
 
 ### Where a directive override is clamped to the baseline
 
+The baseline is the plugins' built-in set of values. Every one of them, with
+its comparison and where it came from, is listed in
+[baseline-sources.md](baseline-sources.md).
+
 Every `[pam]`, `[ssh]` and `[kernel]` directive is clamped so an override can
 only tighten, in `scan`, `apply` and `apply --dry-run` alike. A `deny` limit
 above the baseline is lowered back to it, a `remember` count below it is raised

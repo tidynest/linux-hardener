@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The README says where the default values come from, and a new reference
+  page lists every one (#189).** linux-hardener follows no single hardening
+  guide, and nothing said so. A short README section now explains that the
+  baseline is the project's own choice, that most values were set in November
+  2025 with no recorded source, and that most agree with the CIS Benchmarks or
+  the DISA STIGs without matching either on every setting.
+  `docs/reference/baseline-sources.md` lists every setting the plugins check
+  with its default, comparison, severity, any recorded source, and what the
+  main guides ask for, each guide dated. It explains how the baseline relates
+  to compliance profiles, directives, exceptions and scope, lists the controls
+  a host can pass on a weaker value than the control's own text asks for, and
+  says how to propose a change. A **Propose a baseline change** issue form and
+  a section in CONTRIBUTING.md ask for the evidence such a proposal needs.
+
 ### Changed
 
 - **Building from source now needs Rust 1.94 (#188).** The workspace moves
@@ -53,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   licences under `/usr/share/licenses/linux-hardener/`. The Docker image adds
   `LICENSE` and the Noto Sans licence there, and labels itself
   `Apache-2.0 AND OFL-1.1`.
+- **The README no longer says the permissions plugin checks ownership (#189).**
+  It checks file modes only, and the owner and group in its table are never
+  read. The README's known limitations also gain a bullet saying a compliance
+  Pass is judged against the baseline's value rather than the number in the
+  control's text, held by `validate_readme_claims.py` to the report generator's
+  status chain. The comment on the SSH key-exchange list, which named "OpenSSH
+  10 defaults and Mozilla Modern" as its source, now says what the list
+  actually follows; neither matched it.
 
 ### Security
 

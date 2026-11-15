@@ -29,11 +29,11 @@ consumer, and only the second is what a limitation promises. Predicates
 here name the file they read and fail, with a reason, when that file no
 longer carries the shape they were written against.
 
-Coverage is reported rather than maximised. Of the five bullets currently
-registered, three are machine-checked and two are judgements no parser
+Coverage is reported rather than maximised. Of the six bullets currently
+registered, four are machine-checked and two are judgements no parser
 reaches ("some changes need a reboot", "some hardening breaks specific
 applications"); those are registered as judgements so the summary says
-three of five rather than silently skipping what it cannot see. A bullet
+four of six rather than silently skipping what it cannot see. A bullet
 that is reworded beyond its locator fails as "not found", which is the
 registry asking to move with the text, not noise: a limitation that no
 longer says what it did needs its predicate re-read by a human regardless.
@@ -65,6 +65,7 @@ README = Path("README.md")
 OUTPUT_RS = Path("crates/hardener-cli/src/output.rs")
 MAC_MOD = Path("crates/hardener-plugins/src/mac/mod.rs")
 PERMISSIONS_MOD = Path("crates/hardener-plugins/src/permissions/mod.rs")
+GENERATOR_RS = Path("crates/hardener-compliance/src/generator.rs")
 
 # The JSON renderer's function. Its return type is the payload's shape: a
 # Vec serialised straight to stdout is a bare array, and a wrapper object
@@ -146,6 +147,46 @@ def check_mac(text: str) -> tuple[bool, str]:
     return True, "no write_file call sites; setenforce present (runtime-only)"
 
 
+# The two arms of the report generator's status chain that decide Fail and
+# Pass for an assessed control: a live finding fails it, and its absence
+# passes it. Neither arm reads a value, which is why a Pass is judged against
+# the plugin's own baseline rather than the control's text. Whitespace is
+# free, so a reformat does not fail the check; a new condition on either arm
+# does.
+STATUS_FAIL_ARM = re.compile(
+    r"let status = if has_live_finding\(&related\)\s*\{\s*ControlStatus::Fail\b"
+)
+STATUS_PASS_ARM = re.compile(
+    r"\}\s*else if assessed\.contains\(control\.compliance_control_id\.as_str\(\)\)\s*"
+    r"\{\s*ControlStatus::Pass\b"
+)
+
+
+def check_pass_against_baseline(text: str) -> tuple[bool, str]:
+    """README: "A compliance Pass is judged against linux-hardener's own value
+    for each check, never against a number in the control's text." A finding
+    exists only when a plugin judges the host weaker than its own baseline,
+    so a status chain that reads nothing but findings and coverage passes a
+    control on the baseline's terms. If either arm gains a condition, such as
+    a per-framework threshold or a partial-mapping flag, the bullet may have
+    stopped being true and has to be read again."""
+    if not STATUS_FAIL_ARM.search(text):
+        return False, (
+            "the Fail arm no longer reads `if has_live_finding(&related)` alone; "
+            "a control's status may now depend on more than the plugin's own "
+            "finding"
+        )
+    if not STATUS_PASS_ARM.search(text):
+        return False, (
+            "the Pass arm no longer reads `assessed.contains(...)` alone; a Pass "
+            "may now be judged against something other than the baseline"
+        )
+    return True, (
+        "Fail on a live finding and Pass on assessed coverage alone, so a Pass "
+        "means no finding against the plugin's own value"
+    )
+
+
 def check_permissions(text: str) -> tuple[bool, str]:
     """README: a permissions finding "can name a package-owned file under
     /usr/etc that the tool deliberately never writes ... apply stays silent
@@ -214,6 +255,15 @@ REGISTRY = [
         "locator": re.compile(r"- `scan --format json` emits a bare array with no schema version"),
         "reads": OUTPUT_RS,
         "predicate": check_json_output,
+        "judgement": None,
+    },
+    {
+        "id": "pass-against-baseline",
+        "locator": re.compile(
+            r"- A compliance \*\*Pass\*\* is judged against linux-hardener's own value"
+        ),
+        "reads": GENERATOR_RS,
+        "predicate": check_pass_against_baseline,
         "judgement": None,
     },
 ]
@@ -316,6 +366,39 @@ SELF_TEST_CASES = [
         'let _ = serde_json::to_string_pretty(&serde_json::json!({ "version": 1, "results": scan_json(results) }));',
         False,
         "serialisation call",
+    ),
+    (
+        "pass: the generator's real status chain passes",
+        check_pass_against_baseline,
+        "let status = if has_live_finding(&related) {\n"
+        "    ControlStatus::Fail\n"
+        "} else if unchecked_ids.contains(control.compliance_control_id.as_str()) {\n"
+        "    ControlStatus::ManualReview\n"
+        "} else if assessed.contains(control.compliance_control_id.as_str()) {\n"
+        "    ControlStatus::Pass\n",
+        True,
+        "assessed coverage alone",
+    ),
+    (
+        "pass: a condition on the Pass arm fails the claim",
+        check_pass_against_baseline,
+        "let status = if has_live_finding(&related) {\n"
+        "    ControlStatus::Fail\n"
+        "} else if assessed.contains(control.compliance_control_id.as_str())\n"
+        "    && !partial.contains(control.compliance_control_id.as_str()) {\n"
+        "    ControlStatus::Pass\n",
+        False,
+        "Pass arm",
+    ),
+    (
+        "pass: a threshold on the Fail arm fails the claim",
+        check_pass_against_baseline,
+        "let status = if has_live_finding(&related) || below_threshold(control) {\n"
+        "    ControlStatus::Fail\n"
+        "} else if assessed.contains(control.compliance_control_id.as_str()) {\n"
+        "    ControlStatus::Pass\n",
+        False,
+        "Fail arm",
     ),
     (
         "output: the real shape passes",
