@@ -252,6 +252,26 @@ For feature requests, please include:
 - Use case / motivation
 - Potential implementation approach (if known)
 
+### Proposing a Change to a Default Value
+
+The values the plugins check against follow no single guide, and most have no
+recorded source, so a well-argued proposal to change one is useful work.
+Start from the row for the setting in
+[docs/reference/baseline-sources.md](docs/reference/baseline-sources.md), then
+open an issue with the **Propose a baseline change** form. It asks for:
+
+- The setting, its current default and the value you propose
+- The guide, version and rule or section that backs it, with a link
+- What changes on each validated distribution (Arch, Debian, Ubuntu, Fedora,
+  RHEL or Rocky, openSUSE)
+- Who could be locked out or what could break, and whether rollback undoes it
+- Which compliance controls would move between Pass and Fail
+- Whether it should be the default for everyone, or a stricter value people can
+  already set themselves with `directives`
+
+A pull request that changes a default updates its row on that page in the same
+commit; `validate_all.py` fails until it does.
+
 ### Security Plugins
 
 If you want to contribute a new security plugin, start with
