@@ -361,9 +361,10 @@ async fn report_scan_path_honours_config_exceptions() {
 ///
 /// Both hosts must meet every PAM check other than the password policy's, or
 /// the NIST-derived assertions below fail for that check rather than for the
-/// policy. A check added to the plugin that maps to the same controls, such
-/// as the password hashing check #191 maps to IA-5(1)(d), needs its keys
-/// added here.
+/// policy. A check added to the plugin that maps to the same controls needs
+/// its keys added here, as the password hashing check #191 maps to
+/// IA-5(1)(d) has: the three hashing keys are the SHA-512 target the plugin
+/// holds a host to when its host probe cannot run.
 fn pam_host(minlen: &str, credit: &str, max_days: &str) -> Arc<dyn SystemExecutor> {
     Arc::new(
         MockExecutor::new()
@@ -386,7 +387,12 @@ fn pam_host(minlen: &str, credit: &str, max_days: &str) -> Arc<dyn SystemExecuto
             )
             .with_file(
                 "/etc/login.defs",
-                format!("PASS_MAX_DAYS {max_days}\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n").as_str(),
+                format!(
+                    "PASS_MAX_DAYS {max_days}\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n\
+                     ENCRYPT_METHOD SHA512\nSHA_CRYPT_MIN_ROUNDS 100000\n\
+                     SHA_CRYPT_MAX_ROUNDS 100000\n"
+                )
+                .as_str(),
             )
             .with_file("/etc/security/faillock.conf", "deny = 3\n")
             .with_file("/etc/security/pwhistory.conf", "remember = 10\n"),
