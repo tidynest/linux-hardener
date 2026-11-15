@@ -287,7 +287,7 @@ pub(super) const HASHING_STACK_FILES: &[&str] = &[
 /// Linux-PAM's distribution directory, searched when `/etc/pam.d` has no file
 /// of a service's name (libpam `PAM_CONFIG_DIST_D`). openSUSE installs
 /// `common-password` there.
-const PAM_DIST_DIR: &str = "/usr/lib/pam.d";
+const PAM_DISTRIBUTION_DIR: &str = "/usr/lib/pam.d";
 
 /// One `password` line loading `pam_unix.so`, reduced to what decides hashing.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1319,9 +1319,9 @@ async fn read_stack_file(
         _ => {}
     }
     let name = file.strip_prefix("/etc/pam.d/").unwrap_or(file);
-    let dist = format!("{PAM_DIST_DIR}/{name}");
-    match read_conf_classified(ctx, &dist).await {
-        ConfRead::Content(content, _) => Ok(Some((dist, content))),
+    let distribution_copy = format!("{PAM_DISTRIBUTION_DIR}/{name}");
+    match read_conf_classified(ctx, &distribution_copy).await {
+        ConfRead::Content(content, _) => Ok(Some((distribution_copy, content))),
         ConfRead::Unreadable {
             path,
             permission_denied,
