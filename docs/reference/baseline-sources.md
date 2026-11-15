@@ -52,9 +52,9 @@ The first tables were written in the project's first week: the kernel and SSH
 tables on 2025-11-20, the firewall rules on 2025-11-21, the PAM and services
 tables on 2025-11-22, and the audit rules and the first five file-permission
 paths on 2025-11-23. The README of the first commit described a working
-catalogue, `.claude/SECURITY_CONTROLS.md`, holding "All kernel parameters with
+catalogue of security controls, holding "All kernel parameters with
 secure values", "SSH, PAM, audit rules" and "Compliance framework mappings".
-That file was never committed, so the reasoning behind those first values
+It was never committed, so the reasoning behind those first values
 cannot be recovered from the repository. None of the original tables cites a
 source for a value. The audit rules and the permissions table each carry a
 one-line comment, quoted below, that names CIS without a version or a section.
