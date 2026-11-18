@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The README says where the default values come from, and a new reference
+  page lists every one (#189).** linux-hardener follows no single hardening
+  guide, and nothing said so. A short README section now explains that the
+  baseline is the project's own choice, that most values were set in November
+  2025 with no recorded source, and that most agree with the CIS Benchmarks or
+  the DISA STIGs without matching either on every setting.
+  `docs/reference/baseline-sources.md` lists every setting the plugins check
+  with its default, comparison, severity, any recorded source, the closest
+  match among the guides, and what the main guides ask for, each guide dated.
+  It explains how the baseline relates to compliance profiles, directives,
+  exceptions and scope, and says how to propose a change. It also lists the
+  controls a host can pass without doing what the control's own text asks, in
+  four kinds: the control wants a stricter value; it asks for something the
+  check does not read, such as file ownership, the audit log size or the
+  SELinux boot setting; the host has switched the check off with a value the
+  code ranks as strictest (faillock `deny = 0`, `PASS_MAX_DAYS -1`,
+  `ClientAliveCountMax 0`); or the STIG asks for exactly 1 where the baseline
+  writes 2 (`kptr_restrict`, `ptrace_scope`). It also records that the PAM
+  plugin's three PCI DSS identifiers are PCI DSS v3.2.1 numbers, which name
+  unrelated requirements in v4.0.1. A **Propose a baseline change** issue form
+  and a section in CONTRIBUTING.md ask for the evidence such a proposal needs.
+- **`validate_baseline_sources.py` holds that page to the code.** It reads the
+  baseline tables in the kernel, SSH, PAM, services, permissions, firewall and
+  audit plugins, and fails when a default, comparison or severity differs from
+  its row, when a setting has no row or a row names one the code dropped, and
+  when a row does not say where its value came from. It also fails on any new
+  table of a plugin struct it does not read yet, so a check added in a new
+  file cannot pass with no row, and on a comparison the page's legend does not
+  define. Each listed Pass that falls short must name a control the check's own
+  mapping arm still holds, so a plugin that drops the mapping fails the row
+  even while `profiles.rs` keeps the identifier, and a switched-off row fails
+  once its comparison is fixed. The baseline values README quotes, and its
+  sentence on what a Pass means, are held too, against the Fail, Manual Review
+  and Pass arms of the report generator. `validate_all.py` now runs 30 checks
+  and fails until a changed default and its row agree; CI does not run it.
+
 ### Changed
 
 - **Building from source now needs Rust 1.94 (#188).** The workspace moves
@@ -53,6 +91,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   licences under `/usr/share/licenses/linux-hardener/`. The Docker image adds
   `LICENSE` and the Noto Sans licence there, and labels itself
   `Apache-2.0 AND OFL-1.1`.
+- **The README no longer says the permissions plugin checks ownership (#189).**
+  It checks file modes only, and the owner and group in its table are never
+  read. README also stops saying a report "cannot claim compliance the tool did
+  not measure": a covered control passes when its plugin finds nothing weaker
+  than the baseline, which is not always everything the control asks for. Its
+  known limitations gain a bullet saying so, held by `validate_readme_claims.py`
+  to the report generator's status chain. README, CONTRIBUTING.md and the
+  configuration reference no longer say a directive can only tighten without
+  naming the three settings where the code ranks switching the check off as
+  the strictest value. The comment on the SSH key-exchange list, which named
+  "OpenSSH 10 defaults and Mozilla Modern" as its source, now names ssh-audit's
+  Hardened OpenSSH Server v9.9 policy as the nearest published list, a match
+  rather than a recorded source; neither of the old names matched it. The
+  architecture document's plugin table, which listed 4 of the 18 kernel
+  settings and 3 of the 8 SSH directives and claimed a SUID/SGID check, and
+  the permissions plugin's module comment, which claimed SUID/SGID,
+  world-writable and SSH key checks, now say what the plugins check.
 
 ### Security
 

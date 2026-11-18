@@ -103,6 +103,12 @@ def main():
         ("Test Assertions", "validate_test_assertions.py", ["--all"]),
         ("Policy Exception Sites", "validate_policy_exception_sites.py", []),
         ("Documented Exception Keys", "validate_documented_exception_keys.py", []),
+        # The baseline reference page against the plugins' own tables. Issue
+        # #189 asked which guide the defaults follow, and the answer is a row
+        # per setting saying where its value came from. A value changed
+        # without its row tells readers the old number, and a check added
+        # without one is the gap #189 reported, so both fail here.
+        ("Baseline Sources", "validate_baseline_sources.py", []),
         ("Evidence Ledger", "validate_evidence_ledger.py", []),
         # The check above reads the ledger's paths. This one reads its numbers,
         # which nothing read at all: a count in a sentence was invisible to

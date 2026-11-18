@@ -1,6 +1,6 @@
 # Documentation index
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-11-18
 
 Map of everything under `docs/`. Root-level files (`README.md`,
 `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`) follow GitHub convention
@@ -23,6 +23,7 @@ and stay at the repository root.
 |-----|--------------------------|
 | [reference/cli.md](reference/cli.md) | Look up any `hardener` command, subcommand, or flag |
 | [reference/configuration.md](reference/configuration.md) | Look up any `config.toml` or `hosts.toml` key, default, and effect |
+| [reference/baseline-sources.md](reference/baseline-sources.md) | See every value the plugins check, where it came from, what the main guides ask for, and how to propose a change |
 | [reference/naming-conventions.md](reference/naming-conventions.md) | Follow the project's naming standards |
 | [reference/file-map.md](reference/file-map.md) | Find which source file implements what |
 | [reference/data-flow.md](reference/data-flow.md) | Trace how data moves through the system, and its sources of truth |
