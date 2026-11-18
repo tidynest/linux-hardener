@@ -88,6 +88,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   too, so no build can resolve an affected version. `email-encoding` moves to
   0.4.3 with it and brings in `base64` 0.23.1. The fuzz lockfile never carried
   `lettre`.
+- **`chrono` and `chrono-tz` are accepted as unmaintained until the project
+  moves off them.** RUSTSEC-2026-0543 and RUSTSEC-2026-0555 marked every
+  version of both unmaintained on 2026-11-17, so no upgrade clears them, and
+  `cargo deny` treats an unmaintained crate as an error. Neither advisory
+  reports a defect. `chrono` holds the project's timestamps, and `chrono-tz`
+  comes in through `tokio-cron-scheduler`, whose newest release still needs
+  both. The two are listed in `deny.toml` with a review date of 2027-01-31,
+  and `SECURITY.md` says what removing them takes.
 - **`pin-utils` leaves the lockfile, for RUSTSEC-2026-0441.** Its repository
   was archived on 2026-10-01, so it will get no more releases. `futures-util`
   0.3.31 and `hyper` 1.8.1 pulled it in, and both dropped it later:
