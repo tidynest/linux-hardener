@@ -939,3 +939,42 @@ fn a_skip_marker_renders_as_skipped_by_config_not_as_a_failure() {
         lines[0]
     );
 }
+
+/// The instant type the formatting calls take. A later task changes this body
+/// and the one below it, and nothing else in the pinned tests.
+fn instant(seconds: i64, nanoseconds: u32) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::from_timestamp(seconds, nanoseconds).expect("a representable instant")
+}
+
+fn formatted(instant: chrono::DateTime<chrono::Utc>, pattern: &str) -> String {
+    instant.format(pattern).to_string()
+}
+
+#[test]
+fn the_human_readable_utc_pattern_is_pinned() {
+    assert_eq!(
+        formatted(instant(1767225600, 0), "%Y-%m-%d %H:%M:%S UTC"),
+        "2026-01-01 00:00:00 UTC"
+    );
+}
+
+#[test]
+fn the_underscore_file_name_pattern_is_pinned() {
+    assert_eq!(
+        formatted(instant(1767225600, 0), "%Y%m%d_%H%M%S"),
+        "20260101_000000"
+    );
+}
+
+#[test]
+fn the_hyphen_file_name_pattern_is_pinned() {
+    assert_eq!(
+        formatted(instant(1767225600, 0), "%Y%m%d-%H%M%S"),
+        "20260101-000000"
+    );
+}
+
+#[test]
+fn unix_seconds_are_rendered_as_utc_by_format_timestamp() {
+    assert_eq!(format_timestamp(1767225600), "2026-01-01 00:00:00 UTC");
+}

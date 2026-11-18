@@ -217,3 +217,59 @@ fn format_all_emits_one_array_a_consumer_can_parse() {
     assert_eq!(reports[0]["report_framework"], "CIS");
     assert_eq!(reports[1]["report_framework"], "STIG");
 }
+
+/// The four instants every timestamp test in the time move writes and reads:
+/// whole seconds, then the three fractional widths the serialiser chooses
+/// between. The copy in each crate's tests is the same table on purpose, since
+/// test modules cannot share a private constant.
+const PINNED: [(i64, u32, &str); 4] = [
+    (1767225600, 0, "2026-01-01T00:00:00Z"),
+    (1767225600, 500_000_000, "2026-01-01T00:00:00.500Z"),
+    (1767225600, 123_456_000, "2026-01-01T00:00:00.123456Z"),
+    (1767225600, 123_456_789, "2026-01-01T00:00:00.123456789Z"),
+];
+
+/// The report's instant type. A later task changes this body and nothing else
+/// in the pinned tests.
+fn instant(seconds: i64, nanoseconds: u32) -> chrono::DateTime<Utc> {
+    chrono::DateTime::from_timestamp(seconds, nanoseconds).expect("a representable instant")
+}
+
+fn empty_report_at(generated_at: chrono::DateTime<Utc>) -> ComplianceReport {
+    ComplianceReport {
+        report_framework: ComplianceFramework::CIS,
+        report_profile: ComplianceProfile::default(),
+        report_coverage_note: None,
+        report_generated_at: generated_at,
+        report_controls: vec![],
+        report_summary: ComplianceSummary {
+            summary_total_controls: 0,
+            summary_passing: 0,
+            summary_failing: 0,
+            summary_not_applicable: 0,
+            summary_manual_review: 0,
+            summary_score_percentage: 0.0,
+        },
+    }
+}
+
+/// A saved report is read back by a newer build, so the spelling of the
+/// generation time is part of the file format.
+#[test]
+fn the_report_generation_time_is_written_as_1_9_1_wrote_it() {
+    for (seconds, nanoseconds, literal) in PINNED {
+        let json = serde_json::to_string(&empty_report_at(instant(seconds, nanoseconds))).unwrap();
+        assert!(
+            json.contains(&format!("\"report_generated_at\":\"{literal}\"")),
+            "{seconds}s {nanoseconds}ns should be written as {literal}, got {json}"
+        );
+    }
+
+    let fixture =
+        include_str!("../../../../hardener-types/tests/fixtures/time-1.9.1/compliance-report.json");
+    let read: ComplianceReport = serde_json::from_str(fixture).unwrap();
+    assert_eq!(read.report_generated_at, instant(1767225600, 500_000_000));
+
+    let report = empty_report_at(instant(1767225600, 500_000_000));
+    assert_eq!(serde_json::to_string(&report).unwrap(), fixture);
+}

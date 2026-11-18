@@ -121,3 +121,43 @@ async fn recovery_continues_the_chain_the_log_already_holds() {
         "the control, and the documented fallback: no log means a fresh chain"
     );
 }
+
+/// The four instants every timestamp test in the time move writes and reads:
+/// whole seconds, then the three fractional widths the serialiser chooses
+/// between. The copy in each crate's tests is the same table on purpose, since
+/// test modules cannot share a private constant.
+const PINNED: [(i64, u32, &str); 4] = [
+    (1767225600, 0, "2026-01-01T00:00:00Z"),
+    (1767225600, 500_000_000, "2026-01-01T00:00:00.500Z"),
+    (1767225600, 123_456_000, "2026-01-01T00:00:00.123456Z"),
+    (1767225600, 123_456_789, "2026-01-01T00:00:00.123456789Z"),
+];
+
+/// The audit log's instant type. A later task changes this body and nothing
+/// else in the pinned tests.
+fn instant(seconds: i64, nanoseconds: u32) -> DateTime<Utc> {
+    DateTime::from_timestamp(seconds, nanoseconds).expect("a representable instant")
+}
+
+/// The file is what a 1.9.1 install already wrote to disk, so a build that
+/// spells the timestamp differently cannot read its own history back.
+#[test]
+fn the_audit_entry_timestamp_is_written_as_1_9_1_wrote_it() {
+    for (seconds, nanoseconds, literal) in PINNED {
+        let json = serde_json::to_string(&entry_at(instant(seconds, nanoseconds))).unwrap();
+        assert!(
+            json.contains(&format!("\"entry_timestamp\":\"{literal}\"")),
+            "{seconds}s {nanoseconds}ns should be written as {literal}, got {json}"
+        );
+    }
+
+    let fixture =
+        include_str!("../../../hardener-types/tests/fixtures/time-1.9.1/audit-entry.json");
+    let read: AuditEntry = serde_json::from_str(fixture).unwrap();
+    assert_eq!(read.entry_timestamp, instant(1767225600, 500_000_000));
+
+    let mut entry = entry_at(instant(1767225600, 500_000_000));
+    entry.entry_user = "alice".to_string();
+    entry.entry_target = "example-host".to_string();
+    assert_eq!(serde_json::to_string(&entry).unwrap(), fixture);
+}

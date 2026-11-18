@@ -318,3 +318,51 @@ async fn process_findings_converts_compliance_mappings() {
     assert!(mappings[0].contains("CIS"));
     assert!(mappings[0].contains("1.5.1"));
 }
+
+/// The four instants every timestamp test in the time move writes and reads:
+/// whole seconds, then the three fractional widths the serialiser chooses
+/// between. The copy in each crate's tests is the same table on purpose, since
+/// test modules cannot share a private constant.
+const PINNED: [(i64, u32, &str); 4] = [
+    (1767225600, 0, "2026-01-01T00:00:00Z"),
+    (1767225600, 500_000_000, "2026-01-01T00:00:00.500Z"),
+    (1767225600, 123_456_000, "2026-01-01T00:00:00.123456Z"),
+    (1767225600, 123_456_789, "2026-01-01T00:00:00.123456789Z"),
+];
+
+/// The export's instant type. A later task changes this body and nothing else
+/// in the pinned tests.
+fn instant(seconds: i64, nanoseconds: u32) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::from_timestamp(seconds, nanoseconds).expect("a representable instant")
+}
+
+fn export_at(timestamp: chrono::DateTime<chrono::Utc>) -> JsonExport {
+    JsonExport {
+        host: "example-host".to_string(),
+        timestamp,
+        min_severity: "info".to_string(),
+        plugins_scanned: vec!["ssh-hardening".to_string()],
+        total_findings: 0,
+        findings: vec![],
+        plugin_errors: vec![],
+    }
+}
+
+/// Exports are kept on disk and hashed, so one byte of difference in the
+/// timestamp is a different file. `JsonExport` cannot be deserialised, so the
+/// fixture is compared as bytes.
+#[test]
+fn the_json_export_timestamp_is_written_as_1_9_1_wrote_it() {
+    for (seconds, nanoseconds, literal) in PINNED {
+        let json = serde_json::to_string(&export_at(instant(seconds, nanoseconds))).unwrap();
+        assert!(
+            json.contains(&format!("\"timestamp\":\"{literal}\"")),
+            "{seconds}s {nanoseconds}ns should be written as {literal}, got {json}"
+        );
+    }
+
+    let fixture =
+        include_str!("../../../hardener-types/tests/fixtures/time-1.9.1/json-export.json");
+    let json = serde_json::to_string(&export_at(instant(1767225600, 500_000_000))).unwrap();
+    assert_eq!(json, fixture);
+}

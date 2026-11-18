@@ -237,3 +237,50 @@ fn a_config_without_the_section_still_loads() {
     let config: crate::config::HardenerConfig = toml::from_str("[global]\n").expect("parses");
     assert!(config.compliance.not_applicable.is_empty());
 }
+
+/// A date the calendar does not have is refused, not rolled into March.
+///
+/// A parser that normalised 30 February to 2 March would move an exclusion's
+/// deadline without telling anyone, and the deadline decides whether a control
+/// counts against the score.
+#[test]
+fn a_date_the_calendar_does_not_have_is_refused() {
+    assert_eq!(parse_iso_date("2026-02-30"), None);
+    assert!(
+        !exclusion(Some("2026-02-30")).is_valid_on("iso27001", day("2026-01-01")),
+        "an unparseable review_by is invalid even long before it would fall due"
+    );
+}
+
+/// What the current parser does with unpadded month and day numbers.
+///
+/// This records what chrono does, so a library with a stricter parser shows
+/// up here as a failing test and not as exclusions that quietly stop
+/// applying. If the swap must differ, the difference is a decision to take
+/// and to document, not a side effect.
+#[test]
+fn unpadded_month_and_day_numbers_are_accepted_as_chrono_does() {
+    assert_eq!(parse_iso_date("2026-2-28"), Some(day("2026-02-28")));
+}
+
+/// The twelve month default is added by calendar month, and a month that is
+/// too short for the day clamps to its last day.
+///
+/// The deadline is reachable only through `review_deadline`, which always adds
+/// the framework's twelve months to a date given by `approved_date`, so a
+/// 31 January plus one month cannot be set up from here. A leap day plus
+/// twelve months is the same clamp: the target month is February and the day
+/// does not exist in it. The 2023 row is the control, since it must not
+/// clamp the other way into the leap day.
+#[test]
+fn adding_twelve_months_clamps_to_the_last_day_of_a_short_month() {
+    let deadline = |approved: &str| {
+        let mut e = exclusion(None);
+        e.approved_date = Some(approved.to_string());
+        e.review_deadline("iso27001")
+    };
+    assert_eq!(deadline("2024-02-29"), Some(day("2025-02-28")));
+    assert_eq!(deadline("2028-02-29"), Some(day("2029-02-28")));
+    assert_eq!(deadline("2026-02-28"), Some(day("2027-02-28")));
+    assert_eq!(deadline("2023-02-28"), Some(day("2024-02-28")));
+}

@@ -1,0 +1,1 @@
+{"host":"example-host","timestamp":"2026-01-01T00:00:00.500Z","min_severity":"info","plugins_scanned":["ssh-hardening"],"total_findings":0,"findings":[],"plugin_errors":[]}
