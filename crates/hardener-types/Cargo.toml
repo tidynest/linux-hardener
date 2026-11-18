@@ -10,8 +10,20 @@ version.workspace = true
 [dependencies]
 serde = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+jiff = { workspace = true }
+
+[features]
+# Reading the clock and the machine's time zone. Off by default because the
+# WASM interface has neither. `tz-system` finds the zone from `TZ` and
+# `/etc/localtime`, and `tzdb-zoneinfo` looks a zone name such as
+# `TZ=Europe/Stockholm` up in the system's `/usr/share/zoneinfo`, as chrono
+# did. Neither bundles a copy of the time zone database.
+clock = ["jiff/tz-system", "jiff/tzdb-zoneinfo"]
 
 [dev-dependencies]
+# The crate's own tests take the clock feature, so the workspace test run
+# compiles and runs the clock functions while no other crate turns it on.
+hardener-types = { path = ".", features = ["clock"] }
 serde_json = { workspace = true }
 # Test-only, so the WASM artefact is unaffected. The webhook config's whole
 # subject is the shape it takes in a TOML file, and an array of tables is a

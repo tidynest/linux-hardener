@@ -15,6 +15,7 @@ pub mod checkpoint;
 pub mod config_picker;
 pub mod remote;
 pub mod scheduler;
+pub mod time;
 pub use checkpoint::*;
 pub use config_picker::*;
 pub use remote::*;
