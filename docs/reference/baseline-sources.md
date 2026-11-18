@@ -1,6 +1,6 @@
 # Where the default values come from
 
-**Last Updated**: 2026-11-15
+**Last Updated**: 2026-11-18
 
 linux-hardener judges every host against a set of built-in values, called the
 baseline. This page lists each of them and answers three questions about it:
