@@ -16,6 +16,9 @@ pub const REPORT_STAMP: &str = "%Y-%m-%d %H:%M:%S UTC";
 pub const FILE_STAMP_UNDERSCORE: &str = "%Y%m%d_%H%M%S";
 /// The pattern for a timestamp in a file name, such as `20260101-000000`.
 pub const FILE_STAMP_HYPHEN: &str = "%Y%m%d-%H%M%S";
+/// The pattern for a timestamp to the minute in a scan history list, such as
+/// `2026-01-01 00:00`.
+pub const MINUTE_STAMP: &str = "%Y-%m-%d %H:%M";
 
 /// The instant `seconds` after the Unix epoch, as chrono's
 /// `DateTime::from_timestamp(seconds, 0)` gave. `None` outside the library's
@@ -40,7 +43,9 @@ pub fn date_utc(instant: Timestamp) -> Date {
 }
 
 /// `instant` in UTC written with a strftime `pattern`, giving the same text
-/// chrono's `format` did for the named patterns in this module.
+/// chrono's `format` did for the named patterns in this module. The library
+/// skips a specifier it does not know where chrono panicked, so a new pattern
+/// needs a test of its literal text.
 pub fn format_utc(instant: Timestamp, pattern: &str) -> String {
     instant.strftime(pattern).to_string()
 }
@@ -169,7 +174,9 @@ pub fn today_local() -> Date {
 }
 
 /// `instant` on this machine's clock written with a strftime `pattern`, as
-/// chrono's `with_timezone(&Local).format(pattern)` gave.
+/// chrono's `with_timezone(&Local).format(pattern)` gave. The library skips a
+/// specifier it does not know where chrono panicked, so a new pattern needs a
+/// test of its literal text.
 #[cfg(feature = "clock")]
 pub fn format_local(instant: Timestamp, pattern: &str) -> String {
     local_zone()

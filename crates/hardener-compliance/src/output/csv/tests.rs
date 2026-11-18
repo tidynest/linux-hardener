@@ -16,8 +16,8 @@
 
 use super::*;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
-use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceProfile};
+use hardener_types::time;
 
 #[test]
 fn test_csv_formatter_basic() {
@@ -25,7 +25,7 @@ fn test_csv_formatter_basic() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_controls: vec![
             ControlResult {
                 control_id: "1.5.1".to_string(),
@@ -90,7 +90,7 @@ fn finding_count_counts_live_violations_only() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,
     };
@@ -199,7 +199,7 @@ fn a_field_carrying_a_comma_does_not_shift_the_columns_after_it() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,
     };

@@ -331,9 +331,11 @@ container user IDs. Run it from a directory only you can write in that case.
 
 Both crates were marked unmaintained on 2026-11-17, in every version, so no
 upgrade clears the advisories. Neither advisory reports a defect: they say
-that a future one would get no fix. `chrono` is a direct dependency, used for
-the timestamps in scan results, the audit log, compliance reports and the
-scheduler's history. `chrono-tz` comes in only through `tokio-cron-scheduler`,
+that a future one would get no fix. `chrono` is a direct dependency, still
+used for file-name stamps, scan start times and policy exception dates. The
+audit log, compliance reports and the scheduler's history no longer use it:
+they go through the `time` module in `hardener-types`, which uses `jiff`.
+`chrono-tz` comes in only through `tokio-cron-scheduler`,
 which the scheduling daemon uses to read its cron expression.
 
 The two are ignored in `deny.toml` with a review date of 2027-01-31, and the

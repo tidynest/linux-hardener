@@ -5,6 +5,7 @@
 use crate::output::{ReportFormatter, exclusion_note, report_title};
 use crate::report::ComplianceReport;
 use hardener_common::types::ControlStatus;
+use hardener_types::time;
 
 /// Formats compliance reports as plain text.
 pub struct TextFormatter;
@@ -35,7 +36,7 @@ impl ReportFormatter for TextFormatter {
         output.push('\n');
         output.push_str(&format!(
             "Generated: {}\n",
-            report.report_generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+            time::format_utc(report.report_generated_at, time::REPORT_STAMP)
         ));
         output.push('\n');
 

@@ -3,8 +3,8 @@
 //! Stores scan results as timestamped JSON files for portability
 //! and external tool integration.
 
-use chrono::Utc;
 use hardener_common::error::{HardeningError, Result};
+use hardener_types::time;
 use ring::digest::{Context, SHA256};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -35,7 +35,7 @@ impl JsonStore {
         session_id: &str,
         data: &T,
     ) -> Result<(String, String)> {
-        let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
+        let timestamp = time::format_utc(time::now(), time::FILE_STAMP_UNDERSCORE);
         let prefix = &session_id[..session_id.len().min(8)];
         let filename = format!("scan_{}_{}.json", timestamp, prefix);
         let path = self.output_dir.join(&filename);

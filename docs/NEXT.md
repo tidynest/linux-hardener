@@ -546,6 +546,7 @@ hardener-ui (WASM frontend)
 hardener-scheduler
   ├── hardener-core
   ├── hardener-plugins
+  ├── hardener-types
   └── hardener-common
 ```
 

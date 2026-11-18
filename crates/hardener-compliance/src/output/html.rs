@@ -5,6 +5,7 @@
 use crate::output::{ReportFormatter, exclusion_note, report_title};
 use crate::report::ComplianceReport;
 use hardener_common::types::ControlStatus;
+use hardener_types::time;
 
 /// Formats compliance reports as HTML.
 pub struct HtmlFormatter;
@@ -58,7 +59,7 @@ fn push_report_body(html: &mut String, report: &ComplianceReport) {
     ));
     html.push_str(&format!(
         "<p class=\"generated\">Generated: {}</p>\n",
-        report.report_generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        time::format_utc(report.report_generated_at, time::REPORT_STAMP)
     ));
 
     // Summary Box

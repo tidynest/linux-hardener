@@ -7,6 +7,7 @@ use crate::output::ReportFormatter;
 use crate::report::ComplianceReport;
 use hardener_common::text::truncate_string;
 use hardener_common::types::ControlStatus;
+use hardener_types::time;
 use krilla::geom::{PathBuilder, Point};
 use krilla::num::NormalizedF32;
 use krilla::page::PageSettings;
@@ -246,7 +247,7 @@ fn draw_report(
     // === Generated timestamp ===
     let generated = format!(
         "Generated: {}",
-        report.report_generated_at.format("%Y-%m-%d %H:%M:%S UTC")
+        time::format_utc(report.report_generated_at, time::REPORT_STAMP)
     );
     surface.draw_text(
         Point::from_xy(MARGIN_LEFT, y.y() + SMALL_SIZE),

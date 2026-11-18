@@ -4,6 +4,7 @@
 
 use crate::output::ReportFormatter;
 use crate::report::ComplianceReport;
+use hardener_types::time::Timestamp;
 use serde::Serialize;
 
 /// Extended report with framework metadata for JSON output.
@@ -24,7 +25,8 @@ struct JsonReport<'a> {
     /// title; JSON did not (#163).
     report_profile: &'a hardener_common::types::ComplianceProfile,
     /// When this report was generated.
-    report_generated_at: &'a chrono::DateTime<chrono::Utc>,
+    #[serde(with = "hardener_types::time::rfc3339")]
+    report_generated_at: Timestamp,
     /// Individual control check results.
     report_controls: &'a [hardener_types::ControlResult],
     /// Summary statistics for the report.
@@ -47,7 +49,7 @@ impl<'a> JsonReport<'a> {
             report_framework_name: report.report_framework.full_name(),
             report_framework_description: report.report_framework.description(),
             report_profile: &report.report_profile,
-            report_generated_at: &report.report_generated_at,
+            report_generated_at: report.report_generated_at,
             report_controls: &report.report_controls,
             report_summary: &report.report_summary,
             report_coverage_note: &report.report_coverage_note,

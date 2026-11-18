@@ -306,7 +306,7 @@ async fn previous_completed_session_returns_prior() {
 /// A caller that persists after its scan can record when the scan began.
 ///
 /// Both CLI paths reach persistence only once every plugin has run, so
-/// stamping `Utc::now()` inside the insert put the completion time in
+/// stamping the clock inside the insert put the completion time in
 /// `started_at` and made `completed_at - started_at` measure the finding
 /// inserts. Measured on the machine that found this: zero seconds for 83 of
 /// 106 batch rows and 238 of 245 cli rows, with the non-zero ones all carrying
@@ -321,7 +321,7 @@ async fn a_session_can_record_a_start_that_precedes_its_insert() {
 
     // Well before the insert, and far enough back that no clock skew or slow
     // test host could account for it.
-    let began = chrono::Utc::now().timestamp() - 600;
+    let began = time::unix_seconds(time::now()) - 600;
 
     let id = manager
         .create_session_started_at("batch", "web-01", &["kernel".into()], began)
@@ -358,12 +358,12 @@ async fn create_session_without_an_instant_stamps_the_present() {
         .await
         .unwrap();
 
-    let before = chrono::Utc::now().timestamp();
+    let before = time::unix_seconds(time::now());
     let id = manager
         .create_session("daemon", "localhost", &[])
         .await
         .unwrap();
-    let after = chrono::Utc::now().timestamp();
+    let after = time::unix_seconds(time::now());
 
     let session = manager.get_session(&id).await.unwrap().unwrap();
     assert!(
@@ -371,4 +371,24 @@ async fn create_session_without_an_instant_stamps_the_present() {
         "expected an instant inside [{before}, {after}], got {}",
         session.started_at
     );
+}
+
+/// A start time no calendar can hold reads as the Unix epoch rather than
+/// failing the whole listing, which is what `unwrap_or_default` gave the
+/// history view before the time library moved and must still give after.
+#[tokio::test]
+async fn a_row_with_an_unrepresentable_start_time_reads_as_the_epoch() {
+    let dir = tempdir().unwrap();
+    let manager = ScanHistoryManager::new(&dir.path().join("test.db"))
+        .await
+        .unwrap();
+
+    let id = manager
+        .create_session_started_at("batch", "web-01", &[], i64::MAX)
+        .await
+        .unwrap();
+
+    let session = manager.get_session(&id).await.unwrap().unwrap();
+    assert_eq!(session.started_at, i64::MAX, "the row holds what was bound");
+    assert_eq!(session.started_at_utc(), Timestamp::UNIX_EPOCH);
 }

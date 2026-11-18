@@ -18,7 +18,7 @@ hardener-state = { path = "../crates/hardener-state" }
 hardener-compliance = { path = "../crates/hardener-compliance" }
 hardener-distro = { workspace = true }
 hardener-scheduler = { workspace = true }
-hardener-types = { workspace = true }
+hardener-types = { workspace = true, features = ["clock"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { version = "2.11.1", features = [] }

@@ -2150,7 +2150,6 @@ dependencies = [
 name = "hardener-compliance"
 version = "1.9.1"
 dependencies = [
- "chrono",
  "clap",
  "hardener-common",
  "hardener-core",
@@ -2214,10 +2213,10 @@ name = "hardener-scheduler"
 version = "1.9.1"
 dependencies = [
  "async-trait",
- "chrono",
  "dirs",
  "hardener-common",
  "hardener-core",
+ "hardener-types",
  "hex",
  "lettre",
  "libc",
@@ -2242,7 +2241,6 @@ version = "1.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
  "ed25519-dalek",
  "hardener-common",
  "hardener-types",

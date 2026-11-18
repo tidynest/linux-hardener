@@ -8,10 +8,10 @@ use crate::frameworks;
 use crate::profiles;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
 use crate::scan_evidence;
-use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceMapping, ControlStatus};
 use hardener_core::config::scope::{ComplianceConfig, ScopeExclusion};
 use hardener_core::plugin::{Finding, UncheckedCheck};
+use hardener_types::time;
 use hardener_types::{ExceptionOutcome, PluginId, PluginInventory, ScanResult};
 use std::collections::{HashMap, HashSet};
 
@@ -228,7 +228,7 @@ impl ReportGenerator {
         // Every key that resolves to this framework contributes, rather than an
         // arbitrary first match, so two spellings of one framework in the same
         // file do not make the result depend on hash order.
-        let today = Utc::now().date_naive();
+        let today = time::today_utc();
         let framework_id = framework.id();
         let excluded: HashMap<&str, &ScopeExclusion> = self
             .exclusions
@@ -327,7 +327,7 @@ impl ReportGenerator {
         ComplianceReport {
             report_framework: *framework,
             report_profile: self.config.profile,
-            report_generated_at: Utc::now(),
+            report_generated_at: time::now(),
             report_controls: controls,
             report_summary: summary,
             // Every unchecked entry, not only those mapping a control in this

@@ -16,8 +16,8 @@
 
 use super::*;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
-use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceProfile};
+use hardener_types::time;
 
 #[test]
 fn test_pdf_formatter_creates_output() {
@@ -25,7 +25,7 @@ fn test_pdf_formatter_creates_output() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_controls: vec![
             ControlResult {
                 control_id: "1.5.1".to_string(),
@@ -83,7 +83,7 @@ fn two_control_report(third: ControlStatus) -> ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,
     }
@@ -167,7 +167,7 @@ fn report_for(framework: ComplianceFramework) -> ComplianceReport {
         report_framework: framework,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,
     }

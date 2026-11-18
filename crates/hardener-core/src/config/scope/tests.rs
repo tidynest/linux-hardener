@@ -2,11 +2,10 @@
 //! Unit tests for [`scope`](super).
 
 use super::*;
-use chrono::NaiveDate;
 use hardener_types::remote::RemoteHostProfile;
 
-fn day(s: &str) -> NaiveDate {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").expect("test date parses")
+fn day(s: &str) -> Date {
+    s.parse().expect("test date parses")
 }
 
 fn exclusion(review_by: Option<&str>) -> ScopeExclusion {

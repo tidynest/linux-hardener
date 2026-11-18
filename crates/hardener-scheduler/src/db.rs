@@ -3,9 +3,9 @@
 //! Provides persistent storage for scheduled scan sessions, findings,
 //! and notification delivery tracking.
 
-use chrono::{DateTime, Utc};
 use hardener_common::error::{HardeningError, Result};
 use hardener_common::types::Severity;
+use hardener_types::time::{self, Timestamp};
 use serde::{Deserialize, Serialize};
 use sqlx::{
     FromRow, SqlitePool, query_as,
@@ -69,7 +69,7 @@ impl ScanHistoryManager {
         host: &str,
         plugins: &[String],
     ) -> Result<String> {
-        self.create_session_started_at(trigger_type, host, plugins, Utc::now().timestamp())
+        self.create_session_started_at(trigger_type, host, plugins, time::unix_seconds(time::now()))
             .await
     }
 
@@ -118,7 +118,7 @@ impl ScanHistoryManager {
         json_path: Option<&str>,
         hash: Option<&str>,
     ) -> Result<()> {
-        let now = Utc::now().timestamp();
+        let now = time::unix_seconds(time::now());
         let counts = SeverityCounts::from_findings(findings);
 
         // Update session
@@ -154,7 +154,7 @@ impl ScanHistoryManager {
 
     /// Marks a session as failed with an error message.
     pub async fn fail_session(&self, session_id: &str, error: &str) -> Result<()> {
-        let now = Utc::now().timestamp();
+        let now = time::unix_seconds(time::now());
         sqlx::query(
             "UPDATE scan_sessions SET completed_at = ?, status = 'failed', error_message = ?
              WHERE id = ?",
@@ -211,10 +211,10 @@ impl ScanHistoryManager {
             query = query.bind(status);
         }
         if let Some(since) = filter.since {
-            query = query.bind(since.timestamp());
+            query = query.bind(time::unix_seconds(since));
         }
         if let Some(until) = filter.until {
-            query = query.bind(until.timestamp());
+            query = query.bind(time::unix_seconds(until));
         }
         if let Some(limit) = filter.limit {
             query = query.bind(limit);
@@ -267,7 +267,7 @@ impl ScanHistoryManager {
         error: Option<&str>,
     ) -> Result<()> {
         let now = if status == "sent" {
-            Some(Utc::now().timestamp())
+            Some(time::unix_seconds(time::now()))
         } else {
             None
         };
@@ -296,7 +296,7 @@ impl ScanHistoryManager {
     /// Returns the number of deleted sessions.
     pub async fn cleanup(&self, retention_days: u32, retention_count: u32) -> Result<u32> {
         let deleted = if retention_days > 0 {
-            let cutoff = Utc::now().timestamp() - (retention_days as i64 * 86400);
+            let cutoff = time::unix_seconds(time::now()) - (retention_days as i64 * 86400);
             sqlx::query("DELETE FROM scan_sessions WHERE started_at < ?")
                 .bind(cutoff)
                 .execute(&self.pool)
@@ -444,15 +444,15 @@ impl ScanSession {
         )
     }
 
-    /// Returns the session start time as a DateTime.
-    pub fn started_at_utc(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp(self.started_at, 0).unwrap_or_default()
+    /// Returns the session start time as an instant, or the Unix epoch when
+    /// the stored seconds fall outside the range the time module can hold.
+    pub fn started_at_utc(&self) -> Timestamp {
+        time::from_unix_seconds(self.started_at).unwrap_or_default()
     }
 
-    /// Returns the session completion time as a DateTime, if completed.
-    pub fn completed_at_utc(&self) -> Option<DateTime<Utc>> {
-        self.completed_at
-            .and_then(|ts| DateTime::from_timestamp(ts, 0))
+    /// Returns the session completion time as an instant, if completed.
+    pub fn completed_at_utc(&self) -> Option<Timestamp> {
+        self.completed_at.and_then(time::from_unix_seconds)
     }
 
     /// The plugins this scan covered, or the parse error if the stored record
@@ -503,8 +503,8 @@ pub struct ScanFindingRow {
 pub struct SessionFilter {
     pub host: Option<String>,
     pub status: Option<String>,
-    pub since: Option<DateTime<Utc>>,
-    pub until: Option<DateTime<Utc>>,
+    pub since: Option<Timestamp>,
+    pub until: Option<Timestamp>,
     pub limit: Option<u32>,
 }
 

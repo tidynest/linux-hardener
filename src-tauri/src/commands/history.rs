@@ -120,11 +120,10 @@ pub(crate) fn sessions_to_info(
                 .to_string()
             });
             HostSessionInfo {
-                started: s
-                    .started_at_utc()
-                    .with_timezone(&chrono::Local)
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string(),
+                started: hardener_types::time::format_local(
+                    s.started_at_utc(),
+                    hardener_types::time::MINUTE_STAMP,
+                ),
                 status: s.status.clone(),
                 total_findings: s.total_findings,
                 critical: s.critical_count,

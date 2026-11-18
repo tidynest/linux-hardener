@@ -1353,7 +1353,7 @@ const DEFAULT_DB_PATH: &str = "/var/lib/linux-hardener/checkpoints.db";  // hard
 // Structs:
 pub struct AuditLogger { }
 pub struct AuditEntry {
-    pub entry_timestamp: DateTime<Utc>,
+    pub entry_timestamp: Timestamp,
     pub entry_action_type: ActionType,
     pub entry_user: String,
     pub entry_target: String,

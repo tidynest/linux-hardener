@@ -17,11 +17,11 @@ use super::*;
 
 /// A fixed instant, so the boundary cases below name an exact second rather
 /// than racing the clock.
-fn at(second: i64) -> DateTime<Utc> {
-    DateTime::from_timestamp(second, 0).expect("a representable instant")
+fn at(second: i64) -> Timestamp {
+    time::from_unix_seconds(second).expect("a representable instant")
 }
 
-fn entry_at(timestamp: DateTime<Utc>) -> AuditEntry {
+fn entry_at(timestamp: Timestamp) -> AuditEntry {
     AuditEntry::new(
         ActionType::Apply,
         "root".to_string(),
@@ -135,8 +135,9 @@ const PINNED: [(i64, u32, &str); 4] = [
 
 /// The audit log's instant type. A later task changes this body and nothing
 /// else in the pinned tests.
-fn instant(seconds: i64, nanoseconds: u32) -> DateTime<Utc> {
-    DateTime::from_timestamp(seconds, nanoseconds).expect("a representable instant")
+fn instant(seconds: i64, nanoseconds: u32) -> Timestamp {
+    let total = i128::from(seconds) * 1_000_000_000 + i128::from(nanoseconds);
+    Timestamp::from_nanosecond(total).expect("a representable instant")
 }
 
 /// The file is what a 1.9.1 install already wrote to disk, so a build that

@@ -8,9 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-// Re-export chrono types used in reports
-pub use chrono::{DateTime, Utc};
-
 pub mod checkpoint;
 pub mod config_picker;
 pub mod remote;
@@ -1359,7 +1356,8 @@ pub struct ComplianceReport {
     #[serde(default)]
     pub report_profile: ComplianceProfile,
     /// When this report was generated.
-    pub report_generated_at: DateTime<Utc>,
+    #[serde(with = "crate::time::rfc3339")]
+    pub report_generated_at: time::Timestamp,
     /// Individual control check results.
     pub report_controls: Vec<ControlResult>,
     /// Summary statistics for the report.

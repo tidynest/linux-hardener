@@ -25,8 +25,8 @@
 //! | NIST 800-171 | 12 | 32 CFR 170.22: the Affirming Official affirms continuing compliance at completion of an assessment "and annually thereafter", at every CMMC level. This was 36, taken from the certification assessment cycle in the same part, which is how often an *assessment* is repeated and not how often a determination that a control does not apply must be re-examined. Where two published requirements bear on the same question, the annual one binds, and taking the more permissive reading for a mechanism that raises a score was the wrong instinct. |
 //! | ISO 27001, NIST 800-53, HIPAA, GDPR, CIS, STIG | 12 | No published interval. Project default, chosen as the shortest with an official basis anywhere in this table. |
 
-use chrono::{Months, NaiveDate};
 use hardener_types::ComplianceFramework;
+use hardener_types::time::{self, Date};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -63,8 +63,8 @@ pub fn default_review_months(framework: ComplianceFramework) -> u32 {
 /// copies would diverge in the one direction that matters: a verb accepting a
 /// spelling the config layer then rejects writes an exclusion that is silently
 /// inert, which is the defect the control-id refusal exists to prevent.
-pub fn parse_iso_date(value: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()
+pub fn parse_iso_date(value: &str) -> Option<Date> {
+    time::parse_iso_date(value)
 }
 
 /// `user@host:22` or `host:22` without its port, so an operator may write
@@ -138,13 +138,13 @@ impl ScopeExclusion {
     /// There is deliberately no fallback date. Defaulting the base to the day
     /// of the scan made an exclusion with no dates valid on every day forever,
     /// since the comparison reduced to `today <= today + interval`.
-    pub fn review_deadline(&self, framework_id: &str) -> Option<NaiveDate> {
+    pub fn review_deadline(&self, framework_id: &str) -> Option<Date> {
         let framework = ComplianceFramework::from_id(framework_id)?;
         if let Some(explicit) = self.review_by.as_deref() {
             return parse_iso_date(explicit);
         }
         let approved = parse_iso_date(self.approved_date.as_deref()?)?;
-        approved.checked_add_months(Months::new(default_review_months(framework)))
+        time::add_months(approved, default_review_months(framework))
     }
 
     /// Whether this exclusion still applies on `today`.
@@ -153,7 +153,7 @@ impl ScopeExclusion {
     /// before any id is validated; resolving it happens in
     /// [`Self::review_deadline`], and an id that does not resolve makes the
     /// exclusion invalid.
-    pub fn is_valid_on(&self, framework_id: &str, today: NaiveDate) -> bool {
+    pub fn is_valid_on(&self, framework_id: &str, today: Date) -> bool {
         self.review_deadline(framework_id)
             .is_some_and(|deadline| today <= deadline)
     }

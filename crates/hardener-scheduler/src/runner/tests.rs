@@ -332,11 +332,12 @@ const PINNED: [(i64, u32, &str); 4] = [
 
 /// The export's instant type. A later task changes this body and nothing else
 /// in the pinned tests.
-fn instant(seconds: i64, nanoseconds: u32) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::from_timestamp(seconds, nanoseconds).expect("a representable instant")
+fn instant(seconds: i64, nanoseconds: u32) -> Timestamp {
+    let total = i128::from(seconds) * 1_000_000_000 + i128::from(nanoseconds);
+    Timestamp::from_nanosecond(total).expect("a representable instant")
 }
 
-fn export_at(timestamp: chrono::DateTime<chrono::Utc>) -> JsonExport {
+fn export_at(timestamp: Timestamp) -> JsonExport {
     JsonExport {
         host: "example-host".to_string(),
         timestamp,

@@ -791,7 +791,7 @@ fn compliance_report_with_controls(controls: &[(&str, ControlStatus)]) -> Compli
     ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
-        report_generated_at: chrono::Utc::now(),
+        report_generated_at: hardener_types::time::now(),
         report_summary: ComplianceSummary::from_controls(&report_controls),
         report_controls,
         report_coverage_note: None,

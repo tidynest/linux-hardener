@@ -30,8 +30,8 @@
 
 use super::*;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
-use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceProfile, ControlStatus};
+use hardener_types::time;
 
 /// A one-control report for `framework`. The control is identical across
 /// frameworks on purpose: the framework name is then the only thing that
@@ -49,7 +49,7 @@ fn report_for(framework: ComplianceFramework) -> ComplianceReport {
         report_framework: framework,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,
     }

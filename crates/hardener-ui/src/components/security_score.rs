@@ -334,9 +334,9 @@ mod tests {
     /// The summary is computed by [`ComplianceSummary::from_controls`] rather
     /// than written out, so the fixture cannot state a percentage its controls
     /// disagree with - which is the whole defect these tests are about. The
-    /// report is assembled through JSON because `report_generated_at` is a
-    /// `DateTime<Utc>` and this crate has no chrono; that is also the path the
-    /// running application takes, since the UI only ever deserialises reports.
+    /// report is assembled through JSON because that is the path the running
+    /// application takes: the UI only ever deserialises reports, and it reads
+    /// `report_generated_at` through the same serde adaptor the backend writes.
     fn report_of(statuses: &[ControlStatus]) -> ComplianceReport {
         let controls: Vec<ControlResult> = statuses
             .iter()

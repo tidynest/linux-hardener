@@ -16,8 +16,8 @@
 
 use super::*;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
-use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceProfile, ControlStatus};
+use hardener_types::time;
 
 #[test]
 fn test_json_formatter_basic() {
@@ -25,7 +25,7 @@ fn test_json_formatter_basic() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_controls: vec![ControlResult {
             control_id: "1.5.1".to_string(),
             control_title: "Ensure ASLR is enabled".to_string(),
@@ -61,7 +61,7 @@ fn test_json_formatter_pretty() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_controls: vec![],
         report_summary: ComplianceSummary {
             summary_total_controls: 0,
@@ -97,7 +97,7 @@ fn json_names_the_profile_it_rendered() {
         report_framework: ComplianceFramework::STIG,
         report_profile: profile,
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_controls: vec![],
         report_summary: ComplianceSummary {
             summary_total_controls: 0,
@@ -155,7 +155,7 @@ fn the_rendered_json_parses_back_into_the_documented_shape() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,
     };
@@ -193,7 +193,7 @@ fn format_all_emits_one_array_a_consumer_can_parse() {
         report_framework: framework,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_controls: vec![],
         report_summary: ComplianceSummary {
             summary_total_controls: 0,
@@ -231,11 +231,12 @@ const PINNED: [(i64, u32, &str); 4] = [
 
 /// The report's instant type. A later task changes this body and nothing else
 /// in the pinned tests.
-fn instant(seconds: i64, nanoseconds: u32) -> chrono::DateTime<Utc> {
-    chrono::DateTime::from_timestamp(seconds, nanoseconds).expect("a representable instant")
+fn instant(seconds: i64, nanoseconds: u32) -> time::Timestamp {
+    let total = i128::from(seconds) * 1_000_000_000 + i128::from(nanoseconds);
+    time::Timestamp::from_nanosecond(total).expect("a representable instant")
 }
 
-fn empty_report_at(generated_at: chrono::DateTime<Utc>) -> ComplianceReport {
+fn empty_report_at(generated_at: time::Timestamp) -> ComplianceReport {
     ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),

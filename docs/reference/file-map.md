@@ -14,11 +14,11 @@ This document lists all source files with their purpose and key exports.
 | `src/checkpoint.rs` | Checkpoint and scan-session types shared by the Tauri backend and the Leptos frontend. Hand-mirrored in `hardener-ui/src/types.rs` until #157; two fields fell through that copy (`system_unreadable` in #156, `checkpoint_verified` in #157) because the mirror sat outside the tree `validate_gui_mock_fixtures.py` resolves | `CheckpointInfo`, `CheckpointList`, `CheckpointDetail`, `CheckpointFileInfo`, `ScanSessionInfo` |
 | `src/config_picker.rs` | Config file picker types | `ConfigSummary`, WASM-safe validation results for config file picker |
 | `src/remote.rs` | Remote SSH scanning types | `RemoteHostProfile`, `HostsConfig`, `RemoteConnectionStatus`, `RemoteConnectionInfo` |
-| `src/time.rs` | The only module that names the time library. Writes and reads timestamps in the bytes chrono gave 1.9.1, through the `rfc3339` serde adaptor and the named strftime patterns; the clock and the machine's time zone sit behind the `clock` feature, which the WASM interface leaves off | `Timestamp`, `Date`, `Zoned`, `REPORT_STAMP`, `FILE_STAMP_UNDERSCORE`, `FILE_STAMP_HYPHEN`, `from_unix_seconds()`, `unix_seconds()`, `date_utc()`, `format_utc()`, `parse_iso_date()`, `add_months()`, `rfc3339`, `rfc3339::option`; with `clock`: `now()`, `today_utc()`, `today_local()`, `format_local()`, `now_utc_zoned()` |
+| `src/time.rs` | The only module that names the time library. Writes and reads timestamps in the bytes chrono gave 1.9.1, through the `rfc3339` serde adaptor and the named strftime patterns; the clock and the machine's time zone sit behind the `clock` feature, which the WASM interface leaves off | `Timestamp`, `Date`, `Zoned`, `REPORT_STAMP`, `FILE_STAMP_UNDERSCORE`, `FILE_STAMP_HYPHEN`, `MINUTE_STAMP`, `from_unix_seconds()`, `unix_seconds()`, `date_utc()`, `format_utc()`, `parse_iso_date()`, `add_months()`, `rfc3339`, `rfc3339::option`; with `clock`: `now()`, `today_utc()`, `today_local()`, `format_local()`, `now_utc_zoned()` |
 | `src/scheduler.rs` | Scheduler UI types | `SchedulerUiConfig`, `NotificationUiConfig`, `EmailUiConfig`, `WebhookUiConfig` (converted to the on-disk endpoint list by the private `WebhookWire`), `TestNotificationResult` |
 | `src/tests.rs` | Unit tests for the crate root, seven modules split out of `lib.rs` | Test-only; a child of the crate root, so it still reaches private items |
 | `src/remote/tests.rs` | Unit tests for `src/remote.rs` | Test-only; `super` resolves to `crate::remote`, so its imports carried across unchanged |
-| `src/time/tests.rs` | Unit tests for `src/time.rs`. Every literal is what chrono gave for the same input, checked side by side before chrono left the crate. The crate takes itself as a dev-dependency with `clock` on, so the workspace run tests the clock functions; the local-time test runs this binary as a child under each `TZ` it needs, so it never depends on the host's zone | Test-only; names no chrono API, because chrono leaves this crate before the module's callers move |
+| `src/time/tests.rs` | Unit tests for `src/time.rs`. Every literal is what chrono gave for the same input, checked side by side against chrono 0.4.42. The crate takes itself as a dev-dependency with `clock` on, so the workspace run tests the clock functions; the local-time test runs this binary as a child under each `TZ` it needs, so it never depends on the host's zone | Test-only; names no chrono API, so the tests survive chrono's removal from this crate |
 | `src/scheduler/tests.rs` | Unit tests for `src/scheduler.rs` | Test-only; `super` resolves to `crate::scheduler`, so the private webhook wire types stay reachable. Uses `toml` as a dev-dependency, because the webhook config's subject is the shape it takes in a TOML file |
 
 ### Key Types (lib.rs)
@@ -392,7 +392,7 @@ are the whole public surface now.
 | `src/notification/dispatcher.rs` | Notification coordinator | `NotificationDispatcher` |
 | `src/systemd.rs` | Systemd unit file generation | `SystemdGenerator`, `cron_to_calendar()`, `service_name()`, `timer_name()` |
 | `src/config/tests.rs` | Unit tests for `src/config.rs` | Test-only; `super` resolves to `crate::config`, so its imports carried across unchanged |
-| `src/db/tests.rs` | Unit tests for `src/db.rs`, 15 tests over the host-aware scan history | Test-only; `super` resolves to `crate::db`, so its imports carried across unchanged |
+| `src/db/tests.rs` | Unit tests for `src/db.rs`, 16 tests over the host-aware scan history | Test-only; `super` resolves to `crate::db`, so its imports carried across unchanged |
 | `src/json_store/tests.rs` | Unit tests for `src/json_store.rs` | Test-only; `super` resolves to `crate::json_store`, so its imports carried across unchanged |
 | `src/runner/tests.rs` | Unit tests for `src/runner.rs` | Test-only; `super` resolves to `crate::runner`, so its imports carried across unchanged |
 | `src/daemon/tests.rs` | Unit tests for `src/daemon.rs` | Test-only; `super` resolves to `crate::daemon`, so its imports carried across unchanged |
@@ -1000,14 +1000,17 @@ purpose-named directories.
 Unit tests sit beside the source file they exercise, in a `#[cfg(test)]` module of their own file rather than inside it: `foo.rs` is accompanied by `foo/tests.rs`, and a `foo/mod.rs` by `foo/tests.rs` in the directory it already owns. They are still child modules, so they still read private items; only their location changed. Integration tests, which see the public API only, remain in each crate's `tests/` directory. The **Unit Tests** column below names the source files under test, not the files the tests live in.
 
 The counts below are `#[test]` and `#[tokio::test]` annotations counted in the
-tree on **2026-08-28**, not a run total: a run also executes doctests and, for
-`hardener-ui`, `wasm_bindgen_test` cases that no annotation count here covers.
-Treat them as the size of each crate's declared test surface, and read the
-workspace run itself for what passed.
+tree, not a run total: a run also executes doctests and, for `hardener-ui`,
+`wasm_bindgen_test` cases that no annotation count here covers. The table was
+counted whole on **2026-08-28**. Since then each commit that adds or removes
+tests has moved its own crate's row, and `scripts/validate/validate_file_map.py`
+compares every row with the tree on each run. Treat them as the size of each
+crate's declared test surface, and read the workspace run itself for what
+passed.
 
-The table covers the ten crates under `crates/` and sums to 2239. The eleventh
+The table covers the ten crates under `crates/` and sums to 2240. The eleventh
 workspace member, `src-tauri`, carries 192 more, which is why the tree total the
-evidence ledger records is 2431 and not this table's sum.
+evidence ledger records is 2432 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -1015,7 +1018,7 @@ evidence ledger records is 2431 and not this table's sum.
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, `output/mod.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 140 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs`, `checkpoint.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 155 |
 | hardener-distro | `lib.rs` | - | 5 |
-| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 108 |
+| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 109 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 334 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 875 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 246 |

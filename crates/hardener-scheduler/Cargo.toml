@@ -12,6 +12,7 @@ description = "Scheduled scanning daemon for Linux Hardener"
 # Workspace crates
 hardener-common  = { workspace = true }
 hardener-core    = { workspace = true, features = ["system"] }
+hardener-types   = { workspace = true, features = ["clock"] }
 
 # Async runtime
 async-trait = { workspace = true }
@@ -33,9 +34,6 @@ lettre = { version = "0.11.24", default-features = false, features = ["tokio1", 
 serde      = { workspace = true }
 serde_json = { workspace = true }
 toml       = { workspace = true }
-
-# Date/time
-chrono = { workspace = true, features = ["serde"] }
 
 # Logging
 tracing = { workspace = true }

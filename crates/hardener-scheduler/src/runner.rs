@@ -15,6 +15,7 @@ use hardener_common::{
     types::Severity,
 };
 use hardener_core::{ConfigLoader, Context, HardenerConfig, PluginManager, ScanResult};
+use hardener_types::time::{self, Timestamp};
 use serde::Serialize;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -169,7 +170,8 @@ pub struct ScanRunner {
 #[derive(Clone, Debug, Serialize)]
 struct JsonExport {
     host: String,
-    timestamp: chrono::DateTime<chrono::Utc>,
+    #[serde(with = "hardener_types::time::rfc3339")]
+    timestamp: Timestamp,
     min_severity: String,
     plugins_scanned: Vec<String>,
     total_findings: usize,
@@ -484,7 +486,7 @@ impl ScanRunner {
     ) -> JsonExport {
         JsonExport {
             host: self.host.clone(),
-            timestamp: chrono::Utc::now(),
+            timestamp: time::now(),
             min_severity: self.min_severity.to_string(),
             plugins_scanned: scan_results
                 .iter()

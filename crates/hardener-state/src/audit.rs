@@ -14,8 +14,8 @@
 //! the whole chain from genesis.
 
 use crate::HashChain;
-use chrono::{DateTime, Utc};
 use hardener_common::error::{HardeningError, Result};
+use hardener_types::time::{self, Timestamp};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use tokio::{
@@ -59,7 +59,8 @@ pub enum ActionResult {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AuditEntry {
     /// When the action occurred (UTC)
-    pub entry_timestamp: DateTime<Utc>,
+    #[serde(with = "hardener_types::time::rfc3339")]
+    pub entry_timestamp: Timestamp,
     /// Type of action performed
     pub entry_action_type: ActionType,
     /// User who performed the action
@@ -87,7 +88,7 @@ impl AuditEntry {
         user: String,
         target: String,
         hash: Vec<u8>,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     ) -> AuditEntry {
         Self {
             entry_timestamp: timestamp,
@@ -114,7 +115,7 @@ impl AuditEntry {
         target: String,
         error_message: String,
         hash: Vec<u8>,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     ) -> AuditEntry {
         let mut details = HashMap::new();
         details.insert("error".to_string(), error_message);
@@ -146,11 +147,11 @@ pub struct QueryFilter {
     /// Filter by action type (None means no filter)
     pub filter_action_type: Option<ActionType>,
     /// Filter by maximum timestamp (inclusive)
-    pub filter_end_time: Option<DateTime<Utc>>,
+    pub filter_end_time: Option<Timestamp>,
     /// Filter by action result (None means no filter)
     pub filter_result: Option<ActionResult>,
     /// Filter by minimum timestamp (inclusive)
-    pub filter_start_time: Option<DateTime<Utc>>,
+    pub filter_start_time: Option<Timestamp>,
     /// Filter by user (None means no filter)
     pub filter_user: Option<String>,
 }
@@ -174,13 +175,13 @@ impl QueryFilter {
     }
 
     /// Filters by time range (start).
-    pub fn with_start_time(mut self, start_time: DateTime<Utc>) -> QueryFilter {
+    pub fn with_start_time(mut self, start_time: Timestamp) -> QueryFilter {
         self.filter_start_time = Some(start_time);
         self
     }
 
     /// Filters by time range (end).
-    pub fn with_end_time(mut self, end_time: DateTime<Utc>) -> QueryFilter {
+    pub fn with_end_time(mut self, end_time: Timestamp) -> QueryFilter {
         self.filter_end_time = Some(end_time);
         self
     }
@@ -319,7 +320,7 @@ impl AuditLogger {
         let mut chain = self.hash_chain.lock().await;
 
         // Compute timestamp ONCE for both hash and entry
-        let now = Utc::now();
+        let now = time::now();
 
         // Routed through the same helper the details-bearing writer and
         // verification use, so one function is the only definition of what a
@@ -411,7 +412,7 @@ impl AuditLogger {
         }
 
         let mut chain = self.hash_chain.lock().await;
-        let now = Utc::now();
+        let now = time::now();
 
         let serialised_data = Self::hashable(now, action_type, &user, &target, result, &details)?;
         let hash = chain.next_hash(&serialised_data);
@@ -455,7 +456,7 @@ impl AuditLogger {
     /// `a_v1_5_1_entry_still_verifies` holds a line emitted by the pre-change
     /// code and goes red if the guard is removed.
     fn hashable(
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
         action_type: ActionType,
         user: &str,
         target: &str,
@@ -464,7 +465,7 @@ impl AuditLogger {
     ) -> Result<Vec<u8>> {
         if details.is_empty() {
             return Ok(serde_json::to_vec(&(
-                timestamp.timestamp(),
+                time::unix_seconds(timestamp),
                 action_type,
                 user,
                 target,
@@ -476,7 +477,7 @@ impl AuditLogger {
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
         Ok(serde_json::to_vec(&(
-            timestamp.timestamp(),
+            time::unix_seconds(timestamp),
             action_type,
             user,
             target,
@@ -506,10 +507,10 @@ impl AuditLogger {
         let mut chain = self.hash_chain.lock().await;
 
         // Compute timestamp ONCE for both hash and entry
-        let now = Utc::now();
+        let now = time::now();
 
         let entry_data = (
-            now.timestamp(),
+            time::unix_seconds(now),
             action_type,
             &user,
             &target,
@@ -600,7 +601,7 @@ impl AuditLogger {
                     .unwrap_or("");
 
                 serde_json::to_vec(&(
-                    entry.entry_timestamp.timestamp(),
+                    time::unix_seconds(entry.entry_timestamp),
                     entry.entry_action_type,
                     &entry.entry_user,
                     &entry.entry_target,

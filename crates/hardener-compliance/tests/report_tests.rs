@@ -1,5 +1,5 @@
-use chrono::Utc;
 use hardener_compliance::{ComplianceReport, ComplianceSummary, ControlResult};
+use hardener_types::time;
 use hardener_types::{ComplianceFramework, ComplianceProfile, ControlStatus};
 
 fn make_control(id: &str, status: ControlStatus) -> ControlResult {
@@ -133,7 +133,7 @@ fn test_compliance_report_serialization() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_controls: vec![make_control("1.1", ControlStatus::Pass)],
         report_summary: ComplianceSummary {
             summary_total_controls: 1,

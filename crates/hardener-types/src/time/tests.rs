@@ -8,8 +8,8 @@
 //! Unit tests for [`time`](super).
 //!
 //! Every literal here is what chrono gave for the same input on 1.9.1, checked
-//! side by side before chrono left this crate, so these tests hold the module
-//! to the bytes the tool has always written and read.
+//! side by side against chrono 0.4.42, so these tests hold the module to the
+//! bytes the tool has always written and read.
 
 use super::*;
 use jiff::civil::date;
@@ -234,13 +234,17 @@ fn adding_months_stops_at_the_end_of_a_short_month() {
 
 #[test]
 fn the_named_formats_match_their_pinned_text() {
-    let instant = instant(1767225600, 0);
-    assert_eq!(format_utc(instant, REPORT_STAMP), "2026-01-01 00:00:00 UTC");
+    let new_year = instant(1767225600, 0);
     assert_eq!(
-        format_utc(instant, FILE_STAMP_UNDERSCORE),
+        format_utc(new_year, REPORT_STAMP),
+        "2026-01-01 00:00:00 UTC"
+    );
+    assert_eq!(
+        format_utc(new_year, FILE_STAMP_UNDERSCORE),
         "20260101_000000"
     );
-    assert_eq!(format_utc(instant, FILE_STAMP_HYPHEN), "20260101-000000");
+    assert_eq!(format_utc(new_year, FILE_STAMP_HYPHEN), "20260101-000000");
+    assert_eq!(format_utc(new_year, MINUTE_STAMP), "2026-01-01 00:00");
 
     // Every field distinct, so a swapped pair of specifiers shows.
     let distinct = from_unix_seconds(1772888645).unwrap();
@@ -253,6 +257,7 @@ fn the_named_formats_match_their_pinned_text() {
         "20260307_130405"
     );
     assert_eq!(format_utc(distinct, FILE_STAMP_HYPHEN), "20260307-130405");
+    assert_eq!(format_utc(distinct, MINUTE_STAMP), "2026-03-07 13:04");
 }
 
 #[test]

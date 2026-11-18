@@ -444,7 +444,7 @@ async fn test_query_filter_by_time_range() {
 
     // Wait a bit to create time separation
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    let middle_time = chrono::Utc::now();
+    let middle_time = hardener_types::time::now();
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // Log second entry (after middle_time)

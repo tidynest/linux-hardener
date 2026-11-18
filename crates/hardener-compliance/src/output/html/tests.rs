@@ -16,8 +16,8 @@
 
 use super::*;
 use crate::report::{ComplianceReport, ComplianceSummary, ControlResult};
-use chrono::Utc;
 use hardener_common::types::{ComplianceFramework, ComplianceProfile};
+use hardener_types::time;
 
 #[test]
 fn test_html_formatter_basic() {
@@ -25,7 +25,7 @@ fn test_html_formatter_basic() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_controls: vec![ControlResult {
             control_id: "1.5.1".to_string(),
             control_title: "Ensure ASLR is enabled".to_string(),
@@ -71,7 +71,7 @@ fn passing_control_shows_the_deviation_its_exception_documents() {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,
     };
@@ -109,7 +109,7 @@ fn report_with_one_exclusion() -> ComplianceReport {
         report_framework: ComplianceFramework::CIS,
         report_profile: ComplianceProfile::default(),
         report_coverage_note: None,
-        report_generated_at: Utc::now(),
+        report_generated_at: time::now(),
         report_summary: ComplianceSummary::from_controls(&controls),
         report_controls: controls,
     }
@@ -184,7 +184,7 @@ fn several_frameworks_render_as_one_document() {
             report_framework: framework,
             report_profile: ComplianceProfile::default(),
             report_coverage_note: None,
-            report_generated_at: Utc::now(),
+            report_generated_at: time::now(),
             report_summary: ComplianceSummary::from_controls(&controls),
             report_controls: controls,
         }
