@@ -72,6 +72,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   functions marked unwritten bytes as initialised when given an empty buffer.
   It reaches the binaries through `tempfile`, and the fuzz lockfile moves from
   1.1.4 to the same version.
+- **`lettre` moves from 0.11.22 to 0.11.24 for six advisories in its SMTP
+  client, RUSTSEC-2026-0560 to RUSTSEC-2026-0565.** It sends the scheduler's
+  email notifications. With `smtp_tls = true`, the default, the connection
+  starts in cleartext and upgrades with `STARTTLS`, and three of the six apply
+  to that path: someone between the host and the mail server could forge the
+  server's replies, so a rejected notification looked delivered
+  (RUSTSEC-2026-0560), crash the sending task with an `EHLO` reply line of
+  white space (RUSTSEC-2026-0562), or send a reply that never ends until
+  memory ran out (RUSTSEC-2026-0565). The mail server itself could do the
+  last two under either setting. The other three need input the project does
+  not take from outside: the sender and the recipients come from the
+  operator's own configuration, and the body is a `String`, whose line endings
+  `lettre` converts before sending. The manifest's minimum moves to 0.11.24
+  too, so no build can resolve an affected version. `email-encoding` moves to
+  0.4.3 with it and brings in `base64` 0.23.1. The fuzz lockfile never carried
+  `lettre`.
 - **`pin-utils` leaves the lockfile, for RUSTSEC-2026-0441.** Its repository
   was archived on 2026-10-01, so it will get no more releases. `futures-util`
   0.3.31 and `hyper` 1.8.1 pulled it in, and both dropped it later:
