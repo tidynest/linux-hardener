@@ -1737,24 +1737,17 @@ in `build-mode: none`, on every push and pull request to `main` and on a schedul
 (Mondays, 06:00 UTC). It has no local reproduction: results go to the
 repository's security tab.
 
-### advisories.yml (weekly, by hand, and on pull requests that change the watch)
+### advisories.yml (weekly, and by hand)
 
 ```bash
 cargo audit
 cargo audit --file fuzz/Cargo.lock
-./scripts/test/test-rustsec-2026-0459-watch.sh
-./scripts/deps/watch-rustsec-2026-0459.sh
 ```
 
 The same two audits as `ci.yml`, on Mondays at 06:23 UTC, so an advisory
 published in a week without pushes fails a run that week instead of waiting
-for the next push. The other job is temporary, for #188: the watch exits 1
-once a released `sqlx` accepts a `libsqlite3-sys` that fixes RUSTSEC-2026-0459,
-or once the review date in `.cargo/audit.toml` has passed, and 2 when it could
-not ask the registry at all. Its test runs offline against a stand-in `cargo`.
-A pull request that changes the watch, its test or the workflow file runs the
-watch job as well, so an edit to them is tested before it merges; the audit job
-skips pull requests, since `ci.yml` already audits both lockfiles there.
+for the next push. It does not run on pull requests, since `ci.yml` already
+audits both lockfiles there.
 GitHub sends a failed scheduled run's notification to whoever last modified the
 cron line, so after the workflow lands, the maintainer's own commit should be
 the last to touch it, and one run by hand shows where a failure is reported.

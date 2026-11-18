@@ -10,7 +10,7 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 ### Prerequisites
 
-- Rust 1.88 or later
+- Rust 1.94 or later
 - [trunk](https://trunkrs.dev) and the `wasm32-unknown-unknown` target, for the desktop crate
 - Linux system (for full functionality testing)
 - Git
@@ -378,4 +378,4 @@ By contributing, you agree that your contributions will be licensed under the Ap
 
 Thank you for contributing to Linux Hardener!
 
-**Last Updated**: 2026-10-30
+**Last Updated**: 2026-11-15

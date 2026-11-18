@@ -853,7 +853,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 |------|---------|
 | `.github/workflows/ci.yml` | GitHub Actions: check, test, clippy, fmt, security audit of both lockfiles, WASM check and lint, desktop check/clippy/test, root-gated integration tests, fuzz build, MSRV, build |
 | `.github/workflows/release.yml` | GitHub Actions: multi-target builds, GitHub releases on tag push |
-| `.github/workflows/advisories.yml` | GitHub Actions, weekly and by hand: `cargo audit` on both lockfiles between pushes, and the temporary RUSTSEC-2026-0459 watch (#188), which also runs on pull requests that change the watch |
+| `.github/workflows/advisories.yml` | GitHub Actions, weekly and by hand: `cargo audit` on both lockfiles between pushes |
 
 ---
 
@@ -898,8 +898,6 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | `scripts/validate/validate_contrast.py` | Colour contrast validator: the static half of contrast checking. Weighs every foreground and background pair `crates/hardener-ui/styles.css` declares together in one rule, across all seven themes, translucent fills included, each `rgba()` composited over every opaque `--bg-*` surface the theme declares and scored on the best of those ratios so that a failure holds whatever the real ancestor turns out to be. `--explain <selector>` prints every theme's figure for one pair instead of validating, and for an alpha background prints the spread from worst surface to best with each named, so a rendered reading from the browser half can be compared against what this file actually computes rather than against a number quoted from prose. Deliberately not every token against every surface. Disjoint from `gui-tests/tests/contrast.spec.js` only for OPAQUE declared fills, which this file weighs alone because they are fully determined on paper; a translucent fill is weighed by both, this one reporting the best surface available and the browser the one that actually painted. The boundary is `browserOwnsPairing` in `gui-tests/tests/contrast-math.js` |
 | `scripts/validate/update_all_docs.py` | Batch documentation updater |
 | `scripts/release/release.sh` | Automated version bumping and release |
-| `scripts/deps/watch-rustsec-2026-0459.sh` | Temporary watch for #188: asks `cargo generate-lockfile` whether any released `sqlx` accepts a `libsqlite3-sys` that fixes RUSTSEC-2026-0459. Exits 0 while blocked, 1 once a release takes the fix or the review date passes, 2 when it could not ask |
-| `scripts/test/test-rustsec-2026-0459-watch.sh` | Offline unit test of that watch against a stand-in `cargo`: each of its three answers, a passed review date and a missing `cargo`, and that a registry failure is never read as still blocked |
 | `scripts/dev/tauri-dev.sh` | Tauri development launcher |
 | `scripts/test/full-test-suite.sh` | Complete validation suite, 28 sections recording 149 checks on a booted container under `--apply`. `suite_section_sizes` declares what each section records and `require_expected_total` refuses a run of the wrong size |
 | `scripts/test/differential-suite.sh` | Differential harness: applies hardening, then asks `sshd -T`, `chage -l` and `stat -c %a` what the system enforces and compares that against `scan` (`--self-test` runs anywhere) |

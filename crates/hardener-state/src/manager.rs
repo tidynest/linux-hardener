@@ -120,8 +120,26 @@ enum ContentPolicy {
 /// `NOT EXISTS` rather than `NOT IN`: the latter yields nothing at all if the
 /// sub-select ever produces a NULL, which would silently report a clean
 /// database.
-const ORPHAN_PREDICATE: &str = "NOT EXISTS (SELECT 1 FROM checkpoints \
-                                WHERE checkpoints.id = file_states.checkpoint_id)";
+///
+/// A macro rather than a `const`, so that `concat!` can build both statements
+/// at compile time. They stay `&'static str`, which sqlx 0.9 accepts as SQL
+/// without an `AssertSqlSafe`, because no runtime text can be part of them.
+macro_rules! orphan_predicate {
+    () => {
+        "NOT EXISTS (SELECT 1 FROM checkpoints \
+         WHERE checkpoints.id = file_states.checkpoint_id)"
+    };
+}
+
+/// Counts the orphaned file rows, and the checkpoints they name.
+const COUNT_ORPHANED_FILE_STATES: &str = concat!(
+    "SELECT COUNT(*), COUNT(DISTINCT checkpoint_id) FROM file_states WHERE ",
+    orphan_predicate!()
+);
+
+/// Removes the orphaned file rows.
+const DELETE_ORPHANED_FILE_STATES: &str =
+    concat!("DELETE FROM file_states WHERE ", orphan_predicate!());
 
 /// A count of the file rows no checkpoint owns.
 ///
@@ -946,10 +964,7 @@ impl CheckpointManager {
     /// database carried across a version that did not do that, from one edited
     /// outside this tool, or from a copy taken mid-write.
     pub async fn orphaned_file_states(&self) -> Result<OrphanedFileStates> {
-        let sql = format!(
-            "SELECT COUNT(*), COUNT(DISTINCT checkpoint_id) FROM file_states WHERE {ORPHAN_PREDICATE}"
-        );
-        let row = sqlx::query(&sql)
+        let row = sqlx::query(COUNT_ORPHANED_FILE_STATES)
             .fetch_one(&self.db_pool)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;
@@ -964,8 +979,7 @@ impl CheckpointManager {
     /// Counting and removing share one predicate, so a repair cannot reach a
     /// row its own report did not offer to remove.
     pub async fn remove_orphaned_file_states(&self) -> Result<u64> {
-        let sql = format!("DELETE FROM file_states WHERE {ORPHAN_PREDICATE}");
-        let removed = sqlx::query(&sql)
+        let removed = sqlx::query(DELETE_ORPHANED_FILE_STATES)
             .execute(&self.db_pool)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;

@@ -433,10 +433,15 @@ impl ScanHistoryManager {
         let placeholders: Vec<&str> = keep_ids.iter().map(|_| "?").collect();
         let in_clause = placeholders.join(", ");
 
-        // Delete sessions not in keep list (CASCADE will delete results and findings)
-        let query = format!("DELETE FROM scan_sessions WHERE id NOT IN ({})", in_clause);
+        // Delete sessions not in keep list (CASCADE will delete results and findings).
+        // Not injectable: the only text formatted in is the `?` placeholders
+        // built above, one per id, and the ids themselves are bound.
+        let query = sqlx::AssertSqlSafe(format!(
+            "DELETE FROM scan_sessions WHERE id NOT IN ({})",
+            in_clause
+        ));
 
-        let mut query_builder = sqlx::query(&query);
+        let mut query_builder = sqlx::query(query);
         for id in &keep_ids {
             query_builder = query_builder.bind(id);
         }

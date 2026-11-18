@@ -911,14 +911,11 @@ write, as the default is. Two things can put a file that you, the desktop user,
 can write in that position: the desktop's deep scan passes the config chosen in
 the app to the root CLI, and a root run that keeps your `HOME` or
 `XDG_CONFIG_HOME` (such as `sudo -E`) reads this section from your own
-`~/.config/linux-hardener/config.toml`, as described above. Until the bundled
-SQLite is updated (RUSTSEC-2026-0459, issue #188), a database and `-wal` pair
-that software running as your user planted can make SQLite return stale process
-memory. On a machine where such software may run, leave the desktop's config
-field empty or choose a file under `/etc/linux-hardener/` before a deep scan,
-and run the CLI as root with a clean environment (plain `sudo` or
-`su --login`). See
-[SECURITY.md](../../SECURITY.md#rustsec-2026-0459-bundled-sqlite---accepted-until-sqlx-can-take-the-fix).
+`~/.config/linux-hardener/config.toml`, as described above. On 1.9.1 and
+earlier this matters more, because their bundled SQLite can return stale
+process memory from a planted database and `-wal` pair (RUSTSEC-2026-0459). See
+[SECURITY.md](../../SECURITY.md#rustsec-2026-0459-bundled-sqlite---fixed-after-191)
+for what to do until you upgrade.
 
 ### [scheduler.notifications]
 

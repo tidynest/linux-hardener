@@ -200,7 +200,9 @@ impl ScanHistoryManager {
             sql.push_str(" LIMIT ?");
         }
 
-        let mut query = query_as::<_, ScanSession>(&sql);
+        // Not injectable: every fragment appended above is a literal, and each
+        // filter value is bound below rather than formatted in.
+        let mut query = query_as::<_, ScanSession>(sqlx::AssertSqlSafe(sql));
 
         if let Some(ref host) = filter.host {
             query = query.bind(host);

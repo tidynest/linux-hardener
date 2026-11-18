@@ -34,6 +34,15 @@ async fn bare_pool(path: &std::path::Path) -> sqlx::SqlitePool {
         .expect("open a bare pool")
 }
 
+/// Marks a statement these tests built with `format!` as audited for sqlx.
+///
+/// Every name formatted in comes from [`MIGRATIONS`] or from a literal in this
+/// file, and DDL takes no bound identifiers, so there is nothing to bind
+/// instead. Values are bound wherever SQLite allows it.
+fn audited(statement: String) -> sqlx::AssertSqlSafe<String> {
+    sqlx::AssertSqlSafe(statement)
+}
+
 #[tokio::test]
 async fn checkpoints_pool_uses_wal_journal() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -239,10 +248,10 @@ async fn two_openers_cannot_both_attempt_one_migration() {
 
     {
         let pool = bare_pool(&db).await;
-        sqlx::query(&format!(
+        sqlx::query(audited(format!(
             "ALTER TABLE {} DROP COLUMN {}",
             migration.table, migration.column
-        ))
+        )))
         .execute(&pool)
         .await
         .expect("age the database past the column");
@@ -263,10 +272,10 @@ async fn two_openers_cannot_both_attempt_one_migration() {
     };
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    sqlx::query(&format!(
+    sqlx::query(audited(format!(
         "ALTER TABLE {} ADD COLUMN {}",
         migration.table, migration.ddl
-    ))
+    )))
     .execute(&mut *holder)
     .await
     .expect("the other process adds the column");
@@ -288,12 +297,12 @@ async fn two_openers_cannot_both_attempt_one_migration() {
 
 /// How many columns of `table` are named `column`.
 async fn column_count(pool: &sqlx::SqlitePool, table: &str, column: &str) -> i64 {
-    sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'"
-    ))
-    .fetch_one(pool)
-    .await
-    .expect("count a column")
+    sqlx::query_scalar("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?")
+        .bind(table)
+        .bind(column)
+        .fetch_one(pool)
+        .await
+        .expect("count a column")
 }
 
 /// Inserts one row into `table`, filling in every column that demands a value.
@@ -310,10 +319,11 @@ async fn insert_placeholder_row(pool: &sqlx::SqlitePool, table: &str) {
     // ponytail: assumes every table has at least one such column, which holds
     // for the whole schema. One that has none fails here as a syntax error
     // naming the table, rather than silently inserting nothing.
-    let required: Vec<(String, String)> = sqlx::query_as(&format!(
-        "SELECT name, type FROM pragma_table_info('{table}') \
-         WHERE \"notnull\" = 1 AND dflt_value IS NULL"
-    ))
+    let required: Vec<(String, String)> = sqlx::query_as(
+        "SELECT name, type FROM pragma_table_info(?) \
+         WHERE \"notnull\" = 1 AND dflt_value IS NULL",
+    )
+    .bind(table)
     .fetch_all(pool)
     .await
     .expect("read the table shape");
@@ -328,11 +338,11 @@ async fn insert_placeholder_row(pool: &sqlx::SqlitePool, table: &str) {
         })
         .collect();
 
-    sqlx::query(&format!(
+    sqlx::query(audited(format!(
         "INSERT INTO {table} ({}) VALUES ({})",
         names.join(", "),
         values.join(", ")
-    ))
+    )))
     .execute(pool)
     .await
     .unwrap_or_else(|e| panic!("insert a placeholder row into {table}: {e}"));
@@ -376,7 +386,7 @@ async fn every_migration_restores_its_column() {
         {
             let pool = bare_pool(&db).await;
             insert_placeholder_row(&pool, table).await;
-            sqlx::query(&format!("ALTER TABLE {table} DROP COLUMN {column}"))
+            sqlx::query(audited(format!("ALTER TABLE {table} DROP COLUMN {column}")))
                 .execute(&pool)
                 .await
                 .unwrap_or_else(|e| panic!("drop {table}.{column} to age the database: {e}"));
@@ -397,10 +407,11 @@ async fn every_migration_restores_its_column() {
             "init_db must add {table}.{column} back"
         );
 
-        let value: Option<String> = sqlx::query_scalar(&format!("SELECT {column} FROM {table}"))
-            .fetch_one(&pool)
-            .await
-            .unwrap_or_else(|e| panic!("read {table}.{column} back: {e}"));
+        let value: Option<String> =
+            sqlx::query_scalar(audited(format!("SELECT {column} FROM {table}")))
+                .fetch_one(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("read {table}.{column} back: {e}"));
         assert_eq!(
             value.as_deref(),
             absent,

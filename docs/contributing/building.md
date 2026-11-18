@@ -3,12 +3,21 @@
 Commands for compiling the CLI, desktop GUI, and WASM frontend.
 
 The workspace is on Rust **edition 2024** (`Cargo.toml`, `workspace.package`) and
-needs a toolchain of **1.88 or newer**, declared as `rust-version = "1.88"`
+needs a toolchain of **1.94 or newer**, declared as `rust-version = "1.94"`
 beside the edition and inherited by every member, so cargo refuses an older
 toolchain with a message naming the version rather than letting it fail later as
 a compiler error. The README's rust badge says the same
 (`scripts/badges/generate.js`) and `validate_badges.py` holds it to the declared
 value.
+
+**1.94 comes from `sqlx`, not from the language.** The workspace moved to the
+`sqlx` 0.9 line for #188, because only that line can take the `libsqlite3-sys`
+release that fixes RUSTSEC-2026-0459, and every 0.9 release declares
+`rust-version = "1.94.0"`. The sqlx FAQ fixes that figure for the whole 0.9
+cycle, so it will not drop in a patch release. On 1.93 cargo stops before
+compiling anything, naming the workspace crates and `sqlx` with the version
+each needs. The code itself still needs only 1.88, for the reason below, so
+the floor can come down again only if `sqlx` does.
 
 **The figure is measured rather than inferred**, which it was not before
 2026-08-05. It used to read 1.85, on the reasoning that edition 2024 stabilised
@@ -24,8 +33,8 @@ continuation of a chain rather than a chain apiece. Let-chains stabilised in
 **1.88**: 1.87 rejects them with
 `error[E0658]: 'let' expressions in this position are unstable`, and 1.88 accepts
 them. `cargo +1.88 check --workspace --all-targets` then exits 0 over the whole
-tree, desktop and WASM crates included, so 1.88 is the floor exactly and not just
-a lower bound.
+tree, desktop and WASM crates included, so 1.88 was the floor exactly and not
+just a lower bound until `sqlx` 0.9 raised it.
 
 The `msrv` job in `.github/workflows/ci.yml` builds on the declared version on
 every push and pull request, which is what stops the declaration drifting away
@@ -35,12 +44,17 @@ repeating it, so there is one number to change. There is still no
 install `dtolnay/rust-toolchain@stable`, so the tree is expected to build on
 current stable as well as on the floor.
 
-Raising the floor deliberately is a three-line change: `rust-version` in
-`Cargo.toml`, `message` for the `rust` badge in `scripts/badges/generate.js`,
-then `cd scripts/badges && node generate.js` to re-render the SVG. The README's
-`alt` text repeats the number for screen readers and has to match. Run
+Raising the floor deliberately touches more than the declaration. Change
+`rust-version` in `Cargo.toml` and `message` for the `rust` badge in
+`scripts/badges/generate.js`, then `cd scripts/badges && node generate.js` to
+re-render the SVG. Then the prose that repeats the number: the README's badge
+`alt` text and its "From source" line, the prerequisites in `CONTRIBUTING.md`,
+the opening of this page, the build dependencies in
+`docs/guide/installation.md`, and the badge example in
+`docs/contributing/documentation.md`. Run
 `python3 scripts/validate/validate_badges.py` afterwards: it cross-checks the
-badge against `Cargo.toml` and fails if they disagree.
+badge against `Cargo.toml` and fails if they disagree, but nothing checks the
+prose, so a `git grep` for the old number is the way to find what still names it.
 
 Binary paths below assume the default cargo target directory (`./target`). With
 `CARGO_TARGET_DIR` or a `[build] target-dir` in `~/.cargo/config.toml`, output

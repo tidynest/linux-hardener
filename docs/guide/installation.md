@@ -198,6 +198,10 @@ records exactly what has been validated with this image.
 
 ### Build Dependencies
 
+The build needs Rust 1.94 or newer. Where the distribution's own `rustc` is
+older, install the toolchain with [rustup](https://rustup.rs) instead of the
+distribution's Rust packages.
+
 Building the desktop GUI additionally needs [trunk](https://trunkrs.dev), which
 compiles the Leptos frontend to WASM. Arch packages it; elsewhere install it with
 `cargo install trunk`.

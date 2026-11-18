@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Building from source now needs Rust 1.94 (#188).** The workspace moves
+  from `sqlx` 0.8.6 to 0.9.1, and every 0.9 release declares Rust 1.94. The
+  code itself still needs only 1.88. Where a distribution's own `rustc` is
+  older, a toolchain from rustup meets it. The prebuilt binaries are
+  unaffected. The SQLite features stay what 0.8.6 compiled in: the bundled
+  SQLite and unlock-notify, without the extension loading and deserialisation
+  that 0.9's plain `sqlite` feature adds. sqlx 0.9 accepts only literal SQL
+  unless a statement is marked as audited, so the dynamic statements are now
+  literals with bound values where SQLite allows it, and the three still built
+  at run time carry a written reason why nothing from outside reaches them.
+  The schema, the migrations and the connection settings are unchanged. `rsa`
+  leaves both lockfiles, since 0.9 no longer pulls it in through MySQL
+  support, and with it the RUSTSEC-2023-0071 entry in `.cargo/audit.toml` and
+  `SECURITY.md`.
+
 ### Fixed
 
 - **The packages carry the licences of the fonts the binaries embed.** The
@@ -122,24 +139,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of `deny.toml`. This code only ever ran at compile time, in build scripts
   and proc macros, and none of it reached a shipped binary. The fuzz lockfile
   never carried it.
-- **RUSTSEC-2026-0459 in the bundled SQLite is accepted until a `sqlx` release
-  can take the fix (#188).** The binaries compile in SQLite 3.46.0 from
-  `libsqlite3-sys` 0.30.1, and SQLite before 3.54.0 can return uninitialised
-  memory when a database and its `-wal` file disagree on page size
-  (CVE-2026-119375). The first fixed release, 0.39.0, is out of reach: `sqlx`
-  0.8.6 takes only 0.30, and 0.9.0, the newest, stops below 0.38. The
-  advisory is now listed in `.cargo/audit.toml` and `deny.toml` with a written
-  assessment and a review date of 2027-01-31, so the Security Audit job passes
-  again, and `SECURITY.md` explains who is exposed and what to do meanwhile.
-  Exposure is low. The one way in is the scan-history database, whose location
-  a root run takes from a config file the desktop user can write: the one the
-  deep scan passes to the root CLI, or the user's own config when root keeps
-  the user's `HOME` or `XDG_CONFIG_HOME`, as `sudo -E` does. `SECURITY.md`
-  and the configuration reference say how to keep root's runs off such files.
-  The Security Audit job also audits `fuzz/Cargo.lock`, which nothing read
-  before and which held the same copy, even when the first audit fails, and a
-  new weekly Advisories workflow audits both lockfiles between pushes and
-  fails as soon as a released `sqlx` accepts a fixed `libsqlite3-sys`.
+- **The bundled SQLite moves to 3.54.1, which fixes RUSTSEC-2026-0459
+  (#188).** 1.9.1 compiles in SQLite 3.46.0 from `libsqlite3-sys` 0.30.1, and
+  SQLite before 3.54.0 can return uninitialised memory when a database and its
+  `-wal` file disagree on page size (CVE-2026-119375). `sqlx` 0.9.1 is the
+  first release that accepts a fixed `libsqlite3-sys`, and both lockfiles now
+  hold 0.40.0. The acceptance in `.cargo/audit.toml` and `deny.toml` is gone,
+  and so is the weekly watch that waited for this release. Exposure on 1.9.1
+  is low. The one way in is the scan-history database, whose location a root
+  run takes from a config file the desktop user can write: the one the deep
+  scan passes to the root CLI, or the user's own config when root keeps the
+  user's `HOME` or `XDG_CONFIG_HOME`, as `sudo -E` does. `SECURITY.md` says
+  what to do until this release is installed. Checkpoint databases written by
+  1.9.1, including one left with an unfolded write-ahead log, are held by
+  tests to read back byte for byte on the new SQLite. The Security Audit job
+  also audits `fuzz/Cargo.lock`, which nothing read before and which held the
+  same copy, and a weekly Advisories workflow audits both lockfiles between
+  pushes.
 
 ## [1.9.1] - 2026-10-30
 

@@ -92,29 +92,36 @@ const SCHEMA: &str = r#"
 /// written before it existed reads back as the absent value rather than making
 /// the database unreadable.
 ///
-/// `table`, `column` and `ddl` are formatted into the statement rather than
-/// bound, because SQLite does not accept a bound identifier in DDL. The sole
-/// caller passes them from [`MIGRATIONS`], whose entries are string literals,
-/// and this function is private to the module, so no operator input reaches it.
+/// The presence check binds `table` and `column`, since `pragma_table_info`
+/// takes its argument like any function. The `ALTER TABLE` cannot: SQLite does
+/// not accept a bound identifier in DDL, so `table` and `ddl` are formatted into
+/// that statement. They are `&'static str` so that only text written into the
+/// source can get there. The sole caller passes them from [`MIGRATIONS`], whose
+/// entries are string literals, and this function is private to the module, so
+/// no operator input reaches it.
 ///
 /// The check and the act are only safe together, so this takes a connection
 /// rather than a pool: [`apply_migrations`] holds the write lock around it, and
 /// a pool would be free to run the two statements on different connections.
 async fn add_column_if_missing(
     conn: &mut SqliteConnection,
-    table: &str,
-    column: &str,
-    ddl: &str,
+    table: &'static str,
+    column: &'static str,
+    ddl: &'static str,
 ) -> Result<()> {
-    let present: i64 = sqlx::query_scalar(&format!(
-        "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = '{column}'"
-    ))
-    .fetch_one(&mut *conn)
-    .await
-    .map_err(|e| HardeningError::Database(e.to_string()))?;
+    let present: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?")
+            .bind(table)
+            .bind(column)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|e| HardeningError::Database(e.to_string()))?;
 
     if present == 0 {
-        sqlx::query(&format!("ALTER TABLE {table} ADD COLUMN {ddl}"))
+        // Not injectable: `table` and `ddl` are literals from MIGRATIONS, which
+        // the `&'static str` parameters enforce. See the doc comment above.
+        let alter = sqlx::AssertSqlSafe(format!("ALTER TABLE {table} ADD COLUMN {ddl}"));
+        sqlx::query(alter)
             .execute(&mut *conn)
             .await
             .map_err(|e| HardeningError::Database(e.to_string()))?;

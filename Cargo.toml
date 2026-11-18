@@ -18,7 +18,7 @@ members = [
 version = "1.9.1"
 authors = ["Eric Jingryd"]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.94"
 license = "Apache-2.0"
 repository = "https://github.com/tidynest/linux-hardener"
 
@@ -69,8 +69,12 @@ argon2 = "0.5.3"
 ed25519-dalek = "2.2.0"
 ring = "0.17.14"
 
-# State management
-sqlx = { version = "0.8.6", default-features = false, features = ["migrate", "runtime-tokio-rustls", "sqlite"] }
+# State management. The features are 0.8.6's `sqlite` spelled out for 0.9,
+# where `sqlite` also turns on extension loading and deserialisation, which
+# nothing here uses; unlock-notify is the part 0.8.6 always compiled in. No
+# TLS feature: SQLite is local, and the old `runtime-tokio-rustls` only ever
+# gave it the runtime.
+sqlx = { version = "0.9.1", default-features = false, features = ["migrate", "runtime-tokio", "sqlite-bundled", "sqlite-unlock-notify"] }
 
 # System interaction
 hostname = "0.4.1"

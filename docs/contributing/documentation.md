@@ -409,7 +409,7 @@ Agreeing with the generator is not the same as being true, so a badge with a
 single authority in the repo is compared against that authority as well. `aur`
 is checked against `packaging/PKGBUILD`, and `version` and `rust` against
 `Cargo.toml`'s `version` and `rust-version`. A trailing plus in a badge marks a
-floor rather than an exact value, so the rust badge's `1.88+` is compared on the
+floor rather than an exact value, so the rust badge's `1.94+` is compared on the
 number in front of it. That second kind of check is what catches the case the
 first cannot: the AUR badge read 1.5.0
 while the published package was 1.5.1, with generator and artefact in perfect
@@ -776,4 +776,4 @@ Compares the workspace version in `Cargo.toml` against
 (`PKGBUILD`, the RPM spec, `debian/changelog`) are outside its reach. Also
 invoked by `validate_all.py`, as its first entry.
 
-**Last Updated**: 2026-08-20
+**Last Updated**: 2026-11-15

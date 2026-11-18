@@ -262,27 +262,28 @@ correct; the refusal above is what protects a rollback that reads one.**
 The entries below concern **dependencies**, not this project's own code. For
 advisories against this project, see the section above.
 
-### RUSTSEC-2026-0459 (bundled SQLite) - Accepted until sqlx can take the fix
+### RUSTSEC-2026-0459 (bundled SQLite) - Fixed after 1.9.1
 
 **What it is.** SQLite before 3.54.0 can hand back uninitialised memory when it
 opens a database together with a `-wal` (write-ahead log) file whose page size
 differs from the database's (CVE-2026-119375). A crafted pair of files makes
-ordinary queries return stale bytes from the process's memory. Both binaries
-compile in SQLite 3.46.0 from `libsqlite3-sys` 0.30.1, through `sqlx` and its
-`sqlite` feature, so updating the host's own SQLite package does not change
-them.
+ordinary queries return stale bytes from the process's memory. Version 1.9.1
+and earlier compile in SQLite 3.46.0 from `libsqlite3-sys` 0.30.1, through
+`sqlx` and its `sqlite` feature, so updating the host's own SQLite package does
+not change them.
 
-**Why it is not fixed yet.** `libsqlite3-sys` 0.39.0 (SQLite 3.54.0) is the
-first fixed release, and no released `sqlx` accepts it: 0.8.6 takes only 0.30,
-and 0.9.0, the newest, stops below 0.38. Upstream raised the bound in
-`transact-rs/sqlx#4502` on 2026-11-08 for the coming 0.9.1. The advisory is
-listed in `.cargo/audit.toml` and `deny.toml` with a written assessment until
-then, and a weekly workflow fails as soon as a released `sqlx` takes the fix.
-[Issue #188](https://github.com/tidynest/linux-hardener/issues/188) tracks the
+**The fix.** The workspace now builds on `sqlx` 0.9.1 and `libsqlite3-sys`
+0.40.0, which bundles SQLite 3.54.1. No earlier `sqlx` release accepted a fixed
+`libsqlite3-sys`, so the advisory was accepted in `.cargo/audit.toml` and
+`deny.toml` until 0.9.1 came out; both entries are gone now. The fix reaches a
+host only through a release built from this tree, so until one is out, every
+installed binary still carries SQLite 3.46.0.
+[Issue #188](https://github.com/tidynest/linux-hardener/issues/188) tracked the
 upgrade.
 
-**Who is exposed.** Only a process that opens a database and `-wal` that
-someone less trusted could have written. The checkpoint database, which holds
+**Who is exposed on 1.9.1 and earlier.** Only a process that opens a database
+and `-wal` that someone less trusted could have written. The checkpoint
+database, which holds
 the files rollback restores, is always `/var/lib/linux-hardener/checkpoints.db`
 for root and your own data directory otherwise, and no database is read over
 SSH. The scan history database is the one exception. A root run takes its
@@ -301,8 +302,9 @@ file can be one you, the desktop user, are able to write, in two ways:
 So software running as your user could choose, and plant, the pair a root scan
 opens. Whether memory leaked that way could be read back has not been tested.
 
-**What you can do meanwhile.** On a machine where software you do not fully
-trust runs under your desktop account:
+**What to do.** Upgrade to the first release that carries the fix. Until you
+can, on a machine where software you do not fully trust runs under your
+desktop account:
 
 - Run the desktop's deep scan with the config field empty, or with a file under
   `/etc/linux-hardener/`. pkexec gives the root CLI root's own home and does not
@@ -320,17 +322,6 @@ database in `./.linux-hardener` under the working directory (the desktop app
 in `./linux-hardener`) only when the account has no home directory at all: no
 `XDG_DATA_HOME`, no `HOME`, and none in its passwd entry, as with some
 container user IDs. Run it from a directory only you can write in that case.
-
-### RUSTSEC-2023-0071 (rsa crate) - False Positive
-
-Dependabot/cargo-audit may report a vulnerability in the `rsa` crate (Marvin Attack timing sidechannel). This is a **false positive** for this project because:
-
-- The `rsa` crate is pulled in by `sqlx-mysql` as an optional dependency
-- This project uses SQLite only (`default-features = false` with only `sqlite` feature)
-- The `rsa` crate appears in Cargo.lock metadata but is **not compiled or used**
-- Verification: `cargo tree -p rsa` shows "nothing to print"
-
-The advisory can be safely dismissed as it does not affect this project's security posture.
 
 ### RUSTSEC-2026-0173 (proc-macro-error2) - Unmaintained, Accepted
 
@@ -350,7 +341,7 @@ entries come out when the crates leave the lockfile. That needs the
 timestamps moved to a maintained library and the daemon's cron scheduler
 replaced, since its newest release still depends on both.
 
-The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained crates that `cargo deny` reports: `chrono` and `chrono-tz` above, and the transitive ones, which are the Unicode tables under `urlpattern`, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the two that only `cargo audit` reports: the `rsa` entry above, and `glib` (RUSTSEC-2024-0429), an unsound crate under the webview layer. `cargo deny` checks unsound advisories for workspace crates only, so it never sees `glib`. Both tools report RUSTSEC-2026-0459, so it is the one entry in both files.
+The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained crates that `cargo deny` reports: `chrono` and `chrono-tz` above, and the transitive ones, which are the Unicode tables under `urlpattern`, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the one that only `cargo audit` reports: `glib` (RUSTSEC-2024-0429), an unsound crate under the webview layer. `cargo deny` checks unsound advisories for workspace crates only, so it never sees `glib`.
 
 ## Contact
 
