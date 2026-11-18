@@ -8,25 +8,33 @@
 //! violate the baseline, and carries the layer drift and module-presence
 //! findings beside them.
 
+use super::policy::{
+    PolicyDirective, departure_finding, ignored_override, policy_directives, rule_mappings,
+    unmet_by_either_finding,
+};
 use super::{
-    ConfRead, FAILLOCK_CONF, MIN_DAYS_DIRECTIVE, ModulePresence, PAM_DIRECTIVES, PWHISTORY_CONF,
-    PamConfigFile, PamHardeningPlugin, PamObserved, clamped_baseline, get_pam_compliance_mappings,
-    layer_drift_findings, min_days_enforceable, min_days_unenforceable_finding,
-    module_absent_finding, module_presence_by_file, observed_pam_value, pam_violates, presence_for,
-    read_conf_classified, unchecked_pam_directive, unreadable_reason,
+    ConfRead, FAILLOCK_CONF, MIN_DAYS_DIRECTIVE, ModulePresence, PWHISTORY_CONF, PamConfigFile,
+    PamHardeningPlugin, PamObserved, clamped_baseline, layer_drift_findings, min_days_enforceable,
+    min_days_unenforceable_finding, module_absent_finding, module_presence_by_file,
+    observed_pam_value, pam_violates, presence_for, read_conf_classified, unchecked_pam_directive,
+    unreadable_reason,
 };
 
 use hardener_common::{error::Result, types::FindingCategory};
 use hardener_core::{
-    Context, PluginConfig,
+    Context, PasswordPolicy, PluginConfig,
     plugin::{Finding, HardeningPlugin, ScanResult},
 };
 use std::time::Instant;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanResult> {
     let start = Instant::now();
-    info!("Starting PAM authentication hardening scan");
+    let policy = config.password_policy();
+    info!(
+        "Starting PAM authentication hardening scan ({} password policy)",
+        policy.id()
+    );
 
     let mut findings = Vec::new();
     let mut unchecked = Vec::new();
@@ -64,8 +72,12 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
     // and over SSH a per-directive read is six round trips for one answer.
     let presence = module_presence_by_file(ctx).await;
 
-    // Check each PAM directive.
-    for directive in PAM_DIRECTIVES {
+    // Check each PAM directive, as the selected password policy states it.
+    for policy_directive in policy_directives(policy) {
+        let directive = &policy_directive.rule;
+        if let Some(note) = ignored_override(policy, &policy_directive, config) {
+            warn!("{note}");
+        }
         if directive.pam_config_file == PamConfigFile::PamAuth {
             debug!(
                 "Skipping PAM module directive: {}",
@@ -80,6 +92,11 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
         // unenforced, which is one host described two ways.
         match presence_for(&presence, directive) {
             ModulePresence::NotInStack { module } => {
+                // A row that only switches a check off is met when nothing
+                // runs the check; the length row reports the missing module.
+                if policy_directive.only_switches_off() {
+                    continue;
+                }
                 let conf_path = directive
                     .pam_config_file
                     .conf_path()
@@ -146,45 +163,54 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
 
         // Check if current value satisfies the directive's comparison
         // against the resolved (overridden + clamped) target.
-        let is_secure = !pam_violates(directive, &target, current_value.as_deref());
+        let meets_policy = !pam_violates(directive, &target, current_value.as_deref());
+        let current_display = current_value
+            .clone()
+            .unwrap_or_else(|| "not set".to_string());
 
-        if !is_secure {
-            let current_display = current_value.unwrap_or_else(|| "not set".to_string());
-            let policy_exception =
-                config.exception_outcome(directive.pam_directive_name, &current_display);
+        // A rule the selected policy drops is still judged against the
+        // benchmark rule it replaces, so the frameworks that require that
+        // rule fail rather than pass on a host that does not meet it.
+        let benchmark_breach = policy_directive.relaxation.as_ref().and_then(|relaxation| {
+            let benchmark = relaxation.benchmark?;
+            let benchmark_target = clamped_baseline(benchmark, config);
+            pam_violates(benchmark, &benchmark_target, current_value.as_deref()).then_some((
+                relaxation.drops,
+                benchmark,
+                benchmark_target,
+            ))
+        });
 
-            findings.push(Finding {
-                    finding_id: format!(
-                        "pam-{}",
-                        directive.pam_directive_name
-                    ),
-                    finding_category: FindingCategory::Authentication,
-                    finding_current_value: current_display.clone(),
-                    finding_description: format!(
-                        "PAM directive '{}' is currently '{}' but should be '{}'",
-                        directive.pam_directive_name,
-                        current_display,
-                        target,
-                    ),
-                    finding_explanation: directive.pam_description.to_string(),
-                    finding_impact: "Weak authentication settings can allow easier password guessing and brute-force attacks".to_string(),
-                    finding_recommended_value: target.clone(),
-                    finding_remediation_steps: vec![
-                        format!(
-                            "Set {} = {} in the appropriate configuration file",
-                            directive.pam_directive_name,
-                            target,
-                        ),
-                    ],
-                    finding_severity: directive.pam_severity,
-                    finding_title: format!(
-                        "Insecure PAM setting: {}",
-                        directive.pam_directive_name
-                    ),
-                    finding_compliance: get_pam_compliance_mappings(directive.pam_directive_name),
-                    finding_exception: policy_exception,
-                    finding_exception_key: Some(directive.pam_directive_name.to_string()),
-                });
+        // One finding per directive, whichever rules the value breaks. See
+        // `policy` for why each kind carries the controls it does.
+        match (meets_policy, benchmark_breach) {
+            (true, None) => {}
+            (false, None) => findings.push(rule_finding(
+                policy,
+                &policy_directive,
+                &target,
+                &current_display,
+                config,
+            )),
+            (true, Some((drops, benchmark, benchmark_target))) => findings.push(departure_finding(
+                policy,
+                drops,
+                benchmark,
+                &benchmark_target,
+                &current_display,
+                config,
+            )),
+            (false, Some((_, benchmark, benchmark_target))) => {
+                findings.push(unmet_by_either_finding(
+                    policy,
+                    &policy_directive,
+                    benchmark,
+                    &target,
+                    &benchmark_target,
+                    current_value.as_deref(),
+                    config,
+                ))
+            }
         }
     }
 
@@ -212,4 +238,69 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
         scan_error: None,
         scan_skipped: None,
     })
+}
+
+/// The finding for a host that breaks the selected policy's own rule for a
+/// directive.
+///
+/// Under the benchmark policy this is byte for byte the finding every earlier
+/// release produced, so an operator who changed nothing sees nothing change.
+/// Under the NIST policy it names the policy, and a rule that drops a benchmark
+/// requirement is described as the host not having adopted the policy yet
+/// rather than as an insecure setting, because by that policy's reasoning the
+/// value it replaces is the weaker one.
+fn rule_finding(
+    policy: PasswordPolicy,
+    policy_directive: &PolicyDirective,
+    target: &str,
+    current_display: &str,
+    config: &PluginConfig,
+) -> Finding {
+    let directive = &policy_directive.rule;
+    let name = directive.pam_directive_name;
+    let policy_note = match policy {
+        PasswordPolicy::Benchmark => String::new(),
+        PasswordPolicy::Nist80063b => format!(" under the {} password policy", policy.id()),
+    };
+    let (title, impact) = match &policy_directive.relaxation {
+        Some(_) => (
+            format!(
+                "PAM setting differs from the {} password policy: {name}",
+                policy.id()
+            ),
+            format!(
+                "Character-class rules and forced periodic change push people towards \
+                 predictable patterns and written-down passwords, and reject long passphrases \
+                 made of words. The {} policy drops them and relies on length, the dictionary \
+                 check, lockout and password history instead",
+                policy.id()
+            ),
+        ),
+        None => (
+            format!("Insecure PAM setting: {name}"),
+            "Weak authentication settings can allow easier password guessing and brute-force \
+             attacks"
+                .to_string(),
+        ),
+    };
+    Finding {
+        finding_id: format!("pam-{name}"),
+        finding_category: FindingCategory::Authentication,
+        finding_current_value: current_display.to_string(),
+        finding_description: format!(
+            "PAM directive '{name}' is currently '{current_display}' but should be \
+             '{target}'{policy_note}",
+        ),
+        finding_explanation: directive.pam_description.to_string(),
+        finding_impact: impact,
+        finding_recommended_value: target.to_string(),
+        finding_remediation_steps: vec![format!(
+            "Set {name} = {target} in the appropriate configuration file"
+        )],
+        finding_severity: directive.pam_severity,
+        finding_title: title,
+        finding_compliance: rule_mappings(policy_directive),
+        finding_exception: config.exception_outcome(name, current_display),
+        finding_exception_key: Some(name.to_string()),
+    }
 }

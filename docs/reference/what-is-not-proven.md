@@ -60,11 +60,12 @@ state, and that the compiled rule count came back. Section 12B does the same for
 the `systemctl mask` symlink the services plugin leaves. The differential suite
 puts an ssh rollback and reload cycle back through `sshd -T`. The same script's
 TEST 6 seeds `PASS_MAX_DAYS` in `/etc/login.defs` to shadow's own default of
-99999, which the pam plugin's `AtMost 90` makes a genuine violation, and asserts
-that the apply lowers it, that the rollback returns it, and that the file comes
-back byte for byte. TEST 7 does the same for the firewall, against whichever
-backend the plugin selects rather than an assumed one, and asks both the
-backend's own configuration and **what the host is actually enforcing**.
+99999, which the pam plugin's 90-day maximum (`PositiveAtMost`) makes a genuine
+violation, and asserts that the apply lowers it, that the rollback returns it,
+and that the file comes back byte for byte. TEST 7 does the same for the
+firewall, against whichever backend the plugin selects rather than an assumed
+one, and asks both the backend's own configuration and **what the host is
+actually enforcing**.
 
 **The mac plugin now has one reading, and it is the inverse of every other one
 here.** Measured on the development host 2026-08-09, `/sys/kernel/security/lsm`

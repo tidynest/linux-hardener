@@ -53,6 +53,8 @@ pub fn validate_config(config: &HardenerConfig) -> Result<()> {
         validate_plugin_directives(section, directives, plugin_validator, &mut errors);
     }
 
+    errors.extend(misplaced_password_policies(config));
+
     for key in unknown_exclusion_frameworks(config) {
         warn!(
             "[compliance.not_applicable.{key}] names no known framework, so every \
@@ -73,6 +75,35 @@ pub fn validate_config(config: &HardenerConfig) -> Result<()> {
             errors.join("\n  - ")
         )))
     }
+}
+
+/// A `password_policy` set in a section other than `[pam]`, one error each.
+///
+/// Every section shares one struct, so the key parses anywhere, and only the PAM
+/// plugin reads it. Under `[ssh]` it would load cleanly and do nothing, and an
+/// operator who put it there believing they had chosen a policy would get the
+/// default one with no word said. Refused rather than warned, unlike an unknown
+/// exclusion framework: the cost of the misreading is a password policy the
+/// operator did not choose, not merely a score that did not move.
+fn misplaced_password_policies(config: &HardenerConfig) -> Vec<String> {
+    [
+        ("ssh", &config.ssh),
+        ("kernel", &config.kernel),
+        ("firewall", &config.firewall),
+        ("audit", &config.audit),
+        ("mac", &config.mac),
+        ("permissions", &config.permissions),
+        ("services", &config.services),
+    ]
+    .into_iter()
+    .filter(|(_, plugin)| plugin.password_policy.is_some())
+    .map(|(section, _)| {
+        format!(
+            "[{section}] password_policy: only [pam] has a password policy, so this setting \
+             would have no effect here; move it under [pam]"
+        )
+    })
+    .collect()
 }
 
 /// `[compliance.not_applicable]` keys that name no framework this tool knows.

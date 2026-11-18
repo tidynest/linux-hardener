@@ -554,7 +554,7 @@ fi
 # to stop being the only one available.
 #
 # PASS_MAX_DAYS rather than PASS_MIN_DAYS or PASS_WARN_AGE, because it is the
-# one whose comparison is AtMost. Its target is 90 and shadow's own default is
+# one whose comparison is PositiveAtMost. Its target is 90 and shadow's own default is
 # 99999, so the pre-apply state is genuinely a violation without inventing one,
 # and the apply has to move the value rather than agreeing with it. Seeding a
 # value that already passes is how the kernel arm used to compare a constant

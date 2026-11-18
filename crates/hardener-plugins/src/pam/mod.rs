@@ -14,6 +14,7 @@ mod login_defs;
 // pub(crate) so the crate's fuzz-seam can re-export the pure parsing
 // halves; every other consumer meets them through the readers below.
 pub(crate) mod parsing;
+mod policy;
 mod validate;
 
 use crate::strictness::Strictness;
@@ -1002,7 +1003,9 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Maximum password age of 90 days",
         pam_severity: Severity::Medium,
         pam_config_file: PamConfigFile::LoginDefs,
-        pam_compare: Strictness::AtMost,
+        // -1 disables expiry and 0 expires every password at once, so
+        // neither may read as a stricter maximum than 90.
+        pam_compare: Strictness::PositiveAtMost,
     },
     PamDirective {
         pam_directive_name: "PASS_MIN_DAYS",
@@ -1028,7 +1031,9 @@ const PAM_DIRECTIVES: &[PamDirective] = &[
         pam_description: "Lock the account after at most 5 failed attempts",
         pam_severity: Severity::High,
         pam_config_file: PamConfigFile::SecurityConf(FAILLOCK_CONF),
-        pam_compare: Strictness::AtMost,
+        // deny = 0 disables lockout, so it is the loosest value, not the
+        // strictest.
+        pam_compare: Strictness::PositiveAtMost,
     },
     PamDirective {
         pam_directive_name: "remember",
@@ -1748,6 +1753,14 @@ impl PamObserved {
         match self {
             PamObserved::Value(v) => v,
             PamObserved::NotSet | PamObserved::Unreadable { .. } => "not set",
+        }
+    }
+
+    /// The value itself, or `None` when there is none to read.
+    fn value(&self) -> Option<&str> {
+        match self {
+            PamObserved::Value(v) => Some(v),
+            PamObserved::NotSet | PamObserved::Unreadable { .. } => None,
         }
     }
 }

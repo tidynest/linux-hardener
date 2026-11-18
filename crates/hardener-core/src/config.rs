@@ -65,6 +65,62 @@ pub struct PluginConfig {
     pub directives: HashMap<String, String>,
     /// Policy exceptions for specific checks.
     pub exceptions: HashMap<String, PolicyException>,
+    /// The password policy the PAM plugin enforces, when the source names one.
+    ///
+    /// Only `[pam]` reads it, and config validation refuses it in any other
+    /// section, so it cannot sit unread elsewhere looking as if it did
+    /// something. `None` means the file did not say, which is kept apart from
+    /// an explicit choice for the same reason as `enabled`: a later source that
+    /// names `[pam]` for a directive or an exception has not chosen a policy,
+    /// and must not undo the choice an earlier source made. Read it through
+    /// [`password_policy`](Self::password_policy).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password_policy: Option<PasswordPolicy>,
+}
+
+/// Which set of password rules the PAM plugin enforces.
+///
+/// Two answers to one question the standards no longer agree on. The
+/// configuration benchmarks (CIS, DISA STIG), and PCI DSS for a password that is
+/// the only factor, still ask for character-class rules and a maximum password
+/// age. NIST SP 800-63B-4 (section 3.1.1.2) forbids both: verifiers "SHALL NOT
+/// impose other composition rules" and "SHALL NOT require subscribers to change
+/// passwords periodically", and it asks for length instead. No host satisfies
+/// both at once, so the operator chooses, and the compliance report says what
+/// the choice costs: a control the chosen policy deliberately does not meet is
+/// reported as failing, never as passing.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+pub enum PasswordPolicy {
+    /// Character-class rules and a 90-day maximum age, the rules every earlier
+    /// release enforced. Still the default, so an upgrade changes nothing on a
+    /// host whose configuration did not ask for a change.
+    #[default]
+    #[serde(rename = "benchmark")]
+    Benchmark,
+    /// NIST SP 800-63B-4: a 15-character minimum, no character-class rules and
+    /// no forced periodic change. The dictionary check, lockout and password
+    /// history stay.
+    #[serde(rename = "nist-800-63b")]
+    Nist80063b,
+}
+
+impl PasswordPolicy {
+    /// The spelling `config.toml` uses, which is also how findings and change
+    /// lines name the policy, so an operator can search for one in the other.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Benchmark => "benchmark",
+            Self::Nist80063b => "nist-800-63b",
+        }
+    }
+}
+
+impl PluginConfig {
+    /// The password policy this section selects, or
+    /// [`PasswordPolicy::Benchmark`] when no source chose one.
+    pub fn password_policy(&self) -> PasswordPolicy {
+        self.password_policy.unwrap_or_default()
+    }
 }
 
 impl PluginConfig {

@@ -24,8 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   four kinds: the control wants a stricter value; it asks for something the
   check does not read, such as file ownership, the audit log size or the
   SELinux boot setting; the host has switched the check off with a value the
-  code ranks as strictest (faillock `deny = 0`, `PASS_MAX_DAYS -1`,
-  `ClientAliveCountMax 0`); or the STIG asks for exactly 1 where the baseline
+  code ranks as strictest (`ClientAliveCountMax 0`; faillock `deny = 0` and
+  `PASS_MAX_DAYS -1` are fixed in this release, under #190); or the STIG asks
+  for exactly 1 where the baseline
   writes 2 (`kptr_restrict`, `ptrace_scope`). It also records that the PAM
   plugin's three PCI DSS identifiers are PCI DSS v3.2.1 numbers, which name
   unrelated requirements in v4.0.1. A **Propose a baseline change** issue form
@@ -87,6 +88,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by scheme name only: `/etc/shadow` is read in the target's own shell and no
   hash, salt or user name leaves it. The finding is read-only, needs root, and
   says how to list the accounts on the host itself.
+- **The PAM plugin can enforce NIST SP 800-63B-4 instead of character classes
+  and a 90-day expiry (#190).** `[pam] password_policy = "nist-800-63b"` raises
+  `minlen` to 15, sets the four libpwquality credits to 0, so no digit, capital
+  or symbol is demanded and none shortens the minimum, switches `minclass` and
+  `maxclassrepeat` off, since either one at 4, as the CIS and STIG benchmarks
+  set them, refuses every passphrase made of words, and writes
+  `PASS_MAX_DAYS 99999`, so new accounts are not made to change their password
+  on a schedule. Lockout, password history and the minimum age stay as they
+  were, and libpwquality's dictionary check is left as the host has it. Once
+  `apply` has run, a passphrase made of plain words, which the old rules refused
+  for lacking a digit, is accepted, apart from the occasional phrase
+  libpwquality's dictionary check refuses, wherever the PAM stack loads
+  `pam_pwquality.so` and sets no composition rule on that line itself. The
+  default stays `"benchmark"`, the rules every earlier release enforced, so
+  nothing changes on a host whose configuration does not ask for it. The report
+  stays honest about the choice: a CIS, DISA STIG or PCI DSS control whose rule
+  the policy drops reads Fail, through an Info finding that names the policy,
+  and an auditor's accepted deviation is recorded as an ordinary exception,
+  which, being keyed by directive, lists it under the CIS and DISA STIG
+  controls as well as PCI DSS. The
+  NIST SP 800-53, NIST SP 800-171 and FedRAMP controls do not fail for it,
+  because their current texts require neither a password lifetime nor
+  composition rules. A value that meets neither policy, such as
+  `PASS_MAX_DAYS 0`, is one ordinary finding that fails every control. Every
+  write that relaxes a rule the host had names the policy, in `apply` and in
+  the dry run. The key is refused in any section but `[pam]`, and a value the
+  tool does not know stops the configuration loading.
 
 ### Changed
 
@@ -151,6 +179,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settings and 3 of the 8 SSH directives and claimed a SUID/SGID check, and
   the permissions plugin's module comment, which claimed SUID/SGID,
   world-writable and SSH key checks, now say what the plugins check.
+- **Password expiry or lockout switched off no longer reads as compliant
+  (#190).** `PASS_MAX_DAYS -1` disables expiry and `0` expires every password
+  as soon as it is set, and faillock's `deny = 0` disables lockout. All three
+  scored as stricter than the baseline, because a smaller number counted as
+  stricter all the way down, so a host with expiry or lockout off passed every
+  control the check maps to. An override of `PASS_MAX_DAYS = "-1"` or
+  `deny = "0"` in `config.toml` was even written to the host as a tightening.
+  Only a positive number now counts as a working limit for these two
+  directives, the way `maxrepeat = 0` is already treated. Such a host gains a
+  finding on its next scan and `apply` writes the baseline, while a stricter
+  positive value is still kept. The upgrading guide has a section on checking
+  a host.
 
 ### Security
 

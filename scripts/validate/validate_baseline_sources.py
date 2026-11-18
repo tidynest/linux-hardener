@@ -24,6 +24,12 @@ Each table on the page opens with a marker comment, `<!-- baseline-table: KEY
   comparison and its severity, against `KERNEL_PARAMS`, `SSH_DIRECTIVES`,
   `PAM_DIRECTIVES` and `HASHING_DIRECTIVES`. A `Ranked` comparison must list
   its order, weakest first, as the code does.
+- `pam-nist` and `pam-nist-added`: the same four cells for the rows the NIST
+  SP 800-63B-4 password policy changes (`NIST_RULES`) and the rows it adds
+  (`NIST_ONLY_ROWS`), both in `pam/policy.rs`. A `NistRule` has no severity
+  of its own: `nist_directive` gives it Low where the rule drops a benchmark
+  requirement and the benchmark row's severity otherwise, and this check
+  reads the same two arms, failing if they are no longer there.
 - `ssh-crypto`: each allow-list, in preference order, and its severity.
 - `services`: the service names and severities in `UNNECESSARY_SERVICES`.
 - `permissions`: path, mode, exact or mask comparison, and severity.
@@ -44,7 +50,8 @@ Each table on the page opens with a marker comment, `<!-- baseline-table: KEY
   `weaker-pass` and `exact-value-pass`, the baseline value the row quotes must
   still be the code's. In `switched-off-pass`, the check must still be
   compared "at most", the comparison that ranks the switched-off value as the
-  strictest, so a fix to the comparison fails the row until it is removed.
+  strictest, so a fix to the comparison fails the row until it is removed, as
+  the fix for `deny` and `PASS_MAX_DAYS` (#190) did.
 
 Both directions fail: a setting in code with no row, and a row naming a setting
 the code no longer has. Every setting row, audit and firewall included, must
@@ -144,9 +151,7 @@ README_PASS_SENTENCE = (
 )
 
 # How the page spells each direction. `Ranked` is spelled "ranked" followed by
-# its order, which is compared separately. The last three are not in this tree:
-# the branch for #190 adds them. They are spelled here so that a merge with it
-# names the rows whose comparison changed, instead of stopping at the parser. A
+# its order, which is compared separately. The last four came with #190. A
 # spelling the code uses must also be defined in the page's legend, which
 # `check_legend` holds, so an unused one here costs nothing.
 COMPARISON_WORDS = {
@@ -156,6 +161,7 @@ COMPARISON_WORDS = {
     "PositiveAtMost": "at most, above 0",
     "ClosestToZero": "closest to 0",
     "AtLeastOrUnlimited": "at least, or -1 for no limit",
+    "OffAtOrBelowZero": "off at 0 and below",
 }
 
 # Tables of values this script reads, beyond the SCALAR_TABLES below, as
@@ -166,6 +172,7 @@ READ_TABLES = {
     ("services/mod.rs", "UNNECESSARY_SERVICES"),
     ("permissions/mod.rs", "CRITICAL_PERMISSIONS"),
     ("audit/mod.rs", "AUDIT_RULES"),
+    ("pam/policy.rs", "NIST_RULES"),
 }
 
 # Tables of a plugin struct that hold no baseline value, each with the reason.
@@ -232,7 +239,25 @@ SCALAR_TABLES = [
         "pam_severity",
         "pam_compare",
     ),
+    # The two libpwquality rows the NIST SP 800-63B-4 password policy adds to
+    # the benchmark table (#190).
+    (
+        "pam-nist-added",
+        "pam/policy.rs",
+        "NIST_ONLY_ROWS",
+        "PamDirective",
+        "pam_directive_name",
+        "pam_secure_value",
+        "pam_severity",
+        "pam_compare",
+    ),
 ]
+
+# The benchmark rows the NIST policy rewrites, `NIST_RULES`, have the same
+# cells on the page but a struct of their own with no severity field, so
+# `code_nist_rules` reads them. Every key whose table has the scalar shape:
+NIST_RULES_KEY = "pam-nist"
+SCALAR_KEYS = [spec[0] for spec in SCALAR_TABLES] + [NIST_RULES_KEY]
 
 
 class ParseError(Exception):
@@ -368,6 +393,50 @@ def code_scalar(text: str, spec: tuple) -> dict[str, dict]:
     return entries
 
 
+# The two arms of `nist_directive` that give a rewritten row its severity. The
+# page's severity cells for `NIST_RULES` rest on them, so they are matched
+# rather than assumed.
+NIST_SEVERITY_ARMS = re.compile(
+    r"pam_severity:\s*match\s+nist\.drops\s*\{\s*"
+    r"Some\(_\)\s*=>\s*Severity::(\w+),\s*"
+    r"None\s*=>\s*benchmark\.pam_severity,\s*\}"
+)
+
+
+def code_nist_rules(text: str, benchmark: dict[str, dict]) -> dict[str, dict]:
+    """`NIST_RULES` as {setting: expected cells}, each severity derived the way
+    `nist_directive` derives it from the benchmark row of the same name."""
+    arms = NIST_SEVERITY_ARMS.search(text)
+    if arms is None:
+        raise ParseError(
+            "nist_directive no longer gives a rewritten row its severity through "
+            "`match nist.drops { Some(_) => Severity::..., None => benchmark.pam_severity }`"
+        )
+    bodies = struct_bodies(const_body(text, "NIST_RULES"), "NistRule")
+    if not bodies:
+        raise ParseError("NIST_RULES holds no NistRule literals")
+    entries = {}
+    for body in bodies:
+        name = string_field(body, "name")
+        if name not in benchmark:
+            raise ParseError(f"NIST_RULES rewrites `{name}`, which PAM_DIRECTIVES does not hold")
+        drops = raw_field(body, "drops")
+        if drops == "None":
+            severity = benchmark[name]["severity"]
+        elif drops.startswith("Some("):
+            severity = arms.group(1)
+        else:
+            raise ParseError(f"NIST_RULES `{name}`: drops is `{drops}`, neither None nor Some(..)")
+        word, order = comparison_of(text, raw_field(body, "compare"))
+        entries[name] = {
+            "default": string_field(body, "secure_value"),
+            "comparison": word,
+            "order": order,
+            "severity": severity,
+        }
+    return entries
+
+
 def code_crypto(text: str) -> dict[str, dict]:
     """The SSH algorithm allow-lists as {directive: expected cells}."""
     entries = {}
@@ -464,6 +533,9 @@ def read_code(root: Path) -> dict:
     code = {}
     for spec in SCALAR_TABLES:
         code[spec[0]] = code_scalar((src / spec[1]).read_text(encoding="utf-8"), spec)
+    code[NIST_RULES_KEY] = code_nist_rules(
+        (src / "pam/policy.rs").read_text(encoding="utf-8"), code["pam"]
+    )
     ssh = (src / "ssh/mod.rs").read_text(encoding="utf-8")
     code["ssh-crypto"] = code_crypto(ssh)
     code["services"] = code_services((src / "services/mod.rs").read_text(encoding="utf-8"))
@@ -864,7 +936,7 @@ def check_legend(page: str, code: dict) -> list[str]:
         return [f"no `{LEGEND_HEADING}` section on the page"]
     end = page.find("\n## ", heading.end())
     legend = page[heading.end() : end if end != -1 else len(page)]
-    used = sorted({entry["comparison"] for spec in SCALAR_TABLES for entry in code[spec[0]].values()})
+    used = sorted({entry["comparison"] for key in SCALAR_KEYS for entry in code[key].values()})
     return [
         f"legend: the code compares some setting *{word}*, and `{LEGEND_HEADING}` does not "
         f"define it as `*{word}*`"
@@ -1053,7 +1125,7 @@ def check_page(
     """Every problem with the page, against code already read."""
     problems: list[str] = []
     tables = {}
-    keys = [spec[0] for spec in SCALAR_TABLES] + [
+    keys = SCALAR_KEYS + [
         "ssh-crypto",
         "services",
         "permissions",
@@ -1066,9 +1138,9 @@ def check_page(
             problems.append(f"no `<!-- baseline-table: {key} -->` marker on the page")
             continue
         tables[key] = rows
-    for spec in SCALAR_TABLES:
-        if spec[0] in tables:
-            problems += check_scalar(spec[0], code[spec[0]], tables[spec[0]])
+    for key in SCALAR_KEYS:
+        if key in tables:
+            problems += check_scalar(key, code[key], tables[key])
     if "ssh-crypto" in tables:
         problems += check_crypto(code["ssh-crypto"], tables["ssh-crypto"])
     if "services" in tables:
@@ -1293,7 +1365,7 @@ SAMPLE_LEGEND_PAGE = (
 
 
 def legend(comparisons: list[str]):
-    code: dict = {spec[0]: {} for spec in SCALAR_TABLES}
+    code: dict = {key: {} for key in SCALAR_KEYS}
     code["kernel"] = {f"k{i}": {"comparison": word} for i, word in enumerate(comparisons)}
     return lambda: check_legend(SAMPLE_LEGEND_PAGE, code)
 
@@ -1311,6 +1383,44 @@ def constant_name_read() -> list[str]:
     source = SAMPLE_KERNEL_RS.replace('kernel_parameter_name: "a.b"', "kernel_parameter_name: SPELLING")
     names = sorted(code_scalar(source, SAMPLE_SPEC))
     return [] if names == ["2", "c.d"] else [f"read as {names}"]
+
+
+SAMPLE_POLICY_RS = """
+const NIST_RULES: &[NistRule] = &[
+    NistRule {
+        name: "minlen",
+        secure_value: "15",
+        compare: Strictness::AtLeast,
+        drops: None,
+    },
+    NistRule {
+        name: "dcredit",
+        secure_value: "0",
+        compare: Strictness::ClosestToZero,
+        drops: Some(NO_COMPOSITION_RULES),
+    },
+];
+fn nist_directive() {
+    pam_severity: match nist.drops {
+        Some(_) => Severity::Low,
+        None => benchmark.pam_severity,
+    },
+}
+"""
+SAMPLE_BENCHMARK = {"minlen": {"severity": "High"}, "dcredit": {"severity": "Medium"}}
+
+
+def nist_rules_read(source: str = SAMPLE_POLICY_RS, benchmark: dict = SAMPLE_BENCHMARK):
+    def run() -> list[str]:
+        try:
+            rules = code_nist_rules(source, benchmark)
+        except ParseError as error:
+            return [f"not read: {error}"]
+        got = {name: (rule["default"], rule["comparison"], rule["severity"]) for name, rule in rules.items()}
+        want = {"minlen": ("15", "at least", "High"), "dcredit": ("0", "closest to 0", "Low")}
+        return [] if got == want else [f"read as {got}"]
+
+    return run
 
 
 def missing_marker() -> list[str]:
@@ -1347,6 +1457,21 @@ SELF_TEST_CASES = [
     ),
     ("a ranked order with a constant in it is read weakest first", None, ranked_order_read),
     ("a setting named by a constant is read by the constant's value", None, constant_name_read),
+    (
+        "nist: a rewritten row takes Low where it drops a rule and the benchmark's severity otherwise",
+        None,
+        nist_rules_read(),
+    ),
+    (
+        "nist: a severity rule that moved in nist_directive is flagged",
+        "no longer gives a rewritten row its severity",
+        nist_rules_read(SAMPLE_POLICY_RS.replace("None => benchmark.pam_severity", "None => Severity::Low")),
+    ),
+    (
+        "nist: a rewritten row with no benchmark row is flagged",
+        "which PAM_DIRECTIVES does not hold",
+        nist_rules_read(benchmark={"minlen": {"severity": "High"}}),
+    ),
     ("a page without a table's marker is reported, not read as empty", None, missing_marker),
     ("crypto: a list that matches the code passes", None, crypto([GOOD_CRYPTO])),
     ("crypto: a list in another order is flagged", 'in that order', crypto([GOOD_CRYPTO.replace("`a`, `b`", "`b`, `a`")])),
@@ -1574,7 +1699,7 @@ def main() -> int:
 
     counts = ", ".join(
         f"{len(code[key])} {key}"
-        for key in ("kernel", "ssh", "ssh-crypto", "pam", "pam-hashing", "services", "permissions", "firewall", "audit")
+        for key in ("kernel", "ssh", "ssh-crypto", "pam", "pam-hashing", "pam-nist", "pam-nist-added", "services", "permissions", "firewall", "audit")
     )
     control_rows = sum(len(page_table(page_path.read_text(encoding="utf-8"), key) or []) for key, _ in CONTROL_TABLES)
     read = len({(spec[1], spec[2]) for spec in SCALAR_TABLES} | READ_TABLES) + 1

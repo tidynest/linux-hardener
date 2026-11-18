@@ -354,6 +354,155 @@ async fn report_scan_path_honours_config_exceptions() {
     );
 }
 
+/// A PAM host for the password-policy test below, with every module loaded
+/// so that each value is judged rather than reported unenforced. `minclass`
+/// and `maxclassrepeat` are off on both hosts: the benchmark policy does not
+/// read them, and the NIST policy asks for exactly that.
+///
+/// Both hosts must meet every PAM check other than the password policy's, or
+/// the NIST-derived assertions below fail for that check rather than for the
+/// policy. A check added to the plugin that maps to the same controls needs
+/// its keys added here, as the password hashing check #191 maps to
+/// IA-5(1)(d) has: the three hashing keys are the SHA-512 target the plugin
+/// holds a host to when its host probe cannot run.
+fn pam_host(minlen: &str, credit: &str, max_days: &str) -> Arc<dyn SystemExecutor> {
+    Arc::new(
+        MockExecutor::new()
+            .with_directory("/etc")
+            .with_directory("/etc/security")
+            .with_file(
+                "/etc/pam.d/password-auth",
+                "auth required pam_faillock.so preauth silent\n\
+                 password required pam_pwquality.so retry=3\n\
+                 password required pam_pwhistory.so\n",
+            )
+            .with_file(
+                "/etc/security/pwquality.conf",
+                format!(
+                    "minlen = {minlen}\ndcredit = {credit}\nucredit = {credit}\n\
+                     lcredit = {credit}\nocredit = {credit}\nmaxrepeat = 3\n\
+                     minclass = 0\nmaxclassrepeat = 0\n"
+                )
+                .as_str(),
+            )
+            .with_file(
+                "/etc/login.defs",
+                format!(
+                    "PASS_MAX_DAYS {max_days}\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n\
+                     ENCRYPT_METHOD SHA512\nSHA_CRYPT_MIN_ROUNDS 100000\n\
+                     SHA_CRYPT_MAX_ROUNDS 100000\n"
+                )
+                .as_str(),
+            )
+            .with_file("/etc/security/faillock.conf", "deny = 3\n")
+            .with_file("/etc/security/pwhistory.conf", "remember = 10\n"),
+    )
+}
+
+/// #190, end to end through the report: a control the selected password
+/// policy deliberately does not meet is reported failing, never passing.
+///
+/// Each host is scanned under the policy it follows, so the PAM plugin itself
+/// raises nothing to fix. The benchmark host passes the expiry and
+/// composition controls; the NIST host, which forces no change and requires no
+/// character class, fails exactly those, while the 15-character minimum it
+/// does enforce passes the STIG length control. The NIST SP 800-53, SP 800-171
+/// and FedRAMP controls pass for both: their current texts require neither a
+/// password lifetime nor composition rules, so following SP 800-63B-4 must not
+/// fail them.
+#[tokio::test]
+async fn a_control_the_password_policy_drops_fails_rather_than_passes() {
+    use hardener_core::PasswordPolicy;
+
+    let report_config = ReportConfig {
+        scenario: Scenario::Custom(vec![
+            ComplianceFramework::STIG,
+            ComplianceFramework::PCIDSS,
+            ComplianceFramework::NIST,
+            ComplianceFramework::NIST800171,
+            ComplianceFramework::FedRAMP,
+        ]),
+        formats: vec![OutputFormat::Json],
+        output_dir: None,
+        profile: ComplianceProfile::default(),
+    };
+    let statuses = |policy: PasswordPolicy, host: Arc<dyn SystemExecutor>| {
+        let report_config = report_config.clone();
+        async move {
+            let mut config = HardenerConfig::default();
+            config.pam.password_policy = Some(policy);
+            let (findings, unchecked) =
+                run_scan_for_report(true, host, &CliOutputFormat::Json, &config)
+                    .await
+                    .expect("the scan runs");
+            ReportGenerator::new(
+                report_config,
+                hardener_plugins::plugin_inventory(),
+                ComplianceConfig::default(),
+            )
+            .generate(&findings, &unchecked)
+            .into_iter()
+            .flat_map(|report| {
+                let framework = report.report_framework;
+                report
+                    .report_controls
+                    .into_iter()
+                    .map(move |control| ((framework, control.control_id), control.control_status))
+            })
+            .collect::<std::collections::HashMap<_, _>>()
+        }
+    };
+
+    let benchmark = statuses(PasswordPolicy::Benchmark, pam_host("14", "-1", "90")).await;
+    let nist = statuses(PasswordPolicy::Nist80063b, pam_host("15", "0", "99999")).await;
+    let status =
+        |statuses: &std::collections::HashMap<(ComplianceFramework, String), ControlStatus>,
+         framework: ComplianceFramework,
+         control: &str| { statuses.get(&(framework, control.to_string())).cloned() };
+
+    // RHEL-08-020200: maximum lifetime. RHEL-08-020130: a digit required.
+    // 8.2.4: change every 90 days.
+    for (framework, control) in [
+        (ComplianceFramework::STIG, "RHEL-08-020200"),
+        (ComplianceFramework::STIG, "RHEL-08-020130"),
+        (ComplianceFramework::PCIDSS, "8.2.4"),
+    ] {
+        assert_eq!(
+            status(&benchmark, framework, control),
+            Some(ControlStatus::Pass),
+            "the benchmark host meets {control}"
+        );
+        assert_eq!(
+            status(&nist, framework, control),
+            Some(ControlStatus::Fail),
+            "the NIST policy drops the rule behind {control}, so it must not pass"
+        );
+    }
+    // RHEL-08-020230: a 15-character minimum, which the NIST policy enforces.
+    assert_eq!(
+        status(&nist, ComplianceFramework::STIG, "RHEL-08-020230"),
+        Some(ControlStatus::Pass),
+        "the control: a rule the NIST policy keeps or tightens still passes"
+    );
+    // The NIST-derived controls the dropped rules map to pass under both
+    // policies, because a departure does not fail them.
+    for (framework, control) in [
+        (ComplianceFramework::NIST, "IA-5(1)(a)"),
+        (ComplianceFramework::NIST, "IA-5(1)(d)"),
+        (ComplianceFramework::NIST800171, "3.5.7"),
+        (ComplianceFramework::FedRAMP, "IA-5(1)(a)"),
+        (ComplianceFramework::FedRAMP, "IA-5(1)(d)"),
+    ] {
+        for (policy, statuses) in [("benchmark", &benchmark), ("nist-800-63b", &nist)] {
+            assert_eq!(
+                status(statuses, framework, control),
+                Some(ControlStatus::Pass),
+                "{framework:?} {control} under the {policy} policy"
+            );
+        }
+    }
+}
+
 /// `--output report.json` under the default `--report-format text` wrote a
 /// human text report into a file named `.json`, exited 0 and said "Report saved
 /// to". The extension was added when absent and never checked when present.

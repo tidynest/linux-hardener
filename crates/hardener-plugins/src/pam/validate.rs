@@ -6,11 +6,12 @@
 //! apply it previews would report as incomplete. The trait method in
 //! `mod.rs` delegates here.
 
+use super::policy::{ignored_override, policy_directives, relaxation_note};
 use super::{
-    ConfRead, FAILLOCK_CONF, ModulePresence, PAM_DIRECTIVES, PWHISTORY_CONF, PamConfigFile,
-    PamHardeningPlugin, PamObserved, clamped_baseline, dictcheck_lockout_message,
-    dictcheck_locks_out_password_changes, layer_drift_findings, module_not_loaded_message,
-    module_presence_by_file, observed_pam_value, read_conf_classified, unreadable_issue,
+    ConfRead, FAILLOCK_CONF, ModulePresence, PWHISTORY_CONF, PamConfigFile, PamHardeningPlugin,
+    PamObserved, clamped_baseline, dictcheck_lockout_message, dictcheck_locks_out_password_changes,
+    layer_drift_findings, module_not_loaded_message, module_presence_by_file, observed_pam_value,
+    read_conf_classified, unreadable_issue,
 };
 
 use hardener_common::file_utils::{ConfigFormat, parse_config_value};
@@ -131,10 +132,29 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
     let mut exceptions: Vec<String> = Vec::new();
     let mut compliant_count = 0usize;
 
-    for d in PAM_DIRECTIVES {
+    let policy = config.password_policy();
+    for policy_directive in policy_directives(policy) {
+        let d = &policy_directive.rule;
         if d.pam_config_file == PamConfigFile::PamAuth {
             continue;
         }
+
+        // Low, so the dry run still exits zero: the override is refused the
+        // way every loosening override is, and this only says so.
+        if let Some(note) = ignored_override(policy, &policy_directive, config) {
+            issues.push(ValidationIssue {
+                validation_issue_config_key: Some(d.pam_directive_name.to_string()),
+                validation_issue_message: note,
+                validation_issue_severity: Severity::Low,
+            });
+        }
+
+        // A change that is the selected policy relaxing a rule the host has
+        // says so, the same note apply records, so the preview an operator
+        // reads before applying cannot show a relaxation as an anonymous edit.
+        let note = |current: Option<&str>, written: &str| {
+            relaxation_note(policy, &policy_directive, current, written).unwrap_or_default()
+        };
 
         // Honour an exception only when it documents the value the host
         // actually has, matching apply's rendering of an absent or
@@ -197,12 +217,17 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                         compliant_count += 1
                     }
                     Some(current) => estimated_changes.push(format!(
-                        "{} will change: {} -> {}",
-                        d.pam_directive_name, current, target_value
+                        "{} will change: {} -> {}{}",
+                        d.pam_directive_name,
+                        current,
+                        target_value,
+                        note(Some(&current), target_value)
                     )),
                     None => estimated_changes.push(format!(
-                        "Set {} = {} (currently not set)",
-                        d.pam_directive_name, target_value
+                        "Set {} = {} (currently not set){}",
+                        d.pam_directive_name,
+                        target_value,
+                        note(None, target_value)
                     )),
                 }
             }
@@ -220,12 +245,17 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                         compliant_count += 1
                     }
                     PamObserved::Value(v) => estimated_changes.push(format!(
-                        "{} will change: {} -> {}",
-                        d.pam_directive_name, v, target
+                        "{} will change: {} -> {}{}",
+                        d.pam_directive_name,
+                        v,
+                        target,
+                        note(Some(v), &target)
                     )),
                     PamObserved::NotSet => estimated_changes.push(format!(
-                        "Set {} = {} (currently not set)",
-                        d.pam_directive_name, target
+                        "Set {} = {} (currently not set){}",
+                        d.pam_directive_name,
+                        target,
+                        note(None, &target)
                     )),
                     // Apply refuses outright here, whether what could not be
                     // read is this directive's own conf or a PAM stack file

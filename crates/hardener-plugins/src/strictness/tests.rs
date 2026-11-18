@@ -132,3 +132,183 @@ fn an_extreme_value_does_not_overflow_the_shared_scale() {
     assert!(!Strictness::AtMost.violated_by("3", Some(&min)));
     assert_eq!(Strictness::AtMost.clamp_target("3", Some(&min)), min);
 }
+
+#[test]
+fn only_a_positive_number_is_a_working_limit_for_a_positive_at_most_setting() {
+    // A smaller positive limit is still the stricter one, as under AtMost.
+    assert!(!Strictness::PositiveAtMost.violated_by("90", Some("30")));
+    assert!(!Strictness::PositiveAtMost.violated_by("90", Some("90")));
+    assert!(Strictness::PositiveAtMost.violated_by("90", Some("365")));
+
+    // `PASS_MAX_DAYS -1` disables expiry, `deny = 0` disables lockout and a
+    // negative `deny` wraps to 65535 inside faillock. Each of them is the
+    // setting switched off, which AtMost scored as the strictest value of
+    // all, so none of them may read as compliant.
+    for off in ["-1", "0", "-99999"] {
+        assert!(
+            Strictness::PositiveAtMost.violated_by("90", Some(off)),
+            "{off} switches the setting off and must not satisfy a limit of 90"
+        );
+        assert!(
+            !Strictness::AtMost.violated_by("90", Some(off)),
+            "the plain direction is unchanged: {off} still places as strict there"
+        );
+    }
+
+    // Unset fails closed, as it does in every direction.
+    assert!(Strictness::PositiveAtMost.violated_by("90", None));
+
+    // The extreme value cannot overflow the shared scale either.
+    assert!(Strictness::PositiveAtMost.violated_by("90", Some(&i64::MIN.to_string())));
+}
+
+#[test]
+fn a_switched_off_value_never_wins_a_positive_at_most_clamp() {
+    // As an override it loses, so `PASS_MAX_DAYS = "-1"` in config.toml
+    // leaves the baseline standing rather than being written as a tightening.
+    assert_eq!(
+        Strictness::PositiveAtMost.clamp_target("90", Some("-1")),
+        "90"
+    );
+    assert_eq!(Strictness::PositiveAtMost.clamp_target("5", Some("0")), "5");
+
+    // As the host's value it loses too, so apply replaces it rather than
+    // keeping it as the stricter of the two.
+    assert_eq!(
+        Strictness::PositiveAtMost.clamp_target("90", Some("0")),
+        "90"
+    );
+
+    // A genuinely stricter positive value still wins, so the no-loosen rule
+    // holds for every value that is a working limit.
+    assert_eq!(
+        Strictness::PositiveAtMost.clamp_target("90", Some("30")),
+        "30"
+    );
+    assert_eq!(Strictness::PositiveAtMost.clamp_target("5", Some("3")), "3");
+}
+
+#[test]
+fn a_credit_is_weaker_the_further_it_sits_from_zero_on_either_side() {
+    // Zero neither demands a character class nor shortens the minimum.
+    assert!(!Strictness::ClosestToZero.violated_by("0", Some("0")));
+
+    // A negative credit demands the class, which is the composition rule; a
+    // positive one lets a password containing it be shorter than minlen.
+    for weaker in ["-1", "1", "-4", "4"] {
+        assert!(
+            Strictness::ClosestToZero.violated_by("0", Some(weaker)),
+            "{weaker} is a composition rule or a length credit, and a policy \
+             without either must flag it"
+        );
+    }
+
+    // Unset fails closed here as everywhere: libpwquality's default is zero,
+    // but a drop-in read before the main file may say otherwise, and only an
+    // explicit line in pwquality.conf, read last, settles it.
+    assert!(Strictness::ClosestToZero.violated_by("0", None));
+
+    // Nothing beats zero in a clamp, from the host or from an override, so the
+    // write always converges on it and never keeps a credit.
+    for candidate in ["-1", "1", "-2"] {
+        assert_eq!(
+            Strictness::ClosestToZero.clamp_target("0", Some(candidate)),
+            "0"
+        );
+    }
+
+    // The scale cannot overflow at either extreme.
+    let min = i64::MIN.to_string();
+    assert!(Strictness::ClosestToZero.violated_by("0", Some(&min)));
+    assert_eq!(Strictness::ClosestToZero.clamp_target("0", Some(&min)), "0");
+}
+
+/// libpwquality's `minclass` and `maxclassrepeat` are off at zero and at every
+/// negative value (check.c tests only `> 0` and `numclass < min_class`), so
+/// under a policy that wants them off, every one of those values meets the
+/// target and none is rewritten, while any positive value imposes the check.
+#[test]
+fn every_value_at_or_below_zero_is_off_and_every_positive_value_is_not() {
+    for off in ["0", "-1", "-5"] {
+        assert!(
+            !Strictness::OffAtOrBelowZero.violated_by("0", Some(off)),
+            "{off} switches the check off, which is what the target asks"
+        );
+        // It ties with the target, so a host's own spelling of off is not a
+        // weaker value for apply to rewrite as 0.
+        assert!(!Strictness::OffAtOrBelowZero.is_stricter("0", off));
+    }
+    for on in ["1", "4"] {
+        assert!(
+            Strictness::OffAtOrBelowZero.violated_by("0", Some(on)),
+            "{on} imposes the check"
+        );
+        // No override can put the check back: off wins every clamp.
+        assert_eq!(
+            Strictness::OffAtOrBelowZero.clamp_target("0", Some(on)),
+            "0"
+        );
+    }
+    // An off override ties with the baseline, so the baseline's spelling is
+    // the one written.
+    assert_eq!(
+        Strictness::OffAtOrBelowZero.clamp_target("0", Some("-5")),
+        "0"
+    );
+
+    // Unset fails closed, as everywhere, and the extremes do not overflow.
+    assert!(Strictness::OffAtOrBelowZero.violated_by("0", None));
+    assert!(!Strictness::OffAtOrBelowZero.violated_by("0", Some(&i64::MIN.to_string())));
+    assert!(Strictness::OffAtOrBelowZero.violated_by("0", Some(&i64::MAX.to_string())));
+}
+
+#[test]
+fn a_negative_maximum_age_is_unlimited_and_satisfies_any_target() {
+    // A longer life is stricter on this scale, because the policy it serves
+    // forbids forcing a change.
+    assert!(!Strictness::AtLeastOrUnlimited.violated_by("99999", Some("99999")));
+    assert!(!Strictness::AtLeastOrUnlimited.violated_by("99999", Some("100000")));
+    assert!(Strictness::AtLeastOrUnlimited.violated_by("99999", Some("90")));
+    assert!(Strictness::AtLeastOrUnlimited.violated_by("99999", Some("365")));
+
+    // -1 is login.defs's own "never expires", so it meets any target and is
+    // kept rather than rewritten as 99999.
+    assert!(!Strictness::AtLeastOrUnlimited.violated_by("99999", Some("-1")));
+    assert_eq!(
+        Strictness::AtLeastOrUnlimited.clamp_target("99999", Some("-1")),
+        "-1"
+    );
+
+    // 0 expires every password at once, which is the opposite of the intent.
+    assert!(Strictness::AtLeastOrUnlimited.violated_by("99999", Some("0")));
+    assert_eq!(
+        Strictness::AtLeastOrUnlimited.clamp_target("99999", Some("0")),
+        "99999"
+    );
+
+    // Unset fails closed: an explicit line is what this tool can vouch for.
+    assert!(Strictness::AtLeastOrUnlimited.violated_by("99999", None));
+}
+
+/// `is_stricter` describes a write without deciding one: it answers on the
+/// scale it is asked about, and a value it cannot place is never evidence that
+/// a write loosens anything, rather than a panic.
+#[test]
+fn is_stricter_compares_on_its_own_scale_and_never_panics() {
+    // A -1 credit is stricter than 0 on the benchmark's scale, so writing 0
+    // over it relaxes it; a positive credit is looser, so writing 0 tightens.
+    assert!(Strictness::AtMost.is_stricter("-1", "0"));
+    assert!(!Strictness::AtMost.is_stricter("2", "0"));
+
+    // 90 days is stricter than 99999 by the benchmark's measure, and 0, which
+    // is switched off rather than strict, is not stricter than anything.
+    assert!(Strictness::PositiveAtMost.is_stricter("90", "99999"));
+    assert!(!Strictness::PositiveAtMost.is_stricter("0", "99999"));
+
+    // Strictly: equal values are not stricter than each other.
+    assert!(!Strictness::AtLeast.is_stricter("15", "15"));
+
+    // Unplaceable on either side answers false.
+    assert!(!Strictness::AtMost.is_stricter("abc", "0"));
+    assert!(!Strictness::AtMost.is_stricter("-1", "abc"));
+}

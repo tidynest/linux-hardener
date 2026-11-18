@@ -142,7 +142,7 @@ The rollback takes its own snapshot first, so it too can be undone.
 | **Kernel Hardening** | sysctl parameters: ASLR, ptrace scope, network stack |
 | **SSH Hardening** | OpenSSH configuration, including key exchange, cipher and MAC selection intersected with what the host actually supports |
 | **Firewall Hardening** | rules and default policy across nftables, firewalld and ufw |
-| **PAM Authentication Hardening** | password quality, lockout, history and ageing, and how new passwords are hashed (yescrypt where the host supports it, SHA-512 with 100000 rounds in FIPS mode or where it does not) |
+| **PAM Authentication Hardening** | password quality, lockout, history and ageing, under a selectable policy: the CIS and STIG-style rules, or NIST SP 800-63B-4 (long passphrases, no character classes, no forced change); and how new passwords are hashed (yescrypt where the host supports it, SHA-512 with 100000 rounds in FIPS mode or where it does not) |
 | **Service Minimisation** | disables services that need not be running |
 | **Audit Rules Hardening** | auditd rule files (`auditd.conf` is checkpointed but not modified) |
 | **File Permissions Hardening** | file modes on account, boot and authentication paths (ownership is not checked) |
@@ -187,16 +187,19 @@ The values are the same on every distribution. A compliance profile changes the
 control identifiers a report prints, never a value, and a **Pass** means the
 host meets the baseline's value, which is not always everything the control's
 own text asks for. `directives` can only tighten a value as the code ranks
-it, although for three settings, faillock `deny`, `PASS_MAX_DAYS` and
-`ClientAliveCountMax`, it ranks the value that switches the check off as the
-strictest. An exception is how a host records a deliberately looser value.
+it, although for one setting, `ClientAliveCountMax`, it ranks the value that
+switches the check off as the strictest. An exception is how a host records a
+deliberately looser value.
 
 There is no written rule yet for choosing between guides where they disagree.
 To propose a different default, open an issue with the **Propose a baseline
 change** form, naming the setting, the value, and the guide, version and rule
-that back it. Password expiry and length are under discussion in
-[#190](https://github.com/tidynest/linux-hardener/issues/190), and password
-hashing in [#191](https://github.com/tidynest/linux-hardener/issues/191).
+that back it. The default password rules stay as they are; `password_policy =
+"nist-800-63b"` in `[pam]` selects the NIST SP 800-63B-4 rules instead, with a
+15-character minimum, no character classes and no forced expiry
+([#190](https://github.com/tidynest/linux-hardener/issues/190)). How new
+passwords are hashed is part of the baseline too
+([#191](https://github.com/tidynest/linux-hardener/issues/191)).
 
 ### Supported distributions
 
@@ -545,7 +548,7 @@ hardened host still carries is in [upgrading](docs/guide/upgrading.md).
 ### Tests
 
 ```
-Rust workspace (cargo nextest run --workspace):  2445 passed, 0 failed, 42 skipped
+Rust workspace (cargo nextest run --workspace):  2487 passed, 0 failed, 42 skipped
 ```
 
 The 42 skipped tests need root, a live SSH host, or a specific firewall backend,

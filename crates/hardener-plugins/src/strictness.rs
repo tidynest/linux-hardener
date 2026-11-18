@@ -40,6 +40,60 @@ pub enum Strictness {
     /// number it can hold. A plain [`Self::AtMost`] scores it compliant, which
     /// is a check switched off reading as a check satisfied.
     NonZeroAtMost,
+    /// Smaller is stricter, but only a positive number is a working limit:
+    /// zero and every negative number switch the setting off.
+    ///
+    /// `PASS_MAX_DAYS -1` is shadow's own spelling of "never expires"
+    /// (login.defs(5): "-1 will be assumed (which disables the restriction)"),
+    /// and faillock's `deny = 0` disables lockout outright, because
+    /// `pam_faillock` locks only `if (opts->deny && failures >= opts->deny)`.
+    /// A negative `deny` is no better: faillock reads it as an unsigned short,
+    /// so it wraps to a very large number (`-1` becomes 65535, `-3` 65533).
+    /// Under [`Self::AtMost`] every one of these scored
+    /// as the strictest value its setting could hold, so a host with expiry or
+    /// lockout switched off read as compliant, and an override of `-1` was
+    /// written as a tightening.
+    ///
+    /// `PASS_MAX_DAYS 0` is not off but broken: it expires every password as
+    /// soon as it is set. It ranks with the off values all the same, because
+    /// no reading of it is a stricter policy an operator would want kept.
+    PositiveAtMost,
+    /// Zero is the strictest value, and a number is weaker the further it sits
+    /// from zero on either side.
+    ///
+    /// For libpwquality's character-class credits under a password policy that
+    /// forbids composition rules. A positive credit lets a password that
+    /// contains the class be shorter than `minlen` (libpwquality subtracts it
+    /// from the minimum), and a negative one demands the class, which is the
+    /// composition rule itself. Zero does neither, so it is the one value such
+    /// a policy accepts. This is still a direction rather than an equality:
+    /// nothing is stricter than zero, so a clamp can never overwrite a stricter
+    /// value with it, which is the property the missing `Exact` protects.
+    ClosestToZero,
+    /// Zero and every negative number switch the check off, which is the
+    /// strictest value under a policy that wants it off, and every positive
+    /// number imposes it, equally.
+    ///
+    /// For libpwquality's `minclass` and `maxclassrepeat` under a password
+    /// policy that forbids composition rules. libpwquality stores a negative
+    /// value as given and tests only `max_class_repeat > 0` and
+    /// `numclass(new) < min_class` (check.c), so `-1` refuses nothing, exactly
+    /// as `0` does. [`Self::ClosestToZero`] would report it as a value to
+    /// rewrite, failing every control the finding carries for a setting that
+    /// already does what the policy asks. Positive values are not ranked
+    /// against each other because the two options run in opposite directions
+    /// (a larger `minclass` demands more, a larger `maxclassrepeat` allows
+    /// more) and none of them is met anyway.
+    OffAtOrBelowZero,
+    /// Larger is stricter, and a negative number means unlimited, which is
+    /// larger than any number.
+    ///
+    /// For `PASS_MAX_DAYS` under a password policy that forbids forced periodic
+    /// change, where the quantity judged is how long a password may live.
+    /// login.defs(5) defines `-1` as the value that "disables the restriction",
+    /// so it satisfies any target, while `0`, which expires a password as soon
+    /// as it is set, is the weakest value there is.
+    AtLeastOrUnlimited,
     /// The value space is a closed set whose strictness neither the number nor
     /// the alphabet carries, so it is listed here explicitly, **weakest first**.
     ///
@@ -116,6 +170,20 @@ impl Strictness {
             .is_none_or(|(score, _)| score < target_score)
     }
 
+    /// True when `value` is strictly stricter than `other` on this scale.
+    ///
+    /// For describing a write rather than deciding one: "would writing
+    /// `other` over `value` loosen it?" A value either side that this
+    /// comparison cannot place answers false, because it is no evidence that
+    /// the write loosens anything, and unlike [`Self::violated_by`] this never
+    /// treats its first argument as a target that must place.
+    pub fn is_stricter(self, value: &str, other: &str) -> bool {
+        match (self.place(value), self.place(other)) {
+            (Some((value_score, _)), Some((other_score, _))) => value_score > other_score,
+            _ => false,
+        }
+    }
+
     /// Where `value` sits on this comparison's strictness scale, **higher being
     /// stricter**, together with the spelling this tool writes for it.
     ///
@@ -150,6 +218,29 @@ impl Strictness {
             Self::NonZeroAtMost => value.parse::<i64>().ok().map(|n| match n {
                 0 => (i64::MIN, n.to_string()),
                 n => (n.saturating_neg(), n.to_string()),
+            }),
+            // The same floor as above, widened to every value that is not a
+            // working limit.
+            Self::PositiveAtMost => value.parse::<i64>().ok().map(|n| match n {
+                n if n <= 0 => (i64::MIN, n.to_string()),
+                n => (n.saturating_neg(), n.to_string()),
+            }),
+            // The distance from zero, negated so that nearer sorts stricter.
+            // Saturating for the same reason as above.
+            Self::ClosestToZero => value
+                .parse::<i64>()
+                .ok()
+                .map(|n| (n.saturating_abs().saturating_neg(), n.to_string())),
+            // Off ties with off whatever its spelling, so a host's `-1` is
+            // never a violation, and a clamp, which settles a tie on the
+            // baseline, writes it in this tool's spelling, `0`.
+            Self::OffAtOrBelowZero => value.parse::<i64>().ok().map(|n| match n {
+                n if n <= 0 => (0, n.to_string()),
+                n => (-1, n.to_string()),
+            }),
+            Self::AtLeastOrUnlimited => value.parse::<i64>().ok().map(|n| match n {
+                n if n < 0 => (i64::MAX, n.to_string()),
+                n => (n, n.to_string()),
             }),
         }
     }

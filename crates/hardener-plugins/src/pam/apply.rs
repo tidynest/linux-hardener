@@ -7,11 +7,12 @@
 //! The trait method in `mod.rs` delegates here.
 
 use super::parsing::apply_exact_directive;
+use super::policy::{ignored_override, policy_directives, relaxation_note};
 use super::{
-    ConfRead, InlineRead, ModulePresence, PAM_BACKED_UP_FILES, PAM_DIRECTIVES, PamConfigFile,
-    PamHardeningPlugin, backup_and_write, clamped_baseline, conf_is_writable,
-    module_not_loaded_message, module_presence_by_file, observed_pam_value, pam_backup_prefix,
-    read_conf_classified, read_pamd_inline, write_changed_conf,
+    ConfRead, InlineRead, ModulePresence, PAM_BACKED_UP_FILES, PamConfigFile, PamHardeningPlugin,
+    backup_and_write, clamped_baseline, conf_is_writable, module_not_loaded_message,
+    module_presence_by_file, observed_pam_value, pam_backup_prefix, read_conf_classified,
+    read_pamd_inline, write_changed_conf,
 };
 
 use hardener_common::error::Result;
@@ -26,7 +27,12 @@ use tracing::{debug, info, warn};
 
 pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<ApplyResult> {
     let start = Instant::now();
-    info!("Starting PAM authentication hardening apply");
+    let policy = config.password_policy();
+    info!(
+        "Starting PAM authentication hardening apply ({} password policy)",
+        policy.id()
+    );
+    let directives = policy_directives(policy);
 
     let mut changes = Vec::new();
     let mut all_success = true;
@@ -147,12 +153,12 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
     // pointing at distinct files.
     let pwquality_observed = pwquality_read;
     let login_defs_observed = login_defs_read;
-    let mut observed_values = Vec::with_capacity(PAM_DIRECTIVES.len());
-    for directive in PAM_DIRECTIVES {
+    let mut observed_values = Vec::with_capacity(directives.len());
+    for policy_directive in &directives {
         observed_values.push(
             observed_pam_value(
                 ctx,
-                directive,
+                &policy_directive.rule,
                 &pwquality_observed,
                 &login_defs_observed,
                 &[],
@@ -163,7 +169,11 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
 
     // Step 2: Apply each directive (state-aware: already-correct values
     // record a Skipped no-op and never trigger a rewrite)
-    for (directive, observed) in PAM_DIRECTIVES.iter().zip(observed_values.iter()) {
+    for (policy_directive, observed) in directives.iter().zip(observed_values.iter()) {
+        let directive = &policy_directive.rule;
+        if let Some(note) = ignored_override(policy, policy_directive, config) {
+            warn!("{note}");
+        }
         // Honour an exception only when it documents the value the host
         // actually has. An unset value and an unreadable one both render
         // "not set", matching scan's rendering and what an operator
@@ -227,6 +237,13 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
             continue;
         }
 
+        // Where this write is the selected policy relaxing a rule the host
+        // had, the change line says so, so a relaxation is never recorded as
+        // an anonymous "Set dcredit = 0". Only a real write is annotated; a
+        // skipped no-op has nothing to explain, and a write that repairs an
+        // unset or broken value is not a relaxation.
+        let note = relaxation_note(policy, policy_directive, observed.value(), &target_value);
+        let first_new_change = changes.len();
         match directive.pam_config_file {
             PamConfigFile::PwQuality => apply_exact_directive(
                 &mut pwquality_content,
@@ -387,6 +404,15 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
                 } else {
                     all_success = false;
                 }
+            }
+        }
+
+        if let Some(note) = &note {
+            for change in changes[first_new_change..]
+                .iter_mut()
+                .filter(|change| matches!(change.change_type, ChangeType::ConfigFile))
+            {
+                change.change_description.push_str(note);
             }
         }
     }

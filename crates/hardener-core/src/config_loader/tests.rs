@@ -351,6 +351,38 @@ fn a_section_that_states_enabled_still_decides_it() {
     );
 }
 
+/// The password policy merges the way `enabled` does: the last source that
+/// states it decides, and a source that names `[pam]` only for a directive or
+/// an exception leaves the earlier choice standing.
+#[test]
+fn the_last_source_to_state_a_password_policy_decides_it() {
+    use crate::config::PasswordPolicy;
+
+    let mut base = HardenerConfig::default();
+    base.pam.password_policy = Some(PasswordPolicy::Nist80063b);
+
+    let mut silent = HardenerConfig::default();
+    silent
+        .pam
+        .directives
+        .insert("minlen".to_string(), "20".to_string());
+    let merged = ConfigLoader::merge_configs(base.clone(), silent).expect("the sources merge");
+    assert_eq!(
+        merged.pam.password_policy(),
+        PasswordPolicy::Nist80063b,
+        "a source that did not choose a policy must not undo the earlier choice"
+    );
+
+    let mut stated = HardenerConfig::default();
+    stated.pam.password_policy = Some(PasswordPolicy::Benchmark);
+    let merged = ConfigLoader::merge_configs(base, stated).expect("the sources merge");
+    assert_eq!(
+        merged.pam.password_policy(),
+        PasswordPolicy::Benchmark,
+        "the control: a later source that states a policy decides it"
+    );
+}
+
 /// `skip_defaults` has to set its own field and keep everything already
 /// decided, not hand back a fresh loader.
 ///
@@ -399,6 +431,7 @@ fn the_directive_limit_admits_the_maximum_and_refuses_one_more() {
         enabled: None,
         directives: (0..n).map(|i| (format!("d{i}"), "v".to_string())).collect(),
         exceptions: HashMap::new(),
+        password_policy: None,
     };
 
     let at_limit = ConfigLoader::merge_plugin(
@@ -445,6 +478,7 @@ fn the_exception_limit_admits_the_maximum_and_refuses_one_more() {
                 )
             })
             .collect(),
+        password_policy: None,
     };
 
     let at_limit = ConfigLoader::merge_plugin(

@@ -1,6 +1,6 @@
 # Upgrading
 
-**Last Updated**: 2026-08-29
+**Last Updated**: 2026-11-18
 
 Some releases fixed defects that a hardened host keeps carrying after the
 upgrade. Installing a newer version repairs the tool, not the system it already
@@ -23,6 +23,7 @@ The full per-release history is in [CHANGELOG.md](../../CHANGELOG.md).
 - [1.5.0 and earlier: rollback did not restore systemd unit files](#150-and-earlier-rollback-did-not-restore-systemd-unit-files)
 - [1.5.1 and earlier: the package and the project are renamed](#151-and-earlier-the-package-and-the-project-are-renamed)
 - [1.5.1 and earlier: a remote checkpoint was filed under an account you never named](#151-and-earlier-a-remote-checkpoint-was-filed-under-an-account-you-never-named)
+- [1.9.1 and earlier: password expiry or lockout switched off read as compliant](#191-and-earlier-password-expiry-or-lockout-switched-off-read-as-compliant)
 
 ---
 
@@ -336,6 +337,81 @@ that loses nothing.
 **No signature is affected.** The signed digest covers the checkpoint id, name,
 timestamp, username and file states, and never the host key, so everything you
 have stays valid and verifiable. Only its filing moved.
+
+---
+
+## 1.9.1 and earlier: password expiry or lockout switched off read as compliant
+
+**Affects** hosts whose `/etc/login.defs` sets `PASS_MAX_DAYS` to `-1` or `0`,
+or whose `/etc/security/faillock.conf` (or a `pam_faillock.so` line in the PAM
+stack) sets `deny = 0`, and any `config.toml` whose `[pam.directives]` sets
+either of those values. Other hosts are not affected.
+
+The PAM plugin counted a smaller number as stricter all the way down, so `-1`
+and `0` beat the baseline of 90 days and `deny = 0` beat the baseline of 5. All
+three switch the setting off, or in the case of `PASS_MAX_DAYS 0` expire every
+password as soon as it is set, yet the scan passed every control mapped to them.
+An override naming one of those values was also written to the host as if it
+were a tightening.
+
+### Checking
+
+```bash
+grep -E '^[[:space:]]*PASS_MAX_DAYS' /etc/login.defs /usr/etc/login.defs 2>/dev/null
+grep -E '^[[:space:]]*deny' /etc/security/faillock.conf
+grep -rn 'pam_faillock.so.*deny=' /etc/pam.d/
+```
+
+`/usr/etc/login.defs` is the vendor copy openSUSE ships; the tool reads it when
+`/etc/login.defs` does not exist. After the upgrade, a scan reports any of these
+values as a finding instead of a pass.
+
+### Before re-applying: a value you set on purpose
+
+Re-applying writes the baseline over a switched-off value, so decide first
+whether yours was deliberate. If you set `PASS_MAX_DAYS -1` because you do not
+want forced password changes, you have two ways to keep it:
+
+- Choose the `nist-800-63b` password policy described in
+  [configuration.md](../reference/configuration.md#pam-password-policy), which
+  accepts `-1`. It still reports it as an Info departure that fails the CIS,
+  DISA STIG and PCI DSS controls, which require a maximum age.
+- Or stay on the default policy and record the deviation as a policy exception
+  before re-applying, so `apply` skips the directive and the report lists it as
+  documented rather than failing it:
+
+  ```toml
+  [pam.exceptions.PASS_MAX_DAYS]
+  value = "-1"
+  allowed = true
+  reason = "No forced password changes; see NIST SP 800-63B-4 3.1.1.2"
+  ```
+
+`deny = 0` switches lockout off, which neither password policy accepts (NIST SP
+800-63B-4 requires limiting failed attempts too), so the only way to keep it is
+an exception of the same shape with `value = "0"` under
+`[pam.exceptions.deny]`.
+
+### Repairing
+
+Re-apply, which writes the baseline over a switched-off value and keeps any
+stricter positive value the file sets explicitly:
+
+```bash
+sudo hardener apply -p pam-hardening
+```
+
+A `deny=0` set inline on a `pam_faillock.so` line is reported as a manual step,
+because this tool does not edit the PAM stack. One case is not covered by
+"keeps any stricter value": where `deny` or `remember` is not set at all,
+pam_faillock and pam_pwhistory use their built-in defaults of 3 and 10, which
+are stricter than the baseline's 5, yet `apply` writes 5. That is older than
+this fix and is tracked separately; set the value you want explicitly if it
+matters to you.
+
+`/etc/login.defs` only supplies defaults for accounts created after it changes.
+Existing accounts keep the ageing recorded in `/etc/shadow`; read it with
+`sudo chage -l <user>`.
 
 ---
 

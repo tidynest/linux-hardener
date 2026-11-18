@@ -434,3 +434,43 @@ fn an_exception_is_honoured_through_the_whole_day_it_names() {
         "and a date still ahead has plainly not expired"
     );
 }
+
+/// A section that names no policy gets the benchmark one, which is what every
+/// release before the setting existed enforced, so an upgrade changes nothing
+/// on a host whose configuration did not ask for a change.
+#[test]
+fn the_password_policy_defaults_to_benchmark_and_parses_both_spellings() {
+    assert_eq!(
+        PluginConfig::default().password_policy(),
+        PasswordPolicy::Benchmark
+    );
+
+    for (spelling, expected) in [
+        ("benchmark", PasswordPolicy::Benchmark),
+        ("nist-800-63b", PasswordPolicy::Nist80063b),
+    ] {
+        let config: HardenerConfig =
+            toml::from_str(&format!("[pam]\npassword_policy = \"{spelling}\"\n"))
+                .unwrap_or_else(|e| panic!("'{spelling}' must parse: {e}"));
+        assert_eq!(config.pam.password_policy(), expected);
+        assert_eq!(
+            expected.id(),
+            spelling,
+            "findings name the policy the way config.toml spells it"
+        );
+    }
+}
+
+/// A misspelt policy must stop the load rather than fall back to a default:
+/// the operator asked for something, and quietly enforcing something else is
+/// the one outcome that cannot be noticed from the report.
+#[test]
+fn a_misspelt_password_policy_is_refused_at_parse_time() {
+    let error = toml::from_str::<HardenerConfig>("[pam]\npassword_policy = \"nist\"\n")
+        .expect_err("an unknown policy must not parse");
+    let message = error.to_string();
+    assert!(
+        message.contains("benchmark") && message.contains("nist-800-63b"),
+        "the error must list the accepted spellings: {message}"
+    );
+}
