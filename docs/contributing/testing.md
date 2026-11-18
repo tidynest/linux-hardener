@@ -1752,4 +1752,4 @@ GitHub sends a failed scheduled run's notification to whoever last modified the
 cron line, so after the workflow lands, the maintainer's own commit should be
 the last to touch it, and one run by hand shows where a failure is reported.
 
-**Last Updated**: 2026-11-15
+**Last Updated**: 2026-11-18
