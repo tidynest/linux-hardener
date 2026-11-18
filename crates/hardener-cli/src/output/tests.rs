@@ -940,11 +940,12 @@ fn a_skip_marker_renders_as_skipped_by_config_not_as_a_failure() {
     );
 }
 
-/// The instant type the formatting calls take. These two helpers are the only
-/// part of the pinned tests that moved when chrono left the workspace.
+/// The instant type the formatting calls take. These two helpers moved when
+/// chrono left the workspace, and the tests below pass the module's own
+/// constants, so they check the patterns the tool writes with. The expected
+/// text is unchanged.
 fn instant(seconds: i64, nanoseconds: u32) -> time::Timestamp {
-    let total = i128::from(seconds) * 1_000_000_000 + i128::from(nanoseconds);
-    time::Timestamp::from_nanosecond(total).expect("a representable instant")
+    time::from_unix_parts(seconds, nanoseconds).expect("a representable instant")
 }
 
 fn formatted(instant: time::Timestamp, pattern: &str) -> String {
@@ -954,7 +955,7 @@ fn formatted(instant: time::Timestamp, pattern: &str) -> String {
 #[test]
 fn the_human_readable_utc_pattern_is_pinned() {
     assert_eq!(
-        formatted(instant(1767225600, 0), "%Y-%m-%d %H:%M:%S UTC"),
+        formatted(instant(1767225600, 0), time::REPORT_STAMP),
         "2026-01-01 00:00:00 UTC"
     );
 }
@@ -962,7 +963,7 @@ fn the_human_readable_utc_pattern_is_pinned() {
 #[test]
 fn the_underscore_file_name_pattern_is_pinned() {
     assert_eq!(
-        formatted(instant(1767225600, 0), "%Y%m%d_%H%M%S"),
+        formatted(instant(1767225600, 0), time::FILE_STAMP_UNDERSCORE),
         "20260101_000000"
     );
 }
@@ -970,7 +971,7 @@ fn the_underscore_file_name_pattern_is_pinned() {
 #[test]
 fn the_hyphen_file_name_pattern_is_pinned() {
     assert_eq!(
-        formatted(instant(1767225600, 0), "%Y%m%d-%H%M%S"),
+        formatted(instant(1767225600, 0), time::FILE_STAMP_HYPHEN),
         "20260101-000000"
     );
 }

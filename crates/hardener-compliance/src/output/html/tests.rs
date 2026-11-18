@@ -234,3 +234,18 @@ fn a_single_framework_document_is_header_body_footer() {
     assert_eq!(output.matches("<!DOCTYPE html>").count(), 1);
     assert_eq!(output.matches("</html>").count(), 1);
 }
+
+/// The stamp is part of what a shared HTML report says, so the renderer must
+/// use the report pattern and not one of the module's other patterns.
+#[test]
+fn the_generation_time_is_written_with_the_report_pattern() {
+    let mut report = report_with_one_exclusion();
+    report.report_generated_at = time::from_unix_seconds(1767225600).unwrap();
+
+    let output = HtmlFormatter::new().format(&report);
+
+    assert!(
+        output.contains("<p class=\"generated\">Generated: 2026-01-01 00:00:00 UTC</p>\n"),
+        "got:\n{output}"
+    );
+}

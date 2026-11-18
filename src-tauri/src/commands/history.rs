@@ -3,7 +3,6 @@
 //! keeps its own commands and their private helpers.
 
 use super::*;
-use hardener_types::time;
 
 /// Converts a stored `ScanSession` into the frontend's session metadata.
 ///

@@ -232,8 +232,7 @@ const PINNED: [(i64, u32, &str); 4] = [
 /// The report's instant type. A later task changes this body and nothing else
 /// in the pinned tests.
 fn instant(seconds: i64, nanoseconds: u32) -> time::Timestamp {
-    let total = i128::from(seconds) * 1_000_000_000 + i128::from(nanoseconds);
-    time::Timestamp::from_nanosecond(total).expect("a representable instant")
+    time::from_unix_parts(seconds, nanoseconds).expect("a representable instant")
 }
 
 fn empty_report_at(generated_at: time::Timestamp) -> ComplianceReport {

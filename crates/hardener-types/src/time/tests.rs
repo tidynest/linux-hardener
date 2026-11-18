@@ -29,8 +29,7 @@ const PINNED: [(i64, u32, &str); 4] = [
 /// The instant `seconds` and `nanoseconds` after the epoch, in the pairs 1.9.1
 /// stored, whose fraction always counts forward, also before the epoch.
 fn instant(seconds: i64, nanoseconds: u32) -> Timestamp {
-    let total = i128::from(seconds) * 1_000_000_000 + i128::from(nanoseconds);
-    Timestamp::from_nanosecond(total).expect("a representable instant")
+    from_unix_parts(seconds, nanoseconds).expect("a representable instant")
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -182,6 +181,34 @@ fn unix_seconds_out_of_range_is_none() {
     // The library stops a day short of the end of 9999, where chrono went on
     // to year 262143. No record holds an instant that late.
     assert_eq!(from_unix_seconds(253402300799), None);
+}
+
+/// The pairs chrono's `DateTime::from_timestamp` took, each compared with its
+/// count of nanoseconds from the epoch, so the expected side is a plain number.
+#[test]
+fn unix_parts_count_the_fraction_forward_as_chrono_did() {
+    let nanoseconds_of = |seconds, nanoseconds| {
+        from_unix_parts(seconds, nanoseconds).map(|instant| instant.as_nanosecond())
+    };
+    assert_eq!(nanoseconds_of(-1, 500_000_000), Some(-500_000_000));
+    assert_eq!(nanoseconds_of(-2, 999_999_999), Some(-1_000_000_001));
+    assert_eq!(nanoseconds_of(0, 0), Some(0));
+    assert_eq!(nanoseconds_of(0, 1), Some(1));
+    assert_eq!(
+        nanoseconds_of(1767225600, 123_456_789),
+        Some(1_767_225_600_123_456_789)
+    );
+    assert_eq!(
+        from_unix_parts(1767225600, 0),
+        from_unix_seconds(1767225600)
+    );
+
+    // chrono read a whole second or more of fraction as a leap second, which
+    // the library has no way to hold.
+    assert_eq!(from_unix_parts(1767225599, 1_000_000_000), None);
+    assert_eq!(from_unix_parts(0, u32::MAX), None);
+    assert_eq!(from_unix_parts(i64::MAX, 0), None);
+    assert_eq!(from_unix_parts(i64::MIN, 0), None);
 }
 
 #[test]
@@ -368,4 +395,45 @@ fn the_local_functions_follow_the_tz_variable() {
     // could read. On a host whose zone is UTC this cannot tell that from
     // falling back to UTC, and it still holds.
     assert_eq!(local_under(Some("Not/AZone")).0, local_under(None).0);
+}
+
+/// What [`zone_named_in`] makes of a file holding `contents`, as the PINNED
+/// instant written in that zone. The file sits in the system's scratch
+/// directory under this process's id, so parallel runs do not share it.
+fn zone_file_holding(label: &str, contents: &str) -> Option<String> {
+    let path = std::env::temp_dir().join(format!(
+        "hardener-types-zone-{}-{label}",
+        std::process::id()
+    ));
+    std::fs::write(&path, contents).unwrap();
+    let zone = zone_named_in(&path);
+    std::fs::remove_file(&path).unwrap();
+    zone.map(|zone| {
+        zone.to_datetime(instant(1767225600, 0))
+            .strftime(FILE_STAMP_HYPHEN)
+            .to_string()
+    })
+}
+
+/// `Etc/GMT-5` is five hours ahead of UTC all year, so the result does not
+/// depend on this machine's own zone, only on the system's zoneinfo.
+#[test]
+fn a_zone_name_file_is_read_as_chrono_read_etc_timezone() {
+    assert_eq!(
+        zone_file_holding("named", "Etc/GMT-5\n").as_deref(),
+        Some("20260101-050000")
+    );
+    assert_eq!(
+        zone_file_holding("bare", "UTC").as_deref(),
+        Some("20260101-000000")
+    );
+    assert_eq!(zone_file_holding("nonsense", "not a zone\n"), None);
+    assert_eq!(zone_file_holding("empty", ""), None);
+
+    let missing = std::env::temp_dir().join(format!(
+        "hardener-types-zone-{}-missing",
+        std::process::id()
+    ));
+    assert!(!missing.exists());
+    assert!(zone_named_in(&missing).is_none());
 }

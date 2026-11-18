@@ -237,3 +237,18 @@ fn test_text_formatter_profile_label_in_heading() {
     let generic = formatter.format(&stig_report(ComplianceProfile::Generic));
     assert!(generic.contains("DISA STIG Compliance Report (RHEL 8 baseline IDs)"));
 }
+
+/// The stamp is part of what a saved text report says, so the renderer must
+/// use the report pattern and not one of the module's other patterns.
+#[test]
+fn the_generation_time_is_written_with_the_report_pattern() {
+    let mut report = stig_report(ComplianceProfile::Generic);
+    report.report_generated_at = time::from_unix_seconds(1767225600).unwrap();
+
+    let output = TextFormatter::new().format(&report);
+
+    assert!(
+        output.contains("\nGenerated: 2026-01-01 00:00:00 UTC\n"),
+        "got:\n{output}"
+    );
+}

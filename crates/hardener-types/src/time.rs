@@ -1,8 +1,11 @@
 //! Timestamps, dates and their text forms for the whole workspace.
 //!
-//! This is the only module that names the time library. Every other crate goes
-//! through the functions here, so the bytes the tool writes for a timestamp are
-//! decided in one place and a change of library is a change to this file.
+//! This module and its tests are the only code that names the time library.
+//! The strftime patterns and the RFC 3339 writer the tool uses for a timestamp
+//! live in this file, so those bytes are decided in one place. Other crates
+//! still call the re-exported types' own methods and use their `Display` and
+//! `Default`, the date `hardener scope` writes among them, so a change of
+//! library reaches further than this file.
 
 pub use jiff::{Timestamp, Zoned, civil::Date};
 
@@ -25,7 +28,21 @@ pub const MINUTE_STAMP: &str = "%Y-%m-%d %H:%M";
 /// range, 2 January -9999 to 30 December 9999, which is narrower than chrono's
 /// and which no stored record reaches.
 pub fn from_unix_seconds(seconds: i64) -> Option<Timestamp> {
-    Timestamp::from_second(seconds).ok()
+    from_unix_parts(seconds, 0)
+}
+
+/// The instant `seconds` and then `nanoseconds` after the Unix epoch, as
+/// chrono's `DateTime::from_timestamp(seconds, nanoseconds)` gave. The
+/// fraction counts forward from `seconds` also before the epoch, so
+/// `from_unix_parts(-1, 500_000_000)` is half a second before it. `None`
+/// outside the library's range, and for a fraction of a whole second or more,
+/// which chrono read as a leap second and the library cannot hold.
+pub fn from_unix_parts(seconds: i64, nanoseconds: u32) -> Option<Timestamp> {
+    if nanoseconds >= 1_000_000_000 {
+        return None;
+    }
+    let total = i128::from(seconds) * 1_000_000_000 + i128::from(nanoseconds);
+    Timestamp::from_nanosecond(total).ok()
 }
 
 /// Whole seconds since the Unix epoch, rounded down as chrono's `timestamp()`
@@ -199,8 +216,10 @@ pub fn now_utc_zoned() -> Zoned {
     now().to_zoned(TimeZone::UTC)
 }
 
-/// The machine's time zone, found the way chrono's `Local` found it: `TZ`
-/// first, then `/etc/localtime`, and UTC when neither gives a zone.
+/// The machine's time zone, found in the order chrono's `Local` used: `TZ`
+/// first, then `/etc/localtime`, then the zone name in `/etc/timezone` looked
+/// up in `/usr/share/zoneinfo`, and UTC when none of them gives a zone.
+/// chrono also read OpenWrt's `/etc/config/system`, which this does not.
 #[cfg(feature = "clock")]
 fn local_zone() -> TimeZone {
     // The library gives up when `TZ` is set but unreadable, where chrono went
@@ -211,7 +230,18 @@ fn local_zone() -> TimeZone {
             let data = std::fs::read("/etc/localtime").ok()?;
             TimeZone::tzif("localtime", &data).ok()
         })
+        .or_else(|| zone_named_in(std::path::Path::new("/etc/timezone")))
         .unwrap_or(TimeZone::UTC)
+}
+
+/// The zone whose name a file such as `/etc/timezone` holds, or `None` when
+/// the file is missing or the system has no zone by that name. chrono read
+/// this file through `iana-time-zone`, which drops trailing whitespace and
+/// nothing else, so the same is done here.
+#[cfg(feature = "clock")]
+fn zone_named_in(path: &std::path::Path) -> Option<TimeZone> {
+    let contents = std::fs::read_to_string(path).ok()?;
+    jiff::tz::db().get(contents.trim_end()).ok()
 }
 
 #[cfg(test)]

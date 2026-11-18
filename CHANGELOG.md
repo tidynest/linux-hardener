@@ -23,10 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leaves both lockfiles, since 0.9 no longer pulls it in through MySQL
   support, and with it the RUSTSEC-2023-0071 entry in `.cargo/audit.toml` and
   `SECURITY.md`.
-- **Timestamps now come from `jiff`, behind one module (#197).** Every
-  timestamp and date the tool handled went through the `chrono` crate. They now
-  go through a single `time` module in `hardener-types`, which uses `jiff`
-  0.2, and a new test fails if any other crate names either library. Nothing
+- **Timestamps now come from `jiff`, behind one module (#197).** The
+  timestamps and dates that used the `chrono` crate now go through a single
+  `time` module in `hardener-types`, which uses `jiff` 0.2, and a new test
+  fails if any other crate depends on either library. Nothing
   stored or printed changed: the history databases, the audit log, the reports,
   the file names and the desktop's text read as they did before. `chrono` is
   still in the lockfile, through the cron library the scheduling daemon uses,
@@ -118,10 +118,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moves off them.** RUSTSEC-2026-0543 and RUSTSEC-2026-0555 marked every
   version of both unmaintained on 2026-11-17, so no upgrade clears them, and
   `cargo deny` treats an unmaintained crate as an error. Neither advisory
-  reports a defect. `chrono` holds the project's timestamps, and `chrono-tz`
-  comes in through `tokio-cron-scheduler`, whose newest release still needs
-  both. The two are listed in `deny.toml` with a review date of 2027-01-31,
-  and `SECURITY.md` says what removing them takes.
+  reports a defect. No workspace crate depends on either any more. Both are
+  built only for `tokio-cron-scheduler`, the daemon's cron library, whose
+  newest release still needs both, until the scheduler change replaces that
+  library. The two are listed in `deny.toml` with a review date of
+  2027-01-31, and `SECURITY.md` says what removing them takes.
 - **`pin-utils` leaves the lockfile, for RUSTSEC-2026-0441.** Its repository
   was archived on 2026-10-01, so it will get no more releases. `futures-util`
   0.3.31 and `hyper` 1.8.1 pulled it in, and both dropped it later:
