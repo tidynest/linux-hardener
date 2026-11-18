@@ -610,4 +610,4 @@ Planned for future releases:
 - Jump host / bastion support
 - Remote checkpoint storage option
 
-**Last Updated**: 2026-11-15
+**Last Updated**: 2026-11-18
