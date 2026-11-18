@@ -1,6 +1,6 @@
 # Upgrading
 
-**Last Updated**: 2026-11-15
+**Last Updated**: 2026-11-18
 
 Some releases fixed defects that a hardened host keeps carrying after the
 upgrade. Installing a newer version repairs the tool, not the system it already
