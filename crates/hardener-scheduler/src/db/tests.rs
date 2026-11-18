@@ -321,7 +321,7 @@ async fn a_session_can_record_a_start_that_precedes_its_insert() {
 
     // Well before the insert, and far enough back that no clock skew or slow
     // test host could account for it.
-    let began = time::unix_seconds(time::now()) - 600;
+    let began = time::now_unix_seconds() - 600;
 
     let id = manager
         .create_session_started_at("batch", "web-01", &["kernel".into()], began)
@@ -358,12 +358,12 @@ async fn create_session_without_an_instant_stamps_the_present() {
         .await
         .unwrap();
 
-    let before = time::unix_seconds(time::now());
+    let before = time::now_unix_seconds();
     let id = manager
         .create_session("daemon", "localhost", &[])
         .await
         .unwrap();
-    let after = time::unix_seconds(time::now());
+    let after = time::now_unix_seconds();
 
     let session = manager.get_session(&id).await.unwrap().unwrap();
     assert!(

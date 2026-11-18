@@ -2,7 +2,6 @@
 
 use crate::cli::OutputFormat as CliOutputFormat;
 use anyhow::{Result, anyhow};
-use chrono::Local;
 use hardener_common::types::{ComplianceFramework, ComplianceProfile};
 use hardener_compliance::{
     JsonFormatter, OutputFormat, ReportConfig, ReportFormatter, ReportGenerator, Scenario,
@@ -13,7 +12,7 @@ use hardener_core::{
 };
 use hardener_plugins::create_plugin_registry;
 use hardener_scheduler::db::ScanFinding;
-use hardener_types::PluginId;
+use hardener_types::{PluginId, time};
 use std::{fs, io, io::Write, path::PathBuf, sync::Arc};
 
 /// Decides which format the report body is rendered in.
@@ -180,7 +179,7 @@ pub async fn run(
         }
     } else if output_format == OutputFormat::Pdf {
         // PDF requires file output - generate timestamped filename
-        let timestamp = Local::now().format("%Y%m%d-%H%M%S");
+        let timestamp = time::format_local(time::now(), time::FILE_STAMP_HYPHEN);
         let filename = format!("compliance-report-{}.pdf", timestamp);
 
         let bytes = hardener_compliance::output::PdfFormatter::new().format_all_bytes(&reports);

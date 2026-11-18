@@ -14,7 +14,7 @@ This document lists all source files with their purpose and key exports.
 | `src/checkpoint.rs` | Checkpoint and scan-session types shared by the Tauri backend and the Leptos frontend. Hand-mirrored in `hardener-ui/src/types.rs` until #157; two fields fell through that copy (`system_unreadable` in #156, `checkpoint_verified` in #157) because the mirror sat outside the tree `validate_gui_mock_fixtures.py` resolves | `CheckpointInfo`, `CheckpointList`, `CheckpointDetail`, `CheckpointFileInfo`, `ScanSessionInfo` |
 | `src/config_picker.rs` | Config file picker types | `ConfigSummary`, WASM-safe validation results for config file picker |
 | `src/remote.rs` | Remote SSH scanning types | `RemoteHostProfile`, `HostsConfig`, `RemoteConnectionStatus`, `RemoteConnectionInfo` |
-| `src/time.rs` | The only module that names the time library. Writes and reads timestamps in the bytes chrono gave 1.9.1, through the `rfc3339` serde adaptor and the named strftime patterns; the clock and the machine's time zone sit behind the `clock` feature, which the WASM interface leaves off | `Timestamp`, `Date`, `Zoned`, `REPORT_STAMP`, `FILE_STAMP_UNDERSCORE`, `FILE_STAMP_HYPHEN`, `MINUTE_STAMP`, `from_unix_seconds()`, `unix_seconds()`, `date_utc()`, `format_utc()`, `parse_iso_date()`, `add_months()`, `rfc3339`, `rfc3339::option`; with `clock`: `now()`, `today_utc()`, `today_local()`, `format_local()`, `now_utc_zoned()` |
+| `src/time.rs` | The only module that names the time library. Writes and reads timestamps in the bytes chrono gave 1.9.1, through the `rfc3339` serde adaptor and the named strftime patterns; the clock and the machine's time zone sit behind the `clock` feature, which the WASM interface leaves off | `Timestamp`, `Date`, `Zoned`, `REPORT_STAMP`, `FILE_STAMP_UNDERSCORE`, `FILE_STAMP_HYPHEN`, `MINUTE_STAMP`, `from_unix_seconds()`, `unix_seconds()`, `date_utc()`, `format_utc()`, `parse_iso_date()`, `add_months()`, `rfc3339`, `rfc3339::option`; with `clock`: `now()`, `now_unix_seconds()`, `today_utc()`, `today_local()`, `format_local()`, `now_utc_zoned()` |
 | `src/scheduler.rs` | Scheduler UI types | `SchedulerUiConfig`, `NotificationUiConfig`, `EmailUiConfig`, `WebhookUiConfig` (converted to the on-disk endpoint list by the private `WebhookWire`), `TestNotificationResult` |
 | `src/tests.rs` | Unit tests for the crate root, seven modules split out of `lib.rs` | Test-only; a child of the crate root, so it still reaches private items |
 | `src/remote/tests.rs` | Unit tests for `src/remote.rs` | Test-only; `super` resolves to `crate::remote`, so its imports carried across unchanged |
@@ -1008,9 +1008,9 @@ compares every row with the tree on each run. Treat them as the size of each
 crate's declared test surface, and read the workspace run itself for what
 passed.
 
-The table covers the ten crates under `crates/` and sums to 2241. The eleventh
+The table covers the ten crates under `crates/` and sums to 2243. The eleventh
 workspace member, `src-tauri`, carries 192 more, which is why the tree total the
-evidence ledger records is 2433 and not this table's sum.
+evidence ledger records is 2435 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -1022,7 +1022,7 @@ evidence ledger records is 2433 and not this table's sum.
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 334 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 875 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 246 |
-| hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs`, `time.rs` | - | 83 |
+| hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs`, `time.rs` | - | 85 |
 | hardener-ui | `utils/mod.rs`, `utils/theme.rs`, `pages/fleet_apply_page.rs`, `components/configure_section.rs`, `components/adhoc_host_input.rs`, `components/area_map.rs`, `components/security_score.rs` | - | 154 |
 
 ### Executor and Mock Test Files

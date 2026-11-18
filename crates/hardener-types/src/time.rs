@@ -160,6 +160,13 @@ pub fn now() -> Timestamp {
     Timestamp::now()
 }
 
+/// The current instant as whole seconds since the Unix epoch, as chrono's
+/// `Utc::now().timestamp()` gave, for the history rows that store one.
+#[cfg(feature = "clock")]
+pub fn now_unix_seconds() -> i64 {
+    unix_seconds(now())
+}
+
 /// Today's date in UTC, as chrono's `Utc::now().date_naive()` gave.
 #[cfg(feature = "clock")]
 pub fn today_utc() -> Date {

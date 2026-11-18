@@ -5,7 +5,6 @@
 use super::report::run_scan_for_report;
 use crate::cli::OutputFormat as CliOutputFormat;
 use anyhow::{Result, anyhow};
-use chrono::Local;
 use colored::Colorize;
 use dialoguer::{Confirm, MultiSelect, Select, theme::ColorfulTheme};
 use hardener_common::types::{ComplianceFramework, ComplianceProfile};
@@ -15,6 +14,7 @@ use hardener_compliance::{
     output::{CsvFormatter, HtmlFormatter, PdfFormatter},
 };
 use hardener_core::{ConfigLoader, SystemExecutor};
+use hardener_types::time;
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -625,7 +625,7 @@ fn output_reports(
             None => {
                 // For PDF, generate timestamped file since it can't go to stdout
                 if *format == OutputFormat::Pdf {
-                    let timestamp = Local::now().format("%Y%m%d-%H%M%S");
+                    let timestamp = time::format_local(time::now(), time::FILE_STAMP_HYPHEN);
                     let filename = format!("compliance-report-{}.pdf", timestamp);
                     let bytes = PdfFormatter::new().format_all_bytes(reports);
                     fs::write(&filename, bytes)?;

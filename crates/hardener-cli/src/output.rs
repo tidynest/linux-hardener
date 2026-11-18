@@ -6,7 +6,7 @@ use hardener_core::{
     ApplyResult, PluginMetadata, ScanResult, ValidationReport, plugin::UncheckedCheck,
 };
 use hardener_state::{Checkpoint, FileState, RollbackResult};
-use hardener_types::{DivergenceState, RollbackDivergence};
+use hardener_types::{DivergenceState, RollbackDivergence, time};
 
 use crate::cli::OutputFormat;
 
@@ -960,8 +960,8 @@ fn format_severity(severity: &Severity) -> colored::ColoredString {
 ///
 /// The width is fixed at 23 characters, which the table layouts depend on.
 pub(crate) fn format_timestamp(timestamp: i64) -> String {
-    chrono::DateTime::from_timestamp(timestamp, 0)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+    time::from_unix_seconds(timestamp)
+        .map(|instant| time::format_utc(instant, time::REPORT_STAMP))
         .unwrap_or_else(|| "Unknown".to_string())
 }
 

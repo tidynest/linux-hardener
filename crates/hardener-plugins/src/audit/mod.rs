@@ -26,6 +26,7 @@ use hardener_core::{
         Finding, HardeningPlugin, PluginMetadata, ScanResult, UncheckedBlocker, UncheckedCheck,
     },
 };
+use hardener_types::time;
 use std::{collections::HashSet, path::Path, time::Instant};
 use tracing::{info, warn};
 
@@ -519,7 +520,7 @@ fn audit_backup_prefix() -> String {
 /// reads as "remove this".
 async fn write_audit_rules_file(ctx: &Context, content: &str) -> Result<Option<String>> {
     // Create backup with timestamp + random suffix to prevent symlink attacks
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let timestamp = time::format_local(time::now(), time::FILE_STAMP_UNDERSCORE);
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

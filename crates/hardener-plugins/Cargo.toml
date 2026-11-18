@@ -14,12 +14,11 @@ unexpected_cfgs = { level = "deny", check-cfg = ['cfg(fuzzing)'] }
 [dependencies]
 hardener-common = { path = "../hardener-common" }
 hardener-core   = { path = "../hardener-core" }
-hardener-types  = { workspace = true }
+hardener-types  = { workspace = true, features = ["clock"] }
 nix = { workspace = true, features = ["fs"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
-chrono = { workspace = true }
 
 [dev-dependencies]
 anyhow = { workspace = true }

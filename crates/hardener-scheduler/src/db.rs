@@ -69,7 +69,7 @@ impl ScanHistoryManager {
         host: &str,
         plugins: &[String],
     ) -> Result<String> {
-        self.create_session_started_at(trigger_type, host, plugins, time::unix_seconds(time::now()))
+        self.create_session_started_at(trigger_type, host, plugins, time::now_unix_seconds())
             .await
     }
 
@@ -118,7 +118,7 @@ impl ScanHistoryManager {
         json_path: Option<&str>,
         hash: Option<&str>,
     ) -> Result<()> {
-        let now = time::unix_seconds(time::now());
+        let now = time::now_unix_seconds();
         let counts = SeverityCounts::from_findings(findings);
 
         // Update session
@@ -154,7 +154,7 @@ impl ScanHistoryManager {
 
     /// Marks a session as failed with an error message.
     pub async fn fail_session(&self, session_id: &str, error: &str) -> Result<()> {
-        let now = time::unix_seconds(time::now());
+        let now = time::now_unix_seconds();
         sqlx::query(
             "UPDATE scan_sessions SET completed_at = ?, status = 'failed', error_message = ?
              WHERE id = ?",
@@ -267,7 +267,7 @@ impl ScanHistoryManager {
         error: Option<&str>,
     ) -> Result<()> {
         let now = if status == "sent" {
-            Some(time::unix_seconds(time::now()))
+            Some(time::now_unix_seconds())
         } else {
             None
         };
@@ -296,7 +296,7 @@ impl ScanHistoryManager {
     /// Returns the number of deleted sessions.
     pub async fn cleanup(&self, retention_days: u32, retention_count: u32) -> Result<u32> {
         let deleted = if retention_days > 0 {
-            let cutoff = time::unix_seconds(time::now()) - (retention_days as i64 * 86400);
+            let cutoff = time::now_unix_seconds() - (retention_days as i64 * 86400);
             sqlx::query("DELETE FROM scan_sessions WHERE started_at < ?")
                 .bind(cutoff)
                 .execute(&self.pool)

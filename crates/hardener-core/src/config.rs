@@ -5,7 +5,7 @@
 
 pub mod scope;
 
-use hardener_types::{DeclineReason, ExceptionOutcome, FindingExceptionDeclined};
+use hardener_types::{DeclineReason, ExceptionOutcome, FindingExceptionDeclined, time};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -349,10 +349,9 @@ impl PolicyException {
     /// Check if this exception has expired.
     pub fn is_expired(&self) -> bool {
         if let Some(expires) = &self.expires
-            && let Ok(expiry_date) = chrono::NaiveDate::parse_from_str(expires, "%Y-%m-%d")
+            && let Some(expiry_date) = time::parse_iso_date(expires)
         {
-            let today = chrono::Local::now().date_naive();
-            return today > expiry_date;
+            return time::today_local() > expiry_date;
         }
         false
     }

@@ -44,7 +44,7 @@ use anyhow::{Context as _, Result, anyhow};
 use hardener_compliance::frameworks::curated_controls;
 use hardener_core::config::scope::ScopeExclusion;
 use hardener_state::audit::{ActionType, AuditLogger};
-use hardener_types::ComplianceFramework;
+use hardener_types::{ComplianceFramework, time};
 use std::collections::HashMap;
 use std::path::Path;
 use toml_edit::{Array, DocumentMut, Item, Table, value};
@@ -260,7 +260,7 @@ async fn exclude(
         // fall back to the day of evaluation, which made a dateless exclusion
         // valid forever; `91ebe8e6` removed that, inverting the consequence
         // without changing what has to be written here.
-        approved_date: Some(chrono::Utc::now().date_naive().to_string()),
+        approved_date: Some(time::today_utc().to_string()),
         ticket: request.ticket.map(str::to_string),
         review_by: request.review_by.map(str::to_string),
         hosts: request.hosts.to_vec(),
@@ -408,7 +408,7 @@ fn unknown_control_refusal(framework: &ComplianceFramework, control: &str) -> Op
 /// applies, which is the defect this check exists to prevent, so the two must
 /// not be able to drift apart.
 fn is_iso_date(value: &str) -> bool {
-    hardener_core::config::scope::parse_iso_date(value).is_some()
+    time::parse_iso_date(value).is_some()
 }
 
 /// The warning an exclusion for `framework` warrants, or `None` when the

@@ -220,6 +220,21 @@ fn an_iso_date_must_be_a_real_calendar_day() {
     }
 }
 
+/// `hardener scope` writes `approved_date` as the text of a `Date`, which 1.9.1
+/// wrote through chrono's `NaiveDate` as `YYYY-MM-DD`, and the config layer
+/// reads it back through `parse_iso_date`.
+#[test]
+fn a_date_is_written_as_1_9_1_wrote_one() {
+    assert_eq!(date(2026, 1, 1).to_string(), "2026-01-01");
+    assert_eq!(date(2026, 3, 7).to_string(), "2026-03-07");
+    assert_eq!(date(2026, 12, 31).to_string(), "2026-12-31");
+
+    let today = today_utc();
+    let text = today.to_string();
+    assert_eq!(text.len(), 10, "{text}");
+    assert_eq!(parse_iso_date(&text), Some(today));
+}
+
 #[test]
 fn adding_months_stops_at_the_end_of_a_short_month() {
     assert_eq!(add_months(date(2026, 1, 31), 1), Some(date(2026, 2, 28)));
@@ -268,6 +283,22 @@ fn now_reads_the_system_clock() {
     let after = Timestamp::try_from(SystemTime::now()).unwrap();
     assert!(before <= read && read <= zoned.timestamp() && zoned.timestamp() <= after);
     assert_eq!(zoned.offset(), jiff::tz::Offset::UTC);
+}
+
+/// Read against the standard library's clock, so a helper that returned a
+/// fixed number or milliseconds would fail here.
+#[test]
+fn now_unix_seconds_is_the_whole_seconds_of_now() {
+    let since_epoch = || {
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    };
+    let before = i64::try_from(since_epoch()).unwrap();
+    let read = now_unix_seconds();
+    let after = i64::try_from(since_epoch()).unwrap();
+    assert!(before <= read && read <= after, "{before} {read} {after}");
 }
 
 #[test]

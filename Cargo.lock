@@ -2105,7 +2105,6 @@ version = "1.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
  "clap",
  "colored",
  "dialoguer",
@@ -2167,7 +2166,6 @@ version = "1.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
  "dirs",
  "hardener-common",
  "hardener-state",
@@ -2197,7 +2195,6 @@ version = "1.9.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
  "hardener-common",
  "hardener-core",
  "hardener-state",
@@ -3208,7 +3205,6 @@ checksum = "bfae20f6b19ad527b550c223fddc3077a547fc70cda94b9b566575423fd303ee"
 name = "linux-hardener-desktop"
 version = "1.9.1"
 dependencies = [
- "chrono",
  "dirs",
  "hardener-common",
  "hardener-compliance",

@@ -14,7 +14,6 @@ use super::{
     validate_sshd_config, verify_dropin_precedence,
 };
 
-use chrono::Utc;
 use hardener_common::{
     error::{HardeningError, Result},
     file_utils::{
@@ -24,6 +23,7 @@ use hardener_common::{
     vendor_config::{ConfigLayer, LayeredRead, read_layered},
 };
 use hardener_core::{ApplyResult, Change, ChangeType, PluginConfig, context::Context};
+use hardener_types::time;
 use std::path::Path;
 use tracing::{error, info, warn};
 
@@ -630,7 +630,7 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
         let backup_path = format!(
             "{}{}",
             backup_prefix(config_path),
-            Utc::now().format("%Y%m%d_%H%M%S")
+            time::format_utc(time::now(), time::FILE_STAMP_UNDERSCORE)
         );
         // `-p` was here from the start and `--no-dereference` was not, the
         // reverse of the audit plugin's copy; the two flags answer separate

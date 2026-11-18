@@ -12,7 +12,7 @@ use hardener_plugins::ssh::{
     SshHardeningPlugin, select_algorithms, sshd_validate_scratch_path, supported_algorithms,
     validate_sshd_config,
 };
-use hardener_types::{DeclineReason, UncheckedBlocker};
+use hardener_types::{DeclineReason, UncheckedBlocker, time};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -967,9 +967,10 @@ fn apply_ready_executor(config: &str) -> MockExecutor {
         .with_file("/etc/ssh/sshd_config", config)
         .with_command("sshd", &["-t", "-f", &temp], ok_output(""))
         .with_command("systemctl", &["restart", "sshd"], ok_output(""));
-    let now = chrono::Utc::now();
+    let now = time::now_unix_seconds();
     for offset in -1..=3i64 {
-        let stamp = (now + chrono::Duration::seconds(offset)).format("%Y%m%d_%H%M%S");
+        let instant = time::from_unix_seconds(now + offset).expect("a representable instant");
+        let stamp = time::format_utc(instant, time::FILE_STAMP_UNDERSCORE);
         let backup = format!("/etc/ssh/sshd_config.backup.{stamp}");
         executor = executor.with_command(
             "cp",

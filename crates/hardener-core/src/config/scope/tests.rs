@@ -3,6 +3,7 @@
 
 use super::*;
 use hardener_types::remote::RemoteHostProfile;
+use hardener_types::time::parse_iso_date;
 
 fn day(s: &str) -> Date {
     s.parse().expect("test date parses")

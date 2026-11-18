@@ -27,6 +27,7 @@ use hardener_types::{
         FLEET_PROGRESS_EVENT, FleetProgress, HostSessionInfo, HostsConfig, RemoteConnectionStatus,
         RemoteHostProfile,
     },
+    time,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -236,8 +237,8 @@ fn host_details(operation: &str, profile: &RemoteHostProfile) -> HashMap<String,
 
 /// Formats a Unix timestamp as a human-readable string.
 fn format_timestamp(timestamp: i64) -> String {
-    chrono::DateTime::from_timestamp(timestamp, 0)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+    time::from_unix_seconds(timestamp)
+        .map(|instant| time::format_utc(instant, time::REPORT_STAMP))
         .unwrap_or_else(|| format!("Invalid timestamp: {}", timestamp))
 }
 

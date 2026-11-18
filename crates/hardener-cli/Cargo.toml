@@ -43,7 +43,6 @@ anyhow = { workspace = true }
 nix = { workspace = true }
 
 # Utilities
-chrono = { workspace = true }
 dirs = { workspace = true }
 
 # Interactive prompts

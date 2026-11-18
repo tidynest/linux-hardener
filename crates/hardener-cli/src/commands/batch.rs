@@ -23,6 +23,7 @@ use hardener_scheduler::db::ScanFinding;
 use hardener_state::{ActionResult, ActionType, Checkpoint, CheckpointManager};
 use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
+use hardener_types::time;
 use hardener_types::{
     ApplyOutcome, ApplyStatus, ControlOutcome, DivergenceState, PluginOutcome, RollbackOutcome,
     RollbackResult, RollbackStatus,
@@ -991,7 +992,7 @@ async fn scan_with_executor(
     // Stamped before the scan, not inside `persist_host`, which runs once
     // `scan_grouped` has returned. Recording it there put the completion time
     // in `started_at` and left every remote scan looking instantaneous (#168).
-    let scan_started_at = chrono::Utc::now().timestamp();
+    let scan_started_at = time::now_unix_seconds();
     match scan_grouped(true, executor.clone(), &CliOutputFormat::Json, config).await {
         Ok(grouped) => {
             if let Some(history) = &history {

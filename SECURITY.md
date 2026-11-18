@@ -331,20 +331,15 @@ container user IDs. Run it from a directory only you can write in that case.
 
 Both crates were marked unmaintained on 2026-11-17, in every version, so no
 upgrade clears the advisories. Neither advisory reports a defect: they say
-that a future one would get no fix. `chrono` is a direct dependency, still
-used for file-name stamps, scan start times, policy exception dates, the
-`approved_date` that `hardener scope` writes, and the times the CLI and the
-desktop print for scheduler history. The audit log, compliance reports, the
-scheduler's database and JSON exports, and the review deadlines of scope
-exclusions no longer use it: they go through the `time` module in
-`hardener-types`, which uses `jiff`. `chrono-tz` comes in only through
-`tokio-cron-scheduler`, which the scheduling daemon uses to read its cron
-expression.
+that a future one would get no fix. No workspace crate depends on `chrono`
+any more: every timestamp and date the tool writes, reads or prints goes
+through the `time` module in `hardener-types`, which uses `jiff`. Both crates
+stay in the lockfile only through `tokio-cron-scheduler`, which the
+scheduling daemon uses to read its cron expression.
 
 The two are ignored in `deny.toml` with a review date of 2027-01-31, and the
-entries come out when the crates leave the lockfile. That needs the
-timestamps moved to a maintained library and the daemon's cron scheduler
-replaced, since its newest release still depends on both.
+entries come out when the crates leave the lockfile. That needs the daemon's
+cron scheduler replaced, since its newest release still depends on both.
 
 The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained crates that `cargo deny` reports: `chrono` and `chrono-tz` above, and the transitive ones, which are the Unicode tables under `urlpattern`, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the one that only `cargo audit` reports: `glib` (RUSTSEC-2024-0429), an unsound crate under the webview layer. `cargo deny` checks unsound advisories for workspace crates only, so it never sees `glib`.
 

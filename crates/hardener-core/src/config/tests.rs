@@ -410,27 +410,27 @@ fn exception_outcome_for_mode_declines_a_non_octal_value() {
 /// about a long-past or far-future date cannot fail under either operator.
 #[test]
 fn an_exception_is_honoured_through_the_whole_day_it_names() {
-    let on = |date: chrono::NaiveDate| PolicyException {
+    let on = |date: time::Date| PolicyException {
         value: "running".to_string(),
         allowed: true,
         reason: "print server required".to_string(),
         approved_by: None,
         approved_date: None,
         ticket: None,
-        expires: Some(date.format("%Y-%m-%d").to_string()),
+        expires: Some(date.to_string()),
     };
-    let today = chrono::Local::now().date_naive();
+    let today = time::today_local();
 
     assert!(
         !on(today).is_expired(),
         "the date named is the last day it is honoured, not the first day it is not"
     );
     assert!(
-        on(today - chrono::Duration::days(1)).is_expired(),
+        on(today.yesterday().expect("a representable day")).is_expired(),
         "the control: the day after the date named, it has expired"
     );
     assert!(
-        !on(today + chrono::Duration::days(1)).is_expired(),
+        !on(today.tomorrow().expect("a representable day")).is_expired(),
         "and a date still ahead has plainly not expired"
     );
 }

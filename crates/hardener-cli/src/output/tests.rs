@@ -940,14 +940,15 @@ fn a_skip_marker_renders_as_skipped_by_config_not_as_a_failure() {
     );
 }
 
-/// The instant type the formatting calls take. A later task changes this body
-/// and the one below it, and nothing else in the pinned tests.
-fn instant(seconds: i64, nanoseconds: u32) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::from_timestamp(seconds, nanoseconds).expect("a representable instant")
+/// The instant type the formatting calls take. These two helpers are the only
+/// part of the pinned tests that moved when chrono left the workspace.
+fn instant(seconds: i64, nanoseconds: u32) -> time::Timestamp {
+    let total = i128::from(seconds) * 1_000_000_000 + i128::from(nanoseconds);
+    time::Timestamp::from_nanosecond(total).expect("a representable instant")
 }
 
-fn formatted(instant: chrono::DateTime<chrono::Utc>, pattern: &str) -> String {
-    instant.format(pattern).to_string()
+fn formatted(instant: time::Timestamp, pattern: &str) -> String {
+    time::format_utc(instant, pattern)
 }
 
 #[test]

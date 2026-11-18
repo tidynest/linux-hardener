@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use hardener_compliance::OutputFormat;
 use hardener_core::executor::SystemExecutor;
 use hardener_core::{Context, Finding, HardenerConfig, PolicyException};
-use hardener_types::PluginId;
+use hardener_types::{PluginId, time};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -224,12 +224,12 @@ fn exception_details(exception: &PolicyException) -> HashMap<String, String> {
 /// Refuses an `--expires` value [`PolicyException::is_expired`] cannot parse.
 ///
 /// That method treats an unparseable date as "never expires"
-/// (`crates/hardener-core/src/config.rs:346`), so writing one silently fails
+/// (`crates/hardener-core/src/config.rs:350`), so writing one silently fails
 /// open in the one field whose purpose is to bound a deviation in time. Parsed
-/// here, before anything is written, using the same `%Y-%m-%d` format so a
-/// value that passes here is one `is_expired` can also read.
+/// here, before anything is written, with the same `time::parse_iso_date` that
+/// method reads through, so a value that passes here is one it can also read.
 fn parse_expiry(expires: &str) -> Result<()> {
-    chrono::NaiveDate::parse_from_str(expires, "%Y-%m-%d").map_err(|_| {
+    time::parse_iso_date(expires).ok_or_else(|| {
         anyhow!(
             "--expires '{expires}' is not a valid date. Use YYYY-MM-DD, for example 2027-01-31."
         )

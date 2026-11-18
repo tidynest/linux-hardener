@@ -52,21 +52,6 @@ pub fn default_review_months(framework: ComplianceFramework) -> u32 {
     }
 }
 
-/// Parses an ISO 8601 date, `None` when it does not parse.
-///
-/// One helper for both dates so the two call sites cannot drift into
-/// disagreeing about what a date is.
-/// The one definition of the date format this section accepts.
-///
-/// `pub` because `hardener scope` must refuse a `--review-by` this cannot
-/// parse, and it briefly held its own copy of the format string to do so. Two
-/// copies would diverge in the one direction that matters: a verb accepting a
-/// spelling the config layer then rejects writes an exclusion that is silently
-/// inert, which is the defect the control-id refusal exists to prevent.
-pub fn parse_iso_date(value: &str) -> Option<Date> {
-    time::parse_iso_date(value)
-}
-
 /// `user@host:22` or `host:22` without its port, so an operator may write
 /// `root@web-01`.
 ///
@@ -141,9 +126,9 @@ impl ScopeExclusion {
     pub fn review_deadline(&self, framework_id: &str) -> Option<Date> {
         let framework = ComplianceFramework::from_id(framework_id)?;
         if let Some(explicit) = self.review_by.as_deref() {
-            return parse_iso_date(explicit);
+            return time::parse_iso_date(explicit);
         }
-        let approved = parse_iso_date(self.approved_date.as_deref()?)?;
+        let approved = time::parse_iso_date(self.approved_date.as_deref()?)?;
         time::add_months(approved, default_review_months(framework))
     }
 

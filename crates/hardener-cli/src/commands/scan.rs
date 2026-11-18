@@ -12,7 +12,7 @@ use hardener_core::{
 };
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
-use hardener_types::SkipReason;
+use hardener_types::{SkipReason, time};
 use std::{path::PathBuf, sync::Arc};
 
 pub struct ScanOptions<'a> {
@@ -90,7 +90,7 @@ pub async fn run(opts: ScanOptions<'_>) -> Result<()> {
     // can store, and `Instant` cannot be converted to one. Taken here rather
     // than at persistence, which happens after every plugin has finished and so
     // recorded the completion time under the name `started_at` (#168).
-    let scan_started_at = chrono::Utc::now().timestamp();
+    let scan_started_at = time::now_unix_seconds();
     let scans = futures::future::join_all(selected.iter().map(|(metadata, plugin)| {
         plugin.scan(&ctx, config.get_plugin_config(metadata.plugin_id.as_str()))
     }))

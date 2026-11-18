@@ -288,7 +288,7 @@ pub async fn export_compliance_report(
     let final_path = export_destination(
         output_path,
         output_format,
-        &chrono::Local::now().format("%Y%m%d-%H%M%S").to_string(),
+        &time::format_local(time::now(), time::FILE_STAMP_HYPHEN),
     )?;
 
     // Same sourcing as generate_compliance_report: an exported report must
