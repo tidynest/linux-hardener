@@ -35,8 +35,9 @@ pub fn from_unix_seconds(seconds: i64) -> Option<Timestamp> {
 /// chrono's `DateTime::from_timestamp(seconds, nanoseconds)` gave. The
 /// fraction counts forward from `seconds` also before the epoch, so
 /// `from_unix_parts(-1, 500_000_000)` is half a second before it. `None`
-/// outside the library's range, and for a fraction of a whole second or more,
-/// which chrono read as a leap second and the library cannot hold.
+/// outside the library's range. `None` too for `nanoseconds` of a thousand
+/// million or more, because the library cannot hold the leap second chrono
+/// made of some of them. The two agree only for `nanoseconds` below that.
 pub fn from_unix_parts(seconds: i64, nanoseconds: u32) -> Option<Timestamp> {
     if nanoseconds >= 1_000_000_000 {
         return None;
@@ -216,14 +217,18 @@ pub fn now_utc_zoned() -> Zoned {
     now().to_zoned(TimeZone::UTC)
 }
 
-/// The machine's time zone, found in the order chrono's `Local` used: `TZ`
-/// first, then `/etc/localtime`, then the zone name in `/etc/timezone` looked
-/// up in `/usr/share/zoneinfo`, and UTC when none of them gives a zone.
-/// chrono also read OpenWrt's `/etc/config/system`, which this does not.
+/// The machine's time zone. The library's own lookup comes first and reads
+/// `TZ` and `/etc/localtime`. Then `/etc/localtime` is read as TZif data, then
+/// the zone name in `/etc/timezone` is resolved through the library's time
+/// zone database, which searches the system's zoneinfo directories and
+/// honours `TZDIR`. UTC follows when none of them gives a zone. chrono also
+/// read OpenWrt's `/etc/config/system`, which this does not.
 #[cfg(feature = "clock")]
 fn local_zone() -> TimeZone {
-    // The library gives up when `TZ` is set but unreadable, where chrono went
-    // on to the machine's own zone, so `/etc/localtime` is read here as well.
+    // The library gives up when `TZ` is set but unreadable, so `/etc/localtime`
+    // is read here as well. chrono reached the machine's zone in that case
+    // only where `/etc/localtime` is a symbolic link, or through
+    // `/etc/timezone`.
     TimeZone::try_system()
         .ok()
         .or_else(|| {

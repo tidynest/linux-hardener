@@ -334,8 +334,9 @@ upgrade clears the advisories. Neither advisory reports a defect: they say
 that a future one would get no fix. No workspace crate depends on `chrono`
 any more. The timestamps and dates that used it now go through the `time`
 module in `hardener-types`, which uses `jiff`. Both crates
-stay in the lockfile only through `tokio-cron-scheduler`, which the
-scheduling daemon uses to read its cron expression.
+are built only for `tokio-cron-scheduler`, which the scheduling daemon uses
+to read its cron expression. The lockfile also lists `chrono` under
+`serde_with`, which Tauri brings in and which does not build it.
 
 The two are ignored in `deny.toml` with a review date of 2027-01-31, and the
 entries come out when the crates leave the lockfile. That needs the daemon's

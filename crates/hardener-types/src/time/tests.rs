@@ -203,8 +203,10 @@ fn unix_parts_count_the_fraction_forward_as_chrono_did() {
         from_unix_seconds(1767225600)
     );
 
-    // chrono read a whole second or more of fraction as a leap second, which
-    // the library has no way to hold.
+    // A thousand million nanoseconds or more is refused. chrono made a leap
+    // second of it when the second was 59 and the value below two thousand
+    // million, and gave `None` otherwise, so only values below a thousand
+    // million are compared with chrono.
     assert_eq!(from_unix_parts(1767225599, 1_000_000_000), None);
     assert_eq!(from_unix_parts(0, u32::MAX), None);
     assert_eq!(from_unix_parts(i64::MAX, 0), None);

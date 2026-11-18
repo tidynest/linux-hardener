@@ -29,8 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fails if any other crate depends on either library. Nothing
   stored or printed changed: the history databases, the audit log, the reports,
   the file names and the desktop's text read as they did before. `chrono` is
-  still in the lockfile, through the cron library the scheduling daemon uses,
-  until that library is replaced in the next change. RUSTSEC-2026-0543 and
+  still built, only for the cron library the scheduling daemon uses, until
+  that library is replaced in the next change. RUSTSEC-2026-0543 and
   RUSTSEC-2026-0555 therefore stay accepted for now.
 
 ### Fixed
