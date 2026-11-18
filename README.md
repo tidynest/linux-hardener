@@ -140,7 +140,7 @@ The rollback takes its own snapshot first, so it too can be undone.
 | Plugin | What it does |
 |---|---|
 | **Kernel Hardening** | sysctl parameters: ASLR, ptrace scope, network stack |
-| **SSH Hardening** | OpenSSH configuration, including key exchange, cipher and MAC selection intersected with what the host actually supports |
+| **SSH Hardening** | OpenSSH configuration, including key exchange, cipher and MAC selection intersected with what the host actually supports, and an opt-in second factor (the key, then the account password) |
 | **Firewall Hardening** | rules and default policy across nftables, firewalld and ufw |
 | **PAM Authentication Hardening** | password quality, lockout, history and ageing, under a selectable policy: the CIS and STIG-style rules, or NIST SP 800-63B-4 (long passphrases, no character classes, no forced change); and how new passwords are hashed (yescrypt where the host supports it, SHA-512 with 100000 rounds in FIPS mode or where it does not) |
 | **Service Minimisation** | disables services that need not be running |
@@ -334,7 +334,10 @@ dry run does not probe, since it changes nothing.
 
 SSH authentication is key or agent based. There is no password path, and
 `BatchMode=yes` is passed at the ssh layer, so a password-only host fails at
-connect rather than prompting. Details in
+connect rather than prompting. A host that asks for a second factor after the
+key is reached over a connection you opened yourself
+(`--ssh-control-path <socket>`), or through a `Match` block that keeps the
+automation account on its key. Details in
 [SSH remote scanning](docs/guide/ssh-remote-scanning.md); the host inventory
 lives at `~/.config/linux-hardener/hosts.toml`.
 
@@ -548,10 +551,10 @@ hardened host still carries is in [upgrading](docs/guide/upgrading.md).
 ### Tests
 
 ```
-Rust workspace (cargo nextest run --workspace):  2487 passed, 0 failed, 42 skipped
+Rust workspace (cargo nextest run --workspace):  2549 passed, 0 failed, 46 skipped
 ```
 
-The 42 skipped tests need root, a live SSH host, or a specific firewall backend,
+The 46 skipped tests need root, a live SSH host, or a specific firewall backend,
 so they run only inside the test containers. Beyond the workspace suite there is
 a cross-distribution suite that applies and rolls back on six booted
 containers, and a differential suite that compares the host before and after an

@@ -7,15 +7,16 @@
 //! included. The trait method in `mod.rs` delegates here.
 
 use super::{
-    SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES, SSHD_ADMIN_CONFIG_PATH, crypto_value_is_secure, dropin,
-    include, is_second_factor_only, observed_value, resolved_target, select_algorithms,
+    SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES, SSHD_ADMIN_CONFIG_PATH, auth_methods,
+    crypto_value_is_secure, dropin, include, is_second_factor_only, observed_value,
+    resolved_target, second_factor, second_factor_switched_off_ahead, select_algorithms,
     supported_algorithms,
 };
 
 use hardener_common::{
     error::Result,
     types::{PluginId, Severity},
-    vendor_config::{LayeredRead, read_layered},
+    vendor_config::{ConfigLayer, LayeredRead, read_layered},
 };
 use hardener_core::{PluginConfig, ValidationIssue, ValidationReport, context::Context};
 use std::path::Path;
@@ -72,7 +73,10 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
     let mut writes_fragment = false;
 
     match &main {
-        LayeredRead::Found { content, .. } => {
+        LayeredRead::Found { content, layer, .. } => {
+            // The apply edits the main file only where it is the
+            // administrator's; the vendor copy is never written.
+            let writes_main = matches!(layer, ConfigLayer::Admin);
             // Resolved first, because a preview reading a different
             // configuration from the apply it precedes is not a preview.
             // This parsed the main file alone while scan and apply both
@@ -103,10 +107,44 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                 }
             };
 
+            // The second factor as the apply will plan it, so the preview
+            // judges keyboard-interactive against the same lists the apply
+            // does. An exception documenting what the host does instead
+            // leaves it out here as it does there.
+            let second_factor_plan = second_factor::requested(config)
+                .map(|policy| second_factor::plan(policy, &resolved))
+                .filter(|plan| {
+                    let excepted = plan.shortfall.as_ref().and_then(|observed| {
+                        config
+                            .matching_exception(auth_methods::AUTHENTICATION_METHODS, observed)
+                            .map(|exception| (observed, exception))
+                    });
+                    if let Some((observed, exception)) = excepted {
+                        exceptions.push(hardener_common::types::exception_preview_line(
+                            auth_methods::AUTHENTICATION_METHODS,
+                            observed,
+                            &exception.reason,
+                        ));
+                    }
+                    excepted.is_none()
+                });
+            let auth_lists = second_factor::planned_lists(second_factor_plan.as_ref(), &resolved);
+
             // Check each directive to see if it needs updating.
             for directive in SSH_DIRECTIVES {
-                // Left on by the apply, so absent from its preview.
-                if is_second_factor_only(directive, &resolved) {
+                // Left on by the apply, so absent from its preview, except
+                // where a main-file line above the drop-in Include switches
+                // it off, which the apply switches on.
+                if is_second_factor_only(directive, auth_lists.as_deref()) {
+                    if writes_main
+                        && let Some(line) =
+                            second_factor_switched_off_ahead(directive, content, &resolved_path)
+                    {
+                        estimated_changes.push(format!(
+                            "{}: {} → yes in {} (read before the drop-ins)",
+                            line.keyword, line.value, resolved_path
+                        ));
+                    }
                     continue;
                 }
 
@@ -165,6 +203,107 @@ pub(super) async fn validate(ctx: &Context, config: &PluginConfig) -> Result<Val
                             directive.ssh_directive_name, target
                         ));
                     }
+                }
+            }
+
+            // The second factor's settings, which the apply always writes to
+            // the fragment. Its guards need a staged candidate and `sshd -T`,
+            // which a preview does not stage, so only what can be answered
+            // from here is raised. A PAM stack that cannot ask for the
+            // password refuses on every host, which makes the apply fail, so
+            // that is a blocking issue. Over SSH the apply refuses only where
+            // no Match block keeps this session's account on its key, which
+            // the preview cannot tell, so that is a note and does not fail
+            // the dry run.
+            if let Some(plan) = &second_factor_plan
+                && plan.shortfall.is_some()
+            {
+                for (directive, now) in second_factor::pending(plan, &resolved) {
+                    writes_fragment = true;
+                    estimated_changes.push(format!(
+                        "{}: {} → {}",
+                        directive.keyword,
+                        now.unwrap_or_else(|| "(not set)".to_string()),
+                        directive.value
+                    ));
+                }
+                // The global `PAMServiceName` the files set, which this plugin
+                // never writes; the apply reads it from `sshd -T` instead,
+                // per account as well.
+                let service = resolved
+                    .effective(second_factor::PAM_SERVICE_NAME)
+                    .map_or_else(
+                        || second_factor::DEFAULT_PAM_SERVICE.to_string(),
+                        |effective| effective.value,
+                    );
+                if let Some(reason) =
+                    second_factor::pam_answers_with_password(ctx.executor().as_ref(), &service)
+                        .await
+                        .refusal()
+                {
+                    issues.push(ValidationIssue {
+                        validation_issue_severity: Severity::Critical,
+                        validation_issue_message: format!(
+                            "The second factor will not be applied: {reason} (PAM service \
+                             {service})"
+                        ),
+                        validation_issue_config_key: Some(
+                            auth_methods::AUTHENTICATION_METHODS.to_string(),
+                        ),
+                    });
+                }
+                // Two more refusals the files alone can show: a Match block
+                // the switched-on keyboard-interactive would turn into a
+                // password-only login, and logins no key file lists. The
+                // apply reads the second from `sshd -T`; the files say the
+                // same thing wherever no Match block changes it.
+                if let Some(reason) = second_factor::match_refusal(&resolved) {
+                    issues.push(ValidationIssue {
+                        validation_issue_severity: Severity::Critical,
+                        validation_issue_message: format!(
+                            "The second factor will not be applied: {reason}"
+                        ),
+                        validation_issue_config_key: Some(
+                            auth_methods::AUTHENTICATION_METHODS.to_string(),
+                        ),
+                    });
+                }
+                let unlisted =
+                    second_factor::unlisted_logins_in_files(ctx.executor().as_ref(), &resolved)
+                        .await;
+                if !unlisted.is_empty() {
+                    let named = unlisted.join(",");
+                    if config
+                        .matching_exception(second_factor::UNLISTED_KEYS_EXCEPTION_KEY, &named)
+                        .is_none()
+                    {
+                        issues.push(ValidationIssue {
+                            validation_issue_severity: Severity::Critical,
+                            validation_issue_message: format!(
+                                "The second factor will not be applied: {named} lets accounts \
+                                 log in without a key file the apply's check can read. Accept \
+                                 that with [ssh.exceptions.\"{}\"] value = \"{named}\"",
+                                second_factor::UNLISTED_KEYS_EXCEPTION_KEY
+                            ),
+                            validation_issue_config_key: Some(
+                                auth_methods::AUTHENTICATION_METHODS.to_string(),
+                            ),
+                        });
+                    }
+                }
+                if ctx.executor().is_remote() {
+                    issues.push(ValidationIssue {
+                        validation_issue_severity: Severity::Medium,
+                        validation_issue_message: "This apply runs over SSH, and this tool's \
+                             remote mode cannot answer a password prompt. Before writing, the \
+                             apply checks that this session's account keeps a way in on its \
+                             key alone (a Match block for it, see the configuration \
+                             reference), and leaves the second factor out if not"
+                            .to_string(),
+                        validation_issue_config_key: Some(
+                            auth_methods::AUTHENTICATION_METHODS.to_string(),
+                        ),
+                    });
                 }
             }
 

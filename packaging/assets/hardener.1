@@ -611,6 +611,22 @@ Default:
 .B \-\-ssh\-no\-verify
 Skip SSH host key verification.
 Use with caution.
+.TP
+.BI \-\-ssh\-control\-path " SOCKET"
+Run over an SSH connection you opened yourself, through its ControlMaster
+socket, for a host that asks for a password or a second factor this tool
+cannot answer.
+Commands run as the account that opened it, so it suits a scan of what that
+account can read: where sshd_config is readable by root only, as on Gentoo,
+Fedora, RHEL and Rocky, the SSH checks come back unchecked.
+Open it first with
+.IR "ssh -M -S SOCKET -o ControlPersist=yes host" .
+Requires
+.B \-\-ssh
+naming the same host.
+Refused by
+.BR batch ,
+which opens its own connections.
 .
 .SS Scan Options
 .TP

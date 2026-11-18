@@ -550,18 +550,23 @@ REGISTRY = {
             ),
         ),
     ),
-    ("ssh/mod.rs", "write_file(&temp_path"): (
+    ("ssh/mod.rs", "write_file(path"): (
         (
             "exempt",
-            "/tmp/linux-hardener-sshd-validate-<pid>.conf: scratch copy for "
-            "`sshd -t`, and /tmp is mounted by the system on every host this "
-            "runs on",
+            "`write_scratch`, the one writer of the scratch files "
+            "/tmp/linux-hardener-sshd-validate-<pid>.conf (the candidate "
+            "`sshd -t` and the second factor's `sshd -T` probes read), "
+            "/tmp/linux-hardener-sshd-validate-<pid>-fragment.conf (the new "
+            "body of 00-hardener.conf the candidate includes), and the same "
+            "two with -baseline in the name (the apply without the second "
+            "factor, which the second factor's guard compares against); /tmp "
+            "is mounted by the system on every host this runs on",
         ),
         (
             "exempt",
-            "nothing of it survives the apply to declare: "
-            "`validate_sshd_config` removes the scratch file on every path out "
-            "of itself, the rejecting ones included, so a rollback would find "
+            "nothing of either survives the apply to declare: every caller "
+            "pairs the write with `remove_scratch` on every path out, the "
+            "rejecting and refusing ones included, so a rollback would find "
             "nothing there to remove. The removal is best-effort, so a `rm` "
             "that fails leaves a copy of a candidate config in /tmp, which is "
             "warned about and which a declared path would not have helped "

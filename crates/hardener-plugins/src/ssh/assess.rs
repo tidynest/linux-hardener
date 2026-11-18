@@ -7,14 +7,14 @@
 //! reports the directives whose effective values violate the baseline.
 
 use super::{
-    MainConfig, SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES, SSHD_ADMIN_CONFIG_PATH,
-    crypto_value_is_secure, get_ssh_compliance_mappings, include, is_second_factor_only,
-    observed_value, resolved_target, unchecked_ssh_checks,
+    MainConfig, SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES, SSHD_ADMIN_CONFIG_PATH, auth_methods,
+    crypto_value_is_secure, dropin, get_ssh_compliance_mappings, include, is_second_factor_only,
+    observed_value, resolved_target, second_factor, unchecked_ssh_checks,
 };
 
 use hardener_common::{
     error::Result,
-    types::{FindingCategory, PluginId},
+    types::{FindingCategory, PluginId, Severity},
     vendor_config::{LayeredRead, read_layered},
 };
 use hardener_core::{
@@ -151,6 +151,10 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
         }
     };
 
+    // The lists in force today, which decide whether keyboard-interactive is
+    // a password login or a second factor behind a key.
+    let auth_lists = resolved.effective_arguments(auth_methods::AUTHENTICATION_METHODS);
+
     // Check each SSH directive
     for directive in SSH_DIRECTIVES {
         let effective = resolved.effective(directive.ssh_directive_name);
@@ -168,7 +172,7 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
         let is_insecure = directive
             .ssh_compare
             .violated_by(&target, current_value.as_deref())
-            && !is_second_factor_only(directive, &resolved);
+            && !is_second_factor_only(directive, auth_lists.as_deref());
 
         if is_insecure {
             // An exception is honoured only when it documents the value the
@@ -218,6 +222,53 @@ pub(super) async fn scan(ctx: &Context, config: &PluginConfig) -> Result<ScanRes
                 finding_exception_key: Some(directive.ssh_directive_name.to_string()),
             });
         }
+    }
+
+    // The second factor, only where the operator's config asks for it (#185).
+    // A host that does not enforce it is a finding of its own rather than a
+    // change to the keyboard-interactive one above: that check asks whether a
+    // password can finish a login alone, and this asks whether the key is
+    // followed by the account password, which is a different question with a
+    // different answer on the host the issue started from.
+    if let Some(policy) = second_factor::requested(config)
+        && let Some(observed) = second_factor::shortfall(&resolved)
+    {
+        let key = auth_methods::AUTHENTICATION_METHODS;
+        findings.push(Finding {
+            finding_category: FindingCategory::Network,
+            finding_current_value: observed.clone(),
+            finding_description: "Require an SSH key, then the account password".to_string(),
+            finding_explanation: format!(
+                "The configuration asks for a second factor: an SSH key first, then the \
+                 account password through PAM. sshd does not enforce it, because what is in \
+                 force is '{observed}'. It needs AuthenticationMethods {policy}, \
+                 KbdInteractiveAuthentication yes and UsePAM yes together, with \
+                 PasswordAuthentication left at no."
+            ),
+            finding_id: "ssh-authenticationmethods".to_string(),
+            finding_impact: "A stolen SSH key is enough to log in on its own".to_string(),
+            finding_recommended_value: policy.to_string(),
+            finding_remediation_steps: vec![
+                format!(
+                    "Run `sudo hardener apply --plugin ssh-hardening` with the \
+                     AuthenticationMethods line in /etc/linux-hardener/config.toml or in a \
+                     file passed with --config (a run as root skips \
+                     ~/.config/linux-hardener/config.toml). It writes these to {} after \
+                     checking nobody is locked out; or set them there by hand: \
+                     AuthenticationMethods {policy}, KbdInteractiveAuthentication yes, \
+                     UsePAM yes",
+                    dropin::DROPIN_PATH
+                ),
+                "Validate with: sshd -t".to_string(),
+                "Keep the current session open until a new login with key and password works"
+                    .to_string(),
+            ],
+            finding_severity: Severity::High,
+            finding_title: format!("SSH second factor not enforced: {key}"),
+            finding_compliance: second_factor::compliance(),
+            finding_exception: config.exception_outcome(key, &observed),
+            finding_exception_key: Some(key.to_string()),
+        });
     }
 
     // Check cryptographic directives. These are insecure if unset OR if they

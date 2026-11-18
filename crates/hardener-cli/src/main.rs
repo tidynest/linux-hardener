@@ -48,6 +48,17 @@ async fn main() -> Result<()> {
         std::process::exit(2);
     }
 
+    // `batch` opens a connection per host on its own terms, so a socket the
+    // operator opened to one host means nothing to it. Refused rather than
+    // ignored, for the reason the --ssh refusal above gives.
+    if cli.ssh_control_path.is_some() && matches!(cli.command, Command::Batch { .. }) {
+        eprintln!(
+            "Error: --ssh-control-path is not honoured by `batch`, which opens its own \
+             connection to every host."
+        );
+        std::process::exit(2);
+    }
+
     // Create executor based on SSH flags. Batch keeps a case of its own: its
     // subcommands declare an `ssh` argument that clap resolves to the same
     // argument as the global one, so `--ssh host batch scan` fills batch's
@@ -63,14 +74,19 @@ async fn main() -> Result<()> {
             cli.ssh_key.clone(),
             cli.ssh_timeout,
             cli.ssh_no_verify,
-        );
+        )
+        .with_control_path(cli.ssh_control_path.clone());
 
         if !cli.quiet {
             eprint!("Connecting to {}...", ssh_config.display());
         }
 
         let core_config = ssh_config.to_core_config();
-        match SshExecutor::connect(core_config).await {
+        let connected = match &ssh_config.control_path {
+            Some(socket) => SshExecutor::attach(core_config, socket).await,
+            None => SshExecutor::connect(core_config).await,
+        };
+        match connected {
             Ok(executor) => Arc::new(executor),
             Err(e) => {
                 eprintln!("SSH connection failed: {}", e);

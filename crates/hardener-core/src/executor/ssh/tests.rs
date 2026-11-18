@@ -46,6 +46,28 @@ fn connect_error_appends_hint_on_auth_failure() {
     );
 }
 
+/// A host that wants a key and then the account password accepts the key
+/// and leaves only keyboard-interactive on offer. The key hint would send the
+/// operator after a key that already worked (#185).
+#[test]
+fn connect_error_names_the_second_factor_where_only_a_prompt_is_left() {
+    for detail in [
+        "failed to connect to the remote host: root@10.0.0.5: Permission denied (keyboard-interactive).",
+        "Permission denied (password,keyboard-interactive).",
+    ] {
+        let msg = connect_error_message("10.0.0.5", detail);
+        assert!(msg.contains("--ssh-control-path"), "{msg}");
+        assert!(!msg.contains("ssh-add"), "{msg}");
+    }
+    // Publickey still on offer is a key problem, as before.
+    let msg = connect_error_message(
+        "10.0.0.5",
+        "Permission denied (publickey,keyboard-interactive).",
+    );
+    assert!(msg.contains("ssh-add"), "{msg}");
+    assert!(!msg.contains("--ssh-control-path"), "{msg}");
+}
+
 #[test]
 fn tee_command_round_trips_newline_terminated_content() {
     // A remote apply→rollback cycle must not grow files: content that

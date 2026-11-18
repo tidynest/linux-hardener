@@ -447,6 +447,18 @@ and `KbdInteractiveAuthentication no` are applied without checking that any
 account has a working key, so a host reached only by password stops accepting
 new logins.
 
+**The opt-in second factor is not a baseline value.** Setting
+`AuthenticationMethods` to `publickey,keyboard-interactive` or
+`publickey,keyboard-interactive:pam` in `[ssh.directives]` asks for the account
+password after the key
+([#185](https://github.com/tidynest/linux-hardener/issues/185)). Nothing turns
+it on by default, so it has no row below. Where it is on, the plugin holds
+`KbdInteractiveAuthentication` and `UsePAM` at `yes` instead of the
+`KbdInteractiveAuthentication no` in the table, and `PasswordAuthentication`
+stays at `no`;
+[`[ssh]`: a key, then the account password](configuration.md#ssh-a-key-then-the-account-password)
+describes it.
+
 <!-- baseline-table: ssh -->
 
 | Setting | Default | Comparison | Severity | Where the value comes from | What the guides say |

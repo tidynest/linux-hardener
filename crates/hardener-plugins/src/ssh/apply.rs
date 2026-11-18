@@ -8,10 +8,13 @@
 
 use super::{
     MainConfig, PERMIT_ROOT_LOGIN, REMOTE_ROOT_SAFE_VALUE, SSH_CRYPTO_DIRECTIVES, SSH_DIRECTIVES,
-    SSHD_ADMIN_CONFIG_PATH, SshHardeningPlugin, backup_prefix, crypto_value_is_secure, dropin,
-    include, is_remote_root_session, is_second_factor_only, keep_value_the_fragment_holds,
-    lock_config_path, observed_value, resolved_target, select_algorithms, supported_algorithms,
-    validate_sshd_config, verify_dropin_precedence,
+    SSHD_ADMIN_CONFIG_PATH, SshHardeningPlugin, StagedCandidate, auth_methods, backup_prefix,
+    crypto_value_is_secure, dropin, include, is_remote_root_session, is_second_factor_only,
+    keep_value_the_fragment_holds, lock_config_path, observed_value, remove_scratch,
+    resolved_target, second_factor, second_factor_switched_off_ahead, select_algorithms,
+    sshd_baseline_fragment_scratch_path, sshd_baseline_scratch_path,
+    sshd_validate_fragment_scratch_path, sshd_validate_scratch_path, supported_algorithms,
+    validate_sshd_config, verify_dropin_precedence, write_scratch,
 };
 
 use chrono::Utc;
@@ -90,17 +93,11 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
     let original_content = main.content.clone();
 
     // Step 2: Compute the hardened config from the current content.
-    // Directive changes accumulate in `changes`, but nothing is committed
+    // Directive changes accumulate in the draft, but nothing is committed
     // to disk until the no-op guard below confirms the config actually
     // differs. Probe the session once up front: on a remote root session
     // the PermitRootLogin target is downgraded so the apply cannot sever
     // its own access.
-    let mut config_content = original_content.clone();
-    let mut changes = Vec::new();
-    // Directives that cannot take effect by editing the main file, either
-    // because a drop-in outranks it or because it is the vendor's and must
-    // not be touched. These go to the fragment this tool owns.
-    let mut to_dropin: Vec<dropin::Directive> = Vec::new();
     let remote_root_session = is_remote_root_session(ctx.executor().as_ref()).await;
 
     // Which directives a drop-in already answers. sshd reads the Include
@@ -110,12 +107,470 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
     // whether a write would take effect.
     let resolved = include::resolve(ctx, config_path, &original_content).await?;
 
+    // The second factor, where the operator's config asks for one (#185).
+    // An exception documenting what the host does instead is honoured as for
+    // any other directive: the host is left as it is.
+    let mut second_factor_notes = Vec::new();
+    let mut second_factor_plan =
+        second_factor::requested(config).map(|policy| second_factor::plan(policy, &resolved));
+    if let Some(plan) = &second_factor_plan
+        && let Some(observed) = &plan.shortfall
+        && let Some(exception) =
+            config.matching_exception(auth_methods::AUTHENTICATION_METHODS, observed)
+    {
+        info!(
+            "Skipping the second factor (exception: {})",
+            exception.reason
+        );
+        second_factor_notes.push(Change {
+            change_description: format!(
+                "{}: skipped (exception: {})",
+                auth_methods::AUTHENTICATION_METHODS,
+                exception.reason
+            ),
+            change_type: ChangeType::Skipped,
+            change_success: true,
+            change_error: None,
+        });
+        second_factor_plan = None;
+    }
+
+    let mut drafted = draft(
+        ctx,
+        config,
+        &main,
+        &resolved,
+        remote_root_session,
+        second_factor_plan.as_ref(),
+    )
+    .await;
+
+    // The guards run only where this apply introduces the second factor. A
+    // host already enforcing it has nobody left to lock out by keeping it,
+    // and checking again on every run would refuse a host whose operator
+    // has since accepted what the first run found.
+    //
+    // The same apply without the second factor is drafted beside it, because
+    // the guards compare the two: an account the rest of the apply locks out
+    // anyway, by switching password login off, is not one the second factor
+    // took away. A refusal then writes that draft, rather than refusing the
+    // apply: every other directive is as safe to write as it was, and the
+    // refusal is reported as a failed change, so the run still ends
+    // unsuccessful and says why.
+    let mut second_factor_refusal = None;
+    if second_factor_plan
+        .as_ref()
+        .is_some_and(|plan| plan.shortfall.is_some())
+    {
+        let baseline = draft(ctx, config, &main, &resolved, remote_root_session, None).await;
+        match second_factor_verdict(ctx, config, &main, &resolved, &drafted, &baseline).await {
+            second_factor::Verdict::Proceed(notes) => {
+                second_factor_notes.extend(notes.into_iter().map(|note| Change {
+                    change_description: note,
+                    change_type: ChangeType::Skipped,
+                    change_success: true,
+                    change_error: None,
+                }));
+            }
+            second_factor::Verdict::Refuse(reason) => {
+                warn!("Second factor not applied: {reason}");
+                drafted = baseline;
+                second_factor_refusal = Some(reason);
+            }
+        }
+    }
+    let Draft {
+        config_content,
+        to_dropin,
+        mut changes,
+    } = drafted;
+    changes.extend(second_factor_notes);
+    // Not in `changes`, because the `sshd -t` gate below turns everything in
+    // there into Skipped, and a refusal has to stay a failure whatever else
+    // happens to the run.
+    let refusal_change = second_factor_refusal.as_ref().map(|reason| Change {
+        change_description: format!("Second factor not applied: {reason}"),
+        change_type: ChangeType::ConfigFile,
+        change_success: false,
+        change_error: Some(reason.clone()),
+    });
+
+    // Step 3: No-op guard. If the hardened config is byte-identical to what
+    // was read, the host is already compliant: skip the checkpoint, the
+    // backup, the write and - critically - the sshd restart, which is the
+    // one operation that can drop the admin's own session. Emit a single
+    // Skipped change so the caller still sees the plugin ran.
+    //
+    // The fragment counts as part of the config here. On a vendor-layer
+    // host every directive goes there and the main file is never touched,
+    // so comparing the main file alone would report "already compliant" on
+    // a host nothing had been written to yet.
+    let desired_dropin = (!to_dropin.is_empty()).then(|| dropin::render(&to_dropin));
+    // A drop-in that cannot be read counts as changed, which is why the
+    // failure is folded into None rather than distinguished: the cost of
+    // being wrong is one needless rewrite of a file this tool owns and
+    // stamps as managed, and the direction is toward hardening.
+    let current_dropin = ctx
+        .executor()
+        .read_file(Path::new(dropin::DROPIN_PATH))
+        .await
+        .ok();
+    let dropin_changed = desired_dropin.as_deref() != current_dropin.as_deref();
+
+    if config_content == original_content && !dropin_changed {
+        changes.push(Change {
+            change_description:
+                "sshd_config already compliant - not rewritten, service not restarted".to_string(),
+            change_type: ChangeType::Skipped,
+            change_success: true,
+            change_error: None,
+        });
+        info!("sshd_config already compliant; skipped backup, rewrite and restart");
+        // A refused second factor is the one thing a run with nothing to
+        // write can still have failed at.
+        changes.extend(refusal_change);
+        return Ok(ApplyResult {
+            apply_plugin_id: plugin_id,
+            apply_success: second_factor_refusal.is_none(),
+            apply_changes: changes,
+            apply_checkpoint_id: None,
+            apply_error: second_factor_refusal
+                .map(|reason| format!("Second factor not applied: {reason}")),
+        });
+    }
+
+    // Step 4: The config drifts, so commit the change. Create the
+    // checkpoint and the legacy backup now (never on a no-op); they lead
+    // the committed change list, ahead of the directive changes.
+    let mut committed = Vec::new();
+
+    // The fragment joins the checkpoint so a rollback removes it. It is
+    // deliberately absent from UNDELETABLE_ROLLBACK_PATHS: a checkpoint
+    // taken before this apply records it as truthfully absent, so deleting
+    // it is what the operator asked for, and protecting it would leave the
+    // hardening in place after a rollback. Same precedent as the kernel
+    // plugin's sysctl.d drop-in.
+    // A checkpoint captures what a rollback can put back, which here is
+    // what this apply can write. The vendor file is neither: `edit_target`
+    // sends every managed directive to the drop-in where the vendor copy is
+    // the one in force, and `DEFAULT_ROLLBACK_PREFIXES` covers `/etc` alone.
+    // Capturing `/usr/etc/ssh/sshd_config` therefore recorded a restore
+    // obligation the rollback refuses by design, and on openSUSE that made
+    // every ssh rollback exit 1 reporting files it had not restored, having
+    // restored everything that was ever changed. Five distributions keep it
+    // under /etc and showed nothing. The legacy backup below already skips
+    // the vendor file for the same reason; this is that rule, applied to
+    // the capture it was missing from.
+    // One expression, both arms visible: `writing_main` is the same
+    // predicate that guards the write of `config_path` below, so the file is
+    // captured exactly when it can be written, and never otherwise.
+    let capture_paths: Vec<&Path> = if writing_main {
+        vec![Path::new(config_path), Path::new(dropin::DROPIN_PATH)]
+    } else {
+        vec![Path::new(dropin::DROPIN_PATH)]
+    };
+    let checkpoint_id =
+        crate::create_checkpoint_for_apply(ctx, "ssh-hardening-pre-apply", &capture_paths).await?;
+    committed.extend(crate::checkpoint_change(&checkpoint_id));
+    // Ahead of everything that can return early, so every result this run
+    // can produce carries it.
+    committed.extend(refusal_change);
+
+    // The legacy backup sits beside the file it copies, so it is taken only
+    // when that file is the administrator's. Copying the vendor config
+    // would drop a hardener-named file into /usr/etc, which is the
+    // distribution's to own, and there is nothing to back up in any case
+    // because the vendor file is never edited.
+    let main_write_needed = writing_main && config_content != original_content;
+    if main_write_needed {
+        let backup_path = format!(
+            "{}{}",
+            backup_prefix(config_path),
+            Utc::now().format("%Y%m%d_%H%M%S")
+        );
+        // `-p` was here from the start and `--no-dereference` was not, the
+        // reverse of the audit plugin's copy; the two flags answer separate
+        // questions and a backup needs both. `-p` preserves mode, ownership
+        // and timestamps, so a restored copy is the file rather than one
+        // wearing the umask's mode. `--no-dereference` copies a symlink as
+        // a symlink, which matters here more than at the other two sites: a
+        // host whose sshd_config is a link into a configuration-management
+        // checkout would otherwise have its managed file copied and the
+        // object this apply is about to overwrite left with no backup at
+        // all. `cp -p` exits non-zero when it cannot preserve ownership, as
+        // an unprivileged copy of a root-owned file cannot; that is caught
+        // by the failure arms below, which is the right direction, and
+        // apply runs as root so it should not arise.
+        match ctx
+            .executor()
+            .execute_command("cp", &["-p", "--no-dereference", config_path, &backup_path])
+            .await
+        {
+            Ok(output) if output.success() => {
+                committed.push(Change {
+                    change_description: format!("Created backup: {}", backup_path),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+                info!("SSH config backup created: {}", backup_path);
+                // The copy exists, so the directory holds one more backup
+                // than it did. Pruned here rather than at the end of apply
+                // so the creation and the retention sit together, and only
+                // on the path that made one: a compliant host takes no
+                // backup and has nothing to prune.
+                crate::prune_timestamped_backups(
+                    ctx,
+                    &backup_prefix(config_path),
+                    crate::BACKUPS_KEPT,
+                )
+                .await;
+            }
+            Ok(output) => {
+                return Ok(ApplyResult {
+                    apply_plugin_id: plugin_id,
+                    apply_success: false,
+                    apply_changes: committed,
+                    apply_checkpoint_id: checkpoint_id,
+                    apply_error: Some(format!("Failed to create backup: {}", output.stderr)),
+                });
+            }
+            Err(e) => {
+                return Ok(ApplyResult {
+                    apply_plugin_id: plugin_id,
+                    apply_success: false,
+                    apply_changes: committed,
+                    apply_checkpoint_id: checkpoint_id,
+                    apply_error: Some(format!("Failed to create backup: {}", e)),
+                });
+            }
+        }
+    }
+
+    // Step 5: Validate the candidate config with `sshd -t` BEFORE touching
+    // the live file. If sshd would refuse to start, abort here: no write, no
+    // restart; the running daemon and its config are left fully intact, so
+    // there is no lockout path.
+    //
+    // The candidate is the main file with the fragment's new body staged
+    // where the fragment sorts, read in sshd's own order. It used to be the
+    // body pasted ahead of the main file, whose Include then read the copy
+    // of the fragment still on disk: a rewrite dropping a directive was
+    // checked with the dropped value still in force behind it. On a
+    // vendor-layer host the main file is unchanged, so validating it alone
+    // would check nothing this apply is about to write.
+    let validated =
+        match StagedCandidate::stage(ctx, config_path, &config_content, desired_dropin.as_deref())
+            .await
+        {
+            Ok(staged) => {
+                let validated =
+                    validate_sshd_config(ctx.executor().as_ref(), &staged.main_text).await;
+                staged.unstage(ctx.executor().as_ref()).await;
+                validated
+            }
+            Err(e) => Err(e),
+        };
+    if let Err(e) = validated {
+        error!("Candidate sshd_config failed validation, aborting apply: {e}");
+        // Staged, never written. These edits were moved into `committed`
+        // above this gate and so were counted as applied on every host
+        // where sshd refused the candidate: the debian and ubuntu fixtures
+        // have no /run/sshd, and `apply` there announced "11 of 12
+        // change(s) applied" having written no bytes, with the scan
+        // immediately after still raising all ten SSH findings. Skipped is
+        // what they are, and it keeps them out of both the applied and the
+        // failed counts, because neither happened; the descriptions stay
+        // listed so the operator can still read what would have changed.
+        for change in &mut changes {
+            change.change_type = ChangeType::Skipped;
+        }
+        committed.append(&mut changes);
+        committed.push(Change {
+            change_description: "Candidate sshd_config rejected by `sshd -t`; \
+                    no changes written, service not restarted"
+                .to_string(),
+            change_type: ChangeType::ConfigFile,
+            change_success: false,
+            change_error: Some(e.to_string()),
+        });
+        return Ok(ApplyResult {
+            apply_plugin_id: plugin_id,
+            apply_success: false,
+            apply_changes: committed,
+            apply_checkpoint_id: checkpoint_id,
+            apply_error: Some(format!("sshd config validation failed: {e}")),
+        });
+    }
+
+    // Past the gate, so the candidate is one sshd will accept and these
+    // edits are about to be written. Appended here rather than before the
+    // gate, which is the only difference between a change this apply made
+    // and one it merely planned.
+    committed.append(&mut changes);
+
+    // Step 6: Write modified configuration using executor. The vendor file
+    // is never a write target: creating /etc/ssh/sshd_config to hold these
+    // directives would make sshd stop reading the vendor config entirely,
+    // discarding its Include lines and every setting it makes.
+    if main_write_needed {
+        match ctx
+            .executor()
+            .write_file(Path::new(config_path), &config_content)
+            .await
+        {
+            Ok(_) => {
+                committed.push(Change {
+                    change_description: format!("Updated {}", config_path),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+                info!("SSH configuration updated successfully");
+            }
+            Err(e) => {
+                committed.push(Change {
+                    change_description: format!("Failed to write {}", config_path),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: false,
+                    change_error: Some(e.to_string()),
+                });
+                error!("Failed to write SSH config: {}", e);
+            }
+        }
+    }
+
+    // Step 6b: Write the fragment, then ask the resolver whether it
+    // actually won. That 00- sorts first is a claim about filenames nobody
+    // controls, so it is checked rather than trusted: a directive still
+    // answered by another file is a failed change naming that file, never a
+    // success.
+    if dropin_changed {
+        match dropin::write_dropin(ctx, &to_dropin).await {
+            Ok(()) => committed.extend(
+                verify_dropin_precedence(ctx, config_path, &to_dropin, &config_content).await,
+            ),
+            Err(e) => {
+                committed.push(Change {
+                    change_description: format!("Failed to write {}", dropin::DROPIN_PATH),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: false,
+                    change_error: Some(e.to_string()),
+                });
+                error!("Failed to write the sshd drop-in: {e}");
+            }
+        }
+    }
+
+    // Step 7: Restart SSH service to apply changes. Only reached after the
+    // candidate config passed `sshd -t`, so a restart cannot lock us out.
+    match SshHardeningPlugin::restart_ssh_service(ctx).await {
+        Ok(_) => {
+            committed.push(Change {
+                change_description: "Restarted SSH service".to_string(),
+                change_type: ChangeType::Service,
+                change_success: true,
+                change_error: None,
+            });
+            info!("SSH service restarted successfully");
+        }
+        Err(e) => {
+            committed.push(Change {
+                change_description: "Failed to restart SSH service".to_string(),
+                change_type: ChangeType::Service,
+                change_success: false,
+                change_error: Some(e.to_string()),
+            });
+            error!("Failed to restart SSH service: {}", e);
+        }
+    }
+
+    let success = committed.iter().all(|c| c.change_success);
+    Ok(ApplyResult {
+        apply_plugin_id: plugin_id,
+        apply_success: success,
+        apply_changes: committed,
+        apply_checkpoint_id: checkpoint_id,
+        apply_error: second_factor_refusal
+            .map(|reason| format!("Second factor not applied: {reason}")),
+    })
+}
+
+/// What an apply would write, before any of it is written.
+struct Draft {
+    /// The main file's new text, unchanged where it is not written.
+    config_content: String,
+    /// What the fragment this tool owns will hold.
+    to_dropin: Vec<dropin::Directive>,
+    /// One change per directive, in the order they were decided.
+    changes: Vec<Change>,
+}
+
+/// Decides every directive: which value, and whether the main file or the
+/// fragment carries it.
+///
+/// A function of its own because an apply may draft twice: once with the
+/// second factor, and again without it where the guards refuse it. The
+/// second draft has to judge keyboard-interactive against the lists that will
+/// then be in force, which is not something a draft can have its second
+/// factor removed from afterwards.
+async fn draft(
+    ctx: &Context,
+    config: &PluginConfig,
+    main: &MainConfig,
+    resolved: &include::ResolvedConfig,
+    remote_root_session: bool,
+    planned: Option<&second_factor::Plan>,
+) -> Draft {
+    let config_path = main.path.as_str();
+    let writing_main = matches!(main.layer, ConfigLayer::Admin);
+    let mut config_content = main.content.clone();
+    let mut changes = Vec::new();
+    // Directives that cannot take effect by editing the main file, either
+    // because a drop-in outranks it or because it is the vendor's and must
+    // not be touched. These go to the fragment this tool owns.
+    let mut to_dropin: Vec<dropin::Directive> = Vec::new();
+    // The lists in force once this apply lands, which decide whether
+    // keyboard-interactive is a password login or a second factor.
+    let auth_lists = second_factor::planned_lists(planned, resolved);
+
     for directive in SSH_DIRECTIVES {
-        // Not written at all, and not carried into the fragment either: A
-        // `no` this tool wrote before the operator set up the second factor
-        // is what stops sshd starting once they have, so the rewrite below
-        // dropping it is the repair.
-        if is_second_factor_only(directive, &resolved) {
+        // Not written to the strict value, and not carried into the
+        // fragment either: A `no` this tool wrote before the operator set up
+        // the second factor is what stops sshd starting once they have, so
+        // the fragment rewrite dropping it is the repair. Where that `no`
+        // sits in the main file above the drop-in Include (Gentoo's layout),
+        // sshd reads it before every drop-in, so the line itself is switched
+        // on instead.
+        if is_second_factor_only(directive, auth_lists.as_deref()) {
+            if writing_main
+                && let Some(line) =
+                    second_factor_switched_off_ahead(directive, &config_content, config_path)
+            {
+                config_content = set_config_directive(
+                    &config_content,
+                    &line.keyword,
+                    "yes",
+                    ConfigFormat::SpaceSeparated,
+                    false,
+                    Duplicates::Keep,
+                );
+                info!(
+                    "Switched {} on in {config_path}: it sits above the drop-in Include and \
+                     kept the second factor switched off",
+                    line.keyword
+                );
+                changes.push(Change {
+                    change_description: format!(
+                        "{}: {} -> yes in {config_path} (read before the drop-ins, so it kept \
+                         the second factor behind the key switched off)",
+                        line.keyword, line.value
+                    ),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                });
+            }
             continue;
         }
 
@@ -399,6 +854,15 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
         }
     }
 
+    // The second factor's three settings always go to the fragment, which is
+    // the one file read before every other on all six validated families.
+    // Arch switches keyboard-interactive off in 99-archlinux.conf, and a
+    // value written to the main file would lose to it.
+    if let Some(plan) = planned {
+        changes.extend(second_factor::changes(plan, resolved));
+        to_dropin.extend(second_factor::directives(plan));
+    }
+
     // Step 5b: Apply cryptographic directives via host-capability intersection.
     // For each crypto directive, query what the local sshd supports and emit
     // only (desired strong ∩ supported). This can never produce a weak algo
@@ -546,284 +1010,111 @@ pub(super) async fn apply(ctx: &mut Context, config: &PluginConfig) -> Result<Ap
         }
     }
 
-    // Step 3: No-op guard. If the hardened config is byte-identical to what
-    // was read, the host is already compliant: skip the checkpoint, the
-    // backup, the write and - critically - the sshd restart, which is the
-    // one operation that can drop the admin's own session. Emit a single
-    // Skipped change so the caller still sees the plugin ran.
-    //
-    // The fragment counts as part of the config here. On a vendor-layer
-    // host every directive goes there and the main file is never touched,
-    // so comparing the main file alone would report "already compliant" on
-    // a host nothing had been written to yet.
-    let desired_dropin = (!to_dropin.is_empty()).then(|| dropin::render(&to_dropin));
-    // A drop-in that cannot be read counts as changed, which is why the
-    // failure is folded into None rather than distinguished: the cost of
-    // being wrong is one needless rewrite of a file this tool owns and
-    // stamps as managed, and the direction is toward hardening.
-    let current_dropin = ctx
-        .executor()
-        .read_file(Path::new(dropin::DROPIN_PATH))
-        .await
-        .ok();
-    let dropin_changed = desired_dropin.as_deref() != current_dropin.as_deref();
-
-    if config_content == original_content && !dropin_changed {
-        changes.push(Change {
-            change_description:
-                "sshd_config already compliant - not rewritten, service not restarted".to_string(),
-            change_type: ChangeType::Skipped,
-            change_success: true,
-            change_error: None,
-        });
-        info!("sshd_config already compliant; skipped backup, rewrite and restart");
-        return Ok(ApplyResult {
-            apply_plugin_id: plugin_id,
-            apply_success: true,
-            apply_changes: changes,
-            apply_checkpoint_id: None,
-            apply_error: None,
-        });
+    Draft {
+        config_content,
+        to_dropin,
+        changes,
     }
+}
 
-    // Step 4: The config drifts, so commit the change. Create the
-    // checkpoint and the legacy backup now (never on a no-op); they lead
-    // the committed change list, ahead of the directive changes.
-    let mut committed = Vec::new();
-
-    // The fragment joins the checkpoint so a rollback removes it. It is
-    // deliberately absent from UNDELETABLE_ROLLBACK_PATHS: a checkpoint
-    // taken before this apply records it as truthfully absent, so deleting
-    // it is what the operator asked for, and protecting it would leave the
-    // hardening in place after a rollback. Same precedent as the kernel
-    // plugin's sysctl.d drop-in.
-    // A checkpoint captures what a rollback can put back, which here is
-    // what this apply can write. The vendor file is neither: `edit_target`
-    // sends every managed directive to the drop-in where the vendor copy is
-    // the one in force, and `DEFAULT_ROLLBACK_PREFIXES` covers `/etc` alone.
-    // Capturing `/usr/etc/ssh/sshd_config` therefore recorded a restore
-    // obligation the rollback refuses by design, and on openSUSE that made
-    // every ssh rollback exit 1 reporting files it had not restored, having
-    // restored everything that was ever changed. Five distributions keep it
-    // under /etc and showed nothing. The legacy backup below already skips
-    // the vendor file for the same reason; this is that rule, applied to
-    // the capture it was missing from.
-    // One expression, both arms visible: `writing_main` is the same
-    // predicate that guards the write of `config_path` below, so the file is
-    // captured exactly when it can be written, and never otherwise.
-    let capture_paths: Vec<&Path> = if writing_main {
-        vec![Path::new(config_path), Path::new(dropin::DROPIN_PATH)]
-    } else {
-        vec![Path::new(dropin::DROPIN_PATH)]
-    };
-    let checkpoint_id =
-        crate::create_checkpoint_for_apply(ctx, "ssh-hardening-pre-apply", &capture_paths).await?;
-    committed.extend(crate::checkpoint_change(&checkpoint_id));
-
-    // The legacy backup sits beside the file it copies, so it is taken only
-    // when that file is the administrator's. Copying the vendor config
-    // would drop a hardener-named file into /usr/etc, which is the
-    // distribution's to own, and there is nothing to back up in any case
-    // because the vendor file is never edited.
-    let main_write_needed = writing_main && config_content != original_content;
-    if main_write_needed {
-        let backup_path = format!(
-            "{}{}",
-            backup_prefix(config_path),
-            Utc::now().format("%Y%m%d_%H%M%S")
-        );
-        // `-p` was here from the start and `--no-dereference` was not, the
-        // reverse of the audit plugin's copy; the two flags answer separate
-        // questions and a backup needs both. `-p` preserves mode, ownership
-        // and timestamps, so a restored copy is the file rather than one
-        // wearing the umask's mode. `--no-dereference` copies a symlink as
-        // a symlink, which matters here more than at the other two sites: a
-        // host whose sshd_config is a link into a configuration-management
-        // checkout would otherwise have its managed file copied and the
-        // object this apply is about to overwrite left with no backup at
-        // all. `cp -p` exits non-zero when it cannot preserve ownership, as
-        // an unprivileged copy of a root-owned file cannot; that is caught
-        // by the failure arms below, which is the right direction, and
-        // apply runs as root so it should not arise.
-        match ctx
-            .executor()
-            .execute_command("cp", &["-p", "--no-dereference", config_path, &backup_path])
-            .await
-        {
-            Ok(output) if output.success() => {
-                committed.push(Change {
-                    change_description: format!("Created backup: {}", backup_path),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: true,
-                    change_error: None,
-                });
-                info!("SSH config backup created: {}", backup_path);
-                // The copy exists, so the directory holds one more backup
-                // than it did. Pruned here rather than at the end of apply
-                // so the creation and the retention sit together, and only
-                // on the path that made one: a compliant host takes no
-                // backup and has nothing to prune.
-                crate::prune_timestamped_backups(
-                    ctx,
-                    &backup_prefix(config_path),
-                    crate::BACKUPS_KEPT,
-                )
-                .await;
-            }
-            Ok(output) => {
-                return Ok(ApplyResult {
-                    apply_plugin_id: plugin_id,
-                    apply_success: false,
-                    apply_changes: committed,
-                    apply_checkpoint_id: checkpoint_id,
-                    apply_error: Some(format!("Failed to create backup: {}", output.stderr)),
-                });
-            }
-            Err(e) => {
-                return Ok(ApplyResult {
-                    apply_plugin_id: plugin_id,
-                    apply_success: false,
-                    apply_changes: committed,
-                    apply_checkpoint_id: checkpoint_id,
-                    apply_error: Some(format!("Failed to create backup: {}", e)),
-                });
-            }
-        }
+/// Runs the second factor's guards against the candidate `drafted` describes,
+/// staged where `sshd -t` reads it, beside the same apply drafted without the
+/// second factor (`baseline`), staged the same way.
+async fn second_factor_verdict(
+    ctx: &Context,
+    config: &PluginConfig,
+    main: &MainConfig,
+    resolved: &include::ResolvedConfig,
+    drafted: &Draft,
+    baseline: &Draft,
+) -> second_factor::Verdict {
+    if let Some(reason) = second_factor::match_refusal(resolved) {
+        return second_factor::Verdict::Refuse(reason);
     }
-
-    // Step 5: Validate the candidate config with `sshd -t` BEFORE touching
-    // the live file. If sshd would refuse to start, abort here: no write, no
-    // restart; the running daemon and its config are left fully intact, so
-    // there is no lockout path.
-    //
-    // The candidate is the fragment's body ahead of the main file, because
-    // that is the order sshd resolves in and the first value wins. On a
-    // vendor-layer host the main file is unchanged, so validating it alone
-    // would check nothing this apply is about to write.
-    let candidate = match &desired_dropin {
-        Some(body) => format!("{body}\n{config_content}"),
-        None => config_content.clone(),
-    };
-    if let Err(e) = validate_sshd_config(ctx.executor().as_ref(), &candidate).await {
-        error!("Candidate sshd_config failed validation, aborting apply: {e}");
-        // Staged, never written. These edits were moved into `committed`
-        // above this gate and so were counted as applied on every host
-        // where sshd refused the candidate: the debian and ubuntu fixtures
-        // have no /run/sshd, and `apply` there announced "11 of 12
-        // change(s) applied" having written no bytes, with the scan
-        // immediately after still raising all ten SSH findings. Skipped is
-        // what they are, and it keeps them out of both the applied and the
-        // failed counts, because neither happened; the descriptions stay
-        // listed so the operator can still read what would have changed.
-        for change in &mut changes {
-            change.change_type = ChangeType::Skipped;
-        }
-        committed.append(&mut changes);
-        committed.push(Change {
-            change_description: "Candidate sshd_config rejected by `sshd -t`; \
-                    no changes written, service not restarted"
-                .to_string(),
-            change_type: ChangeType::ConfigFile,
-            change_success: false,
-            change_error: Some(e.to_string()),
-        });
-        return Ok(ApplyResult {
-            apply_plugin_id: plugin_id,
-            apply_success: false,
-            apply_changes: committed,
-            apply_checkpoint_id: checkpoint_id,
-            apply_error: Some(format!("sshd config validation failed: {e}")),
-        });
-    }
-
-    // Past the gate, so the candidate is one sshd will accept and these
-    // edits are about to be written. Appended here rather than before the
-    // gate, which is the only difference between a change this apply made
-    // and one it merely planned.
-    committed.append(&mut changes);
-
-    // Step 6: Write modified configuration using executor. The vendor file
-    // is never a write target: creating /etc/ssh/sshd_config to hold these
-    // directives would make sshd stop reading the vendor config entirely,
-    // discarding its Include lines and every setting it makes.
-    if main_write_needed {
-        match ctx
-            .executor()
-            .write_file(Path::new(config_path), &config_content)
-            .await
-        {
-            Ok(_) => {
-                committed.push(Change {
-                    change_description: format!("Updated {}", config_path),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: true,
-                    change_error: None,
-                });
-                info!("SSH configuration updated successfully");
-            }
-            Err(e) => {
-                committed.push(Change {
-                    change_description: format!("Failed to write {}", config_path),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: false,
-                    change_error: Some(e.to_string()),
-                });
-                error!("Failed to write SSH config: {}", e);
-            }
-        }
-    }
-
-    // Step 6b: Write the fragment, then ask the resolver whether it
-    // actually won. That 00- sorts first is a claim about filenames nobody
-    // controls, so it is checked rather than trusted: a directive still
-    // answered by another file is a failed change naming that file, never a
-    // success.
-    if dropin_changed {
-        match dropin::write_dropin(ctx, &to_dropin).await {
-            Ok(()) => committed.extend(
-                verify_dropin_precedence(ctx, config_path, &to_dropin, &config_content).await,
-            ),
-            Err(e) => {
-                committed.push(Change {
-                    change_description: format!("Failed to write {}", dropin::DROPIN_PATH),
-                    change_type: ChangeType::ConfigFile,
-                    change_success: false,
-                    change_error: Some(e.to_string()),
-                });
-                error!("Failed to write the sshd drop-in: {e}");
-            }
-        }
-    }
-
-    // Step 7: Restart SSH service to apply changes. Only reached after the
-    // candidate config passed `sshd -t`, so a restart cannot lock us out.
-    match SshHardeningPlugin::restart_ssh_service(ctx).await {
-        Ok(_) => {
-            committed.push(Change {
-                change_description: "Restarted SSH service".to_string(),
-                change_type: ChangeType::Service,
-                change_success: true,
-                change_error: None,
-            });
-            info!("SSH service restarted successfully");
-        }
+    let executor = ctx.executor();
+    let staged = match stage_draft(ctx, main, drafted, sshd_validate_fragment_scratch_path()).await
+    {
+        Ok(staged) => staged,
         Err(e) => {
-            committed.push(Change {
-                change_description: "Failed to restart SSH service".to_string(),
-                change_type: ChangeType::Service,
-                change_success: false,
-                change_error: Some(e.to_string()),
-            });
-            error!("Failed to restart SSH service: {}", e);
+            return second_factor::Verdict::Refuse(format!(
+                "could not stage the candidate to check it: {e}"
+            ));
         }
+    };
+    // The second factor lives in the fragment, so a main file that never
+    // includes the drop-in directory never reads it. Said plainly here,
+    // because the global read below would only show the lists the main file
+    // sets, and blame a line ahead of a fragment that is not there.
+    if !staged.reads_fragment() {
+        staged.unstage(executor.as_ref()).await;
+        return second_factor::Verdict::Refuse(format!(
+            "{} does not include the directory {} sits in, so sshd would never read the \
+             second factor written there. Add `Include /etc/ssh/sshd_config.d/*.conf` near \
+             the top of {}",
+            main.path,
+            dropin::DROPIN_PATH,
+            main.path
+        ));
     }
+    let unaltered =
+        match stage_draft(ctx, main, baseline, sshd_baseline_fragment_scratch_path()).await {
+            Ok(unaltered) => unaltered,
+            Err(e) => {
+                staged.unstage(executor.as_ref()).await;
+                return second_factor::Verdict::Refuse(format!(
+                    "could not stage the candidate without the second factor to compare: {e}"
+                ));
+            }
+        };
+    let staged_path = sshd_validate_scratch_path();
+    let baseline_path = sshd_baseline_scratch_path();
+    let written = match write_scratch(executor.as_ref(), &staged_path, &staged.main_text).await {
+        Ok(()) => write_scratch(executor.as_ref(), &baseline_path, &unaltered.main_text).await,
+        Err(e) => Err(e),
+    };
+    let verdict = match written {
+        Ok(()) => {
+            second_factor::check(
+                executor.as_ref(),
+                config,
+                &staged_path.to_string_lossy(),
+                &baseline_path.to_string_lossy(),
+            )
+            .await
+        }
+        Err(e) => second_factor::Verdict::Refuse(format!(
+            "could not stage the candidate to check it: {e}"
+        )),
+    };
+    // Both, whichever was written: `rm -f` on a file that is not there
+    // succeeds.
+    remove_scratch(executor.as_ref(), &staged_path).await;
+    remove_scratch(executor.as_ref(), &baseline_path).await;
+    staged.unstage(executor.as_ref()).await;
+    unaltered.unstage(executor.as_ref()).await;
+    match verdict {
+        second_factor::Verdict::Refuse(reason) => {
+            second_factor::Verdict::Refuse(second_factor::explain_unsatisfiable(reason, resolved))
+        }
+        proceed => proceed,
+    }
+}
 
-    let success = committed.iter().all(|c| c.change_success);
-    Ok(ApplyResult {
-        apply_plugin_id: plugin_id,
-        apply_success: success,
-        apply_changes: committed,
-        apply_checkpoint_id: checkpoint_id,
-        apply_error: None,
-    })
+/// Stages `drafted` the way the `sshd -t` gate stages a candidate, with its
+/// fragment at `fragment_scratch`.
+async fn stage_draft(
+    ctx: &Context,
+    main: &MainConfig,
+    drafted: &Draft,
+    fragment_scratch: std::path::PathBuf,
+) -> Result<StagedCandidate> {
+    let fragment_body = (!drafted.to_dropin.is_empty()).then(|| dropin::render(&drafted.to_dropin));
+    StagedCandidate::stage_at(
+        ctx,
+        &main.path,
+        &drafted.config_content,
+        fragment_body.as_deref(),
+        fragment_scratch,
+    )
+    .await
 }

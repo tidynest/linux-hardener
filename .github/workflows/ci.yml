@@ -313,6 +313,12 @@ jobs:
       # one ignored root-gated test, and `-- --ignored` runs only those,
       # which is the whole curation. The other ignored tests live in other
       # binaries and are never loaded here.
+      #
+      # The second command runs the library's root-gated tests, selected by
+      # the `real_sshd` prefix they share. They hold the SSH plugin's `sshd -t`
+      # candidate and its reading of `sshd -T` against the sshd installed
+      # above, in scratch directories with their own host key, so they write
+      # nothing under /etc (#185).
       # RUSTUP_HOME travels with CARGO_HOME because sudo strips the
       # environment: without it the rustup proxy runs as root, looks in
       # /root/.rustup, and dies with "no default is configured". The
@@ -327,6 +333,12 @@ jobs:
             cargo test -p hardener-plugins --locked \
               --test kernel_tests --test permissions_tests \
               --test pam_tests --test ssh_tests -- --ignored
+          sudo env PATH="$PATH" \
+            CARGO_HOME="$HOME/.cargo" \
+            RUSTUP_HOME="$HOME/.rustup" \
+            RUSTUP_TOOLCHAIN=stable \
+            CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target-root" \
+            cargo test -p hardener-plugins --locked --lib -- --ignored real_sshd
 
       - name: Fix target directory ownership
         run: sudo chown -R "$(id -u):$(id -g)" target-root

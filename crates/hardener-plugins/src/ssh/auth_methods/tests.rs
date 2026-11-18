@@ -62,3 +62,72 @@ fn a_list_is_judged_for_the_method_asked_about() {
     assert!(!finishes_alone(Some(&["password"]), KBD));
     assert!(finishes_alone(Some(&["password"]), "password"));
 }
+
+/// The opted-in policy holds where every list asks for the key first and the
+/// account password after it, and only there (#185).
+#[test]
+fn a_key_then_the_password_is_required_only_where_every_list_asks_for_both() {
+    let cases: &[(Option<&[&str]>, bool, &str)] = &[
+        (None, false, "unset lets any single method in"),
+        (Some(&["any"]), false, "any, spelled out"),
+        (Some(&[]), false, "an empty value is not a policy"),
+        (
+            Some(&["publickey,keyboard-interactive"]),
+            true,
+            "the policy",
+        ),
+        (
+            Some(&["publickey,keyboard-interactive:pam"]),
+            true,
+            "a submethod names the same method",
+        ),
+        (
+            Some(&["publickey,publickey,keyboard-interactive"]),
+            true,
+            "two keys and a password is stricter, and is kept",
+        ),
+        (
+            Some(&["keyboard-interactive,publickey"]),
+            false,
+            "a password before the key lets anyone without the key guess at it",
+        ),
+        (
+            Some(&["publickey,keyboard-interactive", "publickey"]),
+            false,
+            "the second list lets the key in alone",
+        ),
+        (Some(&["publickey"]), false, "the key alone"),
+        (
+            Some(&["publickey,password"]),
+            false,
+            "the password method is switched off by the baseline",
+        ),
+        (
+            Some(&["publickey,keyboard-interactive,password"]),
+            false,
+            "a list naming a disabled method is skipped by sshd",
+        ),
+    ];
+    for (lists, expected, why) in cases {
+        assert_eq!(
+            requires_key_then_password(*lists),
+            *expected,
+            "{why}: {lists:?}"
+        );
+    }
+}
+
+/// What this tool's own remote mode needs: one key, no prompt.
+#[test]
+fn a_key_alone_suffices_only_through_a_list_of_one_key() {
+    assert!(key_alone_suffices(&["any"]));
+    assert!(key_alone_suffices(&["publickey"]));
+    assert!(key_alone_suffices(&[
+        "publickey,keyboard-interactive",
+        "publickey"
+    ]));
+    assert!(!key_alone_suffices(&["publickey,keyboard-interactive"]));
+    assert!(!key_alone_suffices(&["publickey,publickey"]));
+    assert!(!key_alone_suffices(&["keyboard-interactive"]));
+    assert!(!key_alone_suffices(&[]));
+}

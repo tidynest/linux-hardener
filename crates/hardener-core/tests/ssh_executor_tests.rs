@@ -89,9 +89,54 @@ fn test_ssh_config_custom() {
     assert_eq!(config.connect_timeout, Duration::from_secs(60));
 }
 
+/// Attaching to a control socket nobody opened fails at once, and says how to
+/// open one, rather than handing back an executor whose first command fails.
+#[tokio::test]
+async fn attaching_to_a_socket_nobody_opened_fails_and_says_how_to_open_one() {
+    let socket =
+        std::env::temp_dir().join(format!("hardener-no-such-master-{}", std::process::id()));
+    let config = SshConfig {
+        host: "server.example".to_string(),
+        ..SshConfig::default()
+    };
+
+    let error = match SshExecutor::attach(config, &socket).await {
+        Ok(_) => panic!("there is no master at {}", socket.display()),
+        Err(error) => format!("{error:#}"),
+    };
+
+    assert!(error.contains(&socket.display().to_string()), "{error}");
+    assert!(
+        error.contains("ssh -M -S") && error.contains("server.example"),
+        "{error}"
+    );
+}
+
 // =============================================================================
 // INTEGRATION TESTS - Require actual SSH connection
 // =============================================================================
+
+/// Runs a command over a master the operator opened with a key and a password,
+/// the route for a host that asks for a second factor (#185). Open one first:
+/// `ssh -M -S /tmp/cm -o ControlPersist=yes user@host`, then
+/// `SSH_TEST_HOST=host SSH_TEST_CONTROL_PATH=/tmp/cm cargo test -p hardener-core
+/// --test ssh_executor_tests -- --ignored attach`.
+#[tokio::test]
+#[ignore = "Requires SSH_TEST_HOST and SSH_TEST_CONTROL_PATH"]
+async fn test_ssh_executor_attach_runs_over_an_open_master() {
+    let config = get_test_config().expect("SSH_TEST_HOST not set");
+    let socket = env::var("SSH_TEST_CONTROL_PATH").expect("SSH_TEST_CONTROL_PATH not set");
+
+    let executor = SshExecutor::attach(config, Path::new(&socket))
+        .await
+        .expect("the master is open");
+    let output = executor
+        .execute_command("echo", &["attached"])
+        .await
+        .expect("a command runs over the socket");
+
+    assert_eq!(output.stdout.trim(), "attached");
+}
 
 /// Helper to get test configuration from environment variables.
 fn get_test_config() -> Option<SshConfig> {

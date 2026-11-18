@@ -113,13 +113,23 @@ impl ResolvedConfig {
     /// the quotes are dropped and the arguments stop at a `#`.
     pub fn effective_arguments(&self, directive_name: &str) -> Option<Vec<&str>> {
         self.first_line(directive_name, |_| true)
-            .map(|(_, _, arguments)| {
-                arguments
-                    .split_whitespace()
-                    .take_while(|argument| !argument.starts_with('#'))
-                    .map(|argument| argument.trim_matches('"'))
-                    .collect()
-            })
+            .map(|(_, _, arguments)| list_arguments(arguments))
+    }
+
+    /// [`Self::effective_arguments`] as they would read if one file were not
+    /// there.
+    ///
+    /// The second factor needs this for the same reason [`Self::effective_without`]
+    /// exists: this tool's own fragment may be what answers today, and an apply
+    /// that is about to rewrite the fragment has to know what would win without
+    /// it.
+    pub fn effective_arguments_without(
+        &self,
+        directive_name: &str,
+        ignored_path: &str,
+    ) -> Option<Vec<&str>> {
+        self.first_line(directive_name, |path| path != ignored_path)
+            .map(|(_, _, arguments)| list_arguments(arguments))
     }
 
     /// The first segment satisfying `considered` that supplies the directive.
@@ -166,13 +176,229 @@ impl ResolvedConfig {
             })
     }
 
-    /// Fuzz-only construction from raw segments, so the resolution order can
-    /// be held to first-wins without an executor: the targets under `fuzz/`
-    /// build configurations directly and ask `effective` what sshd would
-    /// read.
-    #[cfg(fuzzing)]
+    /// Every `Match` block in the files, in sshd's reading order.
+    ///
+    /// A block runs from its `Match` line to the next one or to the end of the
+    /// file it sits in: sshd does not let an included file's block carry on
+    /// into the file that included it. This reads the files as written; which
+    /// connections a block matches is sshd's to say (`sshd -T -C`).
+    pub fn match_blocks(&self) -> Vec<MatchBlock<'_>> {
+        let mut blocks = Vec::new();
+        for (path, content) in &self.segments {
+            let scoped = &content[global_scope(content).len()..];
+            let mut current: Option<MatchBlock<'_>> = None;
+            for line in scoped.lines() {
+                let (keyword, arguments) = split_directive(line.trim());
+                if keyword.is_empty() || keyword.starts_with('#') {
+                    continue;
+                }
+                if keyword.eq_ignore_ascii_case("Match") {
+                    blocks.extend(current.take());
+                    current = Some(MatchBlock {
+                        source: path,
+                        criteria: arguments,
+                        lines: Vec::new(),
+                    });
+                } else if let Some(block) = current.as_mut() {
+                    block.lines.push((keyword, arguments));
+                }
+            }
+            blocks.extend(current);
+        }
+        blocks
+    }
+
+    /// Construction from raw segments, so the resolution order can be held to
+    /// first-wins without an executor: the targets under `fuzz/` build
+    /// configurations directly and ask `effective` what sshd would read, and
+    /// the second factor's unit tests do the same.
+    #[cfg(any(test, fuzzing))]
     pub fn from_segments(segments: Vec<(String, String)>) -> Self {
         Self { segments }
+    }
+}
+
+/// One `Match` block as written: the file it sits in, its criteria, and the
+/// keywords it sets with their arguments.
+#[derive(Debug, Eq, PartialEq)]
+pub struct MatchBlock<'a> {
+    /// The file the block sits in.
+    pub source: &'a str,
+    /// The text after `Match`, such as `User root Address 192.0.2.10`.
+    pub criteria: &'a str,
+    /// Each line of the block, as keyword and arguments.
+    pub lines: Vec<(&'a str, &'a str)>,
+}
+
+impl MatchBlock<'_> {
+    /// The arguments of the block's first line setting `directive_name`, under
+    /// any name sshd reads it by, the way [`ResolvedConfig::effective_arguments`]
+    /// reads a global line.
+    pub fn arguments(&self, directive_name: &str) -> Option<Vec<&str>> {
+        let names = spellings(&directive_name);
+        self.lines.iter().find_map(|(keyword, arguments)| {
+            names
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(keyword))
+                .then(|| list_arguments(arguments))
+        })
+    }
+}
+
+/// The arguments after a keyword, for a keyword whose value is a list. sshd
+/// lets an argument be quoted and lets a comment end the line, so the quotes
+/// are dropped and the arguments stop at a `#`.
+fn list_arguments(arguments: &str) -> Vec<&str> {
+    arguments
+        .split_whitespace()
+        .take_while(|argument| !argument.starts_with('#'))
+        .map(|argument| argument.trim_matches('"'))
+        .collect()
+}
+
+/// The main file as a staged candidate has to read it: every `Include` that
+/// would pull in `fragment` spelled out file by file, with `staged` standing
+/// where `fragment` sorts, or with `fragment` left out where `staged` is
+/// `None`.
+///
+/// The candidate is checked from a scratch path, but its `Include` lines still
+/// name the live drop-in directory, and the copy of this tool's fragment on
+/// disk is the one about to be replaced. Validating against it checked the
+/// old fragment rather than the new one: a rewrite that drops a directive was
+/// judged with the dropped value still in force, and on openSUSE a stale
+/// `KbdInteractiveAuthentication no` made `sshd -t` refuse the very apply
+/// that would have removed it. Spelling the files out keeps the order sshd
+/// reads them in and keeps each one a separate file, so a `Match` block in a
+/// drop-in still ends where that file ends, which inlining the text would not.
+///
+/// Only the main file's own lines are rewritten. Every shipped layout includes
+/// the drop-in directory from there; an `Include` of it from inside another
+/// included file would still read the copy on disk.
+pub(super) async fn stage_fragment_includes(
+    ctx: &Context,
+    main_path: &str,
+    main_content: &str,
+    fragment: &Path,
+    staged: Option<&Path>,
+) -> Result<String> {
+    let (Some(fragment_dir), Some(fragment_name)) = (fragment.parent(), fragment.file_name())
+    else {
+        return Ok(main_content.to_string());
+    };
+    let fragment_name = fragment_name.to_string_lossy();
+
+    let mut candidate = String::with_capacity(main_content.len());
+    for line in main_content.lines() {
+        let Some(patterns) = include_patterns(line) else {
+            candidate.push_str(line);
+            candidate.push('\n');
+            continue;
+        };
+
+        let mut arguments = Vec::new();
+        let mut rewritten = false;
+        for pattern in patterns {
+            if !pattern_reads(&pattern, main_path, fragment_dir, &fragment_name) {
+                arguments.push(pattern);
+                continue;
+            }
+            rewritten = true;
+            let mut files: Vec<PathBuf> = expand_pattern(ctx, &pattern, main_path)
+                .await?
+                .into_iter()
+                .filter(|file| file.as_path() != fragment)
+                .collect();
+            if let Some(staged) = staged {
+                let at = files.partition_point(|file| file.as_path() < fragment);
+                files.insert(at, staged.to_path_buf());
+            }
+            arguments.extend(files.iter().map(|file| quoted(&file.display().to_string())));
+        }
+
+        if !rewritten {
+            candidate.push_str(line);
+        } else if arguments.is_empty() {
+            // Nothing left for it to read once the fragment is gone, and a
+            // bare `Include` with no argument is a parse error, so the line
+            // stays as a comment that says what it was.
+            candidate.push_str("# ");
+            candidate.push_str(line.trim());
+        } else {
+            candidate.push_str("Include ");
+            candidate.push_str(&arguments.join(" "));
+        }
+        candidate.push('\n');
+    }
+    Ok(candidate)
+}
+
+/// Whether an `Include` pattern written in `main_path` would pull in the file
+/// called `fragment_name` in `fragment_dir`.
+fn pattern_reads(pattern: &str, main_path: &str, fragment_dir: &Path, fragment_name: &str) -> bool {
+    absolute_pattern(pattern, main_path).is_some_and(|absolute| {
+        absolute.parent() == Some(fragment_dir)
+            && absolute
+                .file_name()
+                .is_some_and(|name| glob_matches(&name.to_string_lossy(), fragment_name))
+    })
+}
+
+/// The first global line of the main file that sets `directive_name`, under
+/// any name sshd reads it by, above the `Include` that reads `fragment`, or
+/// `None` where no such line comes first.
+///
+/// sshd reads a line above that `Include` before the fragment and every other
+/// drop-in, so it wins over all of them. Every validated distribution puts
+/// the `Include` at the top of the file, where nothing is above it. Gentoo
+/// puts it at the foot, in place of the `Subsystem` line (its
+/// `openssh-9.7_p1-config-tweaks.patch`), below every commented default, and
+/// an apply that writes the main file there activates the commented default
+/// where it stands: above the `Include`. A main file that never includes the
+/// fragment has every line ahead of it.
+pub(super) fn main_line_ahead_of_dropins(
+    main_content: &str,
+    main_path: &str,
+    directive_name: &str,
+    fragment: &Path,
+) -> Option<EffectiveValue> {
+    let (Some(fragment_dir), Some(fragment_name)) = (fragment.parent(), fragment.file_name())
+    else {
+        return None;
+    };
+    let fragment_name = fragment_name.to_string_lossy();
+    let names = spellings(&directive_name);
+    for line in global_scope(main_content).lines() {
+        if let Some(patterns) = include_patterns(line) {
+            if patterns
+                .iter()
+                .any(|pattern| pattern_reads(pattern, main_path, fragment_dir, &fragment_name))
+            {
+                return None;
+            }
+            continue;
+        }
+        let (keyword, arguments) = split_directive(line.trim());
+        if !arguments.is_empty() && names.iter().any(|name| name.eq_ignore_ascii_case(keyword)) {
+            return arguments
+                .split_whitespace()
+                .next()
+                .map(|value| EffectiveValue {
+                    value: value.to_string(),
+                    source: main_path.to_string(),
+                    keyword: keyword.to_string(),
+                });
+        }
+    }
+    None
+}
+
+/// A path as an `Include` argument: quoted where it holds whitespace, which
+/// sshd's argument splitter honours, and bare otherwise.
+fn quoted(path: &str) -> String {
+    if path.chars().any(char::is_whitespace) {
+        format!("\"{path}\"")
+    } else {
+        path.to_string()
     }
 }
 
@@ -180,19 +406,68 @@ impl ResolvedConfig {
 /// `Include`.
 ///
 /// A commented line includes nothing. Multiple pathnames on one line are
-/// permitted and are processed left to right.
+/// permitted and are processed left to right, split the way sshd splits them
+/// (see [`split_arguments`]): Gentoo's sshd_config quotes its pattern, and a
+/// quote kept as part of it reads as a relative path nobody can list.
 pub fn include_patterns(line: &str) -> Option<Vec<String>> {
     let trimmed = line.trim();
     if trimmed.starts_with('#') {
         return None;
     }
-    let mut parts = trimmed.split_whitespace();
-    let keyword = parts.next()?;
+    let (keyword, rest) = trimmed
+        .split_once(char::is_whitespace)
+        .unwrap_or((trimmed, ""));
     if !keyword.eq_ignore_ascii_case("Include") {
         return None;
     }
-    let patterns: Vec<String> = parts.map(str::to_string).collect();
+    let patterns = split_arguments(rest);
     (!patterns.is_empty()).then_some(patterns)
+}
+
+/// The arguments of a configuration line, split as sshd's `argv_split`
+/// (misc.c, OpenSSH 10.6p2) splits them: spaces and tabs separate arguments;
+/// a pair of double or single quotes keeps whitespace inside one argument and
+/// is itself dropped; a backslash before a quote, before a backslash, or
+/// outside quotes before a space stands for that character; and a `#` where
+/// an argument would start ends the line.
+pub fn split_arguments(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut arguments = Vec::new();
+    let mut at = 0;
+    while at < chars.len() {
+        if chars[at] == ' ' || chars[at] == '\t' {
+            at += 1;
+            continue;
+        }
+        if chars[at] == '#' {
+            break;
+        }
+        let mut quote: Option<char> = None;
+        let mut argument = String::new();
+        while let Some(&c) = chars.get(at) {
+            if c == '\\'
+                && let Some(&next) = chars.get(at + 1)
+                && (next == '\'' || next == '"' || next == '\\' || (quote.is_none() && next == ' '))
+            {
+                argument.push(next);
+                at += 2;
+                continue;
+            }
+            if quote.is_none() && (c == ' ' || c == '\t') {
+                break;
+            }
+            if quote.is_none() && (c == '"' || c == '\'') {
+                quote = Some(c);
+            } else if quote == Some(c) {
+                quote = None;
+            } else {
+                argument.push(c);
+            }
+            at += 1;
+        }
+        arguments.push(argument);
+    }
+    arguments
 }
 
 /// Whether a filename matches a glob(7) pattern containing `*` and `?`.

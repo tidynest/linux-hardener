@@ -70,6 +70,34 @@ fn tee_command(path: &Path, content: &str) -> String {
 const SSH_AUTH_HINT: &str =
     "no usable SSH key - load one with `ssh-add` or configure a key file for this host";
 
+/// Hint appended when the server offered nothing but methods that prompt.
+const SECOND_FACTOR_HINT: &str = "the host asks for a password or a second factor, which a \
+     connection opened here cannot answer; open one yourself with ControlMaster and pass its \
+     socket with --ssh-control-path, or exempt this account with a Match block (see \
+     docs/guide/ssh-remote-scanning.md)";
+
+/// Whether ssh gave up with only prompting methods left on offer.
+///
+/// ssh ends a failed login with `Permission denied (<methods>).`, naming what
+/// the server would still accept. After the key has been accepted as the first
+/// of two steps, that is `keyboard-interactive` alone, which is what a host
+/// requiring a key and then the account password prints to a client in
+/// `BatchMode`. Telling that operator to load a key would send them after one
+/// that already worked.
+fn server_wants_a_prompt(detail: &str) -> bool {
+    const PREFIX: &str = "Permission denied (";
+    detail.match_indices(PREFIX).any(|(at, _)| {
+        detail[at + PREFIX.len()..]
+            .split_once(')')
+            .is_some_and(|(methods, _)| {
+                !methods.is_empty()
+                    && methods
+                        .split(',')
+                        .all(|method| matches!(method.trim(), "keyboard-interactive" | "password"))
+            })
+    })
+}
+
 /// Builds the user-facing connect error from the target `host` and the
 /// underlying ssh failure `detail` (openssh's full chain, rendered `{e:#}`).
 /// The reason always reaches the user; the ssh-agent/key hint is appended only
@@ -80,7 +108,9 @@ const SSH_AUTH_HINT: &str =
 fn connect_error_message(host: &str, detail: &str) -> String {
     let detail = detail.trim();
     let base = format!("Failed to connect to {host}: {detail}");
-    if hardener_common::error::message_indicates_ssh_auth_failure(detail) {
+    if server_wants_a_prompt(detail) {
+        format!("{base} ({SECOND_FACTOR_HINT})")
+    } else if hardener_common::error::message_indicates_ssh_auth_failure(detail) {
         format!("{base} ({SSH_AUTH_HINT})")
     } else {
         base
@@ -139,6 +169,44 @@ impl SshExecutor {
             anyhow::anyhow!(connect_error_message(&config.host, &detail))
         })?;
 
+        Ok(Self {
+            session,
+            host: config.host,
+            user: config.user,
+            port: config.port,
+        })
+    }
+
+    /// Attaches to a connection the operator already opened, through the
+    /// ControlMaster socket at `control_path`, instead of opening one.
+    ///
+    /// The route for a host that asks for a password or a second factor.
+    /// [`Self::connect`] starts its own master with `BatchMode=yes` and no
+    /// terminal, so it can never answer a prompt; a master the operator opened
+    /// with `ssh -M -S <socket> -o ControlPersist=yes <host>` has already
+    /// answered it, and every command here runs over that socket without
+    /// authenticating again. openssh's `Session::resume` does exactly this,
+    /// and a resumed session is not closed when this executor is dropped, so
+    /// the operator's connection outlives the run.
+    ///
+    /// Host-key checking happened when the operator opened the master, so
+    /// `known_hosts` in `config` is not consulted. `config.host`, `user` and
+    /// `port` still name the target for checkpoints and history: the socket
+    /// cannot say which host it reaches, so they must be the ones the master
+    /// was opened to.
+    pub async fn attach(config: SshConfig, control_path: &Path) -> Result<Self> {
+        let session = Session::resume(control_path.to_path_buf().into_boxed_path(), None);
+        session.check().await.map_err(|e| {
+            anyhow::anyhow!(
+                "No usable SSH connection at the control socket {}: {:#}. Open one first, \
+                 for example `ssh -M -S {} -o ControlPersist=yes {}`, and keep it open while \
+                 this runs",
+                control_path.display(),
+                anyhow::Error::new(e),
+                control_path.display(),
+                config.host
+            )
+        })?;
         Ok(Self {
             session,
             host: config.host,

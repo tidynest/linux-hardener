@@ -18,6 +18,7 @@ mod dropin;
 // pub(crate) so the crate's fuzz-seam module can re-export the include
 // parsers; every other consumer meets them through scan, apply and validate.
 pub(crate) mod include;
+mod second_factor;
 mod validate;
 
 /// Where an administrator's sshd_config lives. Not necessarily where the one
@@ -317,6 +318,174 @@ pub fn sshd_validate_scratch_path() -> std::path::PathBuf {
     ))
 }
 
+/// Path the new body of this tool's own fragment is staged at while `sshd`
+/// reads a candidate, which includes it from here in place of the copy on
+/// disk. See `include::stage_fragment_includes` for why.
+pub fn sshd_validate_fragment_scratch_path() -> std::path::PathBuf {
+    std::path::PathBuf::from("/tmp").join(format!(
+        "linux-hardener-sshd-validate-{}-fragment.conf",
+        std::process::id()
+    ))
+}
+
+/// Path the second factor's guard stages the same apply at, drafted without
+/// the second factor, so `sshd -T` can say what the second factor itself
+/// takes away rather than what the rest of the apply does anyway.
+pub fn sshd_baseline_scratch_path() -> std::path::PathBuf {
+    std::path::PathBuf::from("/tmp").join(format!(
+        "linux-hardener-sshd-validate-{}-baseline.conf",
+        std::process::id()
+    ))
+}
+
+/// Path the fragment of [`sshd_baseline_scratch_path`]'s candidate is staged
+/// at, beside the one [`sshd_validate_fragment_scratch_path`] names.
+pub fn sshd_baseline_fragment_scratch_path() -> std::path::PathBuf {
+    std::path::PathBuf::from("/tmp").join(format!(
+        "linux-hardener-sshd-validate-{}-baseline-fragment.conf",
+        std::process::id()
+    ))
+}
+
+/// Writes a scratch file on the executor's host and narrows it to its owner.
+///
+/// The narrowing comes after the write and is not treated as fatal: the same
+/// content is about to become part of the host's own configuration, so
+/// refusing the apply over the mode of a scratch copy would cost more than it
+/// saves. The window between the write and the chmod is the same one every
+/// chmod-after-write site here carries.
+async fn write_scratch(
+    executor: &dyn hardener_core::SystemExecutor,
+    path: &Path,
+    content: &str,
+) -> Result<()> {
+    executor.write_file(path, content).await.map_err(|e| {
+        hardener_common::error::HardeningError::Plugin(format!(
+            "Failed to write temp sshd_config for validation: {:#}",
+            e
+        ))
+    })?;
+
+    let path = path.to_string_lossy();
+    match executor
+        .execute_command("chmod", &[SCRATCH_MODE, &path])
+        .await
+    {
+        Ok(output) if output.success() => {}
+        Ok(output) => warn!(
+            "Could not restrict {} to mode {}: {}",
+            path,
+            SCRATCH_MODE,
+            output.stderr.trim()
+        ),
+        Err(e) => warn!(
+            "Could not restrict {} to mode {}: {}",
+            path, SCRATCH_MODE, e
+        ),
+    }
+    Ok(())
+}
+
+/// Removes a scratch file on the host it was staged on.
+///
+/// Best-effort: cleanup must never mask the answer the caller acts on. Both
+/// failure shapes are reported, because a command that ran and failed comes
+/// back as `Ok` carrying a non-zero status.
+async fn remove_scratch(executor: &dyn hardener_core::SystemExecutor, path: &Path) {
+    let path = path.to_string_lossy();
+    match executor.execute_command("rm", &["-f", &path]).await {
+        Ok(output) if output.success() => {}
+        Ok(output) => warn!(
+            "Failed to remove temp sshd_config {}: {}",
+            path,
+            output.stderr.trim()
+        ),
+        Err(e) => warn!("Failed to remove temp sshd_config {}: {}", path, e),
+    }
+}
+
+/// A candidate about to be written, as sshd will read it once it lands: the
+/// main file's text with its fragment includes spelled out, and the
+/// fragment's new body, if it keeps one, staged at its own scratch path.
+struct StagedCandidate {
+    main_text: String,
+    fragment: Option<std::path::PathBuf>,
+}
+
+impl StagedCandidate {
+    /// Stages the fragment's body and builds the main text that reads it.
+    async fn stage(
+        ctx: &Context,
+        main_path: &str,
+        main_content: &str,
+        fragment_body: Option<&str>,
+    ) -> Result<Self> {
+        Self::stage_at(
+            ctx,
+            main_path,
+            main_content,
+            fragment_body,
+            sshd_validate_fragment_scratch_path(),
+        )
+        .await
+    }
+
+    /// [`Self::stage`], with the fragment staged at `fragment_scratch`, so two
+    /// candidates can be staged side by side.
+    async fn stage_at(
+        ctx: &Context,
+        main_path: &str,
+        main_content: &str,
+        fragment_body: Option<&str>,
+        fragment_scratch: std::path::PathBuf,
+    ) -> Result<Self> {
+        let fragment = match fragment_body {
+            Some(body) => {
+                write_scratch(ctx.executor().as_ref(), &fragment_scratch, body).await?;
+                Some(fragment_scratch)
+            }
+            None => None,
+        };
+        let main_text = match include::stage_fragment_includes(
+            ctx,
+            main_path,
+            main_content,
+            Path::new(dropin::DROPIN_PATH),
+            fragment.as_deref(),
+        )
+        .await
+        {
+            Ok(text) => text,
+            Err(e) => {
+                if let Some(path) = &fragment {
+                    remove_scratch(ctx.executor().as_ref(), path).await;
+                }
+                return Err(e);
+            }
+        };
+        Ok(Self {
+            main_text,
+            fragment,
+        })
+    }
+
+    /// Whether sshd reads the staged fragment from this candidate at all,
+    /// which it does not where the main file never includes the directory
+    /// the fragment sits in. `false` where there is no fragment to read.
+    fn reads_fragment(&self) -> bool {
+        self.fragment
+            .as_ref()
+            .is_some_and(|path| self.main_text.contains(path.to_string_lossy().as_ref()))
+    }
+
+    /// Removes the staged fragment.
+    async fn unstage(self, executor: &dyn hardener_core::SystemExecutor) {
+        if let Some(path) = &self.fragment {
+            remove_scratch(executor, path).await;
+        }
+    }
+}
+
 /// Validates a candidate sshd_config by writing it to a temporary path and
 /// running `sshd -t -f <temp>`.
 ///
@@ -328,58 +497,14 @@ pub async fn validate_sshd_config(
     candidate: &str,
 ) -> Result<()> {
     let temp_path = sshd_validate_scratch_path();
-
-    executor
-        .write_file(&temp_path, candidate)
-        .await
-        .map_err(|e| {
-            hardener_common::error::HardeningError::Plugin(format!(
-                "Failed to write temp sshd_config for validation: {:#}",
-                e
-            ))
-        })?;
+    write_scratch(executor, &temp_path, candidate).await?;
 
     let temp_str = temp_path.to_string_lossy().to_string();
-
-    // Narrowed before `sshd -t` is told about it, and not treated as fatal: the
-    // same content is about to become the host's own sshd_config, so refusing
-    // the apply over the mode of a scratch copy would cost more than it saves.
-    // The window between the write and this is the same one every chmod-after-
-    // write site here carries.
-    match executor
-        .execute_command("chmod", &[SCRATCH_MODE, &temp_str])
-        .await
-    {
-        Ok(output) if output.success() => {}
-        Ok(output) => warn!(
-            "Could not restrict {} to mode {}: {}",
-            temp_str,
-            SCRATCH_MODE,
-            output.stderr.trim()
-        ),
-        Err(e) => warn!(
-            "Could not restrict {} to mode {}: {}",
-            temp_str, SCRATCH_MODE, e
-        ),
-    }
-
     let result = executor
         .execute_command("sshd", &["-t", "-f", &temp_str])
         .await;
 
-    // Removed on the host it was staged on. Best-effort: cleanup must never
-    // mask the validation result, which is the answer the caller acts on. Both
-    // failure shapes are reported, because a command that ran and failed comes
-    // back as `Ok` carrying a non-zero status.
-    match executor.execute_command("rm", &["-f", &temp_str]).await {
-        Ok(output) if output.success() => {}
-        Ok(output) => warn!(
-            "Failed to remove temp sshd_config {}: {}",
-            temp_str,
-            output.stderr.trim()
-        ),
-        Err(e) => warn!("Failed to remove temp sshd_config {}: {}", temp_str, e),
-    }
+    remove_scratch(executor, &temp_path).await;
 
     match result {
         Ok(output) if output.success() => Ok(()),
@@ -420,26 +545,56 @@ fn resolved_target(directive: &SshConfigDirective, config: &PluginConfig) -> Str
     )
 }
 
-/// Whether `directive` may stay on, because `AuthenticationMethods` never lets
-/// the method it enables finish a login on passwords alone.
+/// Whether `directive` may stay on, because the `AuthenticationMethods`
+/// `lists` never let the method it enables finish a login on passwords alone.
 ///
 /// Scan, apply and validate all ask here, as they all resolve their target
 /// through `resolved_target`. A scan that flagged the second factor of
 /// `publickey,keyboard-interactive` would send the operator to switch it off,
 /// and an apply that did so would hand `sshd -t` a list no enabled method can
 /// satisfy, which fails the whole candidate and every other directive in it.
-fn is_second_factor_only(
+///
+/// Scan passes the lists in force today. Apply and its preview pass the lists
+/// in force once the apply lands, from `second_factor::planned_lists`, because
+/// they rewrite the fragment that may be holding today's.
+fn is_second_factor_only(directive: &SshConfigDirective, lists: Option<&[&str]>) -> bool {
+    directive
+        .ssh_auth_method
+        .is_some_and(|method| !auth_methods::finishes_alone(lists, method))
+}
+
+/// The main-file line that switches a second factor's method off ahead of
+/// every drop-in, where `is_second_factor_only` has just said it may stay on.
+///
+/// Skipping the directive is the whole repair wherever the `no` sits in a
+/// file this tool rewrites or below the main file's `Include`, which is every
+/// validated layout: the fragment, read first, then supplies the value the
+/// lists need, or the operator's own drop-in does. It is not enough on
+/// Gentoo, which includes `sshd_config.d` at the foot of the main file. A
+/// normal apply there activates `#KbdInteractiveAuthentication yes` in place
+/// as `no`, above that `Include`, and sshd reads it before 00-hardener.conf
+/// and before an operator's own 10-2fa.conf: `sshd -t` then refuses every
+/// candidate with "AuthenticationMethods cannot be satisfied" (measured with
+/// OpenSSH 9.6p1 on upstream 10.6p2's sshd_config with Gentoo's edits). That
+/// line is the one apply flips, and the preview names.
+///
+/// Only a line above the `Include` counts. A `no` below it, Debian's for one,
+/// already loses to the drop-in carrying the second factor, and switching it
+/// on would leave keyboard-interactive on with no list in front of it if that
+/// drop-in were ever deleted. On the Gentoo layout the flipped line has the
+/// same window, and scan reports it as Critical if it opens.
+fn second_factor_switched_off_ahead(
     directive: &SshConfigDirective,
-    resolved: &include::ResolvedConfig,
-) -> bool {
-    directive.ssh_auth_method.is_some_and(|method| {
-        !auth_methods::finishes_alone(
-            resolved
-                .effective_arguments(auth_methods::AUTHENTICATION_METHODS)
-                .as_deref(),
-            method,
-        )
-    })
+    main_content: &str,
+    main_path: &str,
+) -> Option<include::EffectiveValue> {
+    include::main_line_ahead_of_dropins(
+        main_content,
+        main_path,
+        directive.ssh_directive_name,
+        Path::new(dropin::DROPIN_PATH),
+    )
+    .filter(|line| !line.value.eq_ignore_ascii_case("yes"))
 }
 
 /// How a directive's current value is rendered when it is compared against a
@@ -1230,6 +1385,31 @@ async fn verify_dropin_precedence(
                 change_success: true,
                 change_error: None,
             },
+            // The main file answers first, which is what a main file that
+            // includes the drop-ins at its foot (Gentoo) does with every line
+            // above that Include. Where it says what the fragment says, the
+            // host obeys the value this apply asked for: on that layout the
+            // second factor switches its line on in the main file as well
+            // (see `second_factor_switched_off_ahead`). Any other file, or
+            // any other value, is still an override.
+            Some(effective)
+                if effective.source == main_path
+                    && effective.value.eq_ignore_ascii_case(&directive.value) =>
+            {
+                Change {
+                    change_description: format!(
+                        "{}: set to '{}' in {}, and {} sets the same value ahead of it{}",
+                        directive.keyword,
+                        directive.value,
+                        dropin::DROPIN_PATH,
+                        main_path,
+                        directive.note,
+                    ),
+                    change_type: ChangeType::ConfigFile,
+                    change_success: true,
+                    change_error: None,
+                }
+            }
             Some(effective) => Change {
                 change_description: format!(
                     "{}: written to {} but {} still supplies '{}', and sshd reads it first",
