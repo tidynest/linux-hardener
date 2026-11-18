@@ -332,8 +332,8 @@ container user IDs. Run it from a directory only you can write in that case.
 Both crates were marked unmaintained on 2026-11-17, in every version, so no
 upgrade clears the advisories. Neither advisory reports a defect: they say
 that a future one would get no fix. No workspace crate depends on `chrono`
-any more: every timestamp and date the tool writes, reads or prints goes
-through the `time` module in `hardener-types`, which uses `jiff`. Both crates
+any more. The timestamps and dates that used it now go through the `time`
+module in `hardener-types`, which uses `jiff`. Both crates
 stay in the lockfile only through `tokio-cron-scheduler`, which the
 scheduling daemon uses to read its cron expression.
 

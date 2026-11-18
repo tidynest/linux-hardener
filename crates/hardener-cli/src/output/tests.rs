@@ -979,3 +979,8 @@ fn the_hyphen_file_name_pattern_is_pinned() {
 fn unix_seconds_are_rendered_as_utc_by_format_timestamp() {
     assert_eq!(format_timestamp(1767225600), "2026-01-01 00:00:00 UTC");
 }
+
+#[test]
+fn a_timestamp_the_library_cannot_hold_is_shown_as_unknown() {
+    assert_eq!(format_timestamp(253402300799), "Unknown");
+}

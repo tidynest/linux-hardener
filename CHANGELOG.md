@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leaves both lockfiles, since 0.9 no longer pulls it in through MySQL
   support, and with it the RUSTSEC-2023-0071 entry in `.cargo/audit.toml` and
   `SECURITY.md`.
+- **Timestamps now come from `jiff`, behind one module (#197).** Every
+  timestamp and date the tool handled went through the `chrono` crate. They now
+  go through a single `time` module in `hardener-types`, which uses `jiff`
+  0.2, and a new test fails if any other crate names either library. Nothing
+  stored or printed changed: the history databases, the audit log, the reports,
+  the file names and the desktop's text read as they did before. `chrono` is
+  still in the lockfile, through the cron library the scheduling daemon uses,
+  until that library is replaced in the next change. RUSTSEC-2026-0543 and
+  RUSTSEC-2026-0555 therefore stay accepted for now.
 
 ### Fixed
 

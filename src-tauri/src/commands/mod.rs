@@ -699,3 +699,8 @@ mod test_notification_tests;
 /// when the path is refused.
 #[cfg(test)]
 mod export_destination_tests;
+
+/// Tests for `format_timestamp`, the Unix-seconds text the history and checkpoint
+/// commands return.
+#[cfg(test)]
+mod format_timestamp_tests;
