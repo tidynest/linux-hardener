@@ -466,6 +466,190 @@ so an accept an administrator wrote in their own table no longer keeps a port
 open. A port that must stay open is expressed as a directive to this tool, which
 is what the directives above are for.
 
+### Password hashing in `[pam]`
+
+`[pam]` judges how a new password is stored as well as how it is chosen.
+Three directives cover it, and a host is held to only one of the two costs, the
+one belonging to the algorithm its new passwords will use:
+
+| Directive | Baseline | What it judges |
+|---|---|---|
+| `ENCRYPT_METHOD` | `YESCRYPT`, or `SHA512` where FIPS mode is on or the host cannot confirm yescrypt | The algorithm new passwords are hashed with, on every path that sets one |
+| `YESCRYPT_COST_FACTOR` | `5` | The yescrypt cost, where new passwords are yescrypt |
+| `SHA_CRYPT_MIN_ROUNDS` | `100000` | The SHA-512 rounds, where new passwords are SHA-512 |
+
+**Two places decide the algorithm, and the PAM stack wins.** shadow's own
+tools (`chpasswd -c`, `chgpasswd`, `gpasswd`, and `chpasswd` and `newusers`
+outright on a shadow built without PAM, as RHEL 9's is) read `ENCRYPT_METHOD`
+from `/etc/login.defs`. They compare it case-sensitively, so a lowercase
+`yescrypt` is not a value they accept. `pam_unix`, which `passwd` uses, and
+`chpasswd` and `newusers` too on a shadow built with PAM, reads the same key
+only as a default and lets an algorithm named on its own `password` line
+override it. The cost works the same way: `rounds=` on the `pam_unix` line
+wins, then `YESCRYPT_COST_FACTOR` or `SHA_CRYPT_MAX_ROUNDS` from `login.defs`.
+Linux-PAM before 1.6.0, which Ubuntu 24.04 and Debian 12 ship, never reads
+`YESCRYPT_COST_FACTOR`.
+
+The scan reads the `pam_unix` password lines of `common-password`,
+`system-auth`, `password-auth`, `passwd`, `chpasswd` and `newusers`, each
+where Linux-PAM looks for it: `/etc/pam.d` first, then `/usr/lib/pam.d`, where
+openSUSE installs `common-password`, then `/usr/etc/pam.d`. It reports the
+weakest of all these paths, and its finding says which path falls short and
+names the file the host actually has. Where only `login.defs` is weak, as on a
+stock Ubuntu 24.04 whose `common-password` already names `yescrypt`, the
+finding says that `passwd` already gives yescrypt and only shadow's own tools
+do not.
+
+**`apply` writes `/etc/login.defs` and nothing else.** Where a `pam_unix` line
+names a weaker algorithm, carries a `rounds=` below the target, or sits on a
+Linux-PAM that ignores the cost factor, `apply` records a manual step naming
+the file, and the run does not report success. `/etc/pam.d` is never edited,
+for the reason given for `deny` and `remember`: a malformed stack edit can lock
+everyone out. Make the change through the tool that manages the stack where
+there is one (an authselect profile on Fedora and RHEL, pam-auth-update on
+Debian and Ubuntu, pam-config on openSUSE, and on Gentoo, which this project
+does not test, the `sha512` and `yescrypt` USE flags of `sys-auth/pambase`),
+or its next run may undo a hand edit. On openSUSE the `/usr/etc/login.defs`
+vendor copy is carried into `/etc` first, as for every other `login.defs`
+directive.
+
+**yescrypt only where the host can use it.** Before judging anything, the scan
+asks the target, in one shell round trip that works over `--ssh` too, whether
+`pam_unix.so`, the libcrypt it links against and shadow (through
+`chpasswd --help`) were built with yescrypt, whether `pam_unix` reads
+`YESCRYPT_COST_FACTOR`, and whether `/proc/sys/crypto/fips_enabled` is set.
+The libcrypt is the one `pam_unix.so` names: `libcrypt.so.2` on Fedora, RHEL 9
+and 10 and Arch, whose libxcrypt keeps `libcrypt.so.1` in an optional compat
+package, and `libcrypt.so.1` on Debian, Ubuntu and openSUSE. The host is held
+to yescrypt only when all three components say yes and FIPS mode is off;
+otherwise the target is SHA-512 with 100000 rounds. This is not caution for
+its own sake: every shadow release before 4.20.0 answers an `ENCRYPT_METHOD`
+it was built without, or does not recognise, with DES, which keeps only the
+first eight characters of a password, and RHEL 9 ships one (4.9) built without
+yescrypt. That covers every supported family but openSUSE Tumbleweed, whose
+shadow 4.20.3 falls back to SHA-512 instead. shadow 4.20.0 also stopped
+accepting `DES` and `MD5` as values, so its own tools use SHA-512 for both, but
+`pam_unix` still reads `MD5` as its `md5` default, so the scan still rates it
+High. A host already on yescrypt is never moved down to SHA-512, in FIPS mode
+or out of it.
+
+**Overrides only tighten.** `[pam.directives] ENCRYPT_METHOD = "YESCRYPT"` is
+how an operator chooses yescrypt on a host in FIPS mode, where FIPS 140 does
+not approve it; it has no effect on a host that cannot confirm yescrypt.
+`YESCRYPT_COST_FACTOR` can be raised to at most 11, the largest cost libxcrypt,
+shadow and `pam_unix` all accept, and `SHA_CRYPT_MIN_ROUNDS` to at most
+9999999, where `pam_unix` stops. A lower value is raised back to the baseline,
+as for every other directive.
+
+**A raised yescrypt cost is checked against the host's memory.** Each check of
+a yescrypt password needs 2^(cost - 1) MiB: 16 MiB at the default of 5, 128 MiB
+at 8 and 1 GiB at 11, the maximum. Every simultaneous check needs its own, and
+a password the host cannot afford to check is rejected even when it is typed
+correctly. A cost above 5 is therefore accepted only where ten simultaneous
+checks fit in half of `MemTotal`, so cost `c` needs a `MemTotal` of at least
+10 x 2^c MiB: 640 MiB for 6, 2.5 GiB for 8, 10 GiB for 10 and 20 GiB for 11.
+`MemTotal` reads a little below the installed memory, so a machine sold as
+20 GB does not reach 11. Ten is a safety margin rather than a measured load:
+local checks run side by side (login, `su`, `sudo`, screen lockers), and where
+sshd still takes a password or a keyboard-interactive answer through PAM, each
+unauthenticated connection can start one, up to the ten at which sshd's default
+`MaxStartups` begins refusing. This tool's SSH baseline turns both of those off,
+so on a host it has hardened only a key holder reaches a password prompt.
+
+The check is part of the plan the scan, `apply` and `apply --dry-run` share. A
+cost the host cannot afford is refused once, and is never written to
+`login.defs` or offered as a `rounds=` manual step: on a Linux-PAM older than
+1.6.0 that line is what every user's password gets, so naming the refused cost
+there would be the lockout the refusal prevents. The plan aims instead for the
+largest cost the host can carry, and never for less than the default of 5, so
+a refused override cannot leave a host weaker than no override would: that
+cost is what `apply` writes and what any `rounds=` step names. Where
+`/proc/meminfo` cannot be read, nothing above 5 can be shown to be safe, so the
+plan holds the host to 5. The run then does not report success, and the dry
+run shows the refusal as a High issue. A container's cgroup memory limit is not
+read, so choose the cost by hand on a host whose real limit is lower than
+`MemTotal`.
+
+**A cost already in force that the host cannot carry is reported.** The cost
+check only asks whether the cost is high enough, and `apply` never lowers one,
+so a host where a cost was raised by hand (to the 1 GiB of cost 11, say) would
+otherwise scan clean. `pam-yescrypt-cost-memory` reports the highest yescrypt
+cost on any path, from `login.defs` or from `rounds=` on a `pam_unix` line, when
+it is above 5 and above what the same measure allows. It is a Medium advisory
+with no compliance mapping, `apply` leaves it to the operator, and
+`[pam.exceptions.YESCRYPT_COST_FACTOR]` with that cost as its `value` accepts a
+cost chosen on purpose for a host with few simultaneous logins. It says nothing
+where `/proc/meminfo` cannot be read, and it does not look at the cost of
+hashes already stored.
+
+| Cost | Memory per check | Time per check |
+|---|---|---|
+| 5 (default) | 16 MiB | 21 ms |
+| 6 | 32 MiB | 34 ms |
+| 7 | 64 MiB | 76 ms |
+| 8 | 128 MiB | 141 ms |
+| 11 (maximum) | 1 GiB | 1.29 s |
+
+Measured on 2026-11-15 with libxcrypt 4.4.36 on a 2.1 GHz Xeon virtual
+machine, best of five runs (two at cost 11). SHA-512 took 3.5 ms at 5000
+rounds and 54 ms at 100000, with no memory to speak of.
+
+**Stored hashes are counted, never changed.** A stored hash keeps the
+algorithm and cost it was made with until that password is set again, so
+`pam-stored-password-hashes` counts the accounts whose hash uses a weaker
+scheme than the one new passwords get, by scheme name only. `/etc/shadow` is
+read inside the target's own shell, and only a scheme name per account leaves
+it: no hash, salt or user name reaches this tool, its logs or its reports. The
+count needs root and is reported unchecked without it. It takes no exception
+and maps to no compliance control, because it changes every time a password is
+set. The finding prints a command that lists the accounts on the host itself.
+
+**Exceptions** take the directive name and the value the scan reports, so
+`[pam.exceptions.ENCRYPT_METHOD]` with `value = "SHA512"` accepts a host kept
+on SHA-512 on purpose, for example one whose hashes are copied to systems that
+cannot verify yescrypt. The cost judged on that host is then SHA-512's.
+
+A host held to a DISA STIG is the other case for that exception. The STIGs for
+RHEL 8, 9 and 10 and Ubuntu 24.04 require SHA-512 with 100000 rounds, and the
+RHEL 10 STIG requires it in `login.defs` and on the `pam_unix` lines and for
+every stored hash. A fully compliant host also runs in FIPS mode, and FIPS mode
+already holds it to SHA-512 here. A host configured to the STIG without FIPS
+mode, a virtual machine or a container on a non-FIPS kernel for example, would
+otherwise be moved to yescrypt, and the STIG scan run against it afterwards
+would fail. The `--profile` that selects STIG identifiers in reports does not
+reach the plugin, so record the exception on such hosts.
+
+**Compliance.** The three directives map to NIST 800-53 IA-5(1)(d), NIST SP
+800-171 3.5.7, FedRAMP IA-5(1)(d) and PCI DSS 4.0 8.3.2, beside the HIPAA,
+GDPR, ISO/IEC 27001 8.5 and SOC 2 CC6.1 entries every PAM check carries.
+IA-5(1)(d) is password storage in 800-53 Rev 5, the revision this project
+cites; the ComplianceAsCode rules for the same settings cite IA-5(1)(c), which
+is storage only in Rev 4. Rev 5 asks for "an approved salted key derivation
+function". SP 800-63B names PBKDF2 (specified in SP 800-132) and Balloon as
+examples, and neither yescrypt nor sha512crypt. A pass here therefore means
+the strongest scheme the host's own password stack offers, and counting it
+towards (d) is this project's judgement, not NIST's.
+
+An `ENCRYPT_METHOD` finding for salted SHA-512 on a host held to yescrypt
+carries no compliance mapping. A control fails on any live finding mapped to
+it, whatever the finding's severity, and SHA-512 is the value the DISA STIGs
+require for the same control, so the preference for yescrypt is this tool's
+baseline, not a framework's. Such a host passes the controls; anything weaker
+than SHA-512, or an algorithm that cannot be determined, fails them.
+
+No STIG rule is mapped: every STIG rule for password storage requires SHA-512,
+so a host this tool passes on yescrypt would fail it. No CIS control is mapped
+either, because the hashing control of the benchmark the curated catalogue
+follows could not be checked against the benchmark itself.
+
+**Rollback** restores `/etc/login.defs`. A password set while the new settings
+were in force keeps its new hash, algorithm and cost alike, which is never
+weaker than before, but may be one an older system cannot verify if the hash is
+copied there. A raised cost therefore outlives a rollback: an account whose
+password was set at a cost the host cannot carry stays that way until the
+password is set again with `passwd`. Rollback reports no divergence for this,
+because the plugin's state is the file it restores.
+
 ---
 
 ## Policy exceptions
@@ -698,8 +882,9 @@ statement from a state left as it was found.
 
 The exception key is check-specific: an sshd directive name for `[ssh]`, a
 sysctl name for `[kernel]`, a PAM directive name for `[pam]` (for example
-`minlen`), an absolute path for `[permissions]` (for example `/etc/shadow`), a
-service name for `[services]` (for example `cups`), an audit rule category for
+`minlen`, or `ENCRYPT_METHOD` for the hashing algorithm), an absolute path for
+`[permissions]` (for example `/etc/shadow`), a service name for `[services]`
+(for example `cups`), an audit rule category for
 `[audit]` (`time-change`, `identity`, `network-change`, `perm-mod`,
 `privileged`, `delete`, `modules`), a baseline rule id for `[firewall]`
 (`loopback`, `established`, `ssh`, `drop_default`), and `selinux-enforcing` /

@@ -28,13 +28,18 @@ ocredit = -1
 maxrepeat = 3
 "#,
         )
-        // login.defs uses space-separated format
+        // login.defs uses space-separated format. The hashing keys are the
+        // SHA-512 target the plugin holds a host to when its host probe cannot
+        // run, which no fixture here registers (#191).
         .with_file(
             "/etc/login.defs",
             r#"# Login defaults
 PASS_MAX_DAYS 90
 PASS_MIN_DAYS 1
 PASS_WARN_AGE 7
+ENCRYPT_METHOD SHA512
+SHA_CRYPT_MIN_ROUNDS 100000
+SHA_CRYPT_MAX_ROUNDS 100000
 "#,
         )
         // pwhistory.conf: remember=10 exceeds the minimum of 5, compliant
@@ -264,11 +269,18 @@ async fn test_pam_scan_missing_configs_flags_all() {
         "missing configs should produce findings"
     );
 
-    // All findings should have "not set" as current value
+    // All findings should have "not set" as current value, except the
+    // stored-hash count, which is not a setting, and the hashing cost, which
+    // reports the rounds in force: sha512crypt's own 5000 when nothing sets
+    // them (#191).
     for finding in &result.scan_findings {
+        let expected = match finding.finding_id.as_str() {
+            "pam-SHA_CRYPT_MIN_ROUNDS" => "5000",
+            _ => "not set",
+        };
         assert_eq!(
-            finding.finding_current_value, "not set",
-            "Missing config should show 'not set' for {}",
+            finding.finding_current_value, expected,
+            "Missing config should show '{expected}' for {}",
             finding.finding_id
         );
     }
@@ -537,6 +549,9 @@ maxrepeat 3
             r#"PASS_MAX_DAYS 90
 PASS_MIN_DAYS 1
 PASS_WARN_AGE 7
+ENCRYPT_METHOD SHA512
+SHA_CRYPT_MIN_ROUNDS 100000
+SHA_CRYPT_MAX_ROUNDS 100000
 "#,
         )
         .with_file("/etc/security/faillock.conf", "deny = 3\n")
@@ -1419,7 +1434,8 @@ async fn apply_leaves_a_compliant_file_ending_in_a_blank_line_alone() {
     let executor = Arc::new(with_backup_cp(
         secure_pam_executor().with_file(
             path,
-            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\n\n",
+            "PASS_MAX_DAYS 90\nPASS_MIN_DAYS 1\nPASS_WARN_AGE 7\nENCRYPT_METHOD SHA512\n\
+             SHA_CRYPT_MIN_ROUNDS 100000\nSHA_CRYPT_MAX_ROUNDS 100000\n\n",
         ),
         path,
     ));
@@ -1731,8 +1747,9 @@ async fn pam_validate_all_compliant_lists_no_pending_changes() {
         report.validation_report_estimated_changes
     );
     assert_eq!(
-        report.validation_report_compliant_count, 11,
-        "all 11 directives must be counted as already compliant, not listed as pending"
+        report.validation_report_compliant_count, 13,
+        "all 11 directives, plus the hashing algorithm and its rounds (#191), must be \
+         counted as already compliant, not listed as pending"
     );
 }
 
@@ -1764,8 +1781,9 @@ async fn pam_validate_one_drifted_lists_exactly_that_directive() {
         pending[0]
     );
     assert_eq!(
-        report.validation_report_compliant_count, 10,
-        "the other 10 directives must be counted as already compliant"
+        report.validation_report_compliant_count, 12,
+        "the other 10 directives, plus the hashing algorithm and its rounds (#191), must \
+         be counted as already compliant"
     );
 }
 
@@ -1974,8 +1992,9 @@ async fn pam_validate_does_not_count_an_unreadable_file_as_a_pending_change() {
         "apply refuses this file and fails the run, so the dry run must fail too"
     );
     assert_eq!(
-        report.validation_report_compliant_count, 5,
-        "the five directives in readable files are still counted compliant"
+        report.validation_report_compliant_count, 7,
+        "the five directives in readable files, plus the hashing algorithm and its rounds \
+         from the readable login.defs (#191), are still counted compliant"
     );
 }
 
@@ -2467,9 +2486,12 @@ async fn pam_apply_honours_stricter_override() {
 
 /// A vendor `login.defs` of the shape openSUSE ships under `/usr/etc`. Only
 /// the keys the assertions need are present; the real file sets 38.
+/// `ENCRYPT_METHOD` is `SHA512`, as openSUSE's `shadow-login_defs-suse.patch`
+/// sets it (read 2026-11-15); it was a lowercase `yescrypt` until #191 made
+/// the value matter, and shadow rejects that spelling.
 const VENDOR_LOGIN_DEFS: &str = "\
 UMASK           022
-ENCRYPT_METHOD  yescrypt
+ENCRYPT_METHOD  SHA512
 PASS_MAX_DAYS   99999
 PASS_MIN_DAYS   0
 PASS_WARN_AGE   7
@@ -3044,8 +3066,10 @@ async fn validate_reports_the_layer_drift_scan_reports() {
         .map(|i| i.validation_issue_message.as_str())
         .collect();
 
+    // UMASK rather than ENCRYPT_METHOD for login.defs: the secure fixture sets
+    // ENCRYPT_METHOD itself since #191, so it is no longer masked.
     for (file, key) in [
-        ("/etc/login.defs", "ENCRYPT_METHOD"),
+        ("/etc/login.defs", "UMASK"),
         ("/etc/security/pwquality.conf", "difok"),
     ] {
         let issue = report
@@ -3497,7 +3521,8 @@ async fn scan_does_not_report_a_stricter_host_as_violating() {
         secure_pam_executor()
             .with_file(
                 "/etc/login.defs",
-                "PASS_MAX_DAYS 30\nPASS_MIN_DAYS 7\nPASS_WARN_AGE 14\n",
+                "PASS_MAX_DAYS 30\nPASS_MIN_DAYS 7\nPASS_WARN_AGE 14\nENCRYPT_METHOD SHA512\n\
+                 SHA_CRYPT_MIN_ROUNDS 200000\nSHA_CRYPT_MAX_ROUNDS 200000\n",
             )
             .with_file(
                 "/etc/security/pwquality.conf",

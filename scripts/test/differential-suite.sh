@@ -1230,8 +1230,15 @@ login_defs_system_value() {
     return 1
 }
 
-# Settings this tool does not manage, and must therefore leave exactly as it
-# found them.
+# Settings this tool did not manage when the family was written, and must
+# therefore leave no worse than it found them.
+#
+# ENCRYPT_METHOD is managed since #191: apply may move it, but only upwards (to
+# yescrypt where the host supports it), so its check asks "not weaker" through
+# hash_scheme_not_weaker rather than "unchanged". The masking this family
+# exists to catch moves it DOWN, to DES, so the stronger question still fails
+# on exactly that defect. HOME_MODE and UMASK are still unmanaged and must be
+# unchanged.
 #
 # This is the check the suite was missing, and the reason 110/110 was never
 # proof. Every other check here asks whether a setting the tool targets reached
@@ -1379,6 +1386,32 @@ vendor_survival_probe_readings() {
 vendor_survival_agrees() {
     local before="$1" after="$2"
     [[ -n "$before" && -n "$after" && "$before" == "$after" ]]
+}
+
+# A hashing scheme's strength, weakest first, as shadow_hash_scheme spells it.
+# The order is the one the PAM plugin ranks ENCRYPT_METHOD by: bcrypt below
+# SHA-512 because it reads only the first 72 bytes of a password, and scrypt
+# and gost-yescrypt beside yescrypt. An unknown prefix has no rank and returns
+# non-zero, so it can never pass a comparison.
+hash_scheme_rank() {
+    case "$1" in
+        descrypt) printf '0' ;;
+        '$1$') printf '1' ;;
+        '$5$') printf '2' ;;
+        '$2a$' | '$2b$' | '$2x$' | '$2y$') printf '3' ;;
+        '$6$') printf '4' ;;
+        '$y$' | '$gy$' | '$7$') printf '5' ;;
+        *) return 1 ;;
+    esac
+}
+
+# Whether ENCRYPT_METHOD held or got stronger across the run. An empty or
+# unranked side never agrees, for the reason vendor_survival_agrees gives.
+hash_scheme_not_weaker() {
+    local before after
+    before="$(hash_scheme_rank "$1")" || return 1
+    after="$(hash_scheme_rank "$2")" || return 1
+    ((after >= before))
 }
 
 # Create the probe account, take the three readings, remove it again. Prints
@@ -4519,6 +4552,14 @@ run_vendor_survival_checks() {
             record_fail "vendor survival $key: the value after apply could not be read"
             continue
         fi
+        if [[ "$key" == ENCRYPT_METHOD ]]; then
+            if hash_scheme_not_weaker "$before" "$after"; then
+                record_pass "vendor survival $key: '$before' before apply and '$after' now; the tool manages the hashing algorithm since #191 and never moves it down"
+            else
+                record_fail "vendor survival $key: was '$before' before apply and is '$after' now, which is weaker; the tool manages the hashing algorithm since #191 and must never move it down"
+            fi
+            continue
+        fi
         if vendor_survival_agrees "$before" "$after"; then
             record_pass "vendor survival $key: still '$after', the value the system held before apply"
         else
@@ -5446,6 +5487,17 @@ Number of days of warning before password expires	: 7"
     # family exists to catch: a setting the tool does not manage holding a
     # different value after the run than before it.
     check_status 0 "an unchanged value agrees" vendor_survival_agrees 750 750
+    # ENCRYPT_METHOD is compared by strength since #191, in every direction.
+    check_status 0 "an unchanged scheme is not weaker" \
+        hash_scheme_not_weaker "$scheme_sha512" "$scheme_sha512"
+    check_status 0 "sha512 moved to yescrypt is not weaker" \
+        hash_scheme_not_weaker "$scheme_sha512" "$scheme_yescrypt"
+    check_status 1 "sha512 moved to descrypt, the masking defect, is weaker" \
+        hash_scheme_not_weaker "$scheme_sha512" descrypt
+    check_status 1 "yescrypt moved to bcrypt is weaker" \
+        hash_scheme_not_weaker "$scheme_yescrypt" "$scheme_bcrypt"
+    check_status 1 "a scheme with no rank never passes" \
+        hash_scheme_not_weaker "$scheme_sha512" '$9$'
     check_status 1 "a changed value does not agree" vendor_survival_agrees 750 700
     check_status 1 "a missing before value does not agree" vendor_survival_agrees "" 750
     check_status 1 "a missing after value does not agree" vendor_survival_agrees 750 ""

@@ -4,9 +4,11 @@
 //! - Password quality requirements (complexity, length)
 //! - Account lockout policies (failed login attempts)
 //! - Password ageing policies (expiry, reuse prevention)
+//! - Password hashing for new passwords (algorithm and cost, see `hashing`)
 
 mod apply;
 mod assess;
+mod hashing;
 mod layer_drift;
 mod login_defs;
 // pub(crate) so the crate's fuzz-seam can re-export the pure parsing
@@ -199,6 +201,7 @@ fn pam_fedramp_unsuccessful_logons() -> ComplianceMapping {
 pub fn coverage() -> Vec<ComplianceMapping> {
     PAM_DIRECTIVES
         .iter()
+        .chain(hashing::HASHING_DIRECTIVES)
         .flat_map(|d| get_pam_compliance_mappings(d.pam_directive_name))
         .collect()
 }
@@ -224,6 +227,52 @@ pub fn coverage() -> Vec<ComplianceMapping> {
 /// carry no FedRAMP mapping either.
 fn get_pam_compliance_mappings(check_name: &str) -> Vec<ComplianceMapping> {
     match check_name {
+        // Password storage (#191): ENCRYPT_METHOD, YESCRYPT_COST_FACTOR and
+        // SHA_CRYPT_MIN_ROUNDS. First, so no substring arm below can claim one
+        // of these names and the catch-all cannot mis-map them to CIS 5.3.1.
+        //
+        // SSG: set_password_hashing_algorithm_logindefs and
+        // set_password_hashing_min_rounds_logindefs. Their references cite
+        // IA-5(1)(c), which is Rev 4 lettering ("Stores and transmits only
+        // cryptographically-protected passwords"). This function's ids are
+        // Rev 5, and in Rev 5 part (c) is transmission only while part (d)
+        // is "Store passwords using an approved salted key derivation
+        // function, preferably using a keyed hash" (NIST OSCAL Rev 5
+        // catalogue), so storage is cited as (d). PCI DSS v4.0 8.3.2 is the
+        // requirement the PCI SSC answers password hashing under. No STIG id,
+        // deliberately: every STIG rule for password storage requires
+        // SHA-512, so mapping one to a check that passes yescrypt would report
+        // a STIG Pass a STIG audit fails. No CIS id either: the curated
+        // catalogue is Distribution Independent Linux v2.0, and its hashing
+        // control could not be checked against the benchmark itself.
+        name if hashing::is_hashing_directive(name) => vec![
+            pam_mapping(
+                ComplianceFramework::NIST,
+                "IA-5(1)(d)",
+                "Authenticator Management | Password-Based Authentication",
+            ),
+            // 800-171r3 3.5.7 is sourced from 800-53 IA-5(1) in the r3
+            // source-control table, as for the other password arms.
+            pam_nist171_password_mgmt(),
+            // FedRAMP Moderate r5 baseline member (GSA rev5 baseline): 800-53
+            // IA-5(1), and Rev 5 puts storage in part (d), as above.
+            pam_mapping_in(
+                ComplianceFramework::FedRAMP,
+                "IA-5(1)(d)",
+                "Authenticator Management | Password-Based Authentication",
+                "Identification and Authentication",
+            ),
+            pam_mapping(
+                ComplianceFramework::PCIDSS,
+                "8.3.2",
+                "Strong cryptography renders all authentication factors unreadable during \
+                 transmission and storage",
+            ),
+            pam_hipaa_password_mgmt(),
+            pam_gdpr_auth(),
+            pam_iso_secure_auth(),
+            pam_soc2_logical_access(),
+        ],
         // SSG: accounts_password_pam_minlen (stigid RHEL-08-020230)
         name if name.contains("minlen") || name.contains("complexity") => vec![
             pam_mapping(
