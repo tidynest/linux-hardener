@@ -1849,7 +1849,7 @@ When naming any identifier in this project, verify:
 **hardener-types Crate**:
 - New crate for WASM-compatible shared type definitions
 - Contains all types previously in hardener-common/src/types.rs, hardener-core/src/plugin.rs, hardener-compliance/src/report.rs
-- Dependencies: serde, chrono only (no system dependencies)
+- Dependencies: serde, jiff only (no system dependencies)
 - Key exports: `PluginId`, `Severity`, `FindingCategory`, `ComplianceFramework`, `Finding`, `ScanResult`, `ApplyResult`, `ComplianceReport`, `ControlResult`, `ComplianceSummary`
 
 **Type Re-exports**:

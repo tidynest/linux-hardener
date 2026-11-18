@@ -525,7 +525,7 @@ hardener-cli (entry point)
   └── hardener-common (shared)
 
 hardener-types (WASM-safe, no system deps)
-  └── serde, chrono only
+  └── serde, jiff only
 
 hardener-core
   ├── hardener-types

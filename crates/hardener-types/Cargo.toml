@@ -9,7 +9,6 @@ version.workspace = true
 
 [dependencies]
 serde = { workspace = true }
-chrono = { workspace = true, features = ["serde"] }
 jiff = { workspace = true }
 
 [features]
@@ -21,8 +20,9 @@ jiff = { workspace = true }
 clock = ["jiff/tz-system", "jiff/tzdb-zoneinfo"]
 
 [dev-dependencies]
-# The crate's own tests take the clock feature, so the workspace test run
-# compiles and runs the clock functions while no other crate turns it on.
+# The crate's own tests take the clock feature, so `cargo test -p
+# hardener-types` alone compiles and tests the clock functions, which no
+# build of this crate on its own would otherwise reach.
 hardener-types = { path = ".", features = ["clock"] }
 serde_json = { workspace = true }
 # Test-only, so the WASM artefact is unaffected. The webhook config's whole

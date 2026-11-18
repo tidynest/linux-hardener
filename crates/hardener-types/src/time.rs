@@ -44,8 +44,8 @@ pub fn date_utc(instant: Timestamp) -> Date {
 
 /// `instant` in UTC written with a strftime `pattern`, giving the same text
 /// chrono's `format` did for the named patterns in this module. The library
-/// skips a specifier it does not know where chrono panicked, so a new pattern
-/// needs a test of its literal text.
+/// writes a specifier it does not know as literal text where chrono panicked,
+/// so a new pattern needs a test of its literal text.
 pub fn format_utc(instant: Timestamp, pattern: &str) -> String {
     instant.strftime(pattern).to_string()
 }
@@ -174,9 +174,9 @@ pub fn today_local() -> Date {
 }
 
 /// `instant` on this machine's clock written with a strftime `pattern`, as
-/// chrono's `with_timezone(&Local).format(pattern)` gave. The library skips a
-/// specifier it does not know where chrono panicked, so a new pattern needs a
-/// test of its literal text.
+/// chrono's `with_timezone(&Local).format(pattern)` gave. The library writes
+/// a specifier it does not know as literal text where chrono panicked, so a
+/// new pattern needs a test of its literal text.
 #[cfg(feature = "clock")]
 pub fn format_local(instant: Timestamp, pattern: &str) -> String {
     local_zone()

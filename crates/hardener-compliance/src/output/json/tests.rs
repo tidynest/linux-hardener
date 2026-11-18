@@ -274,3 +274,25 @@ fn the_report_generation_time_is_written_as_1_9_1_wrote_it() {
     let report = empty_report_at(instant(1767225600, 500_000_000));
     assert_eq!(serde_json::to_string(&report).unwrap(), fixture);
 }
+
+/// The formatter writes its own `JsonReport` rather than the report's derive,
+/// so the generation time it prints needs a pin of its own: without the
+/// adaptor on that field the library would write `.5Z` where 1.9.1 wrote
+/// `.500Z`, and the derive test above would not notice.
+#[test]
+fn the_json_formatter_writes_the_generation_time_as_1_9_1_wrote_it() {
+    for (seconds, nanoseconds, literal) in PINNED {
+        let output = JsonFormatter::new().format(&empty_report_at(instant(seconds, nanoseconds)));
+        assert!(
+            output.contains(&format!("\"report_generated_at\":\"{literal}\"")),
+            "{seconds}s {nanoseconds}ns should be written as {literal}, got {output}"
+        );
+    }
+
+    // The pretty form goes through the same field, so it must agree.
+    let pretty = JsonFormatter::pretty().format(&empty_report_at(instant(1767225600, 500_000_000)));
+    assert!(
+        pretty.contains("\"report_generated_at\": \"2026-01-01T00:00:00.500Z\""),
+        "the pretty form should write the same instant, got {pretty}"
+    );
+}
