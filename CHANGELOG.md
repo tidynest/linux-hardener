@@ -37,15 +37,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still a six-field cron expression, read in UTC, and the default is still
   02:00 UTC. A scan missed while the machine was suspended runs once on
   resume, and it may start up to 30 seconds late. Missed scans never queue up.
-  Schedules that 1.9.1 accepted still parse, steps written `N/S` such as
-  `0 0/20 * * * *` included, which run from N to the end of the field. Steps
-  written that way, `L`, `W`, `#`, `@daily` and a year field were each checked
-  against the parser 1.9.1 used and fire at the same instants. Two forms that
-  1.9.1 refused are now accepted: a step with no start, such as
+  Steps written `N/S`, such as `0 0/20 * * * *`, still parse and run from N
+  to the end of the field. croner's own migration notes name this step form
+  as the breaking parse change in 4.0, and the parser now sets
+  `sloppy_ranges(true)`, the switch those notes give to undo it. Nine
+  expressions were checked against the parser 1.9.1 used and fire at the same
+  instants: steps written `N/S`, `L`, `W`, `#`, `@daily` and a year field.
+  Two forms that 1.9.1 refused are now accepted: a step with no start, such as
   `0 /10 * * * *`, which reads as `*/10`, and `LW` in the day of month, the
-  last weekday. One form fires where it did not before, which differs from
-  1.9.1: `7L` in the day of week parsed and never fired, and it now fires on
-  the last Sunday of each month.
+  last weekday. A last Sunday written with `7` now fires where it did not,
+  which differs from 1.9.1. Measured here, `0 0 3 * * 7L` parsed under 1.9.1
+  and never fired, and it now fires at 03:00 UTC on the last Sunday of each
+  month. croner's 4.0.3 changelog gives `7#L` the same change, which was not
+  measured here. If the schedule task ends by itself, `daemon start` now
+  returns an error and exits non-zero, where 1.9.1 would have carried on
+  without scanning.
 
 ### Fixed
 
@@ -135,8 +141,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   crates were accepted in `deny.toml` while the daemon's cron library built
   them. That library is gone, and `chrono-tz` has left the lockfile with it.
   `chrono` stays listed there only under `serde_with`, which does not build
-  it: `cargo tree -i chrono` prints nothing, which shows that no crate in the
-  build depends on it. With the two entries taken out of
+  it: `cargo tree -i chrono --target all` prints nothing, which shows that no
+  crate in the build depends on it on any target. With the two entries taken
+  out of
   `deny.toml`, `cargo deny check` passes and names neither advisory, and
   `cargo audit` exits 0. It prints one warning, for RUSTSEC-2026-0543 on the
   `chrono` line under `serde_with`, and nothing for RUSTSEC-2026-0555. The

@@ -128,7 +128,9 @@ fn next_five(expression: &str, after: i64) -> Result<[i64; 5]> {
     let mut start = at(after);
     let mut instants = [0; 5];
     for instant in &mut instants {
-        let next = schedule.next_after(start).expect("the expression recurs");
+        let next = schedule
+            .next_after(start)
+            .unwrap_or_else(|| panic!("{expression} has no next firing"));
         *instant = time::unix_seconds(next);
         start = next;
     }
@@ -139,7 +141,11 @@ fn next_five(expression: &str, after: i64) -> Result<[i64; 5]> {
 fn computed<'table>(recorded: &[(&'table str, [i64; 5])]) -> Vec<(&'table str, [i64; 5])> {
     recorded
         .iter()
-        .map(|(expression, _)| (*expression, next_five(expression, START).unwrap()))
+        .map(|(expression, _)| {
+            let instants = next_five(expression, START)
+                .unwrap_or_else(|error| panic!("{expression}: {error}"));
+            (*expression, instants)
+        })
         .collect()
 }
 

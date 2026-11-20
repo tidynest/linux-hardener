@@ -24,7 +24,7 @@ has not been thought about hard enough.
 
 ---
 
-## Baseline, as measured on 2026-11-18
+## Baseline, as measured on 2026-11-20
 
 Numbers taken from commands rather than from prose. Re-measure before amending
 them; do not copy a figure from an older document.

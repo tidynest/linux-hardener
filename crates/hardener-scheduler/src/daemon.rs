@@ -149,10 +149,10 @@ impl Daemon {
     /// Starts the daemon scheduler loop.
     ///
     /// Reads the configured cron expression and spawns [`run_schedule`] with
-    /// a scan as its job. It then waits until SIGTERM or SIGINT arrives or the
-    /// schedule task ends by itself, and returns once any scan in progress has
-    /// finished. `stop` cannot be called while this runs, since this holds
-    /// `&mut self`.
+    /// a scan as its job. It then waits for SIGTERM or SIGINT. If the
+    /// schedule task ends first, the wait ends with it. Either way this
+    /// returns once any scan in progress has finished. `stop` cannot be called
+    /// while this runs, since this holds `&mut self`.
     ///
     /// # Arguments
     /// * `plugin_manager` - Configured plugin manager with resolved dependencies
@@ -202,7 +202,7 @@ impl Daemon {
         // Spawn signal handler
         tokio::spawn(Self::signal_handler(shutdown_tx));
 
-        let task = self.daemon_scheduler.insert(tokio::spawn(run_schedule(
+        self.daemon_scheduler = Some(tokio::spawn(run_schedule(
             schedule,
             time::now,
             schedule_shutdown,
@@ -211,15 +211,7 @@ impl Daemon {
 
         info!("Daemon running, waiting for shutdown signal");
 
-        let ended = match first_to_end(shutdown_rx, task).await {
-            FirstToEnd::Shutdown => Ok(()),
-            // The handle has finished, and a finished handle must not be
-            // awaited again, so the shutdown helper is left without it.
-            FirstToEnd::Task(ended) => {
-                self.daemon_scheduler = None;
-                ended
-            }
-        };
+        let ended = wait_for_shutdown(shutdown_rx, &mut self.daemon_scheduler).await;
         if ended.is_ok() {
             info!("Shutdown signal received");
         }
@@ -278,8 +270,8 @@ impl Daemon {
     /// `start` sets the sender and the task together and this takes both, so
     /// a task is never left waiting for a shutdown nobody can send. The task
     /// ends before the wait for a scan, so it cannot start one the wait has
-    /// already passed. `joined` is how the task ended when the caller has
-    /// already awaited it and cleared the handle, and `Ok(())` otherwise.
+    /// already passed. `joined` is how the task ended if the caller has
+    /// already awaited it and emptied the slot. Otherwise it is `Ok(())`.
     async fn shutdown_scheduler(
         &mut self,
         joined: std::result::Result<(), JoinError>,
@@ -308,29 +300,31 @@ impl Daemon {
     }
 }
 
-/// What ended the wait in [`Daemon::start`].
-#[derive(Debug)]
-enum FirstToEnd {
-    /// The shutdown channel answered, with a message or with an error.
-    Shutdown,
-    /// The schedule task ended, with how it ended.
-    Task(std::result::Result<(), JoinError>),
-}
-
-/// Waits for a shutdown or for `task` to end, whichever comes first.
+/// The wait in [`Daemon::start`]: for a shutdown, or for the task in `slot`
+/// to end, whichever comes first.
 ///
-/// The task is polled by reference, so after [`FirstToEnd::Shutdown`] the
-/// caller still holds a handle it can await. A normal shutdown ends the task
-/// too, so both arms can be ready at once, and either answer is then a clean
-/// end: the task ends by itself only on a shutdown or a panic.
-async fn first_to_end(
+/// A shutdown leaves the handle in `slot`, for the shutdown helper to await.
+/// A task that ends first has a finished handle, which must not be awaited
+/// again. So the slot is emptied and the task's own result is returned.
+///
+/// A normal shutdown ends the task as well, so both arms can be ready at
+/// once. Either answer is then a clean end, because the task ends by itself
+/// only on a shutdown or a panic. With an empty slot only a shutdown ends the
+/// wait.
+async fn wait_for_shutdown(
     mut shutdown: broadcast::Receiver<()>,
-    task: &mut JoinHandle<()>,
-) -> FirstToEnd {
-    tokio::select! {
-        _ = shutdown.recv() => FirstToEnd::Shutdown,
-        ended = task => FirstToEnd::Task(ended),
-    }
+    slot: &mut Option<JoinHandle<()>>,
+) -> std::result::Result<(), JoinError> {
+    let Some(task) = slot.as_mut() else {
+        let _ = shutdown.recv().await;
+        return Ok(());
+    };
+    let ended = tokio::select! {
+        _ = shutdown.recv() => return Ok(()),
+        ended = task => ended,
+    };
+    *slot = None;
+    ended
 }
 
 /// Runs `on_due` at each occurrence until `shutdown` fires.

@@ -112,14 +112,34 @@ async fn start_refuses_a_schedule_it_cannot_read() {
     );
 }
 
+/// Polls the history every 100 ms until it holds a session with the
+/// scheduled trigger.
+async fn a_scheduled_session_appears(history: &ScanHistoryManager) {
+    let scheduled = TriggerType::Scheduled.as_str();
+    loop {
+        let sessions = history
+            .list_sessions(&crate::db::SessionFilter::default())
+            .await
+            .unwrap();
+        if sessions
+            .iter()
+            .any(|session| session.trigger_type == scheduled)
+        {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 /// `start` with the scheduler on and a schedule that fires every second
 /// writes a scheduled session to the history database.
 ///
-/// `start` returns only after a shutdown or a failed schedule task, so the
-/// timeout ends it by dropping its future. Every task `start` spawned, scans
-/// included, stays on this test's runtime and is dropped with it when the
-/// test returns. The signal handler's hooks for SIGTERM and SIGINT stay
-/// installed in the test process, as tokio never removes one.
+/// `start` runs until a shutdown, so it races a poll of the history that has
+/// a deadline of 15 seconds. Once the race ends, `stop` shuts the loop down
+/// and waits for a running scan, so the scans are done before the temporary
+/// directory goes. The signal handler `start` spawned waits on until the
+/// test's runtime drops it. Its hooks for SIGTERM and SIGINT stay installed
+/// in the test process, as tokio never removes one.
 ///
 /// The registry holds one mock plugin, because a scan refuses a manager with
 /// no resolved plugin before it writes a session. `ScanRunner::run` loads the
@@ -139,25 +159,20 @@ async fn start_runs_a_scheduled_scan_through_its_own_loop() {
     manager.resolve_dependencies().unwrap();
     let plugins = Arc::new(manager);
     let context = Arc::new(Context::new());
-
-    let outcome = timeout(Duration::from_millis(2500), daemon.start(plugins, context)).await;
-    assert!(outcome.is_err(), "start ended by itself: {outcome:?}");
-
     let history = ScanHistoryManager::new(&dir.path().join("test.db"))
         .await
         .unwrap();
-    let sessions = history
-        .list_sessions(&crate::db::SessionFilter::default())
+
+    let found = tokio::select! {
+        outcome = daemon.start(plugins, context) => panic!("start ended by itself: {outcome:?}"),
+        found = timeout(Duration::from_secs(15), a_scheduled_session_appears(&history)) => found.is_ok(),
+    };
+    let stopped = timeout(Duration::from_secs(15), daemon.stop())
         .await
-        .unwrap();
-    let scheduled = TriggerType::Scheduled.as_str();
-    assert!(
-        sessions
-            .iter()
-            .any(|session| session.trigger_type == scheduled),
-        "no scheduled session among {} sessions",
-        sessions.len()
-    );
+        .expect("stop returns once the loop and any scan have ended");
+
+    assert!(found, "no scheduled session within 15 seconds");
+    assert!(stopped.is_ok(), "{stopped:?}");
 }
 
 #[tokio::test]
@@ -176,15 +191,22 @@ async fn stop_reports_a_schedule_task_that_panicked() {
 async fn the_wait_in_start_ends_when_the_schedule_task_panics() {
     // The sender stays alive, so only the task can end the wait.
     let (_sender, receiver) = broadcast::channel(1);
-    let mut task = tokio::spawn(async { panic!("the schedule task fails") });
+    let mut slot = Some(tokio::spawn(async { panic!("the schedule task fails") }));
 
-    let ended = timeout(Duration::from_secs(5), first_to_end(receiver, &mut task))
-        .await
-        .expect("a panicked task ends the wait");
+    let ended = timeout(
+        Duration::from_secs(5),
+        wait_for_shutdown(receiver, &mut slot),
+    )
+    .await
+    .expect("a panicked task ends the wait");
 
     assert!(
-        matches!(&ended, FirstToEnd::Task(Err(failure)) if failure.is_panic()),
+        matches!(&ended, Err(failure) if failure.is_panic()),
         "{ended:?}"
+    );
+    assert!(
+        slot.is_none(),
+        "a finished handle is left to be awaited again"
     );
 }
 
@@ -201,35 +223,37 @@ fn task_ending_on(sender: &broadcast::Sender<()>) -> JoinHandle<()> {
 #[tokio::test]
 async fn a_normal_shutdown_ends_the_wait_in_start_cleanly_in_either_order() {
     // The shutdown is seen first: the task has not run when the wait begins,
-    // and the handle is still there to await afterwards.
+    // and the handle stays in the slot for the shutdown helper to await.
     let (sender, receiver) = broadcast::channel(1);
-    let mut task = task_ending_on(&sender);
+    let mut slot = Some(task_ending_on(&sender));
     sender.send(()).unwrap();
-    let shutdown_first = timeout(Duration::from_secs(5), first_to_end(receiver, &mut task))
-        .await
-        .expect("a shutdown ends the wait");
-    assert!(
-        matches!(shutdown_first, FirstToEnd::Shutdown),
-        "{shutdown_first:?}"
-    );
+    let shutdown_first = timeout(
+        Duration::from_secs(5),
+        wait_for_shutdown(receiver, &mut slot),
+    )
+    .await
+    .expect("a shutdown ends the wait");
+    assert!(shutdown_first.is_ok(), "{shutdown_first:?}");
+    let task = slot.take().expect("a shutdown leaves the handle in place");
     assert!(task.await.is_ok());
 
     // The task is seen first: it ended before the wait began, and the wait's
     // receiver subscribed after the send, so it holds no message.
     let (sender, _) = broadcast::channel(1);
-    let mut task = task_ending_on(&sender);
+    let mut slot = Some(task_ending_on(&sender));
     sender.send(()).unwrap();
     let task_first = timeout(Duration::from_secs(5), async {
-        while !task.is_finished() {
+        while slot.as_ref().is_some_and(|task| !task.is_finished()) {
             tokio::task::yield_now().await;
         }
-        first_to_end(sender.subscribe(), &mut task).await
+        wait_for_shutdown(sender.subscribe(), &mut slot).await
     })
     .await
     .expect("a finished task ends the wait");
+    assert!(task_first.is_ok(), "{task_first:?}");
     assert!(
-        matches!(task_first, FirstToEnd::Task(Ok(()))),
-        "{task_first:?}"
+        slot.is_none(),
+        "a finished handle is left to be awaited again"
     );
 }
 
