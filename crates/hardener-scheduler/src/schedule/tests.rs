@@ -56,6 +56,67 @@ const FIRINGS: &[(&str, [i64; 5])] = &[
     ),
 ];
 
+/// Each expression with the five instants it fires at after `START`, as
+/// `croner` 3.0.1 gave them.
+///
+/// Recorded on 2026-11-20 by a scratch crate outside the repository, which
+/// built croner 3.0.1's parser the way `tokio-cron-scheduler` 0.15.1 did,
+/// seconds required and day of month and day of week combined. The in-tree
+/// recording test that filled `FIRINGS`, last present at commit `cd90b01a`,
+/// did not record these. Only rows on which croner 4 agrees are here.
+///
+/// The same run saw croner 3 refuse `0 /10 * * * *` and `0 0 3 LW * *`, and
+/// croner 4 accepts both. It saw croner 3 parse `0 0 3 * * 7L` and never fire
+/// it, where croner 4 fires on the last Sunday of each month. None of these
+/// is in the table.
+const CRONER_3_SCRATCH_FIRINGS: &[(&str, [i64; 5])] = &[
+    // A step written with a single start: every 20 minutes from minute 0.
+    (
+        "0 0/20 * * * *",
+        [1767226800, 1767228000, 1767229200, 1767230400, 1767231600],
+    ),
+    // A single start that is not zero: every 20 minutes from minute 5.
+    (
+        "0 5/20 * * * *",
+        [1767225900, 1767227100, 1767228300, 1767229500, 1767230700],
+    ),
+    // A single start in the hours: every six hours from midnight.
+    (
+        "0 0 0/6 * * *",
+        [1767247200, 1767268800, 1767290400, 1767312000, 1767333600],
+    ),
+    // The last day of the month.
+    (
+        "0 0 3 L * *",
+        [1769828400, 1772247600, 1774926000, 1777518000, 1780196400],
+    ),
+    // The weekday nearest the 15th.
+    (
+        "0 0 3 15W * *",
+        [1768446000, 1771210800, 1773630000, 1776222000, 1778814000],
+    ),
+    // The second Friday of the month.
+    (
+        "0 0 3 * * 5#2",
+        [1767927600, 1770951600, 1773370800, 1775790000, 1778209200],
+    ),
+    // The last Friday of the month.
+    (
+        "0 0 3 * * 5L",
+        [1769742000, 1772161200, 1774580400, 1776999600, 1780023600],
+    ),
+    // An alias, midnight daily.
+    (
+        "@daily",
+        [1767312000, 1767398400, 1767484800, 1767571200, 1767657600],
+    ),
+    // A seventh field, the year.
+    (
+        "0 0 2 * * * 2027",
+        [1798768800, 1798855200, 1798941600, 1799028000, 1799114400],
+    ),
+];
+
 /// The instant `seconds` after the Unix epoch.
 fn at(seconds: i64) -> Timestamp {
     time::from_unix_seconds(seconds).expect("a representable instant")
@@ -74,14 +135,23 @@ fn next_five(expression: &str, after: i64) -> Result<[i64; 5]> {
     Ok(instants)
 }
 
-#[test]
-fn the_schedule_fires_when_it_did_under_tokio_cron_scheduler() {
-    let computed: Vec<_> = FIRINGS
+/// Checks that every expression in `recorded` fires at its five instants.
+fn assert_fires_as_recorded(recorded: &[(&str, [i64; 5])]) {
+    let computed: Vec<_> = recorded
         .iter()
         .map(|(expression, _)| (*expression, next_five(expression, START).unwrap()))
         .collect();
-    let recorded = FIRINGS.to_vec();
-    assert_eq!(computed, recorded);
+    assert_eq!(computed, recorded.to_vec());
+}
+
+#[test]
+fn the_schedule_fires_when_it_did_under_tokio_cron_scheduler() {
+    assert_fires_as_recorded(FIRINGS);
+}
+
+#[test]
+fn the_schedule_fires_when_croner_3_did_in_the_scratch_recording() {
+    assert_fires_as_recorded(CRONER_3_SCRATCH_FIRINGS);
 }
 
 #[test]

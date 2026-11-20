@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still a six-field cron expression, read in UTC, and the default is still
   02:00 UTC. A scan missed while the machine was suspended runs once on
   resume, and it may start up to 30 seconds late. Missed scans never queue up.
+  Schedules that 1.9.1 accepted still parse, steps written `N/S` such as
+  `0 0/20 * * * *` included, which run from N to the end of the field. Steps
+  written that way, `L`, `W`, `#`, `@daily` and a year field were each checked
+  against the parser 1.9.1 used and fire at the same instants. Two forms that
+  1.9.1 refused are now accepted: a step with no start, such as
+  `0 /10 * * * *`, which reads as `*/10`, and `LW` in the day of month, the
+  last weekday. One form fires where it did not before, which differs from
+  1.9.1: `7L` in the day of week parsed and never fired, and it now fires on
+  the last Sunday of each month.
 
 ### Fixed
 

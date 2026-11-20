@@ -5,6 +5,11 @@
 //! - `CronParser::builder().seconds(Seconds::Required)` makes the first of six
 //!   fields the seconds, and `.dom_and_dow(true)` makes a day of month and a
 //!   day of week both have to match (`parser.rs:55` and `parser.rs:81`).
+//! - `.sloppy_ranges(true)` gates two step forms and nothing else, in every
+//!   field (`component.rs:495-519`). A single start, `N/S`, then runs from N
+//!   to the field's maximum, as croner 3 read it. An empty start, `/S`, then
+//!   reads as `*/S`, which croner 3 refused. Without the switch croner 4
+//!   refuses both.
 //! - With the `jiff` feature, `Cron::find_next_occurrence(&Zoned, inclusive)`
 //!   gives the next firing (`lib.rs:321`, the `Zoned` impl at
 //!   `time/jiff_impl.rs:57`). With `inclusive` false the search starts one
@@ -40,6 +45,7 @@ impl Schedule {
         CronParser::builder()
             .seconds(Seconds::Required)
             .dom_and_dow(true)
+            .sloppy_ranges(true)
             .build()
             .parse(expression)
             .map(Self)
