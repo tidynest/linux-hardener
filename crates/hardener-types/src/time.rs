@@ -68,6 +68,12 @@ pub fn format_utc(instant: Timestamp, pattern: &str) -> String {
     instant.strftime(pattern).to_string()
 }
 
+/// `instant` in UTC with its zone attached, for code that needs the calendar
+/// fields of an instant or a library that asks for a zoned time.
+pub fn utc_zoned(instant: Timestamp) -> Zoned {
+    instant.to_zoned(TimeZone::UTC)
+}
+
 /// A `YYYY-MM-DD` date, or `None` when it is not a real calendar day. Accepts
 /// what chrono's `%Y-%m-%d` accepted for any date a person writes, including a
 /// month or day without its leading zero.
@@ -189,7 +195,7 @@ pub fn format_local(instant: Timestamp, pattern: &str) -> String {
 /// calendar fields of now without a second clock read.
 #[cfg(feature = "clock")]
 pub fn now_utc_zoned() -> Zoned {
-    now().to_zoned(TimeZone::UTC)
+    utc_zoned(now())
 }
 
 /// The machine's time zone. The library's own lookup comes first and reads

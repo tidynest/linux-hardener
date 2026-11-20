@@ -14,8 +14,10 @@
 //! `croner` 3. They are Unix seconds, so a later library has to agree with
 //! them without any edit to the table.
 
-use croner::parser::{CronParser, Seconds};
-use tokio_cron_scheduler::job::job_data::JobStoredData;
+use super::{LONGEST_WAIT_STEP, Schedule, wait_step};
+use hardener_common::error::{HardeningError, Result};
+use hardener_types::time::{self, Timestamp};
+use std::time::Duration;
 
 /// 2026-01-01T00:00:00Z, the instant every expression is asked from.
 const START: i64 = 1_767_225_600;
@@ -54,36 +56,19 @@ const FIRINGS: &[(&str, [i64; 5])] = &[
     ),
 ];
 
+/// The instant `seconds` after the Unix epoch.
+fn at(seconds: i64) -> Timestamp {
+    time::from_unix_seconds(seconds).expect("a representable instant")
+}
+
 /// The next five instants after `after`, in Unix seconds.
-///
-/// This is the one thing the next task replaces. It parses the way
-/// `tokio-cron-scheduler` does and takes its start instant from that crate's
-/// own conversion, so the time library never needs naming here.
-fn next_five(expression: &str, after: i64) -> Result<[i64; 5], croner::errors::CronError> {
-    let schedule = CronParser::builder()
-        .seconds(Seconds::Required)
-        .dom_and_dow(true)
-        .build()
-        .parse(expression)?;
-    let mut start = JobStoredData {
-        id: None,
-        last_updated: None,
-        last_tick: None,
-        next_tick: after as u64,
-        job_type: 0,
-        count: 0,
-        extra: Vec::new(),
-        ran: false,
-        stopped: false,
-        job: None,
-        time_offset_seconds: 0,
-    }
-    .next_tick_utc()
-    .expect("a non-zero start instant converts");
+fn next_five(expression: &str, after: i64) -> Result<[i64; 5]> {
+    let schedule = Schedule::parse(expression)?;
+    let mut start = at(after);
     let mut instants = [0; 5];
     for instant in &mut instants {
-        let next = schedule.find_next_occurrence(&start, false)?;
-        *instant = next.timestamp();
+        let next = schedule.next_after(start).expect("the expression recurs");
+        *instant = time::unix_seconds(next);
         start = next;
     }
     Ok(instants)
@@ -107,4 +92,49 @@ fn a_five_field_expression_is_refused() {
 #[test]
 fn nonsense_is_refused() {
     assert!(next_five("not a schedule", START).is_err());
+}
+
+#[test]
+fn a_refusal_carries_the_text_the_daemon_wrote_before() {
+    let Err(HardeningError::Config(text)) = Schedule::parse("0 2 * * *") else {
+        panic!("a five-field expression must be a configuration error");
+    };
+    assert!(text.starts_with("Invalid cron expression: "), "{text}");
+}
+
+#[test]
+fn the_start_instant_is_never_a_firing_and_a_fraction_counts_as_its_second() {
+    let schedule = Schedule::parse("0 */15 * * * *").unwrap();
+    let firing = 1767226500;
+    let before = time::from_unix_parts(firing - 1, 500_000_000).unwrap();
+    let on = at(firing);
+    let after = time::from_unix_parts(firing, 500_000_000).unwrap();
+    let results = [before, on, after].map(|start| schedule.next_after(start).unwrap());
+    assert_eq!(results, [at(firing), at(firing + 900), at(firing + 900)]);
+    for result in results {
+        assert_eq!(result.subsec_nanosecond(), 0);
+    }
+}
+
+#[test]
+fn a_wait_step_never_exceeds_thirty_seconds_and_ends_when_due() {
+    let now = at(START);
+    assert_eq!(LONGEST_WAIT_STEP, Duration::from_secs(30));
+    assert_eq!(
+        wait_step(now, at(START + 10)),
+        Some(Duration::from_secs(10))
+    );
+    assert_eq!(
+        wait_step(now, at(START + 300)),
+        Some(Duration::from_secs(30))
+    );
+    assert_eq!(wait_step(now, now), None);
+    assert_eq!(wait_step(at(START + 1), now), None);
+}
+
+#[test]
+fn an_expression_that_never_occurs_has_no_next_instant() {
+    if let Ok(schedule) = Schedule::parse("0 0 0 30 2 *") {
+        assert_eq!(schedule.next_after(at(START)), None);
+    }
 }

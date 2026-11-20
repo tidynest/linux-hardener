@@ -279,6 +279,14 @@ fn the_named_formats_match_their_pinned_text() {
 }
 
 #[test]
+fn utc_zoned_keeps_the_instant_and_names_utc() {
+    let zoned = utc_zoned(instant(1767225600, 500_000_000));
+    assert_eq!(zoned.timestamp(), instant(1767225600, 500_000_000));
+    assert_eq!(zoned.offset(), jiff::tz::Offset::UTC);
+    assert_eq!((zoned.year(), zoned.month(), zoned.day()), (2026, 1, 1));
+}
+
+#[test]
 fn now_reads_the_system_clock() {
     let before = Timestamp::try_from(SystemTime::now()).unwrap();
     let read = now();
