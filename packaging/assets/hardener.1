@@ -395,9 +395,10 @@ Subcommands:
 .BR install ,
 .BR uninstall ,
 .BR status .
-The timer runs on the system's local time, unlike the daemon's
+The timer runs on the system's local time unless its expression names a time
+zone, while the daemon reads its
 .B schedule
-key, which is UTC.
+key in UTC.
 All four honour the global
 .BR \-\-format .
 Under

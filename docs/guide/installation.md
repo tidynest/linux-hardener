@@ -298,8 +298,8 @@ sudo hardener systemd status
 `systemctl enable --now linux-hardener.timer` itself, so no separate `systemctl`
 step is needed. Pass `--user` to install into `~/.config/systemd/user` instead,
 and `--schedule` to change the calendar expression from the `daily` default.
-systemd reads that expression in the system's local time, unlike the daemon's
-`schedule` key, which is UTC.
+systemd reads that expression in the system's local time unless it names a
+time zone, while the daemon reads its `schedule` key in UTC.
 
 ### Optional: Install Polkit Policy
 

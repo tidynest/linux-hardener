@@ -1087,9 +1087,10 @@ hardener daemon status [FLAGS]
 
 Generate, install, and manage systemd unit files for scheduled scanning.
 
-The timer runs on the system's local time, as systemd reads every `OnCalendar`
-expression, while the daemon reads its `schedule` key in UTC. The same hour
-names two different moments unless the system clock is set to UTC.
+The timer runs on the system's local time, as systemd reads an `OnCalendar`
+expression unless the expression names a time zone, while the daemon reads its
+`schedule` key in UTC. The same hour names two different moments unless the
+system's time zone is UTC.
 
 All four verbs honour the global `-f`, `--format`. Under `--format json` each
 prints one envelope on stdout instead of its human text: `generate` carries the
@@ -1118,7 +1119,7 @@ hardener systemd generate [FLAGS]
 |------|-------------|---------|
 | `-o`, `--output <DIR>` | Write files to a directory instead of stdout | stdout |
 | `--binary <PATH>` | Path to the hardener binary | auto-detected |
-| `-s`, `--schedule <EXPR>` | systemd calendar expression in local time (e.g. `daily`, `*-*-* 02:00:00`) | `daily` |
+| `-s`, `--schedule <EXPR>` | systemd calendar expression, read in local time unless it names a time zone (e.g. `daily`, `*-*-* 02:00:00`) | `daily` |
 
 **The global `-C`, `--config` is written into the unit, not just used to
 generate it.** Given `-C`, the service runs
@@ -1153,7 +1154,7 @@ sudo hardener systemd install [FLAGS]
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--user` | Install as user service instead of system service | system |
-| `-s`, `--schedule <EXPR>` | systemd calendar expression in local time | `daily` |
+| `-s`, `--schedule <EXPR>` | systemd calendar expression, read in local time unless it names a time zone | `daily` |
 
 **System vs user install:** System install (`sudo`, no `--user`) runs as root and can apply all hardening changes. User install (`--user`, no sudo) runs under your user account, suitable for scan-only monitoring.
 

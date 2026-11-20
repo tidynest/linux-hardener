@@ -649,8 +649,8 @@ pub enum SystemdAction {
 
         /// Schedule in systemd calendar format (e.g., "daily", "*-*-* 02:00:00").
         ///
-        /// systemd reads it in the system's local time, unlike the daemon's
-        /// `schedule` key, which is UTC.
+        /// systemd reads it in the system's local time unless it names a time
+        /// zone, while the daemon reads its `schedule` key in UTC.
         #[arg(short, long, default_value = "daily")]
         schedule: String,
     },
@@ -663,8 +663,8 @@ pub enum SystemdAction {
 
         /// Schedule in systemd calendar format.
         ///
-        /// systemd reads it in the system's local time, unlike the daemon's
-        /// `schedule` key, which is UTC.
+        /// systemd reads it in the system's local time unless it names a time
+        /// zone, while the daemon reads its `schedule` key in UTC.
         #[arg(short, long, default_value = "daily")]
         schedule: String,
     },

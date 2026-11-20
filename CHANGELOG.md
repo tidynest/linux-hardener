@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as in "Daily at 02:00 UTC", and so do the custom cron hint, the CLI help, the
   man page, `daemon status` and the reference documents. The systemd timer is
   a different mechanism and runs on the system's local time, as systemd reads
-  `OnCalendar`. The packaged timer, the generated one, the `systemd` help and
+  an `OnCalendar` expression that names no time zone. The packaged timer, the generated one, the `systemd` help and
   the documents now say so. No firing time changed, and no default or parsing
   changed either.
 - **The packages carry the licences of the fonts the binaries embed.** The

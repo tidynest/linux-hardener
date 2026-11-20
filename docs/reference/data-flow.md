@@ -1363,7 +1363,7 @@ pub struct Daemon {
 
 The conversion keeps the hour as written. systemd reads the result in the
 system's local time, while the daemon reads its own `schedule` in UTC, so the
-two fire at the same moment only on a host whose clock is set to UTC.
+two name the same hour only on a host whose time zone is UTC.
 
 ### Generated Unit Files
 
