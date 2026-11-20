@@ -25,7 +25,7 @@ use hardener_types::time::{self, Timestamp};
 use std::time::Duration;
 
 /// A six-field cron expression, seconds first, read as UTC.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[cfg_attr(
     not(test),
     expect(dead_code, reason = "the daemon loop task adds the first caller")

@@ -134,7 +134,6 @@ fn a_wait_step_never_exceeds_thirty_seconds_and_ends_when_due() {
 
 #[test]
 fn an_expression_that_never_occurs_has_no_next_instant() {
-    if let Ok(schedule) = Schedule::parse("0 0 0 30 2 *") {
-        assert_eq!(schedule.next_after(at(START)), None);
-    }
+    let outcome = Schedule::parse("0 0 0 30 2 *").map(|schedule| schedule.next_after(at(START)));
+    assert!(matches!(outcome, Err(_) | Ok(None)), "{outcome:?}");
 }
