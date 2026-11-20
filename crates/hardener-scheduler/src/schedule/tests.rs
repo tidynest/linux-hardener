@@ -135,23 +135,22 @@ fn next_five(expression: &str, after: i64) -> Result<[i64; 5]> {
     Ok(instants)
 }
 
-/// Checks that every expression in `recorded` fires at its five instants.
-fn assert_fires_as_recorded(recorded: &[(&str, [i64; 5])]) {
-    let computed: Vec<_> = recorded
+/// Each expression in `recorded` with the five instants it fires at now.
+fn computed<'table>(recorded: &[(&'table str, [i64; 5])]) -> Vec<(&'table str, [i64; 5])> {
+    recorded
         .iter()
         .map(|(expression, _)| (*expression, next_five(expression, START).unwrap()))
-        .collect();
-    assert_eq!(computed, recorded.to_vec());
+        .collect()
 }
 
 #[test]
 fn the_schedule_fires_when_it_did_under_tokio_cron_scheduler() {
-    assert_fires_as_recorded(FIRINGS);
+    assert_eq!(computed(FIRINGS), FIRINGS);
 }
 
 #[test]
 fn the_schedule_fires_when_croner_3_did_in_the_scratch_recording() {
-    assert_fires_as_recorded(CRONER_3_SCRATCH_FIRINGS);
+    assert_eq!(computed(CRONER_3_SCRATCH_FIRINGS), CRONER_3_SCRATCH_FIRINGS);
 }
 
 #[test]
