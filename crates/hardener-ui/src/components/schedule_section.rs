@@ -167,7 +167,7 @@ pub fn ScheduleSection(form: SchedulerForm) -> impl IntoView {
                             on:input=move |ev| form.custom_cron.set(form_helpers::input_value(&ev))
                         />
                         <span class="form-hint">
-                            "Format: sec min hour day month weekday. A custom cron overrides the preset above."
+                            "Format: sec min hour day month weekday, read in UTC. A custom cron overrides the preset above."
                         </span>
                     </div>
                 </Show>

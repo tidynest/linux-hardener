@@ -874,7 +874,7 @@ default.
 
 A typo is the cost of this. Nothing rejects an unknown key, here or anywhere
 else in the file, so `scheduel = "0 0 5 * * *"` is not an error and not a
-setting: the daemon runs on the 02:00 default and no command says otherwise.
+setting: the daemon runs on the 02:00 UTC default and no command says otherwise.
 Check `hardener daemon status`, which prints the schedule it actually resolved.
 
 What a partial table does **not** do is merge across files. The first file

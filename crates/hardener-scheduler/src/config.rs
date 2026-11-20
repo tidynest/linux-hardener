@@ -56,7 +56,8 @@ fn default_data_dir() -> PathBuf {
 pub struct SchedulerConfig {
     /// Enable scheduled scanning daemon.
     pub enabled: bool,
-    /// Cron expression for scan schedule (6-field: sec min hour dom mon dow)
+    /// Cron expression for scan schedule (6-field: sec min hour dom mon dow),
+    /// read in UTC.
     pub schedule: String,
     /// Plugins to scan (empty = all plugins).
     pub plugins: Vec<String>,
@@ -72,7 +73,7 @@ impl Default for SchedulerConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            schedule: "0 0 2 * * *".into(), // Daily at 02:00
+            schedule: "0 0 2 * * *".into(), // Daily at 02:00 UTC
             plugins: Vec::new(),
             min_severity: "medium".into(),
             storage: StorageConfig::default(),

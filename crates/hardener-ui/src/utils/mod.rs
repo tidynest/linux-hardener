@@ -1196,12 +1196,13 @@ pub fn fleet_rollback_aggregate(outcomes: &[FleetRollbackOutcome]) -> String {
 }
 
 /// Cron presets with display labels and 6-field cron expressions. The single
-/// source shared by the Scheduler select and the helpers below.
+/// source shared by the Scheduler select and the helpers below. The daemon
+/// reads every cron in UTC, so each label names the zone.
 pub const SCHEDULE_PRESETS: &[(&str, &str)] = &[
-    ("Daily at 2:00 AM", "0 0 2 * * *"),
-    ("Every 6 hours", "0 0 */6 * * *"),
-    ("Every 12 hours", "0 0 */12 * * *"),
-    ("Weekly on Monday", "0 0 2 * * Mon"),
+    ("Daily at 02:00 UTC", "0 0 2 * * *"),
+    ("Every 6 hours from 00:00 UTC", "0 0 */6 * * *"),
+    ("Every 12 hours from 00:00 UTC", "0 0 */12 * * *"),
+    ("Weekly on Monday at 02:00 UTC", "0 0 2 * * Mon"),
 ];
 
 /// Cron expression for a preset label, if it names a known preset.

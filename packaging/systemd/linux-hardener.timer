@@ -3,6 +3,8 @@ Description=Linux Hardener scheduled security scan (timer)
 Documentation=https://github.com/tidynest/linux-hardener
 
 [Timer]
+# systemd reads OnCalendar in the system's local time, unlike the
+# daemon's schedule key, which is UTC.
 OnCalendar=*-*-* 02:00:00
 Persistent=true
 RandomizedDelaySec=300

@@ -54,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The desktop and the documents say the daemon's schedule is UTC.** The
+  daemon has always read its cron schedule in UTC, but the desktop's presets
+  read "Daily at 2:00 AM", which looks like local time. They now name the zone,
+  as in "Daily at 02:00 UTC", and so do the custom cron hint, the CLI help, the
+  man page, `daemon status` and the reference documents. The systemd timer is
+  a different mechanism and runs on the system's local time, as systemd reads
+  `OnCalendar`. The packaged timer, the generated one, the `systemd` help and
+  the documents now say so. No firing time changed, and no default or parsing
+  changed either.
 - **The packages carry the licences of the fonts the binaries embed.** The
   PDF report embeds Noto Sans and the desktop embeds Martian Mono and IBM Plex
   Sans, all three under the SIL Open Font License 1.1, which requires its text

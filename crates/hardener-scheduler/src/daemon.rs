@@ -175,7 +175,7 @@ impl Daemon {
         }
 
         info!(
-            "Starting daemon with schedule '{}'",
+            "Starting daemon with schedule '{}' in UTC",
             self.daemon_config.schedule
         );
 

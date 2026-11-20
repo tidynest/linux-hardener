@@ -620,6 +620,8 @@ pub enum ScopeAction {
 #[derive(Subcommand)]
 pub enum DaemonAction {
     /// Start the scheduling daemon (blocks until shutdown).
+    ///
+    /// The daemon reads the `schedule` key of `[scheduler]` in UTC.
     Start,
 
     /// Run a single scan immediately without starting the daemon,
@@ -646,6 +648,9 @@ pub enum SystemdAction {
         binary: Option<std::path::PathBuf>,
 
         /// Schedule in systemd calendar format (e.g., "daily", "*-*-* 02:00:00").
+        ///
+        /// systemd reads it in the system's local time, unlike the daemon's
+        /// `schedule` key, which is UTC.
         #[arg(short, long, default_value = "daily")]
         schedule: String,
     },
@@ -657,6 +662,9 @@ pub enum SystemdAction {
         user: bool,
 
         /// Schedule in systemd calendar format.
+        ///
+        /// systemd reads it in the system's local time, unlike the daemon's
+        /// `schedule` key, which is UTC.
         #[arg(short, long, default_value = "daily")]
         schedule: String,
     },

@@ -384,6 +384,9 @@ Subcommands:
 .BR start ,
 .BR run\-once ,
 .BR status .
+The daemon reads the
+.B schedule
+key in UTC.
 .TP
 .B systemd
 Manage systemd unit files for automated scanning.
@@ -392,6 +395,9 @@ Subcommands:
 .BR install ,
 .BR uninstall ,
 .BR status .
+The timer runs on the system's local time, unlike the daemon's
+.B schedule
+key, which is UTC.
 All four honour the global
 .BR \-\-format .
 Under

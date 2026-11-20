@@ -823,7 +823,7 @@ pub async fn validate_config(path: String) -> Result<ConfigSummary, String>
 | File | Purpose |
 |------|---------|
 | `packaging/systemd/linux-hardener.service` | Oneshot service for scheduled security scans |
-| `packaging/systemd/linux-hardener.timer` | Timer unit triggering daily scans at 02:00 |
+| `packaging/systemd/linux-hardener.timer` | Timer unit triggering daily scans at 02:00 local time |
 
 ---
 

@@ -1349,7 +1349,7 @@ fn rollback_aggregate_sums_checkpoints_over_hosts() {
 
 #[test]
 fn preset_cron_maps_known_and_unknown() {
-    assert_eq!(preset_cron("Daily at 2:00 AM"), Some("0 0 2 * * *"));
+    assert_eq!(preset_cron("Daily at 02:00 UTC"), Some("0 0 2 * * *"));
     assert_eq!(preset_cron("nope"), None);
 }
 
@@ -1357,7 +1357,7 @@ fn preset_cron_maps_known_and_unknown() {
 fn preset_label_for_cron_reverse_maps() {
     assert_eq!(
         preset_label_for_cron("0 0 */6 * * *"),
-        Some("Every 6 hours")
+        Some("Every 6 hours from 00:00 UTC")
     );
     assert_eq!(preset_label_for_cron("0 0 2 5 * *"), None);
 }
@@ -1365,7 +1365,7 @@ fn preset_label_for_cron_reverse_maps() {
 #[test]
 fn effective_cron_custom_overrides_preset() {
     assert_eq!(
-        effective_schedule_cron("Daily at 2:00 AM", "0 30 3 * * *"),
+        effective_schedule_cron("Daily at 02:00 UTC", "0 30 3 * * *"),
         "0 30 3 * * *"
     );
 }
@@ -1373,7 +1373,7 @@ fn effective_cron_custom_overrides_preset() {
 #[test]
 fn effective_cron_falls_back_to_preset_when_custom_empty() {
     assert_eq!(
-        effective_schedule_cron("Every 12 hours", ""),
+        effective_schedule_cron("Every 12 hours from 00:00 UTC", ""),
         "0 0 */12 * * *"
     );
 }

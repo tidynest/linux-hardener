@@ -51,7 +51,8 @@ impl SystemdGenerator {
     ///
     /// # Arguments
     /// * `binary_path` - Absolute path to the hardener binary
-    /// * `calendar` - Systemd OnCalendar expression (e.g., "daily", "*-*-* 02:00:00")
+    /// * `calendar` - Systemd OnCalendar expression (e.g., "daily", "*-*-* 02:00:00"),
+    ///   which systemd reads in local time
     pub fn new(binary_path: PathBuf, calendar: impl Into<String>) -> Self {
         Self {
             binary_path,
@@ -137,6 +138,8 @@ Description={description} (timer)
 Documentation=https://github.com/tidynest/linux-hardener
 
 [Timer]
+# systemd reads OnCalendar in the system's local time, unlike the
+# daemon's schedule key, which is UTC.
 OnCalendar={calendar}
 Persistent=true
 RandomizedDelaySec=300

@@ -26,7 +26,7 @@ pub async fn start(format: OutputFormat, quiet: bool, config_path: Option<&PathB
     if !quiet {
         output::status(
             &format,
-            &format!("Starting daemon with schedule '{}'", config.schedule),
+            &format!("Starting daemon with schedule '{}' in UTC", config.schedule),
         );
     }
 
@@ -163,7 +163,7 @@ pub async fn status(
             if !quiet {
                 println!("Scheduler Configuration:");
                 println!("  Enabled:  {}", config.enabled);
-                println!("  Schedule: {}", config.schedule);
+                println!("  Schedule: {} in UTC", config.schedule);
                 println!("  Database: {}", config.storage.database_path.display());
                 println!();
             }

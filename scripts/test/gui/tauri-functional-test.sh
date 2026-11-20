@@ -409,12 +409,12 @@ pass "Scheduler enabled checkbox toggled"
 # Tab to Schedule dropdown
 tw -k Tab; sleep 0.2
 
-# Select "Every 6 hours"
+# Select "Every 6 hours from 00:00 UTC"
 tw -k space; sleep 0.3
 tw -k Down; sleep 0.2
 tw -k Return; sleep 0.3
 shot "fn-36-schedule-6h.png"
-pass "Schedule changed to Every 6 hours"
+pass "Schedule changed to Every 6 hours from 00:00 UTC"
 
 # Tab to plugin checkboxes (cron hidden since not Custom)
 tw -k Tab; sleep 0.15

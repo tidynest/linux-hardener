@@ -1028,7 +1028,7 @@ elevates, and it elevates exactly when the executor's own `write_file` does.
 │  Daemon::start() or Daemon::run_once()                       │
 │  ├─ Check daemon_scan_in_progress (AtomicBool guard)         │
 │  ├─ If scheduled: run_schedule checks the clock at least     │
-│  │  every 30 s and runs the scan at each cron instant        │
+│  │  every 30 s and runs the scan at each UTC cron instant    │
 │  └─ Calls ScanRunner::run()                                  │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -1360,6 +1360,10 @@ pub struct Daemon {
 | `0 0 * * 0` | `Sun *-*-* 00:00:00` |
 | `0 3 1 * *` | `*-*-01 03:00:00` |
 | `30 14 15 6 *` | `*-06-15 14:30:00` |
+
+The conversion keeps the hour as written. systemd reads the result in the
+system's local time, while the daemon reads its own `schedule` in UTC, so the
+two fire at the same moment only on a host whose clock is set to UTC.
 
 ### Generated Unit Files
 

@@ -149,7 +149,7 @@ test.describe('Scheduler', () => {
     await expect(page.getByText(/Loading configuration/i)).toBeVisible();
 
     await expect(toggle).toBeVisible({ timeout: 10000 });
-    await expect(schedule).toHaveValue('Daily at 2:00 AM');
+    await expect(schedule).toHaveValue('Daily at 02:00 UTC');
     await expect(save).toBeEnabled();
 
     await page.getByText('Enable scheduled scanning').click();
