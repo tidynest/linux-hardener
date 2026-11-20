@@ -49,9 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which differs from 1.9.1. Measured here, `0 0 3 * * 7L` parsed under 1.9.1
   and never fired, and it now fires at 03:00 UTC on the last Sunday of each
   month. croner's 4.0.3 changelog gives `7#L` the same change, which was not
-  measured here. If the schedule task ends by itself, `daemon start` now
-  returns an error and exits non-zero, where 1.9.1 would have carried on
-  without scanning.
+  measured here. If the schedule task ends by itself, `daemon start` returns
+  an error and exits non-zero.
 
 ### Fixed
 
@@ -143,11 +142,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `chrono` stays listed there only under `serde_with`, which does not build
   it: `cargo tree -i chrono --target all` prints nothing, which shows that no
   crate in the build depends on it on any target. With the two entries taken
-  out of
-  `deny.toml`, `cargo deny check` passes and names neither advisory, and
-  `cargo audit` exits 0. It prints one warning, for RUSTSEC-2026-0543 on the
-  `chrono` line under `serde_with`, and nothing for RUSTSEC-2026-0555. The
-  acceptance and its section in `SECURITY.md` are removed.
+  out of `deny.toml`, `cargo deny check` passes and names neither advisory,
+  and `cargo audit` exits 0. It prints one warning, for RUSTSEC-2026-0543 on
+  the `chrono` line under `serde_with`, and nothing for RUSTSEC-2026-0555.
+  The acceptance and its section in `SECURITY.md` are removed.
 - **`pin-utils` leaves the lockfile, for RUSTSEC-2026-0441.** Its repository
   was archived on 2026-10-01, so it will get no more releases. `futures-util`
   0.3.31 and `hyper` 1.8.1 pulled it in, and both dropped it later:

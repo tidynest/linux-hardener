@@ -167,18 +167,27 @@ async fn start_runs_a_scheduled_scan_through_its_own_loop() {
         outcome = daemon.start(plugins, context) => panic!("start ended by itself: {outcome:?}"),
         found = timeout(Duration::from_secs(15), a_scheduled_session_appears(&history)) => found.is_ok(),
     };
+    // Only `start` leaving its wait empties the slot, and nothing has sent a
+    // shutdown, so an empty slot means the loop ended or panicked.
+    let still_waiting = daemon.daemon_scheduler.is_some();
     let stopped = timeout(Duration::from_secs(15), daemon.stop())
         .await
         .expect("stop returns once the loop and any scan have ended");
 
     assert!(found, "no scheduled session within 15 seconds");
+    assert!(still_waiting, "start left its wait before the race ended");
     assert!(stopped.is_ok(), "{stopped:?}");
+}
+
+/// A schedule task that panics as soon as it runs.
+fn task_that_panics() -> JoinHandle<()> {
+    tokio::spawn(async { panic!("the schedule task fails") })
 }
 
 #[tokio::test]
 async fn stop_reports_a_schedule_task_that_panicked() {
     let (mut daemon, _dir) = setup_test_daemon().await;
-    daemon.daemon_scheduler = Some(tokio::spawn(async { panic!("the schedule task fails") }));
+    daemon.daemon_scheduler = Some(task_that_panics());
 
     let result = timeout(Duration::from_secs(5), daemon.stop())
         .await
@@ -187,11 +196,45 @@ async fn stop_reports_a_schedule_task_that_panicked() {
     assert!(result.is_err(), "a panic is not a clean stop");
 }
 
+/// The end of `start` with a schedule task that panics. The sender stays
+/// alive, so only the task can end the wait, and its failure has to come out.
+#[tokio::test]
+async fn the_end_of_start_reports_a_schedule_task_that_panicked() {
+    let (mut daemon, _dir) = setup_test_daemon().await;
+    let (_sender, receiver) = broadcast::channel(1);
+    daemon.daemon_scheduler = Some(task_that_panics());
+
+    let result = timeout(Duration::from_secs(5), daemon.wait_then_shut_down(receiver))
+        .await
+        .expect("a panicked task ends the wait");
+
+    assert!(result.is_err(), "a panic is not a clean stop");
+}
+
+/// With the slot already emptied by the wait, the shutdown passes on the
+/// failure it is given, as there is no handle left to learn it from.
+#[tokio::test]
+async fn shutdown_passes_on_a_failure_the_wait_already_took() {
+    let (mut daemon, _dir) = setup_test_daemon().await;
+    let failure = task_that_panics()
+        .await
+        .expect_err("the schedule task panics");
+
+    let result = timeout(
+        Duration::from_secs(5),
+        daemon.shutdown_scheduler(Err(failure)),
+    )
+    .await
+    .expect("an empty slot leaves nothing to wait for");
+
+    assert!(result.is_err(), "a panic is not a clean stop");
+}
+
 #[tokio::test]
 async fn the_wait_in_start_ends_when_the_schedule_task_panics() {
     // The sender stays alive, so only the task can end the wait.
     let (_sender, receiver) = broadcast::channel(1);
-    let mut slot = Some(tokio::spawn(async { panic!("the schedule task fails") }));
+    let mut slot = Some(task_that_panics());
 
     let ended = timeout(
         Duration::from_secs(5),

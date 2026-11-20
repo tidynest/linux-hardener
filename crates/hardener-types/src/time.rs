@@ -191,13 +191,6 @@ pub fn format_local(instant: Timestamp, pattern: &str) -> String {
         .to_string()
 }
 
-/// The current instant in UTC with its zone attached, for code that needs the
-/// calendar fields of now without a second clock read.
-#[cfg(feature = "clock")]
-pub fn now_utc_zoned() -> Zoned {
-    utc_zoned(now())
-}
-
 /// The machine's time zone. The library's own lookup comes first and reads
 /// `TZ` and `/etc/localtime`. Then `/etc/localtime` is read as TZif data, then
 /// the zone name in `/etc/timezone` is resolved through the library's time

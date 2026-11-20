@@ -211,7 +211,15 @@ impl Daemon {
 
         info!("Daemon running, waiting for shutdown signal");
 
-        let ended = wait_for_shutdown(shutdown_rx, &mut self.daemon_scheduler).await;
+        self.wait_then_shut_down(shutdown_rx).await
+    }
+
+    /// The wait at the end of [`start`](Self::start), followed by the
+    /// shutdown, which receives the wait's result. It is a method of its own
+    /// so a test can hand it a schedule task that panics, as `start` gives no
+    /// way to make one.
+    async fn wait_then_shut_down(&mut self, shutdown: broadcast::Receiver<()>) -> Result<()> {
+        let ended = wait_for_shutdown(shutdown, &mut self.daemon_scheduler).await;
         if ended.is_ok() {
             info!("Shutdown signal received");
         }

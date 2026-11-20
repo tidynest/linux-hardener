@@ -290,10 +290,8 @@ fn utc_zoned_keeps_the_instant_and_names_utc() {
 fn now_reads_the_system_clock() {
     let before = Timestamp::try_from(SystemTime::now()).unwrap();
     let read = now();
-    let zoned = now_utc_zoned();
     let after = Timestamp::try_from(SystemTime::now()).unwrap();
-    assert!(before <= read && read <= zoned.timestamp() && zoned.timestamp() <= after);
-    assert_eq!(zoned.offset(), jiff::tz::Offset::UTC);
+    assert!(before <= read && read <= after);
 }
 
 /// Read against the standard library's clock, so a helper that returned a
