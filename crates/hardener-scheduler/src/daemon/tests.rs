@@ -211,6 +211,37 @@ async fn the_end_of_start_reports_a_schedule_task_that_panicked() {
     assert!(result.is_err(), "a panic is not a clean stop");
 }
 
+/// `start` run to its end, on a runtime built with no timers. The schedule
+/// task panics at its first sleep, which ends the wait in `start`, and the
+/// failure has to come out of `start` itself.
+///
+/// No firing comes between the loop's two clock reads, short of a leap day
+/// arriving in that gap, so no scan runs. The signal handler hooks SIGTERM
+/// and SIGINT, as every run of `start` does, and raises no signal. The
+/// runtime is built inside a blocking task, since a runtime cannot be
+/// entered from within the test's own.
+#[tokio::test]
+async fn start_returns_the_failure_of_its_schedule_task() {
+    let (mut daemon, _dir) = setup_test_daemon().await;
+    daemon.daemon_config.enabled = true;
+    daemon.daemon_config.schedule = "0 0 0 29 2 *".into();
+    let plugins = Arc::new(PluginManager::new(hardener_core::PluginRegistry::new()));
+    let context = Arc::new(Context::new());
+
+    let result = tokio::task::spawn_blocking(move || {
+        let without_timers = tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .unwrap();
+        without_timers.block_on(daemon.start(plugins, context))
+    })
+    .await
+    .expect("start returns rather than panics");
+
+    let error = result.expect_err("a panicked schedule task is not a clean stop");
+    assert!(error.to_string().contains("timers are disabled"), "{error}");
+}
+
 /// With the slot already emptied by the wait, the shutdown passes on the
 /// failure it is given, as there is no handle left to learn it from.
 #[tokio::test]
