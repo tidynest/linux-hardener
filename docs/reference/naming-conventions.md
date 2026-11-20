@@ -1613,7 +1613,7 @@ module-level ones, and the user path is built inline from `dirs::config_dir()`.
 pub struct Daemon {
     daemon_config: SchedulerConfig,
     daemon_runner: Arc<ScanRunner>,
-    daemon_scheduler: Option<JobScheduler>,
+    daemon_scheduler: Option<JoinHandle<()>>,
     daemon_shutdown_tx: Option<broadcast::Sender<()>>,
     daemon_scan_in_progress: Arc<AtomicBool>,
 }

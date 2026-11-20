@@ -327,25 +327,7 @@ container user IDs. Run it from a directory only you can write in that case.
 
 `proc-macro-error2` (a fork of the also-unmaintained `proc-macro-error`, RUSTSEC-2024-0370) is unmaintained upstream with **no safe upgrade available**. It is pulled in purely transitively through the Leptos macro stack (`leptos_macro` / `leptos_router` / `rstml`) used by `hardener-ui`, and there is no first-party usage and no drop-in replacement short of removing Leptos. It is a compile-time proc-macro with no runtime attack surface. Accepted and ignored in `deny.toml`.
 
-### RUSTSEC-2026-0543 and RUSTSEC-2026-0555 (chrono, chrono-tz) - Unmaintained, accepted until the project moves off them
-
-Both crates were marked unmaintained on 2026-11-17, in every version, so no
-upgrade clears the advisories. Neither advisory reports a defect: they say
-that a future one would get no fix. No workspace crate depends on `chrono`
-any more. The timestamps and dates that used it now go through the `time`
-module in `hardener-types`, which uses `jiff`. Both crates
-are built only for `tokio-cron-scheduler`, which the scheduling daemon uses
-to read its cron expression. The lockfile also lists `chrono` under
-`serde_with`, which Tauri brings in and which does not build it.
-
-The two are ignored in `deny.toml` with a review date of 2027-01-31. The
-entries come out when no crate builds either one, which `cargo tree -i chrono`
-shows by finding no package, and `cargo deny check` passes without them. That
-needs the daemon's cron scheduler replaced, since its newest release still
-depends on both. The `serde_with` line stays in the lockfile after that and
-is not part of the condition, because nothing compiles it.
-
-The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained crates that `cargo deny` reports: `chrono` and `chrono-tz` above, and the transitive ones, which are the Unicode tables under `urlpattern`, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the one that only `cargo audit` reports: `glib` (RUSTSEC-2024-0429), an unsound crate under the webview layer. `cargo deny` checks unsound advisories for workspace crates only, so it never sees `glib`.
+The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained crates that `cargo deny` reports: the transitive ones, which are the Unicode tables under `urlpattern`, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the one that only `cargo audit` reports: `glib` (RUSTSEC-2024-0429), an unsound crate under the webview layer. `cargo deny` checks unsound advisories for workspace crates only, so it never sees `glib`.
 
 ## Contact
 

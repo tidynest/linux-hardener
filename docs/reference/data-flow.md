@@ -1027,7 +1027,7 @@ elevates, and it elevates exactly when the executor's own `write_file` does.
 ┌──────────────────────────────────────────────────────────────┐
 │  Daemon::start() or Daemon::run_once()                       │
 │  ├─ Check daemon_scan_in_progress (AtomicBool guard)         │
-│  ├─ If scheduled: tokio-cron-scheduler triggers at interval  │
+│  ├─ If scheduled: run_schedule wakes at each cron instant    │
 │  └─ Calls ScanRunner::run()                                  │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -1236,7 +1236,7 @@ opens `scheduler.db` through `scheduler_db_path` so it sees the history
 pub struct Daemon {
     daemon_config: SchedulerConfig,
     daemon_runner: Arc<ScanRunner>,
-    daemon_scheduler: Option<JobScheduler>,
+    daemon_scheduler: Option<JoinHandle<()>>,
     daemon_shutdown_tx: Option<broadcast::Sender<()>>,
     daemon_scan_in_progress: Arc<AtomicBool>,
 }
@@ -1253,11 +1253,11 @@ pub struct Daemon {
 ┌──────────────────────────────────────────────────────────────┐
 │  Daemon::start()                                             │
 │  ├─ Validate config.enabled == true                          │
-│  ├─ Create JobScheduler with tokio-cron-scheduler            │
-│  ├─ Parse cron expression from config.schedule               │
+│  ├─ Parse config.schedule with croner 4 (Schedule::parse)    │
 │  ├─ Create broadcast channel for shutdown signalling         │
 │  ├─ Spawn signal handler (SIGTERM, SIGINT)                   │
-│  └─ scheduler.start() - blocks until shutdown                │
+│  ├─ Spawn run_schedule, the daemon's own wait loop           │
+│  └─ Block until the shutdown signal arrives                  │
 └────────┬─────────────────────────────────────────────────────┘
          │ On schedule trigger
          ▼
@@ -1274,7 +1274,7 @@ pub struct Daemon {
 │  Graceful Shutdown                                           │
 │  ├─ Signal handler sends () on broadcast channel             │
 │  ├─ Wait for scan_in_progress to clear                       │
-│  ├─ scheduler.shutdown()                                     │
+│  ├─ Join the run_schedule task                               │
 │  └─ Return Ok(())                                            │
 └──────────────────────────────────────────────────────────────┘
 ```

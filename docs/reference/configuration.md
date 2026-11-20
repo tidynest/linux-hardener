@@ -887,7 +887,7 @@ keep them in one file.
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
 | `enabled` | bool | `false` | Must be `true` for `daemon start` to run. |
-| `schedule` | string | `"0 0 2 * * *"` | Six-field cron expression (sec min hour dom mon dow). The default scans daily at 02:00. |
+| `schedule` | string | `"0 0 2 * * *"` | Six-field cron expression (sec min hour dom mon dow), read in UTC. The default scans daily at 02:00 UTC. |
 | `plugins` | array of strings | `[]` | Plugins to scan on schedule; empty means all. |
 | `min_severity` | string | `"medium"` | Minimum severity recorded in scheduled scan results. |
 

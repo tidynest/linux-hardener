@@ -19,7 +19,6 @@ async-trait = { workspace = true }
 tokio       = { workspace = true }
 
 # Scheduling
-tokio-cron-scheduler = "0.15.1"
 croner = { version = "4.0.3", default-features = false, features = ["jiff"] }
 
 # Database

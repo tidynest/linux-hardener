@@ -28,10 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `time` module in `hardener-types`, which uses `jiff` 0.2, and a new test
   fails if any other crate depends on either library. Nothing
   stored or printed changed: the history databases, the audit log, the reports,
-  the file names and the desktop's text read as they did before. `chrono` is
-  still built, only for the cron library the scheduling daemon uses, until
-  that library is replaced in the next change. RUSTSEC-2026-0543 and
-  RUSTSEC-2026-0555 therefore stay accepted for now.
+  the file names and the desktop's text read as they did before. At that stage
+  `chrono` was still built, only for the cron library the scheduling daemon
+  used, so RUSTSEC-2026-0543 and RUSTSEC-2026-0555 stayed accepted. The next
+  entry records how the daemon's cron library was replaced.
+- **The daemon reads its schedule with `croner` 4 and its own wait loop
+  (#197).** `tokio-cron-scheduler` has left the workspace. The schedule is
+  still a six-field cron expression, read in UTC, and the default is still
+  02:00 UTC. A scan missed while the machine was suspended runs once on
+  resume, and it may start up to 30 seconds late. Missed scans never queue up.
 
 ### Fixed
 
@@ -114,15 +119,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   too, so no build can resolve an affected version. `email-encoding` moves to
   0.4.3 with it and brings in `base64` 0.23.1. The fuzz lockfile never carried
   `lettre`.
-- **`chrono` and `chrono-tz` are accepted as unmaintained until the project
-  moves off them.** RUSTSEC-2026-0543 and RUSTSEC-2026-0555 marked every
-  version of both unmaintained on 2026-11-17, so no upgrade clears them, and
-  `cargo deny` treats an unmaintained crate as an error. Neither advisory
-  reports a defect. No workspace crate depends on either any more. Both are
-  built only for `tokio-cron-scheduler`, the daemon's cron library, whose
-  newest release still needs both, until the scheduler change replaces that
-  library. The two are listed in `deny.toml` with a review date of
-  2027-01-31, and `SECURITY.md` says what removing them takes.
+- **Nothing builds `chrono` or `chrono-tz` any more (#197).** RUSTSEC-2026-0543
+  and RUSTSEC-2026-0555 marked every version of both unmaintained on
+  2026-11-17, so no upgrade could clear them, and `cargo deny` treats an
+  unmaintained crate as an error. Neither advisory reports a defect. Both
+  crates were accepted in `deny.toml` while the daemon's cron library built
+  them. That library is gone, `chrono-tz` has left the lockfile, and `chrono`
+  stays listed there only under `serde_with`, which does not build it:
+  `cargo tree -i chrono` finds no package. With the two entries taken out of
+  `deny.toml`, `cargo deny check` passes and names neither advisory, and
+  `cargo audit` exits 0. It prints one warning, for RUSTSEC-2026-0543 on the
+  `chrono` line under `serde_with`, and nothing for RUSTSEC-2026-0555. The
+  acceptance and its section in `SECURITY.md` are removed.
 - **`pin-utils` leaves the lockfile, for RUSTSEC-2026-0441.** Its repository
   was archived on 2026-10-01, so it will get no more releases. `futures-util`
   0.3.31 and `hyper` 1.8.1 pulled it in, and both dropped it later:
