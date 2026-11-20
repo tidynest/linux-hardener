@@ -8,28 +8,30 @@ use crate::{
     db::ScanHistoryManager,
     json_store::JsonStore,
     runner::{ScanRunner, ScanSummary, TriggerType},
+    schedule::{Schedule, wait_step},
 };
 use hardener_common::error::{HardeningError, Result};
 use hardener_core::{Context, PluginManager};
+use hardener_types::time::{self, Timestamp};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use tokio::sync::broadcast;
-use tokio_cron_scheduler::JobScheduler;
+use tokio::{sync::broadcast, task::JoinHandle};
 use tracing::{debug, error, info, warn};
 
-/// Scheduled scanning daemon using tokio-cron-scheduler.
+/// Scheduled scanning daemon.
 ///
-/// Manages the lifecycle of scheduled security scans, handling
-/// cron-based scheduling and graceful shutdown on Unix signals.
+/// Manages the lifecycle of scheduled security scans: a task of its own
+/// waits for each firing of the cron expression, and Unix signals end it
+/// gracefully.
 pub struct Daemon {
     /// Scheduler configuration (schedule expression, enabled state).
     daemon_config: SchedulerConfig,
     /// Scan execution runner.
     daemon_runner: Arc<ScanRunner>,
-    /// Cron job scheduler instance (created during start).
-    daemon_scheduler: Option<JobScheduler>,
+    /// The task running [`run_schedule`], created during start.
+    daemon_scheduler: Option<JoinHandle<()>>,
     /// Shutdown signal sender for coordinating graceful stop.
     daemon_shutdown_tx: Option<broadcast::Sender<()>>,
     /// Flag indicating if a scan is currently running.
@@ -100,10 +102,10 @@ impl Daemon {
         result
     }
 
-    /// Internal method called by the scheduler job.
+    /// Runs one scheduled scan.
     ///
-    /// This is a static async function because tokio-cron-scheduler
-    /// requires the job closure to own all its data (no `&self`).
+    /// An associated function with no `&self`, because each scan runs as a
+    /// task of its own and has to own everything it uses.
     async fn execute_scan(
         runner: Arc<ScanRunner>,
         plugin_manager: Arc<PluginManager>,
@@ -143,9 +145,9 @@ impl Daemon {
 
     /// Starts the daemon scheduler loop.
     ///
-    /// Creates a cron job based on the configuration schedule and begins
-    /// listening for shutdown signals. This method blocks until shutdown
-    /// is triggered via signal or `stop()`.
+    /// Reads the configured cron expression, spawns [`run_schedule`] with a
+    /// scan as its job and begins listening for shutdown signals. This method
+    /// blocks until shutdown is triggered via signal or `stop()`.
     ///
     /// # Arguments
     /// * `plugin_manager` - Configured plugin manager with resolved dependencies
@@ -155,7 +157,7 @@ impl Daemon {
     /// Returns an error if:
     /// - Scheduler is disabled in configuration
     /// - Cron expression is invalid
-    /// - Scheduler fails to start
+    /// - The schedule task panicked
     pub async fn start(
         &mut self,
         plugin_manager: Arc<PluginManager>,
@@ -173,50 +175,35 @@ impl Daemon {
             self.daemon_config.schedule
         );
 
-        // Create the job scheduler
-        let scheduler = JobScheduler::new()
-            .await
-            .map_err(|e| HardeningError::State(format!("Failed to create scheduler: {}", e)))?;
+        let schedule = Schedule::parse(&self.daemon_config.schedule)?;
 
-        // Clone Arc references for the job closure
+        // Clone Arc references for the scan closure
         let runner = self.daemon_runner.clone();
-        let pm = plugin_manager.clone();
-        let context = ctx.clone();
         let scan_flag = self.daemon_scan_in_progress.clone();
+        let on_due = move || {
+            Self::execute_scan(
+                runner.clone(),
+                plugin_manager.clone(),
+                ctx.clone(),
+                scan_flag.clone(),
+            )
+        };
 
-        // Create the cron job
-        let job = tokio_cron_scheduler::Job::new_async(
-            self.daemon_config.schedule.as_str(),
-            move |_uuid, _lock| {
-                let runner = runner.clone();
-                let pm = pm.clone();
-                let ctx = context.clone();
-                let flag = scan_flag.clone();
-
-                Box::pin(async move { Self::execute_scan(runner, pm, ctx, flag).await })
-            },
-        )
-        .map_err(|e| HardeningError::Config(format!("Invalid cron expression: {}", e)))?;
-
-        scheduler
-            .add(job)
-            .await
-            .map_err(|e| HardeningError::State(format!("Failed to add job: {}", e)))?;
-
-        // Set up shutdown channel
+        // Set up shutdown channel. The loop subscribes before it is spawned,
+        // so a shutdown sent from here on reaches it.
         let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
+        let schedule_shutdown = shutdown_tx.subscribe();
         self.daemon_shutdown_tx = Some(shutdown_tx.clone());
 
         // Spawn signal handler
         tokio::spawn(Self::signal_handler(shutdown_tx));
 
-        // start the scheduler
-        scheduler
-            .start()
-            .await
-            .map_err(|e| HardeningError::State(format!("Failed to start scheduler: {}", e)))?;
-
-        self.daemon_scheduler = Some(scheduler);
+        self.daemon_scheduler = Some(tokio::spawn(run_schedule(
+            schedule,
+            time::now,
+            schedule_shutdown,
+            on_due,
+        )));
 
         info!("Daemon running, waiting for shutdown signal");
 
@@ -264,42 +251,84 @@ impl Daemon {
 
     /// Gracefully stops the daemon.
     ///
-    /// Signals shutdown and waits for any in-progress scan to complete
-    /// before stopping the scheduler.
+    /// Signals shutdown, waits for the schedule task to end and then for any
+    /// in-progress scan to complete.
     ///
     /// # Errors
-    /// Returns an error if the scheduler fails to stop cleanly.
+    /// Returns an error if the schedule task panicked.
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop requested");
-
-        // Send shutdown signal if channel exists
-        if let Some(tx) = &self.daemon_shutdown_tx {
-            let _ = tx.send(());
-        }
-
         self.shutdown_scheduler().await
     }
 
     /// Internal helper to shutdown the scheduler and wait for scans.
+    ///
+    /// `start` sets the sender and the task together and this takes both, so
+    /// a task is never left waiting for a shutdown nobody can send. The task
+    /// ends before the wait for a scan, so it cannot start one the wait has
+    /// already passed.
     async fn shutdown_scheduler(&mut self) -> Result<()> {
+        if let Some(sender) = self.daemon_shutdown_tx.take() {
+            let _ = sender.send(());
+        }
+        let ended = match self.daemon_scheduler.take() {
+            Some(task) => task.await,
+            None => Ok(()),
+        };
+
         // Wait for in-progress scan to complete
         while self.daemon_scan_in_progress.load(Ordering::SeqCst) {
             debug!("Waiting for in-progress scan to complete...");
             tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
 
-        // Shutdown the scheduler
-        if let Some(mut scheduler) = self.daemon_scheduler.take() {
-            scheduler.shutdown().await.map_err(|e| {
-                HardeningError::State(format!("Failed to shut down scheduler: {}", e))
-            })?;
-        }
-
-        self.daemon_shutdown_tx = None;
+        ended.map_err(|failure| {
+            error!("The schedule task failed: {failure}");
+            HardeningError::State(format!("The schedule task failed: {failure}"))
+        })?;
 
         info!("Daemon stopped gracefully");
         Ok(())
     }
+}
+
+/// Runs `on_due` at each occurrence until `shutdown` fires.
+///
+/// The wait reads `clock` again after each sleep of at most
+/// [`LONGEST_WAIT_STEP`](crate::schedule::LONGEST_WAIT_STEP), because a tokio
+/// sleep stops while the machine is suspended. A firing missed during a
+/// suspend runs once on resume, and the next one is then found from the later
+/// of the clock and the instant just run. So a clock set back never brings an
+/// instant round twice, and missed firings never queue up. Any outcome of
+/// `shutdown.recv` ends the wait, a lagged or closed channel included.
+async fn run_schedule<Clock, Due, Fut>(
+    schedule: Schedule,
+    clock: Clock,
+    mut shutdown: broadcast::Receiver<()>,
+    on_due: Due,
+) where
+    Clock: Fn() -> Timestamp,
+    Due: Fn() -> Fut,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let mut due = schedule.next_after(clock());
+    while let Some(instant) = due {
+        match wait_step(clock(), instant) {
+            // Shutdown wins when both arms are ready, so a waiting shutdown
+            // is never passed over for one more scan.
+            Some(step) => tokio::select! {
+                biased;
+                _ = shutdown.recv() => return,
+                () = tokio::time::sleep(step) => {}
+            },
+            None => {
+                tokio::spawn(on_due());
+                due = schedule.next_after(clock().max(instant));
+            }
+        }
+    }
+    warn!("The schedule has no next firing, so no scan runs until the daemon stops");
+    let _ = shutdown.recv().await;
 }
 
 #[cfg(test)]

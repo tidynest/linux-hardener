@@ -15,7 +15,10 @@
 //! across unchanged, private items included.
 
 use super::*;
+use std::sync::atomic::{AtomicI64, AtomicUsize};
+use std::time::Duration;
 use tempfile::tempdir;
+use tokio::{task::JoinHandle, time::timeout};
 
 /// Helper to create test infrastructure.
 async fn setup_test_daemon() -> (Daemon, tempfile::TempDir) {
@@ -88,4 +91,224 @@ fn scan_in_progress_flag_is_atomic() {
     // Reset
     flag.store(false, Ordering::SeqCst);
     assert!(!flag.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn start_refuses_a_schedule_it_cannot_read() {
+    let (mut daemon, _dir) = setup_test_daemon().await;
+    daemon.daemon_config.enabled = true;
+    daemon.daemon_config.schedule = "not a schedule".into();
+    let plugins = Arc::new(PluginManager::new(hardener_core::PluginRegistry::new()));
+    let context = Arc::new(Context::new());
+
+    let result = timeout(Duration::from_secs(5), daemon.start(plugins, context))
+        .await
+        .expect("start returns without waiting for a shutdown");
+
+    let error = result.expect_err("an unreadable schedule is refused");
+    assert!(
+        error.to_string().contains("Invalid cron expression"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn stop_reports_a_schedule_task_that_panicked() {
+    let (mut daemon, _dir) = setup_test_daemon().await;
+    daemon.daemon_scheduler = Some(tokio::spawn(async { panic!("the schedule task fails") }));
+
+    let result = timeout(Duration::from_secs(5), daemon.stop())
+        .await
+        .expect("stop returns with no shutdown sender to send on");
+
+    assert!(result.is_err(), "a panic is not a clean stop");
+}
+
+/// 2026-01-01T01:00:00Z.
+const ONE: i64 = 1_767_229_200;
+/// 2026-01-01T02:00:00Z, the first firing of the default schedule after `ONE`.
+const TWO: i64 = 1_767_232_800;
+/// The default schedule, 02:00 UTC daily.
+const DAILY_AT_TWO: &str = "0 0 2 * * *";
+
+/// More clock reads than any test here needs. A loop that spins reaches it
+/// and panics, so the test fails where it would otherwise hang.
+const READ_LIMIT: usize = 100;
+
+/// A `run_schedule` task on a clock the test sets by hand, in Unix seconds.
+struct ScheduleLoop {
+    clock: Arc<AtomicI64>,
+    reads: Arc<AtomicUsize>,
+    calls: Arc<AtomicUsize>,
+    shutdown: broadcast::Sender<()>,
+    task: JoinHandle<()>,
+}
+
+impl ScheduleLoop {
+    fn start(expression: &str, seconds: i64) -> Self {
+        Self::start_with(expression, seconds, |_| {})
+    }
+
+    /// As [`start`](Self::start), with `on_call` run at each call before the
+    /// loop reads the clock again.
+    ///
+    /// Pauses tokio time first, so a sleep in the test moves it on without
+    /// waiting. Pausing here rather than with `start_paused` keeps the plain
+    /// `#[tokio::test]` attribute, the one the repository's test counters and
+    /// assertion check match.
+    fn start_with(
+        expression: &str,
+        seconds: i64,
+        on_call: impl Fn(&AtomicI64) + Send + 'static,
+    ) -> Self {
+        tokio::time::pause();
+        let clock = Arc::new(AtomicI64::new(seconds));
+        let reads = Arc::new(AtomicUsize::new(0));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (shutdown, receiver) = broadcast::channel(1);
+        let read_clock = {
+            let (clock, reads) = (clock.clone(), reads.clone());
+            move || {
+                let read = reads.fetch_add(1, Ordering::SeqCst);
+                assert!(read < READ_LIMIT, "the loop spins");
+                time::from_unix_seconds(clock.load(Ordering::SeqCst)).unwrap()
+            }
+        };
+        let on_due = {
+            let (clock, calls) = (clock.clone(), calls.clone());
+            move || {
+                on_call(&clock);
+                let calls = calls.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+        };
+        let schedule = Schedule::parse(expression).unwrap();
+        let task = tokio::spawn(run_schedule(schedule, read_clock, receiver, on_due));
+        Self {
+            clock,
+            reads,
+            calls,
+            shutdown,
+            task,
+        }
+    }
+
+    fn set_clock(&self, seconds: i64) {
+        self.clock.store(seconds, Ordering::SeqCst);
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+
+    fn reads(&self) -> usize {
+        self.reads.load(Ordering::SeqCst)
+    }
+
+    /// Sends shutdown and gives the task a second of tokio time to end. The
+    /// paused clock moves on by itself once every task waits, so a task that
+    /// misses the shutdown fails the timeout and does not hang the run.
+    async fn stop(self) {
+        let _ = self.shutdown.send(());
+        timeout(Duration::from_secs(1), self.task)
+            .await
+            .expect("the loop ends on shutdown")
+            .expect("the loop does not panic");
+    }
+}
+
+/// Lets `seconds` of tokio time pass, running every timer due on the way.
+async fn pass(seconds: u64) {
+    tokio::time::sleep(Duration::from_secs(seconds)).await;
+}
+
+#[tokio::test]
+async fn the_job_runs_once_when_its_instant_arrives() {
+    let schedule = ScheduleLoop::start(DAILY_AT_TWO, TWO - 10);
+    pass(30).await;
+    assert_eq!(schedule.calls(), 0, "the wall clock has not reached 02:00");
+
+    schedule.set_clock(TWO);
+    pass(30).await;
+    assert_eq!(schedule.calls(), 1);
+    schedule.stop().await;
+}
+
+#[tokio::test]
+async fn a_tick_missed_during_a_suspend_runs_once() {
+    let schedule = ScheduleLoop::start("0 0 * * * *", ONE);
+    pass(1).await;
+
+    // Four hourly firings fall inside the suspend, and tokio time does not
+    // count it.
+    schedule.set_clock(ONE + 4 * 3600);
+    pass(30).await;
+    assert_eq!(schedule.calls(), 1);
+    pass(60).await;
+    assert_eq!(schedule.calls(), 1, "no missed firing is made up later");
+    schedule.stop().await;
+}
+
+#[tokio::test]
+async fn a_schedule_with_no_next_instant_idles_until_shutdown() {
+    let schedule = ScheduleLoop::start("0 0 0 30 2 *", ONE);
+    pass(1).await;
+    let reads = schedule.reads();
+
+    pass(3600).await;
+    assert_eq!(schedule.calls(), 0);
+    assert_eq!(
+        schedule.reads(),
+        reads,
+        "an idle loop leaves the clock alone"
+    );
+    schedule.stop().await;
+}
+
+#[tokio::test]
+async fn shutdown_ends_the_wait() {
+    let schedule = ScheduleLoop::start(DAILY_AT_TWO, TWO - 10);
+    pass(1).await;
+
+    let calls = schedule.calls.clone();
+    schedule.stop().await;
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn a_clock_set_backwards_delays_the_job_and_does_not_repeat_it() {
+    let schedule = ScheduleLoop::start(DAILY_AT_TWO, TWO - 10);
+    pass(1).await;
+
+    schedule.set_clock(ONE);
+    pass(60).await;
+    assert_eq!(schedule.calls(), 0, "02:00 has not come round yet");
+
+    schedule.set_clock(TWO);
+    pass(30).await;
+    assert_eq!(schedule.calls(), 1);
+    pass(60).await;
+    assert_eq!(schedule.calls(), 1);
+    schedule.stop().await;
+}
+
+#[tokio::test]
+async fn a_clock_set_back_after_a_firing_does_not_repeat_it() {
+    // A step back of one second as the job starts, as NTP can make, lands
+    // before the loop reads the clock for the next firing.
+    let schedule = ScheduleLoop::start_with(DAILY_AT_TWO, TWO - 10, |clock| {
+        clock.store(TWO - 1, Ordering::SeqCst);
+    });
+    pass(5).await;
+
+    schedule.set_clock(TWO);
+    pass(10).await;
+    assert_eq!(schedule.calls(), 1);
+
+    schedule.set_clock(TWO + 30);
+    pass(60).await;
+    assert_eq!(schedule.calls(), 1, "02:00 ran once already");
+    schedule.stop().await;
 }

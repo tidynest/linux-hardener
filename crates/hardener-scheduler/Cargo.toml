@@ -56,3 +56,5 @@ hex = "0.4.3"
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio-test = "0.4.4"
+# A paused tokio clock, so the daemon loop's tests pass hours in no time.
+tokio = { workspace = true, features = ["test-util"] }
