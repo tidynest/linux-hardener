@@ -145,31 +145,6 @@ pub mod rfc3339 {
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Timestamp, D::Error> {
         Timestamp::deserialize(deserializer)
     }
-
-    /// The same adaptor for an `Option<Timestamp>`, writing `None` as null as
-    /// chrono's `Option<DateTime<Utc>>` did. A field that may be missing needs
-    /// `#[serde(default)]` beside it, because serde stops treating a missing
-    /// `Option` as `None` once a field names its own adaptor.
-    pub mod option {
-        use super::{Rfc3339, Timestamp};
-        use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-        /// Writes `Some` as [`super::serialize`] does and `None` as null,
-        /// through serde's own `Option` handling as chrono's derive did.
-        pub fn serialize<S: Serializer>(
-            instant: &Option<Timestamp>,
-            serializer: S,
-        ) -> Result<S::Ok, S::Error> {
-            instant.map(Rfc3339).serialize(serializer)
-        }
-
-        /// Reads null as `None` and anything else as [`super::deserialize`] does.
-        pub fn deserialize<'de, D: Deserializer<'de>>(
-            deserializer: D,
-        ) -> Result<Option<Timestamp>, D::Error> {
-            Option::<Timestamp>::deserialize(deserializer)
-        }
-    }
 }
 
 /// The current instant, as chrono's `Utc::now()` gave.

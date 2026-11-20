@@ -338,9 +338,12 @@ are built only for `tokio-cron-scheduler`, which the scheduling daemon uses
 to read its cron expression. The lockfile also lists `chrono` under
 `serde_with`, which Tauri brings in and which does not build it.
 
-The two are ignored in `deny.toml` with a review date of 2027-01-31, and the
-entries come out when the crates leave the lockfile. That needs the daemon's
-cron scheduler replaced, since its newest release still depends on both.
+The two are ignored in `deny.toml` with a review date of 2027-01-31. The
+entries come out when no crate builds either one, which `cargo tree -i chrono`
+shows by finding no package, and `cargo deny check` passes without them. That
+needs the daemon's cron scheduler replaced, since its newest release still
+depends on both. The `serde_with` line stays in the lockfile after that and
+is not part of the condition, because nothing compiles it.
 
 The complete set of accepted advisories is listed with a reason for each in two files. `deny.toml` holds the unmaintained crates that `cargo deny` reports: `chrono` and `chrono-tz` above, and the transitive ones, which are the Unicode tables under `urlpattern`, macro helpers and the PDF text shaper. `.cargo/audit.toml` holds the one that only `cargo audit` reports: `glib` (RUSTSEC-2024-0429), an unsound crate under the webview layer. `cargo deny` checks unsound advisories for workspace crates only, so it never sees `glib`.
 

@@ -71,7 +71,7 @@ feature-depth = 1
 # output a note when they are encountered.
 ignore = [
     # Temporary, #197, until the workspace moves off chrono. Unmaintained is not a vulnerability: no defect is reported in either crate.
-    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, every version, no fixed release; no workspace crate depends on it, and only tokio-cron-scheduler, the daemon's cron library, builds it, until the scheduler change replaces that library. Remove when chrono leaves the lockfile; reassess by 2027-01-31 if it has not" },
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, every version, no fixed release; no workspace crate depends on it, and only tokio-cron-scheduler, the daemon's cron library, builds it, until the scheduler change replaces that library. Remove when no crate builds chrono, which is when cargo tree -i chrono finds no package, and cargo deny passes without this entry; reassess by 2027-01-31 if it has not" },
     { id = "RUSTSEC-2026-0555", reason = "chrono-tz unmaintained, every version; transitive via tokio-cron-scheduler only, no first-party usage. Leaves with the daemon's cron scheduler in the same move; reassess by 2027-01-31" },
     # Unmaintained transitive utility/macro crates: no first-party usage, no drop-in replacement.
     { id = "RUSTSEC-2024-0370", reason = "proc-macro-error unmaintained; transitive build/macro dep" },

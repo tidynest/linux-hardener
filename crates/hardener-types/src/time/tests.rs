@@ -38,12 +38,6 @@ struct Stamped {
     at: Timestamp,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct MaybeStamped {
-    #[serde(with = "rfc3339::option", default)]
-    at: Option<Timestamp>,
-}
-
 fn written(at: Timestamp) -> String {
     serde_json::to_string(&Stamped { at }).unwrap()
 }
@@ -136,26 +130,6 @@ fn rfc3339_reads_the_spellings_1_9_1_read() {
 fn rfc3339_refuses_a_timestamp_without_an_offset() {
     assert!(read("2026-01-01T00:00:00").is_err());
     assert!(read("2026-01-01").is_err());
-}
-
-#[test]
-fn the_option_adaptor_round_trips_none_and_some() {
-    let none = serde_json::to_string(&MaybeStamped { at: None }).unwrap();
-    assert_eq!(none, r#"{"at":null}"#);
-    assert_eq!(
-        serde_json::from_str::<MaybeStamped>(&none).unwrap().at,
-        None
-    );
-
-    let at = instant(1767225600, 500_000_000);
-    let some = serde_json::to_string(&MaybeStamped { at: Some(at) }).unwrap();
-    assert_eq!(some, r#"{"at":"2026-01-01T00:00:00.500Z"}"#);
-    assert_eq!(
-        serde_json::from_str::<MaybeStamped>(&some).unwrap().at,
-        Some(at)
-    );
-
-    assert_eq!(serde_json::from_str::<MaybeStamped>("{}").unwrap().at, None);
 }
 
 #[test]
