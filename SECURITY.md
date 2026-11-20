@@ -354,4 +354,4 @@ For security concerns: [private vulnerability report](https://github.com/tidynes
 
 For general issues: [GitHub Issues](https://github.com/tidynest/linux-hardener/issues)
 
-**Last Updated**: 2026-11-18
+**Last Updated**: 2026-11-20
