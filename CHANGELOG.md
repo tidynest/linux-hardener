@@ -133,9 +133,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2026-11-17, so no upgrade could clear them, and `cargo deny` treats an
   unmaintained crate as an error. Neither advisory reports a defect. Both
   crates were accepted in `deny.toml` while the daemon's cron library built
-  them. That library is gone, `chrono-tz` has left the lockfile, and `chrono`
-  stays listed there only under `serde_with`, which does not build it:
-  `cargo tree -i chrono` finds no package. With the two entries taken out of
+  them. That library is gone, and `chrono-tz` has left the lockfile with it.
+  `chrono` stays listed there only under `serde_with`, which does not build
+  it: `cargo tree -i chrono` prints nothing, which shows that no crate in the
+  build depends on it. With the two entries taken out of
   `deny.toml`, `cargo deny check` passes and names neither advisory, and
   `cargo audit` exits 0. It prints one warning, for RUSTSEC-2026-0543 on the
   `chrono` line under `serde_with`, and nothing for RUSTSEC-2026-0555. The

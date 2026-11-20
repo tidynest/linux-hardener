@@ -386,7 +386,7 @@ are the whole public surface now.
 | `src/db.rs` | SQLite scan history | `ScanHistoryManager`, `ScanSession`, `ScanFinding`, `SeverityCounts` |
 | `src/json_store.rs` | JSON file storage | `JsonStore` |
 | `src/runner.rs` | Scan execution orchestrator | `ScanRunner`, `ScanSummary`, `TriggerType` |
-| `src/daemon.rs` | Cron-scheduled scanning daemon. A task of its own, `run_schedule`, compares the wall clock with the next firing in steps of at most 30 seconds, so a firing missed during a suspend runs once on resume, and finds the next firing from the later of the clock and the instant just run, so a clock set back never repeats one. SIGTERM or SIGINT stops it, and `stop` reports a task that panicked as an error | `Daemon` |
+| `src/daemon.rs` | Cron-scheduled scanning daemon. A task of its own, `run_schedule`, compares the wall clock with the next firing in steps of at most 30 seconds, so a firing missed during a suspend runs once on resume, and finds the next firing from the later of the clock and the instant just run, so a clock set back never repeats one. SIGTERM or SIGINT stops it. `start` also returns when that task ends by itself, after any running scan, and both `start` and `stop` report a task that panicked as an error | `Daemon` |
 | `src/notification/mod.rs` | Notification system module | `Notifier`, `NotificationResult`, `parse_severity()`, `meets_severity_threshold()` |
 | `src/notification/email.rs` | SMTP email notifications | `EmailNotifier` |
 | `src/notification/webhook.rs` | HTTP webhook notifications | `WebhookNotifier` |
@@ -397,7 +397,7 @@ are the whole public surface now.
 | `src/db/tests.rs` | Unit tests for `src/db.rs`, 16 tests over the host-aware scan history | Test-only; `super` resolves to `crate::db`, so its imports carried across unchanged |
 | `src/json_store/tests.rs` | Unit tests for `src/json_store.rs` | Test-only; `super` resolves to `crate::json_store`, so its imports carried across unchanged |
 | `src/runner/tests.rs` | Unit tests for `src/runner.rs` | Test-only; `super` resolves to `crate::runner`, so its imports carried across unchanged |
-| `src/daemon/tests.rs` | Unit tests for `src/daemon.rs`, 12 tests. Six drive `run_schedule` on paused tokio time and a clock the test sets by hand: a firing on time, a suspend, a schedule that never fires, shutdown during the wait, and the clock set back before and after a firing. Two more cover an unreadable schedule refused by `start` and a panicked task reported by `stop` | Test-only; `super` resolves to `crate::daemon`, so its imports carried across unchanged |
+| `src/daemon/tests.rs` | Unit tests for `src/daemon.rs`, 15 tests. Six drive `run_schedule` on paused tokio time and a clock the test sets by hand: a firing on time, a suspend, a schedule that never fires, shutdown during the wait, and the clock set back before and after a firing. Two more cover an unreadable schedule refused by `start` and a panicked task reported by `stop`. One runs `start` for two and a half seconds on a schedule that fires every second and finds a scheduled session in the history database. Two cover the wait in `start`, which ends on a panicked task and takes a normal shutdown cleanly in either order | Test-only; `super` resolves to `crate::daemon`, so its imports carried across unchanged |
 | `src/notification/tests.rs` | Unit tests for `src/notification/mod.rs`, that file is the module, so its tests go to the directory it already owns | Test-only; `super` resolves to `crate::notification`, so its imports carried across unchanged |
 | `src/notification/email/tests.rs` | Unit tests for `src/notification/email.rs` | Test-only; `super` resolves to `crate::notification::email`, so its imports carried across unchanged |
 | `src/notification/webhook/tests.rs` | Unit tests for `src/notification/webhook.rs`, 33 tests, the largest block in this crate | Test-only; `super` resolves to `crate::notification::webhook`, so its imports carried across unchanged |
@@ -1012,9 +1012,9 @@ compares every row with the tree on each run. Treat them as the size of each
 crate's declared test surface, and read the workspace run itself for what
 passed.
 
-The table covers the ten crates under `crates/` and sums to 2266. The eleventh
+The table covers the ten crates under `crates/` and sums to 2269. The eleventh
 workspace member, `src-tauri`, carries 194 more, which is why the tree total the
-evidence ledger records is 2460 and not this table's sum.
+evidence ledger records is 2463 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -1022,7 +1022,7 @@ evidence ledger records is 2460 and not this table's sum.
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, `output/mod.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 143 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs`, `checkpoint.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 155 |
 | hardener-distro | `lib.rs` | - | 5 |
-| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `schedule.rs`, `notification/*.rs` | - | 125 |
+| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `schedule.rs`, `notification/*.rs` | - | 128 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 335 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 875 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 246 |

@@ -17,7 +17,10 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use tokio::{sync::broadcast, task::JoinHandle};
+use tokio::{
+    sync::broadcast,
+    task::{JoinError, JoinHandle},
+};
 use tracing::{debug, error, info, warn};
 
 /// Scheduled scanning daemon.
@@ -145,19 +148,20 @@ impl Daemon {
 
     /// Starts the daemon scheduler loop.
     ///
-    /// Reads the configured cron expression, spawns [`run_schedule`] with a
-    /// scan as its job and begins listening for shutdown signals. This method
-    /// blocks until shutdown is triggered via signal or `stop()`.
+    /// Reads the configured cron expression and spawns [`run_schedule`] with
+    /// a scan as its job. It then waits until SIGTERM or SIGINT arrives or the
+    /// schedule task ends by itself, and returns once any scan in progress has
+    /// finished. `stop` cannot be called while this runs, since this holds
+    /// `&mut self`.
     ///
     /// # Arguments
     /// * `plugin_manager` - Configured plugin manager with resolved dependencies
     /// * `ctx` - Execution context for plugins
     ///
     /// # Errors
-    /// Returns an error if:
-    /// - Scheduler is disabled in configuration
-    /// - Cron expression is invalid
-    /// - The schedule task panicked
+    /// Returns an error before anything is spawned when the scheduler is
+    /// disabled in the configuration or the cron expression cannot be read.
+    /// Returns an error after the wait when the schedule task panicked.
     pub async fn start(
         &mut self,
         plugin_manager: Arc<PluginManager>,
@@ -191,14 +195,14 @@ impl Daemon {
 
         // Set up shutdown channel. The loop subscribes before it is spawned,
         // so a shutdown sent from here on reaches it.
-        let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
+        let (shutdown_tx, shutdown_rx) = broadcast::channel::<()>(1);
         let schedule_shutdown = shutdown_tx.subscribe();
         self.daemon_shutdown_tx = Some(shutdown_tx.clone());
 
         // Spawn signal handler
         tokio::spawn(Self::signal_handler(shutdown_tx));
 
-        self.daemon_scheduler = Some(tokio::spawn(run_schedule(
+        let task = self.daemon_scheduler.insert(tokio::spawn(run_schedule(
             schedule,
             time::now,
             schedule_shutdown,
@@ -207,11 +211,19 @@ impl Daemon {
 
         info!("Daemon running, waiting for shutdown signal");
 
-        // Wait for shutdown signal
-        let _ = shutdown_rx.recv().await;
-
-        info!("Shutdown signal received");
-        self.shutdown_scheduler().await
+        let ended = match first_to_end(shutdown_rx, task).await {
+            FirstToEnd::Shutdown => Ok(()),
+            // The handle has finished, and a finished handle must not be
+            // awaited again, so the shutdown helper is left without it.
+            FirstToEnd::Task(ended) => {
+                self.daemon_scheduler = None;
+                ended
+            }
+        };
+        if ended.is_ok() {
+            info!("Shutdown signal received");
+        }
+        self.shutdown_scheduler(ended).await
     }
 
     /// Handles Unix signals for graceful shutdown.
@@ -251,14 +263,14 @@ impl Daemon {
 
     /// Gracefully stops the daemon.
     ///
-    /// Signals shutdown, waits for the schedule task to end and then for any
-    /// in-progress scan to complete.
+    /// Signals shutdown and waits for the schedule task to end. Then it waits
+    /// for any scan in progress to finish.
     ///
     /// # Errors
     /// Returns an error if the schedule task panicked.
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop requested");
-        self.shutdown_scheduler().await
+        self.shutdown_scheduler(Ok(())).await
     }
 
     /// Internal helper to shutdown the scheduler and wait for scans.
@@ -266,14 +278,18 @@ impl Daemon {
     /// `start` sets the sender and the task together and this takes both, so
     /// a task is never left waiting for a shutdown nobody can send. The task
     /// ends before the wait for a scan, so it cannot start one the wait has
-    /// already passed.
-    async fn shutdown_scheduler(&mut self) -> Result<()> {
+    /// already passed. `joined` is how the task ended when the caller has
+    /// already awaited it and cleared the handle, and `Ok(())` otherwise.
+    async fn shutdown_scheduler(
+        &mut self,
+        joined: std::result::Result<(), JoinError>,
+    ) -> Result<()> {
         if let Some(sender) = self.daemon_shutdown_tx.take() {
             let _ = sender.send(());
         }
         let ended = match self.daemon_scheduler.take() {
             Some(task) => task.await,
-            None => Ok(()),
+            None => joined,
         };
 
         // Wait for in-progress scan to complete
@@ -289,6 +305,31 @@ impl Daemon {
 
         info!("Daemon stopped gracefully");
         Ok(())
+    }
+}
+
+/// What ended the wait in [`Daemon::start`].
+#[derive(Debug)]
+enum FirstToEnd {
+    /// The shutdown channel answered, with a message or with an error.
+    Shutdown,
+    /// The schedule task ended, with how it ended.
+    Task(std::result::Result<(), JoinError>),
+}
+
+/// Waits for a shutdown or for `task` to end, whichever comes first.
+///
+/// The task is polled by reference, so after [`FirstToEnd::Shutdown`] the
+/// caller still holds a handle it can await. A normal shutdown ends the task
+/// too, so both arms can be ready at once, and either answer is then a clean
+/// end: the task ends by itself only on a shutdown or a panic.
+async fn first_to_end(
+    mut shutdown: broadcast::Receiver<()>,
+    task: &mut JoinHandle<()>,
+) -> FirstToEnd {
+    tokio::select! {
+        _ = shutdown.recv() => FirstToEnd::Shutdown,
+        ended = task => FirstToEnd::Task(ended),
     }
 }
 

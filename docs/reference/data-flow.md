@@ -1027,7 +1027,8 @@ elevates, and it elevates exactly when the executor's own `write_file` does.
 ┌──────────────────────────────────────────────────────────────┐
 │  Daemon::start() or Daemon::run_once()                       │
 │  ├─ Check daemon_scan_in_progress (AtomicBool guard)         │
-│  ├─ If scheduled: run_schedule wakes at each cron instant    │
+│  ├─ If scheduled: run_schedule checks the clock at least     │
+│  │  every 30 s and runs the scan at each cron instant        │
 │  └─ Calls ScanRunner::run()                                  │
 └────────┬─────────────────────────────────────────────────────┘
          │
@@ -1257,7 +1258,7 @@ pub struct Daemon {
 │  ├─ Create broadcast channel for shutdown signalling         │
 │  ├─ Spawn signal handler (SIGTERM, SIGINT)                   │
 │  ├─ Spawn run_schedule, the daemon's own wait loop           │
-│  └─ Block until the shutdown signal arrives                  │
+│  └─ Wait for a shutdown signal or for the task to end        │
 └────────┬─────────────────────────────────────────────────────┘
          │ On schedule trigger
          ▼
@@ -1273,9 +1274,9 @@ pub struct Daemon {
 ┌──────────────────────────────────────────────────────────────┐
 │  Graceful Shutdown                                           │
 │  ├─ Signal handler sends () on broadcast channel             │
+│  ├─ Join the run_schedule task, unless it ended first        │
 │  ├─ Wait for scan_in_progress to clear                       │
-│  ├─ Join the run_schedule task                               │
-│  └─ Return Ok(())                                            │
+│  └─ Return Ok(()), or an error if the task panicked          │
 └──────────────────────────────────────────────────────────────┘
 ```
 

@@ -112,6 +112,54 @@ async fn start_refuses_a_schedule_it_cannot_read() {
     );
 }
 
+/// `start` with the scheduler on and a schedule that fires every second
+/// writes a scheduled session to the history database.
+///
+/// `start` returns only after a shutdown or a failed schedule task, so the
+/// timeout ends it by dropping its future. Every task `start` spawned, scans
+/// included, stays on this test's runtime and is dropped with it when the
+/// test returns. The signal handler's hooks for SIGTERM and SIGINT stay
+/// installed in the test process, as tokio never removes one.
+///
+/// The registry holds one mock plugin, because a scan refuses a manager with
+/// no resolved plugin before it writes a session. `ScanRunner::run` loads the
+/// on-disk configuration, which can only filter that plugin out of the scan.
+/// The session row is written either way, and the test reads nothing but its
+/// trigger.
+#[tokio::test]
+async fn start_runs_a_scheduled_scan_through_its_own_loop() {
+    let (mut daemon, dir) = setup_test_daemon().await;
+    daemon.daemon_config.enabled = true;
+    daemon.daemon_config.schedule = "* * * * * *".into();
+    let registry = hardener_core::PluginRegistry::new();
+    registry
+        .register(Box::new(hardener_core::testing::MockPlugin::new("probe")))
+        .unwrap();
+    let mut manager = PluginManager::new(registry);
+    manager.resolve_dependencies().unwrap();
+    let plugins = Arc::new(manager);
+    let context = Arc::new(Context::new());
+
+    let outcome = timeout(Duration::from_millis(2500), daemon.start(plugins, context)).await;
+    assert!(outcome.is_err(), "start ended by itself: {outcome:?}");
+
+    let history = ScanHistoryManager::new(&dir.path().join("test.db"))
+        .await
+        .unwrap();
+    let sessions = history
+        .list_sessions(&crate::db::SessionFilter::default())
+        .await
+        .unwrap();
+    let scheduled = TriggerType::Scheduled.as_str();
+    assert!(
+        sessions
+            .iter()
+            .any(|session| session.trigger_type == scheduled),
+        "no scheduled session among {} sessions",
+        sessions.len()
+    );
+}
+
 #[tokio::test]
 async fn stop_reports_a_schedule_task_that_panicked() {
     let (mut daemon, _dir) = setup_test_daemon().await;
@@ -124,10 +172,71 @@ async fn stop_reports_a_schedule_task_that_panicked() {
     assert!(result.is_err(), "a panic is not a clean stop");
 }
 
+#[tokio::test]
+async fn the_wait_in_start_ends_when_the_schedule_task_panics() {
+    // The sender stays alive, so only the task can end the wait.
+    let (_sender, receiver) = broadcast::channel(1);
+    let mut task = tokio::spawn(async { panic!("the schedule task fails") });
+
+    let ended = timeout(Duration::from_secs(5), first_to_end(receiver, &mut task))
+        .await
+        .expect("a panicked task ends the wait");
+
+    assert!(
+        matches!(&ended, FirstToEnd::Task(Err(failure)) if failure.is_panic()),
+        "{ended:?}"
+    );
+}
+
+/// A task that ends when `sender` sends, as the schedule loop does.
+fn task_ending_on(sender: &broadcast::Sender<()>) -> JoinHandle<()> {
+    let mut shutdown = sender.subscribe();
+    tokio::spawn(async move {
+        let _ = shutdown.recv().await;
+    })
+}
+
+/// A normal shutdown ends the task too, so `start` may see either arm first.
+/// Each order is set up here so that only one arm is ready.
+#[tokio::test]
+async fn a_normal_shutdown_ends_the_wait_in_start_cleanly_in_either_order() {
+    // The shutdown is seen first: the task has not run when the wait begins,
+    // and the handle is still there to await afterwards.
+    let (sender, receiver) = broadcast::channel(1);
+    let mut task = task_ending_on(&sender);
+    sender.send(()).unwrap();
+    let shutdown_first = timeout(Duration::from_secs(5), first_to_end(receiver, &mut task))
+        .await
+        .expect("a shutdown ends the wait");
+    assert!(
+        matches!(shutdown_first, FirstToEnd::Shutdown),
+        "{shutdown_first:?}"
+    );
+    assert!(task.await.is_ok());
+
+    // The task is seen first: it ended before the wait began, and the wait's
+    // receiver subscribed after the send, so it holds no message.
+    let (sender, _) = broadcast::channel(1);
+    let mut task = task_ending_on(&sender);
+    sender.send(()).unwrap();
+    let task_first = timeout(Duration::from_secs(5), async {
+        while !task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        first_to_end(sender.subscribe(), &mut task).await
+    })
+    .await
+    .expect("a finished task ends the wait");
+    assert!(
+        matches!(task_first, FirstToEnd::Task(Ok(()))),
+        "{task_first:?}"
+    );
+}
+
 /// 2026-01-01T01:00:00Z.
-const ONE: i64 = 1_767_229_200;
-/// 2026-01-01T02:00:00Z, the first firing of the default schedule after `ONE`.
-const TWO: i64 = 1_767_232_800;
+const NEW_YEAR_AT_ONE: i64 = 1_767_229_200;
+/// 2026-01-01T02:00:00Z, the first firing of the default schedule after `NEW_YEAR_AT_ONE`.
+const NEW_YEAR_AT_TWO: i64 = 1_767_232_800;
 /// The default schedule, 02:00 UTC daily.
 const DAILY_AT_TWO: &str = "0 0 2 * * *";
 
@@ -226,11 +335,11 @@ async fn pass(seconds: u64) {
 
 #[tokio::test]
 async fn the_job_runs_once_when_its_instant_arrives() {
-    let schedule = ScheduleLoop::start(DAILY_AT_TWO, TWO - 10);
+    let schedule = ScheduleLoop::start(DAILY_AT_TWO, NEW_YEAR_AT_TWO - 10);
     pass(30).await;
     assert_eq!(schedule.calls(), 0, "the wall clock has not reached 02:00");
 
-    schedule.set_clock(TWO);
+    schedule.set_clock(NEW_YEAR_AT_TWO);
     pass(30).await;
     assert_eq!(schedule.calls(), 1);
     schedule.stop().await;
@@ -238,12 +347,12 @@ async fn the_job_runs_once_when_its_instant_arrives() {
 
 #[tokio::test]
 async fn a_tick_missed_during_a_suspend_runs_once() {
-    let schedule = ScheduleLoop::start("0 0 * * * *", ONE);
+    let schedule = ScheduleLoop::start("0 0 * * * *", NEW_YEAR_AT_ONE);
     pass(1).await;
 
     // Four hourly firings fall inside the suspend, and tokio time does not
     // count it.
-    schedule.set_clock(ONE + 4 * 3600);
+    schedule.set_clock(NEW_YEAR_AT_ONE + 4 * 3600);
     pass(30).await;
     assert_eq!(schedule.calls(), 1);
     pass(60).await;
@@ -253,7 +362,7 @@ async fn a_tick_missed_during_a_suspend_runs_once() {
 
 #[tokio::test]
 async fn a_schedule_with_no_next_instant_idles_until_shutdown() {
-    let schedule = ScheduleLoop::start("0 0 0 30 2 *", ONE);
+    let schedule = ScheduleLoop::start("0 0 0 30 2 *", NEW_YEAR_AT_ONE);
     pass(1).await;
     let reads = schedule.reads();
 
@@ -269,7 +378,7 @@ async fn a_schedule_with_no_next_instant_idles_until_shutdown() {
 
 #[tokio::test]
 async fn shutdown_ends_the_wait() {
-    let schedule = ScheduleLoop::start(DAILY_AT_TWO, TWO - 10);
+    let schedule = ScheduleLoop::start(DAILY_AT_TWO, NEW_YEAR_AT_TWO - 10);
     pass(1).await;
 
     let calls = schedule.calls.clone();
@@ -279,14 +388,14 @@ async fn shutdown_ends_the_wait() {
 
 #[tokio::test]
 async fn a_clock_set_backwards_delays_the_job_and_does_not_repeat_it() {
-    let schedule = ScheduleLoop::start(DAILY_AT_TWO, TWO - 10);
+    let schedule = ScheduleLoop::start(DAILY_AT_TWO, NEW_YEAR_AT_TWO - 10);
     pass(1).await;
 
-    schedule.set_clock(ONE);
+    schedule.set_clock(NEW_YEAR_AT_ONE);
     pass(60).await;
     assert_eq!(schedule.calls(), 0, "02:00 has not come round yet");
 
-    schedule.set_clock(TWO);
+    schedule.set_clock(NEW_YEAR_AT_TWO);
     pass(30).await;
     assert_eq!(schedule.calls(), 1);
     pass(60).await;
@@ -298,16 +407,16 @@ async fn a_clock_set_backwards_delays_the_job_and_does_not_repeat_it() {
 async fn a_clock_set_back_after_a_firing_does_not_repeat_it() {
     // A step back of one second as the job starts, as NTP can make, lands
     // before the loop reads the clock for the next firing.
-    let schedule = ScheduleLoop::start_with(DAILY_AT_TWO, TWO - 10, |clock| {
-        clock.store(TWO - 1, Ordering::SeqCst);
+    let schedule = ScheduleLoop::start_with(DAILY_AT_TWO, NEW_YEAR_AT_TWO - 10, |clock| {
+        clock.store(NEW_YEAR_AT_TWO - 1, Ordering::SeqCst);
     });
     pass(5).await;
 
-    schedule.set_clock(TWO);
+    schedule.set_clock(NEW_YEAR_AT_TWO);
     pass(10).await;
     assert_eq!(schedule.calls(), 1);
 
-    schedule.set_clock(TWO + 30);
+    schedule.set_clock(NEW_YEAR_AT_TWO + 30);
     pass(60).await;
     assert_eq!(schedule.calls(), 1, "02:00 ran once already");
     schedule.stop().await;
