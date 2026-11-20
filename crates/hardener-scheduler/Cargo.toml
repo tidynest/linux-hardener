@@ -55,3 +55,6 @@ hex = "0.4.3"
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio-test = "0.4.4"
+# Temporary: the firing-instant tests call the parser tokio-cron-scheduler uses.
+# Removed when the cron library is replaced.
+croner = "3.0"

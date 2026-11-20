@@ -391,6 +391,7 @@ are the whole public surface now.
 | `src/notification/email.rs` | SMTP email notifications | `EmailNotifier` |
 | `src/notification/webhook.rs` | HTTP webhook notifications | `WebhookNotifier` |
 | `src/notification/dispatcher.rs` | Notification coordinator | `NotificationDispatcher` |
+| `src/schedule.rs` | Schedule expressions, private for now; holds only the firing-instant tests | Nothing exported yet |
 | `src/systemd.rs` | Systemd unit file generation | `SystemdGenerator`, `cron_to_calendar()`, `service_name()`, `timer_name()` |
 | `src/config/tests.rs` | Unit tests for `src/config.rs` | Test-only; `super` resolves to `crate::config`, so its imports carried across unchanged |
 | `src/db/tests.rs` | Unit tests for `src/db.rs`, 16 tests over the host-aware scan history | Test-only; `super` resolves to `crate::db`, so its imports carried across unchanged |
@@ -401,6 +402,7 @@ are the whole public surface now.
 | `src/notification/email/tests.rs` | Unit tests for `src/notification/email.rs` | Test-only; `super` resolves to `crate::notification::email`, so its imports carried across unchanged |
 | `src/notification/webhook/tests.rs` | Unit tests for `src/notification/webhook.rs`, 33 tests, the largest block in this crate | Test-only; `super` resolves to `crate::notification::webhook`, so its imports carried across unchanged |
 | `src/notification/dispatcher/tests.rs` | Unit tests for `src/notification/dispatcher.rs` | Test-only; `super` resolves to `crate::notification::dispatcher`, so its imports carried across unchanged |
+| `src/schedule/tests.rs` | Pins the five instants each of six cron expressions fires at after 2026-01-01T00:00:00Z, recorded under `tokio-cron-scheduler` 0.15.1, and that a five-field expression and nonsense are refused, 3 tests | Test-only; calls `croner` 3 directly, a temporary dev-dependency that goes when the cron library is replaced |
 | `src/systemd/tests.rs` | Unit tests for `src/systemd.rs` | Test-only; `super` resolves to `crate::systemd`, so its imports carried across unchanged |
 
 ### Key Structures (daemon.rs)
@@ -1010,9 +1012,9 @@ compares every row with the tree on each run. Treat them as the size of each
 crate's declared test surface, and read the workspace run itself for what
 passed.
 
-The table covers the ten crates under `crates/` and sums to 2249. The eleventh
+The table covers the ten crates under `crates/` and sums to 2252. The eleventh
 workspace member, `src-tauri`, carries 194 more, which is why the tree total the
-evidence ledger records is 2443 and not this table's sum.
+evidence ledger records is 2446 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
@@ -1020,7 +1022,7 @@ evidence ledger records is 2443 and not this table's sum.
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, `output/mod.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 143 |
 | hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs`, `checkpoint.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 155 |
 | hardener-distro | `lib.rs` | - | 5 |
-| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `notification/*.rs` | - | 109 |
+| hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `schedule.rs`, `notification/*.rs` | - | 112 |
 | hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 335 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 875 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 246 |

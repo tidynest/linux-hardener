@@ -13,6 +13,7 @@ pub mod db;
 pub mod json_store;
 pub mod notification;
 pub mod runner;
+mod schedule;
 pub mod systemd;
 
 pub use config::SchedulerConfig;

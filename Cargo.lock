@@ -2210,6 +2210,7 @@ name = "hardener-scheduler"
 version = "1.9.1"
 dependencies = [
  "async-trait",
+ "croner",
  "dirs",
  "hardener-common",
  "hardener-core",
