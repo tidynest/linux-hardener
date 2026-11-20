@@ -98,7 +98,7 @@ class NamingValidator:
             'cfg': ('config', True),   # Allowed - Rust keyword in #[cfg(...)]
             'cmd': ('command', True),  # Allowed - common in CLI/executor contexts
             'msg': ('message', False),
-            'dist': ('distribution', False),
+            'dist': ('distribution', True),  # Allowed - trunk's output directory
             'distro': ('distribution', True),  # Allowed - domain term
             'param': ('parameter', False),
             'res': ('result', False),
@@ -116,6 +116,7 @@ class NamingValidator:
             'cfg': [r'#!?\[cfg\(', r'cfg!'],  # Rust cfg attribute/macro
             'ctx': [r'ctx:', r'&ctx', r'ctx\.', r'ctx,', r'\(ctx\)', r'mut ctx', r'ctx\)', r'let ctx'],  # Context param
             'distro': [r'distro_', r'DistroFamily', r'hardener-distro'],
+            'dist': [r'"dist"'],  # the directory name as a string literal
             'cmd': [r'execute_command', r'CommandOutput', r'firewall_cmd', r'cmd:', r'&cmd', r'cmd\.', r'let cmd'],
         }
 
@@ -657,6 +658,9 @@ class NamingValidator:
                     if re.search(r'#\[derive\(.*' + american, line, re.IGNORECASE):
                         continue
                     if re.search(r'serde\(', line, re.IGNORECASE):
+                        continue
+                    # Skip a call of serde's own method, `value.serialize(serializer)`
+                    if re.search(r'\.(de)?serialize\(', line):
                         continue
                     # Skip 'Serialize' and 'Deserialize' trait names entirely
                     if american in ('serialize', 'deserialize') and american.capitalize() in line:
