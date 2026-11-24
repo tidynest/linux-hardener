@@ -359,13 +359,15 @@ async fn scan_reports_rules_unchecked_when_auditctl_needs_root() {
             .any(|f| f.finding_id.starts_with("audit_rule_")),
         "no false missing-rule findings"
     );
-    assert_eq!(result.scan_unchecked.len(), AUDIT_RULES.len());
-    assert!(
-        result
-            .scan_unchecked
-            .iter()
-            .all(|u| u.unchecked_check_id.starts_with("audit_rule_"))
-    );
+    // One entry for each wanted rule, and one for the never,task check, which
+    // reads the same listing and is blocked by the same refusal.
+    let (rule_entries, other_entries): (Vec<_>, Vec<_>) = result
+        .scan_unchecked
+        .iter()
+        .map(|u| u.unchecked_check_id.as_str())
+        .partition(|id| id.starts_with("audit_rule_"));
+    assert_eq!(rule_entries.len(), AUDIT_RULES.len());
+    assert_eq!(other_entries, vec![NEVER_TASK_CHECK_ID]);
 }
 
 /// `validate` must fold `AuditRulesResult::UnrecognisedFailure` back to
@@ -1032,24 +1034,34 @@ async fn the_written_rules_open_with_the_backlog_prelude() {
     );
 }
 
-/// The host #180 was measured on: auditd installed, enabled and running, and
-/// every rule already loaded, so the category count has nothing to add and
-/// the rules file is the only estimate left to make.
-fn validate_mock_with_every_rule_loaded() -> MockExecutor {
+/// A host with auditd installed, enabled and running and every rule this
+/// plugin wants already loaded. `also_loaded` is put ahead of them in what
+/// `auditctl -l` prints, one rule to a line, each ending in a newline.
+fn mock_with_every_rule_loaded_and(also_loaded: &str) -> MockExecutor {
     let ok = |stdout: &str| CommandOutput {
         stdout: stdout.to_string(),
         stderr: String::new(),
         exit_code: 0,
     };
-    let loaded: String = AUDIT_RULES
-        .iter()
-        .map(|rule| format!("{}\n", rule.audit_rule_content))
+    let loaded: String = std::iter::once(also_loaded.to_string())
+        .chain(
+            AUDIT_RULES
+                .iter()
+                .map(|rule| format!("{}\n", rule.audit_rule_content)),
+        )
         .collect();
     MockExecutor::new()
         .with_command_exists("auditd", true)
         .with_command("systemctl", &["is-enabled", "auditd"], ok("enabled\n"))
         .with_command("systemctl", &["is-active", "auditd"], ok("active\n"))
         .with_command("auditctl", &["-l"], ok(&loaded))
+}
+
+/// The host #180 was measured on: auditd installed, enabled and running, and
+/// every rule already loaded, so the category count has nothing to add and
+/// the rules file is the only estimate left to make.
+fn validate_mock_with_every_rule_loaded() -> MockExecutor {
+    mock_with_every_rule_loaded_and("")
 }
 
 async fn validate_estimates(mock: MockExecutor) -> Vec<String> {
@@ -1116,4 +1128,86 @@ async fn validate_names_the_reason_when_the_rules_file_cannot_be_read() {
             && estimates[0].contains("could not be read"),
         "{estimates:?}"
     );
+}
+
+/// A `never,task` rule makes every process created after it loads skip audit
+/// rule processing, so the rules this plugin installs stay loaded and record
+/// nothing for those processes. Fedora 44 and openSUSE Leap 16.0 ship one by
+/// default. The scan reads the loaded rules anyway, so it must say so.
+///
+/// Deleting the check from `scan` fails this test: every wanted rule is
+/// loaded here, so nothing else in the scan raises a finding.
+#[tokio::test]
+async fn a_loaded_never_task_rule_is_reported() {
+    let result = scan_with_also_loaded("-a never,task\n").await;
+
+    assert_eq!(finding_ids(&result), vec!["audit_never_task_rule"]);
+    assert_eq!(
+        result.scan_findings[0].finding_current_value, "-a never,task",
+        "the finding must quote the rule the kernel reported"
+    );
+}
+
+/// The control for the test above: the same host without the rule has nothing
+/// to report. It passes before the check exists and must still pass after it,
+/// or the check is firing on rules it has no business with.
+#[tokio::test]
+async fn a_host_with_every_rule_loaded_reports_nothing() {
+    let result = scan_with_also_loaded("").await;
+
+    let ids = finding_ids(&result);
+    assert!(ids.is_empty(), "{ids:?}");
+}
+
+/// A filter narrows which processes a `never` task rule exempts. It does not
+/// make the rule harmless: `-F auid>=1000` exempts every logged-in user. So a
+/// filtered rule is reported too, with its filter quoted.
+///
+/// Comparing the whole line with `-a never,task` fails this test.
+#[tokio::test]
+async fn a_never_task_rule_with_a_filter_is_reported_too() {
+    let rule = "-a never,task -F auid>=1000";
+    let result = scan_with_also_loaded(&format!("{rule}\n")).await;
+
+    assert_eq!(finding_ids(&result), vec!["audit_never_task_rule"]);
+    assert_eq!(result.scan_findings[0].finding_current_value, rule);
+}
+
+/// `never` rules on the other lists are ordinary tuning. They drop named
+/// events and leave every process audited, and the sample rules the audit
+/// package ships are full of them, so reporting one would cry wolf on a
+/// well-kept host.
+///
+/// Accepting any list after `never,` fails this test.
+#[tokio::test]
+async fn a_never_rule_on_another_list_is_not_reported() {
+    let result = scan_with_also_loaded(
+        "-a never,exit -F arch=b64 -S adjtimex -F uid=chrony\n\
+         -a never,user -F subj_type=crond_t\n\
+         -a never,exclude -F msgtype=CWD\n",
+    )
+    .await;
+
+    let ids = finding_ids(&result);
+    assert!(ids.is_empty(), "{ids:?}");
+}
+
+/// Scans the host [`mock_with_every_rule_loaded_and`] describes.
+async fn scan_with_also_loaded(also_loaded: &str) -> ScanResult {
+    let mock = mock_with_every_rule_loaded_and(also_loaded);
+    AuditHardeningPlugin::new()
+        .scan(
+            &Context::with_executor(Arc::new(mock)),
+            &PluginConfig::default(),
+        )
+        .await
+        .unwrap()
+}
+
+fn finding_ids(result: &ScanResult) -> Vec<&str> {
+    result
+        .scan_findings
+        .iter()
+        .map(|finding| finding.finding_id.as_str())
+        .collect()
 }

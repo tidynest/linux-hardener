@@ -241,6 +241,12 @@ const AUDITD_PRESENT_EXCEPTION: &str = "auditd-present";
 const AUDITD_AT_BOOT_EXCEPTION: &str = "auditd-at-boot";
 const AUDITD_RUNNING_EXCEPTION: &str = "auditd-running";
 
+/// The exception key for a loaded `never` rule on the task list, the state
+/// [`is_never_task_rule`] recognises. It has a key of its own for the reason
+/// the three above do: a host that has accepted running without syscall
+/// auditing has not thereby accepted a daemon that is stopped or missing.
+const AUDITD_NEVER_TASK_EXCEPTION: &str = "auditd-never-task";
+
 const AUDIT_RULES_PATH: &str = "/etc/audit/rules.d/hardening.rules";
 
 /// The kernel-side settings the generated file opens with.
@@ -492,6 +498,76 @@ async fn read_current_audit_rules(ctx: &Context) -> AuditRulesResult {
         .collect();
 
     AuditRulesResult::Rules(rules)
+}
+
+/// Whether one line of `auditctl -l` output is a `never` rule on the task
+/// list.
+///
+/// The kernel consults that list once, when a process is created (`audit_alloc`
+/// in `kernel/auditsc.c`). A process such a rule matches is given no audit
+/// context, so no syscall rule and no file watch is evaluated for it for as
+/// long as it runs. Measured on 2026-11-24, issue #201: with the rule loaded a
+/// watched file read by a matching process produced no event. The audit
+/// packages of Fedora 44 and openSUSE Leap 16.0 installed one with no filter
+/// on that date, written `-a task,never` in the file and printed
+/// `-a never,task` by the kernel.
+fn is_never_task_rule(rule: &str) -> bool {
+    let mut words = rule.split_whitespace();
+    words.next() == Some("-a") && matches!(words.next(), Some("never,task" | "task,never"))
+}
+
+/// The id the `never,task` check reports under, as a finding when the rule is
+/// loaded and as an unchecked entry when the rules could not be listed.
+const NEVER_TASK_CHECK_ID: &str = "audit_never_task_rule";
+
+/// The unchecked entry for the `never,task` check, for a scan that could not
+/// list the loaded rules. Whether one of them is a `never,task` rule decides
+/// whether the others record anything, so a scan that could not look must say
+/// so or the check reads as run and clean.
+fn never_task_unchecked(reason: &str, blocker: UncheckedBlocker) -> UncheckedCheck {
+    UncheckedCheck {
+        unchecked_check_id: NEVER_TASK_CHECK_ID.to_string(),
+        unchecked_title: "A never,task audit rule".to_string(),
+        unchecked_category: FindingCategory::Audit,
+        unchecked_reason: reason.to_string(),
+        unchecked_blocker: blocker,
+        unchecked_compliance: get_audit_compliance_mappings("rules"),
+    }
+}
+
+/// The finding for the loaded `never` task rules, each quoted as the kernel
+/// reported it.
+fn never_task_finding(rules: &[&str], config: &PluginConfig) -> Finding {
+    Finding {
+        finding_category: FindingCategory::Audit,
+        finding_current_value: rules.join("; "),
+        finding_description: "A loaded audit rule exempts newly created processes from auditing"
+            .to_string(),
+        finding_explanation: "A never rule on the task list is consulted once, when a process \
+             is created. A process it matches is given no audit context, so no syscall rule \
+             and no file watch is evaluated for it for as long as it runs. The other rules \
+             stay loaded and record nothing for that process. Some distributions ship such \
+             a rule, with no filter, in /etc/audit/rules.d/audit.rules"
+            .to_string(),
+        finding_id: NEVER_TASK_CHECK_ID.to_string(),
+        finding_impact: "Syscall rules and file watches record nothing for the processes this \
+             rule matches"
+            .to_string(),
+        finding_recommended_value: "no never rule on the task list".to_string(),
+        finding_remediation_steps: vec![
+            "Find the rule: grep -rnE -- '-a (task,never|never,task)' /etc/audit/rules.d/"
+                .to_string(),
+            "Remove that line, then reload the rules: augenrules --load".to_string(),
+            "Restart long-running services, or reboot: a process created while the rule was \
+             loaded stays exempt"
+                .to_string(),
+        ],
+        finding_severity: Severity::High,
+        finding_title: "A never,task audit rule is loaded".to_string(),
+        finding_compliance: get_audit_compliance_mappings("rules"),
+        finding_exception: config.exception_outcome_for_presence(AUDITD_NEVER_TASK_EXCEPTION),
+        finding_exception_key: Some(AUDITD_NEVER_TASK_EXCEPTION.to_string()),
+    }
 }
 
 /// Everything a backup of the rules file carries before its timestamp.
@@ -1296,6 +1372,18 @@ impl HardeningPlugin for AuditHardeningPlugin {
         };
         match rules_result {
             AuditRulesResult::Rules(current_rules) => {
+                // Asked before the per-rule loop because it qualifies every
+                // answer that loop gives: a rule can be loaded and still
+                // record nothing for a process a never,task rule exempts.
+                let never_task: Vec<&str> = current_rules
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|rule| is_never_task_rule(rule))
+                    .collect();
+                if !never_task.is_empty() {
+                    findings.push(never_task_finding(&never_task, config));
+                }
+
                 // Successfully read rules - check each required rule.
                 for rule in AUDIT_RULES {
                     // Check if this rule category is present in current rules.
@@ -1341,6 +1429,7 @@ impl HardeningPlugin for AuditHardeningPlugin {
                 // Cannot verify rules without root: report each expected rule
                 // as unchecked rather than silently skipping the whole check.
                 let blocker = crate::refusal_blocker(ctx).await;
+                let reason = "listing loaded audit rules (auditctl -l) requires root";
                 for rule in AUDIT_RULES {
                     unchecked.push(UncheckedCheck {
                         unchecked_check_id: format!(
@@ -1349,12 +1438,12 @@ impl HardeningPlugin for AuditHardeningPlugin {
                         ),
                         unchecked_title: format!("Audit rule: {}", rule.audit_rule_category),
                         unchecked_category: FindingCategory::Audit,
-                        unchecked_reason: "listing loaded audit rules (auditctl -l) requires root"
-                            .to_string(),
+                        unchecked_reason: reason.to_string(),
                         unchecked_blocker: blocker,
                         unchecked_compliance: get_audit_compliance_mappings("rules"),
                     });
                 }
+                unchecked.push(never_task_unchecked(reason, blocker));
             }
             AuditRulesResult::ProbeFailed(reason) => {
                 // `auditctl` could not be run. Whether that is worth a
@@ -1366,6 +1455,10 @@ impl HardeningPlugin for AuditHardeningPlugin {
                     Ok(false) => UncheckedBlocker::Environment,
                     _ => UncheckedBlocker::Unknown,
                 };
+                let reason = format!(
+                    "auditctl could not be run, so the loaded audit rules \
+                     could not be listed: {reason}"
+                );
                 for rule in AUDIT_RULES {
                     unchecked.push(UncheckedCheck {
                         unchecked_check_id: format!(
@@ -1374,14 +1467,12 @@ impl HardeningPlugin for AuditHardeningPlugin {
                         ),
                         unchecked_title: format!("Audit rule: {}", rule.audit_rule_category),
                         unchecked_category: FindingCategory::Audit,
-                        unchecked_reason: format!(
-                            "auditctl could not be run, so the loaded audit rules \
-                             could not be listed: {reason}"
-                        ),
+                        unchecked_reason: reason.clone(),
                         unchecked_blocker: blocker,
                         unchecked_compliance: get_audit_compliance_mappings("rules"),
                     });
                 }
+                unchecked.push(never_task_unchecked(&reason, blocker));
             }
             // Normalised away above: this arm exists only so the match stays
             // exhaustive against the type, not because it can run.

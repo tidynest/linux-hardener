@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-11-20
+**Last Updated**: 2026-11-24
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
@@ -709,6 +709,7 @@ excuse the second:
 | `auditd-present` | auditd is not installed |
 | `auditd-at-boot` | auditd is installed and not started at boot |
 | `auditd-running` | auditd is installed and currently stopped |
+| `auditd-never-task` | a never rule on the audit task list is loaded, so the processes it matches are not audited |
 
 Each state takes its own key on purpose. Accepting a host with no firewall is a
 different decision from accepting one whose firewall does not survive a

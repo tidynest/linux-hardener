@@ -2333,31 +2333,7 @@ async fn an_absent_auditctl_is_not_reported_as_a_refusal() {
             .cloned()
     };
 
-    // auditd is up, but auditctl is not there. `auditctl -l` is deliberately
-    // left unregistered, so the mock fails the spawn exactly as a real host
-    // does for ENOENT, which is the path that used to be called a refusal.
-    let absent = MockExecutor::new()
-        .with_command_exists("auditd", true)
-        .with_command_exists("auditctl", false)
-        .with_command(
-            "systemctl",
-            &["is-enabled", "auditd"],
-            CommandOutput {
-                stdout: "enabled\n".to_string(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        )
-        .with_command(
-            "systemctl",
-            &["is-active", "auditd"],
-            CommandOutput {
-                stdout: "active\n".to_string(),
-                stderr: String::new(),
-                exit_code: 0,
-            },
-        );
-    let entry = entry_for(absent)
+    let entry = entry_for(auditctl_absent_executor())
         .await
         .expect("the rules must still be reported unchecked");
     assert_eq!(
@@ -2386,6 +2362,75 @@ async fn an_absent_auditctl_is_not_reported_as_a_refusal() {
         refused.unchecked_reason.contains("requires root"),
         "got: {}",
         refused.unchecked_reason
+    );
+}
+
+/// auditd is up, but auditctl is not there. `auditctl -l` is deliberately left
+/// unregistered, so the mock fails the spawn exactly as a real host does for
+/// ENOENT, which is the path that used to be called a refusal.
+fn auditctl_absent_executor() -> MockExecutor {
+    let ok = |stdout: &str| CommandOutput {
+        stdout: stdout.to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    MockExecutor::new()
+        .with_command_exists("auditd", true)
+        .with_command_exists("auditctl", false)
+        .with_command("systemctl", &["is-enabled", "auditd"], ok("enabled\n"))
+        .with_command("systemctl", &["is-active", "auditd"], ok("active\n"))
+}
+
+/// A scan that cannot list the loaded rules cannot know whether a `never,task`
+/// rule is among them, and that rule decides whether the others record
+/// anything. Saying nothing would leave the check looking as if it had run and
+/// found the host clean. So both ways of failing to list report it unchecked,
+/// with the blocker and the reason of the rule entries beside it.
+///
+/// The last block is the control: a scan that did list the rules has answered
+/// the check and must not also call it unchecked.
+#[tokio::test]
+async fn the_never_task_check_is_reported_unchecked_when_the_rules_cannot_be_listed() {
+    let never_task_entry = async |executor: MockExecutor| {
+        let ctx = Context::with_executor(Arc::new(executor));
+        AuditHardeningPlugin::new()
+            .scan(&ctx, &PluginConfig::default())
+            .await
+            .unwrap()
+            .scan_unchecked
+            .iter()
+            .find(|check| check.unchecked_check_id == "audit_never_task_rule")
+            .cloned()
+    };
+
+    for (executor, blocker, reason) in [
+        (
+            auditctl_permission_denied_executor(),
+            UncheckedBlocker::Privilege,
+            "requires root",
+        ),
+        (
+            auditctl_absent_executor(),
+            UncheckedBlocker::Environment,
+            "auditctl could not be run",
+        ),
+    ] {
+        let entry = never_task_entry(executor)
+            .await
+            .unwrap_or_else(|| panic!("no unchecked entry for the check ({reason})"));
+        assert_eq!(entry.unchecked_blocker, blocker, "{reason}");
+        assert!(
+            entry.unchecked_reason.contains(reason),
+            "got: {}",
+            entry.unchecked_reason
+        );
+    }
+
+    assert!(
+        never_task_entry(fully_configured_audit_executor())
+            .await
+            .is_none(),
+        "a scan that listed the rules has answered the check"
     );
 }
 
@@ -2480,6 +2525,45 @@ async fn scan_honours_separate_exceptions_for_auditd_at_boot_and_running() {
         excepted("auditd_not_running"),
         Some(false),
         "approving a unit that does not start at boot does not approve one that is stopped"
+    );
+}
+
+/// The fourth state key. A distribution may ship a `never,task` rule, and an
+/// operator may keep it on purpose, so the finding has to be one an exception
+/// can reach. The daemon keys must not reach it: a host that has accepted a
+/// stopped auditd has said nothing about one that runs and records no syscalls.
+#[tokio::test]
+async fn scan_honours_an_exception_for_a_loaded_never_task_rule() {
+    let never_task_loaded = CommandOutput {
+        stdout: "-a never,task\n".to_string(),
+        stderr: String::new(),
+        exit_code: 0,
+    };
+    let executor =
+        fully_configured_audit_executor().with_command("auditctl", &["-l"], never_task_loaded);
+    let ctx = Context::with_executor(Arc::new(executor));
+    let plugin = AuditHardeningPlugin::new();
+
+    let excepted_under = async |key: &str| {
+        plugin
+            .scan(&ctx, &audit_exception_config(key))
+            .await
+            .unwrap()
+            .scan_findings
+            .iter()
+            .find(|f| f.finding_id == "audit_never_task_rule")
+            .map(|f| f.is_policy_excepted())
+    };
+
+    assert_eq!(
+        excepted_under("auditd-running").await,
+        Some(false),
+        "a daemon key must leave the finding a live violation"
+    );
+    assert_eq!(
+        excepted_under("auditd-never-task").await,
+        Some(true),
+        "the declared exception must reach the finding, or report fails the control"
     );
 }
 
