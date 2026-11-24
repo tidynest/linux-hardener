@@ -91,6 +91,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LICENSE` and the Noto Sans licence there, and labels itself
   `Apache-2.0 AND OFL-1.1`.
 
+- **The audit scan reports a loaded `never,task` rule (#201).** Fedora 44 and
+  openSUSE Leap 16.0 ship `-a task,never` in their default audit rules, and
+  that rule makes every new process skip audit rule processing. The plugin's
+  rules loaded beside it and the scan reported them as present, while the
+  syscall rules and file watches among them recorded nothing for any process
+  started afterwards. The scan now raises `audit_never_task_rule` at High,
+  quoting the rule as the kernel lists it, with or without a filter. A scan
+  that cannot list the rules, for want of root or of `auditctl`, reports the
+  check as unchecked instead of saying nothing. `apply` leaves the rule alone,
+  because it sits in a file the distribution ships. A host that keeps it on
+  purpose can declare the exception key `auditd-never-task`.
+
 ### Security
 
 - **A password no longer gets in through keyboard-interactive on a host the

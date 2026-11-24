@@ -1,6 +1,6 @@
 # What This Release Does Not Prove
 
-**Last Updated**: 2026-08-26
+**Last Updated**: 2026-11-24
 
 This release does not claim to be proven bug-free, and no release of anything
 ever has been. It claims something narrower and checkable: every capability it
@@ -489,6 +489,21 @@ what the plugin reported against what auditd actually holds. In a container the
 apply also fails by design, because there is no auditd for `augenrules --load`
 and `systemctl restart auditd` to reach, which is why that section judges the
 filesystem and not the exit status.
+
+**The `never,task` finding rests on a mock for the scan and on one host for the
+kernel.** The check added for #201 reads `auditctl -l` like every other audit
+check, so it too is the plugin agreeing with a fixture it was handed. The kernel
+behaviour behind it was measured once, on 2026-11-24, on an Arch host with
+kernel 7.3.5 and audit 4.2.1: with the rule loaded, a watched file read by a
+process the rule matched produced no event, and the same read by a process it
+did not match produced one. That rule carried a filter for a single uid, so the
+rest of the machine kept its auditing. Fedora 44 and openSUSE Leap 16.0 ship the
+rule with no filter, which was read from what their packages install, and
+neither was booted with it, because no container this project builds can run
+`auditctl`. What is unproven is the pairing: either distribution's own kernel
+under its own default rule. Both forms of the rule reach the same decision in
+the kernel's `audit_alloc`, which is a reason to expect the same result and not
+a measurement of it.
 
 **`mac-hardening` has an oracle for its no-op case only, and the safety point
 below is unchanged by it.** The differential suite proves the apply writes
