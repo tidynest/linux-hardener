@@ -126,6 +126,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   functions marked unwritten bytes as initialised when given an empty buffer.
   It reaches the binaries through `tempfile`, and the fuzz lockfile moves from
   1.1.4 to the same version.
+- **`url` moves from 2.5.7 to 2.5.9 for RUSTSEC-2026-0592.** `Url::origin()`
+  called itself once for every `blob:` prefix on a URL, with no limit, so a URL
+  nested deeply enough overflowed the stack and killed the process. The
+  scheduler uses `url` to parse the webhook address from its own configuration,
+  and no workspace crate calls `origin()`. What the crates that depend on `url`
+  do with it was not audited. `form_urlencoded` moves to 1.2.3 with it, the
+  scheduler's manifest now asks for 2.5.9 so an older version cannot come back,
+  and the detached fuzz lockfile moves from 2.5.8.
+- **`cookie` moves from 0.18.1 to 0.18.3 for RUSTSEC-2026-0594.** A process
+  that forks and then adds private cookies in more than one of the resulting
+  processes could repeat a nonce. `cookie` reaches the desktop binary through
+  `tauri`, and no workspace crate depends on it or uses private cookies.
 - **`lettre` moves from 0.11.22 to 0.11.24 for six advisories in its SMTP
   client, RUSTSEC-2026-0560 to RUSTSEC-2026-0565.** It sends the scheduler's
   email notifications. With `smtp_tls = true`, the default, the connection
