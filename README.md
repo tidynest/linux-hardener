@@ -145,7 +145,7 @@ The rollback takes its own snapshot first, so it too can be undone.
 | **PAM Authentication Hardening** | password quality, lockout, history and ageing |
 | **Service Minimisation** | disables services that need not be running |
 | **Audit Rules Hardening** | auditd rule files (`auditd.conf` is checkpointed but not modified) |
-| **File Permissions Hardening** | modes and ownership on account, boot and authentication paths |
+| **File Permissions Hardening** | file modes on account, boot and authentication paths (ownership is not checked) |
 | **MAC System Hardening** | SELinux and AppArmor detection and status. SELinux changes are runtime-only, and AppArmor reports manual steps rather than editing profiles |
 
 ### Compliance frameworks
@@ -155,10 +155,48 @@ ISO/IEC 27001:2022, SOC 2 Trust Services Criteria, NIST SP 800-171 Revision 3
 and FedRAMP (Moderate, Rev 5 baseline).
 
 Coverage is declared per control by the plugin that would assess it. A control
-no plugin covers is reported as **Manual Review**, never as a pass, so a report
-cannot claim compliance the tool did not measure. RHEL-10-family hosts are
-assessed against DISA RHEL 10 STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1
-identifiers automatically; `--profile` overrides that.
+no plugin covers is reported as **Manual Review**, never as a pass. A covered
+control passes when its plugin finds nothing weaker than the baseline, which is
+not always everything the control asks for; see
+[Known limitations](#known-limitations). RHEL-10-family hosts are assessed
+against DISA RHEL 10 STIG V1R1 and CIS RHEL 10 Benchmark v1.0.1 identifiers
+automatically; `--profile` overrides that.
+
+### Where the default values come from
+
+**linux-hardener does not follow one hardening guide.** Its built-in values,
+the baseline, are the project's own choice, and the repository does not record
+which guide most of them came from. Comparing them with the guides shows where
+they sit. The password rules, a 14-character minimum and 5 remembered
+passwords, are those of the older CIS Benchmarks for Red Hat Enterprise Linux 7
+and 8. The kernel pointer setting matches the Kernel Self Protection Project,
+and the SSH algorithm lists are close to one of ssh-audit's hardened policies.
+Most other values agree with the CIS Benchmarks or the DISA STIGs, but the
+guides disagree with one another, and the baseline matches none of them on
+every setting. Its 90-day password expiry is stricter than both the CIS
+Benchmarks' 365 days and the current Red Hat STIGs' 180, while its 14-character
+minimum is one short of the STIGs' 15.
+
+The [baseline sources](docs/reference/baseline-sources.md) page lists every
+value with its comparison and severity, any source that is recorded, the
+closest match among the guides, and what each guide asks for on the same
+setting. `scripts/validate/validate_all.py` fails when a value in the code
+changes without its row on that page.
+
+The values are the same on every distribution. A compliance profile changes the
+control identifiers a report prints, never a value, and a **Pass** means the
+host meets the baseline's value, which is not always everything the control's
+own text asks for. `directives` can only tighten a value as the code ranks
+it, although for three settings, faillock `deny`, `PASS_MAX_DAYS` and
+`ClientAliveCountMax`, it ranks the value that switches the check off as the
+strictest. An exception is how a host records a deliberately looser value.
+
+There is no written rule yet for choosing between guides where they disagree.
+To propose a different default, open an issue with the **Propose a baseline
+change** form, naming the setting, the value, and the guide, version and rule
+that back it. Password expiry and length are under discussion in
+[#190](https://github.com/tidynest/linux-hardener/issues/190), and password
+hashing in [#191](https://github.com/tidynest/linux-hardener/issues/191).
 
 ### Supported distributions
 
@@ -467,6 +505,15 @@ evasion.
   been stable, and every entry carries `scan_success` and `scan_error`, so a
   failed plugin is distinguishable; what is missing is a way to know that
   without inspecting the payload.
+- A compliance **Pass** is judged against linux-hardener's own value for each
+  check, never against a number in the control's text. Where a control asks for
+  more than the baseline, such as a 15-character password minimum where the
+  baseline asks for 14, or for something the check does not read, such as the
+  owner of `/etc/shadow`, a host meeting the baseline still passes it. So does
+  a host that switches a check off with a value the code ranks as strictest,
+  such as faillock `deny = 0`.
+  [Baseline sources](docs/reference/baseline-sources.md#where-a-pass-and-the-control-disagree)
+  lists the cases found so far.
 
 Open defects are tracked as
 [GitHub issues](https://github.com/tidynest/linux-hardener/issues),
@@ -559,6 +606,9 @@ tarballs hold only the CLI, so they carry `LICENSE` and the Noto Sans text.
 Drawing on [Lynis](https://cisofy.com/lynis/),
 [OpenSCAP](https://www.open-scap.org/) and the
 [CIS Benchmarks](https://www.cisecurity.org/cis-benchmarks).
+[Baseline sources](docs/reference/baseline-sources.md) compares the default
+values with the CIS Benchmarks, the DISA STIGs, the Kernel Self Protection
+Project, OpenSSH, ssh-audit and others.
 
 ---
 

@@ -1,6 +1,6 @@
 # Plugin authoring guide
 
-**Last Updated**: 2026-08-18
+**Last Updated**: 2026-11-26
 
 How to write a new hardening plugin. The 8 existing plugins in
 `crates/hardener-plugins/src/` are the best worked examples; this page
@@ -431,6 +431,29 @@ than fabricated as passing. Two consequences for authors:
 Plugins keep canonical control IDs (RHEL 8 STIG V-IDs, distribution-neutral
 CIS numbering); profile-specific translation (for example RHEL 10) happens at
 report time in `hardener-compliance`, not in plugins.
+
+## Baseline values and where they come from
+
+A mapping says which control a check relates to. It does not say where the
+check's value came from, and a reader who asks will look in
+[baseline-sources.md](../reference/baseline-sources.md). Every value a plugin
+compares against has a row there: default, comparison, severity, where the
+value came from, and what the main guides ask for on the same setting.
+
+When you add a check or change a value, change its row in the same commit. Name
+the guide, its version and the rule or section the value follows, or write "No
+source recorded" and say why the value was chosen. If the mapped control asks
+for a stricter number than the baseline, add the control to the page's table of
+weaker passes, because a report will pass a host that does not meet it. The
+same goes for a control that asks for more than the check measures, such as
+ownership where the check reads only the mode. For a setting where 0 switches
+the check off, compare it with `NonZeroAtMost` rather than `AtMost`, which
+ranks 0 as the strictest value there is.
+`scripts/validate/validate_baseline_sources.py`, run by `validate_all.py`,
+reads the plugin tables and fails until the page agrees. A new `const` table of
+a plugin struct fails it until the script has a parser for it, so extend the
+script in the same change, or name the table in its `NOT_BASELINE` with the
+reason it holds no value.
 
 ## Naming conventions
 

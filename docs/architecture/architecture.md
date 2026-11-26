@@ -1,6 +1,6 @@
 # Linux Hardener - Architecture Documentation
 
-**Last Updated**: 2026-11-18
+**Last Updated**: 2026-11-26
 **Version:** 1.9.1
 
 ---
@@ -428,14 +428,18 @@ pub trait FirewallBackend: Send + Sync {
 
 | Plugin | Category | Checks |
 |--------|----------|--------|
-| `AuditHardeningPlugin` | Audit | auditd rules for time, users, permissions, modules |
-| `FirewallHardeningPlugin` | Network | Firewall enabled, baseline rules |
-| `KernelHardeningPlugin` | Kernel | ASLR, kptr_restrict, dmesg_restrict, ptrace_scope |
+| `AuditHardeningPlugin` | Audit | 22 auditd rules: time, identity files, network settings, permission changes, deletions, privileged commands and kernel modules |
+| `FirewallHardeningPlugin` | Network | Firewall enabled, and four baseline rules on a drop policy |
+| `KernelHardeningPlugin` | Kernel | 18 sysctls: ASLR, kernel pointer and log restrictions, ptrace scope, link protection, core dumps and IPv4 network settings |
 | `MacHardeningPlugin` | Kernel | SELinux/AppArmor status |
-| `PamHardeningPlugin` | Authentication | Password complexity, lockout, reuse |
-| `PermissionsHardeningPlugin` | FileSystem | Critical paths, SUID/SGID |
-| `ServicesHardeningPlugin` | Services | Unnecessary services |
-| `SshHardeningPlugin` | Network | PermitRootLogin, PasswordAuthentication, KbdInteractiveAuthentication |
+| `PamHardeningPlugin` | Authentication | Password quality, lockout, reuse and ageing |
+| `PermissionsHardeningPlugin` | FileSystem | Modes of 9 critical paths. Ownership and SUID/SGID binaries are not checked |
+| `ServicesHardeningPlugin` | Services | Five services a typical server does not need |
+| `SshHardeningPlugin` | Network | 8 sshd directives and 3 algorithm allow-lists |
+
+Every value these plugins check, with its comparison, severity and where it
+came from, is listed in
+[baseline-sources.md](../reference/baseline-sources.md).
 
 ---
 

@@ -184,9 +184,21 @@ struct SshCryptoDirective {
 
 /// Strong key-exchange algorithms (post-quantum + curve25519 + large MODP DH).
 ///
-/// Source: OpenSSH 10 defaults and Mozilla "Modern" SSH guidance. PQ hybrids
-/// first, then curve25519, then SHA-512 group16/18 as a fallback for hosts that
-/// lack the newer KEX. No SHA-1, no group14, no GSSAPI.
+/// No source was recorded when this list was added. The nearest published
+/// list is ssh-audit's "Hardened OpenSSH Server v9.9" policy, which holds these
+/// six plus diffie-hellman-group-exchange-sha256 and the @openssh.com spelling
+/// of sntrup. That is a match, not a recorded source: the policy opens with
+/// sntrup where this list opens with mlkem, as ssh-audit's OpenSSH 10 policies
+/// do, and the MAC list below follows their order rather than v9.9's. The
+/// OpenSSH 10.0 server default (`myproposal.h` at `V_10_0_P1`) opens with the
+/// same two post-quantum hybrids and curve25519, goes on to the NIST curves
+/// this list leaves out, and moved the finite-field groups to the client only,
+/// where this list keeps group16/18 as a fallback for hosts that lack the newer
+/// KEX.
+/// ssh-audit's OpenSSH 10 policies keep the two hybrids alone. Mozilla's
+/// "Modern" profile, which this comment used to name, predates post-quantum
+/// KEX. No SHA-1, no group14, no GSSAPI. Sources and dates are in
+/// `docs/reference/baseline-sources.md`.
 const SSH_DESIRED_KEX: &[&str] = &[
     "mlkem768x25519-sha256",
     "sntrup761x25519-sha512",

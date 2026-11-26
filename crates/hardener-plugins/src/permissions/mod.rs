@@ -3,12 +3,11 @@
 //! This plugin audits and secures critical file and directory permissions
 //! across the system to prevent privilege escalation and unauthorised access.
 //!
-//! Checks:
-//! - Critical directory permissions (/root, /boot, /etc/ssh, /etc/sudoers)
-//! - SUID/SGID binaries (identifies dangerous ones)
-//! - World-writable files and directories
-//! - SSH key file permissions
-//! - Sudo configuration files
+//! Checks the mode of each path in `CRITICAL_PERMISSIONS`: `/root`, `/boot`,
+//! `/etc/ssh`, `/etc/sudoers`, `/etc/sudoers.d` and the four account files
+//! (`/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow`). The table
+//! carries an owner and a group for each path, but neither is read, and there
+//! is no check for SUID/SGID binaries, world-writable files or SSH key files.
 
 use async_trait::async_trait;
 use hardener_common::{
