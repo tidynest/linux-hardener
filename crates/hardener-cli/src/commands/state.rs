@@ -150,6 +150,17 @@ pub use hardener_core::config_write::{effective_user, get_audit_logger};
 /// logging failure still never fails the action, for the reason
 /// `WriteAudit::record` gives: the change has already happened, and reporting
 /// it as failed would be the worse lie.
+/// What a finished operation says to the audit trail: that it succeeded, or
+/// the whole chain of reasons it did not.
+///
+/// For the operations whose result is only ever asked "did it work", where
+/// the value inside `Ok` is the caller's business and not the trail's.
+pub(crate) fn outcome_of<T, E: std::fmt::Display>(
+    result: &std::result::Result<T, E>,
+) -> std::result::Result<(), String> {
+    result.as_ref().map(|_| ()).map_err(|e| format!("{e:#}"))
+}
+
 pub(crate) async fn record_outcome(
     logger: &AuditLogger,
     action: ActionType,
