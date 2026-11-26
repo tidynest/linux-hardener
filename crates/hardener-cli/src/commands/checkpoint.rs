@@ -5,14 +5,14 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use hardener_core::{Context, SystemExecutor, executor::host_keys_for};
-use hardener_state::{ActionResult, ActionType, AuditLogger, CheckpointId};
+use hardener_state::{ActionType, AuditLogger, CheckpointId};
 use hardener_types::RollbackResult;
 
 use crate::cli::OutputFormat;
 use crate::output;
 
 use super::privilege::is_privileged;
-use super::state::{effective_user, get_checkpoint_manager};
+use super::state::{get_checkpoint_manager, outcome_of, record_outcome};
 
 pub async fn list(
     format: OutputFormat,
@@ -50,8 +50,30 @@ pub async fn create(
         bail!("Root privileges required to create checkpoints.");
     }
 
-    let manager = get_checkpoint_manager().await?;
+    create_with(
+        get_checkpoint_manager().await?,
+        name,
+        format,
+        quiet,
+        executor,
+        logger,
+    )
+    .await
+}
 
+/// [`create`] once the privilege gate has passed, on the manager it is given.
+///
+/// Split off so the manager is an argument, as the logger already is and for
+/// the same reason: the name that resolves it answers with this user's own
+/// checkpoint database, which a test must not write to.
+pub(crate) async fn create_with(
+    manager: hardener_state::CheckpointManager,
+    name: &str,
+    format: OutputFormat,
+    quiet: bool,
+    executor: Arc<dyn SystemExecutor>,
+    logger: Option<AuditLogger>,
+) -> Result<()> {
     // Collect common config file paths to snapshot
     let paths = collect_config_paths();
 
@@ -59,20 +81,21 @@ pub async fn create(
         output::status(&format, &format!("Creating checkpoint: {}", name));
     }
 
-    let checkpoint_id = manager
+    // Recorded either way, as `delete` below does and for its reason: a
+    // checkpoint that could not be taken is the attempt the trail most needs.
+    let created = manager
         .create_checkpoint(executor.as_ref(), name, &paths)
-        .await?;
-
-    if let Some(logger) = logger {
-        let _ = logger
-            .log_action(
-                ActionType::CheckpointCreate,
-                effective_user(),
-                name.to_string(),
-                ActionResult::Success,
-            )
-            .await;
+        .await;
+    if let Some(logger) = &logger {
+        record_outcome(
+            logger,
+            ActionType::CheckpointCreate,
+            name.to_string(),
+            outcome_of(&created),
+        )
+        .await;
     }
+    let checkpoint_id = created?;
 
     output::checkpoint_created(&format, &checkpoint_id);
     Ok(())
@@ -98,19 +121,14 @@ pub async fn delete(
     // which is the one place it needs to appear. `rollback` and `apply` already
     // log both outcomes.
     let outcome = manager.delete_checkpoint(&id).await;
-    if let Some(logger) = logger {
-        let _ = logger
-            .log_action(
-                ActionType::CheckpointDelete,
-                effective_user(),
-                checkpoint_id.to_string(),
-                if outcome.is_ok() {
-                    ActionResult::Success
-                } else {
-                    ActionResult::Failure
-                },
-            )
-            .await;
+    if let Some(logger) = &logger {
+        record_outcome(
+            logger,
+            ActionType::CheckpointDelete,
+            checkpoint_id.to_string(),
+            outcome_of(&outcome),
+        )
+        .await;
     }
     outcome?;
 
@@ -149,15 +167,14 @@ pub async fn repair(
     // Logged under the deletion action because that is what it is: rows leave
     // the state database. A run that removed nothing is still recorded, so the
     // trail says the database was inspected and found clean.
-    if let Some(logger) = logger {
-        let _ = logger
-            .log_action(
-                ActionType::CheckpointDelete,
-                effective_user(),
-                format!("orphaned file rows: {removed}"),
-                ActionResult::Success,
-            )
-            .await;
+    if let Some(logger) = &logger {
+        record_outcome(
+            logger,
+            ActionType::CheckpointDelete,
+            format!("orphaned file rows: {removed}"),
+            Ok(()),
+        )
+        .await;
     }
 
     output::checkpoint_repair(&format, found, Some(removed));
@@ -186,7 +203,27 @@ pub async fn rollback(
         bail!("Root privileges required to rollback changes.");
     }
 
-    let manager = get_checkpoint_manager().await?;
+    rollback_with(
+        get_checkpoint_manager().await?,
+        checkpoint_id,
+        format,
+        quiet,
+        executor,
+        logger,
+    )
+    .await
+}
+
+/// [`rollback`] once the privilege gate has passed, on the manager it is
+/// given. See [`create_with`] for why the manager is an argument.
+pub(crate) async fn rollback_with(
+    manager: hardener_state::CheckpointManager,
+    checkpoint_id: &str,
+    format: OutputFormat,
+    quiet: bool,
+    executor: Arc<dyn SystemExecutor>,
+    logger: Option<AuditLogger>,
+) -> Result<()> {
     let id = CheckpointId::new(checkpoint_id);
 
     if !quiet {
@@ -196,7 +233,21 @@ pub async fn rollback(
         );
     }
 
-    let mut result = manager.rollback(executor.as_ref(), &id).await?;
+    // A rollback refused outright (no such checkpoint, another host's, a
+    // signature that does not verify) has no result to report further down,
+    // so it is recorded here. One that did run is recorded below, once the
+    // reload has had its say.
+    let rolled_back = manager.rollback(executor.as_ref(), &id).await;
+    if let (Some(logger), Err(_)) = (&logger, &rolled_back) {
+        record_outcome(
+            logger,
+            ActionType::Rollback,
+            checkpoint_id.to_string(),
+            outcome_of(&rolled_back),
+        )
+        .await;
+    }
+    let mut result = rolled_back?;
 
     let ctx = Context::with_executor(Arc::clone(&executor));
     let registry = hardener_plugins::create_plugin_registry();
@@ -204,31 +255,23 @@ pub async fn rollback(
 
     output::rollback_result(&format, &result);
 
-    let reason = rollback_failure_reason(&result);
-    let action_result = match reason {
-        None => ActionResult::Success,
-        Some(_) => ActionResult::Failure,
+    // One sentence per failure, used for both the audit entry and the error
+    // the operator sees, so the trail and the terminal cannot disagree.
+    let outcome = match rollback_failure_reason(&result) {
+        None => Ok(()),
+        Some(reason) => Err(reason.message().to_string()),
     };
-    if let Some(logger) = logger {
-        let _ = logger
-            .log_action(
-                ActionType::Rollback,
-                effective_user(),
-                checkpoint_id.to_string(),
-                action_result,
-            )
-            .await;
+    if let Some(logger) = &logger {
+        record_outcome(
+            logger,
+            ActionType::Rollback,
+            checkpoint_id.to_string(),
+            outcome.clone(),
+        )
+        .await;
     }
 
-    match reason {
-        None => Ok(()),
-        Some(FailureReason::Files) => {
-            bail!("Rollback completed with errors: some files were not restored")
-        }
-        Some(FailureReason::Reload) => bail!(
-            "Files were restored, but a service did not reload and is still running the previous configuration"
-        ),
-    }
+    outcome.map_err(anyhow::Error::msg)
 }
 
 /// Restoring the bytes is only half of a rollback: until the services that
@@ -270,6 +313,17 @@ pub(crate) async fn reload_restored_paths(
 pub(crate) enum FailureReason {
     Files,
     Reload,
+}
+
+impl FailureReason {
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            FailureReason::Files => "Rollback completed with errors: some files were not restored",
+            FailureReason::Reload => {
+                "Files were restored, but a service did not reload and is still running the previous configuration"
+            }
+        }
+    }
 }
 
 pub(crate) fn rollback_failure_reason(result: &RollbackResult) -> Option<FailureReason> {

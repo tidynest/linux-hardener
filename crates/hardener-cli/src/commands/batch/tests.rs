@@ -2603,3 +2603,112 @@ fn a_payload_without_the_rows_still_parses() {
         other => panic!("expected RolledBack, got {other:?}"),
     }
 }
+
+// ---- what a fleet outcome says to the audit trail ----
+
+fn plugin_outcome(plugin: &str, error: Option<&str>) -> hardener_types::PluginOutcome {
+    hardener_types::PluginOutcome {
+        plugin: PluginId::new(plugin),
+        success: error.is_none(),
+        applied: usize::from(error.is_none()),
+        failed: usize::from(error.is_some()),
+        error: error.map(str::to_string),
+    }
+}
+
+/// A host where a plugin failed used to be handed to the audit writer as a
+/// bare `Failure`, which that writer refuses, so the host that most needed an
+/// entry got none. The outcome now carries a reason, and the reason names the
+/// plugin, because "apply @ host: failed" sends the reader back to the host.
+#[test]
+fn a_fleet_apply_with_a_failed_plugin_is_audited_as_a_failure_naming_it() {
+    let status = ApplyStatus::Applied {
+        ok: 1,
+        failed: 1,
+        plugins: vec![
+            plugin_outcome("kernel-hardening", None),
+            plugin_outcome("ssh-hardening", Some("sshd -t rejected the file")),
+        ],
+    };
+    let reason = apply_audit_outcome(&status)
+        .expect("an executed apply is audited")
+        .expect_err("a failed plugin makes the host a failure");
+    assert!(reason.contains("ssh-hardening"), "got: {reason}");
+    assert!(
+        reason.contains("sshd -t rejected the file"),
+        "got: {reason}"
+    );
+    assert!(!reason.contains("kernel-hardening"), "got: {reason}");
+}
+
+#[test]
+fn a_fleet_apply_that_never_reached_the_host_is_audited_with_its_error() {
+    let status = ApplyStatus::Failed {
+        error: "connection refused".to_string(),
+    };
+    assert_eq!(
+        apply_audit_outcome(&status),
+        Some(Err("connection refused".to_string()))
+    );
+}
+
+#[test]
+fn a_clean_fleet_apply_is_audited_as_a_success_and_a_dry_run_not_at_all() {
+    let clean = ApplyStatus::Applied {
+        ok: 1,
+        failed: 0,
+        plugins: vec![plugin_outcome("ssh-hardening", None)],
+    };
+    assert_eq!(apply_audit_outcome(&clean), Some(Ok(())));
+
+    let dry_run = ApplyStatus::Validated {
+        plugins: 1,
+        would_change: 1,
+        compliant: 0,
+        failed: 1,
+    };
+    assert_eq!(apply_audit_outcome(&dry_run), None);
+}
+
+#[test]
+fn a_fleet_rollback_with_failures_is_audited_as_a_failure_saying_which_half() {
+    let status = RollbackStatus::RolledBack {
+        restored: 2,
+        failed: 1,
+        reload_failed: 1,
+        diverged: 0,
+        unverifiable: 0,
+        divergences: vec![],
+    };
+    let reason = rollback_audit_outcome(&status)
+        .expect("an executed rollback is audited")
+        .expect_err("a checkpoint that did not roll back is a failure");
+    assert!(reason.contains("1 of 3"), "got: {reason}");
+    assert!(reason.contains("reload"), "got: {reason}");
+
+    let failed = RollbackStatus::Failed {
+        error: "not privileged".to_string(),
+    };
+    assert_eq!(
+        rollback_audit_outcome(&failed),
+        Some(Err("not privileged".to_string()))
+    );
+}
+
+#[test]
+fn a_clean_fleet_rollback_is_a_success_and_a_preview_or_no_op_is_not_audited() {
+    let clean = RollbackStatus::RolledBack {
+        restored: 2,
+        failed: 0,
+        reload_failed: 0,
+        diverged: 0,
+        unverifiable: 0,
+        divergences: vec![],
+    };
+    assert_eq!(rollback_audit_outcome(&clean), Some(Ok(())));
+    assert_eq!(rollback_audit_outcome(&RollbackStatus::NothingToDo), None);
+    assert_eq!(
+        rollback_audit_outcome(&RollbackStatus::Previewed { checkpoints: 2 }),
+        None
+    );
+}

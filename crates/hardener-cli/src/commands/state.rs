@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use hardener_state::signing::repair_narrowed_directory_mode;
-use hardener_state::{CheckpointManager, CheckpointSigner, init_db};
+use hardener_state::{ActionType, AuditLogger, CheckpointManager, CheckpointSigner, init_db};
 use std::os::unix::fs::PermissionsExt;
 use std::{
     fs,
@@ -139,6 +139,42 @@ pub async fn get_checkpoint_manager() -> Result<CheckpointManager> {
 // A check that cannot tell a violation from a sentence about violations is
 // answering a different question from the one it was written for.
 pub use hardener_core::config_write::{effective_user, get_audit_logger};
+
+/// What a finished operation says to the audit trail: that it succeeded, or
+/// the whole chain of reasons it did not.
+///
+/// For the operations whose result is only ever asked "did it work", where
+/// the value inside `Ok` is the caller's business and not the trail's.
+pub(crate) fn outcome_of<T, E: std::fmt::Display>(
+    result: &std::result::Result<T, E>,
+) -> std::result::Result<(), String> {
+    result.as_ref().map(|_| ()).map_err(|e| format!("{e:#}"))
+}
+
+/// Files how an action ended, and says so out loud when the entry could not be
+/// written.
+///
+/// Every verb that records an outcome goes through here, so there is one place
+/// that decides what a lost audit entry looks like. It used to look like
+/// nothing: each call site discarded the writer's `Result`, which is how five
+/// of them went on handing it failures it refused without anyone noticing. A
+/// logging failure still never fails the action, for the reason
+/// `WriteAudit::record` gives: the change has already happened, and reporting
+/// it as failed would be the worse lie.
+pub(crate) async fn record_outcome(
+    logger: &AuditLogger,
+    action: ActionType,
+    target: String,
+    outcome: std::result::Result<(), String>,
+) {
+    if let Err(e) = logger
+        .log_outcome(action, effective_user(), target, outcome)
+        .await
+    {
+        tracing::warn!("an action was not audited: {e}");
+        eprintln!("⚠  The audit entry for this action failed: {e}");
+    }
+}
 
 #[cfg(test)]
 mod tests;

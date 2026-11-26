@@ -921,3 +921,74 @@ async fn an_untouched_failure_entry_still_verifies() {
         "the guard must not reject a log this program wrote"
     );
 }
+
+/// What a caller that only knows "it worked" or "it failed, and why" should
+/// reach for. Five call sites built an `ActionResult` from a boolean and handed
+/// it to `log_action`, which refuses `Failure`, and each discarded the refusal,
+/// so a failed apply, rollback or checkpoint delete left no entry at all. A
+/// failure handed to `log_outcome` has to carry its reason, and lands as a
+/// failure entry that verifies.
+#[tokio::test]
+async fn a_failed_outcome_is_written_as_a_failure_entry_with_its_reason() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    logger
+        .log_outcome(
+            ActionType::Apply,
+            "eric".to_string(),
+            "sshd".to_string(),
+            Err("sshd -t rejected the file".to_string()),
+        )
+        .await
+        .expect("a failed outcome must be written, not refused");
+
+    let entries = AuditLogger::query(path_str, QueryFilter::new())
+        .await
+        .expect("query");
+    assert_eq!(entries.len(), 1, "exactly one entry for one outcome");
+    assert_eq!(entries[0].entry_result, ActionResult::Failure);
+    assert_eq!(
+        entries[0].entry_details.get("error").map(String::as_str),
+        Some("sshd -t rejected the file"),
+        "the reason must be in the entry, where the hash covers it"
+    );
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "a failure entry written this way must verify"
+    );
+}
+
+#[tokio::test]
+async fn a_successful_outcome_is_written_as_a_success_entry() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+    logger
+        .log_outcome(
+            ActionType::Rollback,
+            "eric".to_string(),
+            "checkpoint-1".to_string(),
+            Ok(()),
+        )
+        .await
+        .expect("logged");
+
+    let entries = AuditLogger::query(path_str, QueryFilter::new())
+        .await
+        .expect("query");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry_result, ActionResult::Success);
+    assert!(entries[0].entry_details.is_empty());
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify")
+    );
+}

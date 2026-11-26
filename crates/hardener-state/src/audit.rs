@@ -305,8 +305,11 @@ impl AuditLogger {
         // passed here therefore stores one result and hashes another, and
         // `verify_integrity` recomputes from the stored one, so the entry could
         // never verify and the append-only log would read as tampered from that
-        // point on. Unreachable when this was written, because every failure
-        // path uses `log_failure`, which is why nothing caught it.
+        // point on. Believed unreachable when this was written, on the grounds
+        // that every failure path used `log_failure`. Five did not: they built
+        // the result from a boolean and discarded this refusal, so their
+        // failures were never written. `log_outcome` is the writer for a caller
+        // in that position.
         if result == ActionResult::Failure {
             return Err(HardeningError::Validation(
                 "a failed action cannot be logged through log_action: the entry would record \
@@ -488,8 +491,9 @@ impl AuditLogger {
 
     /// Logs a failed action with an error message.
     ///
-    /// This is a convenience wrapper around log_action() that creates
-    /// a failure entry and includes the error message in details.
+    /// Writes a failure entry whose hash covers the error message. A caller
+    /// that may be reporting either outcome wants
+    /// [`log_outcome`](Self::log_outcome).
     ///
     /// # Arguments
     /// * `action_type` - Type of action being logged
@@ -536,6 +540,35 @@ impl AuditLogger {
         chain.update(hash);
 
         Ok(())
+    }
+
+    /// Logs an action whichever way it ended.
+    ///
+    /// For a caller that learns the outcome only after the fact. `Ok(())` is
+    /// written by [`log_action`](Self::log_action) and `Err(reason)` by
+    /// [`log_failure`](Self::log_failure), so the choice between the two
+    /// writers is made here and nowhere else.
+    ///
+    /// It exists because that choice used to be made at each call site, as an
+    /// `ActionResult` built from a boolean and handed to `log_action`. That
+    /// writer refuses `Failure`, every one of those callers discarded the
+    /// refusal, and a failed apply, rollback or checkpoint delete therefore
+    /// left no entry at all. Taking a `Result` closes it at the type: a failure
+    /// cannot be passed without the reason a failure entry is hashed over.
+    pub async fn log_outcome(
+        &self,
+        action_type: ActionType,
+        user: String,
+        target: String,
+        outcome: std::result::Result<(), String>,
+    ) -> Result<()> {
+        match outcome {
+            Ok(()) => {
+                self.log_action(action_type, user, target, ActionResult::Success)
+                    .await
+            }
+            Err(reason) => self.log_failure(action_type, user, target, reason).await,
+        }
     }
 
     /// Verifies that every entry still links to the one before it.

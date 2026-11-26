@@ -214,3 +214,65 @@ async fn a_global_allow_list_narrows_apply_too() {
     );
     assert!(!result.had_failure);
 }
+
+/// A plugin that fails is exactly the run an auditor goes looking for, and it
+/// used to leave nothing behind: a result with `apply_success: false` was
+/// handed to a writer that refuses failures and the refusal was discarded,
+/// while a plugin whose `apply()` returned `Err` never reached the logging
+/// loop at all.
+///
+/// Both plugins fail here, since a bare `MockExecutor` has none of the files
+/// they read. Which of the two shapes each takes does not matter to the
+/// assertion: one entry per plugin that ran, either way.
+#[tokio::test]
+async fn every_plugin_that_ran_leaves_an_apply_entry_whether_or_not_it_succeeded() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("audit.log");
+    let path_str = path.to_str().expect("utf-8 path");
+    let logger = AuditLogger::new(path_str).await.expect("logger");
+
+    let ids = vec![
+        PluginId::new("ssh-hardening"),
+        PluginId::new("kernel-hardening"),
+    ];
+    let result = apply_host(
+        Arc::new(MockExecutor::new()),
+        &ids,
+        false,
+        &HardenerConfig::default(),
+        None,
+        Some(logger),
+        &OutputFormat::Json,
+        true,
+    )
+    .await;
+    assert!(
+        result.had_failure,
+        "a bare MockExecutor must fail at least one plugin, or this proves nothing"
+    );
+
+    let entries = AuditLogger::query(
+        path_str,
+        hardener_state::audit::QueryFilter::new().with_action_type(ActionType::Apply),
+    )
+    .await
+    .expect("query");
+    assert_eq!(
+        entries.len(),
+        ids.len(),
+        "one apply entry per plugin that ran, got: {entries:?}"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.entry_result == hardener_state::ActionResult::Failure
+                && e.entry_details.contains_key("error")),
+        "the failure must be recorded with its reason, got: {entries:?}"
+    );
+    assert!(
+        AuditLogger::verify_integrity(path_str)
+            .await
+            .expect("verify"),
+        "the trail must still verify after a failed apply"
+    );
+}

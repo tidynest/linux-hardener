@@ -381,3 +381,121 @@ fn a_clean_rollback_carrying_divergences_still_has_no_failure_reason() {
     };
     assert_eq!(rollback_failure_reason(&result), None);
 }
+
+// ---- an operation that errors before it has a result still reaches the trail ----
+
+/// A checkpoint manager and an audit logger on a temporary directory, so no
+/// test here can reach this user's own checkpoint database or audit trail.
+struct Sandbox {
+    _dir: tempfile::TempDir,
+    manager: hardener_state::CheckpointManager,
+    logger: AuditLogger,
+    audit_path: String,
+}
+
+/// Whether the sandbox's database still answers. Closing it fails any
+/// operation at the point it has to store something, whatever the executor
+/// reports about the host.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Database {
+    Open,
+    Closed,
+}
+
+async fn sandbox(database: Database) -> Sandbox {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let pool = hardener_state::init_db(Some(dir.path().join("checkpoints.db").as_path()))
+        .await
+        .expect("database");
+    let signer = hardener_state::CheckpointSigner::new_with_path(&dir.path().join("signing.key"))
+        .expect("signer");
+    let manager =
+        hardener_state::CheckpointManager::new_with_signer(pool.clone(), signer).expect("manager");
+    if database == Database::Closed {
+        pool.close().await;
+    }
+    let audit_path = dir
+        .path()
+        .join("audit.log")
+        .to_str()
+        .expect("utf-8 path")
+        .to_string();
+    let logger = AuditLogger::new(&audit_path).await.expect("logger");
+    Sandbox {
+        _dir: dir,
+        manager,
+        logger,
+        audit_path,
+    }
+}
+
+async fn only_entry(audit_path: &str, action: ActionType) -> hardener_state::AuditEntry {
+    let mut entries = AuditLogger::query(
+        audit_path,
+        hardener_state::audit::QueryFilter::new().with_action_type(action),
+    )
+    .await
+    .expect("query");
+    assert_eq!(entries.len(), 1, "exactly one entry, got: {entries:?}");
+    assert!(
+        AuditLogger::verify_integrity(audit_path)
+            .await
+            .expect("verify"),
+        "the trail must verify"
+    );
+    entries.remove(0)
+}
+
+/// Rolling back to a checkpoint that does not exist, or that belongs to
+/// another host, or whose signature does not verify, is refused before any
+/// file is touched. Those are the attempts an audit trail exists to show, and
+/// the refusal used to leave through `?` ahead of the only line that logged.
+#[tokio::test]
+async fn a_rollback_refused_before_it_restores_anything_is_still_recorded() {
+    let sandbox = sandbox(Database::Open).await;
+
+    let refused = rollback_with(
+        sandbox.manager,
+        "no-such-checkpoint",
+        OutputFormat::Json,
+        true,
+        Arc::new(hardener_common::executor::MockExecutor::new()),
+        Some(sandbox.logger),
+    )
+    .await;
+    assert!(refused.is_err(), "there is no such checkpoint to restore");
+
+    let entry = only_entry(&sandbox.audit_path, ActionType::Rollback).await;
+    assert_eq!(entry.entry_result, hardener_state::ActionResult::Failure);
+    assert_eq!(entry.entry_target, "no-such-checkpoint");
+    assert!(
+        entry.entry_details.contains_key("error"),
+        "the refusal's reason belongs in the entry, got: {entry:?}"
+    );
+}
+
+/// The same hole on the way in: a checkpoint that could not be taken left no
+/// entry, so the trail could not tell "never tried" from "tried and failed".
+#[tokio::test]
+async fn a_checkpoint_that_could_not_be_created_is_still_recorded() {
+    let sandbox = sandbox(Database::Closed).await;
+
+    let failed = create_with(
+        sandbox.manager,
+        "before-upgrade",
+        OutputFormat::Json,
+        true,
+        Arc::new(hardener_common::executor::MockExecutor::new()),
+        Some(sandbox.logger),
+    )
+    .await;
+    assert!(
+        failed.is_err(),
+        "nothing can be stored in a closed database"
+    );
+
+    let entry = only_entry(&sandbox.audit_path, ActionType::CheckpointCreate).await;
+    assert_eq!(entry.entry_result, hardener_state::ActionResult::Failure);
+    assert_eq!(entry.entry_target, "before-upgrade");
+    assert!(entry.entry_details.contains_key("error"), "got: {entry:?}");
+}

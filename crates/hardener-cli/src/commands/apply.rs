@@ -8,11 +8,11 @@ use hardener_core::{
     ApplyResult, Context, HardenerConfig, PluginMetadata, SystemExecutor, ValidationReport,
 };
 use hardener_plugins::create_plugin_registry;
-use hardener_state::{ActionResult, ActionType, AuditLogger, CheckpointManager};
+use hardener_state::{ActionType, AuditLogger, CheckpointManager};
 use std::sync::Arc;
 
 use super::privilege::is_privileged;
-use super::state::get_checkpoint_manager;
+use super::state::{get_checkpoint_manager, record_outcome};
 
 /// Result of running `apply_host` for one executor target.
 pub(crate) struct ApplyHostResult {
@@ -137,7 +137,31 @@ pub(crate) async fn apply_host(
                 }
             }
         } else {
-            match plugin.apply(&mut ctx, plugin_config).await {
+            let applied = plugin.apply(&mut ctx, plugin_config).await;
+
+            // Recorded here, per plugin and before the result is sorted into a
+            // success or a failure, so no shape of failure can miss the trail.
+            // The loop that used to do this after the fact saw only the plugins
+            // that returned a result, and handed the failed ones to a writer
+            // that refuses failures.
+            if let Some(logger) = ctx.audit_logger() {
+                let outcome = match &applied {
+                    Ok(result) if result.apply_success => Ok(()),
+                    Ok(result) => Err(result
+                        .failure_reason()
+                        .unwrap_or_else(|| "no reason given".to_string())),
+                    Err(e) => Err(e.to_string()),
+                };
+                record_outcome(
+                    logger,
+                    ActionType::Apply,
+                    metadata.plugin_name.clone(),
+                    outcome,
+                )
+                .await;
+            }
+
+            match applied {
                 Ok(result) => results.push((metadata, result)),
                 Err(e) => {
                     had_failure = true;
@@ -154,25 +178,6 @@ pub(crate) async fn apply_host(
 
     if results.iter().any(|(_, r)| !r.apply_success) {
         had_failure = true;
-    }
-
-    if let Some(logger) = ctx.audit_logger() {
-        let user = super::state::effective_user();
-        for (metadata, result) in &results {
-            let action_result = if result.apply_success {
-                ActionResult::Success
-            } else {
-                ActionResult::Failure
-            };
-            let _ = logger
-                .log_action(
-                    ActionType::Apply,
-                    user.clone(),
-                    metadata.plugin_name.clone(),
-                    action_result,
-                )
-                .await;
-        }
     }
 
     ApplyHostResult {

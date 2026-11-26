@@ -1,6 +1,6 @@
 # Linux Hardener - File Map
 
-**Last Updated**: 2026-11-24
+**Last Updated**: 2026-11-26
 
 This document lists all source files with their purpose and key exports.
 
@@ -94,7 +94,7 @@ pub struct FleetHostScan { host_name: String, status: FleetHostStatus, tallies: 
 | `src/commands/systemd/tests.rs` | Unit tests for `src/commands/systemd.rs`, 20 tests: what `uninstall` reports, the status stream join, the five decisions the audit descriptor makes (the systemd instance, the unit-shaped target, install against uninstall at that same target, caller detail being added rather than replacing, and the unit directory following the mode, both answers now asserted whole against a home handed in rather than by suffix against the runner's own), a host with no home directory taking a system install and refusing a user one, and four on the privilege gate and the local-write guarantee: a system install without root refusing before the directory exists or systemd is asked anything, a `--user` install never needing root, the uninstall refusal naming its own verb, and the units reaching disk through `std::fs` while the executor is asked for `systemctl` alone, and one that the `LocalTarget` both verbs resolve is never a remote executor, two that drive `write_units` and `remove_units` against a temporary unit directory so a descriptor is observed reaching a write, and four that drive `install_with` and `uninstall_with` against a `MockExecutor` (reload before enable, a timer that would not start, a system install never reaching the user instance, and an uninstall proceeding past a timer that was never enabled) | Test-only; `super` resolves to `crate::commands::systemd`. `unit_dir_for`, the root check and `LocalExecutor` stay outside what is driven; `status` still spawns `systemctl` itself and only its stream join is asserted |
 | `src/commands/report_wizard/tests.rs` | Unit tests for `src/commands/report_wizard.rs` | Test-only; `super` resolves to `crate::commands::report_wizard`, so its imports carried across unchanged |
 | `src/commands/history/tests.rs` | Unit tests for `src/commands/history.rs` | Test-only; `super` resolves to `crate::commands::history`, so its imports carried across unchanged |
-| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 86 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
+| `src/commands/batch/tests.rs` | Unit tests for `src/commands/batch.rs`, 91 tests | Test-only; `super` resolves to `crate::commands::batch`, so its imports carried across unchanged |
 | `src/commands/checkpoint/tests.rs` | Unit tests for `src/commands/checkpoint.rs` | Test-only; `super` resolves to `crate::commands::checkpoint`, so its imports carried across unchanged |
 | `src/commands/state/tests.rs` | Unit tests for `src/commands/state.rs` | Test-only; `super` resolves to `crate::commands::state`, so its imports carried across unchanged |
 | `src/commands/privilege/tests.rs` | Unit tests for `src/commands/privilege.rs` | Test-only; `super` resolves to `crate::commands::privilege`, so its imports carried across unchanged |
@@ -1012,18 +1012,18 @@ compares every row with the tree on each run. Treat them as the size of each
 crate's declared test surface, and read the workspace run itself for what
 passed.
 
-The table covers the ten crates under `crates/` and sums to 2278. The eleventh
+The table covers the ten crates under `crates/` and sums to 2288. The eleventh
 workspace member, `src-tauri`, carries 194 more, which is why the tree total the
-evidence ledger records is 2472 and not this table's sum.
+evidence ledger records is 2482 and not this table's sum.
 
 | Crate | Unit Tests | Integration Tests | Annotations |
 |-------|------------|-------------------|-------------|
 | hardener-common | `error.rs`, `file_utils.rs`, `binary_utils.rs`, `text.rs`, `vendor_config.rs`, `executor/mod.rs`, `executor/mock.rs` | `common_types.rs`, `error_tests.rs`, `file_utils_tests.rs`, `common/mod.rs` | 139 |
 | hardener-compliance | `generator.rs`, `profiles.rs`, `frameworks/iso27001.rs`, `output/mod.rs`, and five of `output/`: `text.rs`, `json.rs`, `csv.rs`, `html.rs`, `pdf.rs` | `assessment_honesty.rs`, `config_tests.rs`, `framework_tests.rs`, `report_tests.rs` | 143 |
-| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs`, `checkpoint.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 155 |
+| hardener-state | `db.rs`, `hash_chain.rs`, `signing.rs`, `manager.rs`, `checkpoint.rs` | `audit_tests.rs`, `checkpoint_system.rs`, `db_tests.rs`, `scan_manager_tests.rs`, `signing_tests.rs`, `common/mod.rs` || 157 |
 | hardener-distro | `lib.rs` | - | 5 |
 | hardener-scheduler | `config.rs`, `db.rs`, `json_store.rs`, `runner.rs`, `daemon.rs`, `systemd.rs`, `schedule.rs`, `notification/*.rs` | - | 131 |
-| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 335 |
+| hardener-cli | `cli.rs`, `output.rs`, `ssh_config.rs`, and thirteen of `commands/`: `apply.rs`, `batch.rs`, `checkpoint.rs`, `exception.rs`, `exception/document.rs`, `history.rs`, `plugin_filter.rs`, `privilege.rs`, `report.rs`, `report_wizard.rs`, `scan.rs`, `scope.rs`, `state.rs`, `systemd.rs` | `batch_ssh_integration.rs` (live-sshd, `#[ignore]`), `ssh_refusal.rs` (drives the built binary), `config_flag.rs` (drives the built binary), `quiet_output.rs` (drives the built binary), `output_artefacts.rs` (drives the built binary), `scope_tests.rs` (drives the built binary) | 343 |
 | hardener-plugins | `lib.rs`, `strictness.rs`, `scan_outcome.rs`, `shell_config.rs`, and all eight plugin modules (`ssh/dropin.rs`, `ssh/include.rs`, `kernel/divergence.rs`, `firewall/divergence.rs`, `ssh/divergence.rs`, `mac/divergence.rs`, `services/divergence.rs` and `audit/divergence.rs` also carry their own) | `*_tests.rs` (8 files), `*_mock_tests.rs` (8 files), `ssh_integration_tests.rs`, `common/mod.rs` | 881 |
 | hardener-core | `config.rs`, `config/scope.rs`, `config_loader.rs`, `config_validation.rs`, `plugin.rs`, `inventory.rs`, `executor/local.rs`, `executor/ssh.rs` | `config_env_precedence.rs`, `config_tests.rs`, `context_tests.rs`, `inventory_shared_path.rs`, `mock_executor_tests.rs`, `plugin_manager_tests.rs`, `registry_tests.rs`, `ssh_executor_tests.rs` | 246 |
 | hardener-types | `lib.rs`, `remote.rs`, `scheduler.rs`, `time.rs` | `time_library_guard.rs` | 89 |
@@ -1098,4 +1098,4 @@ counts measured the same way and on the same date as the table above.
 | `hardener-common/src/types.rs` | Added `FindingPolicyException` struct |
 | `hardener-cli/src/cli.rs` | Added `--config`, `--audit`, `--exit-code` flags, `ScanMode` enum |
 
-**Last Updated**: 2026-11-24
+**Last Updated**: 2026-11-26
