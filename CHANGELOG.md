@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failed apply, rollback or checkpoint delete now reaches the audit
+  log.** Five places handed a failure to an audit writer that only accepts
+  successes, and ignored its refusal, so the runs an auditor most wants to
+  see left no entry. A plugin whose apply returned an error outright was
+  never logged either. Each of these now writes a failure entry carrying its
+  reason: the plugin's own error for `apply`, which half failed for
+  `rollback`, and the failed plugins by name for `batch apply`. Successful
+  runs are logged as before, and the hash chain still verifies. If an entry
+  cannot be written, the command now says so on stderr.
+
 ### Changed
 
 - **Building from source now needs Rust 1.94 (#188).** The workspace moves

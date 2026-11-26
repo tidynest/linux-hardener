@@ -5,14 +5,14 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use hardener_core::{Context, SystemExecutor, executor::host_keys_for};
-use hardener_state::{ActionResult, ActionType, AuditLogger, CheckpointId};
+use hardener_state::{ActionType, AuditLogger, CheckpointId};
 use hardener_types::RollbackResult;
 
 use crate::cli::OutputFormat;
 use crate::output;
 
 use super::privilege::is_privileged;
-use super::state::{effective_user, get_checkpoint_manager};
+use super::state::{get_checkpoint_manager, record_outcome};
 
 pub async fn list(
     format: OutputFormat,
@@ -63,15 +63,14 @@ pub async fn create(
         .create_checkpoint(executor.as_ref(), name, &paths)
         .await?;
 
-    if let Some(logger) = logger {
-        let _ = logger
-            .log_action(
-                ActionType::CheckpointCreate,
-                effective_user(),
-                name.to_string(),
-                ActionResult::Success,
-            )
-            .await;
+    if let Some(logger) = &logger {
+        record_outcome(
+            logger,
+            ActionType::CheckpointCreate,
+            name.to_string(),
+            Ok(()),
+        )
+        .await;
     }
 
     output::checkpoint_created(&format, &checkpoint_id);
@@ -98,19 +97,14 @@ pub async fn delete(
     // which is the one place it needs to appear. `rollback` and `apply` already
     // log both outcomes.
     let outcome = manager.delete_checkpoint(&id).await;
-    if let Some(logger) = logger {
-        let _ = logger
-            .log_action(
-                ActionType::CheckpointDelete,
-                effective_user(),
-                checkpoint_id.to_string(),
-                if outcome.is_ok() {
-                    ActionResult::Success
-                } else {
-                    ActionResult::Failure
-                },
-            )
-            .await;
+    if let Some(logger) = &logger {
+        record_outcome(
+            logger,
+            ActionType::CheckpointDelete,
+            checkpoint_id.to_string(),
+            outcome.as_ref().map(|_| ()).map_err(|e| format!("{e:#}")),
+        )
+        .await;
     }
     outcome?;
 
@@ -149,15 +143,14 @@ pub async fn repair(
     // Logged under the deletion action because that is what it is: rows leave
     // the state database. A run that removed nothing is still recorded, so the
     // trail says the database was inspected and found clean.
-    if let Some(logger) = logger {
-        let _ = logger
-            .log_action(
-                ActionType::CheckpointDelete,
-                effective_user(),
-                format!("orphaned file rows: {removed}"),
-                ActionResult::Success,
-            )
-            .await;
+    if let Some(logger) = &logger {
+        record_outcome(
+            logger,
+            ActionType::CheckpointDelete,
+            format!("orphaned file rows: {removed}"),
+            Ok(()),
+        )
+        .await;
     }
 
     output::checkpoint_repair(&format, found, Some(removed));
@@ -204,31 +197,23 @@ pub async fn rollback(
 
     output::rollback_result(&format, &result);
 
-    let reason = rollback_failure_reason(&result);
-    let action_result = match reason {
-        None => ActionResult::Success,
-        Some(_) => ActionResult::Failure,
+    // One sentence per failure, used for both the audit entry and the error
+    // the operator sees, so the trail and the terminal cannot disagree.
+    let outcome = match rollback_failure_reason(&result) {
+        None => Ok(()),
+        Some(reason) => Err(reason.message().to_string()),
     };
-    if let Some(logger) = logger {
-        let _ = logger
-            .log_action(
-                ActionType::Rollback,
-                effective_user(),
-                checkpoint_id.to_string(),
-                action_result,
-            )
-            .await;
+    if let Some(logger) = &logger {
+        record_outcome(
+            logger,
+            ActionType::Rollback,
+            checkpoint_id.to_string(),
+            outcome.clone(),
+        )
+        .await;
     }
 
-    match reason {
-        None => Ok(()),
-        Some(FailureReason::Files) => {
-            bail!("Rollback completed with errors: some files were not restored")
-        }
-        Some(FailureReason::Reload) => bail!(
-            "Files were restored, but a service did not reload and is still running the previous configuration"
-        ),
-    }
+    outcome.map_err(anyhow::Error::msg)
 }
 
 /// Restoring the bytes is only half of a rollback: until the services that
@@ -270,6 +255,17 @@ pub(crate) async fn reload_restored_paths(
 pub(crate) enum FailureReason {
     Files,
     Reload,
+}
+
+impl FailureReason {
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            FailureReason::Files => "Rollback completed with errors: some files were not restored",
+            FailureReason::Reload => {
+                "Files were restored, but a service did not reload and is still running the previous configuration"
+            }
+        }
+    }
 }
 
 pub(crate) fn rollback_failure_reason(result: &RollbackResult) -> Option<FailureReason> {

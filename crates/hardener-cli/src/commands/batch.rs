@@ -1,7 +1,7 @@
 //! `hardener batch scan`: scan many remote hosts concurrently.
 
 use super::privilege::is_privileged;
-use super::state::{effective_user, get_checkpoint_manager};
+use super::state::{get_checkpoint_manager, record_outcome};
 use crate::cli::OutputFormat as CliOutputFormat;
 use crate::commands::daemon::load_scheduler_config;
 use crate::commands::report::{finding_to_scan_finding, scan_grouped};
@@ -20,7 +20,7 @@ use hardener_core::{
 use hardener_distro::Distribution;
 use hardener_scheduler::ScanHistoryManager;
 use hardener_scheduler::db::ScanFinding;
-use hardener_state::{ActionResult, ActionType, Checkpoint, CheckpointManager};
+use hardener_state::{ActionType, Checkpoint, CheckpointManager};
 use hardener_types::ComplianceReport;
 use hardener_types::remote::{HostsConfig, RemoteHostProfile};
 use hardener_types::time;
@@ -1841,6 +1841,52 @@ pub struct BatchApplyOptions {
     pub logger: Option<hardener_state::AuditLogger>,
 }
 
+/// What one host's apply says to the audit trail, or `None` for a dry run,
+/// which changed nothing and is not an action to record.
+///
+/// A failure names the plugins that failed and their reasons, since the entry
+/// is read by someone who cannot go back and ask the host.
+fn apply_audit_outcome(status: &ApplyStatus) -> Option<std::result::Result<(), String>> {
+    match status {
+        ApplyStatus::Validated { .. } => None,
+        ApplyStatus::Applied { failed: 0, .. } => Some(Ok(())),
+        ApplyStatus::Applied {
+            failed, plugins, ..
+        } => {
+            let named = plugins
+                .iter()
+                .filter(|p| !p.success)
+                .map(|p| {
+                    let reason = p.error.as_deref().unwrap_or("no reason given");
+                    format!("{}: {reason}", p.plugin.as_str())
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            Some(Err(format!("{failed} plugin(s) failed. {named}")))
+        }
+        ApplyStatus::Failed { error } => Some(Err(error.clone())),
+    }
+}
+
+/// What one host's rollback says to the audit trail, or `None` for a preview
+/// or a host with nothing to roll back.
+fn rollback_audit_outcome(status: &RollbackStatus) -> Option<std::result::Result<(), String>> {
+    match status {
+        RollbackStatus::Previewed { .. } | RollbackStatus::NothingToDo => None,
+        RollbackStatus::RolledBack { failed: 0, .. } => Some(Ok(())),
+        RollbackStatus::RolledBack {
+            restored,
+            failed,
+            reload_failed,
+            ..
+        } => Some(Err(format!(
+            "{failed} of {} checkpoint(s) did not roll back, {reload_failed} of them at the service reload",
+            restored + failed
+        ))),
+        RollbackStatus::Failed { error } => Some(Err(error.clone())),
+    }
+}
+
 /// CLI entry point for `hardener batch apply`. Dry-run unless `--execute`.
 pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
     refuse_output_contradiction(opts.output.as_ref(), opts.format);
@@ -1901,23 +1947,19 @@ pub async fn run_apply(opts: BatchApplyOptions) -> anyhow::Result<()> {
 
     // Best-effort per-host audit (execute path only), sequential on a shared logger.
     if execute && let Some(logger) = opts.logger {
-        let user = effective_user();
         for o in &outcomes {
-            let result = match &o.status {
-                ApplyStatus::Applied { failed: 0, .. } => ActionResult::Success,
-                // Defensive: execute-path statuses are Applied/Failed; this guards
-                // against a dry-run status ever being mis-logged as a failure.
-                ApplyStatus::Validated { .. } => continue,
-                _ => ActionResult::Failure,
+            // Execute-path statuses are Applied or Failed; `None` guards against
+            // a dry-run status ever being logged as an action.
+            let Some(outcome) = apply_audit_outcome(&o.status) else {
+                continue;
             };
-            let _ = logger
-                .log_action(
-                    ActionType::Apply,
-                    user.clone(),
-                    format!("apply @ {}", o.target),
-                    result,
-                )
-                .await;
+            record_outcome(
+                &logger,
+                ActionType::Apply,
+                format!("apply @ {}", o.target),
+                outcome,
+            )
+            .await;
         }
     }
 
@@ -2006,22 +2048,18 @@ pub async fn run_rollback(opts: BatchRollbackOptions) -> anyhow::Result<()> {
 
     // Best-effort per-host audit (execute path only), sequential on a shared logger.
     if execute && let Some(logger) = opts.logger {
-        let user = effective_user();
         for o in &outcomes {
-            let result = match &o.status {
-                RollbackStatus::RolledBack { failed: 0, .. } => ActionResult::Success,
-                // Nothing-to-do and dry-run previews are not failures and not logged.
-                RollbackStatus::NothingToDo | RollbackStatus::Previewed { .. } => continue,
-                _ => ActionResult::Failure,
+            // Nothing-to-do and dry-run previews are not failures and not logged.
+            let Some(outcome) = rollback_audit_outcome(&o.status) else {
+                continue;
             };
-            let _ = logger
-                .log_action(
-                    ActionType::Rollback,
-                    user.clone(),
-                    format!("rollback @ {}", o.target),
-                    result,
-                )
-                .await;
+            record_outcome(
+                &logger,
+                ActionType::Rollback,
+                format!("rollback @ {}", o.target),
+                outcome,
+            )
+            .await;
         }
     }
 

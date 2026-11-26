@@ -98,7 +98,10 @@ This tool is designed to harden systems against common attack vectors, but is **
    - Individual operations request only necessary permissions
 
 4. **Audit Logging**
-   - All operations are logged
+   - Every command that changes the host or its policy is logged with its
+     outcome, failures included: apply, rollback, checkpoint create and delete,
+     and edits to exceptions, scope and schedules. Read-only commands such as
+     `scan` and `report` are not logged
    - A SHA-256 hash chain makes a modified or reordered entry **detectable**. It
      prevents nothing: an attacker who can write the file can still write it,
      and what the chain gives you is that the edit does not verify afterwards
