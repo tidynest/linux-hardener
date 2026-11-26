@@ -1,6 +1,6 @@
 # Project Scripts
 
-**Last Updated**: 2026-11-18
+**Last Updated**: 2026-11-26
 
 This directory contains utility scripts for the Linux Hardening Tool project.
 

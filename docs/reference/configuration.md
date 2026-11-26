@@ -1,6 +1,6 @@
 # Configuration reference
 
-**Last Updated**: 2026-11-24
+**Last Updated**: 2026-11-26
 
 Complete reference for the hardener's configuration files. Configuration
 controls which plugins run, tightens directive targets beyond the built-in
